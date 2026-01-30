@@ -6,7 +6,6 @@ import QuestionNav from "../../components/QuestionNav";
 import { supabase } from "../../supabase/client";
 import { saveResponse } from "../../supabase/response";
 
-/* ================= SHUFFLE HELPER ================= */
 const shuffleArray = (array) => {
   const arr = [...array];
   for (let i = arr.length - 1; i > 0; i--) {
@@ -16,28 +15,34 @@ const shuffleArray = (array) => {
   return arr;
 };
 
-/* ================= ASSESSMENT PAGE ================= */
 export default function AssessmentPage() {
   const router = useRouter();
   const { id } = router.query;
-
   const [questions, setQuestions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState({});
   const [loading, setLoading] = useState(true);
   const [elapsed, setElapsed] = useState(0);
+  const [session, setSession] = useState(null);
 
+  const assessmentId = Number(id);
   const backgrounds = [
     "/images/assessment-bg1.jpg",
     "/images/assessment-bg2.jpg",
     "/images/assessment-bg3.jpg",
   ];
 
-  /* ================= FETCH QUESTIONS ================= */
+  // Session load
   useEffect(() => {
-    if (!id) return;
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    return () => sub?.subscription?.unsubscribe();
+  }, []);
 
-    const fetchQuestions = async () => {
+  // Fetch questions
+  useEffect(() => {
+    if (!assessmentId) return;
+    (async () => {
       try {
         const { data, error } = await supabase
           .from("questions")
@@ -47,118 +52,85 @@ export default function AssessmentPage() {
             section,
             answers (id, answer_text)
           `)
+          .eq("assessment_id", assessmentId)
           .order("id");
 
         if (error) throw error;
 
         const formatted = shuffleArray(
           (data || []).map((q) => ({
-            id: q.id,
-            question_text: q.question_text,
-            section: q.section,
+            ...q,
             options: shuffleArray(q.answers || []),
           }))
         );
 
         setQuestions(formatted);
       } catch (err) {
-        console.error("Question load error:", err);
-        alert("Failed to load questions");
+        console.error("Error loading questions:", err);
+        alert("Failed to load assessment questions.");
       } finally {
         setLoading(false);
       }
-    };
+    })();
+  }, [assessmentId]);
 
-    fetchQuestions();
-  }, [id]);
-
-  /* ================= TIMER ================= */
+  // Timer
   useEffect(() => {
     const interval = setInterval(() => setElapsed((t) => t + 1), 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // ================= ANSWER SELECTION =================
-const handleSelect = async (questionId, answerId) => {
-  // Optimistic UI update
-  setAnswers((prev) => ({ ...prev, [questionId]: answerId }));
+  // Save response
+  const handleSelect = async (questionId, answerId) => {
+    setAnswers((prev) => ({ ...prev, [questionId]: answerId }));
 
-  try {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const session = sessionData?.session;
-
-    if (!id) {
-      console.warn("Assessment ID not ready yet — skipping save.");
+    if (!assessmentId || !session?.user?.id) {
+      console.warn("Missing assessment/session, skipping save...");
       return;
     }
 
-    if (!session?.user?.id) {
-      console.warn("Session not ready — skipping save.");
-      return;
+    try {
+      await saveResponse(assessmentId, questionId, answerId, session.user.id);
+    } catch (err) {
+      console.error("Save response error:", err.message || err);
     }
+  };
 
-    await saveResponse(
-      Number(id),   // ensure numeric consistency
-      questionId,
-      answerId,
-      session.user.id
-    );
-  } catch (err) {
-    console.error("Failed to save response:", err.message || err);
-  }
-};
-
-  /* ================= NAVIGATION ================= */
   const handleNext = () => {
-    if (currentIndex < questions.length - 1) {
-      setCurrentIndex((i) => i + 1);
-    }
+    if (currentIndex < questions.length - 1) setCurrentIndex((i) => i + 1);
   };
 
-  const handleBack = () => {
-    setCurrentIndex((i) => Math.max(i - 1, 0));
-  };
+  const handleBack = () => setCurrentIndex((i) => Math.max(i - 1, 0));
 
-  /* ================= FINISH ATTEMPT ================= */
   const handleFinish = async () => {
     try {
-      const sessionRes = await supabase.auth.getSession();
-      const session = sessionRes?.data?.session;
-
       if (!session) {
-        alert("You must be logged in to submit.");
+        alert("Please log in to submit.");
         return;
       }
 
-      const submitRes = await fetch("/api/submit-assessment", {
+      const response = await fetch("/api/submit-assessment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assessment_id: id }),
+        body: JSON.stringify({
+          assessment_id: assessmentId,
+          user_id: session.user.id,
+        }),
       });
 
-      const submitData = await submitRes.json();
-
-      if (!submitRes.ok) {
-        alert(submitData.error || "Submission failed");
-        return;
-      }
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Submission failed.");
 
       alert("Assessment submitted successfully!");
-      window.location.href = "/";
+      router.push("/");
     } catch (err) {
-      console.error(err);
-      alert("Failed to submit assessment.");
+      console.error("Finish error:", err);
+      alert("Failed to submit your assessment.");
     }
   };
 
-  /* ================= UI STATES ================= */
-  if (loading) {
-    return <p style={{ textAlign: "center" }}>Loading assessment…</p>;
-  }
-
-  if (!questions.length) {
-    return <p style={{ textAlign: "center" }}>No questions found.</p>;
-  }
+  if (loading) return <p style={{ textAlign: "center" }}>Loading assessment…</p>;
+  if (!questions.length) return <p style={{ textAlign: "center" }}>No questions found.</p>;
 
   const currentQuestion = questions[currentIndex];
   const bg = backgrounds[currentIndex % backgrounds.length];
@@ -174,7 +146,6 @@ const handleSelect = async (questionId, answerId) => {
           alignItems: "flex-start",
         }}
       >
-        {/* MAIN QUESTION PANEL */}
         <div
           style={{
             flex: 4,
@@ -183,65 +154,50 @@ const handleSelect = async (questionId, answerId) => {
             borderRadius: 12,
             color: "#000",
             minHeight: "72vh",
-            maxHeight: "78vh",
             display: "flex",
             flexDirection: "column",
           }}
         >
-          <div
+          <h3
             style={{
               backgroundColor: "#1565c0",
               color: "#fff",
               padding: "10px 15px",
               borderRadius: 8,
               textAlign: "center",
-              fontWeight: 700,
-              fontSize: 16,
-              marginBottom: 15,
               textTransform: "uppercase",
             }}
           >
-            {currentQuestion.section || "STRATAVAX CAPABILITY ASSESSMENT"}
-          </div>
+            {currentQuestion.section || "Assessment"}
+          </h3>
 
-          <p style={{ marginBottom: 15, fontWeight: 600 }}>
+          <p style={{ fontWeight: 600 }}>
             Question {currentIndex + 1} of {questions.length}
           </p>
 
           <QuestionCard
             question={currentQuestion}
             selected={answers[currentQuestion.id]}
-            onSelect={(answerId) =>
-              handleSelect(currentQuestion.id, answerId)
-            }
-            fitLayout
+            onSelect={(answerId) => session && handleSelect(currentQuestion.id, answerId)}
           />
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginTop: 20,
-            }}
-          >
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
             <button onClick={handleBack} disabled={currentIndex === 0}>
-              Previous page
+              Previous
             </button>
             {currentIndex === questions.length - 1 ? (
-              <button onClick={handleFinish}>Finish Attempt</button>
+              <button onClick={handleFinish}>Finish</button>
             ) : (
-              <button onClick={handleNext}>Next page</button>
+              <button onClick={handleNext}>Next</button>
             )}
           </div>
         </div>
 
-        {/* QUESTION NAV */}
         <QuestionNav
           questions={questions}
           answers={answers}
           current={currentIndex}
           onJump={setCurrentIndex}
-          assessmentId={id}
           elapsed={elapsed}
           totalSeconds={10800}
         />
@@ -249,4 +205,3 @@ const handleSelect = async (questionId, answerId) => {
     </AppLayout>
   );
 }
-
