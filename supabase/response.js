@@ -2,7 +2,8 @@ import { supabase } from "./client";
 
 export async function saveResponse(assessment_id, question_id, answer_id, user_id) {
   if (!assessment_id || !question_id || !answer_id || !user_id) {
-    throw new Error("Missing fields in saveResponse()");
+    console.warn("Skipping saveResponse — missing one or more required values");
+    return;
   }
 
   const { error } = await supabase.from("responses").upsert(
