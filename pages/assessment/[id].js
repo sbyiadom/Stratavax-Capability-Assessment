@@ -78,35 +78,35 @@ export default function AssessmentPage() {
     return () => clearInterval(interval);
   }, []);
 
-  /* ================= ANSWER SELECTION ================= */
-  const handleSelect = async (questionId, answerId) => {
-    // ✅ Optimistic UI update
-    setAnswers((prev) => ({
-      ...prev,
-      [questionId]: answerId,
-    }));
+  // ================= ANSWER SELECTION =================
+const handleSelect = async (questionId, answerId) => {
+  // Optimistic UI update
+  setAnswers((prev) => ({ ...prev, [questionId]: answerId }));
 
-    try {
-      const sessionRes = await supabase.auth.getSession();
-      const session = sessionRes?.data?.session;
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const session = sessionData?.session;
 
-      // ⚠️ Do NOT alert — session can briefly be null
-      if (!session) {
-        console.warn("Session not ready yet, answer not saved");
-        return;
-      }
-
-      await saveResponse(
-        id,
-        questionId,
-        answerId,
-        session.user.id
-      );
-    } catch (err) {
-      // ❌ Do NOT alert — this causes false negatives
-      console.error("Unexpected save error:", err);
+    if (!id) {
+      console.warn("Assessment ID not ready yet — skipping save.");
+      return;
     }
-  };
+
+    if (!session?.user?.id) {
+      console.warn("Session not ready — skipping save.");
+      return;
+    }
+
+    await saveResponse(
+      Number(id),   // ensure numeric consistency
+      questionId,
+      answerId,
+      session.user.id
+    );
+  } catch (err) {
+    console.error("Failed to save response:", err.message || err);
+  }
+};
 
   /* ================= NAVIGATION ================= */
   const handleNext = () => {
@@ -249,3 +249,4 @@ export default function AssessmentPage() {
     </AppLayout>
   );
 }
+
