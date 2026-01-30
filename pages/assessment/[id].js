@@ -30,14 +30,12 @@ export default function AssessmentPage() {
   const [saveStatus, setSaveStatus] = useState({});
   const [isSessionReady, setIsSessionReady] = useState(false);
 
-  // Fixed: Use online images or solid colors to avoid 404 errors
+  // Fixed: Use online images to avoid 404 errors
   const backgrounds = [
     "https://images.unsplash.com/photo-1450101499163-c8848c66ca85?w=1600&auto=format&fit=crop",
     "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1600&auto=format&fit=crop",
     "https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=1600&auto=format&fit=crop",
   ];
-  // Alternative: Use solid colors
-  // const backgrounds = ["#f0f7ff", "#f5f0ff", "#fff0f5"];
 
   // Get session and ensure it's ready
   useEffect(() => {
@@ -72,7 +70,7 @@ export default function AssessmentPage() {
     };
   }, [router]);
 
-  // Fetch questions
+  // Fetch questions - FIXED: Removed assessment_id filter
   useEffect(() => {
     if (!assessmentId || !isSessionReady) return;
     
@@ -80,8 +78,9 @@ export default function AssessmentPage() {
     
     const fetchQuestions = async () => {
       try {
-        console.log("📥 Fetching questions for assessment:", assessmentId);
+        console.log("📥 Fetching all questions...");
         
+        // FIXED: Removed .eq("assessment_id", assessmentId) since column doesn't exist
         const { data, error } = await supabase
           .from("questions")
           .select(`
@@ -90,26 +89,41 @@ export default function AssessmentPage() {
             section,
             answers (id, answer_text, score)
           `)
-          .eq("assessment_id", assessmentId)
           .order("id");
 
-        if (error) throw error;
+        if (error) {
+          console.error("❌ Query error:", {
+            message: error.message,
+            code: error.code,
+            details: error.details
+          });
+          throw error;
+        }
+        
         if (!active) return;
 
-        // Load previously saved answers
-        const { data: savedResponses } = await supabase
+        console.log(`📋 Found ${data?.length || 0} questions`);
+
+        // Load previously saved answers for THIS assessment
+        const { data: savedResponses, error: savedError } = await supabase
           .from("responses")
           .select("question_id, answer_id")
           .eq("assessment_id", assessmentId)
           .eq("user_id", session.user.id);
+
+        if (savedError) {
+          console.error("❌ Error loading saved responses:", savedError);
+        }
 
         const savedAnswers = {};
         if (savedResponses) {
           savedResponses.forEach(res => {
             savedAnswers[res.question_id] = res.answer_id;
           });
+          console.log(`📝 Loaded ${Object.keys(savedAnswers).length} saved answers`);
         }
 
+        // Shuffle questions and answers
         const formatted = shuffleArray(
           (data || []).map((q) => ({
             ...q,
@@ -119,10 +133,18 @@ export default function AssessmentPage() {
 
         setQuestions(formatted);
         setAnswers(savedAnswers);
-        console.log(`✅ Loaded ${formatted.length} questions and ${Object.keys(savedAnswers).length} saved answers`);
+        
+        if (formatted.length === 0) {
+          console.warn("⚠️ No questions found in database");
+        }
       } catch (err) {
-        console.error("❌ Error fetching questions:", err);
-        alert("Failed to load the assessment. Please refresh the page.");
+        console.error("❌ Error fetching questions:", {
+          message: err.message,
+          code: err.code,
+          details: err.details,
+          hint: err.hint
+        });
+        alert("Failed to load questions. Please check if the questions table exists and has data.");
       } finally {
         if (active) setLoading(false);
       }
@@ -141,7 +163,7 @@ export default function AssessmentPage() {
     return () => clearInterval(timer);
   }, []);
 
-  // FIXED: Handle answer selection with detailed debugging
+  // Handle answer selection
   const handleSelect = async (questionId, answerId) => {
     console.group("🎯 handleSelect Debug");
     console.log("Question ID:", questionId);
@@ -256,7 +278,7 @@ export default function AssessmentPage() {
     }
   };
 
-  // Test function to debug save issues
+  // Test function
   const TestSaveButton = () => (
     <button
       onClick={async () => {
@@ -272,7 +294,6 @@ export default function AssessmentPage() {
         console.log("Test data:", testData);
         
         try {
-          // Test direct Supabase call
           const { data, error } = await supabase
             .from("responses")
             .upsert(
@@ -282,19 +303,16 @@ export default function AssessmentPage() {
                 updated_at: new Date().toISOString()
               }],
               { 
-                onConflict: 'assessment_id,question_id,user_id',
-                ignoreDuplicates: false
+                onConflict: 'assessment_id,question_id,user_id'
               }
             )
             .select();
             
-          console.log("Direct test result:", { data, error });
+          console.log("Test result:", { data, error });
           
           if (error) {
-            console.error("❌ Direct test failed:", error);
-            alert(`Test failed: ${error.message}`);
+            alert(`❌ Test failed: ${error.message}`);
           } else {
-            console.log("✅ Direct test succeeded:", data);
             alert("✅ Test save successful!");
           }
           
@@ -343,7 +361,9 @@ export default function AssessmentPage() {
   if (!questions.length) {
     return (
       <div style={{ textAlign: "center", padding: "40px" }}>
-        <p>No questions found for this assessment.</p>
+        <h3>No Questions Found</h3>
+        <p>The questions table is empty or doesn't exist.</p>
+        <p>Please add questions to your database.</p>
         <button 
           onClick={() => router.push("/")}
           style={{
@@ -446,16 +466,6 @@ export default function AssessmentPage() {
                 transition: "all 0.2s",
                 opacity: currentIndex === 0 ? 0.6 : 1
               }}
-              onMouseEnter={(e) => {
-                if (currentIndex !== 0) {
-                  e.currentTarget.style.backgroundColor = "#0d47a1";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (currentIndex !== 0) {
-                  e.currentTarget.style.backgroundColor = "#1565c0";
-                }
-              }}
             >
               ← Previous
             </button>
@@ -472,15 +482,6 @@ export default function AssessmentPage() {
                   cursor: "pointer",
                   fontSize: "16px",
                   fontWeight: "bold",
-                  transition: "all 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#388e3c";
-                  e.currentTarget.style.transform = "scale(1.02)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "#4CAF50";
-                  e.currentTarget.style.transform = "scale(1)";
                 }}
               >
                 🏁 Finish Assessment
@@ -497,15 +498,6 @@ export default function AssessmentPage() {
                   cursor: "pointer",
                   fontSize: "16px",
                   fontWeight: "500",
-                  transition: "all 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#0d47a1";
-                  e.currentTarget.style.transform = "scale(1.02)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "#1565c0";
-                  e.currentTarget.style.transform = "scale(1)";
                 }}
               >
                 Next Question →
@@ -514,7 +506,7 @@ export default function AssessmentPage() {
           </div>
         </div>
 
-        {/* Side panel with navigation */}
+        {/* Side panel */}
         <div style={{ flex: 1 }}>
           <QuestionNav
             questions={questions}
@@ -523,7 +515,6 @@ export default function AssessmentPage() {
             onJump={setCurrentIndex}
           />
           
-          {/* Progress summary */}
           <div style={{ 
             marginTop: "20px", 
             padding: "20px", 
@@ -533,7 +524,7 @@ export default function AssessmentPage() {
           }}>
             <h4 style={{ marginTop: 0, marginBottom: "15px" }}>Progress</h4>
             <p style={{ fontSize: "14px", marginBottom: "10px" }}>
-              Answered: <strong>{Object.keys(answers).length}</strong> / <strong>{questions.length}</strong> questions
+              Answered: <strong>{Object.keys(answers).length}</strong> / <strong>{questions.length}</strong>
             </p>
             <div style={{ 
               height: "10px", 
@@ -551,19 +542,6 @@ export default function AssessmentPage() {
                   transition: "width 0.3s ease"
                 }}
               />
-            </div>
-            
-            {/* Time remaining */}
-            <div style={{ 
-              marginTop: "15px", 
-              padding: "10px", 
-              backgroundColor: "#e3f2fd", 
-              borderRadius: "8px",
-              fontSize: "14px"
-            }}>
-              <div style={{ fontWeight: "600", marginBottom: "5px" }}>Time</div>
-              <div>Elapsed: {Math.floor(elapsed / 60)}:{(elapsed % 60).toString().padStart(2, '0')}</div>
-              <div>Remaining: {Math.floor((10800 - elapsed) / 60)}:{((10800 - elapsed) % 60).toString().padStart(2, '0')}</div>
             </div>
           </div>
         </div>
