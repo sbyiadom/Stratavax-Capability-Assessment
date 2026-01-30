@@ -1,0 +1,25 @@
+import { supabase } from "../supabase/client";
+import { useRouter } from "next/router";
+import { useEffect, useState } from "react";
+
+export function useRequireAuth() {
+  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) {
+        router.replace("/login"); // redirect to login page
+      } else {
+        setSession(data.session);
+        setLoading(false);
+      }
+    };
+
+    checkSession();
+  }, []);
+
+  return { session, loading };
+}
