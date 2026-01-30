@@ -3,17 +3,41 @@ export default function QuestionCard({ question, selected, onSelect, disabled = 
   const getAnswerStyle = (section) => {
     switch(section) {
       case 'Cognitive Abilities':
-        return { type: 'cognitive', prefix: 'A', 'B', 'C', 'D' };
+        return { 
+          type: 'cognitive', 
+          labels: ['A', 'B', 'C', 'D'],
+          description: 'Select the correct answer' 
+        };
       case 'Personality Assessment':
-        return { type: 'likert', labels: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'] };
+        return { 
+          type: 'likert', 
+          labels: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
+          description: 'Rate how much you agree' 
+        };
       case 'Leadership Potential':
-        return { type: 'frequency', labels: ['Never', 'Rarely', 'Sometimes', 'Often', 'Always'] };
+        return { 
+          type: 'frequency', 
+          labels: ['Never', 'Rarely', 'Sometimes', 'Often', 'Always'],
+          description: 'How frequently does this apply?' 
+        };
       case 'Technical Competence':
-        return { type: 'proficiency', labels: ['Beginner', 'Basic', 'Competent', 'Proficient', 'Expert'] };
+        return { 
+          type: 'proficiency', 
+          labels: ['Beginner', 'Basic', 'Competent', 'Proficient', 'Expert'],
+          description: 'Rate your proficiency level' 
+        };
       case 'Performance Metrics':
-        return { type: 'rating', labels: ['Poor', 'Below Average', 'Average', 'Good', 'Excellent'] };
+        return { 
+          type: 'rating', 
+          labels: ['Poor', 'Below Average', 'Average', 'Good', 'Excellent'],
+          description: 'Rate your performance' 
+        };
       default:
-        return { type: 'default', labels: [] };
+        return { 
+          type: 'default', 
+          labels: [],
+          description: 'Select an option' 
+        };
     }
   };
 
@@ -25,18 +49,33 @@ export default function QuestionCard({ question, selected, onSelect, disabled = 
         {question.question_text}
       </p>
       
-      {/* Show answer type hint for cognitive questions */}
-      {question.section === 'Cognitive Abilities' && (
+      {/* Show answer type hint */}
+      {question.section !== 'Cognitive Abilities' && (
         <div style={{ 
           fontSize: "14px", 
           color: "#666", 
+          backgroundColor: "#f5f5f5", 
+          padding: "8px 12px", 
+          borderRadius: "6px",
+          marginBottom: "15px",
+          borderLeft: "3px solid #ccc"
+        }}>
+          <strong>Instructions:</strong> {answerStyle.description}
+        </div>
+      )}
+      
+      {/* Special hint for cognitive questions */}
+      {question.section === 'Cognitive Abilities' && (
+        <div style={{ 
+          fontSize: "14px", 
+          color: "#1565c0", 
           backgroundColor: "#e3f2fd", 
           padding: "8px 12px", 
           borderRadius: "6px",
           marginBottom: "15px",
           borderLeft: "3px solid #1565c0"
         }}>
-          <strong>Select the correct answer:</strong> Each option has a different score based on accuracy.
+          <strong>Select the correct answer:</strong> Choose the most accurate option.
         </div>
       )}
       
@@ -44,8 +83,13 @@ export default function QuestionCard({ question, selected, onSelect, disabled = 
         {question.options.map((opt, index) => {
           // For cognitive questions, show A/B/C/D labels
           const label = question.section === 'Cognitive Abilities' 
-            ? ['A', 'B', 'C', 'D'][index] + '. '
+            ? answerStyle.labels[index] + '. '
             : '';
+          
+          // For other sections, use the scale labels
+          const answerText = question.section === 'Cognitive Abilities' 
+            ? opt.answer_text 
+            : `${answerStyle.labels[index]}: ${opt.answer_text}`;
           
           return (
             <button
@@ -64,34 +108,45 @@ export default function QuestionCard({ question, selected, onSelect, disabled = 
                 fontSize: "16px",
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "space-between"
+                justifyContent: "space-between",
+                minHeight: "50px"
               }}
               onMouseEnter={(e) => {
                 if (!disabled && selected !== opt.id) {
                   e.currentTarget.style.background = "#f8f9fa";
+                  e.currentTarget.style.transform = "translateY(-1px)";
+                  e.currentTarget.style.boxShadow = "0 2px 5px rgba(0,0,0,0.1)";
                 }
               }}
               onMouseLeave={(e) => {
                 if (!disabled && selected !== opt.id) {
                   e.currentTarget.style.background = "#fff";
+                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.boxShadow = "none";
                 }
               }}
             >
-              <span>
-                <strong>{label}</strong>{opt.answer_text}
+              <span style={{ flex: 1 }}>
+                <strong style={{ color: question.section === 'Cognitive Abilities' ? "#1565c0" : "#333" }}>
+                  {label}
+                </strong>
+                {answerText}
               </span>
               
-              {/* Show score for cognitive questions in development */}
+              {/* Show score in development mode */}
               {process.env.NODE_ENV === 'development' && (
                 <span style={{
-                  fontSize: "12px",
+                  fontSize: "11px",
                   color: "#666",
                   backgroundColor: "#f0f0f0",
-                  padding: "2px 8px",
-                  borderRadius: "10px",
-                  marginLeft: "10px"
+                  padding: "3px 8px",
+                  borderRadius: "12px",
+                  marginLeft: "10px",
+                  fontWeight: "500",
+                  minWidth: "60px",
+                  textAlign: "center"
                 }}>
-                  Score: {opt.score}
+                  Score: {opt.score}/5
                 </span>
               )}
             </button>
