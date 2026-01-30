@@ -1,11 +1,11 @@
-// Enhanced scoring system for 100-question assessment
+// Enhanced scoring for 100 questions
 export function calculateSectionScores(responses) {
   const sections = {
-    'Cognitive Abilities': { total: 0, count: 0, max: 100 },
-    'Personality Assessment': { total: 0, count: 0, max: 100 },
-    'Leadership Potential': { total: 0, count: 0, max: 100 },
-    'Technical Competence': { total: 0, count: 0, max: 100 },
-    'Performance Metrics': { total: 0, count: 0, max: 100 }
+    'Cognitive Abilities': { total: 0, count: 0, max: 80 }, // 20 questions × 4 max points
+    'Personality Assessment': { total: 0, count: 0, max: 80 },
+    'Leadership Potential': { total: 0, count: 0, max: 80 },
+    'Technical Competence': { total: 0, count: 0, max: 80 },
+    'Performance Metrics': { total: 0, count: 0, max: 80 }
   };
 
   responses.forEach(response => {
@@ -16,12 +16,11 @@ export function calculateSectionScores(responses) {
     }
   });
 
-  // Convert to percentages
+  // Calculate percentages
   const result = {};
   Object.entries(sections).forEach(([section, data]) => {
     if (data.count > 0) {
-      const maxPossible = data.count * 5; // Each question max 5 points
-      result[section] = Math.round((data.total / maxPossible) * 100);
+      result[section] = Math.round((data.total / (data.count * 4)) * 100);
     } else {
       result[section] = 0;
     }
@@ -34,9 +33,9 @@ export function totalScore(responses) {
   if (!responses || responses.length === 0) return 0;
   
   const total = responses.reduce((sum, r) => sum + (r.score || 0), 0);
-  const maxPossible = responses.length * 5;
+  const maxPossible = responses.length * 4; // Each question max 4 points
   
-  return Math.round((total / maxPossible) * 100); // Percentage score
+  return Math.round((total / maxPossible) * 100);
 }
 
 export function classifyTalent(score) {
@@ -47,22 +46,29 @@ export function classifyTalent(score) {
   return 'UNDERPERFORMING';
 }
 
-export function getStrengths(sectionScores) {
-  const strengths = [];
-  Object.entries(sectionScores).forEach(([section, score]) => {
-    if (score >= 80) {
-      strengths.push(`${section} (${score}%)`);
+export function getSectionBreakdown(responses) {
+  const sections = {};
+  
+  responses.forEach(response => {
+    const section = response.question?.section;
+    if (section) {
+      if (!sections[section]) {
+        sections[section] = { total: 0, count: 0 };
+      }
+      sections[section].total += response.score || 0;
+      sections[section].count += 1;
     }
   });
-  return strengths;
-}
 
-export function getDevelopmentAreas(sectionScores) {
-  const areas = [];
-  Object.entries(sectionScores).forEach(([section, score]) => {
-    if (score < 60) {
-      areas.push(`${section} (${score}%)`);
+  const breakdown = {};
+  Object.entries(sections).forEach(([section, data]) => {
+    if (data.count > 0) {
+      breakdown[section] = {
+        score: Math.round((data.total / (data.count * 4)) * 100),
+        questionsAnswered: data.count
+      };
     }
   });
-  return areas;
+
+  return breakdown;
 }
