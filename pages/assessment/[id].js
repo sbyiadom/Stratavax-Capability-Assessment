@@ -16,6 +16,15 @@ const shuffleArray = (arr) => {
   return array;
 };
 
+// Convert assessment ID to UUID format
+const toAssessmentUUID = (id) => {
+  const num = Number(id);
+  if (isNaN(num) || num <= 0) {
+    return '00000000-0000-0000-0000-000000000001';
+  }
+  return `00000000-0000-0000-0000-${num.toString().padStart(12, '0')}`;
+};
+
 export default function AssessmentPage() {
   const router = useRouter();
   const { id } = router.query;
@@ -29,12 +38,13 @@ export default function AssessmentPage() {
   const [elapsed, setElapsed] = useState(0);
   const [saveStatus, setSaveStatus] = useState({});
   const [isSessionReady, setIsSessionReady] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  // Fixed: Use online images to avoid 404 errors
+  // Fixed backgrounds - using Unsplash to avoid 404 errors
   const backgrounds = [
-    "https://images.unsplash.com/photo-1450101499163-c8848c66ca85?w=1600&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1600&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=1600&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1450101499163-c8848c66ca85?w=1600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=1600&auto=format&fit=crop&q=80",
   ];
 
   // Get session and ensure it's ready
@@ -52,6 +62,7 @@ export default function AssessmentPage() {
         }
       } catch (error) {
         console.error("❌ Session initialization error:", error);
+        setErrorMessage("Failed to initialize session");
       }
     };
 
@@ -59,9 +70,9 @@ export default function AssessmentPage() {
 
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log("🔄 Auth state changed:", event, session?.user?.id);
         setSession(session);
         setIsSessionReady(!!session);
-        console.log("🔄 Auth state changed:", event, session?.user?.id);
       }
     );
 
@@ -70,7 +81,7 @@ export default function AssessmentPage() {
     };
   }, [router]);
 
-  // Fetch questions - FIXED: Removed assessment_id filter
+  // Fetch questions
   useEffect(() => {
     if (!assessmentId || !isSessionReady) return;
     
@@ -78,9 +89,9 @@ export default function AssessmentPage() {
     
     const fetchQuestions = async () => {
       try {
-        console.log("📥 Fetching all questions...");
+        console.log("📥 Fetching questions...");
         
-        // FIXED: Removed .eq("assessment_id", assessmentId) since column doesn't exist
+        // Get all questions (no assessment_id filter since column doesn't exist)
         const { data, error } = await supabase
           .from("questions")
           .select(`
@@ -92,11 +103,7 @@ export default function AssessmentPage() {
           .order("id");
 
         if (error) {
-          console.error("❌ Query error:", {
-            message: error.message,
-            code: error.code,
-            details: error.details
-          });
+          console.error("❌ Questions query error:", error);
           throw error;
         }
         
@@ -104,23 +111,29 @@ export default function AssessmentPage() {
 
         console.log(`📋 Found ${data?.length || 0} questions`);
 
-        // Load previously saved answers for THIS assessment
+        // Load previously saved answers
+        const assessmentUUID = toAssessmentUUID(assessmentId);
+        console.log("🔍 Loading saved responses for assessment UUID:", assessmentUUID);
+        
         const { data: savedResponses, error: savedError } = await supabase
           .from("responses")
           .select("question_id, answer_id")
-          .eq("assessment_id", assessmentId)
+          .eq("assessment_id", assessmentUUID)
           .eq("user_id", session.user.id);
 
         if (savedError) {
           console.error("❌ Error loading saved responses:", savedError);
+          // Continue without saved responses
         }
 
         const savedAnswers = {};
-        if (savedResponses) {
+        if (savedResponses && savedResponses.length > 0) {
           savedResponses.forEach(res => {
             savedAnswers[res.question_id] = res.answer_id;
           });
           console.log(`📝 Loaded ${Object.keys(savedAnswers).length} saved answers`);
+        } else {
+          console.log("📝 No previously saved answers found");
         }
 
         // Shuffle questions and answers
@@ -134,17 +147,13 @@ export default function AssessmentPage() {
         setQuestions(formatted);
         setAnswers(savedAnswers);
         
-        if (formatted.length === 0) {
-          console.warn("⚠️ No questions found in database");
-        }
       } catch (err) {
-        console.error("❌ Error fetching questions:", {
+        console.error("❌ Error in fetchQuestions:", {
           message: err.message,
           code: err.code,
-          details: err.details,
-          hint: err.hint
+          details: err.details
         });
-        alert("Failed to load questions. Please check if the questions table exists and has data.");
+        setErrorMessage("Failed to load questions. Please refresh the page.");
       } finally {
         if (active) setLoading(false);
       }
@@ -165,15 +174,14 @@ export default function AssessmentPage() {
 
   // Handle answer selection
   const handleSelect = async (questionId, answerId) => {
-    console.group("🎯 handleSelect Debug");
+    console.group("🎯 handleSelect");
     console.log("Question ID:", questionId);
     console.log("Answer ID:", answerId);
     console.log("Assessment ID:", assessmentId);
     console.log("Session user ID:", session?.user?.id);
-    console.log("Is session ready?", isSessionReady);
     
     if (!isSessionReady || !session?.user?.id) {
-      console.error("❌ Cannot save: Missing session or user ID");
+      console.error("❌ Cannot save: Session not ready");
       alert("Please wait while we verify your session.");
       console.groupEnd();
       return;
@@ -194,6 +202,7 @@ export default function AssessmentPage() {
       
       console.log("✅ saveResponse result:", result);
       setSaveStatus((prev) => ({ ...prev, [questionId]: "saved" }));
+      setErrorMessage(""); // Clear any previous errors
       
       // Remove success status after 2 seconds
       setTimeout(() => {
@@ -205,17 +214,11 @@ export default function AssessmentPage() {
       }, 2000);
       
     } catch (err) {
-      console.error("❌ Save error in handleSelect:", err);
-      console.error("Error details:", {
-        message: err.message,
-        stack: err.stack,
-        name: err.name
-      });
+      console.error("❌ Save error:", err);
+      console.error("Error details:", err.message);
       
       setSaveStatus((prev) => ({ ...prev, [questionId]: "error" }));
-      
-      // Show specific error message
-      alert(`Save failed: ${err.message}`);
+      setErrorMessage(err.message || "Failed to save answer");
       
       // Revert UI on error
       setAnswers((prev) => {
@@ -223,6 +226,9 @@ export default function AssessmentPage() {
         delete newAnswers[questionId];
         return newAnswers;
       });
+      
+      // Show error message
+      alert(`Save failed: ${err.message}`);
     }
     
     console.groupEnd();
@@ -278,7 +284,7 @@ export default function AssessmentPage() {
     }
   };
 
-  // Test function
+  // Debug function
   const TestSaveButton = () => (
     <button
       onClick={async () => {
@@ -294,18 +300,18 @@ export default function AssessmentPage() {
         console.log("Test data:", testData);
         
         try {
+          const assessmentUUID = toAssessmentUUID(assessmentId);
+          console.log("Assessment UUID:", assessmentUUID);
+          
           const { data, error } = await supabase
             .from("responses")
-            .upsert(
-              [{
-                ...testData,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-              }],
-              { 
-                onConflict: 'assessment_id,question_id,user_id'
-              }
-            )
+            .insert({
+              assessment_id: assessmentUUID,
+              question_id: 1,
+              answer_id: 1,
+              user_id: session?.user?.id,
+              created_at: new Date().toISOString(),
+            })
             .select();
             
           console.log("Test result:", { data, error });
@@ -354,6 +360,7 @@ export default function AssessmentPage() {
       }}>
         <p>Loading assessment...</p>
         {!isSessionReady && <p>Verifying your session...</p>}
+        {errorMessage && <p style={{ color: "red" }}>{errorMessage}</p>}
       </div>
     );
   }
@@ -362,8 +369,7 @@ export default function AssessmentPage() {
     return (
       <div style={{ textAlign: "center", padding: "40px" }}>
         <h3>No Questions Found</h3>
-        <p>The questions table is empty or doesn't exist.</p>
-        <p>Please add questions to your database.</p>
+        <p>Please check if your database has questions.</p>
         <button 
           onClick={() => router.push("/")}
           style={{
@@ -389,6 +395,22 @@ export default function AssessmentPage() {
   return (
     <AppLayout background={bg}>
       <TestSaveButton />
+      
+      {errorMessage && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          backgroundColor: '#f44336',
+          color: 'white',
+          padding: '10px 15px',
+          borderRadius: '5px',
+          zIndex: 1000,
+          maxWidth: '300px'
+        }}>
+          ⚠️ {errorMessage}
+        </div>
+      )}
       
       <div style={{ display: "flex", gap: 20, width: "85vw", margin: "auto" }}>
         {/* Main panel */}
@@ -463,7 +485,6 @@ export default function AssessmentPage() {
                 cursor: currentIndex === 0 ? "not-allowed" : "pointer",
                 fontSize: "16px",
                 fontWeight: "500",
-                transition: "all 0.2s",
                 opacity: currentIndex === 0 ? 0.6 : 1
               }}
             >
@@ -542,6 +563,17 @@ export default function AssessmentPage() {
                   transition: "width 0.3s ease"
                 }}
               />
+            </div>
+            
+            <div style={{ 
+              marginTop: "15px", 
+              padding: "10px", 
+              backgroundColor: "#e3f2fd", 
+              borderRadius: "8px",
+              fontSize: "14px"
+            }}>
+              <div style={{ fontWeight: "600", marginBottom: "5px" }}>Time Remaining</div>
+              <div>{Math.floor((10800 - elapsed) / 60)}:{((10800 - elapsed) % 60).toString().padStart(2, '0')}</div>
             </div>
           </div>
         </div>
