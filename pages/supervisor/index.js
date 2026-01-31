@@ -1,4 +1,4 @@
-// pages/supervisor/index.js - FIXED VERSION
+// pages/supervisor/index.js - API INTEGRATION VERSION
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -13,12 +13,14 @@ export default function SupervisorDashboard() {
     completedAssessments: 0,
     pendingAssessments: 0,
     averageScore: 0,
+    totalResponses: 0,
+    uniqueRespondents: 0
   });
   const [selectedCandidate, setSelectedCandidate] = useState(null);
   const [candidateResponses, setCandidateResponses] = useState([]);
   const [loadingResponses, setLoadingResponses] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [refreshTrigger, setRefreshTrigger] = useState(0); // For manual refresh
+  const [apiStatus, setApiStatus] = useState("loading"); // loading, success, error
 
   // Check if mobile
   useEffect(() => {
@@ -54,7 +56,7 @@ export default function SupervisorDashboard() {
       setSession(data.session);
       setLoading(false);
       
-      // Load candidates and stats
+      // Load candidates and stats via API
       loadCandidates();
       loadStats();
     };
@@ -72,98 +74,173 @@ export default function SupervisorDashboard() {
     return () => authListener?.subscription?.unsubscribe();
   }, [router]);
 
-  // Load REAL candidates from database - SIMPLIFIED AND FIXED
+  // Load candidates via API
   const loadCandidates = async () => {
     try {
-      console.log("=== LOADING CANDIDATES ===");
+      console.log("=== LOADING CANDIDATES VIA API ===");
+      setApiStatus("loading");
       
-      // Get ALL responses to find users who have taken assessments
-      const { data: responses, error: responsesError } = await supabase
-        .from("responses")
-        .select("user_id")
-        .not("user_id", "is", null);
-
-      if (responsesError) {
-        console.error("Error loading responses:", responsesError);
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        console.error("No session found");
+        setCandidates([]);
+        setApiStatus("error");
+        return;
       }
 
-      // Get unique user IDs from responses
-      const candidateIds = [...new Set(responses?.map(r => r.user_id) || [])];
-      console.log("User IDs from responses:", candidateIds);
-
-      // Get all users from auth
-      try {
-        const { data: { users: allUsers }, error: authError } = await supabase.auth.admin.listUsers();
-        
-        if (authError) {
-          console.error("Error listing users:", authError);
-          setCandidates([]);
-          return;
+      // Call our API endpoint
+      const response = await fetch('/api/supervisor/candidates', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
         }
+      });
 
-        console.log("Total auth users:", allUsers?.length || 0);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`API error ${response.status}:`, errorText);
         
-        // Filter users: exclude yourself and anyone with supervisor metadata
-        const currentUserEmail = session?.user?.email || "";
-        const candidateUsers = allUsers?.filter(user => {
-          // Exclude yourself
-          if (user.email === currentUserEmail) return false;
-          
-          // Check if user has supervisor metadata
-          const role = user.user_metadata?.role;
-          const isSupervisor = user.user_metadata?.is_supervisor;
-          
-          // Include if NOT a supervisor
-          return !(role === "supervisor" || isSupervisor === true);
-        }) || [];
-
-        console.log("Filtered candidates:", candidateUsers.length);
-        
-        // Map candidates with their status
-        const mappedCandidates = candidateUsers.map(user => {
-          const hasResponses = candidateIds.includes(user.id);
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.user_metadata?.name || user.email.split('@')[0],
-            created_at: user.created_at,
-            last_sign_in: user.last_sign_in_at,
-            status: hasResponses ? "completed" : "not_started"
-          };
-        });
-
-        console.log("Mapped candidates:", mappedCandidates);
-        setCandidates(mappedCandidates);
-        
-        // If no candidates found, still show empty (not mock data)
-        if (mappedCandidates.length === 0) {
-          console.log("No real candidates found after filtering");
+        if (response.status === 403) {
+          console.error("Permission denied. Check service role key and supervisor role.");
         }
+        
+        // Fallback to direct database query (without user details)
+        await loadCandidatesFallback();
+        setApiStatus("error");
+        return;
+      }
 
-      } catch (adminError) {
-        console.error("Admin API error:", adminError);
+      const data = await response.json();
+      console.log("API response received:", data);
+      
+      if (data.candidates) {
+        setCandidates(data.candidates);
+        console.log(`Loaded ${data.candidates.length} candidates`);
+        
+        // Update stats from API response if available
+        if (data.statistics) {
+          setStats(prev => ({
+            ...prev,
+            totalCandidates: data.statistics.totalCandidates,
+            completedAssessments: data.statistics.usersWithResponses,
+            pendingAssessments: Math.max(0, data.statistics.totalCandidates - data.statistics.usersWithResponses),
+            averageScore: data.statistics.averageScore,
+            totalResponses: data.statistics.totalResponses,
+            uniqueRespondents: data.statistics.usersWithResponses
+          }));
+        }
+        setApiStatus("success");
+      } else {
         setCandidates([]);
+        setApiStatus("success");
+        console.log("No candidates returned from API");
       }
 
     } catch (error) {
       console.error("Error loading candidates:", error);
+      // Try fallback
+      await loadCandidatesFallback();
+      setApiStatus("error");
+    }
+  };
+
+  // Fallback method when API fails
+  const loadCandidatesFallback = async () => {
+    try {
+      console.log("=== USING FALLBACK METHOD ===");
+      
+      // Get users from responses table (only IDs, no user details)
+      const { data: responses, error } = await supabase
+        .from('responses')
+        .select('user_id, created_at')
+        .not('user_id', 'is', null)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error("Error fetching responses:", error);
+        setCandidates([]);
+        return;
+      }
+
+      if (!responses || responses.length === 0) {
+        console.log("No responses found in fallback");
+        setCandidates([]);
+        return;
+      }
+
+      // Group by user_id to get unique candidates
+      const uniqueCandidates = {};
+      responses.forEach(response => {
+        if (!uniqueCandidates[response.user_id]) {
+          uniqueCandidates[response.user_id] = {
+            id: response.user_id,
+            email: `user_${response.user_id.substring(0, 8)}@example.com`, // Anonymous
+            name: `Candidate ${Object.keys(uniqueCandidates).length + 1}`,
+            created_at: response.created_at,
+            last_sign_in: response.created_at,
+            status: 'completed',
+            response_count: 0
+          };
+        }
+        uniqueCandidates[response.user_id].response_count++;
+      });
+
+      const candidates = Object.values(uniqueCandidates);
+      console.log("Found candidates from responses (anonymous):", candidates.length);
+      
+      setCandidates(candidates);
+
+    } catch (fallbackError) {
+      console.error("Fallback also failed:", fallbackError);
       setCandidates([]);
     }
   };
 
-  // Load REAL statistics - SIMPLIFIED AND FIXED
+  // Load statistics via API
   const loadStats = async () => {
     try {
-      console.log("=== LOADING STATS ===");
+      console.log("=== LOADING STATS VIA API ===");
+      
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) return;
+
+      // Call statistics API
+      const response = await fetch('/api/supervisor/statistics', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setStats(prev => ({
+          ...prev,
+          totalResponses: data.totalResponses,
+          completedAssessments: data.completedAssessments,
+          averageScore: data.averageScore,
+          uniqueRespondents: data.uniqueRespondents
+        }));
+        console.log("Stats loaded via API:", data);
+      } else {
+        // Fallback to direct database query
+        await loadStatsFallback();
+      }
+    } catch (error) {
+      console.error("Error loading stats:", error);
+      await loadStatsFallback();
+    }
+  };
+
+  // Fallback statistics loading
+  const loadStatsFallback = async () => {
+    try {
+      console.log("=== LOADING STATS FALLBACK ===");
       
       // Get response counts
-      const { count: totalResponses, error: responsesError } = await supabase
+      const { count: totalResponses } = await supabase
         .from("responses")
         .select("*", { count: 'exact', head: true });
-
-      if (responsesError) {
-        console.error("Error counting responses:", responsesError);
-      }
 
       // Get unique users from responses
       const { data: userResponses } = await supabase
@@ -172,21 +249,20 @@ export default function SupervisorDashboard() {
         .not("user_id", "is", null);
 
       const uniqueRespondents = new Set(userResponses?.map(r => r.user_id) || []);
-      console.log("Unique respondents:", uniqueRespondents.size);
       
       // Calculate average score from responses
       let averageScore = 0;
       if (totalResponses > 0) {
-        // Get all responses with their scores
-        const { data: allResponses, error: scoreError } = await supabase
+        const { data: allResponses } = await supabase
           .from("responses")
           .select(`
             answers (
               score
             )
-          `);
+          `)
+          .limit(1000);
         
-        if (!scoreError && allResponses && allResponses.length > 0) {
+        if (allResponses && allResponses.length > 0) {
           let totalScore = 0;
           let validResponses = 0;
           
@@ -201,42 +277,21 @@ export default function SupervisorDashboard() {
             averageScore = Math.round((totalScore / (validResponses * 10)) * 100);
           }
         }
-        console.log("Average score calculated:", averageScore, "%");
       }
 
-      // Calculate stats based on actual data
-      const totalCandidates = candidates.length;
-      const completedCount = uniqueRespondents.size;
-      
-      console.log("Final stats:", {
-        totalCandidates,
-        completedAssessments: completedCount,
-        pendingAssessments: Math.max(0, totalCandidates - completedCount),
-        averageScore,
+      // Update stats
+      setStats(prev => ({
+        ...prev,
         totalResponses: totalResponses || 0,
-        uniqueRespondents: uniqueRespondents.size
-      });
-
-      setStats({
-        totalCandidates: totalCandidates,
-        completedAssessments: completedCount,
-        pendingAssessments: Math.max(0, totalCandidates - completedCount),
+        completedAssessments: uniqueRespondents.size,
         averageScore: averageScore,
-        totalResponses: totalResponses || 0,
         uniqueRespondents: uniqueRespondents.size
-      });
+      }));
+
+      console.log("Fallback stats loaded");
 
     } catch (error) {
-      console.error("Error loading stats:", error);
-      // Set stats based on current candidates
-      setStats({
-        totalCandidates: candidates.length,
-        completedAssessments: 0,
-        pendingAssessments: candidates.length,
-        averageScore: 0,
-        totalResponses: 0,
-        uniqueRespondents: 0
-      });
+      console.error("Error in stats fallback:", error);
     }
   };
 
@@ -315,16 +370,21 @@ export default function SupervisorDashboard() {
   // Refresh all data
   const handleRefresh = async () => {
     console.log("Manually refreshing data...");
+    setApiStatus("loading");
     await loadCandidates();
     await loadStats();
   };
 
-  // Update stats when candidates change
+  // Update total candidates count when candidates change
   useEffect(() => {
-    if (!loading && candidates.length >= 0) {
-      loadStats();
+    if (candidates.length >= 0) {
+      setStats(prev => ({
+        ...prev,
+        totalCandidates: candidates.length,
+        pendingAssessments: Math.max(0, candidates.length - prev.completedAssessments)
+      }));
     }
-  }, [candidates, refreshTrigger]);
+  }, [candidates]);
 
   // Debug: Log when candidates or stats change
   useEffect(() => {
@@ -412,6 +472,43 @@ export default function SupervisorDashboard() {
             }}>
               Welcome back, {session?.user?.email}
             </p>
+            
+            {/* API Status Indicator */}
+            <div style={{
+              marginTop: "10px",
+              fontSize: "12px",
+              color: "#666",
+              background: apiStatus === "success" ? "#d1fae5" : 
+                         apiStatus === "error" ? "#fee2e2" : "#e0f2fe",
+              padding: "6px 12px",
+              borderRadius: "6px",
+              border: `1px solid ${apiStatus === "success" ? "#a7f3d0" : 
+                       apiStatus === "error" ? "#fecaca" : "#bae6fd"}`,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px"
+            }}>
+              <div style={{
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                background: apiStatus === "success" ? "#10b981" : 
+                           apiStatus === "error" ? "#ef4444" : "#3b82f6",
+                animation: apiStatus === "loading" ? "pulse 1.5s infinite" : "none"
+              }} />
+              <span>
+                {apiStatus === "success" ? "API Connected" :
+                 apiStatus === "error" ? "API Error - Using fallback" :
+                 "Connecting to API..."}
+              </span>
+              <style jsx>{`
+                @keyframes pulse {
+                  0% { opacity: 1; }
+                  50% { opacity: 0.5; }
+                  100% { opacity: 1; }
+                }
+              `}</style>
+            </div>
           </div>
           
           <div style={{
@@ -651,6 +748,19 @@ export default function SupervisorDashboard() {
                     <span>Avg Score:</span>
                     <span>{stats.averageScore}%</span>
                   </div>
+                  {apiStatus === "error" && (
+                    <div style={{ 
+                      marginTop: "10px", 
+                      padding: "8px", 
+                      background: "#fff3e0", 
+                      borderRadius: "4px",
+                      border: "1px solid #ffcc80",
+                      fontSize: "11px",
+                      color: "#e65100"
+                    }}>
+                      ⚠️ API connection failed. Showing anonymous candidate data.
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
@@ -658,6 +768,7 @@ export default function SupervisorDashboard() {
                 const isSelected = selectedCandidate?.id === candidate.id;
                 const statusColor = candidate.status === "completed" ? "#10b981" :
                                    candidate.status === "in_progress" ? "#f59e0b" : "#6b7280";
+                const isAnonymous = candidate.email.includes('@example.com');
                 
                 return (
                   <div
@@ -699,7 +810,7 @@ export default function SupervisorDashboard() {
                       fontSize: "16px",
                       flexShrink: 0
                     }}>
-                      {candidate.name.charAt(0).toUpperCase()}
+                      {isAnonymous ? "?" : candidate.name.charAt(0).toUpperCase()}
                     </div>
                     
                     <div style={{ flex: 1 }}>
@@ -714,7 +825,7 @@ export default function SupervisorDashboard() {
                           fontWeight: "600",
                           color: "#1a237e"
                         }}>
-                          {candidate.name}
+                          {isAnonymous ? `Anonymous Candidate` : candidate.name}
                         </div>
                         <div style={{
                           fontSize: "12px",
@@ -736,13 +847,27 @@ export default function SupervisorDashboard() {
                         justifyContent: "space-between",
                         alignItems: "center"
                       }}>
-                        <span>{candidate.email}</span>
+                        <span style={{ 
+                          fontStyle: isAnonymous ? "italic" : "normal",
+                          color: isAnonymous ? "#999" : "#666"
+                        }}>
+                          {isAnonymous ? `ID: ${candidate.id.substring(0, 8)}...` : candidate.email}
+                        </span>
                         <span style={{ fontSize: "11px" }}>
                           {candidate.last_sign_in ? 
                             new Date(candidate.last_sign_in).toLocaleDateString() : 
                             "No login"}
                         </span>
                       </div>
+                      {isAnonymous && (
+                        <div style={{
+                          fontSize: "10px",
+                          color: "#f59e0b",
+                          marginTop: "2px"
+                        }}>
+                          ⚠️ Real name/email not available (API issue)
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -824,7 +949,7 @@ export default function SupervisorDashboard() {
                       fontSize: "20px",
                       flexShrink: 0
                     }}>
-                      {selectedCandidate.name.charAt(0).toUpperCase()}
+                      {selectedCandidate.email.includes('@example.com') ? "?" : selectedCandidate.name.charAt(0).toUpperCase()}
                     </div>
                     <div>
                       <h3 style={{
@@ -833,15 +958,25 @@ export default function SupervisorDashboard() {
                         color: "#1a237e",
                         margin: 0
                       }}>
-                        {selectedCandidate.name}
+                        {selectedCandidate.email.includes('@example.com') ? `Anonymous Candidate` : selectedCandidate.name}
                       </h3>
                       <p style={{
                         fontSize: "14px",
                         color: "#666",
-                        margin: "4px 0 0 0"
+                        margin: "4px 0 0 0",
+                        fontStyle: selectedCandidate.email.includes('@example.com') ? "italic" : "normal"
                       }}>
-                        {selectedCandidate.email}
+                        {selectedCandidate.email.includes('@example.com') ? `ID: ${selectedCandidate.id.substring(0, 8)}...` : selectedCandidate.email}
                       </p>
+                      {selectedCandidate.email.includes('@example.com') && (
+                        <p style={{
+                          fontSize: "11px",
+                          color: "#f59e0b",
+                          margin: "2px 0 0 0"
+                        }}>
+                          ⚠️ Real user details not available (Check API setup)
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -914,7 +1049,9 @@ export default function SupervisorDashboard() {
                     No Assessment Responses Found
                   </div>
                   <p style={{ fontSize: "14px", color: "#999", maxWidth: "400px", margin: "0 auto" }}>
-                    {selectedCandidate.name} ({selectedCandidate.email}) hasn't started or completed their assessment yet.
+                    {selectedCandidate.email.includes('@example.com') 
+                      ? `This anonymous candidate hasn't started or completed their assessment yet.`
+                      : `${selectedCandidate.name} (${selectedCandidate.email}) hasn't started or completed their assessment yet.`}
                   </p>
                   <div style={{ 
                     marginTop: "20px", 
@@ -1070,10 +1207,13 @@ export default function SupervisorDashboard() {
           {session?.user?.email} • Role: Supervisor • 
           Candidates: {candidates.length} • 
           Responses: {stats.totalResponses} • 
-          Avg Score: {stats.averageScore}%
+          Avg Score: {stats.averageScore}% • 
+          API: {apiStatus}
         </div>
         <div style={{ fontSize: "10px", color: "#ccc", marginTop: "5px" }}>
-          Open browser console (F12) for debug information
+          {apiStatus === "error" 
+            ? "⚠️ API connection failed. Real user emails/names not available. Check service role key setup."
+            : "Open browser console (F12) for debug information"}
         </div>
       </div>
     </div>
