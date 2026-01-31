@@ -5,55 +5,51 @@ import QuestionCard from "../../components/QuestionCard";
 import QuestionNav from "../../components/QuestionNav";
 import { supabase } from "../../supabase/client";
 
-// Color scheme for different sections
 const SECTION_CONFIG = {
   'Cognitive Abilities': { 
     color: '#4A6FA5', 
     gradient: 'linear-gradient(135deg, #4A6FA5 0%, #2E4C7E 100%)',
     icon: '🧠',
-    bgColor: 'rgba(232, 239, 247, 0.7)'
+    bgColor: 'rgba(232, 239, 247, 0.9)'
   },
   'Personality Assessment': { 
     color: '#9C27B0', 
     gradient: 'linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%)',
     icon: '😊',
-    bgColor: 'rgba(243, 229, 245, 0.7)'
+    bgColor: 'rgba(243, 229, 245, 0.9)'
   },
   'Leadership Potential': { 
     color: '#D32F2F', 
     gradient: 'linear-gradient(135deg, #D32F2F 0%, #B71C1C 100%)',
     icon: '👑',
-    bgColor: 'rgba(255, 235, 238, 0.7)'
+    bgColor: 'rgba(255, 235, 238, 0.9)'
   },
   'Technical Competence': { 
     color: '#388E3C', 
     gradient: 'linear-gradient(135deg, #388E3C 0%, #1B5E20 100%)',
     icon: '⚙️',
-    bgColor: 'rgba(232, 245, 233, 0.7)'
+    bgColor: 'rgba(232, 245, 233, 0.9)'
   },
   'Performance Metrics': { 
     color: '#F57C00', 
     gradient: 'linear-gradient(135deg, #F57C00 0%, #E65100 100%)',
     icon: '📊',
-    bgColor: 'rgba(255, 243, 224, 0.7)'
+    bgColor: 'rgba(255, 243, 224, 0.9)'
   }
 };
 
 const SECTION_ORDER = Object.keys(SECTION_CONFIG);
-const TIME_LIMIT_SECONDS = 10800; // 3 hours
+const TIME_LIMIT_SECONDS = 10800;
 
-// Save response function
 async function saveResponse(assessmentId, questionId, answerId, userId) {
   try {
-    const { error } = await supabase
-      .from("responses")
-      .upsert({
-        assessment_id: assessmentId,
-        question_id: parseInt(questionId),
-        answer_id: parseInt(answerId),
-        user_id: userId,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'assessment_id,question_id,user_id' });
+    const { error } = await supabase.from("responses").upsert({
+      assessment_id: assessmentId,
+      question_id: parseInt(questionId),
+      answer_id: parseInt(answerId),
+      user_id: userId,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'assessment_id,question_id,user_id' });
 
     if (error) throw new Error(`Save failed: ${error.message}`);
     return { success: true };
@@ -63,7 +59,6 @@ async function saveResponse(assessmentId, questionId, answerId, userId) {
   }
 }
 
-// Load user responses
 async function loadUserResponses(userId) {
   try {
     const { data } = await supabase
@@ -95,13 +90,6 @@ export default function AssessmentPage() {
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-
-  // Visible background images
-  const backgrounds = [
-    "https://images.unsplash.com/photo-1556761175-b413da4baf72?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80",
-    "https://images.unsplash.com/photo-1497366754035-f200968a6e72?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80",
-    "https://images.unsplash.com/photo-1542744173-8e7e53415bb0?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80",
-  ];
 
   // Initialize session
   useEffect(() => {
@@ -369,7 +357,6 @@ export default function AssessmentPage() {
   const saveState = saveStatus[currentQuestion?.id];
   const totalAnswered = Object.keys(answers).length;
   const isLastQuestion = currentIndex === questions.length - 1;
-  const currentBackground = backgrounds[currentIndex % backgrounds.length];
 
   return (
     <>
@@ -619,359 +606,403 @@ export default function AssessmentPage() {
         </div>
       )}
 
-      {/* Main Assessment Interface */}
+      {/* Main Assessment Interface - COMPACT */}
       <div style={{
-        minHeight: "100vh",
-        background: `url(${currentBackground})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundAttachment: "fixed"
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        background: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)"
       }}>
-        <div style={{ 
-          minHeight: "100vh",
-          background: "rgba(255, 255, 255, 0.85)",
-          display: "flex",
-          flexDirection: "column"
+        {/* Header - Fixed Height */}
+        <div style={{
+          background: "white",
+          padding: "12px 20px",
+          boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+          borderBottom: "1px solid #e0e0e0",
+          flexShrink: 0
         }}>
-          <div style={{ maxWidth: "1400px", margin: "auto", padding: "20px", width: "100%", flex: 1 }}>
-            
-            {/* Header */}
-            <div style={{
-              background: "rgba(255, 255, 255, 0.95)",
-              borderRadius: "16px",
-              padding: "20px 25px",
-              marginBottom: "20px",
-              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.1)",
-              border: "1px solid rgba(255, 255, 255, 0.2)"
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "15px" }}>
-                <div>
-                  <h1 style={{ 
-                    margin: 0, 
-                    fontSize: "24px", 
-                    fontWeight: "800", 
-                    color: "#1a237e",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px"
-                  }}>
-                    <span style={{ 
-                      background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                      WebkitBackgroundClip: "text",
-                      WebkitTextFillColor: "transparent"
-                    }}>
-                      🏢 Stratavax Assessment
-                    </span>
-                  </h1>
-                  <div style={{ margin: "5px 0 0 0", fontSize: "14px", color: "#5a5a5a" }}>
-                    Question {currentIndex + 1} of {questions.length} • Time: {hours}h {minutes}m {seconds}s
-                  </div>
-                </div>
-                
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                  <div style={{
-                    padding: "8px 16px",
-                    background: "linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)",
-                    borderRadius: "20px",
-                    fontWeight: "700",
-                    color: "#1565c0",
-                    fontSize: "14px",
-                    border: "2px solid #90caf9"
-                  }}>
-                    {totalAnswered}/{questions.length} Answered
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Main Content - Single Column Layout */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-              
-              {/* Section Header */}
-              <div style={{
-                background: sectionConfig.gradient,
-                color: "white",
-                padding: "15px 20px",
-                borderRadius: "12px",
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ 
+                fontSize: "18px", 
+                fontWeight: "700", 
+                color: "#1a237e",
                 display: "flex",
                 alignItems: "center",
-                gap: "12px",
-                boxShadow: "0 4px 15px rgba(0, 0, 0, 0.2)"
+                gap: "8px"
               }}>
-                <div style={{
-                  width: "40px",
-                  height: "40px",
-                  background: "rgba(255, 255, 255, 0.2)",
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "20px"
-                }}>
-                  {sectionConfig.icon}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: "700", fontSize: "18px", marginBottom: "2px" }}>
-                    {currentSection}
-                  </div>
-                  <div style={{ fontSize: "12px", opacity: 0.9 }}>
-                    {currentQuestion?.subsection || "General Questions"}
-                  </div>
-                </div>
-                
-                {saveState && (
-                  <div style={{
-                    padding: "6px 12px",
-                    borderRadius: "15px",
-                    background: saveState === "saved" ? "rgba(76, 175, 80, 0.9)" : 
-                               saveState === "saving" ? "rgba(255, 183, 77, 0.9)" : 
-                               "rgba(244, 67, 54, 0.9)",
-                    color: "white",
-                    fontSize: "12px",
-                    fontWeight: "600"
-                  }}>
-                    {saveState === "saved" ? "✅ Saved" : 
-                     saveState === "saving" ? "⏳ Saving..." : "❌ Error"}
-                  </div>
-                )}
+                <span>🏢</span>
+                <span>Stratavax Assessment</span>
               </div>
-
-              {/* Question Card */}
-              <div style={{ 
-                background: "rgba(255, 255, 255, 0.7)",
-                borderRadius: "16px",
-                padding: "25px",
-                boxShadow: "0 8px 32px rgba(0, 0, 0, 0.1)",
-                border: "1px solid rgba(255, 255, 255, 0.2)"
-              }}>
-                {/* Question */}
-                <div style={{
-                  fontSize: "18px",
-                  lineHeight: "1.6",
-                  marginBottom: "25px",
-                  padding: "20px",
-                  background: sectionConfig.bgColor,
-                  borderRadius: "12px",
-                  borderLeft: `6px solid ${sectionConfig.color}`,
-                  boxShadow: "0 2px 10px rgba(0, 0, 0, 0.05)"
-                }}>
-                  {currentQuestion?.question_text}
-                </div>
-
-                {/* Answers - Transparent */}
-                <div style={{ marginBottom: "25px" }}>
-                  {currentQuestion && (
-                    <QuestionCard
-                      question={currentQuestion}
-                      selected={answers[currentQuestion.id]}
-                      onSelect={(answerId) => handleSelect(currentQuestion.id, answerId)}
-                      disabled={saveState === "saving"}
-                    />
-                  )}
-                </div>
-
-                {/* Navigation - Close to Answers */}
-                <div style={{ 
-                  display: "flex", 
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  paddingTop: "20px",
-                  borderTop: "1px solid rgba(0, 0, 0, 0.1)"
-                }}>
-                  <button 
-                    onClick={handleBack} 
-                    disabled={currentIndex === 0} 
-                    style={{ 
-                      padding: "12px 24px", 
-                      background: currentIndex === 0 ? "#f5f5f5" : "#1565c0", 
-                      color: currentIndex === 0 ? "#999" : "white", 
-                      border: "none", 
-                      borderRadius: "8px",
-                      cursor: currentIndex === 0 ? "not-allowed" : "pointer",
-                      fontSize: "15px",
-                      fontWeight: "600",
-                      minWidth: "120px"
-                    }}
-                  >
-                    ← Previous
-                  </button>
-                  
-                  <div style={{ 
-                    display: "flex", 
-                    alignItems: "center", 
-                    gap: "10px",
-                    fontSize: "14px",
-                    color: "#666"
-                  }}>
-                    <span>Question {currentIndex + 1} of {questions.length}</span>
-                  </div>
-                  
-                  {isLastQuestion ? (
-                    <button 
-                      onClick={() => setShowSubmitModal(true)}
-                      style={{ 
-                        padding: "12px 24px", 
-                        background: "linear-gradient(135deg, #4caf50 0%, #2e7d32 100%)", 
-                        color: "white", 
-                        border: "none", 
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        fontSize: "15px",
-                        fontWeight: "700",
-                        minWidth: "140px"
-                      }}
-                    >
-                      🏁 Submit
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={handleNext} 
-                      style={{ 
-                        padding: "12px 24px", 
-                        background: "linear-gradient(135deg, #1565c0 0%, #0d47a1 100%)", 
-                        color: "white", 
-                        border: "none", 
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        fontSize: "15px",
-                        fontWeight: "600",
-                        minWidth: "120px"
-                      }}
-                    >
-                      Next →
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Progress & Navigation Sidebar - Below */}
-              <div style={{ 
-                display: "grid", 
-                gridTemplateColumns: "1fr 1fr", 
-                gap: "20px"
-              }}>
-                
-                {/* Question Navigation */}
-                <div style={{ 
-                  background: "rgba(255, 255, 255, 0.7)",
-                  borderRadius: "16px",
-                  padding: "20px",
-                  boxShadow: "0 8px 32px rgba(0, 0, 0, 0.1)",
-                  border: "1px solid rgba(255, 255, 255, 0.2)"
-                }}>
-                  <h3 style={{ 
-                    marginTop: 0, 
-                    marginBottom: "15px", 
-                    color: "#1a237e",
-                    fontSize: "16px",
-                    fontWeight: "700"
-                  }}>
-                    Question Navigator
-                  </h3>
-                  <QuestionNav
-                    questions={questions}
-                    answers={answers}
-                    current={currentIndex}
-                    onJump={handleJump}
-                    compact={true}
-                  />
-                </div>
-
-                {/* Progress Summary */}
-                <div style={{ 
-                  background: "rgba(255, 255, 255, 0.7)",
-                  borderRadius: "16px",
-                  padding: "20px",
-                  boxShadow: "0 8px 32px rgba(0, 0, 0, 0.1)",
-                  border: "1px solid rgba(255, 255, 255, 0.2)"
-                }}>
-                  <h3 style={{ 
-                    marginTop: 0, 
-                    marginBottom: "20px", 
-                    color: "#1a237e",
-                    fontSize: "16px",
-                    fontWeight: "700"
-                  }}>
-                    Progress Overview
-                  </h3>
-                  
-                  {/* Overall Progress */}
-                  <div style={{ marginBottom: "20px" }}>
-                    <div style={{ 
-                      display: "flex", 
-                      justifyContent: "space-between", 
-                      marginBottom: "10px", 
-                      fontSize: "14px"
-                    }}>
-                      <span style={{ fontWeight: "600" }}>Overall Progress</span>
-                      <span style={{ fontWeight: "700", color: "#4caf50" }}>
-                        {Math.round((totalAnswered / questions.length) * 100)}%
-                      </span>
-                    </div>
-                    <div style={{ 
-                      height: "10px", 
-                      background: "rgba(0, 0, 0, 0.1)", 
-                      borderRadius: "5px",
-                      overflow: "hidden"
-                    }}>
-                      <div style={{ 
-                        height: "100%", 
-                        width: `${(totalAnswered / questions.length) * 100}%`, 
-                        background: "linear-gradient(90deg, #4caf50 0%, #81c784 100%)", 
-                        borderRadius: "5px"
-                      }} />
-                    </div>
-                  </div>
-
-                  {/* Time Info */}
-                  <div style={{
-                    padding: "15px",
-                    background: timeRemaining < 1800 ? 
-                      "linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%)" : 
-                      "linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)",
-                    borderRadius: "10px",
-                    border: `2px solid ${timeRemaining < 1800 ? "#ff5252" : "#4caf50"}`
-                  }}>
-                    <div style={{ 
-                      display: "flex", 
-                      alignItems: "center", 
-                      gap: "8px",
-                      marginBottom: "5px"
-                    }}>
-                      <span style={{ fontSize: "16px" }}>
-                        {timeRemaining < 1800 ? "⏰" : "⏱️"}
-                      </span>
-                      <span style={{ 
-                        fontSize: "13px", 
-                        fontWeight: "700", 
-                        color: timeRemaining < 1800 ? "#c62828" : "#2e7d32"
-                      }}>
-                        {timeRemaining < 1800 ? "Time Running Out!" : "Time Remaining"}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: "20px", fontWeight: "800", color: "#1a237e" }}>
-                      {hours.toString().padStart(2, '0')}:{minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}
-                    </div>
-                  </div>
-                </div>
+              <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
+                Q{currentIndex + 1}/{questions.length} • Time: {hours}h {minutes}m {seconds}s
               </div>
             </div>
             
-            {/* Footer */}
-            <div style={{
-              marginTop: "25px",
-              padding: "15px",
-              textAlign: "center",
-              fontSize: "13px",
-              color: "#666",
-              background: "rgba(255, 255, 255, 0.7)",
-              borderRadius: "12px",
-              border: "1px solid rgba(255, 255, 255, 0.2)"
-            }}>
-              <div style={{ fontWeight: "500" }}>
-                © 2024 Stratavax • {questions.length} Questions • All answers auto-saved
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div style={{
+                padding: "6px 12px",
+                background: "#e3f2fd",
+                borderRadius: "15px",
+                fontWeight: "600",
+                color: "#1565c0",
+                fontSize: "13px",
+                border: "1px solid #90caf9"
+              }}>
+                {totalAnswered}/{questions.length}
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Main Content - No Scroll */}
+        <div style={{ 
+          flex: 1, 
+          display: "flex", 
+          gap: "15px", 
+          padding: "15px",
+          overflow: "hidden"
+        }}>
+          
+          {/* Left Panel - Question & Answers (70%) */}
+          <div style={{ 
+            flex: 7,
+            display: "flex",
+            flexDirection: "column",
+            background: "white",
+            borderRadius: "12px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+            overflow: "hidden"
+          }}>
+            
+            {/* Section Header */}
+            <div style={{
+              background: sectionConfig.gradient,
+              color: "white",
+              padding: "12px 15px",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              flexShrink: 0
+            }}>
+              <div style={{
+                width: "32px",
+                height: "32px",
+                background: "rgba(255, 255, 255, 0.2)",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "16px"
+              }}>
+                {sectionConfig.icon}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: "600", fontSize: "16px" }}>
+                  {currentSection}
+                </div>
+                <div style={{ fontSize: "11px", opacity: 0.9 }}>
+                  {currentQuestion?.subsection || "Question"}
+                </div>
+              </div>
+              
+              {saveState && (
+                <div style={{
+                  padding: "4px 8px",
+                  borderRadius: "10px",
+                  background: saveState === "saved" ? "#4caf50" : 
+                             saveState === "saving" ? "#ff9800" : "#f44336",
+                  color: "white",
+                  fontSize: "11px",
+                  fontWeight: "600"
+                }}>
+                  {saveState === "saved" ? "✅" : 
+                   saveState === "saving" ? "⏳" : "❌"}
+                </div>
+              )}
+            </div>
+
+            {/* Question - Compact */}
+            <div style={{
+              padding: "15px",
+              background: sectionConfig.bgColor,
+              borderBottom: "1px solid rgba(0,0,0,0.1)",
+              flexShrink: 0,
+              maxHeight: "100px",
+              overflow: "auto"
+            }}>
+              <div style={{
+                fontSize: "16px",
+                lineHeight: "1.5",
+                fontWeight: "500",
+                color: "#333"
+              }}>
+                {currentQuestion?.question_text}
+              </div>
+            </div>
+
+            {/* Answers - Compact */}
+            <div style={{ 
+              flex: 1,
+              padding: "15px",
+              overflow: "auto",
+              minHeight: 0
+            }}>
+              {currentQuestion && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "8px" }}>
+                  {currentQuestion.options.map((option) => (
+                    <button
+                      key={option.id}
+                      onClick={() => handleSelect(currentQuestion.id, option.id)}
+                      disabled={saveState === "saving"}
+                      style={{
+                        padding: "10px 12px",
+                        background: answers[currentQuestion.id] === option.id ? 
+                          "#e3f2fd" : "white",
+                        border: `2px solid ${answers[currentQuestion.id] === option.id ? "#1565c0" : "#e0e0e0"}`,
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontSize: "14px",
+                        lineHeight: 1.4,
+                        color: "#333",
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: "8px",
+                        transition: "all 0.2s"
+                      }}
+                    >
+                      <div style={{
+                        width: "18px",
+                        height: "18px",
+                        borderRadius: "50%",
+                        border: `2px solid ${answers[currentQuestion.id] === option.id ? "#1565c0" : "#ccc"}`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                        marginTop: "1px",
+                        background: answers[currentQuestion.id] === option.id ? "#1565c0" : "transparent"
+                      }}>
+                        {answers[currentQuestion.id] === option.id && (
+                          <div style={{
+                            width: "8px",
+                            height: "8px",
+                            borderRadius: "50%",
+                            background: "white"
+                          }} />
+                        )}
+                      </div>
+                      <span style={{ flex: 1 }}>{option.answer_text}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Navigation - Compact & Close */}
+            <div style={{ 
+              padding: "12px 15px",
+              borderTop: "1px solid #e0e0e0",
+              background: "#f8f9fa",
+              display: "flex",
+              justifyContent: "space-between",
+              gap: "10px",
+              flexShrink: 0
+            }}>
+              <button 
+                onClick={handleBack} 
+                disabled={currentIndex === 0} 
+                style={{ 
+                  padding: "8px 16px", 
+                  background: currentIndex === 0 ? "#f5f5f5" : "#1565c0", 
+                  color: currentIndex === 0 ? "#999" : "white", 
+                  border: "none", 
+                  borderRadius: "6px",
+                  cursor: currentIndex === 0 ? "not-allowed" : "pointer",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  flex: 1
+                }}
+              >
+                ← Previous
+              </button>
+              
+              <div style={{ 
+                display: "flex", 
+                alignItems: "center", 
+                justifyContent: "center",
+                fontSize: "13px",
+                color: "#666",
+                minWidth: "100px"
+              }}>
+                {currentIndex + 1}/{questions.length}
+              </div>
+              
+              {isLastQuestion ? (
+                <button 
+                  onClick={() => setShowSubmitModal(true)}
+                  style={{ 
+                    padding: "8px 16px", 
+                    background: "#4caf50", 
+                    color: "white", 
+                    border: "none", 
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "600",
+                    flex: 1
+                  }}
+                >
+                  Submit
+                </button>
+              ) : (
+                <button 
+                  onClick={handleNext} 
+                  style={{ 
+                    padding: "8px 16px", 
+                    background: "#1565c0", 
+                    color: "white", 
+                    border: "none", 
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "600",
+                    flex: 1
+                  }}
+                >
+                  Next →
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Right Panel - Progress & Navigation (30%) */}
+          <div style={{ 
+            flex: 3,
+            display: "flex", 
+            flexDirection: "column", 
+            gap: "15px",
+            minWidth: "250px"
+          }}>
+            
+            {/* Question Navigation - Compact */}
+            <div style={{ 
+              background: "white",
+              borderRadius: "12px",
+              padding: "15px",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+              flex: 1
+            }}>
+              <div style={{ 
+                display: "flex", 
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "12px"
+              }}>
+                <div style={{ fontSize: "14px", fontWeight: "600", color: "#1a237e" }}>
+                  Question Navigator
+                </div>
+                <div style={{ fontSize: "11px", color: "#666" }}>
+                  {totalAnswered}/{questions.length}
+                </div>
+              </div>
+              
+              <div style={{ maxHeight: "150px", overflow: "auto" }}>
+                <QuestionNav
+                  questions={questions}
+                  answers={answers}
+                  current={currentIndex}
+                  onJump={handleJump}
+                  compact={true}
+                />
+              </div>
+            </div>
+
+            {/* Progress Summary - Compact */}
+            <div style={{ 
+              background: "white",
+              borderRadius: "12px",
+              padding: "15px",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+              flex: 1
+            }}>
+              <div style={{ fontSize: "14px", fontWeight: "600", color: "#1a237e", marginBottom: "12px" }}>
+                Progress
+              </div>
+              
+              {/* Overall Progress */}
+              <div style={{ marginBottom: "15px" }}>
+                <div style={{ 
+                  display: "flex", 
+                  justifyContent: "space-between", 
+                  marginBottom: "8px", 
+                  fontSize: "13px"
+                }}>
+                  <span>Overall</span>
+                  <span style={{ fontWeight: "600", color: "#4caf50" }}>
+                    {Math.round((totalAnswered / questions.length) * 100)}%
+                  </span>
+                </div>
+                <div style={{ 
+                  height: "8px", 
+                  background: "#e0e0e0", 
+                  borderRadius: "4px",
+                  overflow: "hidden"
+                }}>
+                  <div style={{ 
+                    height: "100%", 
+                    width: `${(totalAnswered / questions.length) * 100}%`, 
+                    background: "#4caf50", 
+                    borderRadius: "4px"
+                  }} />
+                </div>
+              </div>
+
+              {/* Time Info - Compact */}
+              <div style={{
+                padding: "12px",
+                background: timeRemaining < 1800 ? "#ffebee" : "#e8f5e9",
+                borderRadius: "8px",
+                border: `1px solid ${timeRemaining < 1800 ? "#ff5252" : "#4caf50"}`
+              }}>
+                <div style={{ 
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: "6px",
+                  marginBottom: "6px"
+                }}>
+                  <span style={{ fontSize: "14px" }}>
+                    {timeRemaining < 1800 ? "⏰" : "⏱️"}
+                  </span>
+                  <span style={{ 
+                    fontSize: "12px", 
+                    fontWeight: "600", 
+                    color: timeRemaining < 1800 ? "#c62828" : "#2e7d32"
+                  }}>
+                    {timeRemaining < 1800 ? "Hurry!" : "Time Left"}
+                  </span>
+                </div>
+                <div style={{ fontSize: "18px", fontWeight: "800", color: "#1a237e" }}>
+                  {hours}h {minutes}m {seconds}s
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer - Fixed */}
+        <div style={{
+          padding: "8px 15px",
+          fontSize: "11px",
+          color: "#666",
+          background: "white",
+          borderTop: "1px solid #e0e0e0",
+          textAlign: "center",
+          flexShrink: 0
+        }}>
+          <div>
+            © 2024 Stratavax • Auto-save enabled • Complete all {questions.length} questions
           </div>
         </div>
       </div>
