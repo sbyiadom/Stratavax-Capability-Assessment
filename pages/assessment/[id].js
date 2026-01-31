@@ -6,69 +6,70 @@ import QuestionNav from "../../components/QuestionNav";
 import Timer from "../../components/Timer";
 import { supabase } from "../../supabase/client";
 
-// Section configuration
+// EvalEx Assessment Configuration
 const SECTION_CONFIG = {
-  'Cognitive Abilities': { color: '#1565c0', icon: '🧠', questions: 20 },
-  'Personality Assessment': { color: '#7b1fa2', icon: '😊', questions: 20 },
-  'Leadership Potential': { color: '#d32f2f', icon: '👑', questions: 20 },
-  'Technical Competence': { color: '#388e3c', icon: '⚙️', questions: 20 },
-  'Performance Metrics': { color: '#f57c00', icon: '📊', questions: 20 }
+  'Cognitive Abilities': { 
+    color: '#1565c0', 
+    icon: '🧠', 
+    questions: 20,
+    description: 'Logical reasoning, problem-solving, analytical thinking'
+  },
+  'Personality Assessment': { 
+    color: '#7b1fa2', 
+    icon: '😊', 
+    questions: 20,
+    description: 'Behavioral traits, work style, interpersonal skills'
+  },
+  'Leadership Potential': { 
+    color: '#d32f2f', 
+    icon: '👑', 
+    questions: 20,
+    description: 'Management capabilities, decision-making, team leadership'
+  },
+  'Technical Competence': { 
+    color: '#388e3c', 
+    icon: '⚙️', 
+    questions: 20,
+    description: 'Job-specific technical skills and knowledge'
+  },
+  'Performance Metrics': { 
+    color: '#f57c00', 
+    icon: '📊', 
+    questions: 20,
+    description: 'Work habits, productivity, and performance indicators'
+  }
 };
 
 const SECTION_ORDER = Object.keys(SECTION_CONFIG);
+const TOTAL_QUESTIONS = 100;
+const TIME_LIMIT_SECONDS = 10800; // 3 hours
 
-// Save response function with INTEGER IDs
+// Save response function
 async function saveResponse(assessmentId, questionId, answerId, userId) {
   try {
-    console.log("💾 Saving response:", { 
-      assessmentId, 
-      questionId: parseInt(questionId), 
-      answerId: parseInt(answerId), 
-      userId 
-    });
-    
-    // Parse IDs to integers since your database uses INTEGER
-    const parsedQuestionId = parseInt(questionId);
-    const parsedAnswerId = parseInt(answerId);
-    
-    if (isNaN(parsedQuestionId) || isNaN(parsedAnswerId)) {
-      throw new Error("Invalid question or answer ID");
-    }
-
-    // Try to insert or update the response
     const { data, error } = await supabase
       .from("responses")
       .upsert({
         assessment_id: assessmentId,
-        question_id: parsedQuestionId,
-        answer_id: parsedAnswerId,
+        question_id: parseInt(questionId),
+        answer_id: parseInt(answerId),
         user_id: userId,
-        created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }, {
         onConflict: 'assessment_id,question_id,user_id'
-      })
-      .select();
+      });
 
-    if (error) {
-      console.error("❌ Database error:", error);
-      throw new Error(`Failed to save: ${error.message}`);
-    }
-
-    console.log("✅ Save successful:", data);
-    return data;
-    
+    if (error) throw new Error(`Save failed: ${error.message}`);
+    return { success: true };
   } catch (error) {
-    console.error("❌ Save response error:", error);
+    console.error("Save error:", error);
     throw error;
   }
 }
 
-// Load user responses function with INTEGER IDs
+// Load user responses
 async function loadUserResponses(userId) {
   try {
-    console.log("📥 Loading responses for user:", userId);
-    
     const { data, error } = await supabase
       .from("responses")
       .select("question_id, answer_id")
@@ -76,26 +77,19 @@ async function loadUserResponses(userId) {
       .eq("user_id", userId);
 
     if (error) {
-      console.error("❌ Error loading responses:", error);
-      // If table doesn't exist, return empty object
-      if (error.message.includes("does not exist")) {
-        console.warn("⚠️ Responses table doesn't exist yet");
-        return {};
-      }
-      throw error;
+      console.warn("No previous responses found or table doesn't exist");
+      return {};
     }
 
     const responses = {};
     data.forEach(r => {
-      // Ensure integer IDs for consistency
-      responses[parseInt(r.question_id)] = parseInt(r.answer_id);
+      responses[r.question_id] = r.answer_id;
     });
     
-    console.log(`✅ Loaded ${Object.keys(responses).length} previous responses`);
+    console.log(`Loaded ${Object.keys(responses).length} previous responses`);
     return responses;
-    
   } catch (error) {
-    console.error("❌ Error in loadUserResponses:", error);
+    console.error("Error loading responses:", error);
     return {};
   }
 }
@@ -113,8 +107,9 @@ export default function AssessmentPage() {
   const [saveStatus, setSaveStatus] = useState({});
   const [isSessionReady, setIsSessionReady] = useState(false);
   const [error, setError] = useState("");
-  const [totalQuestions, setTotalQuestions] = useState(0);
-  const [databaseStatus, setDatabaseStatus] = useState("");
+  const [realQuestionCount, setRealQuestionCount] = useState(0);
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Backgrounds
   const backgrounds = [
@@ -126,19 +121,11 @@ export default function AssessmentPage() {
   // Initialize session
   useEffect(() => {
     const initSession = async () => {
-      try {
-        const { data } = await supabase.auth.getSession();
-        if (data.session) {
-          setSession(data.session);
-          setIsSessionReady(true);
-          console.log("✅ Session initialized:", data.session.user.id);
-        } else {
-          console.warn("⚠️ No session found");
-          router.push("/login");
-        }
-      } catch (error) {
-        console.error("❌ Session error:", error);
-        setError("Failed to initialize session");
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        setSession(data.session);
+        setIsSessionReady(true);
+      } else {
         router.push("/login");
       }
     };
@@ -146,7 +133,6 @@ export default function AssessmentPage() {
 
     const { data: authListener } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        console.log("🔄 Auth state:", event);
         setSession(session);
         setIsSessionReady(!!session);
       }
@@ -155,60 +141,16 @@ export default function AssessmentPage() {
     return () => authListener?.subscription?.unsubscribe();
   }, [router]);
 
-  // Check database structure
-  useEffect(() => {
-    const checkDatabase = async () => {
-      try {
-        // Check responses table structure
-        const { error: tableError } = await supabase
-          .from('responses')
-          .select('id')
-          .limit(1);
-          
-        if (tableError && tableError.message.includes("does not exist")) {
-          setDatabaseStatus("responses table missing");
-        } else {
-          setDatabaseStatus("responses table exists");
-        }
-      } catch (err) {
-        console.log("Database check:", err.message);
-      }
-    };
-    
-    if (isSessionReady) {
-      checkDatabase();
-    }
-  }, [isSessionReady]);
-
   // Fetch questions
   useEffect(() => {
     if (!isSessionReady || !session?.user?.id) return;
 
-    const fetchData = async () => {
+    const fetchAssessmentData = async () => {
       try {
-        console.log("📥 Fetching assessment data...");
+        console.log("🔄 Fetching EvalEx assessment data...");
         
-        // First, check total questions count
-        const { count: totalCount, error: countError } = await supabase
-          .from("questions")
-          .select("*", { count: 'exact', head: true })
-          .eq("assessment_id", assessmentId);
-
-        if (countError) {
-          console.error("❌ Count error:", countError);
-          throw countError;
-        }
-
-        const actualCount = totalCount || 0;
-        console.log(`📊 Total questions in DB: ${actualCount}`);
-        setTotalQuestions(actualCount);
-
-        if (actualCount === 0) {
-          throw new Error("No questions found in database. Please add questions first.");
-        }
-
-        // Fetch questions with answers
-        const { data: questionsData, error } = await supabase
+        // Fetch all questions with answers (without difficulty field)
+        const { data: questionsData, error: questionsError } = await supabase
           .from("questions")
           .select(`
             id,
@@ -224,148 +166,82 @@ export default function AssessmentPage() {
           .eq("assessment_id", assessmentId)
           .order("id");
 
-        if (error) {
-          console.error("❌ Query error:", error);
-          throw error;
+        if (questionsError) {
+          console.error("❌ Error fetching questions:", questionsError);
+          throw new Error(`Failed to load questions: ${questionsError.message}`);
         }
 
-        console.log(`📋 Loaded ${questionsData?.length || 0} questions with answers`);
+        console.log(`📊 Database contains ${questionsData?.length || 0} questions`);
+        setRealQuestionCount(questionsData?.length || 0);
 
-        // Check if any questions have answers
-        const questionsWithAnswers = questionsData.filter(q => 
-          q.answers && Array.isArray(q.answers) && q.answers.length > 0
-        );
-        
-        console.log(`✅ ${questionsWithAnswers.length} questions have answers`);
-
-        if (questionsWithAnswers.length === 0) {
-          throw new Error("No questions with answers found. Please add answers to questions.");
+        if (!questionsData || questionsData.length === 0) {
+          throw new Error("No questions found in the database.");
         }
 
-        // Log question structure
-        console.log("Sample question structure:", {
-          id: questionsWithAnswers[0].id,
-          type: typeof questionsWithAnswers[0].id,
-          answers: questionsWithAnswers[0].answers.map(a => ({
-            id: a.id,
-            type: typeof a.id,
-            text: a.answer_text?.substring(0, 20)
-          }))
-        });
-
-        // Load previous responses
+        // Load user's previous responses
         const savedAnswers = await loadUserResponses(session.user.id);
-        console.log("📝 Saved answers loaded:", Object.keys(savedAnswers).length);
 
-        // Group by section
-        const questionsBySection = {};
-        questionsWithAnswers.forEach(q => {
-          if (!questionsBySection[q.section]) {
-            questionsBySection[q.section] = [];
-          }
-          
-          // Ensure answer IDs are integers
-          const processedAnswers = q.answers.map(answer => ({
-            ...answer,
-            id: parseInt(answer.id) || answer.id
-          }));
-          
-          // Shuffle answers
-          const shuffledAnswers = [...processedAnswers].sort(() => Math.random() - 0.5);
-          
-          questionsBySection[q.section].push({
-            ...q,
-            id: parseInt(q.id) || q.id, // Ensure integer ID
-            options: shuffledAnswers
-          });
-        });
+        // Process questions
+        const processedQuestions = questionsData.map(q => ({
+          ...q,
+          id: parseInt(q.id),
+          options: q.answers.map(a => ({
+            ...a,
+            id: parseInt(a.id)
+          })).sort(() => Math.random() - 0.5)
+        }));
 
-        // Log section distribution
-        Object.keys(questionsBySection).forEach(section => {
-          console.log(`📊 ${section}: ${questionsBySection[section].length} questions`);
-        });
-
-        // Combine sections in order
-        let allQuestions = [];
-        SECTION_ORDER.forEach(section => {
-          const sectionQuestions = questionsBySection[section] || [];
-          if (sectionQuestions.length > 0) {
-            // Shuffle questions within each section
-            const shuffledQuestions = [...sectionQuestions].sort(() => Math.random() - 0.5);
-            allQuestions = [...allQuestions, ...shuffledQuestions];
-          }
-        });
-
-        console.log(`🎯 Total real questions: ${allQuestions.length}`);
-
-        // If we have less than 100 questions, create placeholders
-        if (allQuestions.length < 100) {
-          const placeholdersNeeded = 100 - allQuestions.length;
-          console.log(`⚠️ Creating ${placeholdersNeeded} placeholder questions`);
-          
-          const placeholderQuestions = Array.from({ length: placeholdersNeeded }, (_, i) => ({
-            id: `placeholder-${i + 1000}`, // Use string ID for placeholders
-            question_text: `Question ${allQuestions.length + i + 1} (Placeholder)`,
-            section: SECTION_ORDER[i % SECTION_ORDER.length],
-            options: [
-              { id: `${i + 1000}-1`, answer_text: "Option A (Placeholder)", score: 1 },
-              { id: `${i + 1000}-2`, answer_text: "Option B (Placeholder)", score: 2 },
-              { id: `${i + 1000}-3`, answer_text: "Option C (Placeholder)", score: 3 },
-              { id: `${i + 1000}-4`, answer_text: "Option D (Placeholder)", score: 4 }
-            ]
-          }));
-          
-          allQuestions = [...allQuestions, ...placeholderQuestions];
-        }
-
-        console.log(`📚 Final question count: ${allQuestions.length}`);
-
-        setQuestions(allQuestions);
+        // If we have less than 100 questions, we'll work with what we have
+        // But we'll show the user that we expect 100 questions
+        setQuestions(processedQuestions);
         setAnswers(savedAnswers);
 
+        console.log(`✅ Assessment ready: ${processedQuestions.length} questions loaded`);
+
       } catch (error) {
-        console.error("❌ Error loading assessment:", error);
+        console.error("❌ Assessment loading error:", error);
         setError(error.message);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchData();
+    fetchAssessmentData();
   }, [assessmentId, isSessionReady, session]);
 
-  // Timer
+  // Timer with auto-submit
   useEffect(() => {
-    const timer = setInterval(() => setElapsed(t => t + 1), 1000);
+    const timer = setInterval(() => {
+      setElapsed(t => {
+        const newTime = t + 1;
+        if (newTime >= TIME_LIMIT_SECONDS) {
+          handleAutoSubmit();
+          return t;
+        }
+        return newTime;
+      });
+    }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const handleAutoSubmit = async () => {
+    if (!session?.user?.id || isSubmitting) return;
+    
+    setIsSubmitting(true);
+    try {
+      alert("⏰ Time's up! Submitting your assessment automatically...");
+      await submitAssessment();
+    } catch (error) {
+      console.error("Auto-submit error:", error);
+    } finally {
+      router.push("/");
+    }
+  };
 
   // Handle answer selection
   const handleSelect = async (questionId, answerId) => {
     if (!isSessionReady || !session?.user?.id) {
       alert("Please wait for session to initialize");
-      return;
-    }
-
-    console.log("🎯 Selecting answer:", { 
-      questionId, 
-      answerId,
-      questionIdType: typeof questionId,
-      answerIdType: typeof answerId
-    });
-
-    // Skip saving for placeholder questions (they have string IDs)
-    if (typeof questionId === 'string' && questionId.includes('placeholder')) {
-      console.log("📝 Skipping save for placeholder question");
-      setAnswers(prev => ({ ...prev, [questionId]: answerId }));
-      setSaveStatus(prev => ({ ...prev, [questionId]: "saved" }));
-      setTimeout(() => {
-        setSaveStatus(prev => {
-          const newStatus = { ...prev };
-          delete newStatus[questionId];
-          return newStatus;
-        });
-      }, 1000);
       return;
     }
 
@@ -375,25 +251,22 @@ export default function AssessmentPage() {
 
     try {
       await saveResponse(assessmentId, questionId, answerId, session.user.id);
-      
-      console.log("✅ Save successful");
       setSaveStatus(prev => ({ ...prev, [questionId]: "saved" }));
       
-      // Clear status after 1 second
+      // Clear status after delay
       setTimeout(() => {
         setSaveStatus(prev => {
           const newStatus = { ...prev };
           delete newStatus[questionId];
           return newStatus;
         });
-      }, 1000);
+      }, 1500);
 
     } catch (error) {
-      console.error("❌ Save error:", error);
+      console.error("Save failed:", error);
       setSaveStatus(prev => ({ ...prev, [questionId]: "error" }));
       
-      // Show error but don't revert (let user retry)
-      alert(`Save failed: ${error.message}`);
+      alert(`Failed to save answer. Please try again.`);
     }
   };
 
@@ -401,6 +274,8 @@ export default function AssessmentPage() {
   const handleNext = () => {
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(i => i + 1);
+    } else {
+      setShowSubmitModal(true);
     }
   };
 
@@ -416,55 +291,86 @@ export default function AssessmentPage() {
     }
   };
 
-  // Calculate section progress
-  const getSectionProgress = (section) => {
-    const sectionQuestions = questions.filter(q => 
-      q.section === section && 
-      typeof q.id === 'number' && // Only count real questions (with number IDs)
-      !isNaN(q.id)
-    );
-    const answered = sectionQuestions.filter(q => answers[q.id]).length;
-    return { 
-      answered, 
-      total: sectionQuestions.length,
-      percentage: sectionQuestions.length > 0 ? Math.round((answered / sectionQuestions.length) * 100) : 0
-    };
-  };
-
-  const handleFinish = async () => {
+  // Submit assessment
+  const submitAssessment = async () => {
     if (!session?.user?.id) {
       alert("Please log in to submit your assessment.");
       router.push("/login");
       return;
     }
 
-    const realQuestions = questions.filter(q => typeof q.id === 'number' && !isNaN(q.id));
-    const answeredCount = realQuestions.filter(q => answers[q.id]).length;
-    const unanswered = realQuestions.length - answeredCount;
+    setIsSubmitting(true);
     
-    let confirmMessage = "Are you sure you want to submit your assessment?";
-    if (unanswered > 0) {
-      confirmMessage = `You have ${unanswered} unanswered questions. ${confirmMessage}`;
-    }
-    
-    const confirmSubmit = window.confirm(confirmMessage);
-    if (!confirmSubmit) return;
-
     try {
+      const answeredCount = Object.keys(answers).length;
+      const completionRate = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
+
+      // Create or update assessment completion record
+      const { error: updateError } = await supabase
+        .from("user_assessments")
+        .upsert({
+          user_id: session.user.id,
+          assessment_id: assessmentId,
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          score: answeredCount,
+          total_questions: questions.length,
+          completion_rate: completionRate,
+          time_taken: elapsed
+        }, {
+          onConflict: 'user_id,assessment_id'
+        });
+
+      if (updateError) {
+        console.error("Error updating assessment status:", updateError);
+      }
+
       // Show success message
-      alert("🎉 Assessment submitted successfully! Your responses have been saved.");
+      const completionMessage = `
+✅ EvalEx Assessment Successfully Submitted!
+
+📊 Your Results:
+• Questions attempted: ${answeredCount}/${questions.length} (${completionRate}%)
+• Time taken: ${Math.floor(elapsed / 60)} minutes ${elapsed % 60} seconds
+• Assessment completed: ${new Date().toLocaleTimeString()}
+
+Your responses have been saved for evaluation.
+      `;
+
+      alert(completionMessage);
       
-      // Redirect to home
-      router.push("/");
+      // Redirect to results page
+      router.push("/assessment/results");
       
     } catch (error) {
       console.error("❌ Submission error:", error);
       alert(`Submission failed: ${error.message}`);
+    } finally {
+      setIsSubmitting(false);
+      setShowSubmitModal(false);
     }
   };
 
+  const handleFinish = () => {
+    setShowSubmitModal(true);
+  };
+
+  // Calculate section progress
+  const getSectionProgress = (section) => {
+    const sectionQuestions = questions.filter(q => q.section === section);
+    const answered = sectionQuestions.filter(q => answers[q.id]).length;
+    const total = sectionQuestions.length;
+    
+    return { 
+      answered, 
+      total,
+      percentage: total > 0 ? Math.round((answered / total) * 100) : 0,
+      expected: SECTION_CONFIG[section].questions
+    };
+  };
+
   // Calculate time
-  const timeRemaining = Math.max(0, 10800 - elapsed);
+  const timeRemaining = Math.max(0, TIME_LIMIT_SECONDS - elapsed);
   const hours = Math.floor(timeRemaining / 3600);
   const minutes = Math.floor((timeRemaining % 3600) / 60);
   const seconds = timeRemaining % 60;
@@ -481,359 +387,584 @@ export default function AssessmentPage() {
         justifyContent: "center",
         minHeight: "100vh"
       }}>
-        <div style={{ fontSize: "20px", fontWeight: "600", marginBottom: "20px", color: "#1565c0" }}>
-          Loading Assessment...
+        <div style={{ fontSize: "24px", fontWeight: "600", marginBottom: "20px", color: "#1565c0" }}>
+          Loading EvalEx Assessment...
         </div>
-        <div style={{ width: "200px", height: "4px", backgroundColor: "#e0e0e0", borderRadius: "2px" }}>
+        <div style={{ fontSize: "16px", color: "#666", marginBottom: "30px" }}>
+          Preparing your comprehensive evaluation
+        </div>
+        <div style={{ width: "300px", height: "6px", backgroundColor: "#e0e0e0", borderRadius: "3px" }}>
           <div style={{ 
-            width: "60%", 
+            width: "70%", 
             height: "100%", 
             backgroundColor: "#1565c0",
-            borderRadius: "2px",
-            animation: "loading 1.5s infinite"
+            borderRadius: "3px",
+            animation: "loading 2s infinite"
           }} />
         </div>
         <style jsx>{`
           @keyframes loading {
             0% { transform: translateX(-100%); }
-            100% { transform: translateX(200%); }
+            100% { transform: translateX(400%); }
           }
         `}</style>
-        {databaseStatus && (
-          <div style={{ marginTop: "20px", color: "#666", fontSize: "14px" }}>
-            {databaseStatus}
-          </div>
-        )}
+      </div>
+    );
+  }
+
+  if (questions.length === 0) {
+    return (
+      <div style={{ padding: "40px", textAlign: "center" }}>
+        <h3 style={{ color: "#f44336" }}>No Questions Available</h3>
+        <p>The assessment doesn't have any questions yet.</p>
+        {error && <p style={{ color: "#f44336", marginTop: "10px" }}>Error: {error}</p>}
+        <button 
+          onClick={() => router.push("/")}
+          style={{
+            padding: "12px 24px",
+            backgroundColor: "#1565c0",
+            color: "white",
+            border: "none",
+            borderRadius: "6px",
+            cursor: "pointer",
+            marginTop: "20px",
+            fontSize: "16px"
+          }}
+        >
+          Return to Dashboard
+        </button>
       </div>
     );
   }
 
   const currentQuestion = questions[currentIndex];
   const currentSection = currentQuestion?.section || SECTION_ORDER[0];
-  const sectionConfig = SECTION_CONFIG[currentSection] || SECTION_CONFIG[SECTION_ORDER[0]];
+  const sectionConfig = SECTION_CONFIG[currentSection];
   const saveState = saveStatus[currentQuestion?.id];
   const totalAnswered = Object.keys(answers).length;
-  const isPlaceholder = currentQuestion?.id?.includes?.('placeholder') || typeof currentQuestion?.id === 'string';
+  const isLastQuestion = currentIndex === questions.length - 1;
+  const totalQuestions = questions.length;
 
   return (
-    <AppLayout background={backgrounds[currentIndex % backgrounds.length]}>
-      {/* Error banner */}
-      {error && (
+    <>
+      {/* Submit Confirmation Modal */}
+      {showSubmitModal && (
         <div style={{
           position: "fixed",
-          top: "20px",
-          right: "20px",
-          backgroundColor: "#f44336",
-          color: "white",
-          padding: "15px 20px",
-          borderRadius: "8px",
-          zIndex: 1000,
-          maxWidth: "400px",
-          boxShadow: "0 4px 20px rgba(0,0,0,0.2)"
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0,0,0,0.8)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 2000
         }}>
-          ⚠️ <strong>Warning:</strong> {error}
+          <div style={{
+            background: "white",
+            padding: "40px",
+            borderRadius: "16px",
+            maxWidth: "600px",
+            width: "90%",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.4)"
+          }}>
+            <h2 style={{ marginTop: 0, color: "#1565c0", fontSize: "28px" }}>
+              Complete EvalEx Assessment
+            </h2>
+            
+            <div style={{ 
+              margin: "25px 0", 
+              padding: "20px", 
+              background: "#f8f9fa", 
+              borderRadius: "10px",
+              border: "1px solid #e0e0e0"
+            }}>
+              <div style={{ 
+                display: "flex", 
+                justifyContent: "space-between", 
+                marginBottom: "15px",
+                fontSize: "16px"
+              }}>
+                <span>Total Questions:</span>
+                <span style={{ fontWeight: "700" }}>
+                  {totalQuestions} {realQuestionCount < TOTAL_QUESTIONS && `(Expected: ${TOTAL_QUESTIONS})`}
+                </span>
+              </div>
+              
+              <div style={{ 
+                display: "flex", 
+                justifyContent: "space-between", 
+                marginBottom: "15px",
+                fontSize: "16px"
+              }}>
+                <span>Questions Answered:</span>
+                <span style={{ fontWeight: "700", color: "#4caf50" }}>
+                  {totalAnswered}/{totalQuestions}
+                </span>
+              </div>
+              
+              <div style={{ 
+                display: "flex", 
+                justifyContent: "space-between", 
+                marginBottom: "15px",
+                fontSize: "16px"
+              }}>
+                <span>Completion Rate:</span>
+                <span style={{ fontWeight: "700", color: "#2196f3" }}>
+                  {totalQuestions > 0 ? Math.round((totalAnswered / totalQuestions) * 100) : 0}%
+                </span>
+              </div>
+              
+              <div style={{ height: "12px", background: "#e0e0e0", borderRadius: "6px", margin: "20px 0" }}>
+                <div style={{ 
+                  height: "100%", 
+                  width: `${totalQuestions > 0 ? (totalAnswered / totalQuestions) * 100 : 0}%`, 
+                  background: "#4caf50", 
+                  borderRadius: "6px"
+                }} />
+              </div>
+            </div>
+
+            <p style={{ 
+              marginBottom: "30px", 
+              fontSize: "16px",
+              lineHeight: "1.6"
+            }}>
+              {totalQuestions - totalAnswered > 0 
+                ? `You have ${totalQuestions - totalAnswered} unanswered questions. Are you ready to submit?`
+                : "All questions have been answered. Ready to submit your assessment?"}
+            </p>
+
+            {realQuestionCount < TOTAL_QUESTIONS && (
+              <div style={{
+                padding: "15px",
+                backgroundColor: "#fff3e0",
+                borderRadius: "8px",
+                marginBottom: "25px",
+                borderLeft: "4px solid #ff9800"
+              }}>
+                <div style={{ fontSize: "14px", fontWeight: "600", color: "#e65100" }}>
+                  ⚠️ Note: Database has {realQuestionCount} questions (Expected: {TOTAL_QUESTIONS})
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "20px" }}>
+              <button
+                onClick={() => setShowSubmitModal(false)}
+                disabled={isSubmitting}
+                style={{
+                  padding: "12px 24px",
+                  background: "#f5f5f5",
+                  color: "#333",
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontWeight: "600",
+                  fontSize: "15px"
+                }}
+              >
+                Continue Assessment
+              </button>
+              <button
+                onClick={submitAssessment}
+                disabled={isSubmitting}
+                style={{
+                  padding: "12px 30px",
+                  background: isSubmitting ? "#81c784" : "#4caf50",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: isSubmitting ? "not-allowed" : "pointer",
+                  fontWeight: "700",
+                  fontSize: "16px"
+                }}
+              >
+                {isSubmitting ? "Submitting..." : "Submit Assessment"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
-      <div style={{ maxWidth: "1400px", margin: "auto", padding: 20 }}>
-        
-        {/* Header */}
-        <div style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 20,
-          padding: "15px 20px",
-          background: "white",
-          borderRadius: 10,
-          boxShadow: "0 2px 10px rgba(0,0,0,0.1)"
-        }}>
-          <div>
-            <h1 style={{ margin: 0, color: "#1565c0", fontSize: "24px" }}>Stratavax EvalEx Assessment</h1>
-            <div style={{ margin: "5px 0 0 0", color: "#666", fontSize: "14px" }}>
-              <div>100 Questions • Comprehensive Evaluation</div>
-              {totalQuestions < 100 && (
-                <div style={{ color: "#f57c00", marginTop: "2px" }}>
-                  ⚠️ Database has only {totalQuestions} real questions ({100 - totalQuestions} placeholders)
-                </div>
-              )}
-            </div>
-          </div>
+      <AppLayout background={backgrounds[currentIndex % backgrounds.length]}>
+        <div style={{ maxWidth: "1400px", margin: "auto", padding: 20 }}>
           
-          <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
-            <div style={{
-              padding: "8px 16px",
-              backgroundColor: "#e3f2fd",
-              borderRadius: "20px",
-              fontWeight: "600",
-              color: "#1565c0",
-              fontSize: "14px"
-            }}>
-              Time: {hours.toString().padStart(2, '0')}:{minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}
-            </div>
-          </div>
-        </div>
-
-        {/* Main content */}
-        <div style={{ display: "flex", gap: 20 }}>
-          
-          {/* Question panel */}
-          <div style={{ 
-            flex: 3, 
-            background: "white", 
-            padding: 30, 
-            borderRadius: 12, 
-            boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
+          {/* Header */}
+          <div style={{
             display: "flex",
-            flexDirection: "column",
-            minHeight: "70vh"
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 25,
+            padding: "20px 25px",
+            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+            borderRadius: "12px",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+            color: "white"
           }}>
-            
-            {/* Section header */}
-            <div style={{
-              background: isPlaceholder ? "#757575" : sectionConfig.color,
-              color: "white",
-              padding: "12px 20px",
-              borderRadius: 8,
-              marginBottom: 25,
-              display: "flex",
-              alignItems: "center",
-              gap: 10
-            }}>
-              <span style={{ fontSize: 20 }}>{isPlaceholder ? "📝" : sectionConfig.icon}</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, fontSize: 18 }}>
-                  {isPlaceholder ? "Placeholder Question" : currentSection}
-                  {isPlaceholder && (
-                    <span style={{ fontSize: "12px", marginLeft: "10px", opacity: 0.8 }}>
-                      (Admin needs to add more questions)
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: 12, opacity: 0.9 }}>
-                  Question {currentIndex + 1} of 100 • 
-                  Section {SECTION_ORDER.indexOf(currentSection) + 1} of 5
-                  {isPlaceholder && " • Placeholder"}
-                </div>
+            <div>
+              <h1 style={{ margin: 0, fontSize: "28px", fontWeight: "700" }}>EvalEx Comprehensive Assessment</h1>
+              <div style={{ margin: "8px 0 0 0", fontSize: "15px", opacity: 0.9 }}>
+                <div>{totalQuestions} Questions • Stratavax Evaluation System</div>
+                {realQuestionCount < TOTAL_QUESTIONS && (
+                  <div style={{ marginTop: "5px", color: "#ffcc80", fontSize: "13px" }}>
+                    ⚠️ Database has {realQuestionCount} questions (Expected: {TOTAL_QUESTIONS})
+                  </div>
+                )}
               </div>
+            </div>
+            
+            <div style={{ display: "flex", alignItems: "center", gap: "25px" }}>
+              <div style={{
+                padding: "10px 20px",
+                backgroundColor: "rgba(255,255,255,0.15)",
+                backdropFilter: "blur(10px)",
+                borderRadius: "25px",
+                fontWeight: "700",
+                fontSize: "16px",
+                border: "1px solid rgba(255,255,255,0.2)"
+              }}>
+                ⏱️ {hours.toString().padStart(2, '0')}:{minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}
+              </div>
+            </div>
+          </div>
+
+          {/* Main content */}
+          <div style={{ display: "flex", gap: 25 }}>
+            
+            {/* Question panel */}
+            <div style={{ 
+              flex: 3, 
+              background: "white", 
+              padding: 35, 
+              borderRadius: "14px", 
+              boxShadow: "0 6px 25px rgba(0,0,0,0.12)",
+              display: "flex",
+              flexDirection: "column",
+              minHeight: "75vh"
+            }}>
               
-              {/* Save status */}
-              {!isPlaceholder && (
+              {/* Section header */}
+              <div style={{
+                background: `linear-gradient(135deg, ${sectionConfig.color} 0%, ${sectionConfig.color}99 100%)`,
+                color: "white",
+                padding: "18px 25px",
+                borderRadius: "10px",
+                marginBottom: 30,
+                display: "flex",
+                alignItems: "center",
+                gap: 15,
+                position: "relative",
+                overflow: "hidden"
+              }}>
                 <div style={{
-                  padding: "4px 12px",
-                  borderRadius: "15px",
+                  position: "absolute",
+                  right: "-30px",
+                  top: "-30px",
+                  width: "120px",
+                  height: "120px",
+                  background: "rgba(255,255,255,0.1)",
+                  borderRadius: "50%"
+                }} />
+                
+                <span style={{ fontSize: 28, zIndex: 1 }}>{sectionConfig.icon}</span>
+                <div style={{ flex: 1, zIndex: 1 }}>
+                  <div style={{ fontWeight: "700", fontSize: "20px" }}>{currentSection}</div>
+                  <div style={{ fontSize: "13px", opacity: 0.9, marginTop: "4px" }}>
+                    {sectionConfig.description} • Question {currentIndex + 1} of {totalQuestions}
+                  </div>
+                </div>
+                
+                {/* Save status */}
+                <div style={{
+                  padding: "6px 16px",
+                  borderRadius: "20px",
                   backgroundColor: 
-                    saveState === "saving" ? "#ffb74d" :
-                    saveState === "saved" ? "#4caf50" :
-                    saveState === "error" ? "#f44336" : "transparent",
-                  color: saveState ? "white" : "transparent",
+                    saveState === "saving" ? "rgba(255,183,77,0.9)" :
+                    saveState === "saved" ? "rgba(76,175,80,0.9)" :
+                    saveState === "error" ? "rgba(244,67,54,0.9)" : "rgba(255,255,255,0.2)",
+                  color: saveState ? "white" : "rgba(255,255,255,0.8)",
                   fontSize: "14px",
-                  fontWeight: "500",
-                  transition: "all 0.3s"
+                  fontWeight: "600",
+                  backdropFilter: "blur(10px)",
+                  border: saveState ? "none" : "1px solid rgba(255,255,255,0.3)",
+                  zIndex: 1
                 }}>
                   {saveState === "saving" && "⏳ Saving..."}
                   {saveState === "saved" && "✅ Saved"}
                   {saveState === "error" && "❌ Error"}
+                  {!saveState && "Click to answer"}
                 </div>
+              </div>
+
+              {/* Question */}
+              <div style={{
+                fontSize: "20px",
+                lineHeight: 1.7,
+                marginBottom: 35,
+                padding: 25,
+                background: "#f8f9fa",
+                borderRadius: "10px",
+                borderLeft: `5px solid ${sectionConfig.color}`,
+                flex: 1,
+                boxShadow: "0 2px 10px rgba(0,0,0,0.05)"
+              }}>
+                {currentQuestion?.question_text}
+              </div>
+
+              {/* Answers */}
+              {currentQuestion && (
+                <QuestionCard
+                  question={currentQuestion}
+                  selected={answers[currentQuestion.id]}
+                  onSelect={(answerId) => handleSelect(currentQuestion.id, answerId)}
+                  disabled={saveState === "saving"}
+                />
               )}
+
+              {/* Navigation */}
+              <div style={{ 
+                marginTop: "auto", 
+                display: "flex", 
+                justifyContent: "space-between",
+                paddingTop: 35,
+                borderTop: "2px solid #f0f0f0"
+              }}>
+                <button 
+                  onClick={handleBack} 
+                  disabled={currentIndex === 0} 
+                  style={{ 
+                    padding: "14px 28px", 
+                    background: currentIndex === 0 ? "#f5f5f5" : "#1565c0", 
+                    color: currentIndex === 0 ? "#999" : "white", 
+                    border: "none", 
+                    borderRadius: "10px",
+                    cursor: currentIndex === 0 ? "not-allowed" : "pointer",
+                    fontSize: "16px",
+                    fontWeight: "600",
+                    transition: "all 0.3s",
+                    opacity: currentIndex === 0 ? 0.6 : 1
+                  }}
+                >
+                  ← Previous Question
+                </button>
+                
+                {isLastQuestion ? (
+                  <button 
+                    onClick={handleFinish}
+                    style={{ 
+                      padding: "14px 35px", 
+                      background: "linear-gradient(135deg, #4caf50 0%, #2e7d32 100%)", 
+                      color: "white", 
+                      border: "none", 
+                      borderRadius: "10px",
+                      cursor: "pointer",
+                      fontSize: "17px",
+                      fontWeight: "700",
+                      transition: "all 0.3s",
+                      boxShadow: "0 4px 15px rgba(76,175,80,0.4)"
+                    }}
+                  >
+                    🏁 Finish Assessment
+                  </button>
+                ) : (
+                  <button 
+                    onClick={handleNext} 
+                    style={{ 
+                      padding: "14px 28px", 
+                      background: "linear-gradient(135deg, #1565c0 0%, #0d47a1 100%)", 
+                      color: "white", 
+                      border: "none", 
+                      borderRadius: "10px",
+                      cursor: "pointer",
+                      fontSize: "16px",
+                      fontWeight: "600",
+                      transition: "all 0.3s"
+                    }}
+                  >
+                    Next Question →
+                  </button>
+                )}
+              </div>
             </div>
 
-            {/* Question */}
-            <div style={{
-              fontSize: "18px",
-              lineHeight: 1.6,
-              marginBottom: 30,
-              padding: 20,
-              background: isPlaceholder ? "#f5f5f5" : "#f8f9fa",
-              borderRadius: 8,
-              borderLeft: `4px solid ${isPlaceholder ? "#757575" : sectionConfig.color}`,
-              flex: 1
-            }}>
-              {currentQuestion?.question_text || "Question not available"}
-            </div>
-
-            {/* Answers */}
-            {currentQuestion && (
-              <QuestionCard
-                question={currentQuestion}
-                selected={answers[currentQuestion.id]}
-                onSelect={(answerId) => handleSelect(currentQuestion.id, answerId)}
-                disabled={saveState === "saving" || isPlaceholder}
+            {/* Sidebar */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 25 }}>
+              
+              {/* Question navigation */}
+              <QuestionNav
+                questions={questions}
+                answers={answers}
+                current={currentIndex}
+                onJump={handleJump}
+                totalQuestions={totalQuestions}
               />
-            )}
 
-            {/* Navigation */}
-            <div style={{ 
-              marginTop: "auto", 
-              display: "flex", 
-              justifyContent: "space-between",
-              paddingTop: 30,
-              borderTop: "1px solid #eee"
-            }}>
-              <button 
-                onClick={handleBack} 
-                disabled={currentIndex === 0} 
-                style={{ 
-                  padding: "12px 25px", 
-                  background: currentIndex === 0 ? "#f5f5f5" : "#1565c0", 
-                  color: currentIndex === 0 ? "#999" : "white", 
-                  border: "none", 
-                  borderRadius: 8,
-                  cursor: currentIndex === 0 ? "not-allowed" : "pointer",
-                  fontSize: "16px",
-                  fontWeight: "500"
-                }}
-              >
-                ← Previous
-              </button>
-              
-              {currentIndex === questions.length - 1 ? (
-                <button 
-                  onClick={handleFinish}
-                  style={{ 
-                    padding: "12px 30px", 
-                    background: "#4caf50", 
-                    color: "white", 
-                    border: "none", 
-                    borderRadius: 8,
-                    cursor: "pointer",
-                    fontSize: "16px",
-                    fontWeight: "600"
-                  }}
-                >
-                  🏁 Finish Assessment
-                </button>
-              ) : (
-                <button 
-                  onClick={handleNext} 
-                  style={{ 
-                    padding: "12px 25px", 
-                    background: "#1565c0", 
-                    color: "white", 
-                    border: "none", 
-                    borderRadius: 8,
-                    cursor: "pointer",
-                    fontSize: "16px",
-                    fontWeight: "500"
-                  }}
-                >
-                  Next →
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Sidebar */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20 }}>
-            
-            {/* Question navigation */}
-            <QuestionNav
-              questions={questions}
-              answers={answers}
-              current={currentIndex}
-              onJump={handleJump}
-            />
-
-            {/* Progress summary */}
-            <div style={{ 
-              background: "white", 
-              padding: 25, 
-              borderRadius: 12, 
-              boxShadow: "0 4px 20px rgba(0,0,0,0.1)" 
-            }}>
-              <h3 style={{ marginTop: 0, marginBottom: 20, color: "#333" }}>Progress</h3>
-              
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: "14px" }}>
-                  <span>Overall Completion</span>
-                  <span style={{ fontWeight: 600 }}>
-                    {Math.round((totalAnswered / 100) * 100)}%
-                  </span>
-                </div>
-                <div style={{ height: 10, background: "#e0e0e0", borderRadius: 5 }}>
-                  <div style={{ 
-                    height: "100%", 
-                    width: `${(totalAnswered / 100) * 100}%`, 
-                    background: "#4caf50", 
-                    borderRadius: 5,
-                    transition: "width 0.5s ease"
-                  }} />
-                </div>
-                <div style={{ fontSize: "13px", color: "#666", marginTop: "5px" }}>
-                  {totalAnswered} of 100 questions answered
-                </div>
-              </div>
-
-              {/* Section progress */}
-              <div style={{ marginTop: "20px" }}>
-                <h4 style={{ marginBottom: 15, fontSize: "16px", color: "#555" }}>Section Progress</h4>
-                {SECTION_ORDER.map(section => {
-                  const progress = getSectionProgress(section);
-                  const config = SECTION_CONFIG[section];
-                  return (
-                    <div key={section} style={{ marginBottom: 12 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", marginBottom: 5 }}>
-                        <span>{config.icon} {section}</span>
-                        <span>
-                          {progress.answered}/{progress.total} 
-                          {progress.total > 0 && ` (${progress.percentage}%)`}
-                        </span>
-                      </div>
-                      <div style={{ height: 6, background: "#e0e0e0", borderRadius: 3 }}>
-                        <div style={{ 
-                          height: "100%", 
-                          width: `${progress.total > 0 ? progress.percentage : 0}%`, 
-                          background: config.color, 
-                          borderRadius: 3 
-                        }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              
-              {/* Database warning */}
-              {totalQuestions < 100 && (
-                <div style={{
-                  marginTop: "20px",
-                  padding: "10px",
-                  backgroundColor: "#fff3e0",
-                  borderLeft: "4px solid #f57c00",
-                  borderRadius: "4px"
+              {/* Progress summary */}
+              <div style={{ 
+                background: "white", 
+                padding: 30, 
+                borderRadius: "14px", 
+                boxShadow: "0 6px 25px rgba(0,0,0,0.12)",
+                position: "sticky",
+                top: "20px"
+              }}>
+                <h3 style={{ 
+                  marginTop: 0, 
+                  marginBottom: 25, 
+                  color: "#333",
+                  fontSize: "20px",
+                  fontWeight: "700"
                 }}>
-                  <div style={{ fontSize: "12px", color: "#e65100", fontWeight: "500" }}>
-                    ⚠️ Database Status
+                  Assessment Progress
+                </h3>
+                
+                {/* Overall progress */}
+                <div style={{ marginBottom: 30 }}>
+                  <div style={{ 
+                    display: "flex", 
+                    justifyContent: "space-between", 
+                    marginBottom: 12, 
+                    fontSize: "15px",
+                    fontWeight: "600"
+                  }}>
+                    <span>Overall Completion</span>
+                    <span style={{ color: "#4caf50" }}>
+                      {totalQuestions > 0 ? Math.round((totalAnswered / totalQuestions) * 100) : 0}%
+                    </span>
                   </div>
-                  <div style={{ fontSize: "11px", color: "#666", marginTop: "4px" }}>
-                    Only {totalQuestions} real questions in database
+                  <div style={{ height: 12, background: "#e8e8e8", borderRadius: 6 }}>
+                    <div style={{ 
+                      height: "100%", 
+                      width: `${totalQuestions > 0 ? (totalAnswered / totalQuestions) * 100 : 0}%`, 
+                      background: "linear-gradient(90deg, #4caf50 0%, #81c784 100%)", 
+                      borderRadius: 6,
+                      transition: "width 0.5s ease"
+                    }} />
                   </div>
-                  <div style={{ fontSize: "11px", color: "#666", marginTop: "2px" }}>
-                    Placeholder questions won't be saved
+                  <div style={{ 
+                    fontSize: "14px", 
+                    color: "#666", 
+                    marginTop: "10px",
+                    display: "flex",
+                    justifyContent: "space-between"
+                  }}>
+                    <span>{totalAnswered} answered</span>
+                    <span>{totalQuestions - totalAnswered} remaining</span>
                   </div>
                 </div>
-              )}
+
+                {/* Section progress */}
+                <div style={{ marginTop: "25px" }}>
+                  <h4 style={{ 
+                    marginBottom: 20, 
+                    fontSize: "18px", 
+                    color: "#555",
+                    fontWeight: "600"
+                  }}>
+                    Section Breakdown
+                  </h4>
+                  {SECTION_ORDER.map(section => {
+                    const progress = getSectionProgress(section);
+                    const config = SECTION_CONFIG[section];
+                    return (
+                      <div key={section} style={{ marginBottom: 16 }}>
+                        <div style={{ 
+                          display: "flex", 
+                          justifyContent: "space-between", 
+                          fontSize: "14px", 
+                          marginBottom: 8,
+                          alignItems: "center"
+                        }}>
+                          <span>
+                            <span style={{ marginRight: "8px" }}>{config.icon}</span>
+                            <span style={{ fontWeight: "500" }}>{section}</span>
+                          </span>
+                          <span style={{ 
+                            fontWeight: "600", 
+                            color: progress.percentage >= 80 ? "#4caf50" : 
+                                   progress.percentage >= 50 ? "#ff9800" : "#f44336"
+                          }}>
+                            {progress.answered}/{progress.total} ({progress.percentage}%)
+                          </span>
+                        </div>
+                        <div style={{ height: 8, background: "#e8e8e8", borderRadius: 4 }}>
+                          <div style={{ 
+                            height: "100%", 
+                            width: `${progress.percentage}%`, 
+                            background: config.color, 
+                            borderRadius: 4 
+                          }} />
+                        </div>
+                        {progress.total < progress.expected && (
+                          <div style={{ 
+                            fontSize: "11px", 
+                            color: "#f57c00", 
+                            marginTop: "4px",
+                            textAlign: "right"
+                          }}>
+                            Expected: {progress.expected}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Time warning */}
+                <div style={{
+                  marginTop: "25px",
+                  padding: "15px",
+                  backgroundColor: timeRemaining < 1800 ? "#ffebee" : "#e8f5e9",
+                  borderLeft: `4px solid ${timeRemaining < 1800 ? "#f44336" : "#4caf50"}`,
+                  borderRadius: "8px",
+                  border: `1px solid ${timeRemaining < 1800 ? "#ffcdd2" : "#c8e6c9"}`
+                }}>
+                  <div style={{ 
+                    fontSize: "14px", 
+                    fontWeight: "700", 
+                    color: timeRemaining < 1800 ? "#c62828" : "#2e7d32",
+                    marginBottom: "6px"
+                  }}>
+                    {timeRemaining < 1800 ? "⏰ Time Running Out!" : "⏱️ Assessment Timer"}
+                  </div>
+                  <div style={{ fontSize: "13px", color: "#666", marginBottom: "8px" }}>
+                    {hours}h {minutes}m {seconds}s remaining
+                  </div>
+                  <div style={{ 
+                    fontSize: "11px", 
+                    color: timeRemaining < 1800 ? "#e53935" : "#43a047",
+                    fontWeight: "500"
+                  }}>
+                    {timeRemaining < 1800 
+                      ? "Less than 30 minutes remaining - Assessment will auto-submit!" 
+                      : "Assessment auto-submits after 3 hours"}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
+          
+          {/* Footer */}
+          <div style={{
+            marginTop: "25px",
+            padding: "18px",
+            textAlign: "center",
+            fontSize: "13px",
+            color: "#666",
+            background: "white",
+            borderRadius: "10px",
+            boxShadow: "0 2px 15px rgba(0,0,0,0.1)",
+            borderTop: "3px solid #1565c0"
+          }}>
+            <p style={{ margin: 0, fontWeight: "500" }}>
+              © 2024 Stratavax EvalEx System • {totalQuestions} Questions • 
+              All answers are saved automatically • Time remaining: {hours}h {minutes}m {seconds}s
+            </p>
+          </div>
         </div>
-        
-        {/* Footer */}
-        <div style={{
-          marginTop: "20px",
-          padding: "15px",
-          textAlign: "center",
-          fontSize: "12px",
-          color: "#666",
-          background: "white",
-          borderRadius: "8px",
-          boxShadow: "0 2px 10px rgba(0,0,0,0.1)"
-        }}>
-          <p style={{ margin: 0 }}>
-            © 2024 Stratavax Assessment System | 
-            {isPlaceholder ? " Placeholder questions will not be saved" : " Answers are saved automatically"} | 
-            Time remaining: {hours.toString().padStart(2, '0')}:{minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}
-          </p>
-        </div>
-      </div>
-    </AppLayout>
+      </AppLayout>
+    </>
   );
 }
