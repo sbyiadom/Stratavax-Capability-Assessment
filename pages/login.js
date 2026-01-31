@@ -37,8 +37,8 @@ export default function Login() {
           await supabase.auth.signOut();
           throw new Error("You are not authorized as a supervisor. Please use candidate login.");
         }
-        // Redirect to supervisor dashboard
-        router.push("/supervisor/dashboard");
+        // FIX: Redirect to /supervisor (index.js) instead of /supervisor/dashboard
+        router.push("/supervisor");
       } else {
         // For candidates, allow login even if they have supervisor metadata
         // but redirect to assessment
