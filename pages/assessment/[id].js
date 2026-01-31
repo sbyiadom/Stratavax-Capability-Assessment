@@ -882,4 +882,3 @@ export default function AssessmentPage() {
     </>
   );
 }
-
