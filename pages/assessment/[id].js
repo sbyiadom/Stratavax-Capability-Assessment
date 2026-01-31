@@ -77,7 +77,7 @@ async function loadUserResponses(userId) {
       .eq("user_id", userId);
 
     if (error) {
-      console.warn("No previous responses found or table doesn't exist");
+      console.warn("No previous responses found");
       return {};
     }
 
@@ -86,7 +86,6 @@ async function loadUserResponses(userId) {
       responses[r.question_id] = r.answer_id;
     });
     
-    console.log(`Loaded ${Object.keys(responses).length} previous responses`);
     return responses;
   } catch (error) {
     console.error("Error loading responses:", error);
@@ -106,17 +105,9 @@ export default function AssessmentPage() {
   const [elapsed, setElapsed] = useState(0);
   const [saveStatus, setSaveStatus] = useState({});
   const [isSessionReady, setIsSessionReady] = useState(false);
-  const [error, setError] = useState("");
-  const [realQuestionCount, setRealQuestionCount] = useState(0);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Backgrounds
-  const backgrounds = [
-    "https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=1600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1542744173-8e7e53415bb0?w=1600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600&auto=format&fit=crop&q=80",
-  ];
+  const [questionCount, setQuestionCount] = useState(0);
 
   // Initialize session
   useEffect(() => {
@@ -147,9 +138,7 @@ export default function AssessmentPage() {
 
     const fetchAssessmentData = async () => {
       try {
-        console.log("🔄 Fetching EvalEx assessment data...");
-        
-        // Fetch all questions with answers (without difficulty field)
+        // Fetch all questions with answers
         const { data: questionsData, error: questionsError } = await supabase
           .from("questions")
           .select(`
@@ -166,13 +155,9 @@ export default function AssessmentPage() {
           .eq("assessment_id", assessmentId)
           .order("id");
 
-        if (questionsError) {
-          console.error("❌ Error fetching questions:", questionsError);
-          throw new Error(`Failed to load questions: ${questionsError.message}`);
-        }
+        if (questionsError) throw new Error(`Failed to load questions: ${questionsError.message}`);
 
-        console.log(`📊 Database contains ${questionsData?.length || 0} questions`);
-        setRealQuestionCount(questionsData?.length || 0);
+        setQuestionCount(questionsData?.length || 0);
 
         if (!questionsData || questionsData.length === 0) {
           throw new Error("No questions found in the database.");
@@ -181,26 +166,40 @@ export default function AssessmentPage() {
         // Load user's previous responses
         const savedAnswers = await loadUserResponses(session.user.id);
 
-        // Process questions
-        const processedQuestions = questionsData.map(q => ({
-          ...q,
-          id: parseInt(q.id),
-          options: q.answers.map(a => ({
-            ...a,
-            id: parseInt(a.id)
-          })).sort(() => Math.random() - 0.5)
-        }));
+        // Process and shuffle questions within sections
+        const questionsBySection = {};
+        questionsData.forEach(q => {
+          if (!questionsBySection[q.section]) {
+            questionsBySection[q.section] = [];
+          }
+          
+          // Shuffle answers for each question
+          const shuffledAnswers = [...q.answers]
+            .map(a => ({ ...a, id: parseInt(a.id) }))
+            .sort(() => Math.random() - 0.5);
+          
+          questionsBySection[q.section].push({
+            ...q,
+            id: parseInt(q.id),
+            options: shuffledAnswers
+          });
+        });
 
-        // If we have less than 100 questions, we'll work with what we have
-        // But we'll show the user that we expect 100 questions
-        setQuestions(processedQuestions);
+        // Build ordered questions array (shuffle within each section)
+        let orderedQuestions = [];
+        SECTION_ORDER.forEach(section => {
+          const sectionQuestions = questionsBySection[section] || [];
+          const shuffledQuestions = [...sectionQuestions].sort(() => Math.random() - 0.5);
+          orderedQuestions = [...orderedQuestions, ...shuffledQuestions];
+        });
+
+        setQuestions(orderedQuestions);
         setAnswers(savedAnswers);
 
-        console.log(`✅ Assessment ready: ${processedQuestions.length} questions loaded`);
-
       } catch (error) {
-        console.error("❌ Assessment loading error:", error);
-        setError(error.message);
+        console.error("Assessment loading error:", error);
+        alert(`Error: ${error.message}`);
+        router.push("/");
       } finally {
         setLoading(false);
       }
@@ -240,12 +239,8 @@ export default function AssessmentPage() {
 
   // Handle answer selection
   const handleSelect = async (questionId, answerId) => {
-    if (!isSessionReady || !session?.user?.id) {
-      alert("Please wait for session to initialize");
-      return;
-    }
+    if (!isSessionReady || !session?.user?.id) return;
 
-    // Update UI immediately
     setAnswers(prev => ({ ...prev, [questionId]: answerId }));
     setSaveStatus(prev => ({ ...prev, [questionId]: "saving" }));
 
@@ -253,7 +248,6 @@ export default function AssessmentPage() {
       await saveResponse(assessmentId, questionId, answerId, session.user.id);
       setSaveStatus(prev => ({ ...prev, [questionId]: "saved" }));
       
-      // Clear status after delay
       setTimeout(() => {
         setSaveStatus(prev => {
           const newStatus = { ...prev };
@@ -265,8 +259,7 @@ export default function AssessmentPage() {
     } catch (error) {
       console.error("Save failed:", error);
       setSaveStatus(prev => ({ ...prev, [questionId]: "error" }));
-      
-      alert(`Failed to save answer. Please try again.`);
+      alert("Failed to save answer. Please try again.");
     }
   };
 
@@ -303,9 +296,9 @@ export default function AssessmentPage() {
     
     try {
       const answeredCount = Object.keys(answers).length;
-      const completionRate = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
+      const completionRate = Math.round((answeredCount / questions.length) * 100);
 
-      // Create or update assessment completion record
+      // Update assessment status
       const { error: updateError } = await supabase
         .from("user_assessments")
         .upsert({
@@ -321,30 +314,16 @@ export default function AssessmentPage() {
           onConflict: 'user_id,assessment_id'
         });
 
-      if (updateError) {
-        console.error("Error updating assessment status:", updateError);
-      }
+      if (updateError) console.error("Error updating assessment status:", updateError);
 
       // Show success message
-      const completionMessage = `
-✅ EvalEx Assessment Successfully Submitted!
-
-📊 Your Results:
-• Questions attempted: ${answeredCount}/${questions.length} (${completionRate}%)
-• Time taken: ${Math.floor(elapsed / 60)} minutes ${elapsed % 60} seconds
-• Assessment completed: ${new Date().toLocaleTimeString()}
-
-Your responses have been saved for evaluation.
-      `;
-
-      alert(completionMessage);
+      alert(`✅ Assessment Submitted Successfully!\n\n📊 Results:\n• Questions answered: ${answeredCount}/${questions.length}\n• Completion rate: ${completionRate}%\n• Time taken: ${Math.floor(elapsed / 60)}m ${elapsed % 60}s`);
       
-      // Redirect to results page
-      router.push("/assessment/results");
+      router.push("/results");
       
     } catch (error) {
-      console.error("❌ Submission error:", error);
-      alert(`Submission failed: ${error.message}`);
+      console.error("Submission error:", error);
+      alert("Submission failed. Please try again.");
     } finally {
       setIsSubmitting(false);
       setShowSubmitModal(false);
@@ -364,8 +343,7 @@ Your responses have been saved for evaluation.
     return { 
       answered, 
       total,
-      percentage: total > 0 ? Math.round((answered / total) * 100) : 0,
-      expected: SECTION_CONFIG[section].questions
+      percentage: total > 0 ? Math.round((answered / total) * 100) : 0
     };
   };
 
@@ -391,7 +369,7 @@ Your responses have been saved for evaluation.
           Loading EvalEx Assessment...
         </div>
         <div style={{ fontSize: "16px", color: "#666", marginBottom: "30px" }}>
-          Preparing your comprehensive evaluation
+          Preparing 100-question comprehensive evaluation
         </div>
         <div style={{ width: "300px", height: "6px", backgroundColor: "#e0e0e0", borderRadius: "3px" }}>
           <div style={{ 
@@ -416,8 +394,7 @@ Your responses have been saved for evaluation.
     return (
       <div style={{ padding: "40px", textAlign: "center" }}>
         <h3 style={{ color: "#f44336" }}>No Questions Available</h3>
-        <p>The assessment doesn't have any questions yet.</p>
-        {error && <p style={{ color: "#f44336", marginTop: "10px" }}>Error: {error}</p>}
+        <p>Please run the database setup script to create assessment questions.</p>
         <button 
           onClick={() => router.push("/")}
           style={{
@@ -443,7 +420,6 @@ Your responses have been saved for evaluation.
   const saveState = saveStatus[currentQuestion?.id];
   const totalAnswered = Object.keys(answers).length;
   const isLastQuestion = currentIndex === questions.length - 1;
-  const totalQuestions = questions.length;
 
   return (
     <>
@@ -470,7 +446,7 @@ Your responses have been saved for evaluation.
             boxShadow: "0 20px 60px rgba(0,0,0,0.4)"
           }}>
             <h2 style={{ marginTop: 0, color: "#1565c0", fontSize: "28px" }}>
-              Complete EvalEx Assessment
+              Complete Assessment
             </h2>
             
             <div style={{ 
@@ -488,7 +464,7 @@ Your responses have been saved for evaluation.
               }}>
                 <span>Total Questions:</span>
                 <span style={{ fontWeight: "700" }}>
-                  {totalQuestions} {realQuestionCount < TOTAL_QUESTIONS && `(Expected: ${TOTAL_QUESTIONS})`}
+                  {questions.length}/100
                 </span>
               </div>
               
@@ -500,26 +476,26 @@ Your responses have been saved for evaluation.
               }}>
                 <span>Questions Answered:</span>
                 <span style={{ fontWeight: "700", color: "#4caf50" }}>
-                  {totalAnswered}/{totalQuestions}
+                  {totalAnswered}/{questions.length}
                 </span>
               </div>
               
               <div style={{ 
                 display: "flex", 
                 justifyContent: "space-between", 
-                marginBottom: "15px",
+                marginBottom: "20px",
                 fontSize: "16px"
               }}>
                 <span>Completion Rate:</span>
                 <span style={{ fontWeight: "700", color: "#2196f3" }}>
-                  {totalQuestions > 0 ? Math.round((totalAnswered / totalQuestions) * 100) : 0}%
+                  {Math.round((totalAnswered / questions.length) * 100)}%
                 </span>
               </div>
               
               <div style={{ height: "12px", background: "#e0e0e0", borderRadius: "6px", margin: "20px 0" }}>
                 <div style={{ 
                   height: "100%", 
-                  width: `${totalQuestions > 0 ? (totalAnswered / totalQuestions) * 100 : 0}%`, 
+                  width: `${(totalAnswered / questions.length) * 100}%`, 
                   background: "#4caf50", 
                   borderRadius: "6px"
                 }} />
@@ -531,24 +507,10 @@ Your responses have been saved for evaluation.
               fontSize: "16px",
               lineHeight: "1.6"
             }}>
-              {totalQuestions - totalAnswered > 0 
-                ? `You have ${totalQuestions - totalAnswered} unanswered questions. Are you ready to submit?`
+              {questions.length - totalAnswered > 0 
+                ? `You have ${questions.length - totalAnswered} unanswered questions. Are you ready to submit?`
                 : "All questions have been answered. Ready to submit your assessment?"}
             </p>
-
-            {realQuestionCount < TOTAL_QUESTIONS && (
-              <div style={{
-                padding: "15px",
-                backgroundColor: "#fff3e0",
-                borderRadius: "8px",
-                marginBottom: "25px",
-                borderLeft: "4px solid #ff9800"
-              }}>
-                <div style={{ fontSize: "14px", fontWeight: "600", color: "#e65100" }}>
-                  ⚠️ Note: Database has {realQuestionCount} questions (Expected: {TOTAL_QUESTIONS})
-                </div>
-              </div>
-            )}
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "20px" }}>
               <button
@@ -565,7 +527,7 @@ Your responses have been saved for evaluation.
                   fontSize: "15px"
                 }}
               >
-                Continue Assessment
+                Continue
               </button>
               <button
                 onClick={submitAssessment}
@@ -588,7 +550,7 @@ Your responses have been saved for evaluation.
         </div>
       )}
 
-      <AppLayout background={backgrounds[currentIndex % backgrounds.length]}>
+      <AppLayout>
         <div style={{ maxWidth: "1400px", margin: "auto", padding: 20 }}>
           
           {/* Header */}
@@ -606,12 +568,10 @@ Your responses have been saved for evaluation.
             <div>
               <h1 style={{ margin: 0, fontSize: "28px", fontWeight: "700" }}>EvalEx Comprehensive Assessment</h1>
               <div style={{ margin: "8px 0 0 0", fontSize: "15px", opacity: 0.9 }}>
-                <div>{totalQuestions} Questions • Stratavax Evaluation System</div>
-                {realQuestionCount < TOTAL_QUESTIONS && (
-                  <div style={{ marginTop: "5px", color: "#ffcc80", fontSize: "13px" }}>
-                    ⚠️ Database has {realQuestionCount} questions (Expected: {TOTAL_QUESTIONS})
-                  </div>
-                )}
+                <div>{questionCount} Questions • Stratavax Evaluation System</div>
+                <div style={{ marginTop: "5px", fontSize: "13px", color: "#ffcc80" }}>
+                  {questionCount === TOTAL_QUESTIONS ? "✅ Complete 100-question assessment" : `⚠️ ${questionCount}/100 questions loaded`}
+                </div>
               </div>
             </div>
             
@@ -654,25 +614,13 @@ Your responses have been saved for evaluation.
                 marginBottom: 30,
                 display: "flex",
                 alignItems: "center",
-                gap: 15,
-                position: "relative",
-                overflow: "hidden"
+                gap: 15
               }}>
-                <div style={{
-                  position: "absolute",
-                  right: "-30px",
-                  top: "-30px",
-                  width: "120px",
-                  height: "120px",
-                  background: "rgba(255,255,255,0.1)",
-                  borderRadius: "50%"
-                }} />
-                
-                <span style={{ fontSize: 28, zIndex: 1 }}>{sectionConfig.icon}</span>
-                <div style={{ flex: 1, zIndex: 1 }}>
+                <span style={{ fontSize: 28 }}>{sectionConfig.icon}</span>
+                <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: "700", fontSize: "20px" }}>{currentSection}</div>
                   <div style={{ fontSize: "13px", opacity: 0.9, marginTop: "4px" }}>
-                    {sectionConfig.description} • Question {currentIndex + 1} of {totalQuestions}
+                    {sectionConfig.description} • Question {currentIndex + 1} of {questions.length}
                   </div>
                 </div>
                 
@@ -681,20 +629,16 @@ Your responses have been saved for evaluation.
                   padding: "6px 16px",
                   borderRadius: "20px",
                   backgroundColor: 
-                    saveState === "saving" ? "rgba(255,183,77,0.9)" :
-                    saveState === "saved" ? "rgba(76,175,80,0.9)" :
-                    saveState === "error" ? "rgba(244,67,54,0.9)" : "rgba(255,255,255,0.2)",
+                    saveState === "saving" ? "#ffb74d" :
+                    saveState === "saved" ? "#4caf50" :
+                    saveState === "error" ? "#f44336" : "rgba(255,255,255,0.2)",
                   color: saveState ? "white" : "rgba(255,255,255,0.8)",
                   fontSize: "14px",
-                  fontWeight: "600",
-                  backdropFilter: "blur(10px)",
-                  border: saveState ? "none" : "1px solid rgba(255,255,255,0.3)",
-                  zIndex: 1
+                  fontWeight: "600"
                 }}>
                   {saveState === "saving" && "⏳ Saving..."}
                   {saveState === "saved" && "✅ Saved"}
                   {saveState === "error" && "❌ Error"}
-                  {!saveState && "Click to answer"}
                 </div>
               </div>
 
@@ -707,21 +651,18 @@ Your responses have been saved for evaluation.
                 background: "#f8f9fa",
                 borderRadius: "10px",
                 borderLeft: `5px solid ${sectionConfig.color}`,
-                flex: 1,
-                boxShadow: "0 2px 10px rgba(0,0,0,0.05)"
+                flex: 1
               }}>
                 {currentQuestion?.question_text}
               </div>
 
               {/* Answers */}
-              {currentQuestion && (
-                <QuestionCard
-                  question={currentQuestion}
-                  selected={answers[currentQuestion.id]}
-                  onSelect={(answerId) => handleSelect(currentQuestion.id, answerId)}
-                  disabled={saveState === "saving"}
-                />
-              )}
+              <QuestionCard
+                question={currentQuestion}
+                selected={answers[currentQuestion.id]}
+                onSelect={(answerId) => handleSelect(currentQuestion.id, answerId)}
+                disabled={saveState === "saving"}
+              />
 
               {/* Navigation */}
               <div style={{ 
@@ -742,12 +683,10 @@ Your responses have been saved for evaluation.
                     borderRadius: "10px",
                     cursor: currentIndex === 0 ? "not-allowed" : "pointer",
                     fontSize: "16px",
-                    fontWeight: "600",
-                    transition: "all 0.3s",
-                    opacity: currentIndex === 0 ? 0.6 : 1
+                    fontWeight: "600"
                   }}
                 >
-                  ← Previous Question
+                  ← Previous
                 </button>
                 
                 {isLastQuestion ? (
@@ -761,9 +700,7 @@ Your responses have been saved for evaluation.
                       borderRadius: "10px",
                       cursor: "pointer",
                       fontSize: "17px",
-                      fontWeight: "700",
-                      transition: "all 0.3s",
-                      boxShadow: "0 4px 15px rgba(76,175,80,0.4)"
+                      fontWeight: "700"
                     }}
                   >
                     🏁 Finish Assessment
@@ -779,11 +716,10 @@ Your responses have been saved for evaluation.
                       borderRadius: "10px",
                       cursor: "pointer",
                       fontSize: "16px",
-                      fontWeight: "600",
-                      transition: "all 0.3s"
+                      fontWeight: "600"
                     }}
                   >
-                    Next Question →
+                    Next →
                   </button>
                 )}
               </div>
@@ -798,7 +734,6 @@ Your responses have been saved for evaluation.
                 answers={answers}
                 current={currentIndex}
                 onJump={handleJump}
-                totalQuestions={totalQuestions}
               />
 
               {/* Progress summary */}
@@ -806,9 +741,7 @@ Your responses have been saved for evaluation.
                 background: "white", 
                 padding: 30, 
                 borderRadius: "14px", 
-                boxShadow: "0 6px 25px rgba(0,0,0,0.12)",
-                position: "sticky",
-                top: "20px"
+                boxShadow: "0 6px 25px rgba(0,0,0,0.12)"
               }}>
                 <h3 style={{ 
                   marginTop: 0, 
@@ -831,16 +764,15 @@ Your responses have been saved for evaluation.
                   }}>
                     <span>Overall Completion</span>
                     <span style={{ color: "#4caf50" }}>
-                      {totalQuestions > 0 ? Math.round((totalAnswered / totalQuestions) * 100) : 0}%
+                      {Math.round((totalAnswered / questions.length) * 100)}%
                     </span>
                   </div>
                   <div style={{ height: 12, background: "#e8e8e8", borderRadius: 6 }}>
                     <div style={{ 
                       height: "100%", 
-                      width: `${totalQuestions > 0 ? (totalAnswered / totalQuestions) * 100 : 0}%`, 
+                      width: `${(totalAnswered / questions.length) * 100}%`, 
                       background: "linear-gradient(90deg, #4caf50 0%, #81c784 100%)", 
-                      borderRadius: 6,
-                      transition: "width 0.5s ease"
+                      borderRadius: 6
                     }} />
                   </div>
                   <div style={{ 
@@ -851,7 +783,7 @@ Your responses have been saved for evaluation.
                     justifyContent: "space-between"
                   }}>
                     <span>{totalAnswered} answered</span>
-                    <span>{totalQuestions - totalAnswered} remaining</span>
+                    <span>{questions.length - totalAnswered} remaining</span>
                   </div>
                 </div>
 
@@ -874,18 +806,13 @@ Your responses have been saved for evaluation.
                           display: "flex", 
                           justifyContent: "space-between", 
                           fontSize: "14px", 
-                          marginBottom: 8,
-                          alignItems: "center"
+                          marginBottom: 8
                         }}>
                           <span>
                             <span style={{ marginRight: "8px" }}>{config.icon}</span>
-                            <span style={{ fontWeight: "500" }}>{section}</span>
+                            {section}
                           </span>
-                          <span style={{ 
-                            fontWeight: "600", 
-                            color: progress.percentage >= 80 ? "#4caf50" : 
-                                   progress.percentage >= 50 ? "#ff9800" : "#f44336"
-                          }}>
+                          <span style={{ fontWeight: "600" }}>
                             {progress.answered}/{progress.total} ({progress.percentage}%)
                           </span>
                         </div>
@@ -897,71 +824,12 @@ Your responses have been saved for evaluation.
                             borderRadius: 4 
                           }} />
                         </div>
-                        {progress.total < progress.expected && (
-                          <div style={{ 
-                            fontSize: "11px", 
-                            color: "#f57c00", 
-                            marginTop: "4px",
-                            textAlign: "right"
-                          }}>
-                            Expected: {progress.expected}
-                          </div>
-                        )}
                       </div>
                     );
                   })}
                 </div>
-
-                {/* Time warning */}
-                <div style={{
-                  marginTop: "25px",
-                  padding: "15px",
-                  backgroundColor: timeRemaining < 1800 ? "#ffebee" : "#e8f5e9",
-                  borderLeft: `4px solid ${timeRemaining < 1800 ? "#f44336" : "#4caf50"}`,
-                  borderRadius: "8px",
-                  border: `1px solid ${timeRemaining < 1800 ? "#ffcdd2" : "#c8e6c9"}`
-                }}>
-                  <div style={{ 
-                    fontSize: "14px", 
-                    fontWeight: "700", 
-                    color: timeRemaining < 1800 ? "#c62828" : "#2e7d32",
-                    marginBottom: "6px"
-                  }}>
-                    {timeRemaining < 1800 ? "⏰ Time Running Out!" : "⏱️ Assessment Timer"}
-                  </div>
-                  <div style={{ fontSize: "13px", color: "#666", marginBottom: "8px" }}>
-                    {hours}h {minutes}m {seconds}s remaining
-                  </div>
-                  <div style={{ 
-                    fontSize: "11px", 
-                    color: timeRemaining < 1800 ? "#e53935" : "#43a047",
-                    fontWeight: "500"
-                  }}>
-                    {timeRemaining < 1800 
-                      ? "Less than 30 minutes remaining - Assessment will auto-submit!" 
-                      : "Assessment auto-submits after 3 hours"}
-                  </div>
-                </div>
               </div>
             </div>
-          </div>
-          
-          {/* Footer */}
-          <div style={{
-            marginTop: "25px",
-            padding: "18px",
-            textAlign: "center",
-            fontSize: "13px",
-            color: "#666",
-            background: "white",
-            borderRadius: "10px",
-            boxShadow: "0 2px 15px rgba(0,0,0,0.1)",
-            borderTop: "3px solid #1565c0"
-          }}>
-            <p style={{ margin: 0, fontWeight: "500" }}>
-              © 2024 Stratavax EvalEx System • {totalQuestions} Questions • 
-              All answers are saved automatically • Time remaining: {hours}h {minutes}m {seconds}s
-            </p>
           </div>
         </div>
       </AppLayout>
