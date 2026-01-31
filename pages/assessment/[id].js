@@ -3,7 +3,6 @@ import { useRouter } from "next/router";
 import AppLayout from "../../components/AppLayout";
 import QuestionCard from "../../components/QuestionCard";
 import QuestionNav from "../../components/QuestionNav";
-import Timer from "../../components/Timer";
 import { supabase } from "../../supabase/client";
 
 // Color scheme for different sections
@@ -95,12 +94,13 @@ export default function AssessmentPage() {
   const [isSessionReady, setIsSessionReady] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-  // Background images - using Unsplash for professional backgrounds
+  // Fixed background images - removed problematic Unsplash URLs
   const backgrounds = [
-    "https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=1600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1542744173-8e7e53415bb0?w=1600&auto=format&fit=crop&q=80",
+    "https://source.unsplash.com/random/1600x900/?office,work",
+    "https://source.unsplash.com/random/1600x900/?business,technology",
+    "https://source.unsplash.com/random/1600x900/?meeting,professional",
   ];
 
   // Initialize session
@@ -180,6 +180,30 @@ export default function AssessmentPage() {
     return () => clearInterval(timer);
   }, []);
 
+  // Countdown timer for success modal
+  useEffect(() => {
+    if (showSuccessModal) {
+      let countdown = 5;
+      const timer = setInterval(() => {
+        countdown--;
+        const countdownElement = document.getElementById('countdown');
+        if (countdownElement) {
+          countdownElement.textContent = countdown;
+        }
+        
+        if (countdown <= 0) {
+          clearInterval(timer);
+          // Auto sign out and redirect
+          supabase.auth.signOut().then(() => {
+            router.push("/login");
+          });
+        }
+      }, 1000);
+      
+      return () => clearInterval(timer);
+    }
+  }, [showSuccessModal, router]);
+
   // Answer selection
   const handleSelect = async (questionId, answerId) => {
     if (!isSessionReady || !session?.user?.id) return;
@@ -210,8 +234,6 @@ export default function AssessmentPage() {
   const handleNext = () => {
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(i => i + 1);
-    } else {
-      setShowSubmitModal(true);
     }
   };
 
@@ -236,19 +258,18 @@ export default function AssessmentPage() {
     }
 
     setIsSubmitting(true);
+    setShowSubmitModal(false);
     
     try {
       const answeredCount = Object.keys(answers).length;
-      alert(`✅ Assessment Submitted!\n\nYou answered ${answeredCount} of ${questions.length} questions.\n\nResults will be available shortly.`);
       
-      router.push("/results");
+      // Show success modal
+      setShowSuccessModal(true);
       
     } catch (error) {
       console.error("Submission error:", error);
       alert("Submission failed. Please try again.");
-    } finally {
       setIsSubmitting(false);
-      setShowSubmitModal(false);
     }
   };
 
@@ -464,6 +485,148 @@ export default function AssessmentPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Success Modal - Redirects to Login */}
+      {showSuccessModal && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0,0,0,0.9)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 3000
+        }}>
+          <div style={{
+            background: "white",
+            padding: "40px",
+            borderRadius: "20px",
+            maxWidth: "500px",
+            width: "90%",
+            textAlign: "center",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.5)"
+          }}>
+            <div style={{
+              width: "80px",
+              height: "80px",
+              background: "linear-gradient(135deg, #4caf50 0%, #2e7d32 100%)",
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 25px",
+              fontSize: "40px",
+              color: "white",
+              animation: "pulse 2s infinite"
+            }}>
+              ✓
+            </div>
+            
+            <h2 style={{ 
+              marginTop: 0, 
+              marginBottom: "20px", 
+              color: "#1a237e",
+              fontSize: "28px",
+              fontWeight: "800"
+            }}>
+              Assessment Complete! 🎉
+            </h2>
+            
+            <div style={{ 
+              margin: "25px 0", 
+              padding: "25px", 
+              background: "linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)", 
+              borderRadius: "15px",
+              border: "3px solid #4caf50"
+            }}>
+              <div style={{ 
+                display: "flex", 
+                justifyContent: "space-between", 
+                marginBottom: "15px",
+                fontSize: "16px",
+                fontWeight: "600"
+              }}>
+                <span>Questions Answered:</span>
+                <span style={{ color: "#2e7d32" }}>
+                  {totalAnswered}/{questions.length}
+                </span>
+              </div>
+              
+              <div style={{ 
+                display: "flex", 
+                justifyContent: "space-between", 
+                marginBottom: "15px",
+                fontSize: "16px",
+                fontWeight: "600"
+              }}>
+                <span>Completion Rate:</span>
+                <span style={{ color: "#2196f3" }}>
+                  {Math.round((totalAnswered / questions.length) * 100)}%
+                </span>
+              </div>
+              
+              <div style={{ 
+                height: "12px", 
+                background: "#e0e0e0", 
+                borderRadius: "6px", 
+                margin: "20px 0",
+                overflow: "hidden"
+              }}>
+                <div style={{ 
+                  height: "100%", 
+                  width: `${(totalAnswered / questions.length) * 100}%`, 
+                  background: "linear-gradient(90deg, #4caf50 0%, #81c784 100%)", 
+                  borderRadius: "6px"
+                }} />
+              </div>
+            </div>
+
+            <p style={{ 
+              fontSize: "16px", 
+              lineHeight: "1.6", 
+              color: "#555",
+              marginBottom: "30px"
+            }}>
+              Your responses have been saved successfully. 
+              You will be redirected to login in <span style={{ fontWeight: "700", color: "#1a237e" }} id="countdown">5</span> seconds.
+            </p>
+
+            <button
+              onClick={async () => {
+                // Sign out immediately
+                await supabase.auth.signOut();
+                router.push("/login");
+              }}
+              style={{
+                padding: "15px 40px",
+                background: "linear-gradient(135deg, #2196f3 0%, #0d47a1 100%)",
+                color: "white",
+                border: "none",
+                borderRadius: "12px",
+                cursor: "pointer",
+                fontSize: "16px",
+                fontWeight: "700",
+                boxShadow: "0 4px 20px rgba(33, 150, 243, 0.4)",
+                transition: "all 0.2s"
+              }}
+              onMouseOver={(e) => e.target.style.transform = "scale(1.05)"}
+              onMouseOut={(e) => e.target.style.transform = "scale(1)"}
+            >
+              Logout Now
+            </button>
+          </div>
+          <style jsx>{`
+            @keyframes pulse {
+              0% { transform: scale(1); }
+              50% { transform: scale(1.1); }
+              100% { transform: scale(1); }
+            }
+          `}</style>
         </div>
       )}
 
