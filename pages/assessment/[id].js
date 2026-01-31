@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
 import AppLayout from "../../components/AppLayout";
 import QuestionCard from "../../components/QuestionCard";
@@ -6,7 +6,7 @@ import QuestionNav from "../../components/QuestionNav";
 import Timer from "../../components/Timer";
 import { supabase } from "../../supabase/client";
 
-// EvalEx Assessment Configuration
+// Assessment Configuration
 const SECTION_CONFIG = {
   'Cognitive Abilities': { 
     color: '#1565c0', 
@@ -76,16 +76,9 @@ async function loadUserResponses(userId) {
       .eq("assessment_id", '11111111-1111-1111-1111-111111111111')
       .eq("user_id", userId);
 
-    if (error) {
-      console.warn("No previous responses found");
-      return {};
-    }
-
+    if (error) return {};
     const responses = {};
-    data.forEach(r => {
-      responses[r.question_id] = r.answer_id;
-    });
-    
+    data.forEach(r => responses[r.question_id] = r.answer_id);
     return responses;
   } catch (error) {
     console.error("Error loading responses:", error);
@@ -96,6 +89,7 @@ async function loadUserResponses(userId) {
 export default function AssessmentPage() {
   const router = useRouter();
   const assessmentId = '11111111-1111-1111-1111-111111111111';
+  const questionCardRef = useRef(null);
 
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
@@ -107,7 +101,13 @@ export default function AssessmentPage() {
   const [isSessionReady, setIsSessionReady] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [questionCount, setQuestionCount] = useState(0);
+
+  // Use local images from public/images
+  const backgrounds = [
+    "/images/assessment-bg-1.jpg",
+    "/images/assessment-bg-2.jpg",
+    "/images/assessment-bg-3.jpg",
+  ];
 
   // Initialize session
   useEffect(() => {
@@ -138,7 +138,6 @@ export default function AssessmentPage() {
 
     const fetchAssessmentData = async () => {
       try {
-        // Fetch all questions with answers
         const { data: questionsData, error: questionsError } = await supabase
           .from("questions")
           .select(`
@@ -157,40 +156,36 @@ export default function AssessmentPage() {
 
         if (questionsError) throw new Error(`Failed to load questions: ${questionsError.message}`);
 
-        setQuestionCount(questionsData?.length || 0);
-
         if (!questionsData || questionsData.length === 0) {
-          throw new Error("No questions found in the database.");
+          throw new Error("No questions found. Please contact administrator.");
         }
 
-        // Load user's previous responses
         const savedAnswers = await loadUserResponses(session.user.id);
 
-        // Process and shuffle questions within sections
+        // Process questions
         const questionsBySection = {};
         questionsData.forEach(q => {
           if (!questionsBySection[q.section]) {
             questionsBySection[q.section] = [];
           }
           
-          // Shuffle answers for each question
-          const shuffledAnswers = [...q.answers]
-            .map(a => ({ ...a, id: parseInt(a.id) }))
-            .sort(() => Math.random() - 0.5);
+          const processedAnswers = q.answers.map(a => ({
+            ...a,
+            id: parseInt(a.id)
+          }));
           
           questionsBySection[q.section].push({
             ...q,
             id: parseInt(q.id),
-            options: shuffledAnswers
+            options: processedAnswers
           });
         });
 
-        // Build ordered questions array (shuffle within each section)
+        // Build ordered questions
         let orderedQuestions = [];
         SECTION_ORDER.forEach(section => {
           const sectionQuestions = questionsBySection[section] || [];
-          const shuffledQuestions = [...sectionQuestions].sort(() => Math.random() - 0.5);
-          orderedQuestions = [...orderedQuestions, ...shuffledQuestions];
+          orderedQuestions = [...orderedQuestions, ...sectionQuestions];
         });
 
         setQuestions(orderedQuestions);
@@ -208,7 +203,7 @@ export default function AssessmentPage() {
     fetchAssessmentData();
   }, [assessmentId, isSessionReady, session]);
 
-  // Timer with auto-submit
+  // Timer
   useEffect(() => {
     const timer = setInterval(() => {
       setElapsed(t => {
@@ -232,8 +227,6 @@ export default function AssessmentPage() {
       await submitAssessment();
     } catch (error) {
       console.error("Auto-submit error:", error);
-    } finally {
-      router.push("/");
     }
   };
 
@@ -316,8 +309,7 @@ export default function AssessmentPage() {
 
       if (updateError) console.error("Error updating assessment status:", updateError);
 
-      // Show success message
-      alert(`✅ Assessment Submitted Successfully!\n\n📊 Results:\n• Questions answered: ${answeredCount}/${questions.length}\n• Completion rate: ${completionRate}%\n• Time taken: ${Math.floor(elapsed / 60)}m ${elapsed % 60}s`);
+      alert(`✅ Assessment Submitted Successfully!\n\n📊 Results:\n• Questions answered: ${answeredCount}/${questions.length}\n• Completion rate: ${completionRate}%`);
       
       router.push("/results");
       
@@ -366,10 +358,10 @@ export default function AssessmentPage() {
         minHeight: "100vh"
       }}>
         <div style={{ fontSize: "24px", fontWeight: "600", marginBottom: "20px", color: "#1565c0" }}>
-          Loading EvalEx Assessment...
+          Loading Assessment...
         </div>
         <div style={{ fontSize: "16px", color: "#666", marginBottom: "30px" }}>
-          Preparing 100-question comprehensive evaluation
+          Preparing your capability assessment
         </div>
         <div style={{ width: "300px", height: "6px", backgroundColor: "#e0e0e0", borderRadius: "3px" }}>
           <div style={{ 
@@ -394,7 +386,7 @@ export default function AssessmentPage() {
     return (
       <div style={{ padding: "40px", textAlign: "center" }}>
         <h3 style={{ color: "#f44336" }}>No Questions Available</h3>
-        <p>Please run the database setup script to create assessment questions.</p>
+        <p>The assessment is not configured yet. Please contact administrator.</p>
         <button 
           onClick={() => router.push("/")}
           style={{
@@ -420,6 +412,7 @@ export default function AssessmentPage() {
   const saveState = saveStatus[currentQuestion?.id];
   const totalAnswered = Object.keys(answers).length;
   const isLastQuestion = currentIndex === questions.length - 1;
+  const backgroundImage = backgrounds[currentIndex % backgrounds.length];
 
   return (
     <>
@@ -441,33 +434,20 @@ export default function AssessmentPage() {
             background: "white",
             padding: "40px",
             borderRadius: "16px",
-            maxWidth: "600px",
+            maxWidth: "500px",
             width: "90%",
             boxShadow: "0 20px 60px rgba(0,0,0,0.4)"
           }}>
-            <h2 style={{ marginTop: 0, color: "#1565c0", fontSize: "28px" }}>
-              Complete Assessment
+            <h2 style={{ marginTop: 0, color: "#1565c0", fontSize: "24px" }}>
+              Submit Assessment?
             </h2>
             
             <div style={{ 
               margin: "25px 0", 
               padding: "20px", 
               background: "#f8f9fa", 
-              borderRadius: "10px",
-              border: "1px solid #e0e0e0"
+              borderRadius: "10px"
             }}>
-              <div style={{ 
-                display: "flex", 
-                justifyContent: "space-between", 
-                marginBottom: "15px",
-                fontSize: "16px"
-              }}>
-                <span>Total Questions:</span>
-                <span style={{ fontWeight: "700" }}>
-                  {questions.length}/100
-                </span>
-              </div>
-              
               <div style={{ 
                 display: "flex", 
                 justifyContent: "space-between", 
@@ -492,12 +472,12 @@ export default function AssessmentPage() {
                 </span>
               </div>
               
-              <div style={{ height: "12px", background: "#e0e0e0", borderRadius: "6px", margin: "20px 0" }}>
+              <div style={{ height: "10px", background: "#e0e0e0", borderRadius: "5px", margin: "20px 0" }}>
                 <div style={{ 
                   height: "100%", 
                   width: `${(totalAnswered / questions.length) * 100}%`, 
                   background: "#4caf50", 
-                  borderRadius: "6px"
+                  borderRadius: "5px"
                 }} />
               </div>
             </div>
@@ -509,22 +489,22 @@ export default function AssessmentPage() {
             }}>
               {questions.length - totalAnswered > 0 
                 ? `You have ${questions.length - totalAnswered} unanswered questions. Are you ready to submit?`
-                : "All questions have been answered. Ready to submit your assessment?"}
+                : "All questions have been answered. Ready to submit?"}
             </p>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "20px" }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "15px" }}>
               <button
                 onClick={() => setShowSubmitModal(false)}
                 disabled={isSubmitting}
                 style={{
-                  padding: "12px 24px",
+                  padding: "10px 20px",
                   background: "#f5f5f5",
                   color: "#333",
                   border: "none",
-                  borderRadius: "8px",
+                  borderRadius: "6px",
                   cursor: "pointer",
                   fontWeight: "600",
-                  fontSize: "15px"
+                  fontSize: "14px"
                 }}
               >
                 Continue
@@ -533,14 +513,14 @@ export default function AssessmentPage() {
                 onClick={submitAssessment}
                 disabled={isSubmitting}
                 style={{
-                  padding: "12px 30px",
+                  padding: "10px 25px",
                   background: isSubmitting ? "#81c784" : "#4caf50",
                   color: "white",
                   border: "none",
-                  borderRadius: "8px",
+                  borderRadius: "6px",
                   cursor: isSubmitting ? "not-allowed" : "pointer",
                   fontWeight: "700",
-                  fontSize: "16px"
+                  fontSize: "15px"
                 }}
               >
                 {isSubmitting ? "Submitting..." : "Submit Assessment"}
@@ -550,140 +530,175 @@ export default function AssessmentPage() {
         </div>
       )}
 
-      <AppLayout>
-        <div style={{ maxWidth: "1400px", margin: "auto", padding: 20 }}>
+      {/* Main Layout with custom background */}
+      <div style={{
+        minHeight: "100vh",
+        background: `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url(${backgroundImage})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundAttachment: "fixed"
+      }}>
+        <div style={{ maxWidth: "1400px", margin: "auto", padding: "20px" }}>
           
           {/* Header */}
           <div style={{
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            marginBottom: 25,
-            padding: "20px 25px",
-            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+            marginBottom: "20px",
+            padding: "20px",
+            background: "rgba(255, 255, 255, 0.95)",
             borderRadius: "12px",
             boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-            color: "white"
+            backdropFilter: "blur(10px)"
           }}>
             <div>
-              <h1 style={{ margin: 0, fontSize: "28px", fontWeight: "700" }}>EvalEx Comprehensive Assessment</h1>
-              <div style={{ margin: "8px 0 0 0", fontSize: "15px", opacity: 0.9 }}>
-                <div>{questionCount} Questions • Stratavax Evaluation System</div>
-                <div style={{ marginTop: "5px", fontSize: "13px", color: "#ffcc80" }}>
-                  {questionCount === TOTAL_QUESTIONS ? "✅ Complete 100-question assessment" : `⚠️ ${questionCount}/100 questions loaded`}
+              <h1 style={{ 
+                margin: 0, 
+                fontSize: "26px", 
+                fontWeight: "700", 
+                color: "#1565c0",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px"
+              }}>
+                <span>🏢</span>
+                Stratavax Capability Assessment
+              </h1>
+              <div style={{ margin: "8px 0 0 0", fontSize: "14px", color: "#666" }}>
+                <div>100 Questions • Comprehensive Evaluation</div>
+                <div style={{ marginTop: "5px", fontSize: "12px", color: "#666" }}>
+                  Time remaining: {hours}h {minutes}m {seconds}s
                 </div>
               </div>
             </div>
             
-            <div style={{ display: "flex", alignItems: "center", gap: "25px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
               <div style={{
-                padding: "10px 20px",
-                backgroundColor: "rgba(255,255,255,0.15)",
-                backdropFilter: "blur(10px)",
-                borderRadius: "25px",
-                fontWeight: "700",
-                fontSize: "16px",
-                border: "1px solid rgba(255,255,255,0.2)"
+                padding: "8px 16px",
+                backgroundColor: "#e3f2fd",
+                borderRadius: "20px",
+                fontWeight: "600",
+                color: "#1565c0",
+                fontSize: "14px",
+                border: "2px solid #bbdefb"
               }}>
-                ⏱️ {hours.toString().padStart(2, '0')}:{minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}
+                {totalAnswered}/{questions.length} Answered
               </div>
             </div>
           </div>
 
           {/* Main content */}
-          <div style={{ display: "flex", gap: 25 }}>
+          <div style={{ display: "flex", gap: "20px", minHeight: "calc(100vh - 180px)" }}>
             
             {/* Question panel */}
             <div style={{ 
               flex: 3, 
-              background: "white", 
-              padding: 35, 
-              borderRadius: "14px", 
-              boxShadow: "0 6px 25px rgba(0,0,0,0.12)",
+              background: "rgba(255, 255, 255, 0.95)", 
+              padding: "25px", 
+              borderRadius: "12px", 
+              boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
               display: "flex",
               flexDirection: "column",
-              minHeight: "75vh"
+              backdropFilter: "blur(10px)",
+              maxHeight: "calc(100vh - 200px)",
+              overflow: "hidden"
             }}>
               
               {/* Section header */}
               <div style={{
-                background: `linear-gradient(135deg, ${sectionConfig.color} 0%, ${sectionConfig.color}99 100%)`,
+                background: sectionConfig.color,
                 color: "white",
-                padding: "18px 25px",
-                borderRadius: "10px",
-                marginBottom: 30,
+                padding: "15px 20px",
+                borderRadius: "8px",
+                marginBottom: "20px",
                 display: "flex",
                 alignItems: "center",
-                gap: 15
+                gap: "12px"
               }}>
-                <span style={{ fontSize: 28 }}>{sectionConfig.icon}</span>
+                <span style={{ fontSize: "24px" }}>{sectionConfig.icon}</span>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: "700", fontSize: "20px" }}>{currentSection}</div>
-                  <div style={{ fontSize: "13px", opacity: 0.9, marginTop: "4px" }}>
-                    {sectionConfig.description} • Question {currentIndex + 1} of {questions.length}
+                  <div style={{ fontWeight: "700", fontSize: "18px" }}>{currentSection}</div>
+                  <div style={{ fontSize: "12px", opacity: 0.9, marginTop: "4px" }}>
+                    Question {currentIndex + 1} of {questions.length} • {sectionConfig.description}
                   </div>
                 </div>
                 
                 {/* Save status */}
                 <div style={{
-                  padding: "6px 16px",
-                  borderRadius: "20px",
+                  padding: "6px 12px",
+                  borderRadius: "15px",
                   backgroundColor: 
                     saveState === "saving" ? "#ffb74d" :
                     saveState === "saved" ? "#4caf50" :
                     saveState === "error" ? "#f44336" : "rgba(255,255,255,0.2)",
                   color: saveState ? "white" : "rgba(255,255,255,0.8)",
-                  fontSize: "14px",
-                  fontWeight: "600"
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  minWidth: "80px",
+                  textAlign: "center"
                 }}>
-                  {saveState === "saving" && "⏳ Saving..."}
+                  {saveState === "saving" && "⏳ Saving"}
                   {saveState === "saved" && "✅ Saved"}
                   {saveState === "error" && "❌ Error"}
                 </div>
               </div>
 
-              {/* Question */}
+              {/* Question - Fixed Height */}
               <div style={{
-                fontSize: "20px",
-                lineHeight: 1.7,
-                marginBottom: 35,
-                padding: 25,
+                fontSize: "18px",
+                lineHeight: 1.6,
+                marginBottom: "20px",
+                padding: "20px",
                 background: "#f8f9fa",
-                borderRadius: "10px",
-                borderLeft: `5px solid ${sectionConfig.color}`,
-                flex: 1
+                borderRadius: "8px",
+                borderLeft: `4px solid ${sectionConfig.color}`,
+                minHeight: "80px",
+                maxHeight: "120px",
+                overflowY: "auto"
               }}>
                 {currentQuestion?.question_text}
               </div>
 
-              {/* Answers */}
-              <QuestionCard
-                question={currentQuestion}
-                selected={answers[currentQuestion.id]}
-                onSelect={(answerId) => handleSelect(currentQuestion.id, answerId)}
-                disabled={saveState === "saving"}
-              />
+              {/* Answers - Fixed Height Container */}
+              <div ref={questionCardRef} style={{ 
+                flex: 1,
+                minHeight: "300px",
+                maxHeight: "400px",
+                overflow: "hidden"
+              }}>
+                {currentQuestion && (
+                  <QuestionCard
+                    question={currentQuestion}
+                    selected={answers[currentQuestion.id]}
+                    onSelect={(answerId) => handleSelect(currentQuestion.id, answerId)}
+                    disabled={saveState === "saving"}
+                    compact={true}
+                  />
+                )}
+              </div>
 
-              {/* Navigation */}
+              {/* Navigation - Fixed at bottom */}
               <div style={{ 
                 marginTop: "auto", 
                 display: "flex", 
                 justifyContent: "space-between",
-                paddingTop: 35,
-                borderTop: "2px solid #f0f0f0"
+                paddingTop: "20px",
+                borderTop: "1px solid #eee"
               }}>
                 <button 
                   onClick={handleBack} 
                   disabled={currentIndex === 0} 
                   style={{ 
-                    padding: "14px 28px", 
+                    padding: "12px 24px", 
                     background: currentIndex === 0 ? "#f5f5f5" : "#1565c0", 
                     color: currentIndex === 0 ? "#999" : "white", 
                     border: "none", 
-                    borderRadius: "10px",
+                    borderRadius: "8px",
                     cursor: currentIndex === 0 ? "not-allowed" : "pointer",
-                    fontSize: "16px",
-                    fontWeight: "600"
+                    fontSize: "15px",
+                    fontWeight: "600",
+                    transition: "all 0.2s"
                   }}
                 >
                   ← Previous
@@ -693,14 +708,16 @@ export default function AssessmentPage() {
                   <button 
                     onClick={handleFinish}
                     style={{ 
-                      padding: "14px 35px", 
-                      background: "linear-gradient(135deg, #4caf50 0%, #2e7d32 100%)", 
+                      padding: "12px 30px", 
+                      background: "#4caf50", 
                       color: "white", 
                       border: "none", 
-                      borderRadius: "10px",
+                      borderRadius: "8px",
                       cursor: "pointer",
-                      fontSize: "17px",
-                      fontWeight: "700"
+                      fontSize: "15px",
+                      fontWeight: "700",
+                      transition: "all 0.2s",
+                      boxShadow: "0 2px 8px rgba(76,175,80,0.3)"
                     }}
                   >
                     🏁 Finish Assessment
@@ -709,14 +726,15 @@ export default function AssessmentPage() {
                   <button 
                     onClick={handleNext} 
                     style={{ 
-                      padding: "14px 28px", 
-                      background: "linear-gradient(135deg, #1565c0 0%, #0d47a1 100%)", 
+                      padding: "12px 24px", 
+                      background: "#1565c0", 
                       color: "white", 
                       border: "none", 
-                      borderRadius: "10px",
+                      borderRadius: "8px",
                       cursor: "pointer",
-                      fontSize: "16px",
-                      fontWeight: "600"
+                      fontSize: "15px",
+                      fontWeight: "600",
+                      transition: "all 0.2s"
                     }}
                   >
                     Next →
@@ -726,113 +744,143 @@ export default function AssessmentPage() {
             </div>
 
             {/* Sidebar */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 25 }}>
+            <div style={{ 
+              flex: 1, 
+              display: "flex", 
+              flexDirection: "column", 
+              gap: "20px",
+              maxHeight: "calc(100vh - 200px)",
+              overflow: "hidden"
+            }}>
               
               {/* Question navigation */}
-              <QuestionNav
-                questions={questions}
-                answers={answers}
-                current={currentIndex}
-                onJump={handleJump}
-              />
+              <div style={{ 
+                background: "rgba(255, 255, 255, 0.95)", 
+                padding: "20px", 
+                borderRadius: "12px",
+                boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+                backdropFilter: "blur(10px)",
+                flex: 1,
+                overflow: "hidden"
+              }}>
+                <QuestionNav
+                  questions={questions}
+                  answers={answers}
+                  current={currentIndex}
+                  onJump={handleJump}
+                  compact={true}
+                />
+              </div>
 
               {/* Progress summary */}
               <div style={{ 
-                background: "white", 
-                padding: 30, 
-                borderRadius: "14px", 
-                boxShadow: "0 6px 25px rgba(0,0,0,0.12)"
+                background: "rgba(255, 255, 255, 0.95)", 
+                padding: "20px", 
+                borderRadius: "12px",
+                boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+                backdropFilter: "blur(10px)",
+                overflow: "auto"
               }}>
                 <h3 style={{ 
                   marginTop: 0, 
-                  marginBottom: 25, 
+                  marginBottom: "20px", 
                   color: "#333",
-                  fontSize: "20px",
+                  fontSize: "18px",
                   fontWeight: "700"
                 }}>
-                  Assessment Progress
+                  Progress Overview
                 </h3>
                 
                 {/* Overall progress */}
-                <div style={{ marginBottom: 30 }}>
+                <div style={{ marginBottom: "20px" }}>
                   <div style={{ 
                     display: "flex", 
                     justifyContent: "space-between", 
-                    marginBottom: 12, 
-                    fontSize: "15px",
-                    fontWeight: "600"
+                    marginBottom: "10px", 
+                    fontSize: "14px"
                   }}>
                     <span>Overall Completion</span>
-                    <span style={{ color: "#4caf50" }}>
+                    <span style={{ fontWeight: "600", color: "#4caf50" }}>
                       {Math.round((totalAnswered / questions.length) * 100)}%
                     </span>
                   </div>
-                  <div style={{ height: 12, background: "#e8e8e8", borderRadius: 6 }}>
+                  <div style={{ height: "10px", background: "#e8e8e8", borderRadius: "5px" }}>
                     <div style={{ 
                       height: "100%", 
                       width: `${(totalAnswered / questions.length) * 100}%`, 
-                      background: "linear-gradient(90deg, #4caf50 0%, #81c784 100%)", 
-                      borderRadius: 6
+                      background: "#4caf50", 
+                      borderRadius: "5px"
                     }} />
-                  </div>
-                  <div style={{ 
-                    fontSize: "14px", 
-                    color: "#666", 
-                    marginTop: "10px",
-                    display: "flex",
-                    justifyContent: "space-between"
-                  }}>
-                    <span>{totalAnswered} answered</span>
-                    <span>{questions.length - totalAnswered} remaining</span>
                   </div>
                 </div>
 
                 {/* Section progress */}
-                <div style={{ marginTop: "25px" }}>
+                <div>
                   <h4 style={{ 
-                    marginBottom: 20, 
-                    fontSize: "18px", 
+                    marginBottom: "15px", 
+                    fontSize: "16px", 
                     color: "#555",
                     fontWeight: "600"
                   }}>
-                    Section Breakdown
+                    By Section
                   </h4>
                   {SECTION_ORDER.map(section => {
                     const progress = getSectionProgress(section);
                     const config = SECTION_CONFIG[section];
                     return (
-                      <div key={section} style={{ marginBottom: 16 }}>
+                      <div key={section} style={{ marginBottom: "12px" }}>
                         <div style={{ 
                           display: "flex", 
                           justifyContent: "space-between", 
-                          fontSize: "14px", 
-                          marginBottom: 8
+                          fontSize: "13px", 
+                          marginBottom: "6px"
                         }}>
                           <span>
-                            <span style={{ marginRight: "8px" }}>{config.icon}</span>
-                            {section}
+                            <span style={{ marginRight: "6px" }}>{config.icon}</span>
+                            {section.split(' ')[0]}
                           </span>
                           <span style={{ fontWeight: "600" }}>
-                            {progress.answered}/{progress.total} ({progress.percentage}%)
+                            {progress.answered}/{progress.total}
                           </span>
                         </div>
-                        <div style={{ height: 8, background: "#e8e8e8", borderRadius: 4 }}>
+                        <div style={{ height: "6px", background: "#e8e8e8", borderRadius: "3px" }}>
                           <div style={{ 
                             height: "100%", 
                             width: `${progress.percentage}%`, 
                             background: config.color, 
-                            borderRadius: 4 
+                            borderRadius: "3px" 
                           }} />
                         </div>
                       </div>
                     );
                   })}
                 </div>
+
+                {/* Time warning */}
+                <div style={{
+                  marginTop: "20px",
+                  padding: "12px",
+                  backgroundColor: timeRemaining < 1800 ? "#ffebee" : "#e8f5e9",
+                  borderRadius: "8px",
+                  border: `1px solid ${timeRemaining < 1800 ? "#ffcdd2" : "#c8e6c9"}`
+                }}>
+                  <div style={{ 
+                    fontSize: "13px", 
+                    fontWeight: "600", 
+                    color: timeRemaining < 1800 ? "#c62828" : "#2e7d32",
+                    marginBottom: "4px"
+                  }}>
+                    {timeRemaining < 1800 ? "⏰ Time Running Out!" : "⏱️ Time Remaining"}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#666" }}>
+                    {hours}h {minutes}m {seconds}s
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </AppLayout>
+      </div>
     </>
   );
 }
