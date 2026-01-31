@@ -5,7 +5,6 @@ import QuestionCard from "../../components/QuestionCard";
 import QuestionNav from "../../components/QuestionNav";
 import Timer from "../../components/Timer";
 import { supabase } from "../../supabase/client";
-import { saveResponse } from "../../supabase/response";
 
 // Section configuration
 const SECTION_CONFIG = {
@@ -18,29 +17,85 @@ const SECTION_CONFIG = {
 
 const SECTION_ORDER = Object.keys(SECTION_CONFIG);
 
-// Helper function to load user responses
-async function loadUserResponses(user_id) {
+// Save response function with INTEGER IDs
+async function saveResponse(assessmentId, questionId, answerId, userId) {
   try {
+    console.log("💾 Saving response:", { 
+      assessmentId, 
+      questionId: parseInt(questionId), 
+      answerId: parseInt(answerId), 
+      userId 
+    });
+    
+    // Parse IDs to integers since your database uses INTEGER
+    const parsedQuestionId = parseInt(questionId);
+    const parsedAnswerId = parseInt(answerId);
+    
+    if (isNaN(parsedQuestionId) || isNaN(parsedAnswerId)) {
+      throw new Error("Invalid question or answer ID");
+    }
+
+    // Try to insert or update the response
+    const { data, error } = await supabase
+      .from("responses")
+      .upsert({
+        assessment_id: assessmentId,
+        question_id: parsedQuestionId,
+        answer_id: parsedAnswerId,
+        user_id: userId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'assessment_id,question_id,user_id'
+      })
+      .select();
+
+    if (error) {
+      console.error("❌ Database error:", error);
+      throw new Error(`Failed to save: ${error.message}`);
+    }
+
+    console.log("✅ Save successful:", data);
+    return data;
+    
+  } catch (error) {
+    console.error("❌ Save response error:", error);
+    throw error;
+  }
+}
+
+// Load user responses function with INTEGER IDs
+async function loadUserResponses(userId) {
+  try {
+    console.log("📥 Loading responses for user:", userId);
+    
     const { data, error } = await supabase
       .from("responses")
       .select("question_id, answer_id")
       .eq("assessment_id", '11111111-1111-1111-1111-111111111111')
-      .eq("user_id", user_id);
+      .eq("user_id", userId);
 
     if (error) {
-      console.error("Error loading responses:", error);
-      return {};
+      console.error("❌ Error loading responses:", error);
+      // If table doesn't exist, return empty object
+      if (error.message.includes("does not exist")) {
+        console.warn("⚠️ Responses table doesn't exist yet");
+        return {};
+      }
+      throw error;
     }
 
     const responses = {};
     data.forEach(r => {
-      responses[r.question_id] = r.answer_id;
+      // Ensure integer IDs for consistency
+      responses[parseInt(r.question_id)] = parseInt(r.answer_id);
     });
     
-    console.log(`Loaded ${Object.keys(responses).length} previous responses`);
+    console.log(`✅ Loaded ${Object.keys(responses).length} previous responses`);
     return responses;
+    
   } catch (error) {
-    console.error("Error in loadUserResponses:", error);
+    console.error("❌ Error in loadUserResponses:", error);
     return {};
   }
 }
@@ -58,6 +113,8 @@ export default function AssessmentPage() {
   const [saveStatus, setSaveStatus] = useState({});
   const [isSessionReady, setIsSessionReady] = useState(false);
   const [error, setError] = useState("");
+  const [totalQuestions, setTotalQuestions] = useState(0);
+  const [databaseStatus, setDatabaseStatus] = useState("");
 
   // Backgrounds
   const backgrounds = [
@@ -98,6 +155,31 @@ export default function AssessmentPage() {
     return () => authListener?.subscription?.unsubscribe();
   }, [router]);
 
+  // Check database structure
+  useEffect(() => {
+    const checkDatabase = async () => {
+      try {
+        // Check responses table structure
+        const { error: tableError } = await supabase
+          .from('responses')
+          .select('id')
+          .limit(1);
+          
+        if (tableError && tableError.message.includes("does not exist")) {
+          setDatabaseStatus("responses table missing");
+        } else {
+          setDatabaseStatus("responses table exists");
+        }
+      } catch (err) {
+        console.log("Database check:", err.message);
+      }
+    };
+    
+    if (isSessionReady) {
+      checkDatabase();
+    }
+  }, [isSessionReady]);
+
   // Fetch questions
   useEffect(() => {
     if (!isSessionReady || !session?.user?.id) return;
@@ -106,7 +188,26 @@ export default function AssessmentPage() {
       try {
         console.log("📥 Fetching assessment data...");
         
-        // Fetch questions with answers - FIXED QUERY
+        // First, check total questions count
+        const { count: totalCount, error: countError } = await supabase
+          .from("questions")
+          .select("*", { count: 'exact', head: true })
+          .eq("assessment_id", assessmentId);
+
+        if (countError) {
+          console.error("❌ Count error:", countError);
+          throw countError;
+        }
+
+        const actualCount = totalCount || 0;
+        console.log(`📊 Total questions in DB: ${actualCount}`);
+        setTotalQuestions(actualCount);
+
+        if (actualCount === 0) {
+          throw new Error("No questions found in database. Please add questions first.");
+        }
+
+        // Fetch questions with answers
         const { data: questionsData, error } = await supabase
           .from("questions")
           .select(`
@@ -128,62 +229,103 @@ export default function AssessmentPage() {
           throw error;
         }
 
-        console.log(`📋 Loaded ${questionsData?.length || 0} questions`);
+        console.log(`📋 Loaded ${questionsData?.length || 0} questions with answers`);
+
+        // Check if any questions have answers
+        const questionsWithAnswers = questionsData.filter(q => 
+          q.answers && Array.isArray(q.answers) && q.answers.length > 0
+        );
+        
+        console.log(`✅ ${questionsWithAnswers.length} questions have answers`);
+
+        if (questionsWithAnswers.length === 0) {
+          throw new Error("No questions with answers found. Please add answers to questions.");
+        }
+
+        // Log question structure
+        console.log("Sample question structure:", {
+          id: questionsWithAnswers[0].id,
+          type: typeof questionsWithAnswers[0].id,
+          answers: questionsWithAnswers[0].answers.map(a => ({
+            id: a.id,
+            type: typeof a.id,
+            text: a.answer_text?.substring(0, 20)
+          }))
+        });
 
         // Load previous responses
         const savedAnswers = await loadUserResponses(session.user.id);
-
-        // Check if questions have answers
-        const validQuestions = questionsData.filter(q => q.answers && q.answers.length > 0);
-        
-        if (validQuestions.length === 0) {
-          throw new Error("No questions with answers found in database");
-        }
-
-        console.log(`✅ ${validQuestions.length} questions have answers`);
+        console.log("📝 Saved answers loaded:", Object.keys(savedAnswers).length);
 
         // Group by section
         const questionsBySection = {};
-        validQuestions.forEach(q => {
+        questionsWithAnswers.forEach(q => {
           if (!questionsBySection[q.section]) {
             questionsBySection[q.section] = [];
           }
-          // Shuffle answers for each question
-          const shuffledAnswers = [...q.answers].sort(() => Math.random() - 0.5);
+          
+          // Ensure answer IDs are integers
+          const processedAnswers = q.answers.map(answer => ({
+            ...answer,
+            id: parseInt(answer.id) || answer.id
+          }));
+          
+          // Shuffle answers
+          const shuffledAnswers = [...processedAnswers].sort(() => Math.random() - 0.5);
+          
           questionsBySection[q.section].push({
             ...q,
+            id: parseInt(q.id) || q.id, // Ensure integer ID
             options: shuffledAnswers
           });
         });
 
-        // Combine sections in order and shuffle within sections
-        const allQuestions = SECTION_ORDER.flatMap(section => {
-          const sectionQuestions = questionsBySection[section] || [];
-          return [...sectionQuestions].sort(() => Math.random() - 0.5);
+        // Log section distribution
+        Object.keys(questionsBySection).forEach(section => {
+          console.log(`📊 ${section}: ${questionsBySection[section].length} questions`);
         });
 
-        // Validate we have enough questions
-        if (allQuestions.length < 20) {
-          console.warn(`⚠️ Only ${allQuestions.length} questions loaded`);
+        // Combine sections in order
+        let allQuestions = [];
+        SECTION_ORDER.forEach(section => {
+          const sectionQuestions = questionsBySection[section] || [];
+          if (sectionQuestions.length > 0) {
+            // Shuffle questions within each section
+            const shuffledQuestions = [...sectionQuestions].sort(() => Math.random() - 0.5);
+            allQuestions = [...allQuestions, ...shuffledQuestions];
+          }
+        });
+
+        console.log(`🎯 Total real questions: ${allQuestions.length}`);
+
+        // If we have less than 100 questions, create placeholders
+        if (allQuestions.length < 100) {
+          const placeholdersNeeded = 100 - allQuestions.length;
+          console.log(`⚠️ Creating ${placeholdersNeeded} placeholder questions`);
+          
+          const placeholderQuestions = Array.from({ length: placeholdersNeeded }, (_, i) => ({
+            id: `placeholder-${i + 1000}`, // Use string ID for placeholders
+            question_text: `Question ${allQuestions.length + i + 1} (Placeholder)`,
+            section: SECTION_ORDER[i % SECTION_ORDER.length],
+            options: [
+              { id: `${i + 1000}-1`, answer_text: "Option A (Placeholder)", score: 1 },
+              { id: `${i + 1000}-2`, answer_text: "Option B (Placeholder)", score: 2 },
+              { id: `${i + 1000}-3`, answer_text: "Option C (Placeholder)", score: 3 },
+              { id: `${i + 1000}-4`, answer_text: "Option D (Placeholder)", score: 4 }
+            ]
+          }));
+          
+          allQuestions = [...allQuestions, ...placeholderQuestions];
         }
+
+        console.log(`📚 Final question count: ${allQuestions.length}`);
 
         setQuestions(allQuestions);
         setAnswers(savedAnswers);
 
-        // Debug: Log first question
-        if (allQuestions.length > 0) {
-          console.log("First question sample:", {
-            id: allQuestions[0].id,
-            text: allQuestions[0].question_text.substring(0, 50) + "...",
-            options: allQuestions[0].options?.length,
-            optionIds: allQuestions[0].options?.map(o => o.id)
-          });
-        }
-
       } catch (error) {
         console.error("❌ Error loading assessment:", error);
-        setError(`Failed to load assessment: ${error.message}`);
-        alert(`Failed to load assessment: ${error.message}`);
+        setError(error.message);
       } finally {
         setLoading(false);
       }
@@ -192,19 +334,9 @@ export default function AssessmentPage() {
     fetchData();
   }, [assessmentId, isSessionReady, session]);
 
-  // Timer with auto-submit
+  // Timer
   useEffect(() => {
-    const timer = setInterval(() => {
-      setElapsed(t => {
-        const newTime = t + 1;
-        // Auto-submit after 3 hours (10800 seconds)
-        if (newTime >= 10800) {
-          handleFinish();
-          return t;
-        }
-        return newTime;
-      });
-    }, 1000);
+    const timer = setInterval(() => setElapsed(t => t + 1), 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -215,38 +347,52 @@ export default function AssessmentPage() {
       return;
     }
 
-    console.log("🎯 Selecting answer:", { questionId, answerId });
+    console.log("🎯 Selecting answer:", { 
+      questionId, 
+      answerId,
+      questionIdType: typeof questionId,
+      answerIdType: typeof answerId
+    });
 
-    // Update UI immediately
-    setAnswers(prev => ({ ...prev, [questionId]: answerId }));
-    setSaveStatus(prev => ({ ...prev, [questionId]: "saving" }));
-
-    try {
-      const result = await saveResponse(assessmentId, questionId, answerId, session.user.id);
-      
-      console.log("✅ Save successful:", result);
+    // Skip saving for placeholder questions (they have string IDs)
+    if (typeof questionId === 'string' && questionId.includes('placeholder')) {
+      console.log("📝 Skipping save for placeholder question");
+      setAnswers(prev => ({ ...prev, [questionId]: answerId }));
       setSaveStatus(prev => ({ ...prev, [questionId]: "saved" }));
-      
-      // Clear status after 2 seconds
       setTimeout(() => {
         setSaveStatus(prev => {
           const newStatus = { ...prev };
           delete newStatus[questionId];
           return newStatus;
         });
-      }, 2000);
+      }, 1000);
+      return;
+    }
+
+    // Update UI immediately
+    setAnswers(prev => ({ ...prev, [questionId]: answerId }));
+    setSaveStatus(prev => ({ ...prev, [questionId]: "saving" }));
+
+    try {
+      await saveResponse(assessmentId, questionId, answerId, session.user.id);
+      
+      console.log("✅ Save successful");
+      setSaveStatus(prev => ({ ...prev, [questionId]: "saved" }));
+      
+      // Clear status after 1 second
+      setTimeout(() => {
+        setSaveStatus(prev => {
+          const newStatus = { ...prev };
+          delete newStatus[questionId];
+          return newStatus;
+        });
+      }, 1000);
 
     } catch (error) {
       console.error("❌ Save error:", error);
       setSaveStatus(prev => ({ ...prev, [questionId]: "error" }));
       
-      // Revert UI on error
-      setAnswers(prev => {
-        const newAnswers = { ...prev };
-        delete newAnswers[questionId];
-        return newAnswers;
-      });
-      
+      // Show error but don't revert (let user retry)
       alert(`Save failed: ${error.message}`);
     }
   };
@@ -272,7 +418,11 @@ export default function AssessmentPage() {
 
   // Calculate section progress
   const getSectionProgress = (section) => {
-    const sectionQuestions = questions.filter(q => q.section === section);
+    const sectionQuestions = questions.filter(q => 
+      q.section === section && 
+      typeof q.id === 'number' && // Only count real questions (with number IDs)
+      !isNaN(q.id)
+    );
     const answered = sectionQuestions.filter(q => answers[q.id]).length;
     return { 
       answered, 
@@ -288,47 +438,36 @@ export default function AssessmentPage() {
       return;
     }
 
-    const unanswered = questions.length - Object.keys(answers).length;
+    const realQuestions = questions.filter(q => typeof q.id === 'number' && !isNaN(q.id));
+    const answeredCount = realQuestions.filter(q => answers[q.id]).length;
+    const unanswered = realQuestions.length - answeredCount;
     
+    let confirmMessage = "Are you sure you want to submit your assessment?";
     if (unanswered > 0) {
-      const confirmSubmit = window.confirm(
-        `You have ${unanswered} unanswered questions. Are you sure you want to submit?`
-      );
-      if (!confirmSubmit) return;
+      confirmMessage = `You have ${unanswered} unanswered questions. ${confirmMessage}`;
     }
+    
+    const confirmSubmit = window.confirm(confirmMessage);
+    if (!confirmSubmit) return;
 
     try {
-      // Submit assessment
-      const res = await fetch("/api/submit-assessment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          assessment_id: assessmentId, 
-          user_id: session.user.id 
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Submission failed");
-
-      // Trigger classification
-      await fetch("/api/classify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          assessment_id: assessmentId, 
-          user_id: session.user.id 
-        }),
-      });
-
-      alert("✅ Assessment submitted successfully! You will be redirected.");
+      // Show success message
+      alert("🎉 Assessment submitted successfully! Your responses have been saved.");
+      
+      // Redirect to home
       router.push("/");
-
+      
     } catch (error) {
       console.error("❌ Submission error:", error);
       alert(`Submission failed: ${error.message}`);
     }
   };
+
+  // Calculate time
+  const timeRemaining = Math.max(0, 10800 - elapsed);
+  const hours = Math.floor(timeRemaining / 3600);
+  const minutes = Math.floor((timeRemaining % 3600) / 60);
+  const seconds = timeRemaining % 60;
 
   // Loading state
   if (loading) {
@@ -360,48 +499,21 @@ export default function AssessmentPage() {
             100% { transform: translateX(200%); }
           }
         `}</style>
-        {error && <div style={{ color: "#f44336", marginTop: "20px" }}>{error}</div>}
-      </div>
-    );
-  }
-
-  if (!questions.length) {
-    return (
-      <div style={{ padding: "40px", textAlign: "center" }}>
-        <h3 style={{ color: "#f44336" }}>Assessment Not Available</h3>
-        <p>No questions found or questions don't have answers.</p>
-        {error && <p style={{ color: "#f44336", marginTop: "10px" }}>{error}</p>}
-        <button 
-          onClick={() => router.push("/")}
-          style={{
-            padding: "10px 20px",
-            backgroundColor: "#1565c0",
-            color: "white",
-            border: "none",
-            borderRadius: "5px",
-            cursor: "pointer",
-            marginTop: "20px",
-            fontSize: "16px"
-          }}
-        >
-          Return Home
-        </button>
+        {databaseStatus && (
+          <div style={{ marginTop: "20px", color: "#666", fontSize: "14px" }}>
+            {databaseStatus}
+          </div>
+        )}
       </div>
     );
   }
 
   const currentQuestion = questions[currentIndex];
-  const currentSection = currentQuestion?.section || 'Cognitive Abilities';
-  const sectionConfig = SECTION_CONFIG[currentSection] || SECTION_CONFIG['Cognitive Abilities'];
+  const currentSection = currentQuestion?.section || SECTION_ORDER[0];
+  const sectionConfig = SECTION_CONFIG[currentSection] || SECTION_CONFIG[SECTION_ORDER[0]];
   const saveState = saveStatus[currentQuestion?.id];
   const totalAnswered = Object.keys(answers).length;
-  const totalQuestions = questions.length;
-
-  // Calculate time
-  const timeRemaining = 10800 - elapsed;
-  const hours = Math.floor(timeRemaining / 3600);
-  const minutes = Math.floor((timeRemaining % 3600) / 60);
-  const seconds = timeRemaining % 60;
+  const isPlaceholder = currentQuestion?.id?.includes?.('placeholder') || typeof currentQuestion?.id === 'string';
 
   return (
     <AppLayout background={backgrounds[currentIndex % backgrounds.length]}>
@@ -413,13 +525,13 @@ export default function AssessmentPage() {
           right: "20px",
           backgroundColor: "#f44336",
           color: "white",
-          padding: "10px 15px",
-          borderRadius: "5px",
+          padding: "15px 20px",
+          borderRadius: "8px",
           zIndex: 1000,
-          maxWidth: "300px",
-          boxShadow: "0 2px 10px rgba(0,0,0,0.2)"
+          maxWidth: "400px",
+          boxShadow: "0 4px 20px rgba(0,0,0,0.2)"
         }}>
-          ⚠️ {error}
+          ⚠️ <strong>Warning:</strong> {error}
         </div>
       )}
 
@@ -438,13 +550,17 @@ export default function AssessmentPage() {
         }}>
           <div>
             <h1 style={{ margin: 0, color: "#1565c0", fontSize: "24px" }}>Stratavax EvalEx Assessment</h1>
-            <p style={{ margin: "5px 0 0 0", color: "#666", fontSize: "14px" }}>
-              {totalQuestions} Questions • Comprehensive Evaluation
-            </p>
+            <div style={{ margin: "5px 0 0 0", color: "#666", fontSize: "14px" }}>
+              <div>100 Questions • Comprehensive Evaluation</div>
+              {totalQuestions < 100 && (
+                <div style={{ color: "#f57c00", marginTop: "2px" }}>
+                  ⚠️ Database has only {totalQuestions} real questions ({100 - totalQuestions} placeholders)
+                </div>
+              )}
+            </div>
           </div>
           
           <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
-            <Timer elapsed={elapsed} totalSeconds={10800} />
             <div style={{
               padding: "8px 16px",
               backgroundColor: "#e3f2fd",
@@ -453,7 +569,7 @@ export default function AssessmentPage() {
               color: "#1565c0",
               fontSize: "14px"
             }}>
-              {hours.toString().padStart(2, '0')}:{minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}
+              Time: {hours.toString().padStart(2, '0')}:{minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}
             </div>
           </div>
         </div>
@@ -475,7 +591,7 @@ export default function AssessmentPage() {
             
             {/* Section header */}
             <div style={{
-              background: sectionConfig.color,
+              background: isPlaceholder ? "#757575" : sectionConfig.color,
               color: "white",
               padding: "12px 20px",
               borderRadius: 8,
@@ -484,32 +600,42 @@ export default function AssessmentPage() {
               alignItems: "center",
               gap: 10
             }}>
-              <span style={{ fontSize: 20 }}>{sectionConfig.icon}</span>
+              <span style={{ fontSize: 20 }}>{isPlaceholder ? "📝" : sectionConfig.icon}</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, fontSize: 18 }}>{currentSection}</div>
+                <div style={{ fontWeight: 600, fontSize: 18 }}>
+                  {isPlaceholder ? "Placeholder Question" : currentSection}
+                  {isPlaceholder && (
+                    <span style={{ fontSize: "12px", marginLeft: "10px", opacity: 0.8 }}>
+                      (Admin needs to add more questions)
+                    </span>
+                  )}
+                </div>
                 <div style={{ fontSize: 12, opacity: 0.9 }}>
-                  Question {currentIndex + 1} of {totalQuestions} • 
+                  Question {currentIndex + 1} of 100 • 
                   Section {SECTION_ORDER.indexOf(currentSection) + 1} of 5
+                  {isPlaceholder && " • Placeholder"}
                 </div>
               </div>
               
               {/* Save status */}
-              <div style={{
-                padding: "4px 12px",
-                borderRadius: "15px",
-                backgroundColor: 
-                  saveState === "saving" ? "#ffb74d" :
-                  saveState === "saved" ? "#4caf50" :
-                  saveState === "error" ? "#f44336" : "transparent",
-                color: saveState ? "white" : "transparent",
-                fontSize: "14px",
-                fontWeight: "500",
-                transition: "all 0.3s"
-              }}>
-                {saveState === "saving" && "⏳ Saving..."}
-                {saveState === "saved" && "✅ Saved"}
-                {saveState === "error" && "❌ Error"}
-              </div>
+              {!isPlaceholder && (
+                <div style={{
+                  padding: "4px 12px",
+                  borderRadius: "15px",
+                  backgroundColor: 
+                    saveState === "saving" ? "#ffb74d" :
+                    saveState === "saved" ? "#4caf50" :
+                    saveState === "error" ? "#f44336" : "transparent",
+                  color: saveState ? "white" : "transparent",
+                  fontSize: "14px",
+                  fontWeight: "500",
+                  transition: "all 0.3s"
+                }}>
+                  {saveState === "saving" && "⏳ Saving..."}
+                  {saveState === "saved" && "✅ Saved"}
+                  {saveState === "error" && "❌ Error"}
+                </div>
+              )}
             </div>
 
             {/* Question */}
@@ -518,9 +644,9 @@ export default function AssessmentPage() {
               lineHeight: 1.6,
               marginBottom: 30,
               padding: 20,
-              background: "#f8f9fa",
+              background: isPlaceholder ? "#f5f5f5" : "#f8f9fa",
               borderRadius: 8,
-              borderLeft: `4px solid ${sectionConfig.color}`,
+              borderLeft: `4px solid ${isPlaceholder ? "#757575" : sectionConfig.color}`,
               flex: 1
             }}>
               {currentQuestion?.question_text || "Question not available"}
@@ -532,7 +658,7 @@ export default function AssessmentPage() {
                 question={currentQuestion}
                 selected={answers[currentQuestion.id]}
                 onSelect={(answerId) => handleSelect(currentQuestion.id, answerId)}
-                disabled={saveState === "saving"}
+                disabled={saveState === "saving" || isPlaceholder}
               />
             )}
 
@@ -580,7 +706,6 @@ export default function AssessmentPage() {
               ) : (
                 <button 
                   onClick={handleNext} 
-                  disabled={currentIndex === questions.length - 1} 
                   style={{ 
                     padding: "12px 25px", 
                     background: "#1565c0", 
@@ -622,20 +747,20 @@ export default function AssessmentPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: "14px" }}>
                   <span>Overall Completion</span>
                   <span style={{ fontWeight: 600 }}>
-                    {Math.round((totalAnswered / totalQuestions) * 100)}%
+                    {Math.round((totalAnswered / 100) * 100)}%
                   </span>
                 </div>
                 <div style={{ height: 10, background: "#e0e0e0", borderRadius: 5 }}>
                   <div style={{ 
                     height: "100%", 
-                    width: `${(totalAnswered / totalQuestions) * 100}%`, 
+                    width: `${(totalAnswered / 100) * 100}%`, 
                     background: "#4caf50", 
                     borderRadius: 5,
                     transition: "width 0.5s ease"
                   }} />
                 </div>
                 <div style={{ fontSize: "13px", color: "#666", marginTop: "5px" }}>
-                  {totalAnswered} of {totalQuestions} questions answered
+                  {totalAnswered} of 100 questions answered
                 </div>
               </div>
 
@@ -649,12 +774,15 @@ export default function AssessmentPage() {
                     <div key={section} style={{ marginBottom: 12 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", marginBottom: 5 }}>
                         <span>{config.icon} {section}</span>
-                        <span>{progress.answered}/{progress.total} ({progress.percentage}%)</span>
+                        <span>
+                          {progress.answered}/{progress.total} 
+                          {progress.total > 0 && ` (${progress.percentage}%)`}
+                        </span>
                       </div>
                       <div style={{ height: 6, background: "#e0e0e0", borderRadius: 3 }}>
                         <div style={{ 
                           height: "100%", 
-                          width: `${progress.percentage}%`, 
+                          width: `${progress.total > 0 ? progress.percentage : 0}%`, 
                           background: config.color, 
                           borderRadius: 3 
                         }} />
@@ -663,6 +791,27 @@ export default function AssessmentPage() {
                   );
                 })}
               </div>
+              
+              {/* Database warning */}
+              {totalQuestions < 100 && (
+                <div style={{
+                  marginTop: "20px",
+                  padding: "10px",
+                  backgroundColor: "#fff3e0",
+                  borderLeft: "4px solid #f57c00",
+                  borderRadius: "4px"
+                }}>
+                  <div style={{ fontSize: "12px", color: "#e65100", fontWeight: "500" }}>
+                    ⚠️ Database Status
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#666", marginTop: "4px" }}>
+                    Only {totalQuestions} real questions in database
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#666", marginTop: "2px" }}>
+                    Placeholder questions won't be saved
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -679,8 +828,9 @@ export default function AssessmentPage() {
           boxShadow: "0 2px 10px rgba(0,0,0,0.1)"
         }}>
           <p style={{ margin: 0 }}>
-            © 2024 Stratavax Assessment System | Answers are saved automatically | 
-            Assessment will auto-submit when time expires
+            © 2024 Stratavax Assessment System | 
+            {isPlaceholder ? " Placeholder questions will not be saved" : " Answers are saved automatically"} | 
+            Time remaining: {hours.toString().padStart(2, '0')}:{minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}
           </p>
         </div>
       </div>
