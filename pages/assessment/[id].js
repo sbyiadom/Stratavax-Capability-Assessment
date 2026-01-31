@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import AppLayout from "../../components/AppLayout";
 import QuestionCard from "../../components/QuestionCard";
@@ -89,7 +89,6 @@ async function loadUserResponses(userId) {
 export default function AssessmentPage() {
   const router = useRouter();
   const assessmentId = '11111111-1111-1111-1111-111111111111';
-  const questionCardRef = useRef(null);
 
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
@@ -101,8 +100,9 @@ export default function AssessmentPage() {
   const [isSessionReady, setIsSessionReady] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [questionCount, setQuestionCount] = useState(0);
 
-  // Use local images from public/images
+  // Use local images
   const backgrounds = [
     "/images/assessment-bg-1.jpg",
     "/images/assessment-bg-2.jpg",
@@ -138,6 +138,15 @@ export default function AssessmentPage() {
 
     const fetchAssessmentData = async () => {
       try {
+        // First check total count
+        const { count: totalCount } = await supabase
+          .from("questions")
+          .select("*", { count: 'exact', head: true })
+          .eq("assessment_id", assessmentId);
+
+        setQuestionCount(totalCount || 0);
+
+        // Fetch all questions with answers
         const { data: questionsData, error: questionsError } = await supabase
           .from("questions")
           .select(`
@@ -157,7 +166,7 @@ export default function AssessmentPage() {
         if (questionsError) throw new Error(`Failed to load questions: ${questionsError.message}`);
 
         if (!questionsData || questionsData.length === 0) {
-          throw new Error("No questions found. Please contact administrator.");
+          throw new Error("No questions found. Please run the database setup script.");
         }
 
         const savedAnswers = await loadUserResponses(session.user.id);
@@ -191,10 +200,11 @@ export default function AssessmentPage() {
         setQuestions(orderedQuestions);
         setAnswers(savedAnswers);
 
+        console.log(`Loaded ${orderedQuestions.length} questions out of expected ${TOTAL_QUESTIONS}`);
+
       } catch (error) {
         console.error("Assessment loading error:", error);
         alert(`Error: ${error.message}`);
-        router.push("/");
       } finally {
         setLoading(false);
       }
@@ -256,7 +266,7 @@ export default function AssessmentPage() {
     }
   };
 
-  // Navigation
+  // Navigation - FIXED: Proper navigation functions
   const handleNext = () => {
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(i => i + 1);
@@ -355,20 +365,22 @@ export default function AssessmentPage() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        minHeight: "100vh"
+        minHeight: "100vh",
+        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        color: "white"
       }}>
-        <div style={{ fontSize: "24px", fontWeight: "600", marginBottom: "20px", color: "#1565c0" }}>
-          Loading Assessment...
+        <div style={{ fontSize: "28px", fontWeight: "700", marginBottom: "20px" }}>
+          Stratavax Capability Assessment
         </div>
-        <div style={{ fontSize: "16px", color: "#666", marginBottom: "30px" }}>
-          Preparing your capability assessment
+        <div style={{ fontSize: "18px", marginBottom: "30px", opacity: 0.9 }}>
+          Loading {TOTAL_QUESTIONS} questions...
         </div>
-        <div style={{ width: "300px", height: "6px", backgroundColor: "#e0e0e0", borderRadius: "3px" }}>
+        <div style={{ width: "300px", height: "8px", backgroundColor: "rgba(255,255,255,0.2)", borderRadius: "4px" }}>
           <div style={{ 
             width: "70%", 
             height: "100%", 
-            backgroundColor: "#1565c0",
-            borderRadius: "3px",
+            backgroundColor: "white",
+            borderRadius: "4px",
             animation: "loading 2s infinite"
           }} />
         </div>
@@ -384,20 +396,39 @@ export default function AssessmentPage() {
 
   if (questions.length === 0) {
     return (
-      <div style={{ padding: "40px", textAlign: "center" }}>
-        <h3 style={{ color: "#f44336" }}>No Questions Available</h3>
-        <p>The assessment is not configured yet. Please contact administrator.</p>
+      <div style={{ 
+        padding: "40px", 
+        textAlign: "center",
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        color: "white"
+      }}>
+        <div style={{ fontSize: "32px", fontWeight: "700", marginBottom: "20px" }}>
+          🏢 Stratavax
+        </div>
+        <div style={{ fontSize: "24px", marginBottom: "20px" }}>
+          Assessment Not Ready
+        </div>
+        <div style={{ fontSize: "16px", marginBottom: "30px", maxWidth: "500px", lineHeight: 1.6 }}>
+          The assessment needs to be configured with {TOTAL_QUESTIONS} questions. 
+          Currently, only {questionCount} questions are in the database.
+        </div>
         <button 
           onClick={() => router.push("/")}
           style={{
-            padding: "12px 24px",
-            backgroundColor: "#1565c0",
-            color: "white",
+            padding: "12px 30px",
+            backgroundColor: "white",
+            color: "#764ba2",
             border: "none",
-            borderRadius: "6px",
+            borderRadius: "8px",
             cursor: "pointer",
-            marginTop: "20px",
-            fontSize: "16px"
+            fontSize: "16px",
+            fontWeight: "600",
+            boxShadow: "0 4px 15px rgba(0,0,0,0.2)"
           }}
         >
           Return to Dashboard
@@ -448,6 +479,18 @@ export default function AssessmentPage() {
               background: "#f8f9fa", 
               borderRadius: "10px"
             }}>
+              <div style={{ 
+                display: "flex", 
+                justifyContent: "space-between", 
+                marginBottom: "15px",
+                fontSize: "16px"
+              }}>
+                <span>Total Questions:</span>
+                <span style={{ fontWeight: "700" }}>
+                  {questions.length}
+                </span>
+              </div>
+              
               <div style={{ 
                 display: "flex", 
                 justifyContent: "space-between", 
@@ -507,7 +550,7 @@ export default function AssessmentPage() {
                   fontSize: "14px"
                 }}
               >
-                Continue
+                Continue Assessment
               </button>
               <button
                 onClick={submitAssessment}
@@ -530,7 +573,7 @@ export default function AssessmentPage() {
         </div>
       )}
 
-      {/* Main Layout with custom background */}
+      {/* Main Layout */}
       <div style={{
         minHeight: "100vh",
         background: `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url(${backgroundImage})`,
@@ -549,8 +592,7 @@ export default function AssessmentPage() {
             padding: "20px",
             background: "rgba(255, 255, 255, 0.95)",
             borderRadius: "12px",
-            boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-            backdropFilter: "blur(10px)"
+            boxShadow: "0 4px 20px rgba(0,0,0,0.15)"
           }}>
             <div>
               <h1 style={{ 
@@ -566,10 +608,12 @@ export default function AssessmentPage() {
                 Stratavax Capability Assessment
               </h1>
               <div style={{ margin: "8px 0 0 0", fontSize: "14px", color: "#666" }}>
-                <div>100 Questions • Comprehensive Evaluation</div>
-                <div style={{ marginTop: "5px", fontSize: "12px", color: "#666" }}>
-                  Time remaining: {hours}h {minutes}m {seconds}s
-                </div>
+                <div>{questions.length} Questions • Comprehensive Evaluation</div>
+                {questionCount < TOTAL_QUESTIONS && (
+                  <div style={{ marginTop: "5px", fontSize: "12px", color: "#f57c00" }}>
+                    ⚠️ Database has {questionCount} questions (Expected: {TOTAL_QUESTIONS})
+                  </div>
+                )}
               </div>
             </div>
             
@@ -583,13 +627,13 @@ export default function AssessmentPage() {
                 fontSize: "14px",
                 border: "2px solid #bbdefb"
               }}>
-                {totalAnswered}/{questions.length} Answered
+                ⏱️ {hours.toString().padStart(2, '0')}:{minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}
               </div>
             </div>
           </div>
 
-          {/* Main content */}
-          <div style={{ display: "flex", gap: "20px", minHeight: "calc(100vh - 180px)" }}>
+          {/* Main content - FIXED: No overflow:hidden on main container */}
+          <div style={{ display: "flex", gap: "20px", minHeight: "600px" }}>
             
             {/* Question panel */}
             <div style={{ 
@@ -599,10 +643,7 @@ export default function AssessmentPage() {
               borderRadius: "12px", 
               boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
               display: "flex",
-              flexDirection: "column",
-              backdropFilter: "blur(10px)",
-              maxHeight: "calc(100vh - 200px)",
-              overflow: "hidden"
+              flexDirection: "column"
             }}>
               
               {/* Section header */}
@@ -644,7 +685,7 @@ export default function AssessmentPage() {
                 </div>
               </div>
 
-              {/* Question - Fixed Height */}
+              {/* Question */}
               <div style={{
                 fontSize: "18px",
                 lineHeight: 1.6,
@@ -653,19 +694,16 @@ export default function AssessmentPage() {
                 background: "#f8f9fa",
                 borderRadius: "8px",
                 borderLeft: `4px solid ${sectionConfig.color}`,
-                minHeight: "80px",
-                maxHeight: "120px",
-                overflowY: "auto"
+                minHeight: "80px"
               }}>
                 {currentQuestion?.question_text}
               </div>
 
               {/* Answers - Fixed Height Container */}
-              <div ref={questionCardRef} style={{ 
+              <div style={{ 
                 flex: 1,
                 minHeight: "300px",
-                maxHeight: "400px",
-                overflow: "hidden"
+                marginBottom: "20px"
               }}>
                 {currentQuestion && (
                   <QuestionCard
@@ -673,14 +711,12 @@ export default function AssessmentPage() {
                     selected={answers[currentQuestion.id]}
                     onSelect={(answerId) => handleSelect(currentQuestion.id, answerId)}
                     disabled={saveState === "saving"}
-                    compact={true}
                   />
                 )}
               </div>
 
-              {/* Navigation - Fixed at bottom */}
+              {/* Navigation - FIXED: Always visible */}
               <div style={{ 
-                marginTop: "auto", 
                 display: "flex", 
                 justifyContent: "space-between",
                 paddingTop: "20px",
@@ -697,11 +733,10 @@ export default function AssessmentPage() {
                     borderRadius: "8px",
                     cursor: currentIndex === 0 ? "not-allowed" : "pointer",
                     fontSize: "15px",
-                    fontWeight: "600",
-                    transition: "all 0.2s"
+                    fontWeight: "600"
                   }}
                 >
-                  ← Previous
+                  ← Previous Question
                 </button>
                 
                 {isLastQuestion ? (
@@ -715,9 +750,7 @@ export default function AssessmentPage() {
                       borderRadius: "8px",
                       cursor: "pointer",
                       fontSize: "15px",
-                      fontWeight: "700",
-                      transition: "all 0.2s",
-                      boxShadow: "0 2px 8px rgba(76,175,80,0.3)"
+                      fontWeight: "700"
                     }}
                   >
                     🏁 Finish Assessment
@@ -733,11 +766,10 @@ export default function AssessmentPage() {
                       borderRadius: "8px",
                       cursor: "pointer",
                       fontSize: "15px",
-                      fontWeight: "600",
-                      transition: "all 0.2s"
+                      fontWeight: "600"
                     }}
                   >
-                    Next →
+                    Next Question →
                   </button>
                 )}
               </div>
@@ -748,27 +780,30 @@ export default function AssessmentPage() {
               flex: 1, 
               display: "flex", 
               flexDirection: "column", 
-              gap: "20px",
-              maxHeight: "calc(100vh - 200px)",
-              overflow: "hidden"
+              gap: "20px"
             }}>
               
-              {/* Question navigation */}
+              {/* Question navigation - FIXED: Make sure QuestionNav renders */}
               <div style={{ 
                 background: "rgba(255, 255, 255, 0.95)", 
                 padding: "20px", 
                 borderRadius: "12px",
-                boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-                backdropFilter: "blur(10px)",
-                flex: 1,
-                overflow: "hidden"
+                boxShadow: "0 4px 20px rgba(0,0,0,0.15)"
               }}>
+                <h3 style={{ 
+                  marginTop: 0, 
+                  marginBottom: "15px", 
+                  color: "#333",
+                  fontSize: "16px",
+                  fontWeight: "700"
+                }}>
+                  Question Navigator
+                </h3>
                 <QuestionNav
                   questions={questions}
                   answers={answers}
                   current={currentIndex}
                   onJump={handleJump}
-                  compact={true}
                 />
               </div>
 
@@ -777,9 +812,7 @@ export default function AssessmentPage() {
                 background: "rgba(255, 255, 255, 0.95)", 
                 padding: "20px", 
                 borderRadius: "12px",
-                boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-                backdropFilter: "blur(10px)",
-                overflow: "auto"
+                boxShadow: "0 4px 20px rgba(0,0,0,0.15)"
               }}>
                 <h3 style={{ 
                   marginTop: 0, 
@@ -811,6 +844,16 @@ export default function AssessmentPage() {
                       background: "#4caf50", 
                       borderRadius: "5px"
                     }} />
+                  </div>
+                  <div style={{ 
+                    fontSize: "13px", 
+                    color: "#666", 
+                    marginTop: "8px",
+                    display: "flex",
+                    justifyContent: "space-between"
+                  }}>
+                    <span>{totalAnswered} answered</span>
+                    <span>{questions.length - totalAnswered} remaining</span>
                   </div>
                 </div>
 
@@ -855,29 +898,25 @@ export default function AssessmentPage() {
                     );
                   })}
                 </div>
-
-                {/* Time warning */}
-                <div style={{
-                  marginTop: "20px",
-                  padding: "12px",
-                  backgroundColor: timeRemaining < 1800 ? "#ffebee" : "#e8f5e9",
-                  borderRadius: "8px",
-                  border: `1px solid ${timeRemaining < 1800 ? "#ffcdd2" : "#c8e6c9"}`
-                }}>
-                  <div style={{ 
-                    fontSize: "13px", 
-                    fontWeight: "600", 
-                    color: timeRemaining < 1800 ? "#c62828" : "#2e7d32",
-                    marginBottom: "4px"
-                  }}>
-                    {timeRemaining < 1800 ? "⏰ Time Running Out!" : "⏱️ Time Remaining"}
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#666" }}>
-                    {hours}h {minutes}m {seconds}s
-                  </div>
-                </div>
               </div>
             </div>
+          </div>
+          
+          {/* Footer */}
+          <div style={{
+            marginTop: "20px",
+            padding: "15px",
+            textAlign: "center",
+            fontSize: "12px",
+            color: "#fff",
+            background: "rgba(0, 0, 0, 0.5)",
+            borderRadius: "8px",
+            backdropFilter: "blur(10px)"
+          }}>
+            <p style={{ margin: 0, fontWeight: "500" }}>
+              © 2024 Stratavax • {questions.length}-Question Capability Assessment • 
+              Time remaining: {hours}h {minutes}m {seconds}s
+            </p>
           </div>
         </div>
       </div>
