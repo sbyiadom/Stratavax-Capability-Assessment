@@ -1,4 +1,4 @@
-// pages/supervisor/index.js - CORRECTED VERSION
+// pages/supervisor/index.js - FIXED VERSION
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -18,6 +18,7 @@ export default function SupervisorDashboard() {
   const [candidateResponses, setCandidateResponses] = useState([]);
   const [loadingResponses, setLoadingResponses] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0); // For manual refresh
 
   // Check if mobile
   useEffect(() => {
@@ -71,12 +72,12 @@ export default function SupervisorDashboard() {
     return () => authListener?.subscription?.unsubscribe();
   }, [router]);
 
-  // Load REAL candidates from database - NO MOCK DATA
+  // Load REAL candidates from database - SIMPLIFIED AND FIXED
   const loadCandidates = async () => {
     try {
-      console.log("Loading real candidates...");
+      console.log("=== LOADING CANDIDATES ===");
       
-      // METHOD 1: Try to get users from responses table (people who actually took assessment)
+      // Get ALL responses to find users who have taken assessments
       const { data: responses, error: responsesError } = await supabase
         .from("responses")
         .select("user_id")
@@ -87,164 +88,134 @@ export default function SupervisorDashboard() {
       }
 
       // Get unique user IDs from responses
-      const uniqueUserIds = [...new Set(responses?.map(r => r.user_id) || [])];
-      console.log("Users with responses:", uniqueUserIds);
+      const candidateIds = [...new Set(responses?.map(r => r.user_id) || [])];
+      console.log("User IDs from responses:", candidateIds);
 
-      if (uniqueUserIds.length > 0) {
-        const candidates = [];
-        
-        for (const userId of uniqueUserIds) {
-          try {
-            // Get user info from auth - using client API instead of admin
-            const { data: { user }, error: userError } = await supabase.auth.getUser();
-            
-            if (userError) {
-              // Try admin API as fallback
-              const { data: adminUser, error: adminError } = await supabase.auth.admin.getUserById(userId);
-              
-              if (!adminError && adminUser.user) {
-                const role = adminUser.user.user_metadata?.role;
-                const isSupervisor = adminUser.user.user_metadata?.is_supervisor;
-                
-                // Only include if NOT a supervisor
-                if (role !== "supervisor" && !isSupervisor) {
-                  candidates.push({
-                    id: adminUser.user.id,
-                    email: adminUser.user.email,
-                    name: adminUser.user.user_metadata?.name || adminUser.user.email.split('@')[0],
-                    created_at: adminUser.user.created_at,
-                    last_sign_in: adminUser.user.last_sign_in_at,
-                    status: "completed"
-                  });
-                }
-              }
-            } else if (user) {
-              // Using client API
-              const role = user.user_metadata?.role;
-              const isSupervisor = user.user_metadata?.is_supervisor;
-              
-              if (role !== "supervisor" && !isSupervisor && user.id === userId) {
-                candidates.push({
-                  id: user.id,
-                  email: user.email,
-                  name: user.user_metadata?.name || user.email.split('@')[0],
-                  created_at: user.created_at,
-                  last_sign_in: user.last_sign_in_at,
-                  status: "completed"
-                });
-              }
-            }
-          } catch (err) {
-            console.error("Error fetching user:", userId, err);
-          }
-        }
-        
-        if (candidates.length > 0) {
-          console.log("Found candidates from responses:", candidates);
-          setCandidates(candidates);
-          return;
-        }
-      }
-
-      // METHOD 2: List all auth users and filter out supervisors
+      // Get all users from auth
       try {
         const { data: { users: allUsers }, error: authError } = await supabase.auth.admin.listUsers();
         
-        if (!authError && allUsers && allUsers.length > 0) {
-          console.log("All auth users:", allUsers.length);
-          
-          // Filter out supervisors and yourself
-          const candidateUsers = allUsers.filter(user => {
-            const role = user.user_metadata?.role;
-            const isSupervisor = user.user_metadata?.is_supervisor;
-            const currentUserEmail = session?.user?.email || "";
-            
-            // Exclude: supervisors, users with supervisor flag, and yourself
-            const isNotSupervisor = role !== "supervisor" && !isSupervisor;
-            const isNotYou = user.email !== currentUserEmail;
-            
-            return isNotSupervisor && isNotYou;
-          });
-          
-          console.log("Filtered candidates:", candidateUsers.length);
-          
-          if (candidateUsers.length > 0) {
-            const mappedCandidates = candidateUsers.map(user => ({
-              id: user.id,
-              email: user.email,
-              name: user.user_metadata?.name || user.email.split('@')[0],
-              created_at: user.created_at,
-              last_sign_in: user.last_sign_in_at,
-              status: user.last_sign_in_at ? "active" : "not_started"
-            }));
-            
-            console.log("Mapped candidates:", mappedCandidates);
-            setCandidates(mappedCandidates);
-            return;
-          }
+        if (authError) {
+          console.error("Error listing users:", authError);
+          setCandidates([]);
+          return;
         }
+
+        console.log("Total auth users:", allUsers?.length || 0);
+        
+        // Filter users: exclude yourself and anyone with supervisor metadata
+        const currentUserEmail = session?.user?.email || "";
+        const candidateUsers = allUsers?.filter(user => {
+          // Exclude yourself
+          if (user.email === currentUserEmail) return false;
+          
+          // Check if user has supervisor metadata
+          const role = user.user_metadata?.role;
+          const isSupervisor = user.user_metadata?.is_supervisor;
+          
+          // Include if NOT a supervisor
+          return !(role === "supervisor" || isSupervisor === true);
+        }) || [];
+
+        console.log("Filtered candidates:", candidateUsers.length);
+        
+        // Map candidates with their status
+        const mappedCandidates = candidateUsers.map(user => {
+          const hasResponses = candidateIds.includes(user.id);
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.user_metadata?.name || user.email.split('@')[0],
+            created_at: user.created_at,
+            last_sign_in: user.last_sign_in_at,
+            status: hasResponses ? "completed" : "not_started"
+          };
+        });
+
+        console.log("Mapped candidates:", mappedCandidates);
+        setCandidates(mappedCandidates);
+        
+        // If no candidates found, still show empty (not mock data)
+        if (mappedCandidates.length === 0) {
+          console.log("No real candidates found after filtering");
+        }
+
       } catch (adminError) {
         console.error("Admin API error:", adminError);
-        
-        // METHOD 3: Try to get from public.users table if it exists
-        try {
-          const { data: users, error } = await supabase
-            .from("users")
-            .select("*")
-            .neq("role", "supervisor") // Exclude supervisors
-            .order("created_at", { ascending: false });
-
-          if (!error && users && users.length > 0) {
-            console.log("Found users from public.users table:", users);
-            setCandidates(users);
-            return;
-          }
-        } catch (tableError) {
-          console.error("Error loading from users table:", tableError);
-        }
+        setCandidates([]);
       }
-
-      // If no candidates found at all, show empty array (NO MOCK DATA)
-      console.log("No real candidates found");
-      setCandidates([]);
 
     } catch (error) {
       console.error("Error loading candidates:", error);
-      // NO FALLBACK TO MOCK DATA - show empty array
       setCandidates([]);
     }
   };
 
-  // Load REAL statistics - NO MOCK DATA
+  // Load REAL statistics - SIMPLIFIED AND FIXED
   const loadStats = async () => {
     try {
-      // Get total responses count
+      console.log("=== LOADING STATS ===");
+      
+      // Get response counts
       const { count: totalResponses, error: responsesError } = await supabase
         .from("responses")
         .select("*", { count: 'exact', head: true });
 
-      // Get unique candidates who have submitted responses
-      const { data: candidateResponses } = await supabase
+      if (responsesError) {
+        console.error("Error counting responses:", responsesError);
+      }
+
+      // Get unique users from responses
+      const { data: userResponses } = await supabase
         .from("responses")
         .select("user_id")
         .not("user_id", "is", null);
 
-      const uniqueCandidates = new Set(candidateResponses?.map(r => r.user_id) || []);
-
-      // Calculate REAL stats based on actual data
-      const totalCandidates = candidates.length;
-      const completedCount = uniqueCandidates.size;
+      const uniqueRespondents = new Set(userResponses?.map(r => r.user_id) || []);
+      console.log("Unique respondents:", uniqueRespondents.size);
       
-      // Calculate average score if we have responses
+      // Calculate average score from responses
       let averageScore = 0;
       if (totalResponses > 0) {
-        const { data: scores } = await supabase
+        // Get all responses with their scores
+        const { data: allResponses, error: scoreError } = await supabase
           .from("responses")
-          .select("answers(score)");
+          .select(`
+            answers (
+              score
+            )
+          `);
         
-        const totalScore = scores?.reduce((sum, r) => sum + (r.answers?.score || 0), 0) || 0;
-        averageScore = totalResponses > 0 ? Math.round((totalScore / totalResponses) * 10) : 0;
+        if (!scoreError && allResponses && allResponses.length > 0) {
+          let totalScore = 0;
+          let validResponses = 0;
+          
+          allResponses.forEach(response => {
+            if (response.answers && response.answers.length > 0) {
+              totalScore += response.answers[0]?.score || 0;
+              validResponses++;
+            }
+          });
+          
+          if (validResponses > 0) {
+            averageScore = Math.round((totalScore / (validResponses * 10)) * 100);
+          }
+        }
+        console.log("Average score calculated:", averageScore, "%");
       }
+
+      // Calculate stats based on actual data
+      const totalCandidates = candidates.length;
+      const completedCount = uniqueRespondents.size;
+      
+      console.log("Final stats:", {
+        totalCandidates,
+        completedAssessments: completedCount,
+        pendingAssessments: Math.max(0, totalCandidates - completedCount),
+        averageScore,
+        totalResponses: totalResponses || 0,
+        uniqueRespondents: uniqueRespondents.size
+      });
 
       setStats({
         totalCandidates: totalCandidates,
@@ -252,12 +223,12 @@ export default function SupervisorDashboard() {
         pendingAssessments: Math.max(0, totalCandidates - completedCount),
         averageScore: averageScore,
         totalResponses: totalResponses || 0,
-        uniqueRespondents: uniqueCandidates.size || 0
+        uniqueRespondents: uniqueRespondents.size
       });
 
     } catch (error) {
       console.error("Error loading stats:", error);
-      // Set REAL stats based on actual candidates
+      // Set stats based on current candidates
       setStats({
         totalCandidates: candidates.length,
         completedAssessments: 0,
@@ -269,7 +240,7 @@ export default function SupervisorDashboard() {
     }
   };
 
-  // Load candidate responses - NO MOCK DATA
+  // Load candidate responses
   const loadCandidateResponses = async (candidateId) => {
     setLoadingResponses(true);
     try {
@@ -288,6 +259,7 @@ export default function SupervisorDashboard() {
         console.error("Error loading responses:", error);
         setCandidateResponses([]);
       } else {
+        console.log("Loaded responses for candidate:", candidateId, "Count:", responses?.length || 0);
         setCandidateResponses(responses || []);
       }
       
@@ -297,7 +269,6 @@ export default function SupervisorDashboard() {
 
     } catch (error) {
       console.error("Error loading responses:", error);
-      // NO MOCK DATA - show empty array
       setCandidateResponses([]);
       
       const candidate = candidates.find(c => c.id === candidateId);
@@ -341,12 +312,25 @@ export default function SupervisorDashboard() {
     router.push("/login");
   };
 
+  // Refresh all data
+  const handleRefresh = async () => {
+    console.log("Manually refreshing data...");
+    await loadCandidates();
+    await loadStats();
+  };
+
   // Update stats when candidates change
   useEffect(() => {
-    if (candidates.length > 0) {
+    if (!loading && candidates.length >= 0) {
       loadStats();
     }
-  }, [candidates]);
+  }, [candidates, refreshTrigger]);
+
+  // Debug: Log when candidates or stats change
+  useEffect(() => {
+    console.log("Candidates updated:", candidates.length, "items");
+    console.log("Stats updated:", stats);
+  }, [candidates, stats]);
 
   if (loading) {
     return (
@@ -436,6 +420,26 @@ export default function SupervisorDashboard() {
             flexDirection: isMobile ? "row" : "row",
             width: isMobile ? "100%" : "auto"
           }}>
+            <button
+              onClick={handleRefresh}
+              style={{
+                padding: isMobile ? "10px 15px" : "12px 20px",
+                background: "#e8f5e9",
+                color: "#2e7d32",
+                border: "1px solid #a5d6a7",
+                borderRadius: "10px",
+                cursor: "pointer",
+                fontWeight: "600",
+                fontSize: isMobile ? "14px" : "15px",
+                flex: isMobile ? "1" : "none",
+                minHeight: "44px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px"
+              }}
+            >
+              🔄 Refresh
+            </button>
             <button
               onClick={() => router.push("/supervisor/settings")}
               style={{
@@ -593,9 +597,13 @@ export default function SupervisorDashboard() {
               color: "#666",
               background: "#f8f9fa",
               padding: "6px 12px",
-              borderRadius: "20px"
+              borderRadius: "20px",
+              display: "flex",
+              alignItems: "center",
+              gap: "5px"
             }}>
-              {candidates.length} total
+              <span>{candidates.length}</span>
+              <span>total</span>
             </div>
           </div>
 
@@ -621,8 +629,28 @@ export default function SupervisorDashboard() {
                        Candidate data will appear here once users register and take assessments.`
                     : "Candidate data will appear here once users register and take assessments."}
                 </p>
-                <div style={{ marginTop: "20px", fontSize: "13px", color: "#999", padding: "10px", background: "#f8f9fa", borderRadius: "8px" }}>
-                  <strong>Tip:</strong> Create test candidate accounts via Supabase Dashboard → Authentication → Users
+                <div style={{ 
+                  marginTop: "20px", 
+                  fontSize: "13px", 
+                  color: "#666", 
+                  padding: "12px", 
+                  background: "#f8f9fa", 
+                  borderRadius: "8px",
+                  border: "1px solid #e9ecef"
+                }}>
+                  <div style={{ fontWeight: "600", marginBottom: "5px" }}>Current Stats:</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
+                    <span>Total Responses:</span>
+                    <span>{stats.totalResponses}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
+                    <span>Unique Respondents:</span>
+                    <span>{stats.uniqueRespondents}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
+                    <span>Avg Score:</span>
+                    <span>{stats.averageScore}%</span>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -740,13 +768,30 @@ export default function SupervisorDashboard() {
             }}>
               <div style={{ fontSize: "48px", marginBottom: "20px" }}>👈</div>
               <div style={{ fontSize: "18px", fontWeight: "600", marginBottom: "10px" }}>
-                Select a Candidate
+                {candidates.length > 0 ? "Select a Candidate" : "No Candidates Available"}
               </div>
-              <p style={{ fontSize: "14px", color: "#999" }}>
+              <p style={{ fontSize: "14px", color: "#999", maxWidth: "400px", margin: "0 auto" }}>
                 {candidates.length > 0 
                   ? "Click on a candidate from the list to view their assessment responses"
-                  : "No candidates available to select"}
+                  : "There are no candidates in the system. Users need to register and complete assessments."}
               </p>
+              {candidates.length === 0 && stats.totalResponses > 0 && (
+                <div style={{ 
+                  marginTop: "20px", 
+                  padding: "15px", 
+                  background: "#fff3e0", 
+                  borderRadius: "8px",
+                  border: "1px solid #ffcc80"
+                }}>
+                  <div style={{ fontWeight: "600", color: "#e65100", marginBottom: "5px" }}>
+                    ⚠️ Data Discrepancy Detected
+                  </div>
+                  <p style={{ fontSize: "12px", color: "#666", margin: 0 }}>
+                    The system shows {stats.totalResponses} responses from {stats.uniqueRespondents} user(s), 
+                    but no candidates are listed. This might be due to permission issues or data inconsistencies.
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             <>
@@ -866,11 +911,30 @@ export default function SupervisorDashboard() {
                 }}>
                   <div style={{ fontSize: "48px", marginBottom: "20px" }}>📝</div>
                   <div style={{ fontSize: "18px", fontWeight: "600", marginBottom: "10px" }}>
-                    No Assessment Responses
+                    No Assessment Responses Found
                   </div>
                   <p style={{ fontSize: "14px", color: "#999", maxWidth: "400px", margin: "0 auto" }}>
                     {selectedCandidate.name} ({selectedCandidate.email}) hasn't started or completed their assessment yet.
                   </p>
+                  <div style={{ 
+                    marginTop: "20px", 
+                    fontSize: "12px", 
+                    color: "#666", 
+                    padding: "10px", 
+                    background: "white",
+                    borderRadius: "8px",
+                    border: "1px solid #e9ecef"
+                  }}>
+                    <div style={{ fontWeight: "600", marginBottom: "5px" }}>Candidate Status:</div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Status:</span>
+                      <span>{selectedCandidate.status}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Last Login:</span>
+                      <span>{selectedCandidate.last_sign_in ? new Date(selectedCandidate.last_sign_in).toLocaleDateString() : "Never"}</span>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -1003,7 +1067,13 @@ export default function SupervisorDashboard() {
           © 2024 Stratavax • Supervisor Dashboard • Last updated: {new Date().toLocaleDateString()}
         </div>
         <div style={{ fontSize: "11px", color: "#999", marginTop: "5px" }}>
-          {session?.user?.email} • Role: Supervisor • Showing {candidates.length} real candidate(s)
+          {session?.user?.email} • Role: Supervisor • 
+          Candidates: {candidates.length} • 
+          Responses: {stats.totalResponses} • 
+          Avg Score: {stats.averageScore}%
+        </div>
+        <div style={{ fontSize: "10px", color: "#ccc", marginTop: "5px" }}>
+          Open browser console (F12) for debug information
         </div>
       </div>
     </div>
