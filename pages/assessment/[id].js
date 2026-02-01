@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
+import Image from "next/image";
 
 const SECTION_CONFIG = {
   'Cognitive Abilities': { 
@@ -38,19 +39,12 @@ const TIME_LIMIT_SECONDS = 10800;
 function randomizeTechnicalAnswers(answers, questionId) {
   if (!answers || answers.length === 0) return answers;
   
-  // Convert questionId to numeric seed
   const seed = parseInt(questionId) || 1;
-  
-  // Create a copy of answers
   const shuffled = [...answers];
   
-  // Deterministic shuffle using question ID as seed
   for (let i = shuffled.length - 1; i > 0; i--) {
-    // Create deterministic "random" index
     const pseudoRandom = Math.sin(seed * (i + 1)) * 10000;
     const j = Math.floor(Math.abs(pseudoRandom - Math.floor(pseudoRandom)) * (i + 1));
-    
-    // Swap elements
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
   
@@ -154,7 +148,6 @@ export default function AssessmentPage() {
 
         const savedAnswers = await loadUserResponses(session.user.id);
 
-        // Process questions with randomization for Technical Competence
         const processedQuestions = questionsData.map(q => {
           const baseQuestion = {
             ...q,
@@ -162,7 +155,6 @@ export default function AssessmentPage() {
             options: q.answers.map(a => ({ ...a, id: parseInt(a.id) }))
           };
           
-          // Randomize answers for Technical Competence questions
           if (q.section === 'Technical Competence') {
             return {
               ...baseQuestion,
@@ -630,7 +622,7 @@ export default function AssessmentPage() {
         </div>
       )}
 
-      {/* Main Assessment Layout */}
+      {/* Main Assessment Layout - OPTIMIZED FOR SPACE */}
       <div style={{
         minHeight: "100vh",
         background: "linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)",
@@ -639,10 +631,10 @@ export default function AssessmentPage() {
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
       }}>
         
-        {/* Top Navigation Bar */}
+        {/* COMPACT HEADER WITH HAPPY STUDENT IMAGE */}
         <div style={{
           background: "white",
-          padding: "20px 30px",
+          padding: "15px 30px",
           boxShadow: "0 2px 15px rgba(0,0,0,0.08)",
           borderBottom: "1px solid #e9ecef"
         }}>
@@ -652,179 +644,207 @@ export default function AssessmentPage() {
             alignItems: "center"
           }}>
             <div style={{ 
-              fontSize: "24px", 
-              fontWeight: "800", 
-              color: "#1a237e",
-              display: "flex",
-              alignItems: "center",
-              gap: "10px"
+              display: "flex", 
+              alignItems: "center", 
+              gap: "15px"
             }}>
-              <span style={{ 
-                background: sectionConfig.color,
-                color: "white",
-                width: "36px",
-                height: "36px",
-                borderRadius: "10px",
+              {/* Happy Student Image */}
+              <div style={{
+                width: "50px",
+                height: "50px",
+                borderRadius: "12px",
+                overflow: "hidden",
+                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: "20px"
+                color: "white",
+                fontSize: "24px",
+                fontWeight: "bold"
               }}>
-                {sectionConfig.icon}
-              </span>
-              <span>Stratavax Assessment</span>
+                😊
+              </div>
+              
+              <div>
+                <div style={{ 
+                  fontSize: "22px", 
+                  fontWeight: "800", 
+                  color: "#1a237e",
+                  lineHeight: 1.2
+                }}>
+                  Stratavax Capability Assessment
+                </div>
+                <div style={{
+                  fontSize: "12px",
+                  color: "#666",
+                  fontWeight: "500",
+                  marginTop: "2px"
+                }}>
+                  Section: {currentSection} • Question {currentIndex + 1} of {questions.length}
+                </div>
+              </div>
             </div>
             
-            {/* Timer */}
+            {/* COMPACT TIMER */}
             <div style={{
-              padding: "10px 15px",
+              padding: "8px 12px",
               background: timeRemaining < 1800 ? "#fff3e0" : "#e3f2fd",
-              borderRadius: "10px",
+              borderRadius: "8px",
               border: `2px solid ${timeRemaining < 1800 ? "#ff9800" : "#2196f3"}`,
-              minWidth: "140px"
+              minWidth: "120px"
             }}>
               <div style={{ 
-                fontSize: "12px", 
+                fontSize: "11px", 
                 fontWeight: "600", 
                 color: timeRemaining < 1800 ? "#ff9800" : "#2196f3",
-                marginBottom: "5px"
+                marginBottom: "3px"
               }}>
-                {timeRemaining < 1800 ? "TIME LOW" : "TIME REMAINING"}
+                {timeRemaining < 1800 ? "TIME LOW" : "TIME"}
               </div>
               <div style={{ 
-                fontSize: "18px", 
+                fontSize: "16px", 
                 fontWeight: "700", 
                 color: timeRemaining < 1800 ? "#d84315" : "#1565c0"
               }}>
-                {formatTime(hours)}:{formatTime(minutes)}:{formatTime(seconds)}
+                {formatTime(hours)}:{formatTime(minutes)}
               </div>
             </div>
           </div>
 
-          {/* Progress Bar */}
-          <div style={{ marginTop: "20px" }}>
+          {/* COMPACT PROGRESS BAR */}
+          <div style={{ marginTop: "12px" }}>
             <div style={{ 
               display: "flex", 
               justifyContent: "space-between", 
-              marginBottom: "8px",
-              fontSize: "14px",
+              marginBottom: "6px",
+              fontSize: "13px",
               fontWeight: "600"
             }}>
               <span style={{ color: "#666" }}>
-                Question {currentIndex + 1} of {questions.length}
+                Progress: {progressPercentage}%
               </span>
               <span style={{ color: sectionConfig.color }}>
-                {progressPercentage}% Complete ({totalAnswered}/{questions.length})
+                {totalAnswered}/{questions.length} Answered
               </span>
             </div>
             <div style={{ 
-              height: "8px", 
+              height: "6px", 
               background: "#e9ecef", 
-              borderRadius: "4px",
+              borderRadius: "3px",
               overflow: "hidden"
             }}>
               <div style={{ 
                 height: "100%", 
                 width: `${progressPercentage}%`, 
                 background: sectionConfig.color, 
-                borderRadius: "4px"
+                borderRadius: "3px"
               }} />
             </div>
           </div>
         </div>
 
-        {/* Main Content Area */}
+        {/* MAIN CONTENT AREA - OPTIMIZED LAYOUT */}
         <div style={{ 
           flex: 1,
-          padding: "30px",
+          padding: "15px",
           display: "flex",
           justifyContent: "center",
-          alignItems: "flex-start"
+          alignItems: "flex-start",
+          overflow: "auto"
         }}>
           <div style={{
-            maxWidth: "900px",
+            maxWidth: "1000px",
             width: "100%",
             background: "white",
-            borderRadius: "20px",
-            boxShadow: "0 8px 30px rgba(0,0,0,0.06)",
+            borderRadius: "15px",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.05)",
             border: "1px solid #e9ecef",
-            overflow: "hidden"
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            height: "calc(100vh - 140px)", // Dynamic height based on header
+            maxHeight: "800px"
           }}>
-            {/* Question Header */}
+            {/* QUESTION SECTION - COMPACT */}
             <div style={{
-              padding: "30px",
+              padding: "20px",
+              borderBottom: "1px solid #e9ecef",
               background: sectionConfig.lightBg,
-              borderBottom: `2px solid ${sectionConfig.color}`
+              flexShrink: 0
             }}>
               <div style={{
-                display: "inline-flex",
+                display: "flex",
                 alignItems: "center",
-                gap: "8px",
-                padding: "8px 16px",
-                background: "white",
-                color: sectionConfig.color,
-                borderRadius: "20px",
-                fontSize: "14px",
-                fontWeight: "600",
-                marginBottom: "15px"
+                gap: "10px",
+                marginBottom: "10px"
               }}>
-                <span>⚡</span>
-                {currentSection}
-                {currentSection === 'Technical Competence' && (
-                  <span style={{ fontSize: "12px", opacity: 0.8, marginLeft: "5px" }}>
-                    (Randomized)
-                  </span>
-                )}
-              </div>
-              <div style={{
-                fontSize: "20px",
-                fontWeight: "700",
-                color: "#1a237e",
-                lineHeight: 1.4
-              }}>
-                Question {currentIndex + 1}
-              </div>
-              {currentQuestion?.subsection && (
                 <div style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "8px",
+                  background: sectionConfig.color,
+                  color: "white",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                   fontSize: "16px",
-                  color: "#666",
-                  fontWeight: "500",
-                  marginTop: "5px"
+                  fontWeight: "bold"
                 }}>
-                  {currentQuestion.subsection}
+                  {sectionConfig.icon}
                 </div>
-              )}
-            </div>
-
-            {/* Question Content */}
-            <div style={{ padding: "30px" }}>
-              {/* Question Text */}
+                <div>
+                  <div style={{
+                    fontSize: "16px",
+                    fontWeight: "600",
+                    color: sectionConfig.color
+                  }}>
+                    {currentSection}
+                  </div>
+                  {currentQuestion?.subsection && (
+                    <div style={{
+                      fontSize: "14px",
+                      color: "#666",
+                      fontWeight: "500"
+                    }}>
+                      {currentQuestion.subsection}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
               <div style={{ 
-                fontSize: "20px", 
-                lineHeight: 1.6,
+                fontSize: "18px", 
+                lineHeight: 1.5,
                 color: "#333",
-                marginBottom: "30px",
                 fontWeight: "500"
               }}>
                 {currentQuestion?.question_text}
               </div>
+            </div>
 
+            {/* ANSWER OPTIONS - SCROLLABLE AREA */}
+            <div style={{ 
+              flex: 1,
+              padding: "20px",
+              overflowY: "auto",
+              minHeight: 0 // Allows scrolling
+            }}>
               {/* Save Status */}
               {saveStatus[currentQuestion?.id] && (
                 <div style={{
-                  padding: "12px 20px",
+                  padding: "10px 15px",
                   background: saveStatus[currentQuestion.id] === "saved" ? "#e8f5e9" : 
                              saveStatus[currentQuestion.id] === "saving" ? "#fff3e0" : 
                              "#ffebee",
                   border: `1px solid ${saveStatus[currentQuestion.id] === "saved" ? "#c8e6c9" : 
                            saveStatus[currentQuestion.id] === "saving" ? "#ffcc80" : 
                            "#ffcdd2"}`,
-                  borderRadius: "10px",
-                  marginBottom: "25px",
+                  borderRadius: "8px",
+                  marginBottom: "15px",
                   display: "flex",
                   alignItems: "center",
-                  gap: "10px",
-                  fontSize: "15px",
+                  gap: "8px",
+                  fontSize: "14px",
                   fontWeight: "600",
                   color: saveStatus[currentQuestion.id] === "saved" ? "#2e7d32" : 
                          saveStatus[currentQuestion.id] === "saving" ? "#f57c00" : 
@@ -833,34 +853,34 @@ export default function AssessmentPage() {
                   {saveStatus[currentQuestion.id] === "saved" ? (
                     <>
                       <span>✓</span>
-                      Answer saved successfully
+                      Answer saved
                     </>
                   ) : saveStatus[currentQuestion.id] === "saving" ? (
                     <>
                       <div style={{ 
-                        width: "16px", 
-                        height: "16px", 
+                        width: "14px", 
+                        height: "14px", 
                         border: "2px solid currentColor",
                         borderTopColor: "transparent",
                         borderRadius: "50%",
                         animation: "spin 1s linear infinite"
                       }} />
-                      Saving your answer...
+                      Saving...
                     </>
                   ) : (
                     <>
                       <span>⚠️</span>
-                      Failed to save. Please try again.
+                      Save failed
                     </>
                   )}
                 </div>
               )}
 
-              {/* Answer Options */}
+              {/* COMPACT ANSWER GRID */}
               <div style={{ 
                 display: "grid", 
                 gridTemplateColumns: "repeat(2, 1fr)",
-                gap: "15px"
+                gap: "10px"
               }}>
                 {currentQuestion?.options?.map((option, index) => {
                   const isSelected = answers[currentQuestion.id] === option.id;
@@ -872,44 +892,48 @@ export default function AssessmentPage() {
                       onClick={() => handleSelect(currentQuestion.id, option.id)}
                       disabled={saveStatus[currentQuestion.id] === "saving"}
                       style={{
-                        padding: "25px",
+                        padding: "15px",
                         background: isSelected ? sectionConfig.lightBg : "#f8f9fa",
                         border: `2px solid ${isSelected ? sectionConfig.color : "#e9ecef"}`,
-                        borderRadius: "15px",
+                        borderRadius: "10px",
                         cursor: saveStatus[currentQuestion.id] === "saving" ? "not-allowed" : "pointer",
                         textAlign: "left",
-                        fontSize: "17px",
-                        lineHeight: 1.6,
+                        fontSize: "15px",
+                        lineHeight: 1.4,
                         color: isSelected ? sectionConfig.color : "#333",
                         display: "flex",
                         alignItems: "center",
-                        gap: "15px",
-                        transition: "all 0.2s ease"
+                        gap: "12px",
+                        transition: "all 0.2s ease",
+                        height: "100%",
+                        minHeight: "60px"
                       }}
                       onMouseOver={(e) => {
                         if (!saveStatus[currentQuestion.id] && !isSelected) {
                           e.currentTarget.style.background = "#f1f3f4";
                           e.currentTarget.style.borderColor = "#dadce0";
+                          e.currentTarget.style.transform = "translateY(-2px)";
                         }
                       }}
                       onMouseOut={(e) => {
                         if (!saveStatus[currentQuestion.id] && !isSelected) {
                           e.currentTarget.style.background = "#f8f9fa";
                           e.currentTarget.style.borderColor = "#e9ecef";
+                          e.currentTarget.style.transform = "translateY(0)";
                         }
                       }}
                     >
                       {/* Option Indicator */}
                       <div style={{
-                        width: "42px",
-                        height: "42px",
-                        borderRadius: "10px",
+                        width: "32px",
+                        height: "32px",
+                        borderRadius: "8px",
                         background: isSelected ? sectionConfig.color : "#e9ecef",
                         color: isSelected ? "white" : "#666",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        fontSize: "18px",
+                        fontSize: "14px",
                         fontWeight: "700",
                         flexShrink: 0
                       }}>
@@ -923,53 +947,121 @@ export default function AssessmentPage() {
                       }}>
                         {option.answer_text}
                       </span>
+                      
+                      {/* Selection Indicator */}
+                      {isSelected && (
+                        <div style={{
+                          width: "20px",
+                          height: "20px",
+                          borderRadius: "50%",
+                          background: sectionConfig.color,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0
+                        }}>
+                          <div style={{
+                            width: "8px",
+                            height: "8px",
+                            borderRadius: "50%",
+                            background: "white"
+                          }} />
+                        </div>
+                      )}
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* Navigation Footer */}
+            {/* COMPACT NAVIGATION FOOTER */}
             <div style={{ 
-              padding: "25px 30px",
+              padding: "15px 20px",
               borderTop: "1px solid #e9ecef",
               background: "#f8f9fa",
               display: "flex",
               justifyContent: "space-between",
-              alignItems: "center"
+              alignItems: "center",
+              flexShrink: 0
             }}>
               <button 
                 onClick={handleBack} 
                 disabled={currentIndex === 0} 
                 style={{ 
-                  padding: "14px 30px", 
+                  padding: "10px 20px", 
                   background: currentIndex === 0 ? "#e9ecef" : sectionConfig.color, 
                   color: currentIndex === 0 ? "#999" : "white", 
                   border: "none",
-                  borderRadius: "10px",
+                  borderRadius: "8px",
                   cursor: currentIndex === 0 ? "not-allowed" : "pointer",
-                  fontSize: "16px",
+                  fontSize: "14px",
                   fontWeight: "600",
-                  minWidth: "140px"
+                  minWidth: "100px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "5px"
                 }}
               >
                 ← Previous
               </button>
               
-              <div style={{ textAlign: "center" }}>
-                <div style={{ 
-                  fontSize: "14px", 
-                  color: "#666",
-                  marginBottom: "5px"
-                }}>
-                  Question Progress
+              <div style={{ 
+                display: "flex", 
+                alignItems: "center", 
+                gap: "15px"
+              }}>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ 
+                    fontSize: "12px", 
+                    color: "#666",
+                    marginBottom: "2px"
+                  }}>
+                    Current
+                  </div>
+                  <div style={{ 
+                    fontSize: "14px", 
+                    fontWeight: "700", 
+                    color: sectionConfig.color
+                  }}>
+                    {currentIndex + 1}/{questions.length}
+                  </div>
                 </div>
-                <div style={{ 
-                  fontSize: "16px", 
-                  fontWeight: "600", 
-                  color: sectionConfig.color
-                }}>
-                  {currentIndex + 1} of {questions.length}
+                
+                {/* Quick Jump Buttons */}
+                <div style={{ display: "flex", gap: "5px" }}>
+                  <button 
+                    onClick={() => setCurrentIndex(Math.max(0, currentIndex - 5))}
+                    disabled={currentIndex < 5}
+                    style={{
+                      padding: "6px 10px",
+                      background: currentIndex < 5 ? "#e9ecef" : sectionConfig.lightBg,
+                      color: currentIndex < 5 ? "#999" : sectionConfig.color,
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: currentIndex < 5 ? "not-allowed" : "pointer",
+                      fontSize: "12px",
+                      fontWeight: "600"
+                    }}
+                  >
+                    -5
+                  </button>
+                  <button 
+                    onClick={() => setCurrentIndex(Math.min(questions.length - 1, currentIndex + 5))}
+                    disabled={currentIndex >= questions.length - 5}
+                    style={{
+                      padding: "6px 10px",
+                      background: currentIndex >= questions.length - 5 ? "#e9ecef" : sectionConfig.lightBg,
+                      color: currentIndex >= questions.length - 5 ? "#999" : sectionConfig.color,
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: currentIndex >= questions.length - 5 ? "not-allowed" : "pointer",
+                      fontSize: "12px",
+                      fontWeight: "600"
+                    }}
+                  >
+                    +5
+                  </button>
                 </div>
               </div>
               
@@ -977,32 +1069,40 @@ export default function AssessmentPage() {
                 <button 
                   onClick={() => setShowSubmitModal(true)}
                   style={{ 
-                    padding: "14px 30px", 
+                    padding: "10px 20px", 
                     background: "#4caf50", 
                     color: "white", 
                     border: "none",
-                    borderRadius: "10px",
+                    borderRadius: "8px",
                     cursor: "pointer",
-                    fontSize: "16px",
+                    fontSize: "14px",
                     fontWeight: "600",
-                    minWidth: "140px"
+                    minWidth: "100px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "5px"
                   }}
                 >
-                  Submit Assessment
+                  Submit →
                 </button>
               ) : (
                 <button 
                   onClick={handleNext} 
                   style={{ 
-                    padding: "14px 30px", 
+                    padding: "10px 20px", 
                     background: sectionConfig.color, 
                     color: "white", 
                     border: "none",
-                    borderRadius: "10px",
+                    borderRadius: "8px",
                     cursor: "pointer",
-                    fontSize: "16px",
+                    fontSize: "14px",
                     fontWeight: "600",
-                    minWidth: "140px"
+                    minWidth: "100px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "5px"
                   }}
                 >
                   Next →
@@ -1012,24 +1112,31 @@ export default function AssessmentPage() {
           </div>
         </div>
 
-        {/* Quick Navigation Grid */}
+        {/* COMPACT QUICK NAVIGATION */}
         <div style={{
-          padding: "20px 30px",
+          padding: "10px 15px",
           background: "white",
-          borderTop: "1px solid #e9ecef"
+          borderTop: "1px solid #e9ecef",
+          overflowX: "auto"
         }}>
           <div style={{ 
-            fontSize: "16px", 
+            fontSize: "13px", 
             fontWeight: "600", 
-            marginBottom: "15px",
-            color: "#1a237e"
+            marginBottom: "8px",
+            color: "#1a237e",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px"
           }}>
+            <span>📋</span>
             Quick Navigation
           </div>
           <div style={{ 
-            display: "grid", 
-            gridTemplateColumns: "repeat(auto-fill, minmax(40px, 1fr))",
-            gap: "10px"
+            display: "flex", 
+            gap: "6px",
+            flexWrap: "nowrap",
+            overflowX: "auto",
+            paddingBottom: "5px"
           }}>
             {questions.map((q, index) => {
               const isAnswered = answers[q.id];
@@ -1040,18 +1147,19 @@ export default function AssessmentPage() {
                   key={q.id}
                   onClick={() => setCurrentIndex(index)}
                   style={{
-                    width: "40px",
-                    height: "40px",
+                    width: "32px",
+                    height: "32px",
                     background: isCurrent ? sectionConfig.color : 
                                isAnswered ? "#4caf50" : "#f5f5f5",
                     color: isCurrent ? "white" : 
                            isAnswered ? "white" : "#666",
                     border: `2px solid ${isCurrent ? sectionConfig.color : 
                              isAnswered ? "#4caf50" : "#e0e0e0"}`,
-                    borderRadius: "8px",
+                    borderRadius: "6px",
                     cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "600"
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    flexShrink: 0
                   }}
                 >
                   {index + 1}
@@ -1066,6 +1174,26 @@ export default function AssessmentPage() {
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
+        }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+          width: 6px;
+          height: 6px;
+        }
+        
+        ::-webkit-scrollbar-track {
+          background: #f1f1f1;
+          border-radius: 3px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+          background: #c1c1c1;
+          border-radius: 3px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+          background: #a8a8a8;
         }
       `}</style>
     </>
