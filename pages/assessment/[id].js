@@ -991,55 +991,61 @@ export default function AssessmentPage() {
             
             {/* LARGER QUESTION GRID */}
             <div style={{ 
-  flex: 1,
-  display: 'grid',
-  gridTemplateColumns: 'repeat(3, 1fr)',
-  gap: '5px',
-  overflowY: 'auto'
-}}>
-  {questions.map((q, index) => {
-    const isAnswered = answers[q.id];
-    const isCurrent = index === currentIndex;
-    
-    return (
-      <button
-        key={q.id}
-        onClick={() => setCurrentIndex(index)}
-        style={{
-          width: '100%',
-          aspectRatio: '1/1',
-          background: isCurrent ? sectionConfig.color : 
-                     isAnswered ? '#4caf50' : '#f5f5f5',
-          color: isCurrent ? 'white' : 
-                 isAnswered ? 'white' : '#666',
-          border: `1px solid ${isCurrent ? sectionConfig.color : 
-                   isAnswered ? '#4caf50' : '#e0e0e0'}`,
-          borderRadius: '4px',
-          cursor: 'pointer',
-          fontSize: '10px',
-          fontWeight: '600',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '2px',
-          transition: 'all 0.2s'
-        }}
-        title={`Question ${index + 1}`}
-        onMouseOver={(e) => {
-          if (!isCurrent) {
-            e.currentTarget.style.transform = 'scale(1.05)';
-            e.currentTarget.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
-          }
-        }}
-        onMouseOut={(e) => {
-          if (!isCurrent) {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.boxShadow = 'none';
-          }
-        }}
-      >
-        {index + 1}
-      </button>
-    );
-  })}
-</div>
+              flex: 1,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '5px',
+              overflowY: 'auto'
+            }}>
+              {questions.map((q, index) => {
+                const isAnswered = answers[q.id];
+                const isCurrent = index === currentIndex;
+                
+                return (
+                  <button
+                    key={q.id}
+                    onClick={() => setCurrentIndex(index)}
+                    style={{
+                      width: '100%',
+                      aspectRatio: '1/1',
+                      background: isCurrent ? sectionConfig.color : 
+                                 isAnswered ? '#4caf50' : '#f5f5f5',
+                      color: isCurrent ? 'white' : 
+                             isAnswered ? 'white' : '#666',
+                      border: `1px solid ${isCurrent ? sectionConfig.color : 
+                               isAnswered ? '#4caf50' : '#e0e0e0'}`,
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '10px',
+                      fontWeight: '600',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '2px',
+                      transition: 'all 0.2s'
+                    }}
+                    title={`Question ${index + 1}`}
+                    onMouseOver={(e) => {
+                      if (!isCurrent) {
+                        e.currentTarget.style.transform = 'scale(1.05)';
+                        e.currentTarget.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      if (!isCurrent) {
+                        e.currentTarget.style.transform = 'scale(1)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }
+                    }}
+                  >
+                    {index + 1}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
