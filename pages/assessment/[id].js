@@ -730,55 +730,55 @@ export default function AssessmentPage() {
           }} />
         </div>
 
-        {/* MAIN CONTENT */}
+        {/* MAIN CONTENT - OPTIMIZED LAYOUT */}
         <div style={{ 
           flex: 1,
-          padding: '10px',
+          padding: '8px',
           display: 'flex',
           overflow: 'hidden',
-          gap: '10px'
+          gap: '8px'
         }}>
-          {/* QUESTION & ANSWERS - 85% WIDTH (reduced from 90%) */}
+          {/* QUESTION & ANSWERS - 65% WIDTH (reduced significantly) */}
           <div style={{
-            flex: 8.5, // Reduced from 9 to 8.5
+            flex: 6.5, // Reduced from 8.5 to 6.5 (65% of width)
             background: `linear-gradient(rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.95)), 
                         url('${sectionConfig.bgImage}')`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
-            borderRadius: '8px',
+            borderRadius: '6px',
             border: '1px solid #e0e0e0',
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
-            padding: '15px'
+            padding: '12px'
           }}>
             {/* COMPACT QUESTION HEADER */}
             <div style={{
-              marginBottom: '12px',
-              paddingBottom: '10px',
+              marginBottom: '10px',
+              paddingBottom: '8px',
               borderBottom: '1px solid rgba(0, 0, 0, 0.1)'
             }}>
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
-                marginBottom: '6px'
+                gap: '6px',
+                marginBottom: '4px'
               }}>
                 <div style={{
-                  width: '24px',
-                  height: '24px',
+                  width: '20px',
+                  height: '20px',
                   borderRadius: '4px',
                   background: sectionConfig.color,
                   color: 'white',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '12px'
+                  fontSize: '10px'
                 }}>
                   {sectionConfig.icon}
                 </div>
                 <div style={{
-                  fontSize: '12px',
+                  fontSize: '11px',
                   fontWeight: '600',
                   color: sectionConfig.color
                 }}>
@@ -787,31 +787,31 @@ export default function AssessmentPage() {
               </div>
               
               <div style={{ 
-                fontSize: '15px', 
+                fontSize: '14px', 
                 lineHeight: 1.4,
                 color: '#333',
                 fontWeight: '500'
               }}>
-                <strong>Question {currentIndex + 1}:</strong> {currentQuestion?.question_text}
+                <strong>Q{currentIndex + 1}:</strong> {currentQuestion?.question_text}
               </div>
             </div>
 
-            {/* Save Status */}
+            {/* Save Status - Ultra Compact */}
             {saveStatus[currentQuestion?.id] && (
               <div style={{
-                padding: '6px 10px',
+                padding: '4px 8px',
                 background: saveStatus[currentQuestion.id] === 'saved' ? 'rgba(76, 175, 80, 0.1)' : 
                            saveStatus[currentQuestion.id] === 'saving' ? 'rgba(255, 152, 0, 0.1)' : 
                            'rgba(211, 47, 47, 0.1)',
                 border: `1px solid ${saveStatus[currentQuestion.id] === 'saved' ? '#4caf50' : 
                          saveStatus[currentQuestion.id] === 'saving' ? '#ff9800' : 
                          '#d32f2f'}`,
-                borderRadius: '4px',
-                marginBottom: '10px',
+                borderRadius: '3px',
+                marginBottom: '8px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
-                fontSize: '12px',
+                gap: '4px',
+                fontSize: '11px',
                 color: saveStatus[currentQuestion.id] === 'saved' ? '#2e7d32' : 
                        saveStatus[currentQuestion.id] === 'saving' ? '#f57c00' : 
                        '#d32f2f'
@@ -822,11 +822,11 @@ export default function AssessmentPage() {
               </div>
             )}
 
-            {/* SINGLE COLUMN ANSWERS */}
+            {/* SINGLE COLUMN ANSWERS - Compact */}
             <div style={{ 
               display: 'flex',
               flexDirection: 'column',
-              gap: '6px',
+              gap: '5px',
               flex: 1
             }}>
               {currentQuestion?.options?.map((option, index) => {
@@ -839,20 +839,20 @@ export default function AssessmentPage() {
                     onClick={() => handleSelect(currentQuestion.id, option.id)}
                     disabled={saveStatus[currentQuestion.id] === 'saving'}
                     style={{
-                      padding: '10px 12px',
+                      padding: '8px 10px',
                       background: isSelected ? sectionConfig.lightBg : 'white',
                       border: `2px solid ${isSelected ? sectionConfig.color : '#e0e0e0'}`,
-                      borderRadius: '6px',
+                      borderRadius: '5px',
                       cursor: saveStatus[currentQuestion.id] === 'saving' ? 'not-allowed' : 'pointer',
                       textAlign: 'left',
-                      fontSize: '14px',
+                      fontSize: '13px',
                       lineHeight: 1.3,
                       color: isSelected ? sectionConfig.color : '#333',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '10px',
+                      gap: '8px',
                       transition: 'all 0.2s',
-                      boxShadow: isSelected ? `0 2px 4px ${sectionConfig.color}40` : 'none'
+                      boxShadow: isSelected ? `0 1px 3px ${sectionConfig.color}40` : 'none'
                     }}
                     onMouseOver={(e) => {
                       if (!saveStatus[currentQuestion.id] && !isSelected) {
@@ -868,15 +868,15 @@ export default function AssessmentPage() {
                     }}
                   >
                     <div style={{
-                      width: '20px',
-                      height: '20px',
-                      borderRadius: '4px',
+                      width: '18px',
+                      height: '18px',
+                      borderRadius: '3px',
                       background: isSelected ? sectionConfig.color : '#f5f5f5',
                       color: isSelected ? 'white' : '#666',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: '11px',
+                      fontSize: '10px',
                       fontWeight: '700',
                       flexShrink: 0
                     }}>
@@ -885,7 +885,7 @@ export default function AssessmentPage() {
                     
                     <span style={{ 
                       flex: 1,
-                      fontSize: '13px'
+                      fontSize: '12px'
                     }}>
                       {option.answer_text}
                     </span>
@@ -896,8 +896,8 @@ export default function AssessmentPage() {
 
             {/* COMPACT NAVIGATION */}
             <div style={{ 
-              marginTop: '12px',
-              paddingTop: '10px',
+              marginTop: '10px',
+              paddingTop: '8px',
               borderTop: '1px solid #e0e0e0',
               display: 'flex',
               justifyContent: 'space-between',
@@ -907,22 +907,22 @@ export default function AssessmentPage() {
                 onClick={handleBack} 
                 disabled={currentIndex === 0} 
                 style={{ 
-                  padding: '6px 12px', 
+                  padding: '5px 10px', 
                   background: currentIndex === 0 ? '#f5f5f5' : sectionConfig.color, 
                   color: currentIndex === 0 ? '#999' : 'white', 
                   border: 'none',
-                  borderRadius: '4px',
+                  borderRadius: '3px',
                   cursor: currentIndex === 0 ? 'not-allowed' : 'pointer',
-                  fontSize: '12px',
+                  fontSize: '11px',
                   fontWeight: '600',
-                  minWidth: '80px'
+                  minWidth: '70px'
                 }}
               >
                 ← Previous
               </button>
               
               <div style={{ 
-                fontSize: '12px', 
+                fontSize: '11px', 
                 fontWeight: '600', 
                 color: '#666'
               }}>
@@ -933,15 +933,15 @@ export default function AssessmentPage() {
                 <button 
                   onClick={() => setShowSubmitModal(true)}
                   style={{ 
-                    padding: '6px 12px', 
+                    padding: '5px 10px', 
                     background: '#4caf50', 
                     color: 'white', 
                     border: 'none',
-                    borderRadius: '4px',
+                    borderRadius: '3px',
                     cursor: 'pointer',
-                    fontSize: '12px',
+                    fontSize: '11px',
                     fontWeight: '600',
-                    minWidth: '80px'
+                    minWidth: '70px'
                   }}
                 >
                   Submit →
@@ -950,15 +950,15 @@ export default function AssessmentPage() {
                 <button 
                   onClick={handleNext} 
                   style={{ 
-                    padding: '6px 12px', 
+                    padding: '5px 10px', 
                     background: sectionConfig.color, 
                     color: 'white', 
                     border: 'none',
-                    borderRadius: '4px',
+                    borderRadius: '3px',
                     cursor: 'pointer',
-                    fontSize: '12px',
+                    fontSize: '11px',
                     fontWeight: '600',
-                    minWidth: '80px'
+                    minWidth: '70px'
                   }}
                 >
                   Next →
@@ -967,35 +967,60 @@ export default function AssessmentPage() {
             </div>
           </div>
 
-          {/* INCREASED QUESTION NAV - 15% WIDTH (increased by 50% from 10%) */}
+          {/* EXPANDED QUESTION NAV - 35% WIDTH (increased significantly) */}
           <div style={{
-            flex: 1.5, // Increased by 50% from 1 to 1.5
+            flex: 3.5, // Increased from 1.5 to 3.5 (35% of width)
             background: 'white',
-            borderRadius: '8px',
+            borderRadius: '6px',
             border: '1px solid #e0e0e0',
-            padding: '12px',
+            padding: '10px',
             display: 'flex',
             flexDirection: 'column',
-            minWidth: '90px',
-            maxWidth: '120px'
+            minWidth: '180px', // Increased from 90px
+            maxWidth: '250px' // Increased from 120px
           }}>
             <div style={{ 
-              fontSize: '12px',
+              fontSize: '13px',
               fontWeight: '600', 
-              marginBottom: '10px',
-              color: '#666',
-              textAlign: 'center'
+              marginBottom: '12px',
+              color: '#333',
+              textAlign: 'center',
+              paddingBottom: '8px',
+              borderBottom: '2px solid #f0f0f0'
             }}>
               Question Navigator
             </div>
             
-            {/* LARGER QUESTION GRID WITH 8 QUESTIONS PER LINE */}
+            {/* Question Status Summary */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              marginBottom: '10px',
+              padding: '6px 8px',
+              background: '#f8f9fa',
+              borderRadius: '4px',
+              fontSize: '11px'
+            }}>
+              <div>
+                <div style={{ color: '#4caf50', fontWeight: '600' }}>
+                  ✓ {totalAnswered} Answered
+                </div>
+              </div>
+              <div>
+                <div style={{ color: '#666', fontWeight: '600' }}>
+                  ○ {questions.length - totalAnswered} Remaining
+                </div>
+              </div>
+            </div>
+            
+            {/* LARGE QUESTION GRID WITH 6 QUESTIONS PER LINE (no horizontal scroll needed) */}
             <div style={{ 
               flex: 1,
               display: 'grid',
-              gridTemplateColumns: 'repeat(8, 1fr)', // Changed from 3 to 8 columns
-              gap: '3px', // Reduced gap for more compact layout
-              overflowY: 'auto'
+              gridTemplateColumns: 'repeat(6, 1fr)', // 6 per line (better fit)
+              gap: '4px',
+              overflowY: 'auto',
+              padding: '2px'
             }}>
               {questions.map((q, index) => {
                 const isAnswered = answers[q.id];
@@ -1014,21 +1039,20 @@ export default function AssessmentPage() {
                              isAnswered ? 'white' : '#666',
                       border: `1px solid ${isCurrent ? sectionConfig.color : 
                                isAnswered ? '#4caf50' : '#e0e0e0'}`,
-                      borderRadius: '3px', // Reduced border radius
+                      borderRadius: '4px',
                       cursor: 'pointer',
-                      fontSize: '9px', // Reduced font size
+                      fontSize: '10px',
                       fontWeight: '600',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      padding: '1px',
                       transition: 'all 0.2s'
                     }}
-                    title={`Question ${index + 1}`}
+                    title={`Question ${index + 1}${isAnswered ? ' (Answered)' : ' (Not answered)'}`}
                     onMouseOver={(e) => {
                       if (!isCurrent) {
                         e.currentTarget.style.transform = 'scale(1.05)';
-                        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                        e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
                       }
                     }}
                     onMouseOut={(e) => {
@@ -1042,6 +1066,44 @@ export default function AssessmentPage() {
                   </button>
                 );
               })}
+            </div>
+            
+            {/* Section Legend */}
+            <div style={{
+              marginTop: '12px',
+              paddingTop: '10px',
+              borderTop: '1px solid #e0e0e0'
+            }}>
+              <div style={{
+                fontSize: '11px',
+                fontWeight: '600',
+                color: '#666',
+                marginBottom: '6px'
+              }}>
+                Section Legend:
+              </div>
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+                fontSize: '10px'
+              }}>
+                {Object.entries(SECTION_CONFIG).map(([section, config]) => (
+                  <div key={section} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    <div style={{
+                      width: '12px',
+                      height: '12px',
+                      borderRadius: '2px',
+                      background: config.color
+                    }} />
+                    <span style={{ color: '#444' }}>{section}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
