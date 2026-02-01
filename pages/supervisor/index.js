@@ -22,6 +22,16 @@ export default function SupervisorDashboard() {
   const [isMobile, setIsMobile] = useState(false);
   const [apiStatus, setApiStatus] = useState("loading"); // loading, success, error
 
+  // Add candidate analysis state
+  const [candidateAnalysis, setCandidateAnalysis] = useState({
+    traits: {},
+    categories: {},
+    overallScore: 0,
+    strengths: [],
+    developmentAreas: [],
+    summary: ''
+  });
+
   // Check if mobile
   useEffect(() => {
     const checkMobile = () => {
@@ -295,6 +305,111 @@ export default function SupervisorDashboard() {
     }
   };
 
+  // Helper function to get color for trait categories
+  const getTraitColor = (trait) => {
+    const colors = {
+      'Cognitive Ability': '#3b82f6',
+      'Personality': '#8b5cf6',
+      'Leadership': '#10b981',
+      'Technical Skills': '#f59e0b',
+      'Communication': '#ef4444',
+      'Problem Solving': '#06b6d4',
+      'Teamwork': '#8b5cf6',
+      'Adaptability': '#f97316',
+      'General': '#6b7280'
+    };
+    return colors[trait] || '#6b7280';
+  };
+
+  // Helper function to get color for strength levels
+  const getStrengthColor = (strength) => {
+    const colors = {
+      'high': '#10b981',
+      'medium': '#f59e0b',
+      'low': '#ef4444'
+    };
+    return colors[strength] || '#6b7280';
+  };
+
+  // New function to analyze candidate responses
+  const analyzeCandidateResponses = (responses) => {
+    if (!responses || responses.length === 0) return {};
+    
+    const analysis = {
+      traits: {},
+      categories: {},
+      overallScore: 0,
+      strengths: [],
+      developmentAreas: [],
+      summary: ''
+    };
+    
+    // Group by trait categories
+    responses.forEach(response => {
+      const trait = response.answers?.trait_category || 'General';
+      const strength = response.answers?.strength_level || 'medium';
+      const score = response.answers?.score || 0;
+      const interpretation = response.answers?.interpretation || '';
+      
+      if (!analysis.traits[trait]) {
+        analysis.traits[trait] = {
+          totalScore: 0,
+          count: 0,
+          averageScore: 0,
+          strengthLevels: { low: 0, medium: 0, high: 0 },
+          interpretations: []
+        };
+      }
+      
+      analysis.traits[trait].totalScore += score;
+      analysis.traits[trait].count++;
+      analysis.traits[trait].strengthLevels[strength]++;
+      
+      if (interpretation) {
+        analysis.traits[trait].interpretations.push({
+          interpretation: interpretation,
+          strength: strength,
+          score: score
+        });
+      }
+      
+      analysis.overallScore += score;
+    });
+    
+    // Calculate averages and generate insights
+    Object.keys(analysis.traits).forEach(trait => {
+      const traitData = analysis.traits[trait];
+      traitData.averageScore = traitData.count > 0 
+        ? Math.round((traitData.totalScore / (traitData.count * 10)) * 100) 
+        : 0;
+      
+      // Determine primary strength level
+      const { low, medium, high } = traitData.strengthLevels;
+      if (high > medium && high > low) {
+        analysis.strengths.push(`${trait} (Strong)`);
+      } else if (low > medium && low > high) {
+        analysis.developmentAreas.push(`${trait} (Needs Development)`);
+      }
+    });
+    
+    analysis.overallScore = responses.length > 0 
+      ? Math.round((analysis.overallScore / (responses.length * 10)) * 100) 
+      : 0;
+    
+    // Generate summary
+    analysis.summary = generateSummary(analysis);
+    
+    return analysis;
+  };
+
+  // Generate human-readable summary
+  const generateSummary = (analysis) => {
+    const strengths = analysis.strengths.slice(0, 3).join(', ');
+    const areas = analysis.developmentAreas.slice(0, 2).join(', ');
+    
+    return `Candidate demonstrates ${strengths ? 'strengths in ' + strengths : 'balanced capabilities'}${areas ? ', with opportunities for growth in ' + areas : ''}. Overall assessment score: ${analysis.overallScore}%.`;
+  };
+
   // Load candidate responses
   const loadCandidateResponses = async (candidateId) => {
     setLoadingResponses(true);
@@ -304,7 +419,13 @@ export default function SupervisorDashboard() {
         .select(`
           *,
           questions!inner (question_text, section, subsection),
-          answers!inner (answer_text, score)
+          answers!inner (
+            answer_text, 
+            score,
+            interpretation,
+            trait_category,
+            strength_level
+          )
         `)
         .eq("user_id", candidateId)
         .eq("assessment_id", '11111111-1111-1111-1111-111111111111')
@@ -313,9 +434,14 @@ export default function SupervisorDashboard() {
       if (error) {
         console.error("Error loading responses:", error);
         setCandidateResponses([]);
+        setCandidateAnalysis({});
       } else {
         console.log("Loaded responses for candidate:", candidateId, "Count:", responses?.length || 0);
         setCandidateResponses(responses || []);
+        
+        // Generate analysis
+        const analysis = analyzeCandidateResponses(responses || []);
+        setCandidateAnalysis(analysis);
       }
       
       // Find the candidate details
@@ -325,6 +451,7 @@ export default function SupervisorDashboard() {
     } catch (error) {
       console.error("Error loading responses:", error);
       setCandidateResponses([]);
+      setCandidateAnalysis({});
       
       const candidate = candidates.find(c => c.id === candidateId);
       setSelectedCandidate(candidate);
@@ -333,17 +460,25 @@ export default function SupervisorDashboard() {
     }
   };
 
-  // Export data as CSV
+  // Export analysis data as CSV
   const exportToCSV = () => {
     if (selectedCandidate && candidateResponses.length > 0) {
-      const headers = ["Question ID", "Section", "Question", "Response", "Score"];
-      const csvData = candidateResponses.map(r => [
-        r.question_id,
-        r.questions.section,
-        r.questions.question_text,
-        r.answers.answer_text,
-        r.answers.score
-      ]);
+      // Create analysis report
+      const headers = ["Category", "Trait", "Score", "Strength Level", "Interpretation", "Recommendation"];
+      
+      const csvData = Object.entries(candidateAnalysis.traits).flatMap(([trait, data]) => {
+        return data.interpretations.map(insight => [
+          trait,
+          trait,
+          `${data.averageScore}%`,
+          insight.strength,
+          insight.interpretation,
+          insight.strength === 'high' ? 'Leverage strength' : 'Develop further'
+        ]);
+      });
+      
+      // Add summary
+      csvData.push(["SUMMARY", "Overall Assessment", `${candidateAnalysis.overallScore}%`, "", candidateAnalysis.summary, ""]);
       
       const csvContent = [
         headers.join(","),
@@ -354,10 +489,10 @@ export default function SupervisorDashboard() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `candidate-${selectedCandidate.email}-responses.csv`;
+      a.download = `candidate-analysis-${selectedCandidate.email}.csv`;
       a.click();
     } else {
-      alert("No responses to export");
+      alert("No analysis data to export");
     }
   };
 
@@ -724,7 +859,7 @@ export default function SupervisorDashboard() {
                   {session?.user?.email 
                     ? `You are logged in as supervisor (${session.user.email}). 
                        Candidate data will appear here once users register and take assessments.`
-                    : "Candidate data will appear here once users register and take assessments."}
+                    : "Candidate data will appear here once users register and complete assessments."}
                 </p>
                 <div style={{ 
                   marginTop: "20px", 
@@ -897,7 +1032,7 @@ export default function SupervisorDashboard() {
               </div>
               <p style={{ fontSize: "14px", color: "#999", maxWidth: "400px", margin: "0 auto" }}>
                 {candidates.length > 0 
-                  ? "Click on a candidate from the list to view their assessment responses"
+                  ? "Click on a candidate from the list to view their psychological analysis"
                   : "There are no candidates in the system. Users need to register and complete assessments."}
               </p>
               {candidates.length === 0 && stats.totalResponses > 0 && (
@@ -991,7 +1126,7 @@ export default function SupervisorDashboard() {
                     disabled={candidateResponses.length === 0}
                     style={{
                       padding: isMobile ? "10px 15px" : "12px 20px",
-                      background: candidateResponses.length === 0 ? "#f5f5f5" : "#10b981",
+                      background: candidateResponses.length === 0 ? "#f5f5f5" : "#3b82f6",
                       color: candidateResponses.length === 0 ? "#999" : "white",
                       border: "none",
                       borderRadius: "10px",
@@ -1004,12 +1139,12 @@ export default function SupervisorDashboard() {
                       minHeight: "44px"
                     }}
                   >
-                    📥 Export CSV
+                    📊 Export Analysis
                   </button>
                 </div>
               </div>
 
-              {/* Responses */}
+              {/* Candidate Analysis */}
               {loadingResponses ? (
                 <div style={{
                   padding: "40px 20px",
@@ -1033,7 +1168,7 @@ export default function SupervisorDashboard() {
                     `}</style>
                   </div>
                   <div style={{ fontSize: "16px", fontWeight: "600" }}>
-                    Loading responses...
+                    Loading analysis...
                   </div>
                 </div>
               ) : candidateResponses.length === 0 ? (
@@ -1075,111 +1210,377 @@ export default function SupervisorDashboard() {
                 </div>
               ) : (
                 <>
+                  {/* Analysis Overview */}
                   <div style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
+                    background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                    borderRadius: "15px",
+                    padding: "25px",
                     marginBottom: "20px",
-                    paddingBottom: "15px",
-                    borderBottom: "2px solid #f1f3f5"
+                    color: "white"
                   }}>
                     <div style={{
-                      fontSize: "16px",
-                      fontWeight: "600",
-                      color: "#1a237e"
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: "15px",
+                      flexWrap: "wrap",
+                      gap: "15px"
                     }}>
-                      Assessment Responses ({candidateResponses.length})
+                      <div>
+                        <h3 style={{ fontSize: "20px", fontWeight: "700", margin: 0, marginBottom: "5px" }}>
+                          Psychological Analysis Report
+                        </h3>
+                        <p style={{ fontSize: "14px", opacity: 0.9, margin: 0 }}>
+                          Based on {candidateResponses.length} assessment responses
+                        </p>
+                      </div>
+                      <div style={{
+                        fontSize: "24px",
+                        fontWeight: "800",
+                        background: "rgba(255,255,255,0.2)",
+                        padding: "10px 20px",
+                        borderRadius: "10px",
+                        backdropFilter: "blur(10px)"
+                      }}>
+                        {candidateAnalysis.overallScore}%
+                      </div>
                     </div>
+                    
+                    {/* Summary */}
                     <div style={{
+                      background: "rgba(255,255,255,0.15)",
+                      padding: "15px",
+                      borderRadius: "10px",
                       fontSize: "14px",
-                      color: "#10b981",
-                      fontWeight: "600",
-                      background: "#d1fae5",
-                      padding: "6px 12px",
-                      borderRadius: "20px"
+                      lineHeight: 1.6,
+                      backdropFilter: "blur(5px)",
+                      border: "1px solid rgba(255,255,255,0.1)"
                     }}>
-                      Score: {candidateResponses.reduce((sum, r) => sum + (r.answers?.score || 0), 0)}/{candidateResponses.length * 10}
+                      {candidateAnalysis.summary || "Generating analysis..."}
                     </div>
                   </div>
 
+                  {/* Strengths & Development Areas */}
                   <div style={{
-                    maxHeight: isMobile ? "400px" : "500px",
-                    overflowY: "auto",
-                    paddingRight: "10px"
+                    display: "grid",
+                    gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+                    gap: "15px",
+                    marginBottom: "20px"
                   }}>
-                    {candidateResponses.map((response, index) => (
-                      <div
-                        key={response.id}
-                        style={{
-                          background: "#f8f9fa",
-                          borderRadius: "12px",
-                          padding: "20px",
-                          marginBottom: "15px",
-                          borderLeft: "4px solid #1565c0"
-                        }}
-                      >
+                    {/* Strengths */}
+                    <div style={{
+                      background: "#d1fae5",
+                      borderRadius: "12px",
+                      padding: "20px",
+                      border: "1px solid #a7f3d0"
+                    }}>
+                      <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        marginBottom: "15px"
+                      }}>
                         <div style={{
+                          width: "32px",
+                          height: "32px",
+                          background: "#10b981",
+                          borderRadius: "50%",
                           display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "flex-start",
-                          marginBottom: "10px",
-                          flexWrap: "wrap",
-                          gap: "10px"
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "white",
+                          fontWeight: "bold"
                         }}>
-                          <div>
-                            <div style={{
-                              fontSize: "14px",
-                              color: "#1565c0",
-                              fontWeight: "600",
-                              marginBottom: "5px"
-                            }}>
-                              {response.questions?.section || "Unknown Section"}
-                            </div>
-                            <div style={{
-                              fontSize: "15px",
-                              fontWeight: "600",
-                              color: "#1a237e"
-                            }}>
-                              {response.questions?.question_text || "Question not found"}
-                            </div>
-                          </div>
-                          <div style={{
-                            fontSize: "14px",
-                            fontWeight: "600",
-                            color: "#10b981",
-                            background: "#d1fae5",
-                            padding: "4px 10px",
-                            borderRadius: "12px",
-                            flexShrink: 0
-                          }}>
-                            Score: {response.answers?.score || 0}/10
-                          </div>
+                          ✓
                         </div>
-                        
+                        <h4 style={{ fontSize: "16px", fontWeight: "700", color: "#065f46", margin: 0 }}>
+                          Key Strengths
+                        </h4>
+                      </div>
+                      
+                      {candidateAnalysis.strengths.length > 0 ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                          {candidateAnalysis.strengths.map((strength, index) => (
+                            <div key={index} style={{
+                              background: "white",
+                              padding: "12px",
+                              borderRadius: "8px",
+                              fontSize: "14px",
+                              color: "#065f46",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px"
+                            }}>
+                              <div style={{ color: "#10b981" }}>●</div>
+                              <span>{strength}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p style={{ fontSize: "14px", color: "#047857", fontStyle: "italic" }}>
+                          No significant strengths identified
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Development Areas */}
+                    <div style={{
+                      background: "#fef3c7",
+                      borderRadius: "12px",
+                      padding: "20px",
+                      border: "1px solid #fde68a"
+                    }}>
+                      <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        marginBottom: "15px"
+                      }}>
                         <div style={{
-                          background: "white",
-                          borderRadius: "8px",
-                          padding: "15px",
-                          marginTop: "10px",
-                          border: "1px solid #e9ecef"
+                          width: "32px",
+                          height: "32px",
+                          background: "#f59e0b",
+                          borderRadius: "50%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "white",
+                          fontWeight: "bold"
                         }}>
-                          <div style={{
-                            fontSize: "13px",
-                            color: "#666",
-                            marginBottom: "5px"
+                          ⚡
+                        </div>
+                        <h4 style={{ fontSize: "16px", fontWeight: "700", color: "#92400e", margin: 0 }}>
+                          Development Areas
+                        </h4>
+                      </div>
+                      
+                      {candidateAnalysis.developmentAreas.length > 0 ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                          {candidateAnalysis.developmentAreas.map((area, index) => (
+                            <div key={index} style={{
+                              background: "white",
+                              padding: "12px",
+                              borderRadius: "8px",
+                              fontSize: "14px",
+                              color: "#92400e",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px"
+                            }}>
+                              <div style={{ color: "#f59e0b" }}>●</div>
+                              <span>{area}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p style={{ fontSize: "14px", color: "#b45309", fontStyle: "italic" }}>
+                          No significant development areas identified
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Detailed Trait Analysis */}
+                  <div style={{
+                    background: "white",
+                    borderRadius: "12px",
+                    padding: "20px",
+                    marginBottom: "20px",
+                    border: "1px solid #e5e7eb"
+                  }}>
+                    <h4 style={{ fontSize: "16px", fontWeight: "700", color: "#1a237e", marginBottom: "15px" }}>
+                      Detailed Psychological Trait Analysis
+                    </h4>
+                    
+                    {Object.keys(candidateAnalysis.traits).length > 0 ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
+                        {Object.entries(candidateAnalysis.traits).map(([trait, data], index) => (
+                          <div key={index} style={{
+                            background: "#f8f9fa",
+                            borderRadius: "10px",
+                            padding: "15px",
+                            borderLeft: `4px solid ${getTraitColor(trait)}`
                           }}>
-                            Candidate's Response:
+                            <div style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              marginBottom: "10px"
+                            }}>
+                              <div style={{ fontSize: "15px", fontWeight: "600", color: "#1a237e" }}>
+                                {trait}
+                              </div>
+                              <div style={{
+                                fontSize: "14px",
+                                fontWeight: "600",
+                                color: "#10b981",
+                                background: "#d1fae5",
+                                padding: "4px 10px",
+                                borderRadius: "12px"
+                              }}>
+                                {data.averageScore}%
+                              </div>
+                            </div>
+                            
+                            {/* Interpretations */}
+                            {data.interpretations.length > 0 && (
+                              <div style={{ marginTop: "10px" }}>
+                                <div style={{ fontSize: "13px", color: "#666", marginBottom: "8px" }}>
+                                  Key Insights:
+                                </div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                                  {data.interpretations.slice(0, 3).map((insight, idx) => (
+                                    <div key={idx} style={{
+                                      background: "white",
+                                      padding: "10px",
+                                      borderRadius: "6px",
+                                      fontSize: "13px",
+                                      color: "#333",
+                                      borderLeft: `3px solid ${getStrengthColor(insight.strength)}`
+                                    }}>
+                                      {insight.interpretation}
+                                      <div style={{ fontSize: "11px", color: "#999", marginTop: "4px" }}>
+                                        Strength: {insight.strength} • Score: {insight.score}/10
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                          <div style={{
-                            fontSize: "14px",
-                            fontWeight: "500",
-                            color: "#333"
-                          }}>
-                            {response.answers?.answer_text || "No response recorded"}
-                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p style={{ fontSize: "14px", color: "#666", fontStyle: "italic" }}>
+                        No psychological trait analysis available
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Raw Responses Toggle */}
+                  <div style={{
+                    background: "#f1f5f9",
+                    borderRadius: "12px",
+                    padding: "20px",
+                    marginBottom: "20px"
+                  }}>
+                    <details>
+                      <summary style={{
+                        fontSize: "16px",
+                        fontWeight: "600",
+                        color: "#334155",
+                        cursor: "pointer",
+                        listStyle: "none",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center"
+                      }}>
+                        <span>📋 View Raw Assessment Responses ({candidateResponses.length})</span>
+                        <span style={{ fontSize: "14px", color: "#64748b" }}>▼</span>
+                      </summary>
+                      <div style={{ marginTop: "15px" }}>
+                        <div style={{
+                          maxHeight: "300px",
+                          overflowY: "auto",
+                          paddingRight: "10px"
+                        }}>
+                          {candidateResponses.map((response, index) => (
+                            <div
+                              key={response.id}
+                              style={{
+                                background: "white",
+                                borderRadius: "8px",
+                                padding: "15px",
+                                marginBottom: "10px",
+                                border: "1px solid #e2e8f0"
+                              }}
+                            >
+                              <div style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "flex-start",
+                                marginBottom: "10px",
+                                flexWrap: "wrap",
+                                gap: "10px"
+                              }}>
+                                <div>
+                                  <div style={{
+                                    fontSize: "12px",
+                                    color: "#475569",
+                                    fontWeight: "600",
+                                    marginBottom: "5px"
+                                  }}>
+                                    {response.questions?.section || "Unknown Section"}
+                                  </div>
+                                  <div style={{
+                                    fontSize: "14px",
+                                    fontWeight: "500",
+                                    color: "#1e293b"
+                                  }}>
+                                    {response.questions?.question_text || "Question not found"}
+                                  </div>
+                                </div>
+                                <div style={{
+                                  fontSize: "12px",
+                                  fontWeight: "600",
+                                  color: "#10b981",
+                                  background: "#d1fae5",
+                                  padding: "3px 8px",
+                                  borderRadius: "8px"
+                                }}>
+                                  Score: {response.answers?.score || 0}/10
+                                </div>
+                              </div>
+                              
+                              <div style={{
+                                background: "#f8fafc",
+                                borderRadius: "6px",
+                                padding: "12px",
+                                fontSize: "13px",
+                                color: "#475569",
+                                borderLeft: "3px solid #cbd5e1"
+                              }}>
+                                <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "3px" }}>
+                                  Response:
+                                </div>
+                                <div style={{ color: "#334155" }}>
+                                  {response.answers?.answer_text || "No response recorded"}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    ))}
+                    </details>
+                  </div>
+
+                  {/* Export Options */}
+                  <div style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: "10px",
+                    marginTop: "20px",
+                    paddingTop: "20px",
+                    borderTop: "1px solid #e5e7eb"
+                  }}>
+                    <button
+                      onClick={exportToCSV}
+                      style={{
+                        padding: "10px 20px",
+                        background: "#3b82f6",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontWeight: "600",
+                        fontSize: "14px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px"
+                      }}
+                    >
+                      📊 Export Analysis Report
+                    </button>
                   </div>
                 </>
               )}
@@ -1213,7 +1614,7 @@ export default function SupervisorDashboard() {
         <div style={{ fontSize: "10px", color: "#ccc", marginTop: "5px" }}>
           {apiStatus === "error" 
             ? "⚠️ API connection failed. Real user emails/names not available. Check service role key setup."
-            : "Open browser console (F12) for debug information"}
+            : "Showing psychological analysis based on assessment responses"}
         </div>
       </div>
     </div>
