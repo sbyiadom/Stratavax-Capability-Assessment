@@ -22,7 +22,7 @@ const SECTION_CONFIG = {
     icon: '👑',
     bgImage: 'https://img.freepik.com/free-photo/friends-people-group-teamwork-diversity_53876-31488.jpg?semt=ais_hybrid&w=740&q=80'
   },
-  'Bottled Water Manufacturing': {  // CHANGED FROM 'Technical Competence'
+  'Technical Competence': {  // UPDATED: Changed back from 'Bottled Water Manufacturing'
     color: '#388E3C', 
     lightBg: 'rgba(56, 142, 60, 0.1)',
     icon: '⚙️',
@@ -39,8 +39,8 @@ const SECTION_CONFIG = {
 const SECTION_ORDER = Object.keys(SECTION_CONFIG);
 const TIME_LIMIT_SECONDS = 10800;
 
-// Truly random shuffle function
-function trulyRandomizeAnswers(answers) {
+// Truly random shuffle function for Technical Competence questions
+function randomizeTechnicalAnswers(answers) {
   if (!answers || answers.length === 0) return answers;
   
   const shuffled = [...answers];
@@ -49,6 +49,19 @@ function trulyRandomizeAnswers(answers) {
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  
+  // Double-check shuffle worked
+  const isSameOrder = shuffled.every((answer, index) => 
+    answer.id === answers[index]?.id
+  );
+  
+  // If somehow still same order, shuffle again
+  if (isSameOrder) {
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
   }
   
   return shuffled;
@@ -158,22 +171,17 @@ export default function AssessmentPage() {
             options: q.answers.map(a => ({ ...a, id: parseInt(a.id) }))
           };
           
-          // Randomize ONLY for Bottled Water Manufacturing section
-          if (q.section === 'Bottled Water Manufacturing') {
-            console.log(`Randomizing answers for Bottled Water Manufacturing question ${q.id}`);
+          // Randomize ONLY for Technical Competence section
+          if (q.section === 'Technical Competence') {
+            console.log(`Randomizing answers for Technical Competence question ${q.id}`);
             
-            // Use truly random shuffle for Bottled Water Manufacturing
-            const randomizedOptions = trulyRandomizeAnswers(baseQuestion.options);
+            // Use truly random shuffle for Technical Competence
+            const randomizedOptions = randomizeTechnicalAnswers(baseQuestion.options);
             
-            // Log for debugging
-            console.log('Original order:', baseQuestion.options.map(opt => ({ 
-              id: opt.id, 
-              text: opt.answer_text.substring(0, 50) + '...' 
-            })));
-            console.log('Randomized order:', randomizedOptions.map(opt => ({ 
-              id: opt.id, 
-              text: opt.answer_text.substring(0, 50) + '...' 
-            })));
+            // Log for debugging (optional)
+            console.log('Question:', q.id);
+            console.log('Original order:', baseQuestion.options.map(opt => opt.id));
+            console.log('Randomized order:', randomizedOptions.map(opt => opt.id));
             
             return {
               ...baseQuestion,
@@ -702,7 +710,7 @@ export default function AssessmentPage() {
                   color: 'rgba(255, 255, 255, 0.9)'
                 }}>
                   Q{currentIndex + 1}/{questions.length} • {currentSection}
-                  {currentSection === 'Bottled Water Manufacturing' && (
+                  {currentSection === 'Technical Competence' && (
                     <span style={{ marginLeft: '5px', fontStyle: 'italic' }}>
                       (Randomized)
                     </span>
@@ -806,7 +814,7 @@ export default function AssessmentPage() {
                   letterSpacing: '0.5px'
                 }}>
                   {currentSection}
-                  {currentSection === 'Bottled Water Manufacturing' && (
+                  {currentSection === 'Technical Competence' && (
                     <span style={{
                       fontSize: '10px',
                       fontWeight: '400',
