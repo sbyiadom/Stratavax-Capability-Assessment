@@ -625,7 +625,7 @@ export default function AssessmentPage() {
         </div>
       )}
 
-      {/* Main Assessment Layout - OPTIMIZED FOR NO SCROLLING */}
+      {/* Main Assessment Layout - ULTRA COMPACT */}
       <div style={{
         minHeight: "100vh",
         background: "linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)",
@@ -635,83 +635,78 @@ export default function AssessmentPage() {
         overflow: "hidden"
       }}>
         
-        {/* COMPACT HEADER */}
+        {/* ULTRA COMPACT HEADER */}
         <div style={{
           background: `linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), 
                       url('https://img.freepik.com/free-photo/multiethnic-group-young-happy-students-standing-outdoors_171337-11812.jpg?semt=ais_user_personalization&w=740&q=80')`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          padding: '12px 20px',
+          padding: '8px 15px',
           borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
-          minHeight: '100px',
+          height: '70px',
           display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center'
+          alignItems: 'center'
         }}>
           <div style={{ 
             display: 'flex', 
             justifyContent: 'space-between', 
             alignItems: 'center',
-            gap: '15px'
+            width: '100%'
           }}>
             <div style={{ 
               display: 'flex', 
               alignItems: 'center', 
-              gap: '10px',
-              flex: 1
+              gap: '8px'
             }}>
               <div style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '8px',
+                width: '32px',
+                height: '32px',
+                borderRadius: '6px',
                 background: 'rgba(255, 255, 255, 0.9)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#1a237e',
-                fontSize: '20px',
-                fontWeight: 'bold'
+                fontSize: '16px'
               }}>
                 😊
               </div>
               
-              <div style={{ flex: 1 }}>
+              <div>
                 <div style={{ 
-                  fontSize: '18px', 
-                  fontWeight: '800', 
+                  fontSize: '14px', 
+                  fontWeight: '700', 
                   color: 'white',
                   lineHeight: 1.2
                 }}>
                   Stratavax Capability Assessment
                 </div>
                 <div style={{
-                  fontSize: '12px',
-                  color: 'rgba(255, 255, 255, 0.9)',
-                  marginTop: '2px'
+                  fontSize: '11px',
+                  color: 'rgba(255, 255, 255, 0.9)'
                 }}>
                   Q{currentIndex + 1}/{questions.length} • {currentSection}
                 </div>
               </div>
             </div>
             
-            {/* COMPACT TIMER */}
+            {/* ULTRA COMPACT TIMER */}
             <div style={{
-              padding: '6px 10px',
+              padding: '4px 8px',
               background: 'rgba(255, 255, 255, 0.9)',
-              borderRadius: '6px',
-              minWidth: '100px',
-              textAlign: 'center'
+              borderRadius: '4px',
+              textAlign: 'center',
+              minWidth: '70px'
             }}>
               <div style={{ 
-                fontSize: '11px', 
+                fontSize: '10px', 
                 fontWeight: '600', 
-                color: timeRemaining < 1800 ? '#ff9800' : '#2196f3',
-                marginBottom: '2px'
+                color: timeRemaining < 1800 ? '#ff9800' : '#2196f3'
               }}>
                 TIME
               </div>
               <div style={{ 
-                fontSize: '14px', 
+                fontSize: '12px', 
                 fontWeight: '700', 
                 color: timeRemaining < 1800 ? '#d84315' : '#1565c0'
               }}>
@@ -719,84 +714,71 @@ export default function AssessmentPage() {
               </div>
             </div>
           </div>
-
-          {/* MINIMAL PROGRESS BAR */}
-          <div style={{ marginTop: '8px' }}>
-            <div style={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              marginBottom: '4px',
-              fontSize: '11px',
-              color: 'rgba(255, 255, 255, 0.9)'
-            }}>
-              <span>Progress: {progressPercentage}%</span>
-              <span>{totalAnswered}/{questions.length} Answered</span>
-            </div>
-            <div style={{ 
-              height: '4px', 
-              background: 'rgba(255, 255, 255, 0.3)', 
-              borderRadius: '2px',
-              overflow: 'hidden'
-            }}>
-              <div style={{ 
-                height: '100%', 
-                width: `${progressPercentage}%`, 
-                background: 'linear-gradient(90deg, #4caf50, #2e7d32)', 
-                borderRadius: '2px'
-              }} />
-            </div>
-          </div>
         </div>
 
-        {/* MAIN CONTENT - SIDEBAR LAYOUT */}
+        {/* MINIMAL PROGRESS BAR */}
+        <div style={{ 
+          height: '4px', 
+          background: '#e0e0e0',
+          overflow: 'hidden'
+        }}>
+          <div style={{ 
+            height: '100%', 
+            width: `${progressPercentage}%`, 
+            background: sectionConfig.color,
+            transition: 'width 0.3s'
+          }} />
+        </div>
+
+        {/* MAIN CONTENT - SINGLE COLUMN LAYOUT */}
         <div style={{ 
           flex: 1,
+          padding: '10px',
           display: 'flex',
           overflow: 'hidden',
-          padding: '10px'
+          gap: '10px'
         }}>
-          {/* QUESTION & ANSWERS SECTION (Left - 70%) */}
+          {/* QUESTION & ANSWERS - 90% WIDTH */}
           <div style={{
-            flex: 7,
+            flex: 9,
             background: `linear-gradient(rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.95)), 
                         url('${sectionConfig.bgImage}')`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
-            borderRadius: '10px',
+            borderRadius: '8px',
             border: '1px solid #e0e0e0',
-            marginRight: '10px',
             display: 'flex',
             flexDirection: 'column',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            padding: '15px'
           }}>
-            {/* QUESTION SECTION - COMPACT */}
+            {/* COMPACT QUESTION HEADER */}
             <div style={{
-              padding: '15px',
-              borderBottom: '1px solid #e0e0e0',
-              background: 'rgba(255, 255, 255, 0.9)',
-              flexShrink: 0
+              marginBottom: '12px',
+              paddingBottom: '10px',
+              borderBottom: '1px solid rgba(0, 0, 0, 0.1)'
             }}>
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                marginBottom: '10px'
+                marginBottom: '6px'
               }}>
                 <div style={{
-                  width: '30px',
-                  height: '30px',
-                  borderRadius: '6px',
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '4px',
                   background: sectionConfig.color,
                   color: 'white',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '14px'
+                  fontSize: '12px'
                 }}>
                   {sectionConfig.icon}
                 </div>
                 <div style={{
-                  fontSize: '14px',
+                  fontSize: '12px',
                   fontWeight: '600',
                   color: sectionConfig.color
                 }}>
@@ -805,262 +787,215 @@ export default function AssessmentPage() {
               </div>
               
               <div style={{ 
-                fontSize: '16px', 
+                fontSize: '15px', 
                 lineHeight: 1.4,
                 color: '#333',
-                fontWeight: '500',
-                padding: '10px',
-                background: 'rgba(255, 255, 255, 0.7)',
-                borderRadius: '6px',
-                border: '1px solid rgba(0, 0, 0, 0.05)'
+                fontWeight: '500'
               }}>
                 <strong>Question {currentIndex + 1}:</strong> {currentQuestion?.question_text}
               </div>
             </div>
 
-            {/* ANSWERS SECTION - COMPACT NO SCROLL */}
-            <div style={{ 
-              flex: 1,
-              padding: '15px',
-              display: 'flex',
-              flexDirection: 'column'
-            }}>
-              {/* Save Status */}
-              {saveStatus[currentQuestion?.id] && (
-                <div style={{
-                  padding: '8px 12px',
-                  background: saveStatus[currentQuestion.id] === 'saved' ? 'rgba(76, 175, 80, 0.1)' : 
-                             saveStatus[currentQuestion.id] === 'saving' ? 'rgba(255, 152, 0, 0.1)' : 
-                             'rgba(211, 47, 47, 0.1)',
-                  border: `1px solid ${saveStatus[currentQuestion.id] === 'saved' ? '#4caf50' : 
-                           saveStatus[currentQuestion.id] === 'saving' ? '#ff9800' : 
-                           '#d32f2f'}`,
-                  borderRadius: '6px',
-                  marginBottom: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  color: saveStatus[currentQuestion.id] === 'saved' ? '#2e7d32' : 
-                         saveStatus[currentQuestion.id] === 'saving' ? '#f57c00' : 
-                         '#d32f2f'
-                }}>
-                  {saveStatus[currentQuestion.id] === 'saved' ? (
-                    <>
-                      <span>✓</span>
-                      Saved
-                    </>
-                  ) : saveStatus[currentQuestion.id] === 'saving' ? (
-                    <>
-                      <div style={{ 
-                        width: '12px', 
-                        height: '12px', 
-                        border: '2px solid currentColor',
-                        borderTopColor: 'transparent',
-                        borderRadius: '50%',
-                        animation: 'spin 1s linear infinite'
-                      }} />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <span>⚠️</span>
-                      Save failed
-                    </>
-                  )}
-                </div>
-              )}
-
-              {/* COMPACT ANSWER GRID - FIXED HEIGHT */}
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: '8px',
-                flex: 1
-              }}>
-                {currentQuestion?.options?.map((option, index) => {
-                  const isSelected = answers[currentQuestion.id] === option.id;
-                  const optionLetter = String.fromCharCode(65 + index);
-                  
-                  return (
-                    <button
-                      key={option.id}
-                      onClick={() => handleSelect(currentQuestion.id, option.id)}
-                      disabled={saveStatus[currentQuestion.id] === 'saving'}
-                      style={{
-                        padding: '12px',
-                        background: isSelected ? 
-                          `rgba(${parseInt(sectionConfig.color.slice(1, 3), 16)}, ${parseInt(sectionConfig.color.slice(3, 5), 16)}, ${parseInt(sectionConfig.color.slice(5, 7), 16)}, 0.1)` : 
-                          'rgba(255, 255, 255, 0.9)',
-                        border: `2px solid ${isSelected ? sectionConfig.color : '#e0e0e0'}`,
-                        borderRadius: '8px',
-                        cursor: saveStatus[currentQuestion.id] === 'saving' ? 'not-allowed' : 'pointer',
-                        textAlign: 'left',
-                        fontSize: '14px',
-                        lineHeight: 1.3,
-                        color: isSelected ? sectionConfig.color : '#333',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '10px',
-                        height: '100%',
-                        minHeight: '50px',
-                        transition: 'all 0.2s',
-                        boxShadow: isSelected ? `0 2px 6px ${sectionConfig.color}40` : 'none'
-                      }}
-                      onMouseOver={(e) => {
-                        if (!saveStatus[currentQuestion.id] && !isSelected) {
-                          e.currentTarget.style.background = 'rgba(255, 255, 255, 1)';
-                          e.currentTarget.style.borderColor = sectionConfig.color;
-                          e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
-                        }
-                      }}
-                      onMouseOut={(e) => {
-                        if (!saveStatus[currentQuestion.id] && !isSelected) {
-                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.9)';
-                          e.currentTarget.style.borderColor = '#e0e0e0';
-                          e.currentTarget.style.boxShadow = 'none';
-                        }
-                      }}
-                    >
-                      {/* Option Indicator */}
-                      <div style={{
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '6px',
-                        background: isSelected ? sectionConfig.color : '#f0f0f0',
-                        color: isSelected ? 'white' : '#666',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '12px',
-                        fontWeight: '700',
-                        flexShrink: 0
-                      }}>
-                        {optionLetter}
-                      </div>
-                      
-                      {/* Option Text */}
-                      <span style={{ 
-                        flex: 1,
-                        fontSize: '13px',
-                        fontWeight: isSelected ? '600' : '500'
-                      }}>
-                        {option.answer_text}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* COMPACT NAVIGATION - AT BOTTOM OF ANSWERS */}
-              <div style={{ 
-                marginTop: '15px',
-                paddingTop: '12px',
-                borderTop: '1px solid #e0e0e0',
+            {/* Save Status */}
+            {saveStatus[currentQuestion?.id] && (
+              <div style={{
+                padding: '6px 10px',
+                background: saveStatus[currentQuestion.id] === 'saved' ? 'rgba(76, 175, 80, 0.1)' : 
+                           saveStatus[currentQuestion.id] === 'saving' ? 'rgba(255, 152, 0, 0.1)' : 
+                           'rgba(211, 47, 47, 0.1)',
+                border: `1px solid ${saveStatus[currentQuestion.id] === 'saved' ? '#4caf50' : 
+                         saveStatus[currentQuestion.id] === 'saving' ? '#ff9800' : 
+                         '#d32f2f'}`,
+                borderRadius: '4px',
+                marginBottom: '10px',
                 display: 'flex',
-                justifyContent: 'space-between',
                 alignItems: 'center',
-                flexShrink: 0
+                gap: '6px',
+                fontSize: '12px',
+                color: saveStatus[currentQuestion.id] === 'saved' ? '#2e7d32' : 
+                       saveStatus[currentQuestion.id] === 'saving' ? '#f57c00' : 
+                       '#d32f2f'
               }}>
+                {saveStatus[currentQuestion.id] === 'saved' ? '✓ Saved' : 
+                 saveStatus[currentQuestion.id] === 'saving' ? '⏳ Saving...' : 
+                 '⚠️ Save failed'}
+              </div>
+            )}
+
+            {/* SINGLE COLUMN ANSWERS */}
+            <div style={{ 
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              flex: 1
+            }}>
+              {currentQuestion?.options?.map((option, index) => {
+                const isSelected = answers[currentQuestion.id] === option.id;
+                const optionLetter = String.fromCharCode(65 + index);
+                
+                return (
+                  <button
+                    key={option.id}
+                    onClick={() => handleSelect(currentQuestion.id, option.id)}
+                    disabled={saveStatus[currentQuestion.id] === 'saving'}
+                    style={{
+                      padding: '10px 12px',
+                      background: isSelected ? sectionConfig.lightBg : 'white',
+                      border: `2px solid ${isSelected ? sectionConfig.color : '#e0e0e0'}`,
+                      borderRadius: '6px',
+                      cursor: saveStatus[currentQuestion.id] === 'saving' ? 'not-allowed' : 'pointer',
+                      textAlign: 'left',
+                      fontSize: '14px',
+                      lineHeight: 1.3,
+                      color: isSelected ? sectionConfig.color : '#333',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      transition: 'all 0.2s',
+                      boxShadow: isSelected ? `0 2px 4px ${sectionConfig.color}40` : 'none'
+                    }}
+                    onMouseOver={(e) => {
+                      if (!saveStatus[currentQuestion.id] && !isSelected) {
+                        e.currentTarget.style.background = '#f8f9fa';
+                        e.currentTarget.style.borderColor = sectionConfig.color;
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      if (!saveStatus[currentQuestion.id] && !isSelected) {
+                        e.currentTarget.style.background = 'white';
+                        e.currentTarget.style.borderColor = '#e0e0e0';
+                      }
+                    }}
+                  >
+                    <div style={{
+                      width: '20px',
+                      height: '20px',
+                      borderRadius: '4px',
+                      background: isSelected ? sectionConfig.color : '#f5f5f5',
+                      color: isSelected ? 'white' : '#666',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '11px',
+                      fontWeight: '700',
+                      flexShrink: 0
+                    }}>
+                      {optionLetter}
+                    </div>
+                    
+                    <span style={{ 
+                      flex: 1,
+                      fontSize: '13px'
+                    }}>
+                      {option.answer_text}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* COMPACT NAVIGATION */}
+            <div style={{ 
+              marginTop: '12px',
+              paddingTop: '10px',
+              borderTop: '1px solid #e0e0e0',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <button 
+                onClick={handleBack} 
+                disabled={currentIndex === 0} 
+                style={{ 
+                  padding: '6px 12px', 
+                  background: currentIndex === 0 ? '#f5f5f5' : sectionConfig.color, 
+                  color: currentIndex === 0 ? '#999' : 'white', 
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: currentIndex === 0 ? 'not-allowed' : 'pointer',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  minWidth: '80px'
+                }}
+              >
+                ← Previous
+              </button>
+              
+              <div style={{ 
+                fontSize: '12px', 
+                fontWeight: '600', 
+                color: '#666'
+              }}>
+                Q{currentIndex + 1} of {questions.length} • {progressPercentage}%
+              </div>
+              
+              {isLastQuestion ? (
                 <button 
-                  onClick={handleBack} 
-                  disabled={currentIndex === 0} 
+                  onClick={() => setShowSubmitModal(true)}
                   style={{ 
-                    padding: '8px 16px', 
-                    background: currentIndex === 0 ? '#f5f5f5' : sectionConfig.color, 
-                    color: currentIndex === 0 ? '#999' : 'white', 
+                    padding: '6px 12px', 
+                    background: '#4caf50', 
+                    color: 'white', 
                     border: 'none',
-                    borderRadius: '6px',
-                    cursor: currentIndex === 0 ? 'not-allowed' : 'pointer',
-                    fontSize: '13px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px',
                     fontWeight: '600',
-                    minWidth: '90px'
+                    minWidth: '80px'
                   }}
                 >
-                  ← Previous
+                  Submit →
                 </button>
-                
-                <div style={{ 
-                  fontSize: '13px', 
-                  fontWeight: '600', 
-                  color: sectionConfig.color
-                }}>
-                  Q{currentIndex + 1} of {questions.length}
-                </div>
-                
-                {isLastQuestion ? (
-                  <button 
-                    onClick={() => setShowSubmitModal(true)}
-                    style={{ 
-                      padding: '8px 16px', 
-                      background: '#4caf50', 
-                      color: 'white', 
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      minWidth: '90px'
-                    }}
-                  >
-                    Submit →
-                  </button>
-                ) : (
-                  <button 
-                    onClick={handleNext} 
-                    style={{ 
-                      padding: '8px 16px', 
-                      background: sectionConfig.color, 
-                      color: 'white', 
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      minWidth: '90px'
-                    }}
-                  >
-                    Next →
-                  </button>
-                )}
-              </div>
+              ) : (
+                <button 
+                  onClick={handleNext} 
+                  style={{ 
+                    padding: '6px 12px', 
+                    background: sectionConfig.color, 
+                    color: 'white', 
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    minWidth: '80px'
+                  }}
+                >
+                  Next →
+                </button>
+              )}
             </div>
           </div>
 
-          {/* QUESTION NAVIGATION SIDEBAR (Right - 30%) */}
+          {/* MINIMAL QUESTION NAV - 10% WIDTH */}
           <div style={{
-            flex: 3,
+            flex: 1,
             background: 'white',
-            borderRadius: '10px',
+            borderRadius: '8px',
             border: '1px solid #e0e0e0',
-            padding: '12px',
+            padding: '8px',
             display: 'flex',
             flexDirection: 'column',
-            overflow: 'hidden',
-            minWidth: '200px'
+            minWidth: '60px',
+            maxWidth: '80px'
           }}>
             <div style={{ 
-              fontSize: '14px', 
+              fontSize: '11px', 
               fontWeight: '600', 
-              marginBottom: '12px',
-              color: '#1a237e',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
+              marginBottom: '8px',
+              color: '#666',
+              textAlign: 'center'
             }}>
-              <span>📋</span>
-              Question Navigator
+              Q's
             </div>
             
-            {/* SMALL QUESTION GRID */}
+            {/* TINY QUESTION GRID */}
             <div style={{ 
               flex: 1,
               display: 'grid',
-              gridTemplateColumns: 'repeat(5, 1fr)',
-              gap: '6px',
-              overflowY: 'auto',
-              paddingRight: '4px'
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: '3px',
+              overflowY: 'auto'
             }}>
               {questions.map((q, index) => {
                 const isAnswered = answers[q.id];
@@ -1077,29 +1012,18 @@ export default function AssessmentPage() {
                                  isAnswered ? '#4caf50' : '#f5f5f5',
                       color: isCurrent ? 'white' : 
                              isAnswered ? 'white' : '#666',
-                      border: `2px solid ${isCurrent ? sectionConfig.color : 
+                      border: `1px solid ${isCurrent ? sectionConfig.color : 
                                isAnswered ? '#4caf50' : '#e0e0e0'}`,
-                      borderRadius: '6px',
+                      borderRadius: '3px',
                       cursor: 'pointer',
-                      fontSize: '11px',
+                      fontSize: '9px',
                       fontWeight: '600',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      transition: 'all 0.2s'
+                      padding: '1px'
                     }}
-                    onMouseOver={(e) => {
-                      if (!isCurrent) {
-                        e.currentTarget.style.transform = 'scale(1.05)';
-                        e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.15)';
-                      }
-                    }}
-                    onMouseOut={(e) => {
-                      if (!isCurrent) {
-                        e.currentTarget.style.transform = 'scale(1)';
-                        e.currentTarget.style.boxShadow = 'none';
-                      }
-                    }}
+                    title={`Question ${index + 1}`}
                   >
                     {index + 1}
                   </button>
@@ -1107,74 +1031,24 @@ export default function AssessmentPage() {
               })}
             </div>
 
-            {/* SIDEBAR STATS */}
+            {/* TINY STATS */}
             <div style={{
-              marginTop: '15px',
-              padding: '10px',
-              background: '#f8f9fa',
-              borderRadius: '8px',
-              border: '1px solid #e0e0e0'
+              marginTop: '8px',
+              fontSize: '9px',
+              color: '#666',
+              textAlign: 'center'
             }}>
-              <div style={{ 
-                fontSize: '12px', 
-                fontWeight: '600', 
-                color: '#666',
-                marginBottom: '8px'
-              }}>
-                Assessment Stats
+              <div style={{ marginBottom: '2px' }}>
+                <div style={{ color: '#999' }}>Ans:</div>
+                <div style={{ fontWeight: '700', color: '#4caf50' }}>{totalAnswered}</div>
               </div>
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: '8px',
-                fontSize: '11px'
-              }}>
-                <div>
-                  <div style={{ color: '#999' }}>Answered</div>
-                  <div style={{ fontWeight: '700', color: '#4caf50' }}>{totalAnswered}</div>
-                </div>
-                <div>
-                  <div style={{ color: '#999' }}>Remaining</div>
-                  <div style={{ fontWeight: '700', color: '#ff9800' }}>{questions.length - totalAnswered}</div>
-                </div>
-                <div>
-                  <div style={{ color: '#999' }}>Progress</div>
-                  <div style={{ fontWeight: '700', color: '#2196f3' }}>{progressPercentage}%</div>
-                </div>
-                <div>
-                  <div style={{ color: '#999' }}>Time Left</div>
-                  <div style={{ fontWeight: '700', color: timeRemaining < 1800 ? '#d32f2f' : '#388e3c' }}>
-                    {formatTime(hours)}:{formatTime(minutes)}
-                  </div>
+              <div>
+                <div style={{ color: '#999' }}>Time:</div>
+                <div style={{ fontWeight: '700', color: timeRemaining < 1800 ? '#d32f2f' : '#388e3c' }}>
+                  {formatTime(hours)}:{formatTime(minutes)}
                 </div>
               </div>
             </div>
-
-            {/* SUBMIT BUTTON IN SIDEBAR */}
-            <button 
-              onClick={() => setShowSubmitModal(true)}
-              style={{
-                width: '100%',
-                padding: '10px',
-                background: 'linear-gradient(135deg, #4caf50, #2e7d32)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: '600',
-                marginTop: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px'
-              }}
-              onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-              onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-            >
-              <span>✓</span>
-              Submit Assessment
-            </button>
           </div>
         </div>
       </div>
@@ -1185,23 +1059,21 @@ export default function AssessmentPage() {
           100% { transform: rotate(360deg); }
         }
         
-        /* Custom scrollbar for sidebar */
+        /* Tiny scrollbar */
         ::-webkit-scrollbar {
-          width: 6px;
+          width: 3px;
         }
         
         ::-webkit-scrollbar-track {
           background: #f1f1f1;
-          border-radius: 3px;
         }
         
         ::-webkit-scrollbar-thumb {
-          background: #c1c1c1;
-          border-radius: 3px;
+          background: #ccc;
         }
         
         ::-webkit-scrollbar-thumb:hover {
-          background: #a8a8a8;
+          background: #aaa;
         }
       `}</style>
     </>
