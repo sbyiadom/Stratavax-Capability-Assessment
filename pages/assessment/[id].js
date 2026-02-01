@@ -39,7 +39,6 @@ const SECTION_CONFIG = {
 const SECTION_ORDER = Object.keys(SECTION_CONFIG);
 const TIME_LIMIT_SECONDS = 10800;
 
-// Consistent randomization function for Technical Competence
 function randomizeTechnicalAnswers(answers, questionId) {
   if (!answers || answers.length === 0) return answers;
   
@@ -626,26 +625,25 @@ export default function AssessmentPage() {
         </div>
       )}
 
-      {/* Main Assessment Layout */}
+      {/* Main Assessment Layout - OPTIMIZED FOR NO SCROLLING */}
       <div style={{
         minHeight: "100vh",
         background: "linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)",
         display: "flex",
         flexDirection: "column",
-        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        overflow: "hidden"
       }}>
         
-        {/* FULL-WIDTH HEADER WITH HAPPY STUDENT IMAGE */}
+        {/* COMPACT HEADER */}
         <div style={{
-          background: `linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), 
+          background: `linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), 
                       url('https://img.freepik.com/free-photo/multiethnic-group-young-happy-students-standing-outdoors_171337-11812.jpg?semt=ais_user_personalization&w=740&q=80')`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-          padding: '15px 30px',
-          boxShadow: '0 2px 15px rgba(0,0,0,0.08)',
+          padding: '12px 20px',
           borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
-          minHeight: '180px',
+          minHeight: '100px',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center'
@@ -654,263 +652,232 @@ export default function AssessmentPage() {
             display: 'flex', 
             justifyContent: 'space-between', 
             alignItems: 'center',
-            position: 'relative',
-            zIndex: 2
+            gap: '15px'
           }}>
             <div style={{ 
               display: 'flex', 
               alignItems: 'center', 
-              gap: '15px'
+              gap: '10px',
+              flex: 1
             }}>
               <div style={{
-                width: '50px',
-                height: '50px',
-                borderRadius: '12px',
-                overflow: 'hidden',
+                width: '40px',
+                height: '40px',
+                borderRadius: '8px',
                 background: 'rgba(255, 255, 255, 0.9)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#1a237e',
-                fontSize: '24px',
-                fontWeight: 'bold',
-                backdropFilter: 'blur(5px)'
+                fontSize: '20px',
+                fontWeight: 'bold'
               }}>
                 😊
               </div>
               
-              <div>
+              <div style={{ flex: 1 }}>
                 <div style={{ 
-                  fontSize: '28px', 
+                  fontSize: '18px', 
                   fontWeight: '800', 
                   color: 'white',
-                  lineHeight: 1.2,
-                  textShadow: '2px 2px 8px rgba(0,0,0,0.7)'
+                  lineHeight: 1.2
                 }}>
                   Stratavax Capability Assessment
                 </div>
                 <div style={{
-                  fontSize: '14px',
-                  color: 'rgba(255, 255, 255, 0.95)',
-                  fontWeight: '500',
-                  marginTop: '5px',
-                  textShadow: '1px 1px 3px rgba(0,0,0,0.5)'
+                  fontSize: '12px',
+                  color: 'rgba(255, 255, 255, 0.9)',
+                  marginTop: '2px'
                 }}>
-                  Section: {currentSection} • Question {currentIndex + 1} of {questions.length}
+                  Q{currentIndex + 1}/{questions.length} • {currentSection}
                 </div>
               </div>
             </div>
             
             {/* COMPACT TIMER */}
             <div style={{
-              padding: '10px 15px',
+              padding: '6px 10px',
               background: 'rgba(255, 255, 255, 0.9)',
-              borderRadius: '10px',
-              border: '2px solid rgba(255, 255, 255, 0.3)',
-              minWidth: '140px',
-              backdropFilter: 'blur(5px)'
+              borderRadius: '6px',
+              minWidth: '100px',
+              textAlign: 'center'
             }}>
               <div style={{ 
-                fontSize: '12px', 
+                fontSize: '11px', 
                 fontWeight: '600', 
                 color: timeRemaining < 1800 ? '#ff9800' : '#2196f3',
-                marginBottom: '5px'
+                marginBottom: '2px'
               }}>
-                {timeRemaining < 1800 ? 'TIME LOW' : 'TIME REMAINING'}
+                TIME
               </div>
               <div style={{ 
-                fontSize: '20px', 
+                fontSize: '14px', 
                 fontWeight: '700', 
                 color: timeRemaining < 1800 ? '#d84315' : '#1565c0'
               }}>
-                {formatTime(hours)}:{formatTime(minutes)}:{formatTime(seconds)}
+                {formatTime(hours)}:{formatTime(minutes)}
               </div>
             </div>
           </div>
 
-          {/* COMPACT PROGRESS BAR */}
-          <div style={{ marginTop: '15px', position: 'relative', zIndex: 2 }}>
+          {/* MINIMAL PROGRESS BAR */}
+          <div style={{ marginTop: '8px' }}>
             <div style={{ 
               display: 'flex', 
               justifyContent: 'space-between', 
-              marginBottom: '6px',
-              fontSize: '13px',
-              fontWeight: '600'
+              marginBottom: '4px',
+              fontSize: '11px',
+              color: 'rgba(255, 255, 255, 0.9)'
             }}>
-              <span style={{ color: 'rgba(255, 255, 255, 0.95)' }}>
-                Progress: {progressPercentage}%
-              </span>
-              <span style={{ color: 'white' }}>
-                {totalAnswered}/{questions.length} Answered
-              </span>
+              <span>Progress: {progressPercentage}%</span>
+              <span>{totalAnswered}/{questions.length} Answered</span>
             </div>
             <div style={{ 
-              height: '8px', 
+              height: '4px', 
               background: 'rgba(255, 255, 255, 0.3)', 
-              borderRadius: '4px',
-              overflow: 'hidden',
-              backdropFilter: 'blur(5px)'
+              borderRadius: '2px',
+              overflow: 'hidden'
             }}>
               <div style={{ 
                 height: '100%', 
                 width: `${progressPercentage}%`, 
                 background: 'linear-gradient(90deg, #4caf50, #2e7d32)', 
-                borderRadius: '4px'
+                borderRadius: '2px'
               }} />
             </div>
           </div>
         </div>
 
-        {/* MAIN CONTENT AREA */}
+        {/* MAIN CONTENT - SIDEBAR LAYOUT */}
         <div style={{ 
           flex: 1,
-          padding: '20px',
           display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'flex-start',
-          overflow: 'auto'
+          overflow: 'hidden',
+          padding: '10px'
         }}>
+          {/* QUESTION & ANSWERS SECTION (Left - 70%) */}
           <div style={{
-            maxWidth: '1000px',
-            width: '100%',
-            background: `linear-gradient(rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.9)), 
+            flex: 7,
+            background: `linear-gradient(rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.95)), 
                         url('${sectionConfig.bgImage}')`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat',
-            borderRadius: '15px',
-            boxShadow: '0 8px 30px rgba(0,0,0,0.1)',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
-            overflow: 'hidden',
+            borderRadius: '10px',
+            border: '1px solid #e0e0e0',
+            marginRight: '10px',
             display: 'flex',
             flexDirection: 'column',
-            height: 'calc(100vh - 240px)',
-            backdropFilter: 'blur(2px)'
+            overflow: 'hidden'
           }}>
-            {/* QUESTION SECTION */}
+            {/* QUESTION SECTION - COMPACT */}
             <div style={{
-              padding: '25px',
-              borderBottom: '1px solid rgba(0, 0, 0, 0.1)',
-              background: 'rgba(255, 255, 255, 0.8)',
+              padding: '15px',
+              borderBottom: '1px solid #e0e0e0',
+              background: 'rgba(255, 255, 255, 0.9)',
               flexShrink: 0
             }}>
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '12px',
-                marginBottom: '15px'
+                gap: '8px',
+                marginBottom: '10px'
               }}>
                 <div style={{
-                  width: '44px',
-                  height: '44px',
-                  borderRadius: '10px',
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '6px',
                   background: sectionConfig.color,
                   color: 'white',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '20px',
-                  fontWeight: 'bold',
-                  boxShadow: '0 4px 10px rgba(0,0,0,0.2)'
+                  fontSize: '14px'
                 }}>
                   {sectionConfig.icon}
                 </div>
-                <div>
-                  <div style={{
-                    fontSize: '18px',
-                    fontWeight: '700',
-                    color: sectionConfig.color
-                  }}>
-                    {currentSection}
-                  </div>
-                  {currentQuestion?.subsection && (
-                    <div style={{
-                      fontSize: '14px',
-                      color: '#666',
-                      fontWeight: '500'
-                    }}>
-                      {currentQuestion.subsection}
-                    </div>
-                  )}
+                <div style={{
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: sectionConfig.color
+                }}>
+                  {currentSection}
                 </div>
               </div>
               
               <div style={{ 
-                fontSize: '18px', 
-                lineHeight: 1.6,
+                fontSize: '16px', 
+                lineHeight: 1.4,
                 color: '#333',
                 fontWeight: '500',
-                padding: '15px',
+                padding: '10px',
                 background: 'rgba(255, 255, 255, 0.7)',
-                borderRadius: '10px',
-                border: '1px solid rgba(0, 0, 0, 0.1)',
-                backdropFilter: 'blur(5px)'
+                borderRadius: '6px',
+                border: '1px solid rgba(0, 0, 0, 0.05)'
               }}>
-                {currentQuestion?.question_text}
+                <strong>Question {currentIndex + 1}:</strong> {currentQuestion?.question_text}
               </div>
             </div>
 
-            {/* ANSWER OPTIONS AREA */}
+            {/* ANSWERS SECTION - COMPACT NO SCROLL */}
             <div style={{ 
               flex: 1,
-              padding: '25px',
-              overflowY: 'auto',
-              minHeight: 0,
-              background: 'rgba(255, 255, 255, 0.6)'
+              padding: '15px',
+              display: 'flex',
+              flexDirection: 'column'
             }}>
               {/* Save Status */}
               {saveStatus[currentQuestion?.id] && (
                 <div style={{
-                  padding: '12px 20px',
+                  padding: '8px 12px',
                   background: saveStatus[currentQuestion.id] === 'saved' ? 'rgba(76, 175, 80, 0.1)' : 
                              saveStatus[currentQuestion.id] === 'saving' ? 'rgba(255, 152, 0, 0.1)' : 
                              'rgba(211, 47, 47, 0.1)',
-                  border: `2px solid ${saveStatus[currentQuestion.id] === 'saved' ? '#4caf50' : 
+                  border: `1px solid ${saveStatus[currentQuestion.id] === 'saved' ? '#4caf50' : 
                            saveStatus[currentQuestion.id] === 'saving' ? '#ff9800' : 
                            '#d32f2f'}`,
-                  borderRadius: '10px',
-                  marginBottom: '20px',
+                  borderRadius: '6px',
+                  marginBottom: '12px',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '12px',
-                  fontSize: '15px',
+                  gap: '8px',
+                  fontSize: '13px',
                   fontWeight: '600',
                   color: saveStatus[currentQuestion.id] === 'saved' ? '#2e7d32' : 
                          saveStatus[currentQuestion.id] === 'saving' ? '#f57c00' : 
-                         '#d32f2f',
-                  backdropFilter: 'blur(5px)'
+                         '#d32f2f'
                 }}>
                   {saveStatus[currentQuestion.id] === 'saved' ? (
                     <>
-                      <span style={{ fontSize: '18px' }}>✓</span>
-                      Answer saved successfully
+                      <span>✓</span>
+                      Saved
                     </>
                   ) : saveStatus[currentQuestion.id] === 'saving' ? (
                     <>
                       <div style={{ 
-                        width: '18px', 
-                        height: '18px', 
+                        width: '12px', 
+                        height: '12px', 
                         border: '2px solid currentColor',
                         borderTopColor: 'transparent',
                         borderRadius: '50%',
                         animation: 'spin 1s linear infinite'
                       }} />
-                      Saving your answer...
+                      Saving...
                     </>
                   ) : (
                     <>
-                      <span style={{ fontSize: '18px' }}>⚠️</span>
-                      Failed to save. Please try again.
+                      <span>⚠️</span>
+                      Save failed
                     </>
                   )}
                 </div>
               )}
 
-              {/* ANSWER GRID */}
+              {/* COMPACT ANSWER GRID - FIXED HEIGHT */}
               <div style={{ 
                 display: 'grid', 
                 gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: '15px'
+                gap: '8px',
+                flex: 1
               }}>
                 {currentQuestion?.options?.map((option, index) => {
                   const isSelected = answers[currentQuestion.id] === option.id;
@@ -922,60 +889,53 @@ export default function AssessmentPage() {
                       onClick={() => handleSelect(currentQuestion.id, option.id)}
                       disabled={saveStatus[currentQuestion.id] === 'saving'}
                       style={{
-                        padding: '20px',
+                        padding: '12px',
                         background: isSelected ? 
-                          `rgba(${parseInt(sectionConfig.color.slice(1, 3), 16)}, ${parseInt(sectionConfig.color.slice(3, 5), 16)}, ${parseInt(sectionConfig.color.slice(5, 7), 16)}, 0.15)` : 
-                          'rgba(255, 255, 255, 0.8)',
-                        border: `2px solid ${isSelected ? sectionConfig.color : 'rgba(224, 224, 224, 0.7)'}`,
-                        borderRadius: '12px',
+                          `rgba(${parseInt(sectionConfig.color.slice(1, 3), 16)}, ${parseInt(sectionConfig.color.slice(3, 5), 16)}, ${parseInt(sectionConfig.color.slice(5, 7), 16)}, 0.1)` : 
+                          'rgba(255, 255, 255, 0.9)',
+                        border: `2px solid ${isSelected ? sectionConfig.color : '#e0e0e0'}`,
+                        borderRadius: '8px',
                         cursor: saveStatus[currentQuestion.id] === 'saving' ? 'not-allowed' : 'pointer',
                         textAlign: 'left',
-                        fontSize: '16px',
-                        lineHeight: 1.5,
-                        transition: 'all 0.2s ease',
+                        fontSize: '14px',
+                        lineHeight: 1.3,
                         color: isSelected ? sectionConfig.color : '#333',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '15px',
+                        gap: '10px',
                         height: '100%',
-                        minHeight: '70px',
-                        backdropFilter: 'blur(10px)',
-                        boxShadow: isSelected ? 
-                          `0 4px 15px ${sectionConfig.color}40` : 
-                          '0 2px 8px rgba(0, 0, 0, 0.1)'
+                        minHeight: '50px',
+                        transition: 'all 0.2s',
+                        boxShadow: isSelected ? `0 2px 6px ${sectionConfig.color}40` : 'none'
                       }}
                       onMouseOver={(e) => {
                         if (!saveStatus[currentQuestion.id] && !isSelected) {
-                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.95)';
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 1)';
                           e.currentTarget.style.borderColor = sectionConfig.color;
-                          e.currentTarget.style.transform = 'translateY(-3px)';
-                          e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 0, 0, 0.15)';
+                          e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
                         }
                       }}
                       onMouseOut={(e) => {
                         if (!saveStatus[currentQuestion.id] && !isSelected) {
-                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.8)';
-                          e.currentTarget.style.borderColor = 'rgba(224, 224, 224, 0.7)';
-                          e.currentTarget.style.transform = 'translateY(0)';
-                          e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.9)';
+                          e.currentTarget.style.borderColor = '#e0e0e0';
+                          e.currentTarget.style.boxShadow = 'none';
                         }
                       }}
                     >
                       {/* Option Indicator */}
                       <div style={{
-                        width: '36px',
-                        height: '36px',
-                        borderRadius: '10px',
-                        background: isSelected ? sectionConfig.color : 'rgba(255, 255, 255, 0.9)',
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '6px',
+                        background: isSelected ? sectionConfig.color : '#f0f0f0',
                         color: isSelected ? 'white' : '#666',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '16px',
+                        fontSize: '12px',
                         fontWeight: '700',
-                        flexShrink: 0,
-                        border: `2px solid ${isSelected ? sectionConfig.color : '#e0e0e0'}`,
-                        boxShadow: isSelected ? '0 2px 6px rgba(0,0,0,0.2)' : 'none'
+                        flexShrink: 0
                       }}>
                         {optionLetter}
                       </div>
@@ -983,6 +943,7 @@ export default function AssessmentPage() {
                       {/* Option Text */}
                       <span style={{ 
                         flex: 1,
+                        fontSize: '13px',
                         fontWeight: isSelected ? '600' : '500'
                       }}>
                         {option.answer_text}
@@ -991,234 +952,229 @@ export default function AssessmentPage() {
                   );
                 })}
               </div>
-            </div>
 
-            {/* COMPACT NAVIGATION FOOTER */}
-            <div style={{ 
-              padding: '20px',
-              borderTop: '1px solid rgba(0, 0, 0, 0.1)',
-              background: 'rgba(255, 255, 255, 0.8)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              flexShrink: 0,
-              backdropFilter: 'blur(5px)'
-            }}>
-              <button 
-                onClick={handleBack} 
-                disabled={currentIndex === 0} 
-                style={{ 
-                  padding: '12px 25px', 
-                  background: currentIndex === 0 ? 'rgba(233, 236, 239, 0.7)' : sectionConfig.color, 
-                  color: currentIndex === 0 ? '#999' : 'white', 
-                  border: 'none',
-                  borderRadius: '10px',
-                  cursor: currentIndex === 0 ? 'not-allowed' : 'pointer',
-                  fontSize: '15px',
-                  fontWeight: '600',
-                  minWidth: '120px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  backdropFilter: 'blur(5px)',
-                  boxShadow: currentIndex === 0 ? 'none' : '0 4px 10px rgba(0,0,0,0.2)'
-                }}
-                onMouseOver={(e) => currentIndex !== 0 && (e.currentTarget.style.transform = 'translateX(-2px)')}
-                onMouseOut={(e) => currentIndex !== 0 && (e.currentTarget.style.transform = 'translateX(0)')}
-              >
-                ← Previous
-              </button>
-              
+              {/* COMPACT NAVIGATION - AT BOTTOM OF ANSWERS */}
               <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '20px'
+                marginTop: '15px',
+                paddingTop: '12px',
+                borderTop: '1px solid #e0e0e0',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexShrink: 0
               }}>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ 
-                    fontSize: '13px', 
-                    color: '#666',
-                    marginBottom: '3px',
-                    fontWeight: '600'
-                  }}>
-                    Question
-                  </div>
-                  <div style={{ 
-                    fontSize: '18px', 
-                    fontWeight: '800', 
-                    color: sectionConfig.color
-                  }}>
-                    {currentIndex + 1}<span style={{ fontSize: '14px', color: '#999' }}>/{questions.length}</span>
-                  </div>
+                <button 
+                  onClick={handleBack} 
+                  disabled={currentIndex === 0} 
+                  style={{ 
+                    padding: '8px 16px', 
+                    background: currentIndex === 0 ? '#f5f5f5' : sectionConfig.color, 
+                    color: currentIndex === 0 ? '#999' : 'white', 
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: currentIndex === 0 ? 'not-allowed' : 'pointer',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    minWidth: '90px'
+                  }}
+                >
+                  ← Previous
+                </button>
+                
+                <div style={{ 
+                  fontSize: '13px', 
+                  fontWeight: '600', 
+                  color: sectionConfig.color
+                }}>
+                  Q{currentIndex + 1} of {questions.length}
                 </div>
                 
-                {/* Quick Jump Buttons */}
-                <div style={{ display: 'flex', gap: '8px' }}>
+                {isLastQuestion ? (
                   <button 
-                    onClick={() => setCurrentIndex(Math.max(0, currentIndex - 5))}
-                    disabled={currentIndex < 5}
-                    style={{
-                      padding: '8px 12px',
-                      background: currentIndex < 5 ? 'rgba(233, 236, 239, 0.7)' : sectionConfig.lightBg,
-                      color: currentIndex < 5 ? '#999' : sectionConfig.color,
-                      border: `1px solid ${currentIndex < 5 ? 'rgba(224, 224, 224, 0.5)' : sectionConfig.color}`,
-                      borderRadius: '8px',
-                      cursor: currentIndex < 5 ? 'not-allowed' : 'pointer',
+                    onClick={() => setShowSubmitModal(true)}
+                    style={{ 
+                      padding: '8px 16px', 
+                      background: '#4caf50', 
+                      color: 'white', 
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
                       fontSize: '13px',
                       fontWeight: '600',
-                      backdropFilter: 'blur(5px)'
+                      minWidth: '90px'
                     }}
                   >
-                    -5
+                    Submit →
                   </button>
+                ) : (
                   <button 
-                    onClick={() => setCurrentIndex(Math.min(questions.length - 1, currentIndex + 5))}
-                    disabled={currentIndex >= questions.length - 5}
-                    style={{
-                      padding: '8px 12px',
-                      background: currentIndex >= questions.length - 5 ? 'rgba(233, 236, 239, 0.7)' : sectionConfig.lightBg,
-                      color: currentIndex >= questions.length - 5 ? '#999' : sectionConfig.color,
-                      border: `1px solid ${currentIndex >= questions.length - 5 ? 'rgba(224, 224, 224, 0.5)' : sectionConfig.color}`,
-                      borderRadius: '8px',
-                      cursor: currentIndex >= questions.length - 5 ? 'not-allowed' : 'pointer',
+                    onClick={handleNext} 
+                    style={{ 
+                      padding: '8px 16px', 
+                      background: sectionConfig.color, 
+                      color: 'white', 
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
                       fontSize: '13px',
                       fontWeight: '600',
-                      backdropFilter: 'blur(5px)'
+                      minWidth: '90px'
                     }}
                   >
-                    +5
+                    Next →
                   </button>
-                </div>
+                )}
               </div>
-              
-              {isLastQuestion ? (
-                <button 
-                  onClick={() => setShowSubmitModal(true)}
-                  style={{ 
-                    padding: '12px 25px', 
-                    background: 'linear-gradient(135deg, #4caf50, #2e7d32)', 
-                    color: 'white', 
-                    border: 'none',
-                    borderRadius: '10px',
-                    cursor: 'pointer',
-                    fontSize: '15px',
-                    fontWeight: '600',
-                    minWidth: '120px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    backdropFilter: 'blur(5px)',
-                    boxShadow: '0 4px 15px rgba(76, 175, 80, 0.4)'
-                  }}
-                  onMouseOver={(e) => e.currentTarget.style.transform = 'translateX(2px)'}
-                  onMouseOut={(e) => e.currentTarget.style.transform = 'translateX(0)'}
-                >
-                  Submit →
-                </button>
-              ) : (
-                <button 
-                  onClick={handleNext} 
-                  style={{ 
-                    padding: '12px 25px', 
-                    background: sectionConfig.color, 
-                    color: 'white', 
-                    border: 'none',
-                    borderRadius: '10px',
-                    cursor: 'pointer',
-                    fontSize: '15px',
-                    fontWeight: '600',
-                    minWidth: '120px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    backdropFilter: 'blur(5px)',
-                    boxShadow: '0 4px 10px rgba(0,0,0,0.2)'
-                  }}
-                  onMouseOver={(e) => e.currentTarget.style.transform = 'translateX(2px)'}
-                  onMouseOut={(e) => e.currentTarget.style.transform = 'translateX(0)'}
-                >
-                  Next →
-                </button>
-              )}
             </div>
           </div>
-        </div>
 
-        {/* COMPACT QUICK NAVIGATION */}
-        <div style={{
-          padding: '15px 20px',
-          background: 'white',
-          borderTop: '1px solid #e9ecef',
-          overflowX: 'auto',
-          boxShadow: '0 -2px 10px rgba(0,0,0,0.05)'
-        }}>
-          <div style={{ 
-            fontSize: '14px', 
-            fontWeight: '600', 
-            marginBottom: '10px',
-            color: '#1a237e',
+          {/* QUESTION NAVIGATION SIDEBAR (Right - 30%) */}
+          <div style={{
+            flex: 3,
+            background: 'white',
+            borderRadius: '10px',
+            border: '1px solid #e0e0e0',
+            padding: '12px',
             display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
+            flexDirection: 'column',
+            overflow: 'hidden',
+            minWidth: '200px'
           }}>
-            <span>📋</span>
-            Quick Navigation
-            <span style={{ fontSize: '12px', color: '#666', fontWeight: '400', marginLeft: 'auto' }}>
-              Click any number to jump
-            </span>
-          </div>
-          <div style={{ 
-            display: 'flex', 
-            gap: '8px',
-            flexWrap: 'nowrap',
-            overflowX: 'auto',
-            paddingBottom: '5px'
-          }}>
-            {questions.map((q, index) => {
-              const isAnswered = answers[q.id];
-              const isCurrent = index === currentIndex;
-              
-              return (
-                <button
-                  key={q.id}
-                  onClick={() => setCurrentIndex(index)}
-                  style={{
-                    width: '36px',
-                    height: '36px',
-                    background: isCurrent ? sectionConfig.color : 
-                               isAnswered ? '#4caf50' : '#f5f5f5',
-                    color: isCurrent ? 'white' : 
-                           isAnswered ? 'white' : '#666',
-                    border: `2px solid ${isCurrent ? sectionConfig.color : 
-                             isAnswered ? '#4caf50' : '#e0e0e0'}`,
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    flexShrink: 0,
-                    transition: 'all 0.2s',
-                    boxShadow: isCurrent ? `0 2px 8px ${sectionConfig.color}80` : 'none'
-                  }}
-                  onMouseOver={(e) => {
-                    if (!isCurrent) {
-                      e.currentTarget.style.transform = 'translateY(-2px)';
-                      e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';
-                    }
-                  }}
-                  onMouseOut={(e) => {
-                    if (!isCurrent) {
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = isCurrent ? `0 2px 8px ${sectionConfig.color}80` : 'none';
-                    }
-                  }}
-                >
-                  {index + 1}
-                </button>
-              );
-            })}
+            <div style={{ 
+              fontSize: '14px', 
+              fontWeight: '600', 
+              marginBottom: '12px',
+              color: '#1a237e',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}>
+              <span>📋</span>
+              Question Navigator
+            </div>
+            
+            {/* SMALL QUESTION GRID */}
+            <div style={{ 
+              flex: 1,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(5, 1fr)',
+              gap: '6px',
+              overflowY: 'auto',
+              paddingRight: '4px'
+            }}>
+              {questions.map((q, index) => {
+                const isAnswered = answers[q.id];
+                const isCurrent = index === currentIndex;
+                
+                return (
+                  <button
+                    key={q.id}
+                    onClick={() => setCurrentIndex(index)}
+                    style={{
+                      width: '100%',
+                      aspectRatio: '1/1',
+                      background: isCurrent ? sectionConfig.color : 
+                                 isAnswered ? '#4caf50' : '#f5f5f5',
+                      color: isCurrent ? 'white' : 
+                             isAnswered ? 'white' : '#666',
+                      border: `2px solid ${isCurrent ? sectionConfig.color : 
+                               isAnswered ? '#4caf50' : '#e0e0e0'}`,
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseOver={(e) => {
+                      if (!isCurrent) {
+                        e.currentTarget.style.transform = 'scale(1.05)';
+                        e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.15)';
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      if (!isCurrent) {
+                        e.currentTarget.style.transform = 'scale(1)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }
+                    }}
+                  >
+                    {index + 1}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* SIDEBAR STATS */}
+            <div style={{
+              marginTop: '15px',
+              padding: '10px',
+              background: '#f8f9fa',
+              borderRadius: '8px',
+              border: '1px solid #e0e0e0'
+            }}>
+              <div style={{ 
+                fontSize: '12px', 
+                fontWeight: '600', 
+                color: '#666',
+                marginBottom: '8px'
+              }}>
+                Assessment Stats
+              </div>
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: '8px',
+                fontSize: '11px'
+              }}>
+                <div>
+                  <div style={{ color: '#999' }}>Answered</div>
+                  <div style={{ fontWeight: '700', color: '#4caf50' }}>{totalAnswered}</div>
+                </div>
+                <div>
+                  <div style={{ color: '#999' }}>Remaining</div>
+                  <div style={{ fontWeight: '700', color: '#ff9800' }}>{questions.length - totalAnswered}</div>
+                </div>
+                <div>
+                  <div style={{ color: '#999' }}>Progress</div>
+                  <div style={{ fontWeight: '700', color: '#2196f3' }}>{progressPercentage}%</div>
+                </div>
+                <div>
+                  <div style={{ color: '#999' }}>Time Left</div>
+                  <div style={{ fontWeight: '700', color: timeRemaining < 1800 ? '#d32f2f' : '#388e3c' }}>
+                    {formatTime(hours)}:{formatTime(minutes)}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* SUBMIT BUTTON IN SIDEBAR */}
+            <button 
+              onClick={() => setShowSubmitModal(true)}
+              style={{
+                width: '100%',
+                padding: '10px',
+                background: 'linear-gradient(135deg, #4caf50, #2e7d32)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: '600',
+                marginTop: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+            >
+              <span>✓</span>
+              Submit Assessment
+            </button>
           </div>
         </div>
       </div>
@@ -1229,35 +1185,23 @@ export default function AssessmentPage() {
           100% { transform: rotate(360deg); }
         }
         
-        /* Custom scrollbar */
+        /* Custom scrollbar for sidebar */
         ::-webkit-scrollbar {
-          width: 8px;
-          height: 8px;
+          width: 6px;
         }
         
         ::-webkit-scrollbar-track {
-          background: rgba(241, 241, 241, 0.5);
-          border-radius: 4px;
+          background: #f1f1f1;
+          border-radius: 3px;
         }
         
         ::-webkit-scrollbar-thumb {
-          background: rgba(193, 193, 193, 0.8);
-          border-radius: 4px;
+          background: #c1c1c1;
+          border-radius: 3px;
         }
         
         ::-webkit-scrollbar-thumb:hover {
-          background: rgba(168, 168, 168, 0.9);
-        }
-        
-        /* Hide scrollbar for Chrome, Safari and Opera */
-        .scrollbar-hidden::-webkit-scrollbar {
-          display: none;
-        }
-        
-        /* Hide scrollbar for IE, Edge and Firefox */
-        .scrollbar-hidden {
-          -ms-overflow-style: none;  /* IE and Edge */
-          scrollbar-width: none;  /* Firefox */
+          background: #a8a8a8;
         }
       `}</style>
     </>
