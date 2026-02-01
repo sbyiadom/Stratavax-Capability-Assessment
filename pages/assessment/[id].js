@@ -1,45 +1,32 @@
 // pages/assessment/[id].js
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import AppLayout from "../../components/AppLayout";
-import QuestionCard from "../../components/QuestionCard";
-import QuestionNav from "../../components/QuestionNav";
 import { supabase } from "../../supabase/client";
 
 const SECTION_CONFIG = {
   'Cognitive Abilities': { 
     color: '#4A6FA5', 
-    gradient: 'linear-gradient(135deg, #4A6FA5 0%, #2E4C7E 100%)',
     icon: '🧠',
-    bgColor: 'rgba(74, 111, 165, 0.15)',
     bgImage: '/images/backgrounds/cognitive-bg.jpg'
   },
   'Personality Assessment': { 
     color: '#9C27B0', 
-    gradient: 'linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%)',
     icon: '😊',
-    bgColor: 'rgba(156, 39, 176, 0.15)',
     bgImage: '/images/backgrounds/personality-bg.jpg'
   },
   'Leadership Potential': { 
     color: '#D32F2F', 
-    gradient: 'linear-gradient(135deg, #D32F2F 0%, #B71C1C 100%)',
     icon: '👑',
-    bgColor: 'rgba(211, 47, 47, 0.15)',
     bgImage: '/images/backgrounds/leadership-bg.jpg'
   },
   'Technical Competence': { 
     color: '#388E3C', 
-    gradient: 'linear-gradient(135deg, #388E3C 0%, #1B5E20 100%)',
     icon: '⚙️',
-    bgColor: 'rgba(56, 142, 60, 0.15)',
     bgImage: '/images/backgrounds/technical-bg.jpg'
   },
   'Performance Metrics': { 
     color: '#F57C00', 
-    gradient: 'linear-gradient(135deg, #F57C00 0%, #E65100 100%)',
     icon: '📊',
-    bgColor: 'rgba(245, 124, 0, 0.15)',
     bgImage: '/images/backgrounds/performance-bg.jpg'
   }
 };
@@ -98,16 +85,27 @@ export default function AssessmentPage() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
-  // Check if mobile
+  // Check if mobile and screen size
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
+      // Prevent zoom on mobile
+      document.querySelector('meta[name="viewport"]')?.setAttribute('content', 
+        'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
     };
     
     checkMobile();
     window.addEventListener('resize', checkMobile);
     
     return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Prevent scrolling
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'auto';
+    };
   }, []);
 
   // Initialize session
@@ -297,22 +295,53 @@ export default function AssessmentPage() {
   if (loading) {
     return (
       <div style={{ 
-        minHeight: "100vh",
-        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), 
+                    url('/images/backgrounds/default-bg.jpg')`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        color: "white",
         padding: "20px"
       }}>
-        <div style={{ textAlign: "center", padding: "40px", maxWidth: "500px", width: "100%" }}>
-          <div style={{ fontSize: isMobile ? "24px" : "32px", fontWeight: "700", marginBottom: "20px" }}>
+        <div style={{ 
+          background: 'rgba(255, 255, 255, 0.1)',
+          backdropFilter: 'blur(10px)',
+          borderRadius: '20px',
+          padding: '40px',
+          textAlign: "center",
+          maxWidth: "500px",
+          width: "100%",
+          border: '1px solid rgba(255, 255, 255, 0.2)'
+        }}>
+          <div style={{ 
+            fontSize: isMobile ? "28px" : "36px", 
+            fontWeight: "700", 
+            marginBottom: "20px",
+            color: 'white'
+          }}>
             🏢 Stratavax
           </div>
-          <div style={{ fontSize: isMobile ? "18px" : "24px", fontWeight: "600", marginBottom: "20px" }}>
+          <div style={{ 
+            fontSize: isMobile ? "18px" : "22px", 
+            fontWeight: "600", 
+            marginBottom: "20px",
+            color: 'white'
+          }}>
             Loading Assessment...
           </div>
-          <div style={{ width: "100%", height: "6px", backgroundColor: "rgba(255,255,255,0.2)", borderRadius: "3px", overflow: "hidden" }}>
+          <div style={{ 
+            width: "100%", 
+            height: "6px", 
+            backgroundColor: "rgba(255,255,255,0.2)", 
+            borderRadius: "3px", 
+            overflow: "hidden" 
+          }}>
             <div style={{ 
               width: "60%", 
               height: "100%", 
@@ -335,31 +364,61 @@ export default function AssessmentPage() {
   if (questions.length === 0) {
     return (
       <div style={{ 
-        minHeight: "100vh",
-        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), 
+                    url('/images/backgrounds/default-bg.jpg')`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        color: "white",
         padding: "20px"
       }}>
-        <div style={{ textAlign: "center", padding: "30px", maxWidth: "500px", width: "100%" }}>
-          <div style={{ fontSize: isMobile ? "24px" : "32px", fontWeight: "700", marginBottom: "20px" }}>
+        <div style={{ 
+          background: 'rgba(255, 255, 255, 0.1)',
+          backdropFilter: 'blur(10px)',
+          borderRadius: '20px',
+          padding: '30px',
+          textAlign: "center",
+          maxWidth: "500px",
+          width: "100%",
+          border: '1px solid rgba(255, 255, 255, 0.2)'
+        }}>
+          <div style={{ 
+            fontSize: isMobile ? "28px" : "36px", 
+            fontWeight: "700", 
+            marginBottom: "20px",
+            color: 'white'
+          }}>
             🏢 Stratavax
           </div>
-          <div style={{ fontSize: isMobile ? "18px" : "24px", marginBottom: "20px" }}>
+          <div style={{ 
+            fontSize: isMobile ? "18px" : "22px", 
+            marginBottom: "20px",
+            color: 'white'
+          }}>
             Assessment Not Ready
           </div>
-          <div style={{ fontSize: isMobile ? "14px" : "16px", marginBottom: "30px", lineHeight: 1.5 }}>
+          <div style={{ 
+            fontSize: isMobile ? "14px" : "16px", 
+            marginBottom: "30px", 
+            lineHeight: 1.5,
+            color: 'rgba(255, 255, 255, 0.9)'
+          }}>
             Please run the SQL setup scripts to create the assessment questions.
           </div>
           <button 
             onClick={() => router.push("/")}
             style={{
               padding: isMobile ? "14px 25px" : "15px 35px",
-              backgroundColor: "white",
-              color: "#764ba2",
-              border: "none",
+              background: 'rgba(255, 255, 255, 0.2)',
+              backdropFilter: 'blur(5px)',
+              color: "white",
+              border: "1px solid rgba(255, 255, 255, 0.3)",
               borderRadius: "10px",
               cursor: "pointer",
               fontSize: isMobile ? "15px" : "16px",
@@ -382,7 +441,6 @@ export default function AssessmentPage() {
   const totalAnswered = Object.keys(answers).length;
   const isLastQuestion = currentIndex === questions.length - 1;
 
-  // Main render with transparent card
   return (
     <>
       {/* Submit Confirmation Modal */}
@@ -393,20 +451,23 @@ export default function AssessmentPage() {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: "rgba(0,0,0,0.8)",
+          backgroundColor: "rgba(0,0,0,0.9)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           zIndex: 2000,
-          padding: "20px"
+          padding: "20px",
+          backdropFilter: 'blur(5px)'
         }}>
           <div style={{
-            background: "white",
+            background: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(20px)',
             padding: isMobile ? "20px" : "30px",
-            borderRadius: "16px",
+            borderRadius: "20px",
             maxWidth: "500px",
             width: "100%",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.4)"
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.4)'
           }}>
             <h2 style={{ 
               marginTop: 0, 
@@ -420,8 +481,9 @@ export default function AssessmentPage() {
             <div style={{ 
               margin: "20px 0", 
               padding: isMobile ? "15px" : "20px", 
-              background: "#f8f9fa", 
-              borderRadius: "10px"
+              background: "rgba(33, 150, 243, 0.1)", 
+              borderRadius: "12px",
+              border: '1px solid rgba(33, 150, 243, 0.2)'
             }}>
               <div style={{ 
                 display: "flex", 
@@ -447,11 +509,11 @@ export default function AssessmentPage() {
                 </span>
               </div>
               
-              <div style={{ height: "10px", background: "#e0e0e0", borderRadius: "5px", margin: "15px 0" }}>
+              <div style={{ height: "10px", background: "rgba(0,0,0,0.1)", borderRadius: "5px", margin: "15px 0" }}>
                 <div style={{ 
                   height: "100%", 
                   width: `${(totalAnswered / questions.length) * 100}%`, 
-                  background: "#4caf50", 
+                  background: "linear-gradient(90deg, #4caf50, #2e7d32)", 
                   borderRadius: "5px"
                 }} />
               </div>
@@ -479,9 +541,9 @@ export default function AssessmentPage() {
                 disabled={isSubmitting}
                 style={{
                   padding: isMobile ? "12px 20px" : "10px 20px",
-                  background: "#f5f5f5",
+                  background: "rgba(0,0,0,0.1)",
                   color: "#333",
-                  border: "none",
+                  border: "1px solid rgba(0,0,0,0.2)",
                   borderRadius: "8px",
                   cursor: "pointer",
                   fontWeight: "600",
@@ -497,7 +559,7 @@ export default function AssessmentPage() {
                 disabled={isSubmitting}
                 style={{
                   padding: isMobile ? "12px 25px" : "10px 25px",
-                  background: isSubmitting ? "#81c784" : "#4caf50",
+                  background: isSubmitting ? "#81c784" : "linear-gradient(135deg, #4caf50, #2e7d32)",
                   color: "white",
                   border: "none",
                   borderRadius: "8px",
@@ -523,21 +585,24 @@ export default function AssessmentPage() {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: "rgba(0,0,0,0.9)",
+          backgroundColor: "rgba(0,0,0,0.95)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           zIndex: 3000,
-          padding: "20px"
+          padding: "20px",
+          backdropFilter: 'blur(5px)'
         }}>
           <div style={{
-            background: "white",
+            background: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(20px)',
             padding: isMobile ? "25px" : "40px",
             borderRadius: "20px",
             maxWidth: "500px",
             width: "100%",
             textAlign: "center",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.5)"
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.5)'
           }}>
             <div style={{
               width: isMobile ? "60px" : "80px",
@@ -568,9 +633,9 @@ export default function AssessmentPage() {
             <div style={{ 
               margin: "20px 0", 
               padding: isMobile ? "15px" : "25px", 
-              background: "linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)", 
+              background: "rgba(76, 175, 80, 0.1)", 
               borderRadius: "15px",
-              border: "3px solid #4caf50"
+              border: "2px solid rgba(76, 175, 80, 0.3)"
             }}>
               <div style={{ 
                 display: "flex", 
@@ -600,7 +665,7 @@ export default function AssessmentPage() {
               
               <div style={{ 
                 height: "12px", 
-                background: "#e0e0e0", 
+                background: "rgba(0,0,0,0.1)", 
                 borderRadius: "6px", 
                 margin: "15px 0",
                 overflow: "hidden"
@@ -656,36 +721,41 @@ export default function AssessmentPage() {
         </div>
       )}
 
-      {/* Main Assessment Interface with Background */}
+      {/* Main Assessment Interface - NO SCROLL LAYOUT */}
       <div style={{
-        minHeight: "100vh",
-        background: `linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), 
-                    url('${sectionConfig.bgImage || '/images/backgrounds/default-bg.jpg'}')`,
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: `linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), 
+                    url('${sectionConfig.bgImage}')`,
         backgroundSize: "cover",
         backgroundPosition: "center",
-        backgroundAttachment: "fixed",
         backgroundRepeat: "no-repeat",
         display: "flex",
         flexDirection: "column",
-        padding: isMobile ? "10px" : "15px"
+        overflow: "hidden",
+        padding: isMobile ? "0" : "15px"
       }}>
         
-        {/* Header - Mobile Optimized */}
+        {/* Header - Minimal Glass Effect */}
         <div style={{
-          background: "rgba(255, 255, 255, 0.95)",
-          backdropFilter: "blur(10px)",
-          padding: isMobile ? "10px 15px" : "12px 20px",
-          borderRadius: isMobile ? "12px" : "15px",
-          boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
-          border: "1px solid rgba(255, 255, 255, 0.2)",
-          marginBottom: isMobile ? "10px" : "15px"
+          background: "rgba(255, 255, 255, 0.1)",
+          backdropFilter: "blur(15px)",
+          WebkitBackdropFilter: "blur(15px)",
+          padding: isMobile ? "12px 15px" : "15px 20px",
+          borderRadius: isMobile ? "0 0 20px 20px" : "15px",
+          borderBottom: isMobile ? "none" : "1px solid rgba(255, 255, 255, 0.2)",
+          marginBottom: isMobile ? "10px" : "15px",
+          flexShrink: 0
         }}>
           <div style={{ 
             display: "flex", 
             justifyContent: "space-between", 
             alignItems: "center",
             flexDirection: isMobile ? "column" : "row",
-            gap: isMobile ? "10px" : "0"
+            gap: isMobile ? "8px" : "0"
           }}>
             <div style={{ 
               textAlign: isMobile ? "center" : "left",
@@ -694,18 +764,19 @@ export default function AssessmentPage() {
               <div style={{ 
                 fontSize: isMobile ? "16px" : "18px", 
                 fontWeight: "700", 
-                color: "#1a237e",
+                color: "white",
                 display: "flex",
                 alignItems: "center",
                 gap: "8px",
-                justifyContent: isMobile ? "center" : "flex-start"
+                justifyContent: isMobile ? "center" : "flex-start",
+                textShadow: "1px 1px 3px rgba(0,0,0,0.5)"
               }}>
                 <span>🏢</span>
                 <span>Stratavax Assessment</span>
               </div>
               <div style={{ 
                 fontSize: isMobile ? "11px" : "12px", 
-                color: "#666", 
+                color: "rgba(255, 255, 255, 0.9)", 
                 marginTop: "4px",
                 display: "flex",
                 flexWrap: "wrap",
@@ -727,62 +798,69 @@ export default function AssessmentPage() {
               width: isMobile ? "100%" : "auto"
             }}>
               <div style={{
-                padding: isMobile ? "8px 15px" : "6px 12px",
-                background: "#e3f2fd",
+                padding: isMobile ? "8px 15px" : "8px 16px",
+                background: "rgba(255, 255, 255, 0.2)",
+                backdropFilter: "blur(5px)",
                 borderRadius: "20px",
                 fontWeight: "600",
-                color: "#1565c0",
-                fontSize: isMobile ? "13px" : "13px",
-                border: "1px solid #90caf9",
-                whiteSpace: "nowrap"
+                color: "white",
+                fontSize: isMobile ? "13px" : "14px",
+                border: "1px solid rgba(255, 255, 255, 0.3)",
+                whiteSpace: "nowrap",
+                textShadow: "1px 1px 2px rgba(0,0,0,0.5)"
               }}>
-                {totalAnswered}/{questions.length}
+                {totalAnswered}/{questions.length} Answered
               </div>
             </div>
           </div>
         </div>
 
-        {/* Main Content - Mobile Responsive */}
+        {/* Main Content - Fits within viewport */}
         <div style={{ 
           flex: 1,
           display: "flex",
           flexDirection: isMobile ? "column" : "row",
           gap: isMobile ? "10px" : "15px",
+          overflow: "hidden",
+          padding: isMobile ? "0 10px 70px 10px" : "0"
         }}>
           
-          {/* Transparent Question Card - Takes full width on mobile */}
+          {/* TRANSPARENT QUESTION CARD - GLASS EFFECT */}
           <div style={{ 
             flex: isMobile ? "1" : "7",
             display: "flex",
             flexDirection: "column",
-            background: "rgba(255, 255, 255, 0.15)",
-            backdropFilter: "blur(15px)",
+            background: "rgba(255, 255, 255, 0.08)", // Very low opacity for transparency
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
             borderRadius: "20px",
-            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.1)",
-            border: "1px solid rgba(255, 255, 255, 0.2)",
+            border: "1px solid rgba(255, 255, 255, 0.15)",
             overflow: "hidden",
-            WebkitBackdropFilter: "blur(15px)"
+            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.1)",
+            minHeight: "0" // Allows flexbox to handle overflow
           }}>
             
-            {/* Section Header with Glass Effect */}
+            {/* Section Header - Semi-transparent */}
             <div style={{
-              background: `linear-gradient(135deg, ${sectionConfig.color}99 0%, ${sectionConfig.color}cc 100%)`,
+              background: `linear-gradient(90deg, 
+                ${sectionConfig.color}33 0%, 
+                ${sectionConfig.color}66 100%)`,
               color: "white",
               padding: isMobile ? "15px" : "20px",
               display: "flex",
               alignItems: "center",
               gap: "12px",
-              borderBottom: "1px solid rgba(255, 255, 255, 0.2)"
+              borderBottom: "1px solid rgba(255, 255, 255, 0.1)"
             }}>
               <div style={{
-                width: isMobile ? "40px" : "48px",
-                height: isMobile ? "40px" : "48px",
-                background: "rgba(255, 255, 255, 0.3)",
+                width: isMobile ? "36px" : "44px",
+                height: isMobile ? "36px" : "44px",
+                background: "rgba(255, 255, 255, 0.2)",
                 borderRadius: "50%",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: isMobile ? "20px" : "24px",
+                fontSize: isMobile ? "18px" : "22px",
                 backdropFilter: "blur(5px)"
               }}>
                 {sectionConfig.icon}
@@ -790,15 +868,16 @@ export default function AssessmentPage() {
               <div style={{ flex: 1 }}>
                 <div style={{ 
                   fontWeight: "700", 
-                  fontSize: isMobile ? "18px" : "20px",
-                  textShadow: "1px 1px 2px rgba(0,0,0,0.2)"
+                  fontSize: isMobile ? "16px" : "18px",
+                  textShadow: "2px 2px 4px rgba(0,0,0,0.3)"
                 }}>
                   {currentSection}
                 </div>
                 <div style={{ 
-                  fontSize: isMobile ? "12px" : "14px", 
+                  fontSize: isMobile ? "11px" : "13px", 
                   opacity: 0.9,
-                  marginTop: "2px"
+                  marginTop: "2px",
+                  textShadow: "1px 1px 2px rgba(0,0,0,0.3)"
                 }}>
                   {currentQuestion?.subsection || "Question"}
                 </div>
@@ -808,14 +887,15 @@ export default function AssessmentPage() {
                 <div style={{
                   padding: "6px 12px",
                   borderRadius: "20px",
-                  background: saveState === "saved" ? "rgba(76, 175, 80, 0.9)" : 
-                             saveState === "saving" ? "rgba(255, 152, 0, 0.9)" : 
-                             "rgba(244, 67, 54, 0.9)",
+                  background: saveState === "saved" ? "rgba(76, 175, 80, 0.8)" : 
+                             saveState === "saving" ? "rgba(255, 152, 0, 0.8)" : 
+                             "rgba(244, 67, 54, 0.8)",
                   color: "white",
-                  fontSize: isMobile ? "12px" : "13px",
+                  fontSize: isMobile ? "11px" : "12px",
                   fontWeight: "600",
                   backdropFilter: "blur(5px)",
-                  border: "1px solid rgba(255, 255, 255, 0.3)"
+                  border: "1px solid rgba(255, 255, 255, 0.3)",
+                  textShadow: "1px 1px 2px rgba(0,0,0,0.3)"
                 }}>
                   {saveState === "saved" ? "✅ Saved" : 
                    saveState === "saving" ? "⏳ Saving..." : "❌ Error"}
@@ -823,34 +903,36 @@ export default function AssessmentPage() {
               )}
             </div>
 
-            {/* Question Text with Glass Effect */}
+            {/* Question Text - Very transparent */}
             <div style={{
-              padding: isMobile ? "20px" : "30px",
-              background: "rgba(255, 255, 255, 0.1)",
-              borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
+              padding: isMobile ? "20px" : "25px",
+              background: "rgba(255, 255, 255, 0.05)",
+              borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
               minHeight: isMobile ? "auto" : "120px",
               display: "flex",
-              alignItems: "center"
+              alignItems: "center",
+              flexShrink: 0
             }}>
               <div style={{
                 fontSize: isMobile ? "16px" : "18px",
                 lineHeight: "1.6",
                 fontWeight: "500",
                 color: "white",
-                textShadow: "1px 1px 2px rgba(0,0,0,0.5)"
+                textShadow: "2px 2px 4px rgba(0,0,0,0.5)"
               }}>
                 {currentQuestion?.question_text}
               </div>
             </div>
 
-            {/* Answers with Glass Effect */}
+            {/* Answers Grid - Scrollable if needed but fits screen */}
             <div style={{ 
               flex: 1,
               padding: isMobile ? "15px" : "20px",
-              overflow: "auto",
+              overflowY: "auto",
               display: "grid",
               gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-              gap: isMobile ? "10px" : "15px"
+              gap: isMobile ? "10px" : "15px",
+              maxHeight: "calc(100vh - 300px)" // Prevents overflow
             }}>
               {currentQuestion && currentQuestion.options.map((option, index) => {
                 const isSelected = answers[currentQuestion.id] === option.id;
@@ -862,12 +944,15 @@ export default function AssessmentPage() {
                     onClick={() => handleSelect(currentQuestion.id, option.id)}
                     disabled={saveState === "saving"}
                     style={{
-                      padding: isMobile ? "15px" : "20px",
+                      padding: isMobile ? "15px" : "18px",
                       background: isSelected 
-                        ? "rgba(255, 255, 255, 0.25)" 
-                        : "rgba(255, 255, 255, 0.1)",
+                        ? "rgba(255, 255, 255, 0.2)" 
+                        : "rgba(255, 255, 255, 0.08)",
                       backdropFilter: "blur(10px)",
-                      border: `2px solid ${isSelected ? "rgba(255, 255, 255, 0.5)" : "rgba(255, 255, 255, 0.2)"}`,
+                      WebkitBackdropFilter: "blur(10px)",
+                      border: `2px solid ${isSelected ? 
+                        "rgba(255, 255, 255, 0.4)" : 
+                        "rgba(255, 255, 255, 0.15)"}`,
                       borderRadius: "15px",
                       cursor: saveState === "saving" ? "not-allowed" : "pointer",
                       textAlign: "left",
@@ -877,29 +962,32 @@ export default function AssessmentPage() {
                       display: "flex",
                       alignItems: "flex-start",
                       gap: "12px",
-                      transition: "all 0.3s ease",
+                      transition: "all 0.2s ease",
                       opacity: saveState === "saving" && !isSelected ? 0.6 : 1,
                       minHeight: "44px",
-                      WebkitTapHighlightColor: "transparent"
+                      WebkitTapHighlightColor: "transparent",
+                      textShadow: "1px 1px 2px rgba(0,0,0,0.3)"
                     }}
                     onMouseOver={(e) => {
                       if (!saveState && !isSelected) {
-                        e.target.style.background = "rgba(255, 255, 255, 0.2)";
+                        e.target.style.background = "rgba(255, 255, 255, 0.15)";
                         e.target.style.transform = "translateY(-2px)";
                       }
                     }}
                     onMouseOut={(e) => {
                       if (!saveState && !isSelected) {
-                        e.target.style.background = "rgba(255, 255, 255, 0.1)";
+                        e.target.style.background = "rgba(255, 255, 255, 0.08)";
                         e.target.style.transform = "translateY(0)";
                       }
                     }}
                   >
                     <div style={{
-                      width: isMobile ? "24px" : "28px",
-                      height: isMobile ? "24px" : "28px",
+                      width: isMobile ? "28px" : "32px",
+                      height: isMobile ? "28px" : "32px",
                       borderRadius: "50%",
-                      border: `2px solid ${isSelected ? "white" : "rgba(255, 255, 255, 0.5)"}`,
+                      border: `2px solid ${isSelected ? 
+                        "rgba(255, 255, 255, 0.8)" : 
+                        "rgba(255, 255, 255, 0.4)"}`,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -913,7 +1001,7 @@ export default function AssessmentPage() {
                     </div>
                     <span style={{ 
                       flex: 1, 
-                      textShadow: "1px 1px 2px rgba(0,0,0,0.3)",
+                      textShadow: "1px 1px 3px rgba(0,0,0,0.4)",
                       wordBreak: "break-word"
                     }}>
                       {option.answer_text}
@@ -924,7 +1012,7 @@ export default function AssessmentPage() {
                         width: "24px",
                         height: "24px",
                         borderRadius: "50%",
-                        background: "white",
+                        background: "rgba(255, 255, 255, 0.9)",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -943,15 +1031,16 @@ export default function AssessmentPage() {
               })}
             </div>
 
-            {/* Navigation - Mobile Optimized */}
+            {/* Navigation - Bottom */}
             <div style={{ 
               padding: isMobile ? "15px" : "20px",
-              borderTop: "1px solid rgba(255, 255, 255, 0.2)",
-              background: "rgba(255, 255, 255, 0.1)",
+              borderTop: "1px solid rgba(255, 255, 255, 0.1)",
+              background: "rgba(255, 255, 255, 0.05)",
               display: "flex",
               justifyContent: "space-between",
               gap: isMobile ? "8px" : "15px",
-              flexWrap: isMobile ? "wrap" : "nowrap"
+              flexWrap: isMobile ? "wrap" : "nowrap",
+              flexShrink: 0
             }}>
               <button 
                 onClick={handleBack} 
@@ -959,11 +1048,11 @@ export default function AssessmentPage() {
                 style={{ 
                   padding: isMobile ? "12px 15px" : "14px 20px", 
                   background: currentIndex === 0 ? 
-                    "rgba(255, 255, 255, 0.1)" : 
-                    "rgba(21, 101, 192, 0.8)", 
+                    "rgba(255, 255, 255, 0.05)" : 
+                    "rgba(21, 101, 192, 0.6)", 
                   color: currentIndex === 0 ? 
-                    "rgba(255, 255, 255, 0.5)" : "white", 
-                  border: "1px solid rgba(255, 255, 255, 0.2)",
+                    "rgba(255, 255, 255, 0.4)" : "white", 
+                  border: "1px solid rgba(255, 255, 255, 0.15)",
                   borderRadius: "12px",
                   cursor: currentIndex === 0 ? "not-allowed" : "pointer",
                   fontSize: isMobile ? "14px" : "16px",
@@ -971,7 +1060,8 @@ export default function AssessmentPage() {
                   flex: isMobile ? "1" : "1",
                   minHeight: "44px",
                   backdropFilter: "blur(5px)",
-                  minWidth: isMobile ? "calc(50% - 4px)" : "auto"
+                  minWidth: isMobile ? "calc(50% - 4px)" : "auto",
+                  textShadow: "1px 1px 2px rgba(0,0,0,0.5)"
                 }}
               >
                 ← Previous
@@ -984,13 +1074,13 @@ export default function AssessmentPage() {
                 fontSize: isMobile ? "14px" : "16px",
                 color: "white",
                 fontWeight: "600",
-                textShadow: "1px 1px 2px rgba(0,0,0,0.5)",
+                textShadow: "1px 1px 3px rgba(0,0,0,0.5)",
                 minWidth: isMobile ? "100%" : "auto",
                 order: isMobile ? 3 : 2,
                 marginTop: isMobile ? "10px" : "0",
                 padding: isMobile ? "8px" : "0"
               }}>
-                {currentIndex + 1} of {questions.length}
+                Question {currentIndex + 1} of {questions.length}
               </div>
               
               {isLastQuestion ? (
@@ -998,9 +1088,9 @@ export default function AssessmentPage() {
                   onClick={() => setShowSubmitModal(true)}
                   style={{ 
                     padding: isMobile ? "12px 15px" : "14px 20px", 
-                    background: "rgba(76, 175, 80, 0.8)", 
+                    background: "rgba(76, 175, 80, 0.6)", 
                     color: "white", 
-                    border: "1px solid rgba(255, 255, 255, 0.2)",
+                    border: "1px solid rgba(255, 255, 255, 0.15)",
                     borderRadius: "12px",
                     cursor: "pointer",
                     fontSize: isMobile ? "14px" : "16px",
@@ -1008,7 +1098,8 @@ export default function AssessmentPage() {
                     flex: isMobile ? "1" : "1",
                     minHeight: "44px",
                     backdropFilter: "blur(5px)",
-                    minWidth: isMobile ? "calc(50% - 4px)" : "auto"
+                    minWidth: isMobile ? "calc(50% - 4px)" : "auto",
+                    textShadow: "1px 1px 2px rgba(0,0,0,0.5)"
                   }}
                 >
                   Submit
@@ -1018,9 +1109,9 @@ export default function AssessmentPage() {
                   onClick={handleNext} 
                   style={{ 
                     padding: isMobile ? "12px 15px" : "14px 20px", 
-                    background: "rgba(21, 101, 192, 0.8)", 
+                    background: "rgba(21, 101, 192, 0.6)", 
                     color: "white", 
-                    border: "1px solid rgba(255, 255, 255, 0.2)",
+                    border: "1px solid rgba(255, 255, 255, 0.15)",
                     borderRadius: "12px",
                     cursor: "pointer",
                     fontSize: isMobile ? "14px" : "16px",
@@ -1028,7 +1119,8 @@ export default function AssessmentPage() {
                     flex: isMobile ? "1" : "1",
                     minHeight: "44px",
                     backdropFilter: "blur(5px)",
-                    minWidth: isMobile ? "calc(50% - 4px)" : "auto"
+                    minWidth: isMobile ? "calc(50% - 4px)" : "auto",
+                    textShadow: "1px 1px 2px rgba(0,0,0,0.5)"
                   }}
                 >
                   Next →
@@ -1037,24 +1129,26 @@ export default function AssessmentPage() {
             </div>
           </div>
 
-          {/* Right Panel - Hidden on mobile unless in landscape */}
+          {/* Right Panel - Desktop only */}
           {!isMobile && (
             <div style={{ 
               flex: 3,
               display: "flex", 
               flexDirection: "column", 
               gap: "15px",
-              minWidth: "250px"
+              minWidth: "250px",
+              maxHeight: "calc(100vh - 150px)" // Fit within viewport
             }}>
               
-              {/* Progress Panel */}
+              {/* Progress Panel - Glass Effect */}
               <div style={{ 
-                background: "rgba(255, 255, 255, 0.15)",
-                backdropFilter: "blur(15px)",
+                background: "rgba(255, 255, 255, 0.08)",
+                backdropFilter: "blur(20px)",
+                WebkitBackdropFilter: "blur(20px)",
                 borderRadius: "20px",
                 padding: "20px",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.1)",
-                border: "1px solid rgba(255, 255, 255, 0.2)"
+                border: "1px solid rgba(255, 255, 255, 0.15)",
+                overflow: "hidden"
               }}>
                 <div style={{ 
                   display: "flex", 
@@ -1066,7 +1160,7 @@ export default function AssessmentPage() {
                     fontSize: "16px", 
                     fontWeight: "600", 
                     color: "white",
-                    textShadow: "1px 1px 2px rgba(0,0,0,0.5)"
+                    textShadow: "1px 1px 3px rgba(0,0,0,0.5)"
                   }}>
                     Your Progress
                   </div>
@@ -1112,12 +1206,12 @@ export default function AssessmentPage() {
                 <div style={{
                   padding: "15px",
                   background: timeRemaining < 1800 ? 
-                    "rgba(255, 82, 82, 0.2)" : 
-                    "rgba(76, 175, 80, 0.2)",
+                    "rgba(255, 82, 82, 0.15)" : 
+                    "rgba(76, 175, 80, 0.15)",
                   borderRadius: "12px",
                   border: `1px solid ${timeRemaining < 1800 ? 
-                    "rgba(255, 82, 82, 0.5)" : 
-                    "rgba(76, 175, 80, 0.5)"}`
+                    "rgba(255, 82, 82, 0.3)" : 
+                    "rgba(76, 175, 80, 0.3)"}`
                 }}>
                   <div style={{ 
                     display: "flex", 
@@ -1131,7 +1225,7 @@ export default function AssessmentPage() {
                     <span style={{ 
                       fontSize: "14px", 
                       fontWeight: "600", 
-                      color: timeRemaining < 1800 ? "#ff5252" : "#4caf50"
+                      color: timeRemaining < 1800 ? "#ff5252" : "white"
                     }}>
                       {timeRemaining < 1800 ? "Time Running Low!" : "Time Remaining"}
                     </span>
@@ -1140,30 +1234,32 @@ export default function AssessmentPage() {
                     fontSize: "24px", 
                     fontWeight: "800", 
                     color: "white",
-                    textShadow: "1px 1px 3px rgba(0,0,0,0.5)"
+                    textShadow: "2px 2px 4px rgba(0,0,0,0.5)"
                   }}>
                     {hours}h {minutes}m {seconds}s
                   </div>
                 </div>
               </div>
 
-              {/* Section Progress */}
+              {/* Section Progress - Scrollable */}
               <div style={{ 
-                background: "rgba(255, 255, 255, 0.15)",
-                backdropFilter: "blur(15px)",
+                flex: 1,
+                background: "rgba(255, 255, 255, 0.08)",
+                backdropFilter: "blur(20px)",
+                WebkitBackdropFilter: "blur(20px)",
                 borderRadius: "20px",
                 padding: "20px",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.1)",
-                border: "1px solid rgba(255, 255, 255, 0.2)"
+                border: "1px solid rgba(255, 255, 255, 0.15)",
+                overflowY: "auto"
               }}>
                 <div style={{ 
                   fontSize: "16px", 
                   fontWeight: "600", 
                   color: "white",
-                  textShadow: "1px 1px 2px rgba(0,0,0,0.5)",
+                  textShadow: "1px 1px 3px rgba(0,0,0,0.5)",
                   marginBottom: "15px"
                 }}>
-                  Sections
+                  Sections Progress
                 </div>
                 
                 <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
@@ -1173,31 +1269,33 @@ export default function AssessmentPage() {
                     
                     return (
                       <div key={section} style={{ 
-                        padding: "10px",
-                        background: "rgba(255, 255, 255, 0.1)",
-                        borderRadius: "10px",
+                        padding: "12px",
+                        background: "rgba(255, 255, 255, 0.05)",
+                        borderRadius: "12px",
                         border: "1px solid rgba(255, 255, 255, 0.1)"
                       }}>
                         <div style={{ 
                           display: "flex", 
                           justifyContent: "space-between", 
                           alignItems: "center",
-                          marginBottom: "5px"
+                          marginBottom: "8px"
                         }}>
                           <div style={{ 
                             display: "flex", 
                             alignItems: "center", 
                             gap: "8px",
                             fontSize: "14px",
-                            color: "white"
+                            color: "white",
+                            textShadow: "1px 1px 2px rgba(0,0,0,0.5)"
                           }}>
                             <span>{config.icon}</span>
-                            <span>{section}</span>
+                            <span style={{ fontSize: "13px" }}>{section}</span>
                           </div>
                           <span style={{ 
                             fontSize: "13px", 
                             fontWeight: "600", 
-                            color: config.color
+                            color: config.color,
+                            textShadow: "1px 1px 2px rgba(0,0,0,0.5)"
                           }}>
                             {progress.percentage}%
                           </span>
@@ -1218,7 +1316,7 @@ export default function AssessmentPage() {
                         <div style={{ 
                           fontSize: "11px", 
                           color: "rgba(255, 255, 255, 0.7)",
-                          marginTop: "4px",
+                          marginTop: "6px",
                           textAlign: "right"
                         }}>
                           {progress.answered}/{progress.total}
@@ -1232,36 +1330,43 @@ export default function AssessmentPage() {
           )}
         </div>
 
-        {/* Mobile Bottom Navigation */}
+        {/* Mobile Bottom Navigation - Fixed */}
         {isMobile && (
           <div style={{
             position: "fixed",
             bottom: "0",
             left: "0",
             right: "0",
-            background: "rgba(255, 255, 255, 0.95)",
-            backdropFilter: "blur(10px)",
-            padding: "10px 15px",
-            borderTop: "1px solid rgba(0, 0, 0, 0.1)",
+            background: "rgba(255, 255, 255, 0.1)",
+            backdropFilter: "blur(15px)",
+            WebkitBackdropFilter: "blur(15px)",
+            padding: "12px 15px",
+            borderTop: "1px solid rgba(255, 255, 255, 0.2)",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            zIndex: 100
+            zIndex: 100,
+            borderRadius: "20px 20px 0 0"
           }}>
             <button 
               onClick={handleBack}
               disabled={currentIndex === 0}
               style={{
-                padding: "10px 15px",
-                background: currentIndex === 0 ? "#f5f5f5" : "#1565c0",
-                color: currentIndex === 0 ? "#999" : "white",
-                border: "none",
-                borderRadius: "8px",
+                padding: "12px 15px",
+                background: currentIndex === 0 ? 
+                  "rgba(255, 255, 255, 0.05)" : 
+                  "rgba(21, 101, 192, 0.6)",
+                color: currentIndex === 0 ? 
+                  "rgba(255, 255, 255, 0.4)" : "white",
+                border: "1px solid rgba(255, 255, 255, 0.2)",
+                borderRadius: "10px",
                 fontSize: "14px",
                 fontWeight: "600",
                 flex: 1,
                 marginRight: "5px",
-                minHeight: "44px"
+                minHeight: "44px",
+                backdropFilter: "blur(5px)",
+                textShadow: "1px 1px 2px rgba(0,0,0,0.5)"
               }}
             >
               ← Back
@@ -1269,13 +1374,15 @@ export default function AssessmentPage() {
             
             <div style={{
               padding: "8px 12px",
-              background: "#e3f2fd",
+              background: "rgba(255, 255, 255, 0.15)",
+              backdropFilter: "blur(5px)",
               borderRadius: "20px",
               fontSize: "12px",
               fontWeight: "600",
-              color: "#1565c0",
+              color: "white",
               whiteSpace: "nowrap",
-              margin: "0 10px"
+              margin: "0 10px",
+              textShadow: "1px 1px 2px rgba(0,0,0,0.5)"
             }}>
               {currentIndex + 1}/{questions.length}
             </div>
@@ -1284,16 +1391,18 @@ export default function AssessmentPage() {
               <button 
                 onClick={() => setShowSubmitModal(true)}
                 style={{
-                  padding: "10px 15px",
-                  background: "#4caf50",
+                  padding: "12px 15px",
+                  background: "rgba(76, 175, 80, 0.6)",
                   color: "white",
-                  border: "none",
-                  borderRadius: "8px",
+                  border: "1px solid rgba(255, 255, 255, 0.2)",
+                  borderRadius: "10px",
                   fontSize: "14px",
                   fontWeight: "600",
                   flex: 1,
                   marginLeft: "5px",
-                  minHeight: "44px"
+                  minHeight: "44px",
+                  backdropFilter: "blur(5px)",
+                  textShadow: "1px 1px 2px rgba(0,0,0,0.5)"
                 }}
               >
                 Submit
@@ -1302,16 +1411,18 @@ export default function AssessmentPage() {
               <button 
                 onClick={handleNext}
                 style={{
-                  padding: "10px 15px",
-                  background: "#1565c0",
+                  padding: "12px 15px",
+                  background: "rgba(21, 101, 192, 0.6)",
                   color: "white",
-                  border: "none",
-                  borderRadius: "8px",
+                  border: "1px solid rgba(255, 255, 255, 0.2)",
+                  borderRadius: "10px",
                   fontSize: "14px",
                   fontWeight: "600",
                   flex: 1,
                   marginLeft: "5px",
-                  minHeight: "44px"
+                  minHeight: "44px",
+                  backdropFilter: "blur(5px)",
+                  textShadow: "1px 1px 2px rgba(0,0,0,0.5)"
                 }}
               >
                 Next →
@@ -1320,18 +1431,20 @@ export default function AssessmentPage() {
           </div>
         )}
 
-        {/* Footer */}
+        {/* Footer - Minimal */}
         <div style={{
-          padding: isMobile ? "10px 15px" : "15px 20px",
+          padding: isMobile ? "10px 15px 70px 15px" : "15px 20px",
           fontSize: isMobile ? "11px" : "12px",
           color: "rgba(255, 255, 255, 0.7)",
           textAlign: "center",
-          marginTop: isMobile ? "60px" : "20px",
-          background: "rgba(0, 0, 0, 0.3)",
+          marginTop: "10px",
+          background: "rgba(0, 0, 0, 0.2)",
           borderRadius: "10px",
-          backdropFilter: "blur(5px)"
+          backdropFilter: "blur(5px)",
+          border: "1px solid rgba(255, 255, 255, 0.1)",
+          flexShrink: 0
         }}>
-          <div>
+          <div style={{ textShadow: "1px 1px 2px rgba(0,0,0,0.5)" }}>
             © 2024 Stratavax • Auto-save enabled • Complete all {questions.length} questions
           </div>
         </div>
