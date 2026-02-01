@@ -1023,7 +1023,7 @@ export default function AssessmentPage() {
                       justifyContent: 'center',
                       padding: '2px', // Increased from 1px
                       transition: 'all 0.2s'
-                    }}
+                                       }}
                     title={`Question ${index + 1}`}
                     onMouseOver={(e) => {
                       if (!isCurrent) {
@@ -1039,5 +1039,6 @@ export default function AssessmentPage() {
                     }}
                   >
                     {index + 1}
-                  </button
-
+                  </button>
+                );
+              })}
