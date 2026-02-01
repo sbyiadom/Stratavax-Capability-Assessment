@@ -625,7 +625,7 @@ export default function AssessmentPage() {
         </div>
       )}
 
-      {/* Main Assessment Layout - ULTRA COMPACT */}
+      {/* Main Assessment Layout */}
       <div style={{
         minHeight: "100vh",
         background: "linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)",
@@ -730,7 +730,7 @@ export default function AssessmentPage() {
           }} />
         </div>
 
-        {/* MAIN CONTENT - SINGLE COLUMN LAYOUT */}
+        {/* MAIN CONTENT */}
         <div style={{ 
           flex: 1,
           padding: '10px',
@@ -738,9 +738,9 @@ export default function AssessmentPage() {
           overflow: 'hidden',
           gap: '10px'
         }}>
-          {/* QUESTION & ANSWERS - 90% WIDTH */}
+          {/* QUESTION & ANSWERS - 85% WIDTH (reduced from 90%) */}
           <div style={{
-            flex: 9,
+            flex: 8.5, // Reduced from 9 to 8.5
             background: `linear-gradient(rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.95)), 
                         url('${sectionConfig.bgImage}')`,
             backgroundSize: 'cover',
@@ -967,34 +967,34 @@ export default function AssessmentPage() {
             </div>
           </div>
 
-          {/* MINIMAL QUESTION NAV - 10% WIDTH */}
+          {/* INCREASED QUESTION NAV - 15% WIDTH (increased by 50% from 10%) */}
           <div style={{
-            flex: 1,
+            flex: 1.5, // Increased by 50% from 1 to 1.5
             background: 'white',
             borderRadius: '8px',
             border: '1px solid #e0e0e0',
-            padding: '8px',
+            padding: '12px', // Increased padding
             display: 'flex',
             flexDirection: 'column',
-            minWidth: '60px',
-            maxWidth: '80px'
+            minWidth: '90px', // Increased from 60px to 90px (50% increase)
+            maxWidth: '120px' // Increased from 80px to 120px (50% increase)
           }}>
             <div style={{ 
-              fontSize: '11px', 
+              fontSize: '12px', // Increased from 11px
               fontWeight: '600', 
-              marginBottom: '8px',
+              marginBottom: '10px', // Increased from 8px
               color: '#666',
               textAlign: 'center'
             }}>
-              Q's
+              Question Navigator
             </div>
             
-            {/* TINY QUESTION GRID */}
+            {/* LARGER QUESTION GRID */}
             <div style={{ 
               flex: 1,
               display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
-              gap: '3px',
+              gridTemplateColumns: 'repeat(3, 1fr)', // Increased from 2 to 3 columns
+              gap: '5px', // Increased from 3px
               overflowY: 'auto'
             }}>
               {questions.map((q, index) => {
@@ -1014,68 +1014,30 @@ export default function AssessmentPage() {
                              isAnswered ? 'white' : '#666',
                       border: `1px solid ${isCurrent ? sectionConfig.color : 
                                isAnswered ? '#4caf50' : '#e0e0e0'}`,
-                      borderRadius: '3px',
+                      borderRadius: '4px', // Increased from 3px
                       cursor: 'pointer',
-                      fontSize: '9px',
+                      fontSize: '10px', // Increased from 9px
                       fontWeight: '600',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      padding: '1px'
+                      padding: '2px', // Increased from 1px
+                      transition: 'all 0.2s'
                     }}
                     title={`Question ${index + 1}`}
+                    onMouseOver={(e) => {
+                      if (!isCurrent) {
+                        e.currentTarget.style.transform = 'scale(1.05)';
+                        e.currentTarget.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      if (!isCurrent) {
+                        e.currentTarget.style.transform = 'scale(1)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }
+                    }}
                   >
                     {index + 1}
-                  </button>
-                );
-              })}
-            </div>
+                  </button
 
-            {/* TINY STATS */}
-            <div style={{
-              marginTop: '8px',
-              fontSize: '9px',
-              color: '#666',
-              textAlign: 'center'
-            }}>
-              <div style={{ marginBottom: '2px' }}>
-                <div style={{ color: '#999' }}>Ans:</div>
-                <div style={{ fontWeight: '700', color: '#4caf50' }}>{totalAnswered}</div>
-              </div>
-              <div>
-                <div style={{ color: '#999' }}>Time:</div>
-                <div style={{ fontWeight: '700', color: timeRemaining < 1800 ? '#d32f2f' : '#388e3c' }}>
-                  {formatTime(hours)}:{formatTime(minutes)}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <style jsx global>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        
-        /* Tiny scrollbar */
-        ::-webkit-scrollbar {
-          width: 3px;
-        }
-        
-        ::-webkit-scrollbar-track {
-          background: #f1f1f1;
-        }
-        
-        ::-webkit-scrollbar-thumb {
-          background: #ccc;
-        }
-        
-        ::-webkit-scrollbar-thumb:hover {
-          background: #aaa;
-        }
-      `}</style>
-    </>
-  );
-}
