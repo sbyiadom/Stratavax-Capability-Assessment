@@ -2,33 +2,37 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
-import Image from "next/image";
 
 const SECTION_CONFIG = {
   'Cognitive Abilities': { 
     color: '#4A6FA5', 
     lightBg: 'rgba(74, 111, 165, 0.1)',
-    icon: '🧠'
+    icon: '🧠',
+    bgImage: '/images/backgrounds/cognitive-bg.jpg'
   },
   'Personality Assessment': { 
     color: '#9C27B0', 
     lightBg: 'rgba(156, 39, 176, 0.1)',
-    icon: '😊'
+    icon: '😊',
+    bgImage: 'https://img.freepik.com/free-photo/people-studying-together-communicating_23-2147656354.jpg'
   },
   'Leadership Potential': { 
     color: '#D32F2F', 
     lightBg: 'rgba(211, 47, 47, 0.1)',
-    icon: '👑'
+    icon: '👑',
+    bgImage: 'https://img.freepik.com/free-photo/friends-people-group-teamwork-diversity_53876-31488.jpg?semt=ais_hybrid&w=740&q=80'
   },
   'Technical Competence': { 
     color: '#388E3C', 
     lightBg: 'rgba(56, 142, 60, 0.1)',
-    icon: '⚙️'
+    icon: '⚙️',
+    bgImage: 'https://thumbs.dreamstime.com/b/happy-students-giving-high-five-school-education-friendship-concept-33187252.jpg'
   },
   'Performance Metrics': { 
     color: '#F57C00', 
     lightBg: 'rgba(245, 124, 0, 0.1)',
-    icon: '📊'
+    icon: '📊',
+    bgImage: '/images/backgrounds/performance-bg.jpg'
   }
 };
 
@@ -622,7 +626,7 @@ export default function AssessmentPage() {
         </div>
       )}
 
-      {/* Main Assessment Layout - OPTIMIZED FOR SPACE */}
+      {/* Main Assessment Layout */}
       <div style={{
         minHeight: "100vh",
         background: "linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)",
@@ -631,54 +635,66 @@ export default function AssessmentPage() {
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
       }}>
         
-        {/* COMPACT HEADER WITH HAPPY STUDENT IMAGE */}
+        {/* FULL-WIDTH HEADER WITH HAPPY STUDENT IMAGE */}
         <div style={{
-          background: "white",
-          padding: "15px 30px",
-          boxShadow: "0 2px 15px rgba(0,0,0,0.08)",
-          borderBottom: "1px solid #e9ecef"
+          background: `linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), 
+                      url('https://img.freepik.com/free-photo/multiethnic-group-young-happy-students-standing-outdoors_171337-11812.jpg?semt=ais_user_personalization&w=740&q=80')`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          padding: '15px 30px',
+          boxShadow: '0 2px 15px rgba(0,0,0,0.08)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
+          minHeight: '180px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center'
         }}>
           <div style={{ 
-            display: "flex", 
-            justifyContent: "space-between", 
-            alignItems: "center"
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center',
+            position: 'relative',
+            zIndex: 2
           }}>
             <div style={{ 
-              display: "flex", 
-              alignItems: "center", 
-              gap: "15px"
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '15px'
             }}>
-              {/* Happy Student Image */}
               <div style={{
-                width: "50px",
-                height: "50px",
-                borderRadius: "12px",
-                overflow: "hidden",
-                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "white",
-                fontSize: "24px",
-                fontWeight: "bold"
+                width: '50px',
+                height: '50px',
+                borderRadius: '12px',
+                overflow: 'hidden',
+                background: 'rgba(255, 255, 255, 0.9)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#1a237e',
+                fontSize: '24px',
+                fontWeight: 'bold',
+                backdropFilter: 'blur(5px)'
               }}>
                 😊
               </div>
               
               <div>
                 <div style={{ 
-                  fontSize: "22px", 
-                  fontWeight: "800", 
-                  color: "#1a237e",
-                  lineHeight: 1.2
+                  fontSize: '28px', 
+                  fontWeight: '800', 
+                  color: 'white',
+                  lineHeight: 1.2,
+                  textShadow: '2px 2px 8px rgba(0,0,0,0.7)'
                 }}>
                   Stratavax Capability Assessment
                 </div>
                 <div style={{
-                  fontSize: "12px",
-                  color: "#666",
-                  fontWeight: "500",
-                  marginTop: "2px"
+                  fontSize: '14px',
+                  color: 'rgba(255, 255, 255, 0.95)',
+                  fontWeight: '500',
+                  marginTop: '5px',
+                  textShadow: '1px 1px 3px rgba(0,0,0,0.5)'
                 }}>
                   Section: {currentSection} • Question {currentIndex + 1} of {questions.length}
                 </div>
@@ -687,124 +703,131 @@ export default function AssessmentPage() {
             
             {/* COMPACT TIMER */}
             <div style={{
-              padding: "8px 12px",
-              background: timeRemaining < 1800 ? "#fff3e0" : "#e3f2fd",
-              borderRadius: "8px",
-              border: `2px solid ${timeRemaining < 1800 ? "#ff9800" : "#2196f3"}`,
-              minWidth: "120px"
+              padding: '10px 15px',
+              background: 'rgba(255, 255, 255, 0.9)',
+              borderRadius: '10px',
+              border: '2px solid rgba(255, 255, 255, 0.3)',
+              minWidth: '140px',
+              backdropFilter: 'blur(5px)'
             }}>
               <div style={{ 
-                fontSize: "11px", 
-                fontWeight: "600", 
-                color: timeRemaining < 1800 ? "#ff9800" : "#2196f3",
-                marginBottom: "3px"
+                fontSize: '12px', 
+                fontWeight: '600', 
+                color: timeRemaining < 1800 ? '#ff9800' : '#2196f3',
+                marginBottom: '5px'
               }}>
-                {timeRemaining < 1800 ? "TIME LOW" : "TIME"}
+                {timeRemaining < 1800 ? 'TIME LOW' : 'TIME REMAINING'}
               </div>
               <div style={{ 
-                fontSize: "16px", 
-                fontWeight: "700", 
-                color: timeRemaining < 1800 ? "#d84315" : "#1565c0"
+                fontSize: '20px', 
+                fontWeight: '700', 
+                color: timeRemaining < 1800 ? '#d84315' : '#1565c0'
               }}>
-                {formatTime(hours)}:{formatTime(minutes)}
+                {formatTime(hours)}:{formatTime(minutes)}:{formatTime(seconds)}
               </div>
             </div>
           </div>
 
           {/* COMPACT PROGRESS BAR */}
-          <div style={{ marginTop: "12px" }}>
+          <div style={{ marginTop: '15px', position: 'relative', zIndex: 2 }}>
             <div style={{ 
-              display: "flex", 
-              justifyContent: "space-between", 
-              marginBottom: "6px",
-              fontSize: "13px",
-              fontWeight: "600"
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              marginBottom: '6px',
+              fontSize: '13px',
+              fontWeight: '600'
             }}>
-              <span style={{ color: "#666" }}>
+              <span style={{ color: 'rgba(255, 255, 255, 0.95)' }}>
                 Progress: {progressPercentage}%
               </span>
-              <span style={{ color: sectionConfig.color }}>
+              <span style={{ color: 'white' }}>
                 {totalAnswered}/{questions.length} Answered
               </span>
             </div>
             <div style={{ 
-              height: "6px", 
-              background: "#e9ecef", 
-              borderRadius: "3px",
-              overflow: "hidden"
+              height: '8px', 
+              background: 'rgba(255, 255, 255, 0.3)', 
+              borderRadius: '4px',
+              overflow: 'hidden',
+              backdropFilter: 'blur(5px)'
             }}>
               <div style={{ 
-                height: "100%", 
+                height: '100%', 
                 width: `${progressPercentage}%`, 
-                background: sectionConfig.color, 
-                borderRadius: "3px"
+                background: 'linear-gradient(90deg, #4caf50, #2e7d32)', 
+                borderRadius: '4px'
               }} />
             </div>
           </div>
         </div>
 
-        {/* MAIN CONTENT AREA - OPTIMIZED LAYOUT */}
+        {/* MAIN CONTENT AREA */}
         <div style={{ 
           flex: 1,
-          padding: "15px",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "flex-start",
-          overflow: "auto"
+          padding: '20px',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'flex-start',
+          overflow: 'auto'
         }}>
           <div style={{
-            maxWidth: "1000px",
-            width: "100%",
-            background: "white",
-            borderRadius: "15px",
-            boxShadow: "0 4px 20px rgba(0,0,0,0.05)",
-            border: "1px solid #e9ecef",
-            overflow: "hidden",
-            display: "flex",
-            flexDirection: "column",
-            height: "calc(100vh - 140px)", // Dynamic height based on header
-            maxHeight: "800px"
+            maxWidth: '1000px',
+            width: '100%',
+            background: `linear-gradient(rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.9)), 
+                        url('${sectionConfig.bgImage}')`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+            borderRadius: '15px',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.1)',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            height: 'calc(100vh - 240px)',
+            backdropFilter: 'blur(2px)'
           }}>
-            {/* QUESTION SECTION - COMPACT */}
+            {/* QUESTION SECTION */}
             <div style={{
-              padding: "20px",
-              borderBottom: "1px solid #e9ecef",
-              background: sectionConfig.lightBg,
+              padding: '25px',
+              borderBottom: '1px solid rgba(0, 0, 0, 0.1)',
+              background: 'rgba(255, 255, 255, 0.8)',
               flexShrink: 0
             }}>
               <div style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                marginBottom: "10px"
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                marginBottom: '15px'
               }}>
                 <div style={{
-                  width: "36px",
-                  height: "36px",
-                  borderRadius: "8px",
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '10px',
                   background: sectionConfig.color,
-                  color: "white",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "16px",
-                  fontWeight: "bold"
+                  color: 'white',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '20px',
+                  fontWeight: 'bold',
+                  boxShadow: '0 4px 10px rgba(0,0,0,0.2)'
                 }}>
                   {sectionConfig.icon}
                 </div>
                 <div>
                   <div style={{
-                    fontSize: "16px",
-                    fontWeight: "600",
+                    fontSize: '18px',
+                    fontWeight: '700',
                     color: sectionConfig.color
                   }}>
                     {currentSection}
                   </div>
                   {currentQuestion?.subsection && (
                     <div style={{
-                      fontSize: "14px",
-                      color: "#666",
-                      fontWeight: "500"
+                      fontSize: '14px',
+                      color: '#666',
+                      fontWeight: '500'
                     }}>
                       {currentQuestion.subsection}
                     </div>
@@ -813,74 +836,81 @@ export default function AssessmentPage() {
               </div>
               
               <div style={{ 
-                fontSize: "18px", 
-                lineHeight: 1.5,
-                color: "#333",
-                fontWeight: "500"
+                fontSize: '18px', 
+                lineHeight: 1.6,
+                color: '#333',
+                fontWeight: '500',
+                padding: '15px',
+                background: 'rgba(255, 255, 255, 0.7)',
+                borderRadius: '10px',
+                border: '1px solid rgba(0, 0, 0, 0.1)',
+                backdropFilter: 'blur(5px)'
               }}>
                 {currentQuestion?.question_text}
               </div>
             </div>
 
-            {/* ANSWER OPTIONS - SCROLLABLE AREA */}
+            {/* ANSWER OPTIONS AREA */}
             <div style={{ 
               flex: 1,
-              padding: "20px",
-              overflowY: "auto",
-              minHeight: 0 // Allows scrolling
+              padding: '25px',
+              overflowY: 'auto',
+              minHeight: 0,
+              background: 'rgba(255, 255, 255, 0.6)'
             }}>
               {/* Save Status */}
               {saveStatus[currentQuestion?.id] && (
                 <div style={{
-                  padding: "10px 15px",
-                  background: saveStatus[currentQuestion.id] === "saved" ? "#e8f5e9" : 
-                             saveStatus[currentQuestion.id] === "saving" ? "#fff3e0" : 
-                             "#ffebee",
-                  border: `1px solid ${saveStatus[currentQuestion.id] === "saved" ? "#c8e6c9" : 
-                           saveStatus[currentQuestion.id] === "saving" ? "#ffcc80" : 
-                           "#ffcdd2"}`,
-                  borderRadius: "8px",
-                  marginBottom: "15px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  fontSize: "14px",
-                  fontWeight: "600",
-                  color: saveStatus[currentQuestion.id] === "saved" ? "#2e7d32" : 
-                         saveStatus[currentQuestion.id] === "saving" ? "#f57c00" : 
-                         "#d32f2f"
+                  padding: '12px 20px',
+                  background: saveStatus[currentQuestion.id] === 'saved' ? 'rgba(76, 175, 80, 0.1)' : 
+                             saveStatus[currentQuestion.id] === 'saving' ? 'rgba(255, 152, 0, 0.1)' : 
+                             'rgba(211, 47, 47, 0.1)',
+                  border: `2px solid ${saveStatus[currentQuestion.id] === 'saved' ? '#4caf50' : 
+                           saveStatus[currentQuestion.id] === 'saving' ? '#ff9800' : 
+                           '#d32f2f'}`,
+                  borderRadius: '10px',
+                  marginBottom: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  fontSize: '15px',
+                  fontWeight: '600',
+                  color: saveStatus[currentQuestion.id] === 'saved' ? '#2e7d32' : 
+                         saveStatus[currentQuestion.id] === 'saving' ? '#f57c00' : 
+                         '#d32f2f',
+                  backdropFilter: 'blur(5px)'
                 }}>
-                  {saveStatus[currentQuestion.id] === "saved" ? (
+                  {saveStatus[currentQuestion.id] === 'saved' ? (
                     <>
-                      <span>✓</span>
-                      Answer saved
+                      <span style={{ fontSize: '18px' }}>✓</span>
+                      Answer saved successfully
                     </>
-                  ) : saveStatus[currentQuestion.id] === "saving" ? (
+                  ) : saveStatus[currentQuestion.id] === 'saving' ? (
                     <>
                       <div style={{ 
-                        width: "14px", 
-                        height: "14px", 
-                        border: "2px solid currentColor",
-                        borderTopColor: "transparent",
-                        borderRadius: "50%",
-                        animation: "spin 1s linear infinite"
+                        width: '18px', 
+                        height: '18px', 
+                        border: '2px solid currentColor',
+                        borderTopColor: 'transparent',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite'
                       }} />
-                      Saving...
+                      Saving your answer...
                     </>
                   ) : (
                     <>
-                      <span>⚠️</span>
-                      Save failed
+                      <span style={{ fontSize: '18px' }}>⚠️</span>
+                      Failed to save. Please try again.
                     </>
                   )}
                 </div>
               )}
 
-              {/* COMPACT ANSWER GRID */}
+              {/* ANSWER GRID */}
               <div style={{ 
-                display: "grid", 
-                gridTemplateColumns: "repeat(2, 1fr)",
-                gap: "10px"
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: '15px'
               }}>
                 {currentQuestion?.options?.map((option, index) => {
                   const isSelected = answers[currentQuestion.id] === option.id;
@@ -890,52 +920,62 @@ export default function AssessmentPage() {
                     <button
                       key={option.id}
                       onClick={() => handleSelect(currentQuestion.id, option.id)}
-                      disabled={saveStatus[currentQuestion.id] === "saving"}
+                      disabled={saveStatus[currentQuestion.id] === 'saving'}
                       style={{
-                        padding: "15px",
-                        background: isSelected ? sectionConfig.lightBg : "#f8f9fa",
-                        border: `2px solid ${isSelected ? sectionConfig.color : "#e9ecef"}`,
-                        borderRadius: "10px",
-                        cursor: saveStatus[currentQuestion.id] === "saving" ? "not-allowed" : "pointer",
-                        textAlign: "left",
-                        fontSize: "15px",
-                        lineHeight: 1.4,
-                        color: isSelected ? sectionConfig.color : "#333",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "12px",
-                        transition: "all 0.2s ease",
-                        height: "100%",
-                        minHeight: "60px"
+                        padding: '20px',
+                        background: isSelected ? 
+                          `rgba(${parseInt(sectionConfig.color.slice(1, 3), 16)}, ${parseInt(sectionConfig.color.slice(3, 5), 16)}, ${parseInt(sectionConfig.color.slice(5, 7), 16)}, 0.15)` : 
+                          'rgba(255, 255, 255, 0.8)',
+                        border: `2px solid ${isSelected ? sectionConfig.color : 'rgba(224, 224, 224, 0.7)'}`,
+                        borderRadius: '12px',
+                        cursor: saveStatus[currentQuestion.id] === 'saving' ? 'not-allowed' : 'pointer',
+                        textAlign: 'left',
+                        fontSize: '16px',
+                        lineHeight: 1.5,
+                        transition: 'all 0.2s ease',
+                        color: isSelected ? sectionConfig.color : '#333',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '15px',
+                        height: '100%',
+                        minHeight: '70px',
+                        backdropFilter: 'blur(10px)',
+                        boxShadow: isSelected ? 
+                          `0 4px 15px ${sectionConfig.color}40` : 
+                          '0 2px 8px rgba(0, 0, 0, 0.1)'
                       }}
                       onMouseOver={(e) => {
                         if (!saveStatus[currentQuestion.id] && !isSelected) {
-                          e.currentTarget.style.background = "#f1f3f4";
-                          e.currentTarget.style.borderColor = "#dadce0";
-                          e.currentTarget.style.transform = "translateY(-2px)";
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.95)';
+                          e.currentTarget.style.borderColor = sectionConfig.color;
+                          e.currentTarget.style.transform = 'translateY(-3px)';
+                          e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 0, 0, 0.15)';
                         }
                       }}
                       onMouseOut={(e) => {
                         if (!saveStatus[currentQuestion.id] && !isSelected) {
-                          e.currentTarget.style.background = "#f8f9fa";
-                          e.currentTarget.style.borderColor = "#e9ecef";
-                          e.currentTarget.style.transform = "translateY(0)";
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.8)';
+                          e.currentTarget.style.borderColor = 'rgba(224, 224, 224, 0.7)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
                         }
                       }}
                     >
                       {/* Option Indicator */}
                       <div style={{
-                        width: "32px",
-                        height: "32px",
-                        borderRadius: "8px",
-                        background: isSelected ? sectionConfig.color : "#e9ecef",
-                        color: isSelected ? "white" : "#666",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: "14px",
-                        fontWeight: "700",
-                        flexShrink: 0
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '10px',
+                        background: isSelected ? sectionConfig.color : 'rgba(255, 255, 255, 0.9)',
+                        color: isSelected ? 'white' : '#666',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '16px',
+                        fontWeight: '700',
+                        flexShrink: 0,
+                        border: `2px solid ${isSelected ? sectionConfig.color : '#e0e0e0'}`,
+                        boxShadow: isSelected ? '0 2px 6px rgba(0,0,0,0.2)' : 'none'
                       }}>
                         {optionLetter}
                       </div>
@@ -943,31 +983,10 @@ export default function AssessmentPage() {
                       {/* Option Text */}
                       <span style={{ 
                         flex: 1,
-                        fontWeight: isSelected ? "600" : "500"
+                        fontWeight: isSelected ? '600' : '500'
                       }}>
                         {option.answer_text}
                       </span>
-                      
-                      {/* Selection Indicator */}
-                      {isSelected && (
-                        <div style={{
-                          width: "20px",
-                          height: "20px",
-                          borderRadius: "50%",
-                          background: sectionConfig.color,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0
-                        }}>
-                          <div style={{
-                            width: "8px",
-                            height: "8px",
-                            borderRadius: "50%",
-                            background: "white"
-                          }} />
-                        </div>
-                      )}
                     </button>
                   );
                 })}
@@ -976,72 +995,79 @@ export default function AssessmentPage() {
 
             {/* COMPACT NAVIGATION FOOTER */}
             <div style={{ 
-              padding: "15px 20px",
-              borderTop: "1px solid #e9ecef",
-              background: "#f8f9fa",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexShrink: 0
+              padding: '20px',
+              borderTop: '1px solid rgba(0, 0, 0, 0.1)',
+              background: 'rgba(255, 255, 255, 0.8)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexShrink: 0,
+              backdropFilter: 'blur(5px)'
             }}>
               <button 
                 onClick={handleBack} 
                 disabled={currentIndex === 0} 
                 style={{ 
-                  padding: "10px 20px", 
-                  background: currentIndex === 0 ? "#e9ecef" : sectionConfig.color, 
-                  color: currentIndex === 0 ? "#999" : "white", 
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: currentIndex === 0 ? "not-allowed" : "pointer",
-                  fontSize: "14px",
-                  fontWeight: "600",
-                  minWidth: "100px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "5px"
+                  padding: '12px 25px', 
+                  background: currentIndex === 0 ? 'rgba(233, 236, 239, 0.7)' : sectionConfig.color, 
+                  color: currentIndex === 0 ? '#999' : 'white', 
+                  border: 'none',
+                  borderRadius: '10px',
+                  cursor: currentIndex === 0 ? 'not-allowed' : 'pointer',
+                  fontSize: '15px',
+                  fontWeight: '600',
+                  minWidth: '120px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  backdropFilter: 'blur(5px)',
+                  boxShadow: currentIndex === 0 ? 'none' : '0 4px 10px rgba(0,0,0,0.2)'
                 }}
+                onMouseOver={(e) => currentIndex !== 0 && (e.currentTarget.style.transform = 'translateX(-2px)')}
+                onMouseOut={(e) => currentIndex !== 0 && (e.currentTarget.style.transform = 'translateX(0)')}
               >
                 ← Previous
               </button>
               
               <div style={{ 
-                display: "flex", 
-                alignItems: "center", 
-                gap: "15px"
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '20px'
               }}>
-                <div style={{ textAlign: "center" }}>
+                <div style={{ textAlign: 'center' }}>
                   <div style={{ 
-                    fontSize: "12px", 
-                    color: "#666",
-                    marginBottom: "2px"
+                    fontSize: '13px', 
+                    color: '#666',
+                    marginBottom: '3px',
+                    fontWeight: '600'
                   }}>
-                    Current
+                    Question
                   </div>
                   <div style={{ 
-                    fontSize: "14px", 
-                    fontWeight: "700", 
+                    fontSize: '18px', 
+                    fontWeight: '800', 
                     color: sectionConfig.color
                   }}>
-                    {currentIndex + 1}/{questions.length}
+                    {currentIndex + 1}<span style={{ fontSize: '14px', color: '#999' }}>/{questions.length}</span>
                   </div>
                 </div>
                 
                 {/* Quick Jump Buttons */}
-                <div style={{ display: "flex", gap: "5px" }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
                   <button 
                     onClick={() => setCurrentIndex(Math.max(0, currentIndex - 5))}
                     disabled={currentIndex < 5}
                     style={{
-                      padding: "6px 10px",
-                      background: currentIndex < 5 ? "#e9ecef" : sectionConfig.lightBg,
-                      color: currentIndex < 5 ? "#999" : sectionConfig.color,
-                      border: "none",
-                      borderRadius: "6px",
-                      cursor: currentIndex < 5 ? "not-allowed" : "pointer",
-                      fontSize: "12px",
-                      fontWeight: "600"
+                      padding: '8px 12px',
+                      background: currentIndex < 5 ? 'rgba(233, 236, 239, 0.7)' : sectionConfig.lightBg,
+                      color: currentIndex < 5 ? '#999' : sectionConfig.color,
+                      border: `1px solid ${currentIndex < 5 ? 'rgba(224, 224, 224, 0.5)' : sectionConfig.color}`,
+                      borderRadius: '8px',
+                      cursor: currentIndex < 5 ? 'not-allowed' : 'pointer',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      backdropFilter: 'blur(5px)'
                     }}
                   >
                     -5
@@ -1050,14 +1076,15 @@ export default function AssessmentPage() {
                     onClick={() => setCurrentIndex(Math.min(questions.length - 1, currentIndex + 5))}
                     disabled={currentIndex >= questions.length - 5}
                     style={{
-                      padding: "6px 10px",
-                      background: currentIndex >= questions.length - 5 ? "#e9ecef" : sectionConfig.lightBg,
-                      color: currentIndex >= questions.length - 5 ? "#999" : sectionConfig.color,
-                      border: "none",
-                      borderRadius: "6px",
-                      cursor: currentIndex >= questions.length - 5 ? "not-allowed" : "pointer",
-                      fontSize: "12px",
-                      fontWeight: "600"
+                      padding: '8px 12px',
+                      background: currentIndex >= questions.length - 5 ? 'rgba(233, 236, 239, 0.7)' : sectionConfig.lightBg,
+                      color: currentIndex >= questions.length - 5 ? '#999' : sectionConfig.color,
+                      border: `1px solid ${currentIndex >= questions.length - 5 ? 'rgba(224, 224, 224, 0.5)' : sectionConfig.color}`,
+                      borderRadius: '8px',
+                      cursor: currentIndex >= questions.length - 5 ? 'not-allowed' : 'pointer',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      backdropFilter: 'blur(5px)'
                     }}
                   >
                     +5
@@ -1069,20 +1096,24 @@ export default function AssessmentPage() {
                 <button 
                   onClick={() => setShowSubmitModal(true)}
                   style={{ 
-                    padding: "10px 20px", 
-                    background: "#4caf50", 
-                    color: "white", 
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "600",
-                    minWidth: "100px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "5px"
+                    padding: '12px 25px', 
+                    background: 'linear-gradient(135deg, #4caf50, #2e7d32)', 
+                    color: 'white', 
+                    border: 'none',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    minWidth: '120px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    backdropFilter: 'blur(5px)',
+                    boxShadow: '0 4px 15px rgba(76, 175, 80, 0.4)'
                   }}
+                  onMouseOver={(e) => e.currentTarget.style.transform = 'translateX(2px)'}
+                  onMouseOut={(e) => e.currentTarget.style.transform = 'translateX(0)'}
                 >
                   Submit →
                 </button>
@@ -1090,20 +1121,24 @@ export default function AssessmentPage() {
                 <button 
                   onClick={handleNext} 
                   style={{ 
-                    padding: "10px 20px", 
+                    padding: '12px 25px', 
                     background: sectionConfig.color, 
-                    color: "white", 
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "600",
-                    minWidth: "100px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "5px"
+                    color: 'white', 
+                    border: 'none',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    minWidth: '120px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    backdropFilter: 'blur(5px)',
+                    boxShadow: '0 4px 10px rgba(0,0,0,0.2)'
                   }}
+                  onMouseOver={(e) => e.currentTarget.style.transform = 'translateX(2px)'}
+                  onMouseOut={(e) => e.currentTarget.style.transform = 'translateX(0)'}
                 >
                   Next →
                 </button>
@@ -1114,29 +1149,33 @@ export default function AssessmentPage() {
 
         {/* COMPACT QUICK NAVIGATION */}
         <div style={{
-          padding: "10px 15px",
-          background: "white",
-          borderTop: "1px solid #e9ecef",
-          overflowX: "auto"
+          padding: '15px 20px',
+          background: 'white',
+          borderTop: '1px solid #e9ecef',
+          overflowX: 'auto',
+          boxShadow: '0 -2px 10px rgba(0,0,0,0.05)'
         }}>
           <div style={{ 
-            fontSize: "13px", 
-            fontWeight: "600", 
-            marginBottom: "8px",
-            color: "#1a237e",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px"
+            fontSize: '14px', 
+            fontWeight: '600', 
+            marginBottom: '10px',
+            color: '#1a237e',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
           }}>
             <span>📋</span>
             Quick Navigation
+            <span style={{ fontSize: '12px', color: '#666', fontWeight: '400', marginLeft: 'auto' }}>
+              Click any number to jump
+            </span>
           </div>
           <div style={{ 
-            display: "flex", 
-            gap: "6px",
-            flexWrap: "nowrap",
-            overflowX: "auto",
-            paddingBottom: "5px"
+            display: 'flex', 
+            gap: '8px',
+            flexWrap: 'nowrap',
+            overflowX: 'auto',
+            paddingBottom: '5px'
           }}>
             {questions.map((q, index) => {
               const isAnswered = answers[q.id];
@@ -1147,19 +1186,33 @@ export default function AssessmentPage() {
                   key={q.id}
                   onClick={() => setCurrentIndex(index)}
                   style={{
-                    width: "32px",
-                    height: "32px",
+                    width: '36px',
+                    height: '36px',
                     background: isCurrent ? sectionConfig.color : 
-                               isAnswered ? "#4caf50" : "#f5f5f5",
-                    color: isCurrent ? "white" : 
-                           isAnswered ? "white" : "#666",
+                               isAnswered ? '#4caf50' : '#f5f5f5',
+                    color: isCurrent ? 'white' : 
+                           isAnswered ? 'white' : '#666',
                     border: `2px solid ${isCurrent ? sectionConfig.color : 
-                             isAnswered ? "#4caf50" : "#e0e0e0"}`,
-                    borderRadius: "6px",
-                    cursor: "pointer",
-                    fontSize: "12px",
-                    fontWeight: "600",
-                    flexShrink: 0
+                             isAnswered ? '#4caf50' : '#e0e0e0'}`,
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    flexShrink: 0,
+                    transition: 'all 0.2s',
+                    boxShadow: isCurrent ? `0 2px 8px ${sectionConfig.color}80` : 'none'
+                  }}
+                  onMouseOver={(e) => {
+                    if (!isCurrent) {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';
+                    }
+                  }}
+                  onMouseOut={(e) => {
+                    if (!isCurrent) {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = isCurrent ? `0 2px 8px ${sectionConfig.color}80` : 'none';
+                    }
                   }}
                 >
                   {index + 1}
@@ -1178,22 +1231,33 @@ export default function AssessmentPage() {
         
         /* Custom scrollbar */
         ::-webkit-scrollbar {
-          width: 6px;
-          height: 6px;
+          width: 8px;
+          height: 8px;
         }
         
         ::-webkit-scrollbar-track {
-          background: #f1f1f1;
-          border-radius: 3px;
+          background: rgba(241, 241, 241, 0.5);
+          border-radius: 4px;
         }
         
         ::-webkit-scrollbar-thumb {
-          background: #c1c1c1;
-          border-radius: 3px;
+          background: rgba(193, 193, 193, 0.8);
+          border-radius: 4px;
         }
         
         ::-webkit-scrollbar-thumb:hover {
-          background: #a8a8a8;
+          background: rgba(168, 168, 168, 0.9);
+        }
+        
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        .scrollbar-hidden::-webkit-scrollbar {
+          display: none;
+        }
+        
+        /* Hide scrollbar for IE, Edge and Firefox */
+        .scrollbar-hidden {
+          -ms-overflow-style: none;  /* IE and Edge */
+          scrollbar-width: none;  /* Firefox */
         }
       `}</style>
     </>
