@@ -2,8 +2,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
-import { FiChevronLeft, FiChevronRight, FiCheck, FiClock, FiBarChart2, FiGrid, FiMenu } from "react-icons/fi";
-import { BsArrowLeftRight, BsLightning, BsCheckCircle, BsFillCircleFill } from "react-icons/bs";
 
 const SECTION_CONFIG = {
   'Cognitive Abilities': { 
@@ -97,6 +95,7 @@ export default function AssessmentPage() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
+  const [error, setError] = useState(null);
 
   // Check if mobile
   useEffect(() => {
@@ -113,12 +112,17 @@ export default function AssessmentPage() {
   // Initialize session
   useEffect(() => {
     const initSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (data.session) {
-        setSession(data.session);
-        setIsSessionReady(true);
-      } else {
-        router.push("/login");
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data.session) {
+          setSession(data.session);
+          setIsSessionReady(true);
+        } else {
+          router.push("/login");
+        }
+      } catch (error) {
+        console.error("Session init error:", error);
+        setError("Failed to initialize session");
       }
     };
     initSession();
@@ -139,6 +143,7 @@ export default function AssessmentPage() {
 
     const fetchAssessmentData = async () => {
       try {
+        setLoading(true);
         const { data: questionsData, error: questionsError } = await supabase
           .from("questions")
           .select(`
@@ -167,10 +172,11 @@ export default function AssessmentPage() {
 
         setQuestions(processedQuestions);
         setAnswers(savedAnswers);
+        setError(null);
 
       } catch (error) {
         console.error("Assessment loading error:", error);
-        alert(`Error: ${error.message}`);
+        setError(error.message);
       } finally {
         setLoading(false);
       }
@@ -227,13 +233,6 @@ export default function AssessmentPage() {
         });
       }, 1500);
 
-      // Auto-advance to next question after 500ms on mobile
-      if (isMobile && currentIndex < questions.length - 1) {
-        setTimeout(() => {
-          setCurrentIndex(i => i + 1);
-        }, 500);
-      }
-
     } catch (error) {
       console.error("Save failed:", error);
       setSaveStatus(prev => ({ ...prev, [questionId]: "error" }));
@@ -284,6 +283,10 @@ export default function AssessmentPage() {
 
   // Calculate section progress
   const getSectionProgress = (section) => {
+    if (!questions || questions.length === 0) {
+      return { answered: 0, total: 0, percentage: 0 };
+    }
+    
     const sectionQuestions = questions.filter(q => q.section === section);
     const answered = sectionQuestions.filter(q => answers[q.id]).length;
     const total = sectionQuestions.length;
@@ -303,6 +306,15 @@ export default function AssessmentPage() {
 
   // Format time display
   const formatTime = (time) => time.toString().padStart(2, '0');
+
+  // Get current question data safely
+  const currentQuestion = questions[currentIndex] || null;
+  const currentSection = currentQuestion?.section || SECTION_ORDER[0];
+  const sectionConfig = SECTION_CONFIG[currentSection] || SECTION_CONFIG[SECTION_ORDER[0]];
+  const saveState = currentQuestion ? saveStatus[currentQuestion.id] : null;
+  const totalAnswered = Object.keys(answers).length;
+  const isLastQuestion = currentIndex === questions.length - 1;
+  const progressPercentage = questions.length > 0 ? Math.round((totalAnswered / questions.length) * 100) : 0;
 
   // Loading state
   if (loading) {
@@ -343,7 +355,8 @@ export default function AssessmentPage() {
     );
   }
 
-  if (questions.length === 0) {
+  // Error state
+  if (error) {
     return (
       <div style={{ 
         minHeight: "100vh",
@@ -359,10 +372,17 @@ export default function AssessmentPage() {
             🏢 Stratavax
           </div>
           <div style={{ fontSize: isMobile ? "18px" : "22px", marginBottom: "20px" }}>
-            Assessment Not Ready
+            Error Loading Assessment
           </div>
-          <div style={{ fontSize: isMobile ? "14px" : "16px", marginBottom: "30px", lineHeight: 1.5 }}>
-            Please run the SQL setup scripts to create the assessment questions.
+          <div style={{ 
+            fontSize: isMobile ? "14px" : "16px", 
+            marginBottom: "30px", 
+            lineHeight: 1.5,
+            background: "rgba(255,255,255,0.1)",
+            padding: "20px",
+            borderRadius: "10px"
+          }}>
+            {error}
           </div>
           <button 
             onClick={() => router.push("/")}
@@ -386,13 +406,48 @@ export default function AssessmentPage() {
     );
   }
 
-  const currentQuestion = questions[currentIndex];
-  const currentSection = currentQuestion?.section || SECTION_ORDER[0];
-  const sectionConfig = SECTION_CONFIG[currentSection];
-  const saveState = saveStatus[currentQuestion?.id];
-  const totalAnswered = Object.keys(answers).length;
-  const isLastQuestion = currentIndex === questions.length - 1;
-  const progressPercentage = Math.round((totalAnswered / questions.length) * 100);
+  if (questions.length === 0 && !loading) {
+    return (
+      <div style={{ 
+        minHeight: "100vh",
+        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "white",
+        padding: "20px"
+      }}>
+        <div style={{ textAlign: "center", padding: "30px", maxWidth: "500px", width: "100%" }}>
+          <div style={{ fontSize: isMobile ? "28px" : "36px", fontWeight: "700", marginBottom: "20px" }}>
+            🏢 Stratavax
+          </div>
+          <div style={{ fontSize: isMobile ? "18px" : "22px", marginBottom: "20px" }}>
+            No Questions Available
+          </div>
+          <div style={{ fontSize: isMobile ? "14px" : "16px", marginBottom: "30px", lineHeight: 1.5 }}>
+            No assessment questions found. Please run the setup scripts.
+          </div>
+          <button 
+            onClick={() => router.push("/")}
+            style={{
+              padding: isMobile ? "14px 25px" : "15px 35px",
+              backgroundColor: "white",
+              color: "#764ba2",
+              border: "none",
+              borderRadius: "10px",
+              cursor: "pointer",
+              fontSize: isMobile ? "15px" : "16px",
+              fontWeight: "600",
+              width: isMobile ? "100%" : "auto",
+              minHeight: "44px"
+            }}
+          >
+            Return to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -694,7 +749,7 @@ export default function AssessmentPage() {
         </div>
       )}
 
-      {/* Main Assessment Layout - Professional Evalex Style */}
+      {/* Main Assessment Layout */}
       <div style={{
         minHeight: "100vh",
         background: "linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)",
@@ -777,10 +832,7 @@ export default function AssessmentPage() {
                   gap: "8px",
                   marginBottom: "5px"
                 }}>
-                  <FiClock style={{ 
-                    color: timeRemaining < 1800 ? "#ff9800" : "#2196f3",
-                    fontSize: "16px"
-                  }} />
+                  <span style={{ fontSize: "16px" }}>⏱️</span>
                   <span style={{ 
                     fontSize: "12px", 
                     fontWeight: "600", 
@@ -812,10 +864,11 @@ export default function AssessmentPage() {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    cursor: "pointer"
+                    cursor: "pointer",
+                    fontSize: "20px"
                   }}
                 >
-                  <FiMenu size={20} />
+                  ☰
                 </button>
               )}
             </div>
@@ -955,7 +1008,7 @@ export default function AssessmentPage() {
                   marginBottom: "15px",
                   color: "#1a237e"
                 }}>
-                  <BsBarChart2 style={{ verticalAlign: "middle", marginRight: "8px" }} />
+                  <span style={{ verticalAlign: "middle", marginRight: "8px" }}>📈</span>
                   Section Progress
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -1022,7 +1075,7 @@ export default function AssessmentPage() {
                   marginBottom: "15px",
                   color: "#1a237e"
                 }}>
-                  <FiGrid style={{ verticalAlign: "middle", marginRight: "8px" }} />
+                  <span style={{ verticalAlign: "middle", marginRight: "8px" }}>📋</span>
                   All Questions
                 </div>
                 <div style={{ 
@@ -1099,7 +1152,7 @@ export default function AssessmentPage() {
                 onMouseOver={(e) => e.currentTarget.style.transform = "translateY(-2px)"}
                 onMouseOut={(e) => e.currentTarget.style.transform = "translateY(0)"}
               >
-                <FiCheck size={20} />
+                <span style={{ fontSize: "18px" }}>✓</span>
                 Submit Assessment
               </button>
             </div>
@@ -1134,7 +1187,7 @@ export default function AssessmentPage() {
                   fontWeight: "600",
                   marginBottom: "15px"
                 }}>
-                  <BsLightning style={{ fontSize: "16px" }} />
+                  <span style={{ fontSize: "16px" }}>⚡</span>
                   {currentSection}
                 </div>
                 <div style={{
@@ -1176,7 +1229,7 @@ export default function AssessmentPage() {
                     gap: "8px"
                   }}
                 >
-                  <FiGrid size={16} />
+                  <span style={{ fontSize: "16px" }}>📋</span>
                   View All Questions
                 </button>
               )}
@@ -1224,7 +1277,7 @@ export default function AssessmentPage() {
                 }}>
                   {saveState === "saved" ? (
                     <>
-                      <BsCheckCircle style={{ fontSize: "18px" }} />
+                      <span style={{ fontSize: "18px" }}>✓</span>
                       Answer saved successfully
                     </>
                   ) : saveState === "saving" ? (
@@ -1254,7 +1307,7 @@ export default function AssessmentPage() {
                 gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)",
                 gap: "15px"
               }}>
-                {currentQuestion && currentQuestion.options.map((option, index) => {
+                {currentQuestion?.options?.map((option, index) => {
                   const isSelected = answers[currentQuestion.id] === option.id;
                   const optionLetter = String.fromCharCode(65 + index);
                   
@@ -1338,7 +1391,12 @@ export default function AssessmentPage() {
                           alignItems: "center",
                           justifyContent: "center"
                         }}>
-                          <BsFillCircleFill size={12} color="white" />
+                          <div style={{
+                            width: "12px",
+                            height: "12px",
+                            borderRadius: "50%",
+                            background: "white"
+                          }} />
                         </div>
                       )}
                     </button>
@@ -1377,7 +1435,7 @@ export default function AssessmentPage() {
                 onMouseOver={(e) => currentIndex !== 0 && (e.currentTarget.style.transform = "translateX(-2px)")}
                 onMouseOut={(e) => currentIndex !== 0 && (e.currentTarget.style.transform = "translateX(0)")}
               >
-                <FiChevronLeft size={20} />
+                <span style={{ fontSize: "20px" }}>←</span>
                 Previous
               </button>
               
@@ -1418,7 +1476,7 @@ export default function AssessmentPage() {
                   onMouseOut={(e) => e.currentTarget.style.transform = "translateX(0)"}
                 >
                   Submit Assessment
-                  <FiChevronRight size={20} />
+                  <span style={{ fontSize: "20px" }}>→</span>
                 </button>
               ) : (
                 <button 
@@ -1443,7 +1501,7 @@ export default function AssessmentPage() {
                   onMouseOut={(e) => e.currentTarget.style.transform = "translateX(0)"}
                 >
                   Next
-                  <FiChevronRight size={20} />
+                  <span style={{ fontSize: "20px" }}>→</span>
                 </button>
               )}
             </div>
