@@ -973,28 +973,28 @@ export default function AssessmentPage() {
             background: 'white',
             borderRadius: '8px',
             border: '1px solid #e0e0e0',
-            padding: '12px', // Increased padding
+            padding: '12px',
             display: 'flex',
             flexDirection: 'column',
-            minWidth: '90px', // Increased from 60px to 90px (50% increase)
-            maxWidth: '120px' // Increased from 80px to 120px (50% increase)
+            minWidth: '90px',
+            maxWidth: '120px'
           }}>
             <div style={{ 
-              fontSize: '12px', // Increased from 11px
+              fontSize: '12px',
               fontWeight: '600', 
-              marginBottom: '10px', // Increased from 8px
+              marginBottom: '10px',
               color: '#666',
               textAlign: 'center'
             }}>
               Question Navigator
             </div>
             
-            {/* LARGER QUESTION GRID */}
+            {/* LARGER QUESTION GRID WITH 8 QUESTIONS PER LINE */}
             <div style={{ 
               flex: 1,
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: '5px',
+              gridTemplateColumns: 'repeat(8, 1fr)', // Changed from 3 to 8 columns
+              gap: '3px', // Reduced gap for more compact layout
               overflowY: 'auto'
             }}>
               {questions.map((q, index) => {
@@ -1014,21 +1014,21 @@ export default function AssessmentPage() {
                              isAnswered ? 'white' : '#666',
                       border: `1px solid ${isCurrent ? sectionConfig.color : 
                                isAnswered ? '#4caf50' : '#e0e0e0'}`,
-                      borderRadius: '4px',
+                      borderRadius: '3px', // Reduced border radius
                       cursor: 'pointer',
-                      fontSize: '10px',
+                      fontSize: '9px', // Reduced font size
                       fontWeight: '600',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      padding: '2px',
+                      padding: '1px',
                       transition: 'all 0.2s'
                     }}
                     title={`Question ${index + 1}`}
                     onMouseOver={(e) => {
                       if (!isCurrent) {
                         e.currentTarget.style.transform = 'scale(1.05)';
-                        e.currentTarget.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
+                        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
                       }
                     }}
                     onMouseOut={(e) => {
