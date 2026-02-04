@@ -1,0 +1,14 @@
+// components/AppLayout.js
+export default function AppLayout({ children, background }) {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: `url(${background}) center/cover no-repeat`,
+        padding: 20,
+      }}
+    >
+      {children}
+    </div>
+  );
+}

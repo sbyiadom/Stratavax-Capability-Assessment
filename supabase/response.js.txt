@@ -1,0 +1,74 @@
+import { supabase } from "./client";
+
+export async function saveResponse(assessment_id, question_id, answer_id, user_id) {
+  console.log("💾 Saving response:", { question_id, answer_id, user_id });
+
+  // Always use our assessment UUID
+  const assessmentUUID = '11111111-1111-1111-1111-111111111111';
+  
+  // Convert to numbers
+  const questionId = Number(question_id);
+  const answerId = Number(answer_id);
+
+  try {
+    // Simple upsert - let database handle constraints
+    const { data, error } = await supabase
+      .from("responses")
+      .upsert(
+        {
+          assessment_id: assessmentUUID,
+          question_id: questionId,
+          answer_id: answerId,
+          user_id: user_id,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: 'assessment_id,question_id,user_id',
+        }
+      )
+      .select();
+
+    if (error) {
+      console.error("Database error:", error);
+      
+      // User-friendly error messages
+      if (error.code === '23503') {
+        throw new Error("Please select a valid answer.");
+      } else if (error.code === '23505') {
+        throw new Error("Answer already saved.");
+      } else {
+        throw new Error("Failed to save. Please try again.");
+      }
+    }
+
+    console.log("✅ Response saved");
+    return { success: true, data };
+
+  } catch (error) {
+    console.error("Save failed:", error);
+    throw error;
+  }
+}
+
+// Load previous responses
+export async function loadUserResponses(user_id) {
+  try {
+    const { data, error } = await supabase
+      .from("responses")
+      .select("question_id, answer_id")
+      .eq("assessment_id", '11111111-1111-1111-1111-111111111111')
+      .eq("user_id", user_id);
+
+    if (error) throw error;
+    
+    const responses = {};
+    data.forEach(r => {
+      responses[r.question_id] = r.answer_id;
+    });
+    
+    return responses;
+  } catch (error) {
+    console.error("Error loading responses:", error);
+    return {};
+  }
+}

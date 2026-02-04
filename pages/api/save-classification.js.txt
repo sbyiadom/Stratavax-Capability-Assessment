@@ -1,0 +1,45 @@
+import { supabase } from "../../supabase/client";
+import { totalScore } from "../../utils/scoring";
+import { classifyTalent } from "../../utils/classification";
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const { assessment_id, user_id } = req.body;
+  if (!assessment_id || !user_id) {
+    return res.status(400).json({ error: "assessment_id and user_id are required" });
+  }
+
+  try {
+    // Get all responses for the candidate for this assessment
+    const { data: responses, error } = await supabase
+      .from("responses")
+      .select("score")
+      .eq("assessment_id", assessment_id)
+      .eq("user_id", user_id);
+
+    if (error) throw error;
+
+    const total = totalScore(responses || []);
+    const classification = classifyTalent(total);
+
+    // Upsert into talent_classification
+    const { error: insertError } = await supabase
+      .from("talent_classification")
+      .upsert({
+        assessment_id,
+        user_id,
+        total_score: total,
+        classification,
+      }, { onConflict: ["assessment_id", "user_id"] });
+
+    if (insertError) throw insertError;
+
+    res.status(200).json({ total, classification });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+}

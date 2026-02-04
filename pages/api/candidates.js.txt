@@ -1,0 +1,175 @@
+// pages/api/supervisor/candidates.js
+import { createClient } from '@supabase/supabase-js'
+
+export default async function handler(req, res) {
+  // Only allow GET requests
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  try {
+    // Initialize regular client for session verification
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    )
+
+    // Get the authorization token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized: No token provided' })
+    }
+
+    const token = authHeader.split(' ')[1];
+    
+    // Set the session for this request
+    supabase.auth.setSession({
+      access_token: token,
+      refresh_token: ''
+    });
+
+    // Get the current user
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      return res.status(401).json({ error: 'Invalid session' })
+    }
+
+    // Check if user is supervisor
+    const role = user.user_metadata?.role;
+    const isSupervisor = user.user_metadata?.is_supervisor;
+    
+    if (role !== 'supervisor' && !isSupervisor) {
+      return res.status(403).json({ error: 'Forbidden: Not a supervisor' })
+    }
+
+    console.log(`Supervisor ${user.email} accessing candidates API`);
+
+    // Initialize admin client with service role key
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
+
+    // Get ALL users from auth (admin privilege)
+    const { data: { users: allUsers }, error: adminError } = await supabaseAdmin.auth.admin.listUsers({
+      perPage: 1000 // Get all users
+    });
+
+    if (adminError) {
+      console.error('Admin API error:', adminError);
+      return res.status(500).json({ error: 'Failed to fetch users: ' + adminError.message })
+    }
+
+    console.log(`Total users in system: ${allUsers?.length || 0}`);
+
+    // Get responses to see who has taken assessments
+    const { data: responses, error: responsesError } = await supabase
+      .from('responses')
+      .select('user_id')
+      .not('user_id', 'is', null);
+
+    if (responsesError) {
+      console.error('Error fetching responses:', responsesError);
+    }
+
+    const usersWithResponses = new Set(responses?.map(r => r.user_id) || []);
+    console.log(`Users with responses: ${usersWithResponses.size}`);
+
+    // Filter candidates: exclude supervisors and current user
+    const currentUserEmail = user.email.toLowerCase();
+    const candidates = [];
+
+    if (allUsers && allUsers.length > 0) {
+      for (const authUser of allUsers) {
+        const userEmail = authUser.email?.toLowerCase() || '';
+        const userRole = authUser.user_metadata?.role;
+        const userIsSupervisor = authUser.user_metadata?.is_supervisor;
+        
+        // Skip if it's the current user (supervisor)
+        if (userEmail === currentUserEmail) {
+          continue;
+        }
+        
+        // Skip if user is a supervisor
+        if (userRole === 'supervisor' || userIsSupervisor === true) {
+          continue;
+        }
+        
+        // This is a candidate
+        candidates.push({
+          id: authUser.id,
+          email: authUser.email,
+          name: authUser.user_metadata?.name || authUser.email.split('@')[0],
+          created_at: authUser.created_at,
+          last_sign_in: authUser.last_sign_in_at,
+          status: usersWithResponses.has(authUser.id) ? 'completed' : 'not_started',
+          role: userRole || 'candidate',
+          raw_metadata: authUser.user_metadata
+        });
+      }
+    }
+
+    console.log(`Found ${candidates.length} candidates`);
+
+    // Get statistics
+    const { count: totalResponses } = await supabase
+      .from('responses')
+      .select('*', { count: 'exact', head: true });
+
+    // Calculate average score
+    let averageScore = 0;
+    if (totalResponses > 0) {
+      const { data: scoreResponses } = await supabase
+        .from('responses')
+        .select('answers(score)')
+        .limit(1000);
+
+      if (scoreResponses && scoreResponses.length > 0) {
+        let totalScore = 0;
+        let validScores = 0;
+        
+        scoreResponses.forEach(response => {
+          if (response.answers && response.answers.length > 0) {
+            const score = response.answers[0]?.score;
+            if (typeof score === 'number') {
+              totalScore += score;
+              validScores++;
+            }
+          }
+        });
+        
+        if (validScores > 0) {
+          averageScore = Math.round((totalScore / (validScores * 10)) * 100);
+        }
+      }
+    }
+
+    res.status(200).json({
+      candidates,
+      statistics: {
+        totalCandidates: candidates.length,
+        totalResponses: totalResponses || 0,
+        usersWithResponses: usersWithResponses.size,
+        averageScore
+      },
+      debug: {
+        totalUsers: allUsers?.length || 0,
+        currentUser: user.email
+      }
+    });
+
+  } catch (error) {
+    console.error('Unexpected API error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    })
+  }
+}
