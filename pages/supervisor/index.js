@@ -1,4 +1,58 @@
 import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
+import Link from "next/link";
+import AppLayout from "../../components/AppLayout";
+import { supabase } from "../../supabase/client";
+
+export default function SupervisorDashboard() {
+  const router = useRouter();
+  const [candidates, setCandidates] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isSupervisor, setIsSupervisor] = useState(false);
+
+  // Check supervisor authentication
+  useEffect(() => {
+    const checkSupervisorAuth = () => {
+      if (typeof window !== 'undefined') {
+        const supervisorSession = localStorage.getItem("supervisorSession");
+        if (!supervisorSession) {
+          router.push("/supervisor-login");
+          return;
+        }
+        
+        try {
+          const session = JSON.parse(supervisorSession);
+          if (session.loggedIn) {
+            setIsSupervisor(true);
+          } else {
+            router.push("/supervisor-login");
+          }
+        } catch {
+          router.push("/supervisor-login");
+        }
+      }
+    };
+
+    checkSupervisorAuth();
+  }, [router]);
+
+  // Only fetch data if supervisor is authenticated
+  useEffect(() => {
+    if (!isSupervisor) return;
+
+    const fetchCandidates = async () => {
+      // ... your existing fetchCandidates code ...
+    };
+
+    fetchCandidates();
+  }, [isSupervisor]);
+
+  if (!isSupervisor) {
+    return <p style={{ textAlign: "center" }}>Checking authentication...</p>;
+  }
+
+  // ... rest of your existing code ...
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
@@ -79,3 +133,4 @@ export default function SupervisorDashboard() {
     </AppLayout>
   );
 }
+
