@@ -1,5 +1,7 @@
+// pages/supervisor-login.js
 import { useState } from "react";
 import { useRouter } from "next/router";
+import Link from "next/link";
 import { supabase } from "../supabase/client";
 
 export default function SupervisorLogin() {
@@ -26,18 +28,18 @@ export default function SupervisorLogin() {
         throw new Error("Access denied. Supervisor credentials only.");
       }
 
-      // For now, use a simple password check
-      // In production, use Supabase Auth with proper password hashing
-      if (password !== "supervisor123") { // Change this password
+      // Simple password check (for demo only)
+      if (password !== "supervisor123") {
         throw new Error("Invalid credentials");
       }
 
-      // Store supervisor session in localStorage
+      // Store supervisor session
       localStorage.setItem("supervisorSession", JSON.stringify({
         email: supervisorData.email,
         name: supervisorData.full_name,
         role: supervisorData.role,
-        loggedIn: true
+        loggedIn: true,
+        timestamp: Date.now()
       }));
 
       // Redirect to supervisor dashboard
@@ -129,7 +131,7 @@ export default function SupervisorLogin() {
                 fontSize: "16px",
                 boxSizing: "border-box"
               }}
-              placeholder="Enter password"
+              placeholder="Enter supervisor password"
             />
           </div>
 
@@ -159,11 +161,24 @@ export default function SupervisorLogin() {
               fontSize: "16px",
               fontWeight: "600",
               cursor: loading ? "not-allowed" : "pointer",
-              transition: "background 0.3s"
+              transition: "background 0.3s",
+              marginBottom: "15px"
             }}
           >
             {loading ? "Logging in..." : "Login as Supervisor"}
           </button>
+
+          <div style={{ textAlign: "center" }}>
+            <Link href="/login" legacyBehavior>
+              <a style={{
+                color: "#1565c0",
+                textDecoration: "none",
+                fontSize: "14px"
+              }}>
+                ← Back to Candidate Login
+              </a>
+            </Link>
+          </div>
         </form>
 
         <div style={{
@@ -172,11 +187,23 @@ export default function SupervisorLogin() {
           borderTop: "1px solid #eee",
           textAlign: "center"
         }}>
-          <p style={{ color: "#666", fontSize: "14px", margin: 0 }}>
-            Demo credentials: <br />
-            <strong>supervisor@stratax.com</strong><br />
-            Password: <strong>supervisor123</strong>
+          <p style={{ color: "#666", fontSize: "14px", marginBottom: "10px" }}>
+            <strong>Demo Supervisor Credentials:</strong>
           </p>
+          <div style={{
+            background: "#f8f9fa",
+            padding: "12px",
+            borderRadius: "8px",
+            fontSize: "13px",
+            color: "#333"
+          }}>
+            <div style={{ marginBottom: "5px" }}>
+              <strong>Email:</strong> supervisor@stratax.com
+            </div>
+            <div>
+              <strong>Password:</strong> supervisor123
+            </div>
+          </div>
         </div>
       </div>
     </div>
