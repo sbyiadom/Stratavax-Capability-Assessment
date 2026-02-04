@@ -244,7 +244,7 @@ export default function AssessmentPage() {
     }
   };
 
-  // Submit assessment
+  // Submit assessment - FIXED VERSION
   const submitAssessment = async () => {
     if (!session?.user?.id) {
       alert("Please log in to submit your assessment.");
@@ -256,10 +256,61 @@ export default function AssessmentPage() {
     setShowSubmitModal(false);
     
     try {
+      // Calculate total score from responses
+      const calculateAndStoreScore = async () => {
+        try {
+          // Calculate total score from responses
+          const { data: responsesData, error: responsesError } = await supabase
+            .from("responses")
+            .select(`
+              answer_id,
+              answers (score)
+            `)
+            .eq("user_id", session.user.id)
+            .eq("assessment_id", assessmentId);
+
+          if (responsesError) throw responsesError;
+
+          const totalScore = responsesData?.reduce((sum, r) => sum + (r.answers?.score || 0), 0) || 0;
+
+          // Determine classification
+          const classification = 
+            totalScore >= 90 ? 'Top Talent' :
+            totalScore >= 75 ? 'High Potential' :
+            totalScore >= 60 ? 'Solid Performer' :
+            totalScore >= 40 ? 'Developing' : 'Needs Improvement';
+
+          // Save to talent_classification table
+          const { error: classificationError } = await supabase
+            .from("talent_classification")
+            .upsert({
+              user_id: session.user.id,
+              total_score: totalScore,
+              classification: classification,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
+
+          if (classificationError) {
+            console.error("Failed to save classification:", classificationError);
+            throw classificationError;
+          }
+
+          console.log("Score calculated and saved:", { totalScore, classification });
+          return { totalScore, classification };
+        } catch (error) {
+          console.error("Score calculation error:", error);
+          throw error;
+        }
+      };
+
+      // Call the function to calculate and store score
+      await calculateAndStoreScore();
+      
+      // Show success modal
       setShowSuccessModal(true);
     } catch (error) {
       console.error("Submission error:", error);
-      alert("Submission failed. Please try again.");
+      alert("Assessment submitted but there was an error calculating your score. Please contact support.");
       setIsSubmitting(false);
     }
   };
@@ -534,7 +585,7 @@ export default function AssessmentPage() {
         </div>
       )}
 
-      {/* Success Modal */}
+      {/* Success Modal - UPDATED VERSION */}
       {showSuccessModal && (
         <div style={{
           position: "fixed",
@@ -614,6 +665,17 @@ export default function AssessmentPage() {
                 <span style={{ color: "#2196f3" }}>
                   {progressPercentage}%
                 </span>
+              </div>
+
+              <div style={{ 
+                fontSize: "14px", 
+                color: "#666", 
+                margin: "15px 0",
+                padding: "12px",
+                background: "#e3f2fd",
+                borderRadius: "8px"
+              }}>
+                <strong>📊 Supervisor Access:</strong> Your results are now available in the supervisor dashboard for review and analysis.
               </div>
             </div>
 
@@ -1042,10 +1104,10 @@ export default function AssessmentPage() {
                     border: 'none',
                     borderRadius: '6px',
                     cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    minWidth: '100px',
-                    transition: 'all 0.2s'
+                    fontSize: "14px",
+                    fontWeight: "600",
+                    minWidth: "100px",
+                    transition: "all 0.2s"
                   }}
                 >
                   Next Question →
@@ -1057,70 +1119,70 @@ export default function AssessmentPage() {
           {/* QUESTION NAVIGATOR - 30% WIDTH (8 questions per line) */}
           <div style={{
             flex: 3, // 30% width
-            background: 'white',
-            borderRadius: '8px',
-            border: '1px solid #e0e0e0',
-            padding: '15px',
-            display: 'flex',
-            flexDirection: 'column',
-            minWidth: '250px'
+            background: "white",
+            borderRadius: "8px",
+            border: "1px solid #e0e0e0",
+            padding: "15px",
+            display: "flex",
+            flexDirection: "column",
+            minWidth: "250px"
           }}>
             <div style={{ 
-              fontSize: '16px',
-              fontWeight: '600', 
-              marginBottom: '15px',
-              color: '#333',
-              textAlign: 'center',
-              paddingBottom: '10px',
-              borderBottom: '2px solid #f0f0f0'
+              fontSize: "16px",
+              fontWeight: "600", 
+              marginBottom: "15px",
+              color: "#333",
+              textAlign: "center",
+              paddingBottom: "10px",
+              borderBottom: "2px solid #f0f0f0"
             }}>
               📋 Question Navigator
             </div>
             
             {/* Progress Summary - Clear */}
             <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              marginBottom: '15px',
-              padding: '12px 15px',
-              background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)',
-              borderRadius: '6px',
-              fontSize: '14px',
-              border: '1px solid #e0e0e0'
+              display: "flex",
+              justifyContent: "space-between",
+              marginBottom: "15px",
+              padding: "12px 15px",
+              background: "linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)",
+              borderRadius: "6px",
+              fontSize: "14px",
+              border: "1px solid #e0e0e0"
             }}>
               <div style={{ 
-                display: 'flex', 
-                flexDirection: 'column',
-                alignItems: 'center'
+                display: "flex", 
+                flexDirection: "column",
+                alignItems: "center"
               }}>
-                <div style={{ color: '#4caf50', fontWeight: '700', fontSize: '18px' }}>
+                <div style={{ color: "#4caf50", fontWeight: "700", fontSize: "18px" }}>
                   {totalAnswered}
                 </div>
-                <div style={{ color: '#666', fontSize: '11px', marginTop: '2px' }}>
+                <div style={{ color: "#666", fontSize: "11px", marginTop: "2px" }}>
                   Answered
                 </div>
               </div>
               <div style={{ 
-                display: 'flex', 
-                flexDirection: 'column',
-                alignItems: 'center'
+                display: "flex", 
+                flexDirection: "column",
+                alignItems: "center"
               }}>
-                <div style={{ color: '#666', fontWeight: '700', fontSize: '18px' }}>
+                <div style={{ color: "#666", fontWeight: "700", fontSize: "18px" }}>
                   {questions.length - totalAnswered}
                 </div>
-                <div style={{ color: '#666', fontSize: '11px', marginTop: '2px' }}>
+                <div style={{ color: "#666", fontSize: "11px", marginTop: "2px" }}>
                   Remaining
                 </div>
               </div>
               <div style={{ 
-                display: 'flex', 
-                flexDirection: 'column',
-                alignItems: 'center'
+                display: "flex", 
+                flexDirection: "column",
+                alignItems: "center"
               }}>
-                <div style={{ color: '#2196f3', fontWeight: '700', fontSize: '18px' }}>
+                <div style={{ color: "#2196f3", fontWeight: "700", fontSize: "18px" }}>
                   {progressPercentage}%
                 </div>
-                <div style={{ color: '#666', fontSize: '11px', marginTop: '2px' }}>
+                <div style={{ color: "#666", fontSize: "11px", marginTop: "2px" }}>
                   Complete
                 </div>
               </div>
@@ -1129,11 +1191,11 @@ export default function AssessmentPage() {
             {/* QUESTION GRID - 8 PER LINE (NO SCROLLING) */}
             <div style={{ 
               flex: 1,
-              display: 'grid',
-              gridTemplateColumns: 'repeat(8, 1fr)',
-              gap: '4px',
-              gridAutoRows: 'minmax(32px, auto)',
-              alignContent: 'start'
+              display: "grid",
+              gridTemplateColumns: "repeat(8, 1fr)",
+              gap: "4px",
+              gridAutoRows: "minmax(32px, auto)",
+              alignContent: "start"
             }}>
               {questions.map((q, index) => {
                 const isAnswered = answers[q.id];
@@ -1144,51 +1206,51 @@ export default function AssessmentPage() {
                     key={q.id}
                     onClick={() => setCurrentIndex(index)}
                     style={{
-                      width: '100%',
-                      height: '32px',
-                      minHeight: '32px',
+                      width: "100%",
+                      height: "32px",
+                      minHeight: "32px",
                       background: isCurrent ? sectionConfig.color : 
-                                 isAnswered ? '#4caf50' : '#f5f5f5',
-                      color: isCurrent ? 'white' : 
-                             isAnswered ? 'white' : '#666',
+                                 isAnswered ? "#4caf50" : "#f5f5f5",
+                      color: isCurrent ? "white" : 
+                             isAnswered ? "white" : "#666",
                       border: `1px solid ${isCurrent ? sectionConfig.color : 
-                               isAnswered ? '#4caf50' : '#e0e0e0'}`,
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: '600',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '0',
-                      transition: 'all 0.2s',
-                      position: 'relative'
+                               isAnswered ? "#4caf50" : "#e0e0e0"}`,
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: "0",
+                      transition: "all 0.2s",
+                      position: "relative"
                     }}
-                    title={`Question ${index + 1}${isAnswered ? ' (Answered)' : ' (Not answered)'}`}
+                    title={`Question ${index + 1}${isAnswered ? " (Answered)" : " (Not answered)"}`}
                     onMouseOver={(e) => {
                       if (!isCurrent) {
-                        e.currentTarget.style.transform = 'scale(1.05)';
-                        e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.1)';
+                        e.currentTarget.style.transform = "scale(1.05)";
+                        e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.1)";
                       }
                     }}
                     onMouseOut={(e) => {
                       if (!isCurrent) {
-                        e.currentTarget.style.transform = 'scale(1)';
-                        e.currentTarget.style.boxShadow = 'none';
+                        e.currentTarget.style.transform = "scale(1)";
+                        e.currentTarget.style.boxShadow = "none";
                       }
                     }}
                   >
                     {index + 1}
                     {isCurrent && (
                       <div style={{
-                        position: 'absolute',
-                        top: '-4px',
-                        right: '-4px',
-                        width: '12px',
-                        height: '12px',
-                        borderRadius: '50%',
+                        position: "absolute",
+                        top: "-4px",
+                        right: "-4px",
+                        width: "12px",
+                        height: "12px",
+                        borderRadius: "50%",
                         background: sectionConfig.color,
-                        border: '2px solid white'
+                        border: "2px solid white"
                       }} />
                     )}
                   </button>
@@ -1198,112 +1260,112 @@ export default function AssessmentPage() {
             
             {/* Legend - Helpful */}
             <div style={{
-              marginTop: '15px',
-              paddingTop: '15px',
-              borderTop: '2px solid #e0e0e0'
+              marginTop: "15px",
+              paddingTop: "15px",
+              borderTop: "2px solid #e0e0e0"
             }}>
               <div style={{
-                fontSize: '12px',
-                fontWeight: '600',
-                color: '#666',
-                marginBottom: '8px',
-                textAlign: 'center'
+                fontSize: "12px",
+                fontWeight: "600",
+                color: "#666",
+                marginBottom: "8px",
+                textAlign: "center"
               }}>
                 Navigation Guide
               </div>
               <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '8px',
-                fontSize: '11px'
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "8px",
+                fontSize: "11px"
               }}>
                 <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '6px',
-                  padding: '6px',
-                  background: '#f8f9fa',
-                  borderRadius: '4px'
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: "6px",
+                  padding: "6px",
+                  background: "#f8f9fa",
+                  borderRadius: "4px"
                 }}>
                   <div style={{ 
-                    width: '16px', 
-                    height: '16px', 
-                    borderRadius: '4px', 
-                    background: '#4caf50',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'white',
-                    fontSize: '10px'
+                    width: "16px", 
+                    height: "16px", 
+                    borderRadius: "4px", 
+                    background: "#4caf50",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "white",
+                    fontSize: "10px"
                   }}>
                     ✓
                   </div>
                   <span>Answered</span>
                 </div>
                 <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '6px',
-                  padding: '6px',
-                  background: '#f8f9fa',
-                  borderRadius: '4px'
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: "6px",
+                  padding: "6px",
+                  background: "#f8f9fa",
+                  borderRadius: "4px"
                 }}>
                   <div style={{ 
-                    width: '16px', 
-                    height: '16px', 
-                    borderRadius: '4px', 
+                    width: "16px", 
+                    height: "16px", 
+                    borderRadius: "4px", 
                     background: sectionConfig.color,
-                    position: 'relative'
+                    position: "relative"
                   }}>
                     <div style={{
-                      position: 'absolute',
-                      top: '-3px',
-                      right: '-3px',
-                      width: '8px',
-                      height: '8px',
-                      borderRadius: '50%',
-                      background: 'white',
-                      border: '1px solid' + sectionConfig.color
+                      position: "absolute",
+                      top: "-3px",
+                      right: "-3px",
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      background: "white",
+                      border: "1px solid" + sectionConfig.color
                     }} />
                   </div>
                   <span>Current</span>
                 </div>
                 <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '6px',
-                  padding: '6px',
-                  background: '#f8f9fa',
-                  borderRadius: '4px'
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: "6px",
+                  padding: "6px",
+                  background: "#f8f9fa",
+                  borderRadius: "4px"
                 }}>
                   <div style={{ 
-                    width: '16px', 
-                    height: '16px', 
-                    borderRadius: '4px', 
-                    background: '#f5f5f5',
-                    border: '1px solid #e0e0e0'
+                    width: "16px", 
+                    height: "16px", 
+                    borderRadius: "4px", 
+                    background: "#f5f5f5",
+                    border: "1px solid #e0e0e0"
                   }} />
                   <span>Pending</span>
                 </div>
                 <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '6px',
-                  padding: '6px',
-                  background: '#f8f9fa',
-                  borderRadius: '4px'
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: "6px",
+                  padding: "6px",
+                  background: "#f8f9fa",
+                  borderRadius: "4px"
                 }}>
                   <div style={{ 
-                    width: '16px', 
-                    height: '16px', 
-                    borderRadius: '4px', 
-                    background: '#2196f3',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'white',
-                    fontSize: '10px',
-                    fontWeight: 'bold'
+                    width: "16px", 
+                    height: "16px", 
+                    borderRadius: "4px", 
+                    background: "#2196f3",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "white",
+                    fontSize: "10px",
+                    fontWeight: "bold"
                   }}>
                     %
                   </div>
@@ -1317,4 +1379,3 @@ export default function AssessmentPage() {
     </>
   );
 }
-
