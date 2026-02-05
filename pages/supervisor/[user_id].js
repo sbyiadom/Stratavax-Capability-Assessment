@@ -1,7 +1,6 @@
-// pages/supervisor/[user_id].js - CORRECTED VERSION
+// pages/supervisor/[user_id].js - UPDATED WITH PROPER CATEGORY SCORING
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import Link from "next/link";
 import { supabase } from "../../supabase/client";
 import AppLayout from "../../components/AppLayout";
 
@@ -18,6 +17,30 @@ export default function CandidateReport() {
   const [strengths, setStrengths] = useState([]);
   const [weaknesses, setWeaknesses] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
+
+  // Define your 5 categories with their expected max scores
+  const CATEGORIES = {
+    'Technical Competence': { 
+      maxScore: 100, // 20 questions * 5 points each
+      description: 'Technical skills and knowledge'
+    },
+    'Leadership Skills': { 
+      maxScore: 100,
+      description: 'Leadership and management abilities'
+    },
+    'Problem Solving': { 
+      maxScore: 100,
+      description: 'Analytical and problem-solving skills'
+    },
+    'Communication Skills': { 
+      maxScore: 100,
+      description: 'Verbal and written communication'
+    },
+    'Personality Assessment': { 
+      maxScore: null, // Personality may have different scoring
+      description: 'Personality traits and behavioral tendencies'
+    }
+  };
 
   // Check supervisor authentication
   useEffect(() => {
@@ -45,7 +68,7 @@ export default function CandidateReport() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch candidate data - WORKING VERSION
+  // Fetch candidate data - UPDATED WITH PROPER CATEGORY SCORING
   useEffect(() => {
     if (!isSupervisor || !user_id) return;
 
@@ -88,7 +111,7 @@ export default function CandidateReport() {
           console.error('Failed to fetch user info:', apiError);
         }
 
-        // 3. Get candidate's responses - SIMPLIFIED AND WORKING
+        // 3. Get candidate's responses
         const { data: responsesData, error: responsesError } = await supabase
           .from("responses")
           .select(`
@@ -112,10 +135,10 @@ export default function CandidateReport() {
           const questionIds = [...new Set(responsesData.map(r => r.question_id))];
           const answerIds = [...new Set(responsesData.map(r => r.answer_id))];
 
-          // Get questions
+          // Get questions with their categories
           const { data: questionsData } = await supabase
             .from("questions")
-            .select("id, question_text, section, subsection")
+            .select("id, question_text, section, category, weight")
             .in("id", questionIds);
 
           // Get answers with scores
@@ -140,57 +163,89 @@ export default function CandidateReport() {
             const question = questionsMap[response.question_id];
             const answer = answersMap[response.answer_id];
             
+            // Determine category - check multiple fields
+            let category = "Unknown";
+            if (question) {
+              // Try category first, then section
+              category = question.category || question.section || "Unknown";
+            }
+            
             return {
               ...response,
               questions: question || { 
                 question_text: `Question ${response.question_id}`, 
-                section: "Unknown", 
-                subsection: "" 
+                category: "Unknown"
               },
               answers: answer || { 
                 answer_text: "Answer not available", 
                 score: 0, 
                 interpretation: "No interpretation available" 
-              }
+              },
+              category: category
             };
           });
 
           setResponses(detailedResponses);
 
-          // 4. Calculate category scores
-          const categoryTotals = {};
-          const categoryCounts = {};
-          const categoryMaxScores = {};
+          // 4. Calculate category scores - IMPROVED VERSION
+          const categoryStats = {};
           
-          detailedResponses.forEach(response => {
-            const section = response.questions?.section;
-            const score = response.answers?.score || 0;
-            
-            if (section) {
-              categoryTotals[section] = (categoryTotals[section] || 0) + score;
-              categoryCounts[section] = (categoryCounts[section] || 0) + 1;
-              // Max score per question is 5
-              categoryMaxScores[section] = (categoryMaxScores[section] || 0) + 5;
-            }
-          });
-
-          const calculatedCategoryScores = {};
-          Object.keys(categoryTotals).forEach(section => {
-            const total = categoryTotals[section];
-            const count = categoryCounts[section];
-            const maxPossible = categoryMaxScores[section];
-            const percentage = maxPossible > 0 ? Math.round((total / maxPossible) * 100) : 0;
-            
-            calculatedCategoryScores[section] = {
-              total,
-              average: count > 0 ? (total / count).toFixed(1) : 0,
-              count,
-              percentage,
-              maxPossible
+          // Initialize all categories
+          Object.keys(CATEGORIES).forEach(category => {
+            categoryStats[category] = {
+              totalScore: 0,
+              questionCount: 0,
+              averageScore: 0,
+              percentage: 0,
+              maxPossible: CATEGORIES[category].maxScore || 100
             };
           });
 
-          setCategoryScores(calculatedCategoryScores);
+          // Group responses by category
+          detailedResponses.forEach(response => {
+            const category = response.category;
+            const score = response.answers?.score || 0;
+            
+            // Check if this is one of our main categories
+            if (Object.keys(CATEGORIES).includes(category)) {
+              if (!categoryStats[category]) {
+                categoryStats[category] = {
+                  totalScore: 0,
+                  questionCount: 0,
+                  averageScore: 0,
+                  percentage: 0,
+                  maxPossible: CATEGORIES[category].maxScore || 100
+                };
+              }
+              
+              categoryStats[category].totalScore += score;
+              categoryStats[category].questionCount += 1;
+            } else {
+              // Handle unexpected categories
+              console.log(`Unexpected category: ${category} for question ${response.question_id}`);
+            }
+          });
+
+          // Calculate averages and percentages
+          Object.keys(categoryStats).forEach(category => {
+            const stats = categoryStats[category];
+            if (stats.questionCount > 0) {
+              stats.averageScore = (stats.totalScore / stats.questionCount).toFixed(2);
+              
+              // For Personality Assessment, use different calculation if needed
+              if (category === 'Personality Assessment') {
+                // Personality might be scored differently - adjust as needed
+                stats.percentage = Math.min(100, Math.round((stats.totalScore / (stats.questionCount * 5)) * 100));
+              } else {
+                // For other categories: (actual/total questions * 5) * 100%
+                const maxPossibleScore = stats.questionCount * 5;
+                stats.percentage = Math.round((stats.totalScore / maxPossibleScore) * 100);
+              }
+            }
+          });
+
+          console.log("Category Stats:", categoryStats);
+          setCategoryScores(categoryStats);
 
           // 5. Identify strengths and weaknesses
           const candidateStrengths = [];
@@ -200,30 +255,27 @@ export default function CandidateReport() {
             const answer = response.answers;
             const question = response.questions;
             const score = answer?.score;
+            const category = response.category;
             
             if (score !== undefined && question) {
               // Strength: score >= 4 (out of 5)
               if (score >= 4) {
                 candidateStrengths.push({
-                  category: question.section,
-                  subcategory: question.subsection,
-                  trait: answer.trait_category || question.section,
-                  interpretation: answer.interpretation || `Strong performance (score: ${score}/5)`,
+                  category: category,
+                  question: question.question_text.substring(0, 100) + (question.question_text.length > 100 ? "..." : ""),
+                  interpretation: answer.interpretation || `Strong performance in ${category} (score: ${score}/5)`,
                   strength: answer.strength_level || "High",
-                  score: score,
-                  question: question.question_text.substring(0, 100) + (question.question_text.length > 100 ? "..." : "")
+                  score: score
                 });
               }
               
               // Weakness: score <= 2 (out of 5)
               if (score <= 2) {
                 candidateWeaknesses.push({
-                  category: question.section,
-                  subcategory: question.subsection,
-                  trait: answer.trait_category || question.section,
-                  interpretation: answer.interpretation || `Needs improvement (score: ${score}/5)`,
-                  score: score,
-                  question: question.question_text.substring(0, 100) + (question.question_text.length > 100 ? "..." : "")
+                  category: category,
+                  question: question.question_text.substring(0, 100) + (question.question_text.length > 100 ? "..." : ""),
+                  interpretation: answer.interpretation || `Needs improvement in ${category} (score: ${score}/5)`,
+                  score: score
                 });
               }
             }
@@ -247,28 +299,27 @@ export default function CandidateReport() {
             let recommendation = "";
             
             switch(category) {
-              case 'Cognitive Abilities':
-                recommendation = `Based on ${weakCount} areas needing improvement, recommend: 1) Cognitive training exercises, 2) Problem-solving workshops, 3) Analytical thinking development programs.`;
+              case 'Technical Competence':
+                recommendation = `Based on ${weakCount} areas needing improvement in technical skills, recommend: 1) Technical training sessions, 2) Hands-on practice, 3) Industry certification programs.`;
+                break;
+              case 'Leadership Skills':
+                recommendation = `Address ${weakCount} leadership areas with: 1) Leadership workshops, 2) Mentorship programs, 3) Team management training.`;
+                break;
+              case 'Problem Solving':
+                recommendation = `Improve ${weakCount} analytical areas through: 1) Problem-solving workshops, 2) Case study analysis, 3) Critical thinking exercises.`;
+                break;
+              case 'Communication Skills':
+                recommendation = `Enhance ${weakCount} communication areas with: 1) Communication workshops, 2) Presentation skills training, 3) Writing improvement programs.`;
                 break;
               case 'Personality Assessment':
-                recommendation = `Address ${weakCount} areas with: 1) Personality development sessions, 2) Emotional intelligence training, 3) Interpersonal skills workshops.`;
-                break;
-              case 'Leadership Potential':
-                recommendation = `Improve ${weakCount} leadership areas through: 1) Leadership workshops, 2) Mentorship programs, 3) Team management training.`;
-                break;
-              case 'Bottled Water Manufacturing':
-                recommendation = `Enhance ${weakCount} technical areas with: 1) Technical training sessions, 2) Industry-specific workshops, 3) Hands-on practice.`;
-                break;
-              case 'Performance Metrics':
-                recommendation = `Strengthen ${weakCount} performance areas via: 1) Goal-setting strategies, 2) Performance tracking improvement, 3) Productivity techniques.`;
+                recommendation = `Develop ${weakCount} personality areas through: 1) Self-awareness training, 2) Emotional intelligence development, 3) Behavioral adjustment workshops.`;
                 break;
               default:
-                recommendation = `Focus on ${weakCount} areas with targeted training and practical exercises.`;
+                recommendation = `Focus on ${weakCount} areas in ${category} with targeted training and practical exercises.`;
             }
             
             candidateRecommendations.push({
               category,
-              subcategory: categoryWeaknesses[0]?.subcategory || "General",
               issue: `${weakCount} area${weakCount > 1 ? 's' : ''} need${weakCount > 1 ? '' : 's'} improvement in ${category}`,
               recommendation,
               priority: weakCount > 3 ? "High" : weakCount > 1 ? "Medium" : "Low"
@@ -279,7 +330,6 @@ export default function CandidateReport() {
           if (candidateWeaknesses.length === 0 && candidateStrengths.length > 0) {
             candidateRecommendations.push({
               category: "Overall Performance",
-              subcategory: "Development",
               issue: "Strong performance across all categories",
               recommendation: "Continue current development path. Consider advanced training or leadership roles to further develop strengths.",
               priority: "Informational"
@@ -317,11 +367,11 @@ export default function CandidateReport() {
 
   const getCategoryColor = (category) => {
     const colors = {
-      'Cognitive Abilities': '#4A6FA5',
-      'Personality Assessment': '#9C27B0',
-      'Leadership Potential': '#D32F2F',
-      'Bottled Water Manufacturing': '#388E3C',
-      'Performance Metrics': '#F57C00'
+      'Technical Competence': '#4A6FA5',
+      'Leadership Skills': '#D32F2F',
+      'Problem Solving': '#388E3C',
+      'Communication Skills': '#F57C00',
+      'Personality Assessment': '#9C27B0'
     };
     return colors[category] || '#666';
   };
@@ -506,7 +556,7 @@ export default function CandidateReport() {
               <div>
                 <div style={{ fontSize: "14px", opacity: 0.9 }}>Overall Assessment Score</div>
                 <div style={{ fontSize: "48px", fontWeight: "700", margin: "10px 0" }}>
-                  {candidate.total_score}
+                  {candidate.total_score}/500
                 </div>
                 <div style={{ fontSize: "14px", opacity: 0.9 }}>
                   Based on {responses.length} responses across {Object.keys(categoryScores).length} categories
@@ -535,7 +585,7 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* Category Scores */}
+        {/* Category Scores - UPDATED DISPLAY */}
         <div style={{ 
           background: "white", 
           padding: "25px", 
@@ -544,7 +594,7 @@ export default function CandidateReport() {
           marginBottom: "30px"
         }}>
           <h2 style={{ margin: "0 0 25px 0", color: "#333" }}>Performance by Category</h2>
-          {Object.keys(categoryScores).length === 0 ? (
+          {Object.keys(categoryScores).length === 0 || Object.values(categoryScores).every(stats => stats.questionCount === 0) ? (
             <div style={{ 
               textAlign: "center", 
               padding: "40px",
@@ -554,14 +604,19 @@ export default function CandidateReport() {
             }}>
               <div style={{ fontSize: "48px", marginBottom: "15px" }}>📊</div>
               <p>No category scores available. The candidate may not have completed all sections.</p>
+              <p style={{ fontSize: "14px", marginTop: "10px", color: "#666" }}>
+                Debug: Found {responses.length} total responses
+              </p>
             </div>
           ) : (
             <div style={{ 
               display: "grid", 
-              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", 
+              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", 
               gap: "20px" 
             }}>
-              {Object.entries(categoryScores).map(([category, data]) => (
+              {Object.entries(categoryScores)
+                .filter(([category, stats]) => stats.questionCount > 0)
+                .map(([category, stats]) => (
                 <div key={category} style={{
                   borderLeft: `4px solid ${getCategoryColor(category)}`,
                   padding: "20px",
@@ -588,7 +643,7 @@ export default function CandidateReport() {
                         fontSize: "14px", 
                         color: "#666" 
                       }}>
-                        {data.count} questions • Average: {data.average}/5
+                        {stats.questionCount} questions • Average: {stats.averageScore}/5
                       </p>
                     </div>
                     <div style={{ textAlign: "center" }}>
@@ -597,10 +652,10 @@ export default function CandidateReport() {
                         fontWeight: "700",
                         color: getCategoryColor(category)
                       }}>
-                        {data.percentage}%
+                        {stats.percentage}%
                       </div>
                       <div style={{ fontSize: "12px", color: "#666" }}>
-                        of max
+                        Score Percentage
                       </div>
                     </div>
                   </div>
@@ -614,34 +669,73 @@ export default function CandidateReport() {
                   }}>
                     <div style={{ 
                       height: "100%", 
-                      width: `${data.percentage}%`, 
+                      width: `${stats.percentage}%`, 
                       background: getCategoryColor(category),
                       borderRadius: "5px"
                     }} />
                   </div>
                   
                   <div style={{ 
-                    display: "flex", 
-                    justifyContent: "space-between",
+                    display: "grid", 
+                    gridTemplateColumns: "repeat(3, 1fr)",
+                    gap: "10px",
                     fontSize: "12px", 
                     color: "#666",
                     marginTop: "10px"
                   }}>
                     <div>
-                      <div style={{ fontWeight: "600" }}>Total Score</div>
-                      <div>{data.total}/{data.maxPossible}</div>
+                      <div style={{ fontWeight: "600", marginBottom: "3px" }}>Total Score</div>
+                      <div>{stats.totalScore}/{stats.questionCount * 5}</div>
                     </div>
                     <div>
-                      <div style={{ fontWeight: "600" }}>Average</div>
-                      <div>{data.average}/5</div>
+                      <div style={{ fontWeight: "600", marginBottom: "3px" }}>Questions</div>
+                      <div>{stats.questionCount}/20</div>
                     </div>
                     <div>
-                      <div style={{ fontWeight: "600" }}>Completion</div>
-                      <div>{data.percentage}%</div>
+                      <div style={{ fontWeight: "600", marginBottom: "3px" }}>Average</div>
+                      <div>{stats.averageScore}/5</div>
                     </div>
+                  </div>
+                  
+                  {/* Performance indicator */}
+                  <div style={{ 
+                    marginTop: "15px",
+                    padding: "8px",
+                    background: stats.percentage >= 80 ? "rgba(76, 175, 80, 0.1)" : 
+                              stats.percentage >= 60 ? "rgba(255, 152, 0, 0.1)" : 
+                              "rgba(244, 67, 54, 0.1)",
+                    borderRadius: "6px",
+                    textAlign: "center",
+                    fontSize: "12px",
+                    color: stats.percentage >= 80 ? "#2e7d32" : 
+                          stats.percentage >= 60 ? "#f57c00" : "#c62828",
+                    fontWeight: "600"
+                  }}>
+                    {stats.percentage >= 80 ? "Strong Performance" : 
+                     stats.percentage >= 60 ? "Satisfactory" : "Needs Improvement"}
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+          
+          {/* Summary if we have categories but they're empty */}
+          {responses.length > 0 && Object.values(categoryScores).every(stats => stats.questionCount === 0) && (
+            <div style={{ 
+              marginTop: "20px",
+              padding: "15px",
+              background: "#fff3e0",
+              borderRadius: "8px",
+              borderLeft: "4px solid #ff9800"
+            }}>
+              <div style={{ fontWeight: "600", color: "#333", marginBottom: "5px" }}>
+                Debug Information
+              </div>
+              <div style={{ fontSize: "14px", color: "#666" }}>
+                <p>Found {responses.length} responses but couldn't categorize them.</p>
+                <p>Check if your questions have proper category assignments in the database.</p>
+                <p>Categories found in responses: {Array.from(new Set(responses.map(r => r.category))).join(", ")}</p>
+              </div>
             </div>
           )}
         </div>
@@ -720,7 +814,7 @@ export default function CandidateReport() {
                         fontWeight: "600",
                         color: "#2e7d32"
                       }}>
-                        {strength.trait}
+                        {strength.category}
                       </div>
                       <div style={{ 
                         padding: "3px 8px",
@@ -743,12 +837,9 @@ export default function CandidateReport() {
                     </div>
                     <div style={{ 
                       fontSize: "12px", 
-                      color: "#666",
-                      display: "flex",
-                      justifyContent: "space-between"
+                      color: "#666"
                     }}>
-                      <span><strong>Category:</strong> {strength.category}</span>
-                      <span><strong>Level:</strong> {strength.strength}</span>
+                      <strong>Question:</strong> {strength.question}
                     </div>
                   </div>
                 ))}
@@ -823,7 +914,7 @@ export default function CandidateReport() {
                         fontWeight: "600",
                         color: "#c62828"
                       }}>
-                        {weakness.trait}
+                        {weakness.category}
                       </div>
                       <div style={{ 
                         padding: "3px 8px",
@@ -846,12 +937,9 @@ export default function CandidateReport() {
                     </div>
                     <div style={{ 
                       fontSize: "12px", 
-                      color: "#666",
-                      display: "flex",
-                      justifyContent: "space-between"
+                      color: "#666"
                     }}>
-                      <span><strong>Category:</strong> {weakness.category}</span>
-                      <span><strong>Subcategory:</strong> {weakness.subcategory}</span>
+                      <strong>Question:</strong> {weakness.question}
                     </div>
                   </div>
                 ))}
@@ -948,7 +1036,7 @@ export default function CandidateReport() {
                         fontSize: "12px", 
                         color: "#666"
                       }}>
-                        {rec.subcategory} • Priority: <span style={{ 
+                        Priority: <span style={{ 
                           color: rec.priority === "High" ? "#F44336" : 
                                  rec.priority === "Medium" ? "#FF9800" : "#4CAF50",
                           fontWeight: "600"
@@ -1077,23 +1165,13 @@ export default function CandidateReport() {
                       }}>
                         <span style={{ 
                           padding: "2px 8px",
-                          background: getCategoryColor(response.questions?.section),
+                          background: getCategoryColor(response.category),
                           color: "white",
                           borderRadius: "4px",
                           marginRight: "8px"
                         }}>
-                          {response.questions?.section}
+                          {response.category}
                         </span>
-                        {response.questions?.subsection && (
-                          <span style={{ 
-                            padding: "2px 8px",
-                            background: "#666",
-                            color: "white",
-                            borderRadius: "4px"
-                          }}>
-                            {response.questions.subsection}
-                          </span>
-                        )}
                       </div>
                     </div>
                     <div style={{ 
