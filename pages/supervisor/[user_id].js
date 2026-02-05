@@ -1,4 +1,4 @@
-// pages/supervisor/[user_id].js
+// pages/supervisor/[user_id].js - CORRECTED VERSION
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -17,6 +17,7 @@ export default function CandidateReport() {
   const [strengths, setStrengths] = useState([]);
   const [weaknesses, setWeaknesses] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
+  const [userEmail, setUserEmail] = useState("");
 
   // Check supervisor authentication
   useEffect(() => {
@@ -44,7 +45,7 @@ export default function CandidateReport() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch candidate data
+  // Fetch candidate data - FIXED VERSION
   useEffect(() => {
     if (!isSupervisor || !user_id) return;
 
@@ -52,19 +53,35 @@ export default function CandidateReport() {
       try {
         setLoading(true);
 
-        // 1. Get candidate classification data
+        // 1. Get candidate email first
+        const { data: userData, error: userError } = await supabase
+          .from("auth.users")
+          .select("email, raw_user_meta_data")
+          .eq("id", user_id)
+          .single();
+
+        if (userError) {
+          console.error("Error fetching user:", userError);
+          setUserEmail("Unknown Candidate");
+        } else {
+          setUserEmail(userData?.email || "Unknown Candidate");
+        }
+
+        // 2. Get candidate classification data
         const { data: classificationData, error: classificationError } = await supabase
           .from("talent_classification")
-          .select(`
-            *,
-            users (email, full_name, created_at)
-          `)
+          .select("*")
           .eq("user_id", user_id)
           .single();
 
-        if (classificationError) throw classificationError;
+        if (classificationError) {
+          console.error("Error fetching classification:", classificationError);
+          setCandidate(null);
+        } else {
+          setCandidate(classificationData);
+        }
 
-        // 2. Get candidate's responses with questions and answers
+        // 3. Get candidate's responses with questions and answers
         const { data: responsesData, error: responsesError } = await supabase
           .from("responses")
           .select(`
@@ -86,11 +103,17 @@ export default function CandidateReport() {
           .eq("user_id", user_id)
           .eq("assessment_id", '11111111-1111-1111-1111-111111111111');
 
-        if (responsesError) throw responsesError;
+        if (responsesError) {
+          console.error("Error fetching responses:", responsesError);
+          setResponses([]);
+        } else {
+          setResponses(responsesData || []);
+        }
 
-        // 3. Calculate category scores
+        // 4. Calculate category scores
         const categoryTotals = {};
         const categoryCounts = {};
+        const categoryMaxScores = {};
         
         responsesData?.forEach(response => {
           const section = response.questions?.section;
@@ -99,6 +122,8 @@ export default function CandidateReport() {
           if (section) {
             categoryTotals[section] = (categoryTotals[section] || 0) + score;
             categoryCounts[section] = (categoryCounts[section] || 0) + 1;
+            // Assume max score per question is 5
+            categoryMaxScores[section] = (categoryMaxScores[section] || 0) + 5;
           }
         });
 
@@ -106,14 +131,19 @@ export default function CandidateReport() {
         Object.keys(categoryTotals).forEach(section => {
           const total = categoryTotals[section];
           const count = categoryCounts[section];
+          const maxPossible = categoryMaxScores[section];
+          const percentage = maxPossible > 0 ? Math.round((total / maxPossible) * 100) : 0;
+          
           calculatedCategoryScores[section] = {
             total,
             average: count > 0 ? Math.round(total / count) : 0,
-            count
+            count,
+            percentage,
+            maxPossible
           };
         });
 
-        // 4. Identify strengths and weaknesses
+        // 5. Identify strengths and weaknesses
         const candidateStrengths = [];
         const candidateWeaknesses = [];
         const candidateRecommendations = [];
@@ -128,9 +158,9 @@ export default function CandidateReport() {
               candidateStrengths.push({
                 category: question.section,
                 subcategory: question.subsection,
-                trait: answer.trait_category,
-                interpretation: answer.interpretation,
-                strength: answer.strength_level,
+                trait: answer.trait_category || question.section,
+                interpretation: answer.interpretation || "Strong performance in this area",
+                strength: answer.strength_level || "High",
                 score: answer.score
               });
             }
@@ -140,48 +170,56 @@ export default function CandidateReport() {
               candidateWeaknesses.push({
                 category: question.section,
                 subcategory: question.subsection,
-                trait: answer.trait_category,
-                interpretation: answer.interpretation,
+                trait: answer.trait_category || question.section,
+                interpretation: answer.interpretation || "Area needing improvement",
                 score: answer.score
               });
             }
           }
         });
 
-        // 5. Generate recommendations
+        // 6. Generate recommendations
         candidateWeaknesses.forEach(weakness => {
           let recommendation = "";
           
           switch(weakness.category) {
             case 'Cognitive Abilities':
-              recommendation = "Consider cognitive training exercises and problem-solving workshops.";
+              recommendation = "Consider cognitive training exercises and problem-solving workshops to enhance analytical thinking.";
               break;
             case 'Personality Assessment':
-              recommendation = "Engage in personality development sessions and emotional intelligence training.";
+              recommendation = "Engage in personality development sessions and emotional intelligence training for better interpersonal skills.";
               break;
             case 'Leadership Potential':
-              recommendation = "Participate in leadership workshops and mentorship programs.";
+              recommendation = "Participate in leadership workshops, mentorship programs, and team management exercises.";
               break;
             case 'Bottled Water Manufacturing':
-              recommendation = "Attend technical training and industry-specific skill development.";
+              recommendation = "Attend technical training, industry-specific workshops, and hands-on manufacturing practice.";
               break;
             case 'Performance Metrics':
-              recommendation = "Focus on goal-setting and performance tracking improvement.";
+              recommendation = "Focus on goal-setting strategies, performance tracking improvement, and productivity enhancement techniques.";
               break;
             default:
-              recommendation = "Consider targeted training in this area.";
+              recommendation = "Consider targeted training and development programs in this specific area.";
           }
           
           candidateRecommendations.push({
             category: weakness.category,
-            subcategory: weakness.subcategory,
+            subcategory: weakness.subsection || weakness.category,
             issue: weakness.interpretation || `Low score in ${weakness.trait}`,
-            recommendation
+            recommendation: recommendation
           });
         });
 
-        setCandidate(classificationData);
-        setResponses(responsesData || []);
+        // 7. Add general recommendations if no weaknesses
+        if (candidateWeaknesses.length === 0 && candidateStrengths.length > 0) {
+          candidateRecommendations.push({
+            category: "Overall Performance",
+            subcategory: "Development",
+            issue: "Strong overall performance",
+            recommendation: "Continue current development path. Consider advanced training in areas of strength to further enhance expertise."
+          });
+        }
+
         setCategoryScores(calculatedCategoryScores);
         setStrengths(candidateStrengths);
         setWeaknesses(candidateWeaknesses);
@@ -274,8 +312,22 @@ export default function CandidateReport() {
         }}>
           <h1 style={{ color: "#666", marginBottom: "20px" }}>Candidate Not Found</h1>
           <p style={{ color: "#888", marginBottom: "30px" }}>
-            The requested candidate data could not be found.
+            The requested candidate data could not be found. This might be because:
           </p>
+          <div style={{
+            textAlign: "left",
+            maxWidth: "500px",
+            margin: "0 auto 30px",
+            padding: "20px",
+            background: "#f8f9fa",
+            borderRadius: "8px"
+          }}>
+            <ul style={{ margin: 0, paddingLeft: "20px", color: "#555" }}>
+              <li>The candidate hasn't completed the assessment</li>
+              <li>There's an issue with the candidate's data</li>
+              <li>The candidate ID is incorrect</li>
+            </ul>
+          </div>
           <button
             onClick={handleBack}
             style={{
@@ -336,7 +388,7 @@ export default function CandidateReport() {
                 color: "#666",
                 fontSize: "16px"
               }}>
-                {candidate.users?.full_name || "Anonymous Candidate"} • {candidate.users?.email || "No email"}
+                {userEmail}
               </p>
             </div>
             <div style={{ 
@@ -381,7 +433,7 @@ export default function CandidateReport() {
               <div>
                 <div style={{ fontSize: "14px", opacity: 0.9 }}>Overall Assessment Score</div>
                 <div style={{ fontSize: "48px", fontWeight: "700", margin: "10px 0" }}>
-                  {candidate.total_score}/100
+                  {candidate.total_score}
                 </div>
                 <div style={{ fontSize: "14px", opacity: 0.9 }}>
                   Based on {responses.length} responses across {Object.keys(categoryScores).length} categories
@@ -399,14 +451,15 @@ export default function CandidateReport() {
                   border: "5px solid rgba(255,255,255,0.2)"
                 }}>
                   <div style={{ fontSize: "32px", fontWeight: "700" }}>
-                    {candidate.total_score >= 90 ? 'A' :
-                     candidate.total_score >= 75 ? 'B' :
-                     candidate.total_score >= 60 ? 'C' :
-                     candidate.total_score >= 40 ? 'D' : 'E'}
+                    {candidate.total_score >= 450 ? 'A+' :
+                     candidate.total_score >= 400 ? 'A' :
+                     candidate.total_score >= 350 ? 'B' :
+                     candidate.total_score >= 300 ? 'C' :
+                     candidate.total_score >= 250 ? 'D' : 'E'}
                   </div>
                 </div>
                 <div style={{ marginTop: "10px", fontSize: "12px", opacity: 0.8 }}>
-                  Grade
+                  Performance Grade
                 </div>
               </div>
             </div>
@@ -453,7 +506,7 @@ export default function CandidateReport() {
                       fontSize: "14px", 
                       color: "#666" 
                     }}>
-                      {data.count} questions
+                      {data.count} questions • Avg: {data.average}/5
                     </p>
                   </div>
                   <div style={{ 
@@ -461,7 +514,7 @@ export default function CandidateReport() {
                     fontWeight: "700",
                     color: getCategoryColor(category)
                   }}>
-                    {data.average}
+                    {data.percentage}%
                   </div>
                 </div>
                 
@@ -474,7 +527,7 @@ export default function CandidateReport() {
                 }}>
                   <div style={{ 
                     height: "100%", 
-                    width: `${data.average * 10}%`, 
+                    width: `${data.percentage}%`, 
                     background: getCategoryColor(category),
                     borderRadius: "5px"
                   }} />
@@ -486,8 +539,8 @@ export default function CandidateReport() {
                   fontSize: "12px", 
                   color: "#666"
                 }}>
-                  <span>Average Score</span>
-                  <span>{data.total} total points</span>
+                  <span>Score: {data.total}/{data.maxPossible}</span>
+                  <span>{data.percentage}% of max</span>
                 </div>
               </div>
             ))}
@@ -535,16 +588,21 @@ export default function CandidateReport() {
               <div style={{ 
                 textAlign: "center", 
                 padding: "30px",
-                color: "#888"
+                color: "#888",
+                background: "#f8f9fa",
+                borderRadius: "8px"
               }}>
-                No significant strengths identified
+                No significant strengths identified in this assessment.
               </div>
             ) : (
               <div style={{ 
                 display: "grid", 
-                gap: "15px" 
+                gap: "15px",
+                maxHeight: "400px",
+                overflowY: "auto",
+                paddingRight: "10px"
               }}>
-                {strengths.slice(0, 5).map((strength, index) => (
+                {strengths.map((strength, index) => (
                   <div key={index} style={{
                     padding: "15px",
                     background: "rgba(76, 175, 80, 0.1)",
@@ -561,7 +619,7 @@ export default function CandidateReport() {
                         fontWeight: "600",
                         color: "#2e7d32"
                       }}>
-                        {strength.trait || strength.category}
+                        {strength.trait}
                       </div>
                       <div style={{ 
                         padding: "3px 8px",
@@ -571,7 +629,7 @@ export default function CandidateReport() {
                         fontSize: "12px",
                         fontWeight: "600"
                       }}>
-                        Score: {strength.score}
+                        Score: {strength.score}/5
                       </div>
                     </div>
                     <div style={{ 
@@ -583,9 +641,12 @@ export default function CandidateReport() {
                     </div>
                     <div style={{ 
                       fontSize: "12px", 
-                      color: "#666"
+                      color: "#666",
+                      display: "flex",
+                      justifyContent: "space-between"
                     }}>
-                      <strong>Category:</strong> {strength.category} • {strength.subcategory}
+                      <span><strong>Category:</strong> {strength.category}</span>
+                      <span><strong>Level:</strong> {strength.strength}</span>
                     </div>
                   </div>
                 ))}
@@ -627,16 +688,21 @@ export default function CandidateReport() {
               <div style={{ 
                 textAlign: "center", 
                 padding: "30px",
-                color: "#888"
+                color: "#888",
+                background: "#f8f9fa",
+                borderRadius: "8px"
               }}>
-                No significant weaknesses identified
+                No significant weaknesses identified. Candidate shows balanced performance across all areas.
               </div>
             ) : (
               <div style={{ 
                 display: "grid", 
-                gap: "15px" 
+                gap: "15px",
+                maxHeight: "400px",
+                overflowY: "auto",
+                paddingRight: "10px"
               }}>
-                {weaknesses.slice(0, 5).map((weakness, index) => (
+                {weaknesses.map((weakness, index) => (
                   <div key={index} style={{
                     padding: "15px",
                     background: "rgba(244, 67, 54, 0.1)",
@@ -653,7 +719,7 @@ export default function CandidateReport() {
                         fontWeight: "600",
                         color: "#c62828"
                       }}>
-                        {weakness.trait || weakness.category}
+                        {weakness.trait}
                       </div>
                       <div style={{ 
                         padding: "3px 8px",
@@ -663,7 +729,7 @@ export default function CandidateReport() {
                         fontSize: "12px",
                         fontWeight: "600"
                       }}>
-                        Score: {weakness.score}
+                        Score: {weakness.score}/5
                       </div>
                     </div>
                     <div style={{ 
@@ -675,9 +741,12 @@ export default function CandidateReport() {
                     </div>
                     <div style={{ 
                       fontSize: "12px", 
-                      color: "#666"
+                      color: "#666",
+                      display: "flex",
+                      justifyContent: "space-between"
                     }}>
-                      <strong>Category:</strong> {weakness.category} • {weakness.subcategory}
+                      <span><strong>Category:</strong> {weakness.category}</span>
+                      <span><strong>Subcategory:</strong> {weakness.subcategory}</span>
                     </div>
                   </div>
                 ))}
@@ -721,9 +790,11 @@ export default function CandidateReport() {
             <div style={{ 
               textAlign: "center", 
               padding: "30px",
-              color: "#888"
+              color: "#888",
+              background: "#f8f9fa",
+              borderRadius: "8px"
             }}>
-              No specific recommendations available
+              No specific recommendations available. Candidate shows strong overall performance.
             </div>
           ) : (
             <div style={{ 
@@ -731,7 +802,7 @@ export default function CandidateReport() {
               gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", 
               gap: "20px" 
             }}>
-              {recommendations.slice(0, 6).map((rec, index) => (
+              {recommendations.map((rec, index) => (
                 <div key={index} style={{
                   padding: "20px",
                   background: "#fff3e0",
@@ -830,15 +901,17 @@ export default function CandidateReport() {
             <div style={{ 
               textAlign: "center", 
               padding: "30px",
-              color: "#888"
+              color: "#888",
+              background: "#f8f9fa",
+              borderRadius: "8px"
             }}>
-              No response data available
+              No response data available for this candidate.
             </div>
           ) : (
             <div style={{ 
               display: "grid", 
               gap: "15px",
-              maxHeight: "400px",
+              maxHeight: "500px",
               overflowY: "auto",
               paddingRight: "10px"
             }}>
@@ -897,7 +970,8 @@ export default function CandidateReport() {
                         <div style={{ 
                           fontSize: "13px", 
                           color: "#555",
-                          fontStyle: "italic"
+                          fontStyle: "italic",
+                          marginTop: "5px"
                         }}>
                           "{response.answers.interpretation}"
                         </div>
@@ -929,7 +1003,7 @@ export default function CandidateReport() {
                         color: "#666",
                         fontWeight: "600"
                       }}>
-                        Score
+                        Score (out of 5)
                       </div>
                     </div>
                   </div>
