@@ -1,4 +1,4 @@
-// pages/supervisor/[user_id].js - COMPLETE WORKING VERSION
+// pages/supervisor/[user_id].js - CORRECTED VERSION
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -1085,3 +1085,71 @@ export default function CandidateReport() {
                           {response.questions?.section}
                         </span>
                         {response.questions?.subsection && (
+                          <span style={{ 
+                            padding: "2px 8px",
+                            background: "#666",
+                            color: "white",
+                            borderRadius: "4px"
+                          }}>
+                            {response.questions.subsection}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ 
+                      padding: "5px 12px",
+                      background: getScoreColor(response.answers?.score || 0),
+                      color: "white",
+                      borderRadius: "20px",
+                      fontWeight: "600",
+                      fontSize: "14px",
+                      minWidth: "60px",
+                      textAlign: "center"
+                    }}>
+                      {response.answers?.score || 0}/5
+                    </div>
+                  </div>
+                  
+                  <div style={{ 
+                    padding: "12px",
+                    background: "white",
+                    borderRadius: "6px",
+                    border: "1px solid #e0e0e0"
+                  }}>
+                    <div style={{ 
+                      fontSize: "14px", 
+                      fontWeight: "500",
+                      color: "#1565c0",
+                      marginBottom: "5px"
+                    }}>
+                      Selected Answer:
+                    </div>
+                    <div style={{ fontSize: "14px", color: "#333", marginBottom: "10px" }}>
+                      {response.answers?.answer_text}
+                    </div>
+                    
+                    {response.answers?.interpretation && (
+                      <>
+                        <div style={{ 
+                          fontSize: "14px", 
+                          fontWeight: "500",
+                          color: "#666",
+                          marginBottom: "5px"
+                        }}>
+                          Interpretation:
+                        </div>
+                        <div style={{ fontSize: "14px", color: "#333" }}>
+                          {response.answers.interpretation}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </AppLayout>
+  );
+}
