@@ -47,7 +47,7 @@ export default function SupervisorDashboard() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch candidates and stats - IMPROVED VERSION
+  // Fetch candidates and stats - UPDATED WITH API INTEGRATION
   useEffect(() => {
     if (!isSupervisor) return;
 
@@ -85,68 +85,68 @@ export default function SupervisorDashboard() {
           return;
         }
 
-        // Get user details for each candidate - IMPROVED VERSION
-        const candidatesWithUsers = await Promise.all(
-          talentData.map(async (candidate, index) => {
-            try {
-              // Try to get user email from auth.users with better error handling
-              let userEmail = "Unknown Email";
-              let userName = `Candidate ${index + 1}`;
-              
-              try {
-                // Method 1: Direct query to auth.users (may require RLS policies)
-                const { data: userData, error: userError } = await supabase
-                  .from("auth.users")
-                  .select("email, raw_user_meta_data")
-                  .eq("id", candidate.user_id)
-                  .single();
+        // Try to get user emails via API first
+        let candidatesWithUsers = [];
+        
+        try {
+          // Extract user IDs
+          const userIds = talentData.map(c => c.user_id);
+          
+          // Call our API to get user emails and names
+          const response = await fetch('/api/admin/get-users', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ userIds })
+          });
 
-                if (!userError && userData) {
-                  userEmail = userData.email || "Unknown Email";
-                  userName = userData.raw_user_meta_data?.full_name || 
-                            userData.email?.split('@')[0] || 
-                            `Candidate ${index + 1}`;
-                } else {
-                  // Method 2: Try to extract from user_id pattern or use admin API
-                  console.log(`Could not fetch user ${candidate.user_id}:`, userError);
-                  
-                  // Create identifiable name from user_id
-                  userName = `Candidate ${candidate.user_id.substring(0, 8).toUpperCase()}`;
-                  
-                  // If you have known test users, map them
-                  if (candidate.user_id === 'e71fd572-5afc-40f9-be41-454bdf130a70') {
-                    userEmail = "test.candidate@stratax.com";
-                    userName = "Test Candidate";
-                  }
-                  // Add more mappings as needed
-                }
-              } catch (fetchError) {
-                console.error(`Error in user fetch for ${candidate.user_id}:`, fetchError);
-                userName = `Candidate ${candidate.user_id.substring(0, 6).toUpperCase()}`;
+          if (response.ok) {
+            const { users } = await response.json();
+            
+            // Create a map for quick lookup
+            const userMap = {};
+            users.forEach(user => {
+              userMap[user.id] = {
+                email: user.email,
+                full_name: user.full_name || user.email.split('@')[0]
+              };
+            });
+
+            // Combine talent data with user info
+            candidatesWithUsers = talentData.map((candidate, index) => {
+              const userInfo = userMap[candidate.user_id] || {
+                email: "Unknown Email",
+                full_name: `Candidate ${index + 1}`
+              };
+
+              return {
+                ...candidate,
+                user: userInfo
+              };
+            });
+          } else {
+            // If API fails, use fallback method
+            console.error('Failed to fetch user data via API, using fallback');
+            candidatesWithUsers = talentData.map((candidate, index) => ({
+              ...candidate,
+              user: {
+                email: `candidate${index + 1}@example.com`,
+                full_name: `Candidate ${index + 1}`
               }
-
-              return {
-                ...candidate,
-                user: {
-                  email: userEmail,
-                  full_name: userName,
-                  id_short: candidate.user_id.substring(0, 8).toUpperCase()
-                }
-              };
-            } catch (error) {
-              console.error(`Error processing candidate ${candidate.user_id}:`, error);
-              // Return candidate with identifiable info
-              return {
-                ...candidate,
-                user: {
-                  email: `candidate_${candidate.user_id.substring(0, 6)}@example.com`,
-                  full_name: `Candidate ${candidate.user_id.substring(0, 6).toUpperCase()}`,
-                  id_short: candidate.user_id.substring(0, 8).toUpperCase()
-                }
-              };
+            }));
+          }
+        } catch (apiError) {
+          console.error('API error, using fallback:', apiError);
+          // Fallback if API call fails
+          candidatesWithUsers = talentData.map((candidate, index) => ({
+            ...candidate,
+            user: {
+              email: `candidate${index + 1}@example.com`,
+              full_name: `Candidate ${index + 1}`
             }
-          })
-        );
+          }));
+        }
 
         setCandidates(candidatesWithUsers);
 
@@ -368,7 +368,7 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        {/* Candidates Table - IMPROVED DISPLAY */}
+        {/* Candidates Table - SIMPLIFIED DISPLAY */}
         <div style={{ 
           background: "white", 
           padding: "25px", 
@@ -463,9 +463,8 @@ export default function SupervisorDashboard() {
                     borderBottom: "2px solid #1565c0",
                     backgroundColor: "#f5f5f5"
                   }}>
-                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Candidate ID</th>
-                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Name</th>
-                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Contact</th>
+                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Candidate Name</th>
+                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Email</th>
                     <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Total Score</th>
                     <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Classification</th>
                     <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Status</th>
@@ -478,13 +477,10 @@ export default function SupervisorDashboard() {
                       borderBottom: "1px solid #eee",
                       transition: "background 0.2s"
                     }}>
-                      <td style={{ padding: "15px", fontSize: "13px", color: "#666", fontFamily: "monospace" }}>
-                        {c.user_id.substring(0, 12)}...
-                      </td>
                       <td style={{ padding: "15px", fontWeight: "500" }}>
                         {c.user?.full_name}
                         <div style={{ fontSize: "12px", color: "#888", marginTop: "3px" }}>
-                          Candidate #{index + 1}
+                          ID: {c.user_id.substring(0, 8)}...
                         </div>
                       </td>
                       <td style={{ padding: "15px" }}>
@@ -493,7 +489,7 @@ export default function SupervisorDashboard() {
                         </div>
                         {c.user?.email === "Unknown Email" && (
                           <div style={{ fontSize: "11px", color: "#999", marginTop: "3px" }}>
-                            ID: {c.user?.id_short}
+                            Contact information not available
                           </div>
                         )}
                       </td>
@@ -509,7 +505,7 @@ export default function SupervisorDashboard() {
                           fontWeight: "600",
                           fontSize: "14px"
                         }}>
-                          {c.total_score}/100
+                          {c.total_score}
                         </div>
                       </td>
                       <td style={{ padding: "15px" }}>
@@ -567,17 +563,18 @@ export default function SupervisorDashboard() {
                 </tbody>
               </table>
               
-              {/* Legend for identification */}
+              {/* Info Box */}
               <div style={{ 
                 marginTop: "20px", 
                 padding: "15px", 
-                background: "#f8f9fa", 
+                background: "#e3f2fd", 
                 borderRadius: "8px",
-                fontSize: "12px",
-                color: "#666"
+                fontSize: "13px",
+                color: "#1565c0",
+                borderLeft: "4px solid #1565c0"
               }}>
-                <strong>Identification Guide:</strong> Candidates are identified by their unique ID. If email is "Unknown", 
-                the candidate can still be tracked using their ID prefix (e.g., {candidates[0]?.user?.id_short || "XXXXXX"}).
+                <strong>Note:</strong> Candidate emails and names are retrieved from the registration data. 
+                If you see "Unknown Email", the candidate's contact information may not be available in the system.
               </div>
             </div>
           )}
