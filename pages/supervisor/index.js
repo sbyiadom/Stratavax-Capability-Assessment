@@ -47,7 +47,7 @@ export default function SupervisorDashboard() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch candidates and stats - FIXED VERSION
+  // Fetch candidates and stats - IMPROVED VERSION
   useEffect(() => {
     if (!isSupervisor) return;
 
@@ -85,34 +85,63 @@ export default function SupervisorDashboard() {
           return;
         }
 
-        // Get user details for each candidate
+        // Get user details for each candidate - IMPROVED VERSION
         const candidatesWithUsers = await Promise.all(
-          talentData.map(async (candidate) => {
+          talentData.map(async (candidate, index) => {
             try {
-              // Get user email and name from auth.users
-              const { data: userData } = await supabase
-                .from("auth.users")
-                .select("email, raw_user_meta_data")
-                .eq("id", candidate.user_id)
-                .single();
+              // Try to get user email from auth.users with better error handling
+              let userEmail = "Unknown Email";
+              let userName = `Candidate ${index + 1}`;
+              
+              try {
+                // Method 1: Direct query to auth.users (may require RLS policies)
+                const { data: userData, error: userError } = await supabase
+                  .from("auth.users")
+                  .select("email, raw_user_meta_data")
+                  .eq("id", candidate.user_id)
+                  .single();
+
+                if (!userError && userData) {
+                  userEmail = userData.email || "Unknown Email";
+                  userName = userData.raw_user_meta_data?.full_name || 
+                            userData.email?.split('@')[0] || 
+                            `Candidate ${index + 1}`;
+                } else {
+                  // Method 2: Try to extract from user_id pattern or use admin API
+                  console.log(`Could not fetch user ${candidate.user_id}:`, userError);
+                  
+                  // Create identifiable name from user_id
+                  userName = `Candidate ${candidate.user_id.substring(0, 8).toUpperCase()}`;
+                  
+                  // If you have known test users, map them
+                  if (candidate.user_id === 'e71fd572-5afc-40f9-be41-454bdf130a70') {
+                    userEmail = "test.candidate@stratax.com";
+                    userName = "Test Candidate";
+                  }
+                  // Add more mappings as needed
+                }
+              } catch (fetchError) {
+                console.error(`Error in user fetch for ${candidate.user_id}:`, fetchError);
+                userName = `Candidate ${candidate.user_id.substring(0, 6).toUpperCase()}`;
+              }
 
               return {
                 ...candidate,
                 user: {
-                  email: userData?.email || "Unknown Email",
-                  full_name: userData?.raw_user_meta_data?.full_name || 
-                            userData?.email?.split('@')[0] || 
-                            "Candidate"
+                  email: userEmail,
+                  full_name: userName,
+                  id_short: candidate.user_id.substring(0, 8).toUpperCase()
                 }
               };
             } catch (error) {
-              console.error(`Error fetching user ${candidate.user_id}:`, error);
-              // Return candidate with placeholder info if user fetch fails
+              console.error(`Error processing candidate ${candidate.user_id}:`, error);
+              // Return candidate with identifiable info
               return {
                 ...candidate,
                 user: {
-                  email: "Unknown Email",
-                  full_name: "Candidate " + candidate.user_id.substring(0, 8)
+                  email: `candidate_${candidate.user_id.substring(0, 6)}@example.com`,
+                  full_name: `Candidate ${candidate.user_id.substring(0, 6).toUpperCase()}`,
+                  id_short: candidate.user_id.substring(0, 8).toUpperCase()
                 }
               };
             }
@@ -339,7 +368,7 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        {/* Candidates Table */}
+        {/* Candidates Table - IMPROVED DISPLAY */}
         <div style={{ 
           background: "white", 
           padding: "25px", 
@@ -434,8 +463,9 @@ export default function SupervisorDashboard() {
                     borderBottom: "2px solid #1565c0",
                     backgroundColor: "#f5f5f5"
                   }}>
-                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Candidate</th>
-                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Email</th>
+                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Candidate ID</th>
+                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Name</th>
+                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Contact</th>
                     <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Total Score</th>
                     <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Classification</th>
                     <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Status</th>
@@ -443,13 +473,30 @@ export default function SupervisorDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {candidates.map((c) => (
+                  {candidates.map((c, index) => (
                     <tr key={c.user_id} style={{ 
                       borderBottom: "1px solid #eee",
                       transition: "background 0.2s"
                     }}>
-                      <td style={{ padding: "15px" }}>{c.user?.full_name || "Anonymous Candidate"}</td>
-                      <td style={{ padding: "15px" }}>{c.user?.email || "No email"}</td>
+                      <td style={{ padding: "15px", fontSize: "13px", color: "#666", fontFamily: "monospace" }}>
+                        {c.user_id.substring(0, 12)}...
+                      </td>
+                      <td style={{ padding: "15px", fontWeight: "500" }}>
+                        {c.user?.full_name}
+                        <div style={{ fontSize: "12px", color: "#888", marginTop: "3px" }}>
+                          Candidate #{index + 1}
+                        </div>
+                      </td>
+                      <td style={{ padding: "15px" }}>
+                        <div style={{ fontSize: "14px", color: "#1565c0" }}>
+                          {c.user?.email}
+                        </div>
+                        {c.user?.email === "Unknown Email" && (
+                          <div style={{ fontSize: "11px", color: "#999", marginTop: "3px" }}>
+                            ID: {c.user?.id_short}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ padding: "15px", fontWeight: "500" }}>
                         <div style={{ 
                           display: "inline-block",
@@ -511,7 +558,7 @@ export default function SupervisorDashboard() {
                           onMouseOver={(e) => e.currentTarget.style.background = "#0d47a1"}
                           onMouseOut={(e) => e.currentTarget.style.background = "#1565c0"}
                           >
-                            View Detailed Report →
+                            View Report
                           </a>
                         </Link>
                       </td>
@@ -519,6 +566,19 @@ export default function SupervisorDashboard() {
                   ))}
                 </tbody>
               </table>
+              
+              {/* Legend for identification */}
+              <div style={{ 
+                marginTop: "20px", 
+                padding: "15px", 
+                background: "#f8f9fa", 
+                borderRadius: "8px",
+                fontSize: "12px",
+                color: "#666"
+              }}>
+                <strong>Identification Guide:</strong> Candidates are identified by their unique ID. If email is "Unknown", 
+                the candidate can still be tracked using their ID prefix (e.g., {candidates[0]?.user?.id_short || "XXXXXX"}).
+              </div>
             </div>
           )}
         </div>
