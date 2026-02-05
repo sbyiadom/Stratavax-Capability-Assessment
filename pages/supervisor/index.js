@@ -47,46 +47,98 @@ export default function SupervisorDashboard() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch candidates and stats
+  // Fetch candidates and stats - FIXED VERSION
   useEffect(() => {
     if (!isSupervisor) return;
 
     const fetchData = async () => {
       try {
-        // Get all users who have responses
+        // Get all talent classification data
         const { data: talentData, error: talentError } = await supabase
           .from("talent_classification")
           .select(`
             user_id,
             total_score,
             classification,
-            users (email, full_name)
+            created_at,
+            updated_at
           `)
           .order("total_score", { ascending: false });
 
         if (talentError) throw talentError;
 
-        setCandidates(talentData || []);
-
-        // Calculate statistics
-        if (talentData && talentData.length > 0) {
-          const statsData = {
-            totalCandidates: talentData.length,
-            completed: talentData.length, // Assuming all have completed if in talent_classification
+        // If no data, set empty and return
+        if (!talentData || talentData.length === 0) {
+          setCandidates([]);
+          setStats({
+            totalCandidates: 0,
+            completed: 0,
             inProgress: 0,
             notStarted: 0,
-            topTalent: talentData.filter(c => c.classification === 'Top Talent').length,
-            highPotential: talentData.filter(c => c.classification === 'High Potential').length,
-            solidPerformer: talentData.filter(c => c.classification === 'Solid Performer').length,
-            developing: talentData.filter(c => c.classification === 'Developing').length,
-            needsImprovement: talentData.filter(c => c.classification === 'Needs Improvement').length
-          };
-          setStats(statsData);
+            topTalent: 0,
+            highPotential: 0,
+            solidPerformer: 0,
+            developing: 0,
+            needsImprovement: 0
+          });
+          setLoading(false);
+          return;
         }
+
+        // Get user details for each candidate
+        const candidatesWithUsers = await Promise.all(
+          talentData.map(async (candidate) => {
+            try {
+              // Get user email and name from auth.users
+              const { data: userData } = await supabase
+                .from("auth.users")
+                .select("email, raw_user_meta_data")
+                .eq("id", candidate.user_id)
+                .single();
+
+              return {
+                ...candidate,
+                user: {
+                  email: userData?.email || "Unknown Email",
+                  full_name: userData?.raw_user_meta_data?.full_name || 
+                            userData?.email?.split('@')[0] || 
+                            "Candidate"
+                }
+              };
+            } catch (error) {
+              console.error(`Error fetching user ${candidate.user_id}:`, error);
+              // Return candidate with placeholder info if user fetch fails
+              return {
+                ...candidate,
+                user: {
+                  email: "Unknown Email",
+                  full_name: "Candidate " + candidate.user_id.substring(0, 8)
+                }
+              };
+            }
+          })
+        );
+
+        setCandidates(candidatesWithUsers);
+
+        // Calculate statistics
+        const statsData = {
+          totalCandidates: talentData.length,
+          completed: talentData.length,
+          inProgress: 0,
+          notStarted: 0,
+          topTalent: talentData.filter(c => c.classification === 'Top Talent').length,
+          highPotential: talentData.filter(c => c.classification === 'High Potential').length,
+          solidPerformer: talentData.filter(c => c.classification === 'Solid Performer').length,
+          developing: talentData.filter(c => c.classification === 'Developing').length,
+          needsImprovement: talentData.filter(c => c.classification === 'Needs Improvement').length
+        };
+        setStats(statsData);
 
         setLoading(false);
       } catch (err) {
         console.error("Error fetching data:", err);
+        setCandidates([]);
         setLoading(false);
       }
     };
@@ -302,7 +354,7 @@ export default function SupervisorDashboard() {
           }}>
             <h2 style={{ margin: 0, color: "#333" }}>Candidate Assessments</h2>
             <div style={{ fontSize: "14px", color: "#666" }}>
-              {loading ? "Loading..." : `${candidates.length} candidates found`}
+              {loading ? "Loading..." : `${candidates.length} candidate${candidates.length !== 1 ? 's' : ''} found`}
             </div>
           </div>
 
@@ -396,8 +448,8 @@ export default function SupervisorDashboard() {
                       borderBottom: "1px solid #eee",
                       transition: "background 0.2s"
                     }}>
-                      <td style={{ padding: "15px" }}>{c.users?.full_name || "Anonymous Candidate"}</td>
-                      <td style={{ padding: "15px" }}>{c.users?.email || "No email"}</td>
+                      <td style={{ padding: "15px" }}>{c.user?.full_name || "Anonymous Candidate"}</td>
+                      <td style={{ padding: "15px" }}>{c.user?.email || "No email"}</td>
                       <td style={{ padding: "15px", fontWeight: "500" }}>
                         <div style={{ 
                           display: "inline-block",
