@@ -1,4 +1,3 @@
-// pages/supervisor/[user_id].js - UNIVERSAL FIX
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -18,22 +17,6 @@ export default function CandidateReport() {
   const [weaknesses, setWeaknesses] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [debugInfo, setDebugInfo] = useState("");
-
-  // Common category names - adjust based on your data
-  const POSSIBLE_CATEGORIES = [
-    'Technical Competence',
-    'Leadership Skills', 
-    'Problem Solving',
-    'Communication Skills',
-    'Personality Assessment',
-    'Technical',
-    'Leadership',
-    'Problem-Solving',
-    'Communication',
-    'Personality',
-    'Cognitive',
-    'Behavioral'
-  ];
 
   // Check supervisor authentication
   useEffect(() => {
@@ -61,7 +44,39 @@ export default function CandidateReport() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch ALL data in one optimized query
+  // Helper function to generate classification from score
+  const getClassificationFromScore = (score) => {
+    if (score >= 450) return 'Top Talent';
+    if (score >= 400) return 'High Potential';
+    if (score >= 350) return 'Solid Performer';
+    if (score >= 300) return 'Developing';
+    return 'Needs Improvement';
+  };
+
+  // Helper function to generate recommendations
+  const generateRecommendations = (assessmentData) => {
+    const recommendations = [];
+    const categoryScores = assessmentData.category_scores || {};
+    
+    Object.entries(categoryScores).forEach(([category, data]) => {
+      const percentage = data.percentage || 0;
+      
+      if (percentage < 60) {
+        recommendations.push({
+          category: category,
+          issue: `Low performance in ${category}`,
+          recommendation: percentage < 50 
+            ? `Urgent improvement needed. Consider focused training in ${category}.`
+            : `Needs improvement. Recommend targeted practice in ${category}.`,
+          priority: percentage < 50 ? "High" : "Medium"
+        });
+      }
+    });
+    
+    return recommendations;
+  };
+
+  // Fetch candidate data - USING PRE-CALCULATED DATABASE DATA
   useEffect(() => {
     if (!isSupervisor || !user_id) return;
 
@@ -70,243 +85,95 @@ export default function CandidateReport() {
         setLoading(true);
         setDebugInfo(`Fetching data for: ${user_id}`);
 
-        // 1. Get candidate classification
-        const { data: classificationData, error: classificationError } = await supabase
-          .from("talent_classification")
+        // 1. Get candidate's complete assessment results with pre-calculated scores
+        const { data: assessmentResult, error: assessmentError } = await supabase
+          .from("assessment_results")
           .select("*")
           .eq("user_id", user_id)
           .single();
 
-        if (classificationError) {
-          console.error("Classification error:", classificationError);
-          setCandidate(null);
-        } else {
-          setCandidate(classificationData);
-          setDebugInfo(prev => prev + ` | Classification score: ${classificationData?.total_score}`);
-        }
-
-        // 2. Try to get user info from multiple sources
-        try {
-          // First try the API
-          const response = await fetch('/api/admin/get-users', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userIds: [user_id] })
+        if (assessmentError) {
+          console.error("Assessment results error:", assessmentError);
+          setDebugInfo(`Assessment error: ${assessmentError.message}`);
+          
+          // Fallback to talent_classification if assessment_results doesn't exist
+          const { data: classificationData } = await supabase
+            .from("talent_classification")
+            .select("*")
+            .eq("user_id", user_id)
+            .single();
+          
+          if (classificationData) {
+            setCandidate({
+              total_score: classificationData.total_score,
+              classification: classificationData.classification,
+              user_id: classificationData.user_id
+            });
+          } else {
+            setCandidate(null);
+          }
+        } else if (assessmentResult) {
+          // Set all data from the pre-calculated assessment_results
+          setCandidate({
+            total_score: assessmentResult.overall_score || assessmentResult.total_score || 0,
+            classification: assessmentResult.risk_level || 
+                          getClassificationFromScore(assessmentResult.overall_score || 0),
+            user_id: assessmentResult.user_id
           });
-
-          if (response.ok) {
-            const { users } = await response.json();
-            if (users.length > 0) {
+          
+          // Use pre-calculated category scores
+          setCategoryScores(assessmentResult.category_scores || {});
+          setStrengths(assessmentResult.strengths || []);
+          setWeaknesses(assessmentResult.weaknesses || []);
+          
+          // Generate recommendations from the data
+          const recs = generateRecommendations(assessmentResult);
+          setRecommendations(recs);
+          
+          setDebugInfo(`Loaded pre-calculated scores for ${assessmentResult.user_name}`);
+          
+          // 2. Get user info
+          try {
+            const { data: profileData } = await supabase
+              .from("profiles")
+              .select("email, full_name")
+              .eq("id", user_id)
+              .single();
+            
+            if (profileData) {
               setUserInfo({
-                email: users[0].email,
-                full_name: users[0].full_name || users[0].email.split('@')[0]
+                email: profileData.email,
+                full_name: profileData.full_name
+              });
+            } else {
+              setUserInfo({
+                email: assessmentResult.user_email || "No email available",
+                full_name: assessmentResult.user_name || "Unknown Candidate"
               });
             }
-          }
-        } catch (apiError) {
-          console.log("API failed, trying Supabase directly");
-          // Try to get from auth.users if API fails
-          const { data: authData } = await supabase.auth.admin.getUserById(user_id);
-          if (authData?.user) {
+          } catch (profileError) {
             setUserInfo({
-              email: authData.user.email,
-              full_name: authData.user.user_metadata?.full_name || authData.user.email.split('@')[0]
+              email: assessmentResult.user_email || "No email available",
+              full_name: assessmentResult.user_name || "Unknown Candidate"
             });
           }
-        }
 
-        // 3. Get ALL responses for this user with related data
-        console.log("Fetching complete response data...");
-        
-        // OPTION A: Try with direct query first
-        let allResponses = [];
-        
-        // First, get all responses for this user
-        const { data: responsesData, error: responsesError } = await supabase
-          .from("responses")
-          .select("*")
-          .eq("user_id", user_id);
-
-        if (responsesError) {
-          console.error("Responses error:", responsesError);
-          setDebugInfo(prev => prev + ` | Responses error: ${responsesError.message}`);
-        } else if (responsesData && responsesData.length > 0) {
-          console.log(`Found ${responsesData.length} responses`);
-          setDebugInfo(prev => prev + ` | Found ${responsesData.length} responses`);
-          
-          // Now get ALL questions and answers to match
-          const { data: allQuestions } = await supabase
-            .from("questions")
-            .select("*");
+          // 3. Get responses for detailed view (optional)
+          if (assessmentResult.responses) {
+            // If responses are stored in the assessment_results
+            setResponses(assessmentResult.responses);
+          } else {
+            // Fallback: fetch responses separately
+            const { data: responsesData } = await supabase
+              .from("responses")
+              .select("*, questions(*), answers(*)")
+              .eq("user_id", user_id);
             
-          const { data: allAnswers } = await supabase
-            .from("answers")
-            .select("*");
-          
-          console.log(`Questions: ${allQuestions?.length}, Answers: ${allAnswers?.length}`);
-          
-          // Create lookup maps
-          const questionsMap = {};
-          allQuestions?.forEach(q => {
-            questionsMap[q.id] = q;
-          });
-          
-          const answersMap = {};
-          allAnswers?.forEach(a => {
-            answersMap[a.id] = a;
-          });
-          
-          // Process each response
-          allResponses = responsesData.map(response => {
-            const question = questionsMap[response.question_id];
-            const answer = answersMap[response.answer_id];
-            
-            // Determine category - check multiple possible fields
-            let category = "Unknown";
-            if (question) {
-              category = question.category || question.section || question.type || question.domain || "Unknown";
-            }
-            
-            return {
-              ...response,
-              question: question || { 
-                id: response.question_id,
-                question_text: `Question ${response.question_id}`,
-                category: "Unknown"
-              },
-              answer: answer || {
-                id: response.answer_id,
-                answer_text: "Answer not available",
-                score: 0,
-                interpretation: "No interpretation"
-              },
-              category: category,
-              score: answer?.score || 0
-            };
-          });
-          
-          console.log("Processed responses:", allResponses.length);
-          
-          // Calculate category scores
-          const categoryStats = {};
-          
-          // Initialize with possible categories
-          POSSIBLE_CATEGORIES.forEach(cat => {
-            categoryStats[cat] = {
-              totalScore: 0,
-              questionCount: 0,
-              averageScore: 0,
-              percentage: 0
-            };
-          });
-          
-          // Add "Unknown" category for any responses that don't match
-          categoryStats["Unknown"] = {
-            totalScore: 0,
-            questionCount: 0,
-            averageScore: 0,
-            percentage: 0
-          };
-          
-          // Group responses by category
-          allResponses.forEach(response => {
-            const category = response.category;
-            const score = response.score;
-            
-            // Normalize category name
-            let normalizedCategory = "Unknown";
-            POSSIBLE_CATEGORIES.forEach(cat => {
-              if (category.toLowerCase().includes(cat.toLowerCase())) {
-                normalizedCategory = cat;
-              }
-            });
-            
-            if (!categoryStats[normalizedCategory]) {
-              categoryStats[normalizedCategory] = {
-                totalScore: 0,
-                questionCount: 0,
-                averageScore: 0,
-                percentage: 0
-              };
-            }
-            
-            categoryStats[normalizedCategory].totalScore += score;
-            categoryStats[normalizedCategory].questionCount += 1;
-          });
-          
-          // Calculate averages and percentages
-          Object.keys(categoryStats).forEach(category => {
-            const stats = categoryStats[category];
-            if (stats.questionCount > 0) {
-              stats.averageScore = (stats.totalScore / stats.questionCount).toFixed(2);
-              const maxPossibleScore = stats.questionCount * 5;
-              stats.percentage = Math.round((stats.totalScore / maxPossibleScore) * 100);
-            }
-          });
-          
-          // Filter out empty categories
-          const filteredStats = {};
-          Object.keys(categoryStats).forEach(category => {
-            if (categoryStats[category].questionCount > 0) {
-              filteredStats[category] = categoryStats[category];
-            }
-          });
-          
-          console.log("Category statistics:", filteredStats);
-          setCategoryScores(filteredStats);
-          
-          // Identify strengths and weaknesses
-          const candidateStrengths = [];
-          const candidateWeaknesses = [];
-          
-          allResponses.forEach(response => {
-            const score = response.score;
-            const category = response.category;
-            
-            if (score >= 4) {
-              candidateStrengths.push({
-                category: category,
-                question: response.question?.question_text?.substring(0, 100) || "Question",
-                score: score,
-                interpretation: response.answer?.interpretation || `Strong in ${category}`
-              });
-            }
-            
-            if (score <= 2) {
-              candidateWeaknesses.push({
-                category: category,
-                question: response.question?.question_text?.substring(0, 100) || "Question",
-                score: score,
-                interpretation: response.answer?.interpretation || `Needs improvement in ${category}`
-              });
-            }
-          });
-          
-          setStrengths(candidateStrengths);
-          setWeaknesses(candidateWeaknesses);
-          
-          // Generate basic recommendations
-          const candidateRecommendations = [];
-          
-          // Check each category for weaknesses
-          Object.keys(filteredStats).forEach(category => {
-            const catWeaknesses = candidateWeaknesses.filter(w => w.category === category);
-            if (catWeaknesses.length > 0) {
-              candidateRecommendations.push({
-                category: category,
-                issue: `${catWeaknesses.length} area${catWeaknesses.length > 1 ? 's' : ''} need improvement`,
-                recommendation: `Focus on improving ${category.toLowerCase()} skills through targeted training.`,
-                priority: catWeaknesses.length > 3 ? "High" : catWeaknesses.length > 1 ? "Medium" : "Low"
-              });
-            }
-          });
-          
-          setRecommendations(candidateRecommendations);
-          setResponses(allResponses);
-          
+            setResponses(responsesData || []);
+          }
         } else {
-          console.log("No responses found");
-          setDebugInfo(prev => prev + " | No responses found");
+          setDebugInfo("No assessment results found");
+          setCandidate(null);
         }
 
       } catch (err) {
@@ -320,7 +187,6 @@ export default function CandidateReport() {
     fetchCandidateData();
   }, [isSupervisor, user_id]);
 
-  // Rest of the component remains the same...
   const handleBack = () => {
     router.push("/supervisor");
   };
@@ -333,15 +199,15 @@ export default function CandidateReport() {
 
   const getCategoryColor = (category) => {
     const colors = {
-      'Technical Competence': '#4A6FA5',
-      'Technical': '#4A6FA5',
-      'Leadership Skills': '#D32F2F',
-      'Leadership': '#D32F2F',
-      'Problem Solving': '#388E3C',
-      'Problem-Solving': '#388E3C',
-      'Communication Skills': '#F57C00',
-      'Communication': '#F57C00',
+      'Cognitive Abilities': '#4A6FA5',
+      'Technical Competence': '#2E7D32',
       'Personality Assessment': '#9C27B0',
+      'Leadership Potential': '#D32F2F',
+      'Performance Metrics': '#F57C00',
+      'Technical': '#4A6FA5',
+      'Leadership': '#D32F2F',
+      'Problem-Solving': '#388E3C',
+      'Communication': '#F57C00',
       'Personality': '#9C27B0',
       'Cognitive': '#607D8B',
       'Behavioral': '#795548',
@@ -359,7 +225,7 @@ export default function CandidateReport() {
     return 'E';
   };
 
-  // Loading and error states remain the same...
+  // Loading and error states
   if (!isSupervisor) {
     return (
       <div style={{ 
@@ -437,7 +303,6 @@ export default function CandidateReport() {
     );
   }
 
-  // The JSX render remains mostly the same, just updating the category scores display
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
       <div style={{ width: "90vw", margin: "auto", padding: "30px 20px" }}>
@@ -457,7 +322,7 @@ export default function CandidateReport() {
           </div>
         )}
 
-        {/* Header - same as before */}
+        {/* Header */}
         <div style={{ marginBottom: "30px" }}>
           <div style={{ 
             display: "flex", 
@@ -576,7 +441,7 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* Category Scores - UPDATED */}
+        {/* Category Scores - USING PRE-CALCULATED DATA */}
         <div style={{ 
           background: "white", 
           padding: "25px", 
@@ -586,7 +451,7 @@ export default function CandidateReport() {
         }}>
           <h2 style={{ margin: "0 0 25px 0", color: "#333" }}>Performance by Category</h2>
           
-          {responses.length === 0 ? (
+          {!categoryScores || Object.keys(categoryScores).length === 0 ? (
             <div style={{ 
               textAlign: "center", 
               padding: "40px",
@@ -595,32 +460,10 @@ export default function CandidateReport() {
               borderRadius: "8px"
             }}>
               <div style={{ fontSize: "48px", marginBottom: "15px" }}>📊</div>
-              <p><strong>No assessment responses found.</strong></p>
+              <p><strong>Category scores not calculated yet.</strong></p>
               <p style={{ fontSize: "14px", marginTop: "10px", color: "#666" }}>
-                The candidate has a classification but no detailed responses were found in the database.
+                The candidate's category breakdown is being processed. Please refresh in a moment.
               </p>
-            </div>
-          ) : Object.keys(categoryScores).length === 0 ? (
-            <div style={{ 
-              textAlign: "center", 
-              padding: "40px",
-              color: "#888",
-              background: "#f8f9fa",
-              borderRadius: "8px"
-            }}>
-              <div style={{ fontSize: "48px", marginBottom: "15px" }}>📊</div>
-              <p>Found {responses.length} responses but couldn't categorize them.</p>
-              <div style={{ 
-                marginTop: "20px",
-                padding: "15px",
-                background: "#fff3e0",
-                borderRadius: "6px"
-              }}>
-                <p style={{ margin: "0 0 10px 0", fontWeight: "600" }}>Found categories:</p>
-                <p style={{ margin: 0, fontSize: "14px", color: "#666" }}>
-                  {Array.from(new Set(responses.map(r => r.category))).join(", ")}
-                </p>
-              </div>
             </div>
           ) : (
             <div style={{ 
@@ -628,94 +471,376 @@ export default function CandidateReport() {
               gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", 
               gap: "20px" 
             }}>
-              {Object.entries(categoryScores).map(([category, stats]) => (
-                <div key={category} style={{
-                  borderLeft: `4px solid ${getCategoryColor(category)}`,
-                  padding: "20px",
-                  background: "#f8f9fa",
+              {Object.entries(categoryScores).map(([category, stats]) => {
+                // Handle both object and direct value formats
+                const categoryData = typeof stats === 'object' ? stats : { 
+                  score: stats, 
+                  percentage: Math.round((stats / 100) * 100) 
+                };
+                
+                return (
+                  <div key={category} style={{
+                    borderLeft: `4px solid ${getCategoryColor(category)}`,
+                    padding: "20px",
+                    background: "#f8f9fa",
+                    borderRadius: "8px",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+                  }}>
+                    <div style={{ 
+                      display: "flex", 
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      marginBottom: "15px"
+                    }}>
+                      <div>
+                        <h3 style={{ 
+                          margin: "0 0 5px 0", 
+                          color: getCategoryColor(category),
+                          fontSize: "18px"
+                        }}>
+                          {category}
+                        </h3>
+                        <p style={{ 
+                          margin: 0, 
+                          fontSize: "14px", 
+                          color: "#666" 
+                        }}>
+                          {categoryData.questions || 'N/A'} questions • 
+                          Avg: {categoryData.average || categoryData.average_score || 'N/A'}/5
+                        </p>
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ 
+                          fontSize: "28px", 
+                          fontWeight: "700",
+                          color: getCategoryColor(category)
+                        }}>
+                          {categoryData.percentage || 0}%
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#666" }}>
+                          Score
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div style={{ 
+                      height: "10px", 
+                      background: "#e0e0e0", 
+                      borderRadius: "5px",
+                      overflow: "hidden",
+                      marginBottom: "8px"
+                    }}>
+                      <div style={{ 
+                        height: "100%", 
+                        width: `${categoryData.percentage || 0}%`, 
+                        background: getCategoryColor(category),
+                        borderRadius: "5px"
+                      }} />
+                    </div>
+                    
+                    <div style={{ 
+                      display: "flex", 
+                      justifyContent: "space-between",
+                      fontSize: "12px", 
+                      color: "#666",
+                      marginTop: "10px"
+                    }}>
+                      <div>
+                        <div style={{ fontWeight: "600" }}>Total Score</div>
+                        <div>{categoryData.score || 0}/{categoryData.max_possible || 100}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: "600" }}>Level</div>
+                        <div style={{ 
+                          color: (categoryData.level === 'STRONG' || categoryData.level === 'GOOD') ? '#4CAF50' : '#F44336',
+                          fontWeight: "600"
+                        }}>
+                          {categoryData.level || 'N/A'}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: "600" }}>Performance</div>
+                        <div>
+                          {categoryData.percentage >= 80 ? 'Excellent' :
+                           categoryData.percentage >= 60 ? 'Good' :
+                           categoryData.percentage >= 40 ? 'Average' : 'Needs Improvement'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Strengths */}
+        {strengths.length > 0 && (
+          <div style={{ 
+            background: "white", 
+            padding: "25px", 
+            borderRadius: "12px", 
+            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+            marginBottom: "30px"
+          }}>
+            <h2 style={{ margin: "0 0 20px 0", color: "#333" }}>Key Strengths</h2>
+            <div style={{ 
+              display: "grid", 
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+              gap: "15px" 
+            }}>
+              {Array.isArray(strengths) && strengths.map((strength, index) => (
+                <div key={index} style={{
+                  padding: "15px",
+                  background: "#e8f5e9",
                   borderRadius: "8px",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+                  borderLeft: "4px solid #4CAF50"
+                }}>
+                  <div style={{ 
+                    display: "flex", 
+                    alignItems: "center", 
+                    gap: "10px",
+                    marginBottom: "8px"
+                  }}>
+                    <span style={{ 
+                      background: "#4CAF50", 
+                      color: "white", 
+                      width: "28px", 
+                      height: "28px",
+                      borderRadius: "50%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "14px",
+                      fontWeight: "600"
+                    }}>
+                      ✓
+                    </span>
+                    <span style={{ fontWeight: "600", color: "#2e7d32" }}>
+                      {typeof strength === 'string' ? strength : strength.category}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: "13px", color: "#555" }}>
+                    {categoryScores[strength] ? 
+                      `Score: ${categoryScores[strength].percentage}%` : 
+                      'Strong performance area'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Weaknesses */}
+        {weaknesses.length > 0 && (
+          <div style={{ 
+            background: "white", 
+            padding: "25px", 
+            borderRadius: "12px", 
+            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+            marginBottom: "30px"
+          }}>
+            <h2 style={{ margin: "0 0 20px 0", color: "#333" }}>Areas Needing Improvement</h2>
+            <div style={{ 
+              display: "grid", 
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+              gap: "15px" 
+            }}>
+              {Array.isArray(weaknesses) && weaknesses.map((weakness, index) => (
+                <div key={index} style={{
+                  padding: "15px",
+                  background: "#ffebee",
+                  borderRadius: "8px",
+                  borderLeft: "4px solid #F44336"
+                }}>
+                  <div style={{ 
+                    display: "flex", 
+                    alignItems: "center", 
+                    gap: "10px",
+                    marginBottom: "8px"
+                  }}>
+                    <span style={{ 
+                      background: "#F44336", 
+                      color: "white", 
+                      width: "28px", 
+                      height: "28px",
+                      borderRadius: "50%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "14px",
+                      fontWeight: "600"
+                    }}>
+                      !
+                    </span>
+                    <span style={{ fontWeight: "600", color: "#c62828" }}>
+                      {typeof weakness === 'string' ? weakness : weakness.category}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: "13px", color: "#555" }}>
+                    {categoryScores[weakness] ? 
+                      `Score: ${categoryScores[weakness].percentage}% - Needs attention` : 
+                      'Requires development'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Recommendations */}
+        {recommendations.length > 0 && (
+          <div style={{ 
+            background: "white", 
+            padding: "25px", 
+            borderRadius: "12px", 
+            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+            marginBottom: "30px"
+          }}>
+            <h2 style={{ margin: "0 0 20px 0", color: "#333" }}>Recommendations</h2>
+            <div style={{ 
+              display: "grid", 
+              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", 
+              gap: "20px" 
+            }}>
+              {recommendations.map((rec, index) => (
+                <div key={index} style={{
+                  padding: "20px",
+                  background: rec.priority === "High" ? "#fff3e0" : "#e3f2fd",
+                  borderRadius: "8px",
+                  borderLeft: `4px solid ${rec.priority === "High" ? "#FF9800" : "#2196F3"}`
                 }}>
                   <div style={{ 
                     display: "flex", 
                     justifyContent: "space-between",
                     alignItems: "flex-start",
-                    marginBottom: "15px"
+                    marginBottom: "10px"
                   }}>
                     <div>
-                      <h3 style={{ 
-                        margin: "0 0 5px 0", 
-                        color: getCategoryColor(category),
-                        fontSize: "18px"
+                      <div style={{ 
+                        display: "flex", 
+                        alignItems: "center", 
+                        gap: "8px",
+                        marginBottom: "5px"
                       }}>
-                        {category}
-                      </h3>
+                        <span style={{ 
+                          fontWeight: "600", 
+                          color: rec.priority === "High" ? "#E65100" : "#1565c0",
+                          fontSize: "16px"
+                        }}>
+                          {rec.category}
+                        </span>
+                        <span style={{
+                          fontSize: "11px",
+                          padding: "3px 8px",
+                          background: rec.priority === "High" ? "#FF9800" : "#2196F3",
+                          color: "white",
+                          borderRadius: "12px",
+                          fontWeight: "600"
+                        }}>
+                          {rec.priority} Priority
+                        </span>
+                      </div>
                       <p style={{ 
-                        margin: 0, 
+                        margin: "0 0 10px 0", 
                         fontSize: "14px", 
-                        color: "#666" 
+                        color: "#555" 
                       }}>
-                        {stats.questionCount} questions • Average: {stats.averageScore}/5
+                        {rec.issue}
                       </p>
                     </div>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ 
-                        fontSize: "28px", 
-                        fontWeight: "700",
-                        color: getCategoryColor(category)
-                      }}>
-                        {stats.percentage}%
-                      </div>
-                      <div style={{ fontSize: "12px", color: "#666" }}>
-                        Score
-                      </div>
-                    </div>
                   </div>
-                  
-                  <div style={{ 
-                    height: "10px", 
-                    background: "#e0e0e0", 
-                    borderRadius: "5px",
-                    overflow: "hidden",
-                    marginBottom: "8px"
-                  }}>
-                    <div style={{ 
-                      height: "100%", 
-                      width: `${stats.percentage}%`, 
-                      background: getCategoryColor(category),
-                      borderRadius: "5px"
-                    }} />
-                  </div>
-                  
-                  <div style={{ 
-                    display: "flex", 
-                    justifyContent: "space-between",
-                    fontSize: "12px", 
+                  <p style={{ 
+                    margin: "0", 
+                    fontSize: "13px", 
                     color: "#666",
-                    marginTop: "10px"
+                    lineHeight: "1.5"
                   }}>
-                    <div>
-                      <div style={{ fontWeight: "600" }}>Total Score</div>
-                      <div>{stats.totalScore}/{stats.questionCount * 5}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: "600" }}>Questions</div>
-                      <div>{stats.questionCount}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: "600" }}>Average</div>
-                      <div>{stats.averageScore}/5</div>
-                    </div>
-                  </div>
+                    <strong>Action:</strong> {rec.recommendation}
+                  </p>
                 </div>
               ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* The rest of the component (Strengths, Weaknesses, Recommendations, Responses) remains the same */}
-        {/* ... */}
-        
+        {/* Detailed Responses (Optional) */}
+        {responses.length > 0 && (
+          <div style={{ 
+            background: "white", 
+            padding: "25px", 
+            borderRadius: "12px", 
+            boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
+          }}>
+            <h2 style={{ margin: "0 0 20px 0", color: "#333" }}>Detailed Responses ({responses.length})</h2>
+            <div style={{ maxHeight: "400px", overflowY: "auto" }}>
+              <table style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                textAlign: "left"
+              }}>
+                <thead>
+                  <tr style={{ 
+                    borderBottom: "2px solid #1565c0",
+                    backgroundColor: "#f5f5f5",
+                    position: "sticky",
+                    top: 0
+                  }}>
+                    <th style={{ padding: "12px 15px", fontWeight: "600", color: "#333" }}>Category</th>
+                    <th style={{ padding: "12px 15px", fontWeight: "600", color: "#333" }}>Question</th>
+                    <th style={{ padding: "12px 15px", fontWeight: "600", color: "#333" }}>Answer</th>
+                    <th style={{ padding: "12px 15px", fontWeight: "600", color: "#333" }}>Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {responses.slice(0, 20).map((response, index) => (
+                    <tr key={index} style={{ 
+                      borderBottom: "1px solid #eee",
+                      transition: "background 0.2s"
+                    }}>
+                      <td style={{ padding: "12px 15px", fontSize: "13px" }}>
+                        {response.category || "Unknown"}
+                      </td>
+                      <td style={{ padding: "12px 15px", fontSize: "13px", maxWidth: "300px" }}>
+                        {response.question?.question_text?.substring(0, 80) || "Question " + (index + 1)}
+                        {response.question?.question_text?.length > 80 ? "..." : ""}
+                      </td>
+                      <td style={{ padding: "12px 15px", fontSize: "13px" }}>
+                        {response.answer?.answer_text?.substring(0, 50) || "Answer " + (index + 1)}
+                        {response.answer?.answer_text?.length > 50 ? "..." : ""}
+                      </td>
+                      <td style={{ padding: "12px 15px" }}>
+                        <span style={{
+                          padding: "4px 10px",
+                          background: getScoreColor(response.answer?.score || 0),
+                          color: "white",
+                          borderRadius: "12px",
+                          fontSize: "12px",
+                          fontWeight: "600"
+                        }}>
+                          {response.answer?.score || 0}/5
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {responses.length > 20 && (
+                <div style={{ 
+                  marginTop: "15px", 
+                  textAlign: "center", 
+                  color: "#666",
+                  fontSize: "13px",
+                  padding: "10px",
+                  background: "#f5f5f5",
+                  borderRadius: "6px"
+                }}>
+                  Showing 20 of {responses.length} responses. Use detailed view for complete analysis.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </AppLayout>
   );
