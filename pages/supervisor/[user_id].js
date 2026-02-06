@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "../../../supabase/client";
-import AppLayout from "../../../components/AppLayout";
+import { supabase } from "../../supabase/client";
+import AppLayout from "../../components/AppLayout";
 
 export default function CandidateReport() {
   const router = useRouter();
@@ -68,27 +68,12 @@ export default function CandidateReport() {
         console.log("Classification found:", classificationData);
         setCandidate(classificationData);
 
-        // 2. Get user info from multiple sources
-        let email = "";
-        let full_name = "";
+        // 2. Get user info
+        let email = "Email not available";
+        let full_name = `Candidate ${user_id.substring(0, 8)}`;
         
-        // First try auth.users via admin API
         try {
-          const { data: { users }, error: authError } = await supabase.auth.admin.getUserById(user_id);
-          if (!authError && users && users.length > 0) {
-            const user = users[0];
-            email = user.email || "";
-            full_name = user.user_metadata?.full_name || 
-                       user.user_metadata?.name ||
-                       user.email?.split('@')[0] ||
-                       `Candidate ${user_id.substring(0, 8)}`;
-          }
-        } catch (authErr) {
-          console.log("Auth API failed, trying profiles table...");
-        }
-
-        // If still no email, try profiles table
-        if (!email) {
+          // Try profiles table first
           const { data: profileData } = await supabase
             .from("profiles")
             .select("email, full_name")
@@ -99,34 +84,26 @@ export default function CandidateReport() {
           if (profileData?.email) {
             email = profileData.email;
             full_name = profileData.full_name || profileData.email.split('@')[0];
+          } else {
+            // Try auth.users via admin API
+            const { data: { users }, error: authError } = await supabase.auth.admin.getUserById(user_id);
+            if (!authError && users && users.length > 0) {
+              const user = users[0];
+              email = user.email || "Email not available";
+              full_name = user.user_metadata?.full_name || 
+                         user.user_metadata?.name ||
+                         user.email?.split('@')[0] ||
+                         `Candidate ${user_id.substring(0, 8)}`;
+            }
           }
-        }
-
-        // If still no email, try assessment_results
-        if (!email) {
-          const { data: assessmentData } = await supabase
-            .from("assessment_results")
-            .select("email, full_name")
-            .eq("user_id", user_id)
-            .single()
-            .catch(() => null);
-
-          if (assessmentData?.email) {
-            email = assessmentData.email;
-            full_name = assessmentData.full_name || assessmentData.email.split('@')[0];
-          }
-        }
-
-        // Final fallback
-        if (!email) {
-          email = "Email not available";
-          full_name = `Candidate ${user_id.substring(0, 8)}`;
+        } catch (userError) {
+          console.error("Error fetching user info:", userError);
         }
 
         setUserInfo({ email, full_name });
 
-        // 3. Get ALL responses for this user with questions and answers
-        console.log("Fetching responses for user...");
+        // 3. Get responses with question and answer data
+        console.log("Fetching responses...");
         const { data: responsesData, error: responsesError } = await supabase
           .from("responses")
           .select(`
@@ -153,6 +130,7 @@ export default function CandidateReport() {
 
         if (responsesError) {
           console.error("Responses error:", responsesError);
+          setError("No response data found");
         } else if (responsesData && responsesData.length > 0) {
           console.log(`Found ${responsesData.length} responses`);
           setResponses(responsesData);
@@ -160,10 +138,10 @@ export default function CandidateReport() {
           // Calculate category scores
           const scores = calculateCategoryScores(responsesData);
           setCategoryScores(scores);
-          console.log("Category scores calculated:", scores);
+          console.log("Category scores:", scores);
         } else {
           console.log("No responses found");
-          setError("No detailed response data found for this candidate");
+          setError("No detailed response data available");
         }
 
         setLoading(false);
@@ -188,14 +166,12 @@ export default function CandidateReport() {
           categoryData[category] = {
             totalScore: 0,
             count: 0,
-            questionIds: new Set(),
             scores: []
           };
         }
         
         categoryData[category].totalScore += score;
         categoryData[category].count += 1;
-        categoryData[category].questionIds.add(response.question_id);
         categoryData[category].scores.push(score);
       });
 
@@ -217,7 +193,8 @@ export default function CandidateReport() {
           maxPossible: maxPossibleScore,
           level: percentage >= 80 ? 'Excellent' : 
                  percentage >= 60 ? 'Good' : 
-                 percentage >= 40 ? 'Average' : 'Needs Improvement'
+                 percentage >= 40 ? 'Average' : 'Needs Improvement',
+          scores: data.scores
         };
       });
 
@@ -312,18 +289,8 @@ export default function CandidateReport() {
             <div style={{ fontSize: "48px", marginBottom: "15px" }}>⚠️</div>
             <h3 style={{ color: "#c62828", marginBottom: "10px" }}>{error || "Candidate Not Found"}</h3>
             <p style={{ color: "#666", marginBottom: "20px" }}>
-              Could not load the candidate report. This might be because:
+              Could not load the candidate report.
             </p>
-            <ul style={{ 
-              textAlign: "left", 
-              display: "inline-block",
-              color: "#666",
-              marginBottom: "20px"
-            }}>
-              <li>The candidate hasn't completed the assessment</li>
-              <li>There's no data in the talent_classification table</li>
-              <li>The user_id is invalid or doesn't exist</li>
-            </ul>
           </div>
           <button
             onClick={handleBack}
@@ -486,7 +453,7 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* Category Breakdown - MAIN FIX */}
+        {/* Category Breakdown */}
         <div style={{ 
           background: "white", 
           padding: "25px", 
@@ -508,7 +475,6 @@ export default function CandidateReport() {
               <p><strong>No detailed category data available</strong></p>
               <p style={{ fontSize: "14px", marginTop: "10px", color: "#666" }}>
                 The candidate has completed the assessment, but detailed category breakdown is not available.
-                This might be because response data is not linked to question categories.
               </p>
             </div>
           ) : (
@@ -604,7 +570,7 @@ export default function CandidateReport() {
                       </div>
                     </div>
                     
-                    {data.questionCount > 0 && (
+                    {data.scores && data.scores.length > 0 && (
                       <div style={{ 
                         marginTop: "15px",
                         padding: "10px",
@@ -613,22 +579,30 @@ export default function CandidateReport() {
                         fontSize: "12px"
                       }}>
                         <div style={{ fontWeight: "600", marginBottom: "5px", color: "#666" }}>
-                          Score Distribution:
+                          Individual Scores:
                         </div>
-                        <div style={{ display: "flex", gap: "5px", height: "20px" }}>
-                          {data.scores && data.scores.map((score, idx) => (
+                        <div style={{ display: "flex", gap: "3px", flexWrap: "wrap" }}>
+                          {data.scores.map((score, idx) => (
                             <div 
                               key={idx}
                               style={{
-                                flex: 1,
+                                width: "24px",
+                                height: "24px",
                                 background: score >= 4 ? "#4CAF50" : 
                                           score >= 3 ? "#2196F3" : 
                                           score >= 2 ? "#FF9800" : "#F44336",
-                                borderRadius: "3px",
-                                opacity: 0.7
+                                borderRadius: "4px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "white",
+                                fontSize: "10px",
+                                fontWeight: "600"
                               }}
                               title={`Question ${idx + 1}: ${score}/5`}
-                            />
+                            >
+                              {score}
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -639,106 +613,6 @@ export default function CandidateReport() {
             </div>
           )}
         </div>
-
-        {/* Detailed Responses Table */}
-        {responses.length > 0 && (
-          <div style={{ 
-            background: "white", 
-            padding: "25px", 
-            borderRadius: "12px", 
-            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-            marginBottom: "30px"
-          }}>
-            <h2 style={{ margin: "0 0 25px 0", color: "#333" }}>Detailed Question Responses</h2>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                textAlign: "left",
-                minWidth: "800px"
-              }}>
-                <thead>
-                  <tr style={{ 
-                    borderBottom: "2px solid #1565c0",
-                    backgroundColor: "#f5f5f5"
-                  }}>
-                    <th style={{ padding: "12px", fontWeight: "600", color: "#333", width: "50px" }}>#</th>
-                    <th style={{ padding: "12px", fontWeight: "600", color: "#333" }}>Question</th>
-                    <th style={{ padding: "12px", fontWeight: "600", color: "#333", width: "150px" }}>Category</th>
-                    <th style={{ padding: "12px", fontWeight: "600", color: "#333", width: "100px" }}>Score</th>
-                    <th style={{ padding: "12px", fontWeight: "600", color: "#333", width: "80px" }}>Out of 5</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {responses.map((response, index) => (
-                    <tr key={response.id} style={{ 
-                      borderBottom: "1px solid #eee",
-                      background: index % 2 === 0 ? "#fafafa" : "white"
-                    }}>
-                      <td style={{ padding: "12px", color: "#666", fontWeight: "500" }}>
-                        {index + 1}
-                      </td>
-                      <td style={{ padding: "12px" }}>
-                        <div style={{ fontWeight: "500", marginBottom: "5px" }}>
-                          {response.questions?.question_text || "Question not found"}
-                        </div>
-                        <div style={{ fontSize: "12px", color: "#888" }}>
-                          Answer: {response.answers?.answer_text || "No answer text"}
-                        </div>
-                      </td>
-                      <td style={{ padding: "12px" }}>
-                        <span style={{
-                          padding: "4px 8px",
-                          background: "#e3f2fd",
-                          color: "#1565c0",
-                          borderRadius: "4px",
-                          fontSize: "12px",
-                          fontWeight: "500"
-                        }}>
-                          {response.questions?.category || response.questions?.section || "Uncategorized"}
-                        </span>
-                      </td>
-                      <td style={{ padding: "12px", fontWeight: "500" }}>
-                        <div style={{ 
-                          display: "inline-block",
-                          padding: "4px 10px",
-                          background: response.answers?.score >= 4 ? "#e8f5e9" : 
-                                    response.answers?.score >= 3 ? "#fff3e0" : "#ffebee",
-                          color: response.answers?.score >= 4 ? "#2e7d32" : 
-                                response.answers?.score >= 3 ? "#f57c00" : "#c62828",
-                          borderRadius: "4px",
-                          fontWeight: "600",
-                          fontSize: "13px"
-                        }}>
-                          {response.answers?.score || 0}
-                        </div>
-                      </td>
-                      <td style={{ padding: "12px", color: "#666", textAlign: "center" }}>
-                        <div style={{ 
-                          width: "40px",
-                          height: "40px",
-                          borderRadius: "50%",
-                          border: `2px solid ${response.answers?.score >= 4 ? "#4CAF50" : 
-                                                   response.answers?.score >= 3 ? "#FF9800" : "#F44336"}`,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          margin: "0 auto",
-                          fontSize: "14px",
-                          fontWeight: "600",
-                          color: response.answers?.score >= 4 ? "#2e7d32" : 
-                                response.answers?.score >= 3 ? "#f57c00" : "#c62828"
-                        }}>
-                          {response.answers?.score || 0}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
 
         {/* Back Button */}
         <div style={{ textAlign: "center", marginTop: "40px" }}>
