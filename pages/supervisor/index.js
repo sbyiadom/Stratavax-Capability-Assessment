@@ -47,13 +47,15 @@ export default function SupervisorDashboard() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch candidates and stats - USING YOUR ORIGINAL APPROACH
+  // Fetch candidates and stats
   useEffect(() => {
     if (!isSupervisor) return;
 
     const fetchData = async () => {
       try {
-        // Get all talent classification data (THIS IS WHERE SCORES ARE STORED)
+        setLoading(true);
+        
+        // Get all talent classification data
         const { data: talentData, error: talentError } = await supabase
           .from("talent_classification")
           .select(`
@@ -85,62 +87,101 @@ export default function SupervisorDashboard() {
           return;
         }
 
-        // Get user emails and names for these candidates
-        const candidatePromises = talentData.map(async (candidate) => {
-          try {
-            // Try to get user info from multiple sources
-            const { data: profileData } = await supabase
-              .from("profiles")
-              .select("email, full_name")
-              .eq("id", candidate.user_id)
-              .single()
-              .catch(() => null);
+        // Get unique user IDs
+        const userIds = talentData.map(c => c.user_id);
+        
+        // FIRST: Try to get user info from assessment_results table
+        const { data: assessmentResults } = await supabase
+          .from("assessment_results")
+          .select("user_id, email, full_name")
+          .in("user_id", userIds);
 
-            const { data: userData } = await supabase
-              .from("users")
-              .select("email, full_name")
-              .eq("id", candidate.user_id)
-              .single()
-              .catch(() => null);
-
-            // Try assessment_results for additional data
-            const { data: assessmentData } = await supabase
-              .from("assessment_results")
-              .select("category_scores, completed_at")
-              .eq("user_id", candidate.user_id)
-              .single()
-              .catch(() => null);
-
-            return {
-              ...candidate,
-              user: {
-                email: profileData?.email || userData?.email || "Unknown Email",
-                full_name: profileData?.full_name || userData?.full_name || `Candidate ${candidate.user_id.substring(0, 8)}`
-              },
-              category_scores: assessmentData?.category_scores || {},
-              completed_at: assessmentData?.completed_at || candidate.updated_at
+        // Create a map for quick lookup
+        const userInfoMap = {};
+        if (assessmentResults) {
+          assessmentResults.forEach(result => {
+            userInfoMap[result.user_id] = {
+              email: result.email || "",
+              full_name: result.full_name || ""
             };
-          } catch (error) {
-            console.error(`Error fetching user ${candidate.user_id}:`, error);
-            return {
-              ...candidate,
-              user: {
-                email: "Unknown Email",
-                full_name: `Candidate ${candidate.user_id.substring(0, 8)}`
-              },
-              category_scores: {},
-              completed_at: candidate.updated_at
-            };
+          });
+        }
+
+        // SECOND: Check which users are missing info
+        const missingUserIds = userIds.filter(id => !userInfoMap[id] || !userInfoMap[id].email);
+        
+        if (missingUserIds.length > 0) {
+          // Try profiles table
+          const { data: profilesData } = await supabase
+            .from("profiles")
+            .select("id, email, full_name")
+            .in("id", missingUserIds);
+          
+          if (profilesData) {
+            profilesData.forEach(profile => {
+              if (!userInfoMap[profile.id]) {
+                userInfoMap[profile.id] = {
+                  email: profile.email || "",
+                  full_name: profile.full_name || ""
+                };
+              }
+            });
           }
+
+          // Update missing IDs after profiles check
+          const stillMissingIds = missingUserIds.filter(id => !userInfoMap[id]?.email);
+          
+          if (stillMissingIds.length > 0) {
+            // Try users table as final fallback
+            const { data: usersData } = await supabase
+              .from("users")
+              .select("id, email, full_name")
+              .in("id", stillMissingIds);
+            
+            if (usersData) {
+              usersData.forEach(user => {
+                userInfoMap[user.id] = {
+                  email: user.email || "",
+                  full_name: user.full_name || user.email?.split('@')[0] || `Candidate ${user.id.substring(0, 8)}`
+                };
+              });
+            }
+          }
+        }
+
+        // Combine talent data with user info
+        const candidatesWithUsers = talentData.map(candidate => {
+          const userInfo = userInfoMap[candidate.user_id];
+          
+          let email = "Email not found";
+          let full_name = `Candidate ${candidate.user_id.substring(0, 8)}`;
+          
+          if (userInfo) {
+            if (userInfo.email) {
+              email = userInfo.email;
+            }
+            if (userInfo.full_name) {
+              full_name = userInfo.full_name;
+            } else if (userInfo.email) {
+              full_name = userInfo.email.split('@')[0];
+            }
+          }
+
+          return {
+            ...candidate,
+            user: {
+              email: email,
+              full_name: full_name
+            }
+          };
         });
 
-        const candidatesWithUsers = await Promise.all(candidatePromises);
         setCandidates(candidatesWithUsers);
 
         // Calculate statistics
         const statsData = {
           totalCandidates: talentData.length,
-          completed: talentData.length, // All in talent_classification are completed
+          completed: talentData.length,
           inProgress: 0,
           notStarted: 0,
           topTalent: talentData.filter(c => c.classification === 'Top Talent').length,
@@ -355,7 +396,7 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        {/* Candidates Table - SIMPLIFIED DISPLAY */}
+        {/* Candidates Table */}
         <div style={{ 
           background: "white", 
           padding: "25px", 
@@ -411,31 +452,8 @@ export default function SupervisorDashboard() {
                 No Assessment Data Yet
               </h3>
               <p style={{ color: "#888", maxWidth: "500px", margin: "0 auto 25px" }}>
-                When candidates complete their assessments, their results will appear here with detailed analytics including scores, classifications, strengths, weaknesses, and improvement opportunities.
+                When candidates complete their assessments, their results will appear here.
               </p>
-              <div style={{
-                display: "inline-flex",
-                gap: "15px",
-                background: "#e3f2fd",
-                padding: "15px",
-                borderRadius: "8px"
-              }}>
-                <div style={{ textAlign: "left" }}>
-                  <div style={{ fontWeight: "600", color: "#1565c0" }}>Expected Analytics:</div>
-                  <ul style={{ 
-                    margin: "10px 0 0 0", 
-                    paddingLeft: "20px",
-                    fontSize: "14px",
-                    color: "#555"
-                  }}>
-                    <li>Individual performance breakdown</li>
-                    <li>Category-wise scoring (Cognitive, Personality, etc.)</li>
-                    <li>Strengths & Weaknesses analysis</li>
-                    <li>Improvement recommendations</li>
-                    <li>Comparative analytics</li>
-                  </ul>
-                </div>
-              </div>
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>
@@ -450,6 +468,7 @@ export default function SupervisorDashboard() {
                     borderBottom: "2px solid #1565c0",
                     backgroundColor: "#f5f5f5"
                   }}>
+                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>#</th>
                     <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Candidate Name</th>
                     <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Email</th>
                     <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Total Score</th>
@@ -464,19 +483,20 @@ export default function SupervisorDashboard() {
                       borderBottom: "1px solid #eee",
                       transition: "background 0.2s"
                     }}>
+                      <td style={{ padding: "15px", color: "#666" }}>{index + 1}</td>
                       <td style={{ padding: "15px", fontWeight: "500" }}>
-                        {c.user?.full_name}
+                        {c.user.full_name}
                         <div style={{ fontSize: "12px", color: "#888", marginTop: "3px" }}>
                           ID: {c.user_id.substring(0, 8)}...
                         </div>
                       </td>
                       <td style={{ padding: "15px" }}>
                         <div style={{ fontSize: "14px", color: "#1565c0" }}>
-                          {c.user?.email}
+                          {c.user.email}
                         </div>
-                        {c.user?.email === "Unknown Email" && (
+                        {c.user.email === "Email not found" && (
                           <div style={{ fontSize: "11px", color: "#999", marginTop: "3px" }}>
-                            Contact information not available
+                            Email not available
                           </div>
                         )}
                       </td>
@@ -560,8 +580,8 @@ export default function SupervisorDashboard() {
                 color: "#1565c0",
                 borderLeft: "4px solid #1565c0"
               }}>
-                <strong>Note:</strong> Candidate emails and names are retrieved from the registration data. 
-                If you see "Unknown Email", the candidate's contact information may not be available in the system.
+                <strong>Note:</strong> Candidate emails and names are retrieved from multiple sources (assessment_results, profiles, users tables).
+                If "Email not found" appears, the candidate's contact information may not be available in the system.
               </div>
             </div>
           )}
