@@ -1,22 +1,25 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "../../supabase/client";
+import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
+import { supabase } from "../../supabase/client";
 
-export default function CandidateReport() {
+export default function SupervisorDashboard() {
   const router = useRouter();
-  const { user_id } = router.query;
-  
+  const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isSupervisor, setIsSupervisor] = useState(false);
-  const [candidate, setCandidate] = useState(null);
-  const [userInfo, setUserInfo] = useState({ email: "", full_name: "" });
-  const [responses, setResponses] = useState([]);
-  const [categoryScores, setCategoryScores] = useState({});
-  const [strengths, setStrengths] = useState([]);
-  const [weaknesses, setWeaknesses] = useState([]);
-  const [recommendations, setRecommendations] = useState([]);
-  const [debugInfo, setDebugInfo] = useState("");
+  const [stats, setStats] = useState({
+    totalCandidates: 0,
+    completed: 0,
+    inProgress: 0,
+    notStarted: 0,
+    topTalent: 0,
+    highPotential: 0,
+    solidPerformer: 0,
+    developing: 0,
+    needsImprovement: 0
+  });
 
   // Check supervisor authentication
   useEffect(() => {
@@ -44,238 +47,167 @@ export default function CandidateReport() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch ALL data for the candidate
+  // Fetch candidates and stats
   useEffect(() => {
-    if (!isSupervisor || !user_id) return;
+    if (!isSupervisor) return;
 
-    const fetchCandidateData = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
-        setDebugInfo(`Fetching data for: ${user_id}`);
-
-        // 1. Get candidate classification (from talent_classification table)
-        const { data: classificationData, error: classificationError } = await supabase
+        
+        // Get all talent classification data
+        const { data: talentData, error: talentError } = await supabase
           .from("talent_classification")
-          .select("*")
-          .eq("user_id", user_id)
-          .single();
+          .select(`
+            user_id,
+            total_score,
+            classification,
+            created_at,
+            updated_at
+          `)
+          .order("total_score", { ascending: false });
 
-        if (classificationError) {
-          console.error("Classification error:", classificationError);
-          setCandidate(null);
-          setDebugInfo(`No classification found: ${classificationError.message}`);
+        if (talentError) throw talentError;
+
+        // If no data, set empty and return
+        if (!talentData || talentData.length === 0) {
+          setCandidates([]);
+          setStats({
+            totalCandidates: 0,
+            completed: 0,
+            inProgress: 0,
+            notStarted: 0,
+            topTalent: 0,
+            highPotential: 0,
+            solidPerformer: 0,
+            developing: 0,
+            needsImprovement: 0
+          });
           setLoading(false);
           return;
         }
 
-        console.log("Found classification:", classificationData);
-        setCandidate(classificationData);
-        setDebugInfo(prev => prev + ` | Classification score: ${classificationData?.total_score}`);
+        // Get unique user IDs
+        const userIds = talentData.map(c => c.user_id);
+        
+        // FIRST: Try to get user info from assessment_results table
+        const { data: assessmentResults } = await supabase
+          .from("assessment_results")
+          .select("user_id, email, full_name")
+          .in("user_id", userIds);
 
-        // 2. Get user info from profiles table
-        try {
-          const { data: profileData } = await supabase
+        // Create a map for quick lookup
+        const userInfoMap = {};
+        if (assessmentResults) {
+          assessmentResults.forEach(result => {
+            userInfoMap[result.user_id] = {
+              email: result.email || "",
+              full_name: result.full_name || ""
+            };
+          });
+        }
+
+        // SECOND: Check which users are missing info
+        const missingUserIds = userIds.filter(id => !userInfoMap[id] || !userInfoMap[id].email);
+        
+        if (missingUserIds.length > 0) {
+          // Try profiles table
+          const { data: profilesData } = await supabase
             .from("profiles")
-            .select("email, full_name")
-            .eq("id", user_id)
-            .single();
-
-          if (profileData) {
-            setUserInfo({
-              email: profileData.email,
-              full_name: profileData.full_name || profileData.email.split('@')[0]
+            .select("id, email, full_name")
+            .in("id", missingUserIds);
+          
+          if (profilesData) {
+            profilesData.forEach(profile => {
+              if (!userInfoMap[profile.id]) {
+                userInfoMap[profile.id] = {
+                  email: profile.email || "",
+                  full_name: profile.full_name || ""
+                };
+              }
             });
-            console.log("Found profile:", profileData);
           }
-        } catch (profileError) {
-          console.log("Profile not found, trying users table");
-          // Try users table as fallback
-          const { data: userData } = await supabase
-            .from("users")
-            .select("email, full_name")
-            .eq("id", user_id)
-            .single();
 
-          if (userData) {
-            setUserInfo({
-              email: userData.email,
-              full_name: userData.full_name || userData.email.split('@')[0]
-            });
-          } else {
-            setUserInfo({
-              email: "Unknown Email",
-              full_name: "Candidate"
-            });
+          // Update missing IDs after profiles check
+          const stillMissingIds = missingUserIds.filter(id => !userInfoMap[id]?.email);
+          
+          if (stillMissingIds.length > 0) {
+            // Try users table as final fallback
+            const { data: usersData } = await supabase
+              .from("users")
+              .select("id, email, full_name")
+              .in("id", stillMissingIds);
+            
+            if (usersData) {
+              usersData.forEach(user => {
+                userInfoMap[user.id] = {
+                  email: user.email || "",
+                  full_name: user.full_name || user.email?.split('@')[0] || `Candidate ${user.id.substring(0, 8)}`
+                };
+              });
+            }
           }
         }
 
-        // 3. Get ALL responses for this user with related data
-        console.log("Fetching responses...");
-        const { data: responsesData, error: responsesError } = await supabase
-          .from("responses")
-          .select(`
-            *,
-            questions!inner (
-              section
-            ),
-            answers!inner (
-              score
-            )
-          `)
-          .eq("user_id", user_id);
+        // Combine talent data with user info
+        const candidatesWithUsers = talentData.map(candidate => {
+          const userInfo = userInfoMap[candidate.user_id];
+          
+          let email = "Email not found";
+          let full_name = `Candidate ${candidate.user_id.substring(0, 8)}`;
+          
+          if (userInfo) {
+            if (userInfo.email) {
+              email = userInfo.email;
+            }
+            if (userInfo.full_name) {
+              full_name = userInfo.full_name;
+            } else if (userInfo.email) {
+              full_name = userInfo.email.split('@')[0];
+            }
+          }
 
-        if (responsesError) {
-          console.error("Responses error:", responsesError);
-          setDebugInfo(prev => prev + ` | Responses error: ${responsesError.message}`);
-        } else if (responsesData && responsesData.length > 0) {
-          console.log(`Found ${responsesData.length} responses`);
-          setDebugInfo(prev => prev + ` | Found ${responsesData.length} responses`);
-          setResponses(responsesData);
-          
-          // Calculate category scores from responses
-          const calculatedScores = calculateCategoryScoresFromResponses(responsesData);
-          setCategoryScores(calculatedScores);
-          
-          // Calculate strengths and weaknesses
-          const calculatedStrengths = calculateStrengthsFromScores(calculatedScores);
-          const calculatedWeaknesses = calculateWeaknessesFromScores(calculatedScores);
-          setStrengths(calculatedStrengths);
-          setWeaknesses(calculatedWeaknesses);
-          
-          // Generate recommendations
-          const calculatedRecommendations = generateRecommendationsFromScores(calculatedScores);
-          setRecommendations(calculatedRecommendations);
-          
-          console.log("Calculated scores:", calculatedScores);
-          console.log("Strengths:", calculatedStrengths);
-          console.log("Weaknesses:", calculatedWeaknesses);
-        } else {
-          console.log("No responses found");
-          setDebugInfo(prev => prev + " | No responses found");
-        }
+          return {
+            ...candidate,
+            user: {
+              email: email,
+              full_name: full_name
+            }
+          };
+        });
 
+        setCandidates(candidatesWithUsers);
+
+        // Calculate statistics
+        const statsData = {
+          totalCandidates: talentData.length,
+          completed: talentData.length,
+          inProgress: 0,
+          notStarted: 0,
+          topTalent: talentData.filter(c => c.classification === 'Top Talent').length,
+          highPotential: talentData.filter(c => c.classification === 'High Potential').length,
+          solidPerformer: talentData.filter(c => c.classification === 'Solid Performer').length,
+          developing: talentData.filter(c => c.classification === 'Developing').length,
+          needsImprovement: talentData.filter(c => c.classification === 'Needs Improvement').length
+        };
+        setStats(statsData);
+
+        setLoading(false);
       } catch (err) {
-        console.error("General error:", err);
-        setDebugInfo(prev => prev + ` | Error: ${err.message}`);
-      } finally {
+        console.error("Error fetching data:", err);
+        setCandidates([]);
         setLoading(false);
       }
     };
 
-    // Function to calculate category scores from responses
-    const calculateCategoryScoresFromResponses = (responses) => {
-      const scoresByCategory = {};
-      
-      responses.forEach(response => {
-        const category = response.questions?.section || "Unknown";
-        const score = response.answers?.score || 0;
-        
-        if (!scoresByCategory[category]) {
-          scoresByCategory[category] = {
-            totalScore: 0,
-            count: 0,
-            scores: []
-          };
-        }
-        
-        scoresByCategory[category].totalScore += score;
-        scoresByCategory[category].count += 1;
-        scoresByCategory[category].scores.push(score);
-      });
+    fetchData();
+  }, [isSupervisor]);
 
-      // Format results
-      const formattedScores = {};
-      Object.keys(scoresByCategory).forEach(category => {
-        const data = scoresByCategory[category];
-        const totalScore = data.totalScore;
-        const questionCount = data.count;
-        const averageScore = questionCount > 0 ? (totalScore / questionCount).toFixed(2) : 0;
-        const maxPossibleScore = questionCount * 5;
-        const percentage = maxPossibleScore > 0 ? Math.round((totalScore / maxPossibleScore) * 100) : 0;
-        
-        formattedScores[category] = {
-          score: totalScore,
-          questions: questionCount,
-          average: parseFloat(averageScore),
-          percentage: percentage,
-          level: percentage >= 80 ? 'STRONG' : 
-                 percentage >= 60 ? 'GOOD' : 
-                 percentage >= 40 ? 'NEEDS_IMPROVEMENT' : 'WEAK',
-          max_possible: maxPossibleScore
-        };
-      });
-
-      return formattedScores;
-    };
-
-    // Function to calculate strengths
-    const calculateStrengthsFromScores = (scores) => {
-      return Object.entries(scores)
-        .filter(([_, data]) => data.percentage >= 75)
-        .map(([category]) => category);
-    };
-
-    // Function to calculate weaknesses
-    const calculateWeaknessesFromScores = (scores) => {
-      return Object.entries(scores)
-        .filter(([_, data]) => data.percentage < 60)
-        .map(([category]) => category);
-    };
-
-    // Function to generate recommendations
-    const generateRecommendationsFromScores = (scores) => {
-      const recs = [];
-      Object.entries(scores).forEach(([category, data]) => {
-        const percentage = data.percentage || 0;
-        
-        if (percentage < 60) {
-          recs.push({
-            category: category,
-            issue: `Low performance in ${category}`,
-            recommendation: percentage < 50 
-              ? `Urgent improvement needed. Consider focused training in ${category}.`
-              : `Needs improvement. Recommend targeted practice in ${category}.`,
-            priority: percentage < 50 ? "High" : "Medium"
-          });
-        }
-      });
-      return recs;
-    };
-
-    fetchCandidateData();
-  }, [isSupervisor, user_id]);
-
-  const handleBack = () => {
-    router.push("/supervisor");
+  const handleLogout = () => {
+    localStorage.removeItem("supervisorSession");
+    router.push("/supervisor-login");
   };
 
-  const getCategoryColor = (category) => {
-    const colors = {
-      'Cognitive Abilities': '#4A6FA5',
-      'Technical Competence': '#2E7D32',
-      'Personality Assessment': '#9C27B0',
-      'Leadership Potential': '#D32F2F',
-      'Performance Metrics': '#F57C00',
-      'Cognitive': '#4A6FA5',
-      'Technical': '#2E7D32',
-      'Personality': '#9C27B0',
-      'Leadership': '#D32F2F',
-      'Performance': '#F57C00',
-      'Unknown': '#666'
-    };
-    return colors[category] || '#666';
-  };
-
-  const calculateGrade = (score) => {
-    if (score >= 450) return 'A+';
-    if (score >= 400) return 'A';
-    if (score >= 350) return 'B';
-    if (score >= 300) return 'C';
-    if (score >= 250) return 'D';
-    return 'E';
-  };
-
-  // Loading and error states
   if (!isSupervisor) {
     return (
       <div style={{ 
@@ -289,528 +221,371 @@ export default function CandidateReport() {
     );
   }
 
-  if (loading) {
-    return (
-      <AppLayout background="/images/supervisor-bg.jpg">
-        <div style={{ 
-          display: "flex", 
-          justifyContent: "center", 
-          alignItems: "center", 
-          minHeight: "400px" 
-        }}>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ 
-              width: "50px", 
-              height: "50px", 
-              border: "5px solid #f3f3f3",
-              borderTop: "5px solid #1565c0",
-              borderRadius: "50%",
-              animation: "spin 1s linear infinite",
-              margin: "0 auto 20px"
-            }} />
-            <p style={{ color: "#666" }}>Loading candidate report...</p>
-            <style jsx>{`
-              @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-              }
-            `}</style>
-          </div>
-        </div>
-      </AppLayout>
-    );
-  }
-
-  if (!candidate) {
-    return (
-      <AppLayout background="/images/supervisor-bg.jpg">
-        <div style={{ 
-          width: "90vw", 
-          margin: "auto", 
-          padding: "40px 20px",
-          textAlign: "center" 
-        }}>
-          <h1 style={{ color: "#666", marginBottom: "20px" }}>Candidate Not Found</h1>
-          <p style={{ color: "#888", marginBottom: "30px" }}>
-            No assessment data found for this candidate.
-          </p>
-          <button
-            onClick={handleBack}
-            style={{
-              padding: "12px 24px",
-              background: "#1565c0",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              cursor: "pointer",
-              fontSize: "16px"
-            }}
-          >
-            ← Back to Dashboard
-          </button>
-        </div>
-      </AppLayout>
-    );
-  }
-
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
       <div style={{ width: "90vw", margin: "auto", padding: "30px 20px" }}>
-        {/* Debug info at top */}
-        {debugInfo && (
-          <div style={{ 
-            marginBottom: "20px",
-            padding: "10px 15px",
-            background: "#f5f5f5",
-            borderRadius: "6px",
-            borderLeft: "4px solid #1565c0",
-            fontSize: "12px",
-            fontFamily: "monospace",
-            color: "#333"
-          }}>
-            <strong>Debug:</strong> {debugInfo}
-          </div>
-        )}
-
         {/* Header */}
-        <div style={{ marginBottom: "30px" }}>
-          <div style={{ 
-            display: "flex", 
-            justifyContent: "space-between", 
-            alignItems: "flex-start",
-            marginBottom: "20px" 
-          }}>
-            <div>
-              <button
-                onClick={handleBack}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#1565c0",
-                  cursor: "pointer",
-                  fontSize: "16px",
-                  padding: "0",
-                  marginBottom: "15px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px"
-                }}
-              >
-                ← Back to Dashboard
-              </button>
-              <h1 style={{ 
-                margin: "0 0 10px 0", 
-                color: "#333",
-                fontSize: "28px"
-              }}>
-                Candidate Performance Report
-              </h1>
-              <div style={{ 
-                margin: "0", 
-                color: "#666",
-                fontSize: "16px"
-              }}>
-                <div style={{ fontWeight: "600", marginBottom: "5px" }}>
-                  {userInfo.full_name || "Candidate"}
-                </div>
-                <div style={{ color: "#1565c0" }}>
-                  {userInfo.email || "No email available"}
-                </div>
-              </div>
-            </div>
-            <div style={{ 
-              background: "#f8f9fa", 
-              padding: "15px 20px", 
-              borderRadius: "10px",
-              minWidth: "200px",
-              border: "1px solid #e0e0e0"
-            }}>
-              <div style={{ 
-                fontSize: "14px", 
-                color: "#666", 
-                marginBottom: "5px" 
-              }}>
-                Overall Classification
-              </div>
-              <div style={{ 
-                fontSize: "20px", 
-                fontWeight: "700",
-                color: candidate.classification === 'Top Talent' ? "#4CAF50" :
-                       candidate.classification === 'High Potential' ? "#2196F3" :
-                       candidate.classification === 'Solid Performer' ? "#FF9800" :
-                       candidate.classification === 'Developing' ? "#9C27B0" : "#F44336"
-              }}>
-                {candidate.classification}
-              </div>
-            </div>
+        <div style={{ 
+          display: "flex", 
+          justifyContent: "space-between", 
+          alignItems: "center", 
+          marginBottom: 30 
+        }}>
+          <div>
+            <h1 style={{ margin: 0, color: "#1565c0", fontSize: "32px" }}>Supervisor Dashboard</h1>
+            <p style={{ margin: "5px 0 0 0", color: "#666" }}>
+              Talent Assessment Analytics & Management
+            </p>
           </div>
+          <button
+            onClick={handleLogout}
+            style={{
+              background: "#d32f2f",
+              color: "white",
+              border: "none",
+              padding: "10px 20px",
+              borderRadius: "8px",
+              cursor: "pointer",
+              fontSize: "14px",
+              fontWeight: "600"
+            }}
+          >
+            Logout
+          </button>
+        </div>
 
-          {/* Overall Score Card */}
+        {/* Statistics Cards */}
+        <div style={{ 
+          display: "grid", 
+          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+          gap: "20px", 
+          marginBottom: "40px" 
+        }}>
           <div style={{
-            background: "linear-gradient(135deg, #1565c0 0%, #0d47a1 100%)",
-            color: "white",
+            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
             padding: "25px",
             borderRadius: "12px",
-            marginBottom: "30px",
+            color: "white",
             boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
           }}>
-            <div style={{ 
-              display: "flex", 
-              justifyContent: "space-between",
-              alignItems: "center"
-            }}>
-              <div>
-                <div style={{ fontSize: "14px", opacity: 0.9 }}>Overall Assessment Score</div>
-                <div style={{ fontSize: "48px", fontWeight: "700", margin: "10px 0" }}>
-                  {candidate.total_score}/500
-                </div>
-                <div style={{ fontSize: "14px", opacity: 0.9 }}>
-                  Based on {responses.length} responses across {Object.keys(categoryScores).length} categories
-                </div>
-              </div>
-              <div style={{ textAlign: "center" }}>
-                <div style={{
-                  width: "100px",
-                  height: "100px",
-                  borderRadius: "50%",
-                  background: "rgba(255,255,255,0.1)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  border: "5px solid rgba(255,255,255,0.2)"
-                }}>
-                  <div style={{ fontSize: "32px", fontWeight: "700" }}>
-                    {calculateGrade(candidate.total_score)}
-                  </div>
-                </div>
-                <div style={{ marginTop: "10px", fontSize: "12px", opacity: 0.8 }}>
-                  Performance Grade
-                </div>
-              </div>
+            <div style={{ fontSize: "14px", opacity: 0.9 }}>Total Candidates</div>
+            <div style={{ fontSize: "36px", fontWeight: "700", margin: "10px 0" }}>
+              {stats.totalCandidates}
+            </div>
+            <div style={{ fontSize: "12px", opacity: 0.8 }}>
+              Across all classifications
+            </div>
+          </div>
+
+          <div style={{
+            background: "linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)",
+            padding: "25px",
+            borderRadius: "12px",
+            color: "white",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
+          }}>
+            <div style={{ fontSize: "14px", opacity: 0.9 }}>Completed Assessments</div>
+            <div style={{ fontSize: "36px", fontWeight: "700", margin: "10px 0" }}>
+              {stats.completed}
+            </div>
+            <div style={{ fontSize: "12px", opacity: 0.8 }}>
+              100% completion rate
+            </div>
+          </div>
+
+          <div style={{
+            background: "linear-gradient(135deg, #FF9800 0%, #F57C00 100%)",
+            padding: "25px",
+            borderRadius: "12px",
+            color: "white",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
+          }}>
+            <div style={{ fontSize: "14px", opacity: 0.9 }}>Top Talent</div>
+            <div style={{ fontSize: "36px", fontWeight: "700", margin: "10px 0" }}>
+              {stats.topTalent}
+            </div>
+            <div style={{ fontSize: "12px", opacity: 0.8 }}>
+              {stats.totalCandidates > 0 ? `${Math.round((stats.topTalent / stats.totalCandidates) * 100)}% of total` : "0%"}
+            </div>
+          </div>
+
+          <div style={{
+            background: "linear-gradient(135deg, #2196F3 0%, #0D47A1 100%)",
+            padding: "25px",
+            borderRadius: "12px",
+            color: "white",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
+          }}>
+            <div style={{ fontSize: "14px", opacity: 0.9 }}>Average Score</div>
+            <div style={{ fontSize: "36px", fontWeight: "700", margin: "10px 0" }}>
+              {candidates.length > 0 
+                ? Math.round(candidates.reduce((sum, c) => sum + c.total_score, 0) / candidates.length)
+                : "0"
+              }
+            </div>
+            <div style={{ fontSize: "12px", opacity: 0.8 }}>
+              Out of maximum 500
             </div>
           </div>
         </div>
 
-        {/* Category Scores - UPDATED */}
+        {/* Classification Distribution */}
         <div style={{ 
           background: "white", 
           padding: "25px", 
           borderRadius: "12px", 
           boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-          marginBottom: "30px"
+          marginBottom: "40px"
         }}>
-          <h2 style={{ margin: "0 0 25px 0", color: "#333" }}>Performance by Category</h2>
-          
-          {responses.length === 0 ? (
-            <div style={{ 
-              textAlign: "center", 
-              padding: "40px",
-              color: "#888",
-              background: "#f8f9fa",
-              borderRadius: "8px"
-            }}>
-              <div style={{ fontSize: "48px", marginBottom: "15px" }}>📊</div>
-              <p><strong>No assessment responses found.</strong></p>
-              <p style={{ fontSize: "14px", marginTop: "10px", color: "#666" }}>
-                The candidate has a classification but no detailed responses were found in the database.
-              </p>
-            </div>
-          ) : Object.keys(categoryScores).length === 0 ? (
-            <div style={{ 
-              textAlign: "center", 
-              padding: "40px",
-              color: "#888",
-              background: "#f8f9fa",
-              borderRadius: "8px"
-            }}>
-              <div style={{ fontSize: "48px", marginBottom: "15px" }}>📊</div>
-              <p>Found {responses.length} responses but couldn't categorize them.</p>
-            </div>
-          ) : (
-            <div style={{ 
-              display: "grid", 
-              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", 
-              gap: "20px" 
-            }}>
-              {Object.entries(categoryScores).map(([category, stats]) => (
-                <div key={category} style={{
-                  borderLeft: `4px solid ${getCategoryColor(category)}`,
-                  padding: "20px",
-                  background: "#f8f9fa",
-                  borderRadius: "8px",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+          <h2 style={{ margin: "0 0 20px 0", color: "#333" }}>Talent Classification Distribution</h2>
+          <div style={{ 
+            display: "grid", 
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", 
+            gap: "15px" 
+          }}>
+            {[
+              { name: 'Top Talent', count: stats.topTalent, color: '#4CAF50' },
+              { name: 'High Potential', count: stats.highPotential, color: '#2196F3' },
+              { name: 'Solid Performer', count: stats.solidPerformer, color: '#FF9800' },
+              { name: 'Developing', count: stats.developing, color: '#9C27B0' },
+              { name: 'Needs Improvement', count: stats.needsImprovement, color: '#F44336' }
+            ].map((category) => (
+              <div key={category.name} style={{
+                borderLeft: `4px solid ${category.color}`,
+                padding: "15px",
+                background: "#f8f9fa",
+                borderRadius: "8px"
+              }}>
+                <div style={{ 
+                  display: "flex", 
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "5px"
+                }}>
+                  <span style={{ fontWeight: "600", color: "#333" }}>{category.name}</span>
+                  <span style={{ 
+                    fontWeight: "700", 
+                    color: category.color,
+                    fontSize: "18px"
+                  }}>{category.count}</span>
+                </div>
+                <div style={{ 
+                  height: "8px", 
+                  background: "#e0e0e0", 
+                  borderRadius: "4px",
+                  overflow: "hidden",
+                  marginTop: "8px"
                 }}>
                   <div style={{ 
-                    display: "flex", 
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    marginBottom: "15px"
-                  }}>
-                    <div>
-                      <h3 style={{ 
-                        margin: "0 0 5px 0", 
-                        color: getCategoryColor(category),
-                        fontSize: "18px"
-                      }}>
-                        {category}
-                      </h3>
-                      <p style={{ 
-                        margin: 0, 
-                        fontSize: "14px", 
-                        color: "#666" 
-                      }}>
-                        {stats.questions} questions • Average: {stats.average}/5
-                      </p>
-                    </div>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ 
-                        fontSize: "28px", 
-                        fontWeight: "700",
-                        color: getCategoryColor(category)
-                      }}>
-                        {stats.percentage}%
-                      </div>
-                      <div style={{ fontSize: "12px", color: "#666" }}>
-                        Score
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div style={{ 
-                    height: "10px", 
-                    background: "#e0e0e0", 
-                    borderRadius: "5px",
-                    overflow: "hidden",
-                    marginBottom: "8px"
-                  }}>
-                    <div style={{ 
-                      height: "100%", 
-                      width: `${stats.percentage}%`, 
-                      background: getCategoryColor(category),
-                      borderRadius: "5px"
-                    }} />
-                  </div>
-                  
-                  <div style={{ 
-                    display: "flex", 
-                    justifyContent: "space-between",
-                    fontSize: "12px", 
-                    color: "#666",
-                    marginTop: "10px"
-                  }}>
-                    <div>
-                      <div style={{ fontWeight: "600" }}>Total Score</div>
-                      <div>{stats.score}/{stats.max_possible}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: "600" }}>Performance Level</div>
-                      <div style={{ 
-                        color: stats.percentage >= 60 ? '#4CAF50' : '#F44336',
-                        fontWeight: "600"
-                      }}>
-                        {stats.level}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: "600" }}>Average</div>
-                      <div>{stats.average}/5</div>
-                    </div>
-                  </div>
+                    height: "100%", 
+                    width: `${stats.totalCandidates > 0 ? (category.count / stats.totalCandidates) * 100 : 0}%`, 
+                    background: category.color,
+                    borderRadius: "4px"
+                  }} />
                 </div>
-              ))}
+                <div style={{ 
+                  fontSize: "12px", 
+                  color: "#666", 
+                  marginTop: "5px",
+                  textAlign: "right"
+                }}>
+                  {stats.totalCandidates > 0 ? `${Math.round((category.count / stats.totalCandidates) * 100)}%` : "0%"}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Candidates Table */}
+        <div style={{ 
+          background: "white", 
+          padding: "25px", 
+          borderRadius: "12px", 
+          boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
+        }}>
+          <div style={{ 
+            display: "flex", 
+            justifyContent: "space-between", 
+            alignItems: "center",
+            marginBottom: "20px" 
+          }}>
+            <h2 style={{ margin: 0, color: "#333" }}>Candidate Assessments</h2>
+            <div style={{ fontSize: "14px", color: "#666" }}>
+              {loading ? "Loading..." : `${candidates.length} candidate${candidates.length !== 1 ? 's' : ''} found`}
+            </div>
+          </div>
+
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "40px" }}>
+              <div style={{ 
+                width: "40px", 
+                height: "40px", 
+                border: "4px solid #f3f3f3",
+                borderTop: "4px solid #1565c0",
+                borderRadius: "50%",
+                animation: "spin 1s linear infinite",
+                margin: "0 auto 20px"
+              }} />
+              <p style={{ color: "#666" }}>Loading candidate data...</p>
+              <style jsx>{`
+                @keyframes spin {
+                  0% { transform: rotate(0deg); }
+                  100% { transform: rotate(360deg); }
+                }
+              `}</style>
+            </div>
+          ) : candidates.length === 0 ? (
+            <div style={{ 
+              textAlign: "center", 
+              padding: "60px 20px",
+              background: "#f8f9fa",
+              borderRadius: "8px"
+            }}>
+              <div style={{ 
+                fontSize: "48px", 
+                marginBottom: "20px",
+                opacity: 0.3
+              }}>
+                📊
+              </div>
+              <h3 style={{ color: "#666", marginBottom: "10px" }}>
+                No Assessment Data Yet
+              </h3>
+              <p style={{ color: "#888", maxWidth: "500px", margin: "0 auto 25px" }}>
+                When candidates complete their assessments, their results will appear here.
+              </p>
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                textAlign: "left",
+                minWidth: "800px"
+              }}>
+                <thead>
+                  <tr style={{ 
+                    borderBottom: "2px solid #1565c0",
+                    backgroundColor: "#f5f5f5"
+                  }}>
+                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>#</th>
+                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Candidate Name</th>
+                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Email</th>
+                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Total Score</th>
+                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Classification</th>
+                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Status</th>
+                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {candidates.map((c, index) => (
+                    <tr key={c.user_id} style={{ 
+                      borderBottom: "1px solid #eee",
+                      transition: "background 0.2s"
+                    }}>
+                      <td style={{ padding: "15px", color: "#666" }}>{index + 1}</td>
+                      <td style={{ padding: "15px", fontWeight: "500" }}>
+                        {c.user.full_name}
+                        <div style={{ fontSize: "12px", color: "#888", marginTop: "3px" }}>
+                          ID: {c.user_id.substring(0, 8)}...
+                        </div>
+                      </td>
+                      <td style={{ padding: "15px" }}>
+                        <div style={{ fontSize: "14px", color: "#1565c0" }}>
+                          {c.user.email}
+                        </div>
+                        {c.user.email === "Email not found" && (
+                          <div style={{ fontSize: "11px", color: "#999", marginTop: "3px" }}>
+                            Email not available
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: "15px", fontWeight: "500" }}>
+                        <div style={{ 
+                          display: "inline-block",
+                          padding: "5px 12px",
+                          background: c.total_score >= 400 ? "#e8f5e9" : 
+                                    c.total_score >= 350 ? "#fff3e0" : "#ffebee",
+                          color: c.total_score >= 400 ? "#2e7d32" : 
+                                c.total_score >= 350 ? "#f57c00" : "#c62828",
+                          borderRadius: "20px",
+                          fontWeight: "600",
+                          fontSize: "14px"
+                        }}>
+                          {c.total_score}/500
+                        </div>
+                      </td>
+                      <td style={{ padding: "15px" }}>
+                        <span style={{ 
+                          color: c.classification === 'Top Talent' ? "#4CAF50" :
+                                c.classification === 'High Potential' ? "#2196F3" :
+                                c.classification === 'Solid Performer' ? "#FF9800" :
+                                c.classification === 'Developing' ? "#9C27B0" : "#F44336",
+                          fontWeight: "600",
+                          padding: "6px 12px",
+                          background: `${c.classification === 'Top Talent' ? "#4CAF50" :
+                                     c.classification === 'High Potential' ? "#2196F3" :
+                                     c.classification === 'Solid Performer' ? "#FF9800" :
+                                     c.classification === 'Developing' ? "#9C27B0" : "#F44336"}15`,
+                          borderRadius: "6px",
+                          display: "inline-block"
+                        }}>
+                          {c.classification}
+                        </span>
+                      </td>
+                      <td style={{ padding: "15px" }}>
+                        <span style={{
+                          padding: "6px 12px",
+                          background: "#4CAF50",
+                          color: "white",
+                          borderRadius: "6px",
+                          fontSize: "12px",
+                          fontWeight: "600"
+                        }}>
+                          Completed
+                        </span>
+                      </td>
+                      <td style={{ padding: "15px" }}>
+                        <Link href={`/supervisor/${c.user_id}`} legacyBehavior>
+                          <a style={{ 
+                            color: "#fff", 
+                            background: "#1565c0", 
+                            padding: "8px 16px", 
+                            borderRadius: "6px",
+                            textDecoration: "none",
+                            display: "inline-block",
+                            fontWeight: "500",
+                            fontSize: "14px",
+                            transition: "background 0.2s"
+                          }}
+                          onMouseOver={(e) => e.currentTarget.style.background = "#0d47a1"}
+                          onMouseOut={(e) => e.currentTarget.style.background = "#1565c0"}
+                          >
+                            View Report
+                          </a>
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              
+              {/* Info Box */}
+              <div style={{ 
+                marginTop: "20px", 
+                padding: "15px", 
+                background: "#e3f2fd", 
+                borderRadius: "8px",
+                fontSize: "13px",
+                color: "#1565c0",
+                borderLeft: "4px solid #1565c0"
+              }}>
+                <strong>Note:</strong> Candidate emails and names are retrieved from multiple sources (assessment_results, profiles, users tables).
+                If "Email not found" appears, the candidate's contact information may not be available in the system.
+              </div>
             </div>
           )}
         </div>
-
-        {/* Strengths */}
-        {strengths.length > 0 && (
-          <div style={{ 
-            background: "white", 
-            padding: "25px", 
-            borderRadius: "12px", 
-            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-            marginBottom: "30px"
-          }}>
-            <h2 style={{ margin: "0 0 20px 0", color: "#333" }}>Key Strengths</h2>
-            <div style={{ 
-              display: "grid", 
-              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
-              gap: "15px" 
-            }}>
-              {strengths.map((strength, index) => (
-                <div key={index} style={{
-                  padding: "15px",
-                  background: "#e8f5e9",
-                  borderRadius: "8px",
-                  borderLeft: "4px solid #4CAF50"
-                }}>
-                  <div style={{ 
-                    display: "flex", 
-                    alignItems: "center", 
-                    gap: "10px",
-                    marginBottom: "8px"
-                  }}>
-                    <span style={{ 
-                      background: "#4CAF50", 
-                      color: "white", 
-                      width: "28px", 
-                      height: "28px",
-                      borderRadius: "50%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "14px",
-                      fontWeight: "600"
-                    }}>
-                      ✓
-                    </span>
-                    <span style={{ fontWeight: "600", color: "#2e7d32" }}>
-                      {strength}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: "13px", color: "#555" }}>
-                    {categoryScores[strength] ? 
-                      `Score: ${categoryScores[strength].percentage}%` : 
-                      'Strong performance area'}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Weaknesses */}
-        {weaknesses.length > 0 && (
-          <div style={{ 
-            background: "white", 
-            padding: "25px", 
-            borderRadius: "12px", 
-            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-            marginBottom: "30px"
-          }}>
-            <h2 style={{ margin: "0 0 20px 0", color: "#333" }}>Areas Needing Improvement</h2>
-            <div style={{ 
-              display: "grid", 
-              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
-              gap: "15px" 
-            }}>
-              {weaknesses.map((weakness, index) => (
-                <div key={index} style={{
-                  padding: "15px",
-                  background: "#ffebee",
-                  borderRadius: "8px",
-                  borderLeft: "4px solid #F44336"
-                }}>
-                  <div style={{ 
-                    display: "flex", 
-                    alignItems: "center", 
-                    gap: "10px",
-                    marginBottom: "8px"
-                  }}>
-                    <span style={{ 
-                      background: "#F44336", 
-                      color: "white", 
-                      width: "28px", 
-                      height: "28px",
-                      borderRadius: "50%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "14px",
-                      fontWeight: "600"
-                    }}>
-                      !
-                    </span>
-                    <span style={{ fontWeight: "600", color: "#c62828" }}>
-                      {weakness}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: "13px", color: "#555" }}>
-                    {categoryScores[weakness] ? 
-                      `Score: ${categoryScores[weakness].percentage}% - Needs attention` : 
-                      'Requires development'}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Recommendations */}
-        {recommendations.length > 0 && (
-          <div style={{ 
-            background: "white", 
-            padding: "25px", 
-            borderRadius: "12px", 
-            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-            marginBottom: "30px"
-          }}>
-            <h2 style={{ margin: "0 0 20px 0", color: "#333" }}>Recommendations</h2>
-            <div style={{ 
-              display: "grid", 
-              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", 
-              gap: "20px" 
-            }}>
-              {recommendations.map((rec, index) => (
-                <div key={index} style={{
-                  padding: "20px",
-                  background: rec.priority === "High" ? "#fff3e0" : "#e3f2fd",
-                  borderRadius: "8px",
-                  borderLeft: `4px solid ${rec.priority === "High" ? "#FF9800" : "#2196F3"}`
-                }}>
-                  <div style={{ 
-                    display: "flex", 
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    marginBottom: "10px"
-                  }}>
-                    <div>
-                      <div style={{ 
-                        display: "flex", 
-                        alignItems: "center", 
-                        gap: "8px",
-                        marginBottom: "5px"
-                      }}>
-                        <span style={{ 
-                          fontWeight: "600", 
-                          color: rec.priority === "High" ? "#E65100" : "#1565c0",
-                          fontSize: "16px"
-                        }}>
-                          {rec.category}
-                        </span>
-                        <span style={{
-                          fontSize: "11px",
-                          padding: "3px 8px",
-                          background: rec.priority === "High" ? "#FF9800" : "#2196F3",
-                          color: "white",
-                          borderRadius: "12px",
-                          fontWeight: "600"
-                        }}>
-                          {rec.priority} Priority
-                        </span>
-                      </div>
-                      <p style={{ 
-                        margin: "0 0 10px 0", 
-                        fontSize: "14px", 
-                        color: "#555" 
-                      }}>
-                        {rec.issue}
-                      </p>
-                    </div>
-                  </div>
-                  <p style={{ 
-                    margin: "0", 
-                    fontSize: "13px", 
-                    color: "#666",
-                    lineHeight: "1.5"
-                  }}>
-                    <strong>Action:</strong> {rec.recommendation}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </AppLayout>
   );
