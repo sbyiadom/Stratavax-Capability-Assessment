@@ -16,6 +16,7 @@ export default function CandidateReport() {
   const [strengths, setStrengths] = useState([]);
   const [weaknesses, setWeaknesses] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
+  const [debugInfo, setDebugInfo] = useState("");
 
   // Check supervisor authentication
   useEffect(() => {
@@ -43,16 +44,16 @@ export default function CandidateReport() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch ALL candidate data - FIXED TO GET REAL NAMES AND CATEGORY SCORES
+  // Fetch ALL data for the candidate
   useEffect(() => {
     if (!isSupervisor || !user_id) return;
 
     const fetchCandidateData = async () => {
       try {
         setLoading(true);
-        console.log(`Fetching detailed report for candidate: ${user_id}`);
+        setDebugInfo(`Fetching data for: ${user_id}`);
 
-        // 1. Get candidate's classification and score from talent_classification
+        // 1. Get candidate classification (from talent_classification table)
         const { data: classificationData, error: classificationError } = await supabase
           .from("talent_classification")
           .select("*")
@@ -60,26 +61,35 @@ export default function CandidateReport() {
           .single();
 
         if (classificationError) {
-          console.error("No classification found:", classificationError);
+          console.error("Classification error:", classificationError);
           setCandidate(null);
+          setDebugInfo(`No classification found: ${classificationError.message}`);
           setLoading(false);
           return;
         }
 
-        // 2. Get REAL user info from profiles table
-        const { data: profileData } = await supabase
-          .from("profiles")
-          .select("email, full_name")
-          .eq("id", user_id)
-          .single();
+        console.log("Found classification:", classificationData);
+        setCandidate(classificationData);
+        setDebugInfo(prev => prev + ` | Classification score: ${classificationData?.total_score}`);
 
-        if (profileData) {
-          setUserInfo({
-            email: profileData.email,
-            full_name: profileData.full_name || profileData.email?.split('@')[0] || "Candidate"
-          });
-        } else {
-          // Fallback to users table
+        // 2. Get user info from profiles table
+        try {
+          const { data: profileData } = await supabase
+            .from("profiles")
+            .select("email, full_name")
+            .eq("id", user_id)
+            .single();
+
+          if (profileData) {
+            setUserInfo({
+              email: profileData.email,
+              full_name: profileData.full_name || profileData.email.split('@')[0]
+            });
+            console.log("Found profile:", profileData);
+          }
+        } catch (profileError) {
+          console.log("Profile not found, trying users table");
+          // Try users table as fallback
           const { data: userData } = await supabase
             .from("users")
             .select("email, full_name")
@@ -89,93 +99,98 @@ export default function CandidateReport() {
           if (userData) {
             setUserInfo({
               email: userData.email,
-              full_name: userData.full_name || userData.email?.split('@')[0] || "Candidate"
+              full_name: userData.full_name || userData.email.split('@')[0]
+            });
+          } else {
+            setUserInfo({
+              email: "Unknown Email",
+              full_name: "Candidate"
             });
           }
         }
 
-        // Set candidate basic info
-        setCandidate({
-          total_score: classificationData.total_score,
-          classification: classificationData.classification,
-          user_id: classificationData.user_id
-        });
-
-        // 3. Get ALL responses for this candidate to calculate category scores
-        const { data: responsesData } = await supabase
+        // 3. Get ALL responses for this user with related data
+        console.log("Fetching responses...");
+        const { data: responsesData, error: responsesError } = await supabase
           .from("responses")
           .select(`
             *,
             questions!inner (
-              section,
-              question_text
+              section
             ),
             answers!inner (
-              score,
-              answer_text,
-              interpretation
+              score
             )
           `)
           .eq("user_id", user_id);
 
-        if (responsesData && responsesData.length > 0) {
+        if (responsesError) {
+          console.error("Responses error:", responsesError);
+          setDebugInfo(prev => prev + ` | Responses error: ${responsesError.message}`);
+        } else if (responsesData && responsesData.length > 0) {
+          console.log(`Found ${responsesData.length} responses`);
+          setDebugInfo(prev => prev + ` | Found ${responsesData.length} responses`);
           setResponses(responsesData);
           
           // Calculate category scores from responses
-          const calculatedScores = calculateCategoryScores(responsesData);
+          const calculatedScores = calculateCategoryScoresFromResponses(responsesData);
           setCategoryScores(calculatedScores);
           
           // Calculate strengths and weaknesses
-          const { strengths: candidateStrengths, weaknesses: candidateWeaknesses } = 
-            calculateStrengthsAndWeaknesses(calculatedScores);
-          setStrengths(candidateStrengths);
-          setWeaknesses(candidateWeaknesses);
+          const calculatedStrengths = calculateStrengthsFromScores(calculatedScores);
+          const calculatedWeaknesses = calculateWeaknessesFromScores(calculatedScores);
+          setStrengths(calculatedStrengths);
+          setWeaknesses(calculatedWeaknesses);
           
           // Generate recommendations
-          const candidateRecommendations = generateRecommendations(calculatedScores);
-          setRecommendations(candidateRecommendations);
+          const calculatedRecommendations = generateRecommendationsFromScores(calculatedScores);
+          setRecommendations(calculatedRecommendations);
           
-          console.log("Calculated category scores:", calculatedScores);
+          console.log("Calculated scores:", calculatedScores);
+          console.log("Strengths:", calculatedStrengths);
+          console.log("Weaknesses:", calculatedWeaknesses);
         } else {
-          console.log("No responses found for this candidate");
+          console.log("No responses found");
+          setDebugInfo(prev => prev + " | No responses found");
         }
 
       } catch (err) {
-        console.error("Error loading candidate data:", err);
+        console.error("General error:", err);
+        setDebugInfo(prev => prev + ` | Error: ${err.message}`);
       } finally {
         setLoading(false);
       }
     };
 
     // Function to calculate category scores from responses
-    const calculateCategoryScores = (responses) => {
-      const categoryData = {};
+    const calculateCategoryScoresFromResponses = (responses) => {
+      const scoresByCategory = {};
       
       responses.forEach(response => {
         const category = response.questions?.section || "Unknown";
         const score = response.answers?.score || 0;
         
-        if (!categoryData[category]) {
-          categoryData[category] = {
+        if (!scoresByCategory[category]) {
+          scoresByCategory[category] = {
             totalScore: 0,
             count: 0,
             scores: []
           };
         }
         
-        categoryData[category].totalScore += score;
-        categoryData[category].count += 1;
-        categoryData[category].scores.push(score);
+        scoresByCategory[category].totalScore += score;
+        scoresByCategory[category].count += 1;
+        scoresByCategory[category].scores.push(score);
       });
 
-      // Format the results
+      // Format results
       const formattedScores = {};
-      Object.keys(categoryData).forEach(category => {
-        const data = categoryData[category];
+      Object.keys(scoresByCategory).forEach(category => {
+        const data = scoresByCategory[category];
         const totalScore = data.totalScore;
         const questionCount = data.count;
         const averageScore = questionCount > 0 ? (totalScore / questionCount).toFixed(2) : 0;
-        const maxPossibleScore = questionCount * 5; // Assuming max 5 points per question
+        const maxPossibleScore = questionCount * 5;
         const percentage = maxPossibleScore > 0 ? Math.round((totalScore / maxPossibleScore) * 100) : 0;
         
         formattedScores[category] = {
@@ -193,31 +208,28 @@ export default function CandidateReport() {
       return formattedScores;
     };
 
-    // Function to calculate strengths and weaknesses
-    const calculateStrengthsAndWeaknesses = (categoryScores) => {
-      const strengths = [];
-      const weaknesses = [];
-      
-      Object.entries(categoryScores).forEach(([category, data]) => {
-        if (data.percentage >= 75) {
-          strengths.push(category);
-        } else if (data.percentage < 60) {
-          weaknesses.push(category);
-        }
-      });
-      
-      return { strengths, weaknesses };
+    // Function to calculate strengths
+    const calculateStrengthsFromScores = (scores) => {
+      return Object.entries(scores)
+        .filter(([_, data]) => data.percentage >= 75)
+        .map(([category]) => category);
+    };
+
+    // Function to calculate weaknesses
+    const calculateWeaknessesFromScores = (scores) => {
+      return Object.entries(scores)
+        .filter(([_, data]) => data.percentage < 60)
+        .map(([category]) => category);
     };
 
     // Function to generate recommendations
-    const generateRecommendations = (categoryScores) => {
-      const recommendations = [];
-      
-      Object.entries(categoryScores).forEach(([category, data]) => {
+    const generateRecommendationsFromScores = (scores) => {
+      const recs = [];
+      Object.entries(scores).forEach(([category, data]) => {
         const percentage = data.percentage || 0;
         
         if (percentage < 60) {
-          recommendations.push({
+          recs.push({
             category: category,
             issue: `Low performance in ${category}`,
             recommendation: percentage < 50 
@@ -227,8 +239,7 @@ export default function CandidateReport() {
           });
         }
       });
-      
-      return recommendations;
+      return recs;
     };
 
     fetchCandidateData();
@@ -345,6 +356,22 @@ export default function CandidateReport() {
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
       <div style={{ width: "90vw", margin: "auto", padding: "30px 20px" }}>
+        {/* Debug info at top */}
+        {debugInfo && (
+          <div style={{ 
+            marginBottom: "20px",
+            padding: "10px 15px",
+            background: "#f5f5f5",
+            borderRadius: "6px",
+            borderLeft: "4px solid #1565c0",
+            fontSize: "12px",
+            fontFamily: "monospace",
+            color: "#333"
+          }}>
+            <strong>Debug:</strong> {debugInfo}
+          </div>
+        )}
+
         {/* Header */}
         <div style={{ marginBottom: "30px" }}>
           <div style={{ 
@@ -383,10 +410,10 @@ export default function CandidateReport() {
                 color: "#666",
                 fontSize: "16px"
               }}>
-                <div style={{ fontWeight: "600", marginBottom: "5px", fontSize: "18px" }}>
+                <div style={{ fontWeight: "600", marginBottom: "5px" }}>
                   {userInfo.full_name || "Candidate"}
                 </div>
-                <div style={{ color: "#1565c0", fontSize: "14px" }}>
+                <div style={{ color: "#1565c0" }}>
                   {userInfo.email || "No email available"}
                 </div>
               </div>
@@ -464,7 +491,7 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* Category Scores - MAIN SECTION - WILL SHOW ALL 5 CATEGORIES */}
+        {/* Category Scores - UPDATED */}
         <div style={{ 
           background: "white", 
           padding: "25px", 
@@ -474,7 +501,7 @@ export default function CandidateReport() {
         }}>
           <h2 style={{ margin: "0 0 25px 0", color: "#333" }}>Performance by Category</h2>
           
-          {Object.keys(categoryScores).length === 0 ? (
+          {responses.length === 0 ? (
             <div style={{ 
               textAlign: "center", 
               padding: "40px",
@@ -483,10 +510,21 @@ export default function CandidateReport() {
               borderRadius: "8px"
             }}>
               <div style={{ fontSize: "48px", marginBottom: "15px" }}>📊</div>
-              <p><strong>Calculating category scores...</strong></p>
+              <p><strong>No assessment responses found.</strong></p>
               <p style={{ fontSize: "14px", marginTop: "10px", color: "#666" }}>
-                Loading detailed category breakdown from candidate responses.
+                The candidate has a classification but no detailed responses were found in the database.
               </p>
+            </div>
+          ) : Object.keys(categoryScores).length === 0 ? (
+            <div style={{ 
+              textAlign: "center", 
+              padding: "40px",
+              color: "#888",
+              background: "#f8f9fa",
+              borderRadius: "8px"
+            }}>
+              <div style={{ fontSize: "48px", marginBottom: "15px" }}>📊</div>
+              <p>Found {responses.length} responses but couldn't categorize them.</p>
             </div>
           ) : (
             <div style={{ 
@@ -494,104 +532,92 @@ export default function CandidateReport() {
               gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", 
               gap: "20px" 
             }}>
-              {Object.entries(categoryScores).map(([category, stats]) => {
-                const percentage = stats.percentage || 0;
-                const score = stats.score || 0;
-                const questions = stats.questions || 0;
-                const average = stats.average || 0;
-                const level = stats.level || 'N/A';
-                
-                return (
-                  <div key={category} style={{
-                    borderLeft: `4px solid ${getCategoryColor(category)}`,
-                    padding: "20px",
-                    background: "#f8f9fa",
-                    borderRadius: "8px",
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+              {Object.entries(categoryScores).map(([category, stats]) => (
+                <div key={category} style={{
+                  borderLeft: `4px solid ${getCategoryColor(category)}`,
+                  padding: "20px",
+                  background: "#f8f9fa",
+                  borderRadius: "8px",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+                }}>
+                  <div style={{ 
+                    display: "flex", 
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    marginBottom: "15px"
                   }}>
-                    <div style={{ 
-                      display: "flex", 
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      marginBottom: "15px"
-                    }}>
-                      <div>
-                        <h3 style={{ 
-                          margin: "0 0 5px 0", 
-                          color: getCategoryColor(category),
-                          fontSize: "18px"
-                        }}>
-                          {category}
-                        </h3>
-                        <p style={{ 
-                          margin: 0, 
-                          fontSize: "14px", 
-                          color: "#666" 
-                        }}>
-                          {questions} questions • Average: {average}/5
-                        </p>
-                      </div>
-                      <div style={{ textAlign: "center" }}>
-                        <div style={{ 
-                          fontSize: "28px", 
-                          fontWeight: "700",
-                          color: getCategoryColor(category)
-                        }}>
-                          {percentage}%
-                        </div>
-                        <div style={{ fontSize: "12px", color: "#666" }}>
-                          Score
-                        </div>
-                      </div>
+                    <div>
+                      <h3 style={{ 
+                        margin: "0 0 5px 0", 
+                        color: getCategoryColor(category),
+                        fontSize: "18px"
+                      }}>
+                        {category}
+                      </h3>
+                      <p style={{ 
+                        margin: 0, 
+                        fontSize: "14px", 
+                        color: "#666" 
+                      }}>
+                        {stats.questions} questions • Average: {stats.average}/5
+                      </p>
                     </div>
-                    
-                    <div style={{ 
-                      height: "10px", 
-                      background: "#e0e0e0", 
-                      borderRadius: "5px",
-                      overflow: "hidden",
-                      marginBottom: "8px"
-                    }}>
+                    <div style={{ textAlign: "center" }}>
                       <div style={{ 
-                        height: "100%", 
-                        width: `${percentage}%`, 
-                        background: getCategoryColor(category),
-                        borderRadius: "5px"
-                      }} />
-                    </div>
-                    
-                    <div style={{ 
-                      display: "flex", 
-                      justifyContent: "space-between",
-                      fontSize: "12px", 
-                      color: "#666",
-                      marginTop: "10px"
-                    }}>
-                      <div>
-                        <div style={{ fontWeight: "600" }}>Total Score</div>
-                        <div>{score}/{questions * 5}</div>
+                        fontSize: "28px", 
+                        fontWeight: "700",
+                        color: getCategoryColor(category)
+                      }}>
+                        {stats.percentage}%
                       </div>
-                      <div>
-                        <div style={{ fontWeight: "600" }}>Performance Level</div>
-                        <div style={{ 
-                          color: (level === 'STRONG' || level === 'GOOD') ? '#4CAF50' : '#F44336',
-                          fontWeight: "600"
-                        }}>
-                          {level}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: "600" }}>Performance</div>
-                        <div>
-                          {percentage >= 80 ? 'Excellent' :
-                           percentage >= 60 ? 'Good' :
-                           percentage >= 40 ? 'Average' : 'Needs Improvement'}
-                        </div>
+                      <div style={{ fontSize: "12px", color: "#666" }}>
+                        Score
                       </div>
                     </div>
                   </div>
-                );
-              })}
+                  
+                  <div style={{ 
+                    height: "10px", 
+                    background: "#e0e0e0", 
+                    borderRadius: "5px",
+                    overflow: "hidden",
+                    marginBottom: "8px"
+                  }}>
+                    <div style={{ 
+                      height: "100%", 
+                      width: `${stats.percentage}%`, 
+                      background: getCategoryColor(category),
+                      borderRadius: "5px"
+                    }} />
+                  </div>
+                  
+                  <div style={{ 
+                    display: "flex", 
+                    justifyContent: "space-between",
+                    fontSize: "12px", 
+                    color: "#666",
+                    marginTop: "10px"
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: "600" }}>Total Score</div>
+                      <div>{stats.score}/{stats.max_possible}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: "600" }}>Performance Level</div>
+                      <div style={{ 
+                        color: stats.percentage >= 60 ? '#4CAF50' : '#F44336',
+                        fontWeight: "600"
+                      }}>
+                        {stats.level}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: "600" }}>Average</div>
+                      <div>{stats.average}/5</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
