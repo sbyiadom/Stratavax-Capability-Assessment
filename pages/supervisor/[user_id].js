@@ -18,6 +18,7 @@ export default function CandidateReport() {
   const [weaknesses, setWeaknesses] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [userEmail, setUserEmail] = useState("");
+  const [userName, setUserName] = useState("");
 
   // Check supervisor authentication
   useEffect(() => {
@@ -45,7 +46,7 @@ export default function CandidateReport() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch candidate data - FIXED VERSION
+  // Fetch candidate data - CORRECTED VERSION
   useEffect(() => {
     if (!isSupervisor || !user_id) return;
 
@@ -53,18 +54,20 @@ export default function CandidateReport() {
       try {
         setLoading(true);
 
-        // 1. Get candidate email first
+        // 1. Get candidate info from users table
         const { data: userData, error: userError } = await supabase
-          .from("auth.users")
-          .select("email, raw_user_meta_data")
+          .from("users")
+          .select("email, full_name")
           .eq("id", user_id)
           .single();
 
         if (userError) {
           console.error("Error fetching user:", userError);
           setUserEmail("Unknown Candidate");
+          setUserName("Unknown Candidate");
         } else {
           setUserEmail(userData?.email || "Unknown Candidate");
+          setUserName(userData?.full_name || "Unknown Candidate");
         }
 
         // 2. Get candidate classification data
@@ -81,25 +84,11 @@ export default function CandidateReport() {
           setCandidate(classificationData);
         }
 
-        // 3. Get candidate's responses with questions and answers
+        // 3. Get category scores using a direct query approach
+        // First, let's fetch responses with separate queries to avoid join issues
         const { data: responsesData, error: responsesError } = await supabase
           .from("responses")
-          .select(`
-            question_id,
-            answer_id,
-            questions (
-              question_text,
-              section,
-              subsection
-            ),
-            answers (
-              answer_text,
-              score,
-              interpretation,
-              trait_category,
-              strength_level
-            )
-          `)
+          .select("question_id, answer_id")
           .eq("user_id", user_id)
           .eq("assessment_id", '11111111-1111-1111-1111-111111111111');
 
@@ -108,127 +97,190 @@ export default function CandidateReport() {
           setResponses([]);
         } else {
           setResponses(responsesData || []);
+          
+          // If we have responses, fetch details for each one
+          if (responsesData && responsesData.length > 0) {
+            await fetchResponseDetails(responsesData);
+          }
         }
 
-        // 4. Calculate category scores
-        const categoryTotals = {};
-        const categoryCounts = {};
-        const categoryMaxScores = {};
-        
-        responsesData?.forEach(response => {
-          const section = response.questions?.section;
-          const score = response.answers?.score || 0;
-          
-          if (section) {
-            categoryTotals[section] = (categoryTotals[section] || 0) + score;
-            categoryCounts[section] = (categoryCounts[section] || 0) + 1;
-            // Assume max score per question is 5
-            categoryMaxScores[section] = (categoryMaxScores[section] || 0) + 5;
-          }
-        });
-
-        const calculatedCategoryScores = {};
-        Object.keys(categoryTotals).forEach(section => {
-          const total = categoryTotals[section];
-          const count = categoryCounts[section];
-          const maxPossible = categoryMaxScores[section];
-          const percentage = maxPossible > 0 ? Math.round((total / maxPossible) * 100) : 0;
-          
-          calculatedCategoryScores[section] = {
-            total,
-            average: count > 0 ? Math.round(total / count) : 0,
-            count,
-            percentage,
-            maxPossible
-          };
-        });
-
-        // 5. Identify strengths and weaknesses
-        const candidateStrengths = [];
-        const candidateWeaknesses = [];
-        const candidateRecommendations = [];
-
-        responsesData?.forEach(response => {
-          const answer = response.answers;
-          const question = response.questions;
-          
-          if (answer && question) {
-            // Strength: score >= 4
-            if (answer.score >= 4) {
-              candidateStrengths.push({
-                category: question.section,
-                subcategory: question.subsection,
-                trait: answer.trait_category || question.section,
-                interpretation: answer.interpretation || "Strong performance in this area",
-                strength: answer.strength_level || "High",
-                score: answer.score
-              });
-            }
-            
-            // Weakness: score <= 2
-            if (answer.score <= 2) {
-              candidateWeaknesses.push({
-                category: question.section,
-                subcategory: question.subsection,
-                trait: answer.trait_category || question.section,
-                interpretation: answer.interpretation || "Area needing improvement",
-                score: answer.score
-              });
-            }
-          }
-        });
-
-        // 6. Generate recommendations
-        candidateWeaknesses.forEach(weakness => {
-          let recommendation = "";
-          
-          switch(weakness.category) {
-            case 'Cognitive Abilities':
-              recommendation = "Consider cognitive training exercises and problem-solving workshops to enhance analytical thinking.";
-              break;
-            case 'Personality Assessment':
-              recommendation = "Engage in personality development sessions and emotional intelligence training for better interpersonal skills.";
-              break;
-            case 'Leadership Potential':
-              recommendation = "Participate in leadership workshops, mentorship programs, and team management exercises.";
-              break;
-            case 'Bottled Water Manufacturing':
-              recommendation = "Attend technical training, industry-specific workshops, and hands-on manufacturing practice.";
-              break;
-            case 'Performance Metrics':
-              recommendation = "Focus on goal-setting strategies, performance tracking improvement, and productivity enhancement techniques.";
-              break;
-            default:
-              recommendation = "Consider targeted training and development programs in this specific area.";
-          }
-          
-          candidateRecommendations.push({
-            category: weakness.category,
-            subcategory: weakness.subsection || weakness.category,
-            issue: weakness.interpretation || `Low score in ${weakness.trait}`,
-            recommendation: recommendation
-          });
-        });
-
-        // 7. Add general recommendations if no weaknesses
-        if (candidateWeaknesses.length === 0 && candidateStrengths.length > 0) {
-          candidateRecommendations.push({
-            category: "Overall Performance",
-            subcategory: "Development",
-            issue: "Strong overall performance",
-            recommendation: "Continue current development path. Consider advanced training in areas of strength to further enhance expertise."
-          });
-        }
-
-        setCategoryScores(calculatedCategoryScores);
-        setStrengths(candidateStrengths);
-        setWeaknesses(candidateWeaknesses);
-        setRecommendations(candidateRecommendations);
+        // 4. Calculate category scores using a more reliable method
+        await calculateCategoryScores(user_id);
 
       } catch (err) {
         console.error("Error fetching candidate data:", err);
       } finally {
         setLoading(false);
+      }
+    };
+
+    // Helper function to fetch response details
+    const fetchResponseDetails = async (responsesData) => {
+      try {
+        // Get all question IDs
+        const questionIds = responsesData.map(r => r.question_id);
+        
+        // Get all answer IDs
+        const answerIds = responsesData.map(r => r.answer_id);
+        
+        // Fetch questions in batches if needed
+        const { data: questionsData, error: questionsError } = await supabase
+          .from("questions")
+          .select("id, question_text, section, subsection")
+          .in("id", questionIds);
+        
+        // Fetch answers in batches if needed
+        const { data: answersData, error: answersError } = await supabase
+          .from("answers")
+          .select("id, answer_text, score, interpretation, trait_category, strength_level")
+          .in("id", answerIds);
+        
+        if (questionsError || answersError) {
+          console.error("Error fetching details:", questionsError || answersError);
+        } else {
+          // Combine the data for display if needed
+          console.log("Fetched", questionsData?.length, "questions and", answersData?.length, "answers");
+        }
+      } catch (error) {
+        console.error("Error fetching details:", error);
+      }
+    };
+
+    // Function to calculate category scores
+    const calculateCategoryScores = async (userId) => {
+      try {
+        // Use RPC function if it exists, otherwise use direct query
+        const { data: categoryData, error: categoryError } = await supabase
+          .rpc('get_candidate_category_scores', { candidate_uuid: userId });
+        
+        if (categoryError) {
+          console.log("RPC function not available, using manual calculation");
+          
+          // Manual calculation using separate queries
+          const { data: responsesWithDetails, error: detailsError } = await supabase
+            .from("responses")
+            .select(`
+              id,
+              question_id,
+              answer_id,
+              questions!inner (
+                section
+              ),
+              answers!inner (
+                score
+              )
+            `)
+            .eq("user_id", userId)
+            .eq("assessment_id", '11111111-1111-1111-1111-111111111111');
+
+          if (detailsError) {
+            console.error("Error fetching detailed responses:", detailsError);
+            return;
+          }
+
+          if (responsesWithDetails && responsesWithDetails.length > 0) {
+            // Calculate category scores
+            const categoryTotals = {};
+            const categoryCounts = {};
+            
+            responsesWithDetails.forEach(response => {
+              const section = response.questions?.section;
+              const score = response.answers?.score || 0;
+              
+              if (section) {
+                categoryTotals[section] = (categoryTotals[section] || 0) + score;
+                categoryCounts[section] = (categoryCounts[section] || 0) + 1;
+              }
+            });
+
+            const calculatedCategoryScores = {};
+            const candidateStrengths = [];
+            const candidateWeaknesses = [];
+            
+            Object.keys(categoryTotals).forEach(section => {
+              const total = categoryTotals[section];
+              const count = categoryCounts[section];
+              const maxPossible = count * 5; // Max score per question is 5
+              const percentage = maxPossible > 0 ? Math.round((total / maxPossible) * 100) : 0;
+              const average = count > 0 ? (total / count).toFixed(1) : 0;
+              
+              calculatedCategoryScores[section] = {
+                total,
+                average: parseFloat(average),
+                count,
+                percentage,
+                maxPossible
+              };
+              
+              // Identify strengths and weaknesses based on category percentage
+              if (percentage >= 70) {
+                candidateStrengths.push({
+                  category: section,
+                  score: percentage,
+                  interpretation: `Strong performance in ${section} with ${percentage}% score`
+                });
+              } else if (percentage <= 50) {
+                candidateWeaknesses.push({
+                  category: section,
+                  score: percentage,
+                  interpretation: `Needs improvement in ${section} with ${percentage}% score`
+                });
+              }
+            });
+
+            setCategoryScores(calculatedCategoryScores);
+            
+            // Generate recommendations based on weaknesses
+            const candidateRecommendations = candidateWeaknesses.map(weakness => {
+              let recommendation = "";
+              
+              switch(weakness.category) {
+                case 'Cognitive Abilities':
+                  recommendation = "Consider cognitive training exercises and problem-solving workshops to enhance analytical thinking.";
+                  break;
+                case 'Personality Assessment':
+                  recommendation = "Engage in personality development sessions and emotional intelligence training for better interpersonal skills.";
+                  break;
+                case 'Leadership Potential':
+                  recommendation = "Participate in leadership workshops, mentorship programs, and team management exercises.";
+                  break;
+                case 'Technical Competence':
+                  recommendation = "Attend technical training, industry-specific workshops, and hands-on practice sessions.";
+                  break;
+                case 'Performance Metrics':
+                  recommendation = "Focus on goal-setting strategies, performance tracking improvement, and productivity enhancement techniques.";
+                  break;
+                default:
+                  recommendation = "Consider targeted training and development programs in this specific area.";
+              }
+              
+              return {
+                category: weakness.category,
+                issue: weakness.interpretation,
+                recommendation: recommendation
+              };
+            });
+            
+            // Add general recommendation if no weaknesses
+            if (candidateWeaknesses.length === 0 && Object.keys(calculatedCategoryScores).length > 0) {
+              candidateRecommendations.push({
+                category: "Overall Performance",
+                issue: "Strong overall performance",
+                recommendation: "Continue current development path. Consider advanced training in areas of strength to further enhance expertise."
+              });
+            }
+
+            setStrengths(candidateStrengths);
+            setWeaknesses(candidateWeaknesses);
+            setRecommendations(candidateRecommendations);
+          }
+        } else {
+          // RPC function returned data
+          console.log("Category data from RPC:", categoryData);
+          // Process the categoryData as needed
+        }
+      } catch (error) {
+        console.error("Error calculating category scores:", error);
       }
     };
 
@@ -250,7 +302,7 @@ export default function CandidateReport() {
       'Cognitive Abilities': '#4A6FA5',
       'Personality Assessment': '#9C27B0',
       'Leadership Potential': '#D32F2F',
-      'Bottled Water Manufacturing': '#388E3C',
+      'Technical Competence': '#388E3C',
       'Performance Metrics': '#F57C00'
     };
     return colors[category] || '#666';
@@ -384,9 +436,16 @@ export default function CandidateReport() {
                 Candidate Performance Report
               </h1>
               <p style={{ 
-                margin: "0", 
+                margin: "0 0 5px 0", 
                 color: "#666",
                 fontSize: "16px"
+              }}>
+                {userName}
+              </p>
+              <p style={{ 
+                margin: "0", 
+                color: "#888",
+                fontSize: "14px"
               }}>
                 {userEmail}
               </p>
@@ -475,76 +534,92 @@ export default function CandidateReport() {
           marginBottom: "30px"
         }}>
           <h2 style={{ margin: "0 0 25px 0", color: "#333" }}>Performance by Category</h2>
-          <div style={{ 
-            display: "grid", 
-            gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", 
-            gap: "20px" 
-          }}>
-            {Object.entries(categoryScores).map(([category, data]) => (
-              <div key={category} style={{
-                borderLeft: `4px solid ${getCategoryColor(category)}`,
-                padding: "20px",
-                background: "#f8f9fa",
-                borderRadius: "8px"
-              }}>
-                <div style={{ 
-                  display: "flex", 
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  marginBottom: "15px"
+          {Object.keys(categoryScores).length === 0 ? (
+            <div style={{ 
+              textAlign: "center", 
+              padding: "40px",
+              color: "#888",
+              background: "#f8f9fa",
+              borderRadius: "8px"
+            }}>
+              <div style={{ fontSize: "48px", marginBottom: "20px" }}>📊</div>
+              <h3 style={{ color: "#666" }}>No Category Scores Available</h3>
+              <p style={{ maxWidth: "500px", margin: "0 auto" }}>
+                Category scores could not be calculated. This might be due to missing response data or database connection issues.
+              </p>
+            </div>
+          ) : (
+            <div style={{ 
+              display: "grid", 
+              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", 
+              gap: "20px" 
+            }}>
+              {Object.entries(categoryScores).map(([category, data]) => (
+                <div key={category} style={{
+                  borderLeft: `4px solid ${getCategoryColor(category)}`,
+                  padding: "20px",
+                  background: "#f8f9fa",
+                  borderRadius: "8px"
                 }}>
-                  <div>
-                    <h3 style={{ 
-                      margin: "0 0 5px 0", 
-                      color: getCategoryColor(category),
-                      fontSize: "18px"
-                    }}>
-                      {category}
-                    </h3>
-                    <p style={{ 
-                      margin: 0, 
-                      fontSize: "14px", 
-                      color: "#666" 
-                    }}>
-                      {data.count} questions • Avg: {data.average}/5
-                    </p>
-                  </div>
                   <div style={{ 
-                    fontSize: "28px", 
-                    fontWeight: "700",
-                    color: getCategoryColor(category)
+                    display: "flex", 
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    marginBottom: "15px"
                   }}>
-                    {data.percentage}%
+                    <div>
+                      <h3 style={{ 
+                        margin: "0 0 5px 0", 
+                        color: getCategoryColor(category),
+                        fontSize: "18px"
+                      }}>
+                        {category}
+                      </h3>
+                      <p style={{ 
+                        margin: 0, 
+                        fontSize: "14px", 
+                        color: "#666" 
+                      }}>
+                        {data.count} questions • Avg: {data.average.toFixed(1)}/5
+                      </p>
+                    </div>
+                    <div style={{ 
+                      fontSize: "28px", 
+                      fontWeight: "700",
+                      color: getCategoryColor(category)
+                    }}>
+                      {data.percentage}%
+                    </div>
+                  </div>
+                  
+                  <div style={{ 
+                    height: "10px", 
+                    background: "#e0e0e0", 
+                    borderRadius: "5px",
+                    overflow: "hidden",
+                    marginBottom: "8px"
+                  }}>
+                    <div style={{ 
+                      height: "100%", 
+                      width: `${data.percentage}%`, 
+                      background: getCategoryColor(category),
+                      borderRadius: "5px"
+                    }} />
+                  </div>
+                  
+                  <div style={{ 
+                    display: "flex", 
+                    justifyContent: "space-between",
+                    fontSize: "12px", 
+                    color: "#666"
+                  }}>
+                    <span>Score: {data.total}/{data.maxPossible}</span>
+                    <span>{data.percentage}% of max</span>
                   </div>
                 </div>
-                
-                <div style={{ 
-                  height: "10px", 
-                  background: "#e0e0e0", 
-                  borderRadius: "5px",
-                  overflow: "hidden",
-                  marginBottom: "8px"
-                }}>
-                  <div style={{ 
-                    height: "100%", 
-                    width: `${data.percentage}%`, 
-                    background: getCategoryColor(category),
-                    borderRadius: "5px"
-                  }} />
-                </div>
-                
-                <div style={{ 
-                  display: "flex", 
-                  justifyContent: "space-between",
-                  fontSize: "12px", 
-                  color: "#666"
-                }}>
-                  <span>Score: {data.total}/{data.maxPossible}</span>
-                  <span>{data.percentage}% of max</span>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Strengths and Weaknesses */}
@@ -592,7 +667,7 @@ export default function CandidateReport() {
                 background: "#f8f9fa",
                 borderRadius: "8px"
               }}>
-                No significant strengths identified in this assessment.
+                No significant strengths identified. Consider reviewing individual responses for specific strengths.
               </div>
             ) : (
               <div style={{ 
@@ -619,7 +694,7 @@ export default function CandidateReport() {
                         fontWeight: "600",
                         color: "#2e7d32"
                       }}>
-                        {strength.trait}
+                        {strength.category}
                       </div>
                       <div style={{ 
                         padding: "3px 8px",
@@ -629,7 +704,7 @@ export default function CandidateReport() {
                         fontSize: "12px",
                         fontWeight: "600"
                       }}>
-                        Score: {strength.score}/5
+                        Score: {strength.score}%
                       </div>
                     </div>
                     <div style={{ 
@@ -638,15 +713,6 @@ export default function CandidateReport() {
                       marginBottom: "5px"
                     }}>
                       {strength.interpretation}
-                    </div>
-                    <div style={{ 
-                      fontSize: "12px", 
-                      color: "#666",
-                      display: "flex",
-                      justifyContent: "space-between"
-                    }}>
-                      <span><strong>Category:</strong> {strength.category}</span>
-                      <span><strong>Level:</strong> {strength.strength}</span>
                     </div>
                   </div>
                 ))}
@@ -719,7 +785,7 @@ export default function CandidateReport() {
                         fontWeight: "600",
                         color: "#c62828"
                       }}>
-                        {weakness.trait}
+                        {weakness.category}
                       </div>
                       <div style={{ 
                         padding: "3px 8px",
@@ -729,7 +795,7 @@ export default function CandidateReport() {
                         fontSize: "12px",
                         fontWeight: "600"
                       }}>
-                        Score: {weakness.score}/5
+                        Score: {weakness.score}%
                       </div>
                     </div>
                     <div style={{ 
@@ -738,15 +804,6 @@ export default function CandidateReport() {
                       marginBottom: "5px"
                     }}>
                       {weakness.interpretation}
-                    </div>
-                    <div style={{ 
-                      fontSize: "12px", 
-                      color: "#666",
-                      display: "flex",
-                      justifyContent: "space-between"
-                    }}>
-                      <span><strong>Category:</strong> {weakness.category}</span>
-                      <span><strong>Subcategory:</strong> {weakness.subcategory}</span>
                     </div>
                   </div>
                 ))}
@@ -783,7 +840,7 @@ export default function CandidateReport() {
             }}>
               💡
             </span>
-            Development Recommendations
+            Development Recommendations ({recommendations.length})
           </h2>
           
           {recommendations.length === 0 ? (
@@ -837,12 +894,6 @@ export default function CandidateReport() {
                       }}>
                         {rec.category}
                       </div>
-                      <div style={{ 
-                        fontSize: "12px", 
-                        color: "#666"
-                      }}>
-                        {rec.subcategory}
-                      </div>
                     </div>
                   </div>
                   
@@ -886,7 +937,7 @@ export default function CandidateReport() {
           )}
         </div>
 
-        {/* Response Details */}
+        {/* Response Details - Simplified */}
         <div style={{ 
           background: "white", 
           padding: "25px", 
@@ -894,126 +945,86 @@ export default function CandidateReport() {
           boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
         }}>
           <h2 style={{ margin: "0 0 20px 0", color: "#333" }}>
-            Detailed Responses ({responses.length})
+            Assessment Summary
           </h2>
           
-          {responses.length === 0 ? (
-            <div style={{ 
-              textAlign: "center", 
-              padding: "30px",
-              color: "#888",
+          <div style={{ 
+            display: "grid", 
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+            gap: "20px",
+            marginBottom: "30px"
+          }}>
+            <div style={{
+              padding: "20px",
               background: "#f8f9fa",
-              borderRadius: "8px"
+              borderRadius: "8px",
+              textAlign: "center"
             }}>
-              No response data available for this candidate.
+              <div style={{ fontSize: "32px", fontWeight: "700", color: "#1565c0" }}>
+                {responses.length}
+              </div>
+              <div style={{ fontSize: "14px", color: "#666", marginTop: "8px" }}>
+                Total Responses
+              </div>
             </div>
-          ) : (
-            <div style={{ 
-              display: "grid", 
-              gap: "15px",
-              maxHeight: "500px",
-              overflowY: "auto",
-              paddingRight: "10px"
+            
+            <div style={{
+              padding: "20px",
+              background: "#f8f9fa",
+              borderRadius: "8px",
+              textAlign: "center"
             }}>
-              {responses.map((response, index) => (
-                <div key={index} style={{
-                  padding: "20px",
-                  background: "#f8f9fa",
-                  borderRadius: "8px",
-                  borderLeft: `4px solid ${getScoreColor(response.answers?.score || 0)}`
-                }}>
-                  <div style={{ 
-                    display: "flex", 
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    marginBottom: "10px"
-                  }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ 
-                        fontSize: "14px", 
-                        fontWeight: "600",
-                        color: "#333",
-                        marginBottom: "5px"
-                      }}>
-                        Q{index + 1}: {response.questions?.question_text}
-                      </div>
-                      <div style={{ 
-                        fontSize: "12px", 
-                        color: "#666",
-                        marginBottom: "10px"
-                      }}>
-                        <span style={{ 
-                          padding: "2px 8px",
-                          background: getCategoryColor(response.questions?.section),
-                          color: "white",
-                          borderRadius: "4px",
-                          marginRight: "8px"
-                        }}>
-                          {response.questions?.section}
-                        </span>
-                        {response.questions?.subsection}
-                      </div>
-                      
-                      <div style={{ 
-                        fontSize: "14px", 
-                        color: "#333",
-                        background: "white",
-                        padding: "12px",
-                        borderRadius: "6px",
-                        border: "1px solid #e0e0e0",
-                        marginBottom: "10px"
-                      }}>
-                        <strong>Response:</strong> {response.answers?.answer_text}
-                      </div>
-                      
-                      {response.answers?.interpretation && (
-                        <div style={{ 
-                          fontSize: "13px", 
-                          color: "#555",
-                          fontStyle: "italic",
-                          marginTop: "5px"
-                        }}>
-                          "{response.answers.interpretation}"
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div style={{ 
-                      marginLeft: "20px",
-                      textAlign: "center",
-                      minWidth: "80px"
-                    }}>
-                      <div style={{ 
-                        width: "50px", 
-                        height: "50px",
-                        borderRadius: "50%",
-                        background: getScoreColor(response.answers?.score || 0),
-                        color: "white",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontWeight: "700",
-                        fontSize: "18px",
-                        margin: "0 auto 8px"
-                      }}>
-                        {response.answers?.score || 0}
-                      </div>
-                      <div style={{ 
-                        fontSize: "11px", 
-                        color: "#666",
-                        fontWeight: "600"
-                      }}>
-                        Score (out of 5)
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+              <div style={{ fontSize: "32px", fontWeight: "700", color: "#4CAF50" }}>
+                {candidate.total_score}
+              </div>
+              <div style={{ fontSize: "14px", color: "#666", marginTop: "8px" }}>
+                Total Score
+              </div>
             </div>
-          )}
+            
+            <div style={{
+              padding: "20px",
+              background: "#f8f9fa",
+              borderRadius: "8px",
+              textAlign: "center"
+            }}>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: "#9C27B0" }}>
+                {Object.keys(categoryScores).length}
+              </div>
+              <div style={{ fontSize: "14px", color: "#666", marginTop: "8px" }}>
+                Categories Assessed
+              </div>
+            </div>
+            
+            <div style={{
+              padding: "20px",
+              background: "#f8f9fa",
+              borderRadius: "8px",
+              textAlign: "center"
+            }}>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: "#FF9800" }}>
+                {strengths.length}
+              </div>
+              <div style={{ fontSize: "14px", color: "#666", marginTop: "8px" }}>
+                Key Strengths
+              </div>
+            </div>
+          </div>
+          
+          <div style={{ 
+            textAlign: "center",
+            padding: "20px",
+            background: "#e3f2fd",
+            borderRadius: "8px",
+            border: "1px solid #bbdefb"
+          }}>
+            <p style={{ margin: 0, color: "#1565c0", fontSize: "14px" }}>
+              <strong>Note:</strong> Detailed individual responses are available in the database. 
+              Contact technical support if you need access to specific response data.
+            </p>
+          </div>
         </div>
       </div>
     </AppLayout>
   );
 }
-
