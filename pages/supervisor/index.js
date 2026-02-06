@@ -9,6 +9,17 @@ export default function SupervisorDashboard() {
   const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isSupervisor, setIsSupervisor] = useState(false);
+  const [stats, setStats] = useState({
+    totalCandidates: 0,
+    completed: 0,
+    inProgress: 0,
+    notStarted: 0,
+    topTalent: 0,
+    highPotential: 0,
+    solidPerformer: 0,
+    developing: 0,
+    needsImprovement: 0
+  });
 
   // Check supervisor authentication
   useEffect(() => {
@@ -19,120 +30,136 @@ export default function SupervisorDashboard() {
           router.push("/supervisor-login");
           return;
         }
+        
         try {
           const session = JSON.parse(supervisorSession);
-          setIsSupervisor(session.loggedIn);
+          if (session.loggedIn) {
+            setIsSupervisor(true);
+          } else {
+            router.push("/supervisor-login");
+          }
         } catch {
           router.push("/supervisor-login");
         }
       }
     };
+
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch all registered candidates
+  // Fetch candidates and stats - USING YOUR ORIGINAL APPROACH
   useEffect(() => {
     if (!isSupervisor) return;
 
-    const fetchCandidates = async () => {
+    const fetchData = async () => {
       try {
-        setLoading(true);
-        console.log("Fetching all registered candidates...");
+        // Get all talent classification data (THIS IS WHERE SCORES ARE STORED)
+        const { data: talentData, error: talentError } = await supabase
+          .from("talent_classification")
+          .select(`
+            user_id,
+            total_score,
+            classification,
+            created_at,
+            updated_at
+          `)
+          .order("total_score", { ascending: false });
 
-        // Get ALL registered users from profiles
-        const { data: profiles, error } = await supabase
-          .from("profiles")
-          .select("id, email, full_name, created_at")
-          .order("created_at", { ascending: false });
+        if (talentError) throw talentError;
 
-        if (error) {
-          console.error("Error fetching profiles:", error);
+        // If no data, set empty and return
+        if (!talentData || talentData.length === 0) {
           setCandidates([]);
+          setStats({
+            totalCandidates: 0,
+            completed: 0,
+            inProgress: 0,
+            notStarted: 0,
+            topTalent: 0,
+            highPotential: 0,
+            solidPerformer: 0,
+            developing: 0,
+            needsImprovement: 0
+          });
           setLoading(false);
           return;
         }
 
-        if (!profiles || profiles.length === 0) {
-          console.log("No registered candidates found");
-          setCandidates([]);
-          setLoading(false);
-          return;
-        }
+        // Get user emails and names for these candidates
+        const candidatePromises = talentData.map(async (candidate) => {
+          try {
+            // Try to get user info from multiple sources
+            const { data: profileData } = await supabase
+              .from("profiles")
+              .select("email, full_name")
+              .eq("id", candidate.user_id)
+              .single()
+              .catch(() => null);
 
-        // Get user IDs
-        const userIds = profiles.map(p => p.id);
-        
-        // Check which users have started assessments
-        const { data: responses } = await supabase
-          .from("responses")
-          .select("user_id")
-          .in("user_id", userIds)
-          .groupBy("user_id");
+            const { data: userData } = await supabase
+              .from("users")
+              .select("email, full_name")
+              .eq("id", candidate.user_id)
+              .single()
+              .catch(() => null);
 
-        const usersWithResponses = responses?.map(r => r.user_id) || [];
-        
-        // Get any assessment results
-        const { data: assessments } = await supabase
-          .from("assessment_results")
-          .select("*")
-          .in("user_id", userIds);
+            // Try assessment_results for additional data
+            const { data: assessmentData } = await supabase
+              .from("assessment_results")
+              .select("category_scores, completed_at")
+              .eq("user_id", candidate.user_id)
+              .single()
+              .catch(() => null);
 
-        // Format candidates data
-        const formattedCandidates = profiles.map(profile => {
-          const hasResponses = usersWithResponses.includes(profile.id);
-          const assessment = assessments?.find(a => a.user_id === profile.id);
-          
-          // Determine status
-          let status = "Not Started";
-          let statusColor = "#9E9E9E";
-          let overallScore = 0;
-          let classification = "Not Assessed";
-          
-          if (assessment) {
-            status = "Completed";
-            statusColor = "#4CAF50";
-            overallScore = assessment.overall_score || 0;
-            classification = assessment.risk_level || "Not Classified";
-          } else if (hasResponses) {
-            status = "In Progress";
-            statusColor = "#FF9800";
-            classification = "In Progress";
+            return {
+              ...candidate,
+              user: {
+                email: profileData?.email || userData?.email || "Unknown Email",
+                full_name: profileData?.full_name || userData?.full_name || `Candidate ${candidate.user_id.substring(0, 8)}`
+              },
+              category_scores: assessmentData?.category_scores || {},
+              completed_at: assessmentData?.completed_at || candidate.updated_at
+            };
+          } catch (error) {
+            console.error(`Error fetching user ${candidate.user_id}:`, error);
+            return {
+              ...candidate,
+              user: {
+                email: "Unknown Email",
+                full_name: `Candidate ${candidate.user_id.substring(0, 8)}`
+              },
+              category_scores: {},
+              completed_at: candidate.updated_at
+            };
           }
-
-          return {
-            user_id: profile.id,
-            user_name: profile.full_name || profile.email?.split('@')[0] || "User",
-            user_email: profile.email || "No email",
-            overall_score: overallScore,
-            classification: classification,
-            status: status,
-            status_color: statusColor,
-            registered_date: profile.created_at,
-            has_assessment: hasResponses || !!assessment
-          };
         });
 
-        // Sort: Completed first, then In Progress, then Not Started
-        formattedCandidates.sort((a, b) => {
-          if (a.status === "Completed" && b.status !== "Completed") return -1;
-          if (a.status !== "Completed" && b.status === "Completed") return 1;
-          if (a.status === "In Progress" && b.status === "Not Started") return -1;
-          if (a.status === "Not Started" && b.status === "In Progress") return 1;
-          return new Date(b.registered_date) - new Date(a.registered_date);
-        });
+        const candidatesWithUsers = await Promise.all(candidatePromises);
+        setCandidates(candidatesWithUsers);
 
-        setCandidates(formattedCandidates);
-        console.log(`Loaded ${formattedCandidates.length} candidates`);
+        // Calculate statistics
+        const statsData = {
+          totalCandidates: talentData.length,
+          completed: talentData.length, // All in talent_classification are completed
+          inProgress: 0,
+          notStarted: 0,
+          topTalent: talentData.filter(c => c.classification === 'Top Talent').length,
+          highPotential: talentData.filter(c => c.classification === 'High Potential').length,
+          solidPerformer: talentData.filter(c => c.classification === 'Solid Performer').length,
+          developing: talentData.filter(c => c.classification === 'Developing').length,
+          needsImprovement: talentData.filter(c => c.classification === 'Needs Improvement').length
+        };
+        setStats(statsData);
 
-      } catch (error) {
-        console.error("Error loading candidates:", error);
+        setLoading(false);
+      } catch (err) {
+        console.error("Error fetching data:", err);
         setCandidates([]);
-      } finally {
         setLoading(false);
       }
     };
 
-    fetchCandidates();
+    fetchData();
   }, [isSupervisor]);
 
   const handleLogout = () => {
@@ -140,28 +167,15 @@ export default function SupervisorDashboard() {
     router.push("/supervisor-login");
   };
 
-  const getClassificationColor = (classification) => {
-    switch(classification) {
-      case 'Top Talent': return '#4CAF50';
-      case 'High Potential': return '#2196F3';
-      case 'Solid Performer': return '#FF9800';
-      case 'Developing': return '#9C27B0';
-      case 'In Progress': return '#FF9800';
-      case 'Not Assessed': return '#757575';
-      default: return '#F44336';
-    }
-  };
-
-  // Calculate statistics
-  const totalCandidates = candidates.length;
-  const completedAssessments = candidates.filter(c => c.status === "Completed").length;
-  const inProgressAssessments = candidates.filter(c => c.status === "In Progress").length;
-  const notStartedAssessments = candidates.filter(c => c.status === "Not Started").length;
-
   if (!isSupervisor) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <p>Checking authentication...</p>
+      <div style={{ 
+        minHeight: "100vh", 
+        display: "flex", 
+        alignItems: "center", 
+        justifyContent: "center" 
+      }}>
+        <p style={{ textAlign: "center" }}>Checking authentication...</p>
       </div>
     );
   }
@@ -169,12 +183,18 @@ export default function SupervisorDashboard() {
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
       <div style={{ width: "90vw", margin: "auto", padding: "30px 20px" }}>
-        
         {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 30 }}>
+        <div style={{ 
+          display: "flex", 
+          justifyContent: "space-between", 
+          alignItems: "center", 
+          marginBottom: 30 
+        }}>
           <div>
             <h1 style={{ margin: 0, color: "#1565c0", fontSize: "32px" }}>Supervisor Dashboard</h1>
-            <p style={{ margin: "5px 0 0 0", color: "#666" }}>Talent Assessment Management System</p>
+            <p style={{ margin: "5px 0 0 0", color: "#666" }}>
+              Talent Assessment Analytics & Management
+            </p>
           </div>
           <button
             onClick={handleLogout}
@@ -207,12 +227,12 @@ export default function SupervisorDashboard() {
             color: "white",
             boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
           }}>
-            <div style={{ fontSize: "14px", opacity: 0.9 }}>Registered Candidates</div>
+            <div style={{ fontSize: "14px", opacity: 0.9 }}>Total Candidates</div>
             <div style={{ fontSize: "36px", fontWeight: "700", margin: "10px 0" }}>
-              {totalCandidates}
+              {stats.totalCandidates}
             </div>
             <div style={{ fontSize: "12px", opacity: 0.8 }}>
-              Total in system
+              Across all classifications
             </div>
           </div>
 
@@ -223,12 +243,12 @@ export default function SupervisorDashboard() {
             color: "white",
             boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
           }}>
-            <div style={{ fontSize: "14px", opacity: 0.9 }}>Completed</div>
+            <div style={{ fontSize: "14px", opacity: 0.9 }}>Completed Assessments</div>
             <div style={{ fontSize: "36px", fontWeight: "700", margin: "10px 0" }}>
-              {completedAssessments}
+              {stats.completed}
             </div>
             <div style={{ fontSize: "12px", opacity: 0.8 }}>
-              {totalCandidates > 0 ? `${Math.round((completedAssessments / totalCandidates) * 100)}%` : "0%"} done
+              100% completion rate
             </div>
           </div>
 
@@ -239,33 +259,103 @@ export default function SupervisorDashboard() {
             color: "white",
             boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
           }}>
-            <div style={{ fontSize: "14px", opacity: 0.9 }}>In Progress</div>
+            <div style={{ fontSize: "14px", opacity: 0.9 }}>Top Talent</div>
             <div style={{ fontSize: "36px", fontWeight: "700", margin: "10px 0" }}>
-              {inProgressAssessments}
+              {stats.topTalent}
             </div>
             <div style={{ fontSize: "12px", opacity: 0.8 }}>
-              Currently taking assessment
+              {stats.totalCandidates > 0 ? `${Math.round((stats.topTalent / stats.totalCandidates) * 100)}% of total` : "0%"}
             </div>
           </div>
 
           <div style={{
-            background: "linear-gradient(135deg, #757575 0%, #616161 100%)",
+            background: "linear-gradient(135deg, #2196F3 0%, #0D47A1 100%)",
             padding: "25px",
             borderRadius: "12px",
             color: "white",
             boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
           }}>
-            <div style={{ fontSize: "14px", opacity: 0.9 }}>Not Started</div>
+            <div style={{ fontSize: "14px", opacity: 0.9 }}>Average Score</div>
             <div style={{ fontSize: "36px", fontWeight: "700", margin: "10px 0" }}>
-              {notStartedAssessments}
+              {candidates.length > 0 
+                ? Math.round(candidates.reduce((sum, c) => sum + c.total_score, 0) / candidates.length)
+                : "0"
+              }
             </div>
             <div style={{ fontSize: "12px", opacity: 0.8 }}>
-              Registered but not started
+              Out of maximum 500
             </div>
           </div>
         </div>
 
-        {/* Candidates Table */}
+        {/* Classification Distribution */}
+        <div style={{ 
+          background: "white", 
+          padding: "25px", 
+          borderRadius: "12px", 
+          boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+          marginBottom: "40px"
+        }}>
+          <h2 style={{ margin: "0 0 20px 0", color: "#333" }}>Talent Classification Distribution</h2>
+          <div style={{ 
+            display: "grid", 
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", 
+            gap: "15px" 
+          }}>
+            {[
+              { name: 'Top Talent', count: stats.topTalent, color: '#4CAF50' },
+              { name: 'High Potential', count: stats.highPotential, color: '#2196F3' },
+              { name: 'Solid Performer', count: stats.solidPerformer, color: '#FF9800' },
+              { name: 'Developing', count: stats.developing, color: '#9C27B0' },
+              { name: 'Needs Improvement', count: stats.needsImprovement, color: '#F44336' }
+            ].map((category) => (
+              <div key={category.name} style={{
+                borderLeft: `4px solid ${category.color}`,
+                padding: "15px",
+                background: "#f8f9fa",
+                borderRadius: "8px"
+              }}>
+                <div style={{ 
+                  display: "flex", 
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "5px"
+                }}>
+                  <span style={{ fontWeight: "600", color: "#333" }}>{category.name}</span>
+                  <span style={{ 
+                    fontWeight: "700", 
+                    color: category.color,
+                    fontSize: "18px"
+                  }}>{category.count}</span>
+                </div>
+                <div style={{ 
+                  height: "8px", 
+                  background: "#e0e0e0", 
+                  borderRadius: "4px",
+                  overflow: "hidden",
+                  marginTop: "8px"
+                }}>
+                  <div style={{ 
+                    height: "100%", 
+                    width: `${stats.totalCandidates > 0 ? (category.count / stats.totalCandidates) * 100 : 0}%`, 
+                    background: category.color,
+                    borderRadius: "4px"
+                  }} />
+                </div>
+                <div style={{ 
+                  fontSize: "12px", 
+                  color: "#666", 
+                  marginTop: "5px",
+                  textAlign: "right"
+                }}>
+                  {stats.totalCandidates > 0 ? `${Math.round((category.count / stats.totalCandidates) * 100)}%` : "0%"}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Candidates Table - SIMPLIFIED DISPLAY */}
         <div style={{ 
           background: "white", 
           padding: "25px", 
@@ -278,9 +368,9 @@ export default function SupervisorDashboard() {
             alignItems: "center",
             marginBottom: "20px" 
           }}>
-            <h2 style={{ margin: 0, color: "#333" }}>Candidate Management</h2>
+            <h2 style={{ margin: 0, color: "#333" }}>Candidate Assessments</h2>
             <div style={{ fontSize: "14px", color: "#666" }}>
-              {loading ? "Loading..." : `${totalCandidates} candidate${totalCandidates !== 1 ? 's' : ''}`}
+              {loading ? "Loading..." : `${candidates.length} candidate${candidates.length !== 1 ? 's' : ''} found`}
             </div>
           </div>
 
@@ -303,7 +393,7 @@ export default function SupervisorDashboard() {
                 }
               `}</style>
             </div>
-          ) : totalCandidates === 0 ? (
+          ) : candidates.length === 0 ? (
             <div style={{ 
               textAlign: "center", 
               padding: "60px 20px",
@@ -315,24 +405,36 @@ export default function SupervisorDashboard() {
                 marginBottom: "20px",
                 opacity: 0.3
               }}>
-                👥
+                📊
               </div>
               <h3 style={{ color: "#666", marginBottom: "10px" }}>
-                No Candidates Registered
+                No Assessment Data Yet
               </h3>
-              <p style={{ color: "#888", marginBottom: "20px" }}>
-                No candidates are registered in the system yet. 
-                Candidates will appear here once they sign up and complete their assessments.
+              <p style={{ color: "#888", maxWidth: "500px", margin: "0 auto 25px" }}>
+                When candidates complete their assessments, their results will appear here with detailed analytics including scores, classifications, strengths, weaknesses, and improvement opportunities.
               </p>
               <div style={{
+                display: "inline-flex",
+                gap: "15px",
                 background: "#e3f2fd",
                 padding: "15px",
-                borderRadius: "8px",
-                display: "inline-block"
+                borderRadius: "8px"
               }}>
-                <p style={{ margin: 0, color: "#1565c0" }}>
-                  <strong>Next Steps:</strong> Share the assessment link with candidates to get started.
-                </p>
+                <div style={{ textAlign: "left" }}>
+                  <div style={{ fontWeight: "600", color: "#1565c0" }}>Expected Analytics:</div>
+                  <ul style={{ 
+                    margin: "10px 0 0 0", 
+                    paddingLeft: "20px",
+                    fontSize: "14px",
+                    color: "#555"
+                  }}>
+                    <li>Individual performance breakdown</li>
+                    <li>Category-wise scoring (Cognitive, Personality, etc.)</li>
+                    <li>Strengths & Weaknesses analysis</li>
+                    <li>Improvement recommendations</li>
+                    <li>Comparative analytics</li>
+                  </ul>
+                </div>
               </div>
             </div>
           ) : (
@@ -341,7 +443,7 @@ export default function SupervisorDashboard() {
                 width: "100%",
                 borderCollapse: "collapse",
                 textAlign: "left",
-                minWidth: "1000px"
+                minWidth: "800px"
               }}>
                 <thead>
                   <tr style={{ 
@@ -350,89 +452,96 @@ export default function SupervisorDashboard() {
                   }}>
                     <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Candidate Name</th>
                     <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Email</th>
-                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Status</th>
-                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Score</th>
+                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Total Score</th>
                     <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Classification</th>
-                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Registered Date</th>
-                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Report</th>
+                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Status</th>
+                    <th style={{ padding: "15px", fontWeight: "600", color: "#333" }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {candidates.map((candidate, index) => (
-                    <tr key={candidate.user_id} style={{ 
+                  {candidates.map((c, index) => (
+                    <tr key={c.user_id} style={{ 
                       borderBottom: "1px solid #eee",
-                      background: index % 2 === 0 ? "#fff" : "#fafafa"
+                      transition: "background 0.2s"
                     }}>
                       <td style={{ padding: "15px", fontWeight: "500" }}>
-                        <div style={{ fontWeight: "600", color: "#333" }}>
-                          {candidate.user_name}
-                        </div>
+                        {c.user?.full_name}
                         <div style={{ fontSize: "12px", color: "#888", marginTop: "3px" }}>
-                          ID: {candidate.user_id.substring(0, 8)}...
+                          ID: {c.user_id.substring(0, 8)}...
                         </div>
                       </td>
                       <td style={{ padding: "15px" }}>
                         <div style={{ fontSize: "14px", color: "#1565c0" }}>
-                          {candidate.user_email}
+                          {c.user?.email}
                         </div>
+                        {c.user?.email === "Unknown Email" && (
+                          <div style={{ fontSize: "11px", color: "#999", marginTop: "3px" }}>
+                            Contact information not available
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: "15px", fontWeight: "500" }}>
+                        <div style={{ 
+                          display: "inline-block",
+                          padding: "5px 12px",
+                          background: c.total_score >= 400 ? "#e8f5e9" : 
+                                    c.total_score >= 350 ? "#fff3e0" : "#ffebee",
+                          color: c.total_score >= 400 ? "#2e7d32" : 
+                                c.total_score >= 350 ? "#f57c00" : "#c62828",
+                          borderRadius: "20px",
+                          fontWeight: "600",
+                          fontSize: "14px"
+                        }}>
+                          {c.total_score}/500
+                        </div>
+                      </td>
+                      <td style={{ padding: "15px" }}>
+                        <span style={{ 
+                          color: c.classification === 'Top Talent' ? "#4CAF50" :
+                                c.classification === 'High Potential' ? "#2196F3" :
+                                c.classification === 'Solid Performer' ? "#FF9800" :
+                                c.classification === 'Developing' ? "#9C27B0" : "#F44336",
+                          fontWeight: "600",
+                          padding: "6px 12px",
+                          background: `${c.classification === 'Top Talent' ? "#4CAF50" :
+                                     c.classification === 'High Potential' ? "#2196F3" :
+                                     c.classification === 'Solid Performer' ? "#FF9800" :
+                                     c.classification === 'Developing' ? "#9C27B0" : "#F44336"}15`,
+                          borderRadius: "6px",
+                          display: "inline-block"
+                        }}>
+                          {c.classification}
+                        </span>
                       </td>
                       <td style={{ padding: "15px" }}>
                         <span style={{
                           padding: "6px 12px",
-                          background: candidate.status_color,
+                          background: "#4CAF50",
                           color: "white",
                           borderRadius: "6px",
                           fontSize: "12px",
                           fontWeight: "600"
                         }}>
-                          {candidate.status}
+                          Completed
                         </span>
                       </td>
                       <td style={{ padding: "15px" }}>
-                        <div style={{ 
-                          display: "inline-block",
-                          padding: "6px 12px",
-                          background: candidate.overall_score >= 400 ? "#e8f5e9" : 
-                                    candidate.overall_score >= 350 ? "#fff3e0" : 
-                                    candidate.overall_score > 0 ? "#ffebee" : "#f5f5f5",
-                          color: candidate.overall_score >= 400 ? "#2e7d32" : 
-                                candidate.overall_score >= 350 ? "#f57c00" : 
-                                candidate.overall_score > 0 ? "#c62828" : "#666",
-                          borderRadius: "20px",
-                          fontWeight: "600",
-                          fontSize: "14px"
-                        }}>
-                          {candidate.overall_score > 0 ? `${candidate.overall_score}/500` : "N/A"}
-                        </div>
-                      </td>
-                      <td style={{ padding: "15px" }}>
-                        <span style={{ 
-                          color: getClassificationColor(candidate.classification),
-                          fontWeight: "600",
-                          padding: "6px 12px",
-                          background: `${getClassificationColor(candidate.classification)}15`,
-                          borderRadius: "6px",
-                          display: "inline-block"
-                        }}>
-                          {candidate.classification}
-                        </span>
-                      </td>
-                      <td style={{ padding: "15px", fontSize: "14px", color: "#666" }}>
-                        {new Date(candidate.registered_date).toLocaleDateString()}
-                      </td>
-                      <td style={{ padding: "15px" }}>
-                        <Link href={`/supervisor/${candidate.user_id}`} legacyBehavior>
+                        <Link href={`/supervisor/${c.user_id}`} legacyBehavior>
                           <a style={{ 
                             color: "#fff", 
-                            background: candidate.has_assessment ? "#1565c0" : "#9E9E9E", 
+                            background: "#1565c0", 
                             padding: "8px 16px", 
                             borderRadius: "6px",
                             textDecoration: "none",
                             display: "inline-block",
                             fontWeight: "500",
-                            cursor: candidate.has_assessment ? "pointer" : "default"
-                          }}>
-                            {candidate.has_assessment ? "View Report" : "No Data"}
+                            fontSize: "14px",
+                            transition: "background 0.2s"
+                          }}
+                          onMouseOver={(e) => e.currentTarget.style.background = "#0d47a1"}
+                          onMouseOut={(e) => e.currentTarget.style.background = "#1565c0"}
+                          >
+                            View Report
                           </a>
                         </Link>
                       </td>
@@ -440,6 +549,20 @@ export default function SupervisorDashboard() {
                   ))}
                 </tbody>
               </table>
+              
+              {/* Info Box */}
+              <div style={{ 
+                marginTop: "20px", 
+                padding: "15px", 
+                background: "#e3f2fd", 
+                borderRadius: "8px",
+                fontSize: "13px",
+                color: "#1565c0",
+                borderLeft: "4px solid #1565c0"
+              }}>
+                <strong>Note:</strong> Candidate emails and names are retrieved from the registration data. 
+                If you see "Unknown Email", the candidate's contact information may not be available in the system.
+              </div>
             </div>
           )}
         </div>
