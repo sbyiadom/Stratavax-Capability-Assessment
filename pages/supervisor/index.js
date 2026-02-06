@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 
@@ -47,7 +46,7 @@ export default function SupervisorDashboard() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch candidates and stats - SIMPLIFIED AND FIXED VERSION
+  // Fetch candidates and stats
   useEffect(() => {
     if (!isSupervisor) return;
 
@@ -56,40 +55,6 @@ export default function SupervisorDashboard() {
         setLoading(true);
         console.log("Fetching candidate data...");
         
-        // OPTION 1: Get ALL users from auth.users (if using Supabase Auth)
-        // This gets ALL registered users
-        const { data: allUsers, error: usersError } = await supabase.auth.admin.listUsers();
-        
-        let usersMap = {};
-        
-        if (!usersError && allUsers?.users) {
-          allUsers.users.forEach(user => {
-            usersMap[user.id] = {
-              email: user.email || "",
-              full_name: user.user_metadata?.full_name || 
-                        user.user_metadata?.name ||
-                        user.email?.split('@')[0] ||
-                        `User ${user.id.substring(0, 8)}`
-            };
-          });
-        } else {
-          console.log("Could not get users from auth, trying profiles table...");
-          
-          // OPTION 2: Get from profiles table
-          const { data: profilesData, error: profilesError } = await supabase
-            .from("profiles")
-            .select("id, email, full_name");
-            
-          if (!profilesError && profilesData) {
-            profilesData.forEach(profile => {
-              usersMap[profile.id] = {
-                email: profile.email || "",
-                full_name: profile.full_name || profile.email?.split('@')[0] || `User ${profile.id.substring(0, 8)}`
-              };
-            });
-          }
-        }
-
         // Get all talent classification data
         const { data: talentData, error: talentError } = await supabase
           .from("talent_classification")
@@ -108,7 +73,6 @@ export default function SupervisorDashboard() {
         }
 
         console.log("Talent data found:", talentData?.length || 0, "candidates");
-        console.log("Users map size:", Object.keys(usersMap).length);
 
         // If no talent data, show empty dashboard
         if (!talentData || talentData.length === 0) {
@@ -128,36 +92,51 @@ export default function SupervisorDashboard() {
           return;
         }
 
-        // Combine talent data with user info
-        const candidatesWithUsers = talentData.map(candidate => {
-          const userInfo = usersMap[candidate.user_id];
-          
-          let email = "Not available";
-          let full_name = `Candidate ${candidate.user_id.substring(0, 8)}`;
-          
-          if (userInfo) {
-            if (userInfo.email) {
-              email = userInfo.email;
-            }
-            if (userInfo.full_name) {
-              full_name = userInfo.full_name;
-            } else if (userInfo.email) {
-              full_name = userInfo.email.split('@')[0];
-            }
-          } else {
-            // Try to fetch individual user info if not in map
-            console.log("User info not found in map for:", candidate.user_id);
-          }
+        // Get user info for all candidates
+        const candidatesWithUsers = await Promise.all(
+          talentData.map(async (candidate) => {
+            let email = "Email not available";
+            let full_name = `Candidate ${candidate.user_id.substring(0, 8)}`;
+            
+            // Try to get user info from multiple sources
+            try {
+              // Try profiles table first
+              const { data: profileData } = await supabase
+                .from("profiles")
+                .select("email, full_name")
+                .eq("id", candidate.user_id)
+                .single()
+                .catch(() => null);
 
-          return {
-            ...candidate,
-            user: {
-              email: email,
-              full_name: full_name,
-              id: candidate.user_id
+              if (profileData?.email) {
+                email = profileData.email;
+                full_name = profileData.full_name || profileData.email.split('@')[0];
+              } else {
+                // Try auth.users via admin API
+                const { data: { users }, error: authError } = await supabase.auth.admin.getUserById(candidate.user_id);
+                if (!authError && users && users.length > 0) {
+                  const user = users[0];
+                  email = user.email || "Email not available";
+                  full_name = user.user_metadata?.full_name || 
+                             user.user_metadata?.name ||
+                             user.email?.split('@')[0] ||
+                             `Candidate ${candidate.user_id.substring(0, 8)}`;
+                }
+              }
+            } catch (error) {
+              console.error("Error fetching user info:", error);
             }
-          };
-        });
+
+            return {
+              ...candidate,
+              user: {
+                email: email,
+                full_name: full_name,
+                id: candidate.user_id
+              }
+            };
+          })
+        );
 
         console.log("Processed candidates:", candidatesWithUsers.length);
         setCandidates(candidatesWithUsers);
@@ -194,7 +173,7 @@ export default function SupervisorDashboard() {
 
   const handleViewReport = (userId) => {
     console.log("View report clicked for user:", userId);
-    router.push(`/supervisor/candidate/${userId}`);
+    router.push(`/supervisor/${userId}`);
   };
 
   if (!isSupervisor) {
@@ -376,28 +355,6 @@ export default function SupervisorDashboard() {
               <p style={{ color: "#888", maxWidth: "500px", margin: "0 auto 25px" }}>
                 When candidates complete their assessments, their results will appear here.
               </p>
-              <div style={{
-                display: "inline-flex",
-                gap: "15px",
-                background: "#e3f2fd",
-                padding: "15px",
-                borderRadius: "8px"
-              }}>
-                <div style={{ textAlign: "left" }}>
-                  <div style={{ fontWeight: "600", color: "#1565c0" }}>What you'll see:</div>
-                  <ul style={{ 
-                    margin: "10px 0 0 0", 
-                    paddingLeft: "20px",
-                    fontSize: "14px",
-                    color: "#555"
-                  }}>
-                    <li>Candidate name and email</li>
-                    <li>Total assessment score</li>
-                    <li>Talent classification</li>
-                    <li>Detailed performance breakdown</li>
-                  </ul>
-                </div>
-              </div>
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>
@@ -434,8 +391,7 @@ export default function SupervisorDashboard() {
                     return (
                       <tr key={c.user_id} style={{ 
                         borderBottom: "1px solid #eee",
-                        transition: "background 0.2s",
-                        cursor: "pointer"
+                        transition: "background 0.2s"
                       }}
                       onMouseEnter={(e) => e.currentTarget.style.background = "#f8f9fa"}
                       onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
@@ -453,9 +409,9 @@ export default function SupervisorDashboard() {
                           <div style={{ fontSize: "14px", color: "#1565c0" }}>
                             {c.user.email}
                           </div>
-                          {c.user.email === "Not available" && (
+                          {c.user.email === "Email not available" && (
                             <div style={{ fontSize: "11px", color: "#999", marginTop: "3px" }}>
-                              Email not in database
+                              Email not found
                             </div>
                           )}
                         </td>
@@ -522,20 +478,6 @@ export default function SupervisorDashboard() {
                   })}
                 </tbody>
               </table>
-              
-              {/* Info Box */}
-              <div style={{ 
-                marginTop: "20px", 
-                padding: "15px", 
-                background: "#e3f2fd", 
-                borderRadius: "8px",
-                fontSize: "13px",
-                color: "#1565c0",
-                borderLeft: "4px solid #1565c0"
-              }}>
-                <strong>Note:</strong> This dashboard shows all candidates who have completed the assessment. 
-                Click "View Report" to see detailed performance breakdown by question category.
-              </div>
             </div>
           )}
         </div>
