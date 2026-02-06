@@ -1,4 +1,4 @@
-// pages/supervisor/[user_id].js - CORRECTED VERSION
+// pages/supervisor/[user_id].js - FINAL CORRECTED VERSION
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -46,7 +46,7 @@ export default function CandidateReport() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch candidate data - CORRECTED VERSION
+  // Fetch candidate data - FINAL CORRECTED VERSION
   useEffect(() => {
     if (!isSupervisor || !user_id) return;
 
@@ -84,8 +84,7 @@ export default function CandidateReport() {
           setCandidate(classificationData);
         }
 
-        // 3. Get category scores using a direct query approach
-        // First, let's fetch responses with separate queries to avoid join issues
+        // 3. Get basic response count
         const { data: responsesData, error: responsesError } = await supabase
           .from("responses")
           .select("question_id, answer_id")
@@ -97,14 +96,9 @@ export default function CandidateReport() {
           setResponses([]);
         } else {
           setResponses(responsesData || []);
-          
-          // If we have responses, fetch details for each one
-          if (responsesData && responsesData.length > 0) {
-            await fetchResponseDetails(responsesData);
-          }
         }
 
-        // 4. Calculate category scores using a more reliable method
+        // 4. Calculate category scores using RPC function
         await calculateCategoryScores(user_id);
 
       } catch (err) {
@@ -114,173 +108,238 @@ export default function CandidateReport() {
       }
     };
 
-    // Helper function to fetch response details
-    const fetchResponseDetails = async (responsesData) => {
+    // Function to calculate category scores - CORRECTED FOR RPC
+    const calculateCategoryScores = async (userId) => {
       try {
-        // Get all question IDs
-        const questionIds = responsesData.map(r => r.question_id);
+        // Call the RPC function that we know works
+        const { data: rpcResult, error: rpcError } = await supabase
+          .rpc('get_candidate_category_scores', { candidate_uuid: userId });
         
-        // Get all answer IDs
-        const answerIds = responsesData.map(r => r.answer_id);
-        
-        // Fetch questions in batches if needed
-        const { data: questionsData, error: questionsError } = await supabase
-          .from("questions")
-          .select("id, question_text, section, subsection")
-          .in("id", questionIds);
-        
-        // Fetch answers in batches if needed
-        const { data: answersData, error: answersError } = await supabase
-          .from("answers")
-          .select("id, answer_text, score, interpretation, trait_category, strength_level")
-          .in("id", answerIds);
-        
-        if (questionsError || answersError) {
-          console.error("Error fetching details:", questionsError || answersError);
-        } else {
-          // Combine the data for display if needed
-          console.log("Fetched", questionsData?.length, "questions and", answersData?.length, "answers");
+        if (rpcError) {
+          console.error("RPC function error:", rpcError);
+          // Fall back to manual calculation
+          await calculateManually(userId);
+          return;
         }
+        
+        console.log("RPC result received:", rpcResult);
+        
+        if (rpcResult && typeof rpcResult === 'object') {
+          // Process the RPC result - it's the JSON object we saw in the test
+          const categoryData = rpcResult;
+          const calculatedCategoryScores = {};
+          const candidateStrengths = [];
+          const candidateWeaknesses = [];
+          
+          // Convert the RPC result to our format
+          Object.entries(categoryData).forEach(([section, data]) => {
+            calculatedCategoryScores[section] = {
+              total: data.total_score,
+              average: data.average_score,
+              count: data.questions_answered,
+              percentage: data.percentage,
+              maxPossible: data.questions_answered * 5
+            };
+            
+            // Identify strengths and weaknesses based on category percentage
+            if (data.percentage >= 70) {
+              candidateStrengths.push({
+                category: section,
+                score: data.percentage,
+                interpretation: `Strong performance in ${section} with ${data.percentage}% score`
+              });
+            } else if (data.percentage <= 50) {
+              candidateWeaknesses.push({
+                category: section,
+                score: data.percentage,
+                interpretation: `Needs improvement in ${section} with ${data.percentage}% score`
+              });
+            }
+          });
+          
+          setCategoryScores(calculatedCategoryScores);
+          
+          // Generate recommendations based on weaknesses
+          const candidateRecommendations = candidateWeaknesses.map(weakness => {
+            let recommendation = "";
+            
+            switch(weakness.category) {
+              case 'Cognitive Abilities':
+                recommendation = "Consider cognitive training exercises and problem-solving workshops to enhance analytical thinking.";
+                break;
+              case 'Personality Assessment':
+                recommendation = "Engage in personality development sessions and emotional intelligence training for better interpersonal skills.";
+                break;
+              case 'Leadership Potential':
+                recommendation = "Participate in leadership workshops, mentorship programs, and team management exercises.";
+                break;
+              case 'Technical Competence':
+                recommendation = "Attend technical training, industry-specific workshops, and hands-on practice sessions.";
+                break;
+              case 'Performance Metrics':
+                recommendation = "Focus on goal-setting strategies, performance tracking improvement, and productivity enhancement techniques.";
+                break;
+              default:
+                recommendation = "Consider targeted training and development programs in this specific area.";
+            }
+            
+            return {
+              category: weakness.category,
+              issue: weakness.interpretation,
+              recommendation: recommendation
+            };
+          });
+          
+          // Add general recommendation if no weaknesses
+          if (candidateWeaknesses.length === 0 && Object.keys(calculatedCategoryScores).length > 0) {
+            candidateRecommendations.push({
+              category: "Overall Performance",
+              issue: "Strong overall performance",
+              recommendation: "Continue current development path. Consider advanced training in areas of strength to further enhance expertise."
+            });
+          }
+          
+          setStrengths(candidateStrengths);
+          setWeaknesses(candidateWeaknesses);
+          setRecommendations(candidateRecommendations);
+          
+          console.log("Category scores set:", Object.keys(calculatedCategoryScores).length, "categories");
+          console.log("Strengths:", candidateStrengths.length);
+          console.log("Weaknesses:", candidateWeaknesses.length);
+          console.log("Recommendations:", candidateRecommendations.length);
+        } else {
+          console.log("RPC returned no data, falling back to manual calculation");
+          await calculateManually(userId);
+        }
+        
       } catch (error) {
-        console.error("Error fetching details:", error);
+        console.error("Error calculating category scores:", error);
+        // Fall back to manual calculation
+        await calculateManually(userId);
       }
     };
 
-    // Function to calculate category scores
-    const calculateCategoryScores = async (userId) => {
+    // Fallback manual calculation function
+    const calculateManually = async (userId) => {
       try {
-        // Use RPC function if it exists, otherwise use direct query
+        console.log("Starting manual calculation...");
         const { data: categoryData, error: categoryError } = await supabase
-          .rpc('get_candidate_category_scores', { candidate_uuid: userId });
-        
+          .from("responses")
+          .select(`
+            questions!inner (
+              section
+            ),
+            answers!inner (
+              score
+            )
+          `)
+          .eq("user_id", userId)
+          .eq("assessment_id", '11111111-1111-1111-1111-111111111111');
+
         if (categoryError) {
-          console.log("RPC function not available, using manual calculation");
+          console.error("Error fetching category data:", categoryError);
+          return;
+        }
+
+        if (categoryData && categoryData.length > 0) {
+          console.log("Manual calculation found", categoryData.length, "responses");
+          const categoryTotals = {};
+          const categoryCounts = {};
           
-          // Manual calculation using separate queries
-          const { data: responsesWithDetails, error: detailsError } = await supabase
-            .from("responses")
-            .select(`
-              id,
-              question_id,
-              answer_id,
-              questions!inner (
-                section
-              ),
-              answers!inner (
-                score
-              )
-            `)
-            .eq("user_id", userId)
-            .eq("assessment_id", '11111111-1111-1111-1111-111111111111');
-
-          if (detailsError) {
-            console.error("Error fetching detailed responses:", detailsError);
-            return;
-          }
-
-          if (responsesWithDetails && responsesWithDetails.length > 0) {
-            // Calculate category scores
-            const categoryTotals = {};
-            const categoryCounts = {};
+          categoryData.forEach(item => {
+            const section = item.questions?.section;
+            const score = item.answers?.score || 0;
             
-            responsesWithDetails.forEach(response => {
-              const section = response.questions?.section;
-              const score = response.answers?.score || 0;
-              
-              if (section) {
-                categoryTotals[section] = (categoryTotals[section] || 0) + score;
-                categoryCounts[section] = (categoryCounts[section] || 0) + 1;
-              }
-            });
+            if (section) {
+              categoryTotals[section] = (categoryTotals[section] || 0) + score;
+              categoryCounts[section] = (categoryCounts[section] || 0) + 1;
+            }
+          });
 
-            const calculatedCategoryScores = {};
-            const candidateStrengths = [];
-            const candidateWeaknesses = [];
+          const calculatedCategoryScores = {};
+          const candidateStrengths = [];
+          const candidateWeaknesses = [];
+          
+          Object.keys(categoryTotals).forEach(section => {
+            const total = categoryTotals[section];
+            const count = categoryCounts[section];
+            const maxPossible = count * 5;
+            const percentage = maxPossible > 0 ? Math.round((total / maxPossible) * 100) : 0;
+            const average = count > 0 ? (total / count).toFixed(1) : 0;
             
-            Object.keys(categoryTotals).forEach(section => {
-              const total = categoryTotals[section];
-              const count = categoryCounts[section];
-              const maxPossible = count * 5; // Max score per question is 5
-              const percentage = maxPossible > 0 ? Math.round((total / maxPossible) * 100) : 0;
-              const average = count > 0 ? (total / count).toFixed(1) : 0;
-              
-              calculatedCategoryScores[section] = {
-                total,
-                average: parseFloat(average),
-                count,
-                percentage,
-                maxPossible
-              };
-              
-              // Identify strengths and weaknesses based on category percentage
-              if (percentage >= 70) {
-                candidateStrengths.push({
-                  category: section,
-                  score: percentage,
-                  interpretation: `Strong performance in ${section} with ${percentage}% score`
-                });
-              } else if (percentage <= 50) {
-                candidateWeaknesses.push({
-                  category: section,
-                  score: percentage,
-                  interpretation: `Needs improvement in ${section} with ${percentage}% score`
-                });
-              }
-            });
-
-            setCategoryScores(calculatedCategoryScores);
+            calculatedCategoryScores[section] = {
+              total,
+              average: parseFloat(average),
+              count,
+              percentage,
+              maxPossible
+            };
             
-            // Generate recommendations based on weaknesses
-            const candidateRecommendations = candidateWeaknesses.map(weakness => {
-              let recommendation = "";
-              
-              switch(weakness.category) {
-                case 'Cognitive Abilities':
-                  recommendation = "Consider cognitive training exercises and problem-solving workshops to enhance analytical thinking.";
-                  break;
-                case 'Personality Assessment':
-                  recommendation = "Engage in personality development sessions and emotional intelligence training for better interpersonal skills.";
-                  break;
-                case 'Leadership Potential':
-                  recommendation = "Participate in leadership workshops, mentorship programs, and team management exercises.";
-                  break;
-                case 'Technical Competence':
-                  recommendation = "Attend technical training, industry-specific workshops, and hands-on practice sessions.";
-                  break;
-                case 'Performance Metrics':
-                  recommendation = "Focus on goal-setting strategies, performance tracking improvement, and productivity enhancement techniques.";
-                  break;
-                default:
-                  recommendation = "Consider targeted training and development programs in this specific area.";
-              }
-              
-              return {
-                category: weakness.category,
-                issue: weakness.interpretation,
-                recommendation: recommendation
-              };
-            });
-            
-            // Add general recommendation if no weaknesses
-            if (candidateWeaknesses.length === 0 && Object.keys(calculatedCategoryScores).length > 0) {
-              candidateRecommendations.push({
-                category: "Overall Performance",
-                issue: "Strong overall performance",
-                recommendation: "Continue current development path. Consider advanced training in areas of strength to further enhance expertise."
+            if (percentage >= 70) {
+              candidateStrengths.push({
+                category: section,
+                score: percentage,
+                interpretation: `Strong performance in ${section} with ${percentage}% score`
+              });
+            } else if (percentage <= 50) {
+              candidateWeaknesses.push({
+                category: section,
+                score: percentage,
+                interpretation: `Needs improvement in ${section} with ${percentage}% score`
               });
             }
+          });
 
-            setStrengths(candidateStrengths);
-            setWeaknesses(candidateWeaknesses);
-            setRecommendations(candidateRecommendations);
+          setCategoryScores(calculatedCategoryScores);
+          
+          const candidateRecommendations = candidateWeaknesses.map(weakness => {
+            let recommendation = "";
+            
+            switch(weakness.category) {
+              case 'Cognitive Abilities':
+                recommendation = "Consider cognitive training exercises and problem-solving workshops to enhance analytical thinking.";
+                break;
+              case 'Personality Assessment':
+                recommendation = "Engage in personality development sessions and emotional intelligence training for better interpersonal skills.";
+                break;
+              case 'Leadership Potential':
+                recommendation = "Participate in leadership workshops, mentorship programs, and team management exercises.";
+                break;
+              case 'Technical Competence':
+                recommendation = "Attend technical training, industry-specific workshops, and hands-on practice sessions.";
+                break;
+              case 'Performance Metrics':
+                recommendation = "Focus on goal-setting strategies, performance tracking improvement, and productivity enhancement techniques.";
+                break;
+              default:
+                recommendation = "Consider targeted training and development programs in this specific area.";
+            }
+            
+            return {
+              category: weakness.category,
+              issue: weakness.interpretation,
+              recommendation: recommendation
+            };
+          });
+          
+          if (candidateWeaknesses.length === 0 && Object.keys(calculatedCategoryScores).length > 0) {
+            candidateRecommendations.push({
+              category: "Overall Performance",
+              issue: "Strong overall performance",
+              recommendation: "Continue current development path. Consider advanced training in areas of strength to further enhance expertise."
+            });
           }
+
+          setStrengths(candidateStrengths);
+          setWeaknesses(candidateWeaknesses);
+          setRecommendations(candidateRecommendations);
+          
+          console.log("Manual calculation completed:", Object.keys(calculatedCategoryScores).length, "categories");
         } else {
-          // RPC function returned data
-          console.log("Category data from RPC:", categoryData);
-          // Process the categoryData as needed
+          console.log("No data found for manual calculation");
         }
       } catch (error) {
-        console.error("Error calculating category scores:", error);
+        console.error("Manual calculation error:", error);
       }
     };
 
@@ -547,6 +606,9 @@ export default function CandidateReport() {
               <p style={{ maxWidth: "500px", margin: "0 auto" }}>
                 Category scores could not be calculated. This might be due to missing response data or database connection issues.
               </p>
+              <div style={{ marginTop: "20px", fontSize: "14px", color: "#1565c0" }}>
+                <strong>Debug Info:</strong> Check browser console for detailed error messages.
+              </div>
             </div>
           ) : (
             <div style={{ 
@@ -616,6 +678,18 @@ export default function CandidateReport() {
                     <span>Score: {data.total}/{data.maxPossible}</span>
                     <span>{data.percentage}% of max</span>
                   </div>
+                  
+                  {/* Performance indicator */}
+                  <div style={{ 
+                    marginTop: "10px",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    color: data.percentage >= 70 ? "#4CAF50" : 
+                           data.percentage >= 60 ? "#FF9800" : "#F44336"
+                  }}>
+                    {data.percentage >= 70 ? "✓ Strong" : 
+                     data.percentage >= 60 ? "○ Average" : "⚠ Needs Improvement"}
+                  </div>
                 </div>
               ))}
             </div>
@@ -667,7 +741,13 @@ export default function CandidateReport() {
                 background: "#f8f9fa",
                 borderRadius: "8px"
               }}>
-                No significant strengths identified. Consider reviewing individual responses for specific strengths.
+                <div style={{ fontSize: "36px", marginBottom: "15px" }}>📈</div>
+                <p style={{ marginBottom: "10px" }}>
+                  No categories scored 70% or above.
+                </p>
+                <p style={{ fontSize: "13px", color: "#666" }}>
+                  Consider reviewing individual responses for specific question-level strengths.
+                </p>
               </div>
             ) : (
               <div style={{ 
@@ -714,6 +794,13 @@ export default function CandidateReport() {
                     }}>
                       {strength.interpretation}
                     </div>
+                    <div style={{ 
+                      fontSize: "12px", 
+                      color: "#666",
+                      fontStyle: "italic"
+                    }}>
+                      Top {Math.round(strength.score/10)} out of 10
+                    </div>
                   </div>
                 ))}
               </div>
@@ -758,7 +845,13 @@ export default function CandidateReport() {
                 background: "#f8f9fa",
                 borderRadius: "8px"
               }}>
-                No significant weaknesses identified. Candidate shows balanced performance across all areas.
+                <div style={{ fontSize: "36px", marginBottom: "15px" }}>🎯</div>
+                <p style={{ marginBottom: "10px" }}>
+                  All categories scored above 50%.
+                </p>
+                <p style={{ fontSize: "13px", color: "#666" }}>
+                  Candidate shows balanced performance across all areas.
+                </p>
               </div>
             ) : (
               <div style={{ 
@@ -804,6 +897,13 @@ export default function CandidateReport() {
                       marginBottom: "5px"
                     }}>
                       {weakness.interpretation}
+                    </div>
+                    <div style={{ 
+                      fontSize: "12px", 
+                      color: "#666",
+                      fontStyle: "italic"
+                    }}>
+                      Improvement needed: {100 - weakness.score}% to reach target
                     </div>
                   </div>
                 ))}
@@ -851,7 +951,13 @@ export default function CandidateReport() {
               background: "#f8f9fa",
               borderRadius: "8px"
             }}>
-              No specific recommendations available. Candidate shows strong overall performance.
+              <div style={{ fontSize: "36px", marginBottom: "15px" }}>✅</div>
+              <p style={{ marginBottom: "10px" }}>
+                No specific development recommendations needed.
+              </p>
+              <p style={{ fontSize: "13px", color: "#666" }}>
+                Candidate shows strong overall performance across all categories.
+              </p>
             </div>
           ) : (
             <div style={{ 
@@ -894,6 +1000,12 @@ export default function CandidateReport() {
                       }}>
                         {rec.category}
                       </div>
+                      <div style={{ 
+                        fontSize: "12px", 
+                        color: "#666"
+                      }}>
+                        Priority: {index === 0 ? "High" : index === 1 ? "Medium" : "Low"}
+                      </div>
                     </div>
                   </div>
                   
@@ -908,7 +1020,11 @@ export default function CandidateReport() {
                     </div>
                     <div style={{ 
                       fontSize: "14px", 
-                      color: "#333"
+                      color: "#333",
+                      padding: "8px",
+                      background: "white",
+                      borderRadius: "4px",
+                      borderLeft: "3px solid #FF9800"
                     }}>
                       {rec.issue}
                     </div>
@@ -926,7 +1042,10 @@ export default function CandidateReport() {
                     <div style={{ 
                       fontSize: "14px", 
                       color: "#333",
-                      lineHeight: 1.5
+                      lineHeight: 1.5,
+                      padding: "8px",
+                      background: "rgba(255, 255, 255, 0.7)",
+                      borderRadius: "4px"
                     }}>
                       {rec.recommendation}
                     </div>
@@ -937,7 +1056,7 @@ export default function CandidateReport() {
           )}
         </div>
 
-        {/* Response Details - Simplified */}
+        {/* Assessment Summary */}
         <div style={{ 
           background: "white", 
           padding: "25px", 
@@ -958,7 +1077,8 @@ export default function CandidateReport() {
               padding: "20px",
               background: "#f8f9fa",
               borderRadius: "8px",
-              textAlign: "center"
+              textAlign: "center",
+              borderTop: "4px solid #1565c0"
             }}>
               <div style={{ fontSize: "32px", fontWeight: "700", color: "#1565c0" }}>
                 {responses.length}
@@ -966,13 +1086,17 @@ export default function CandidateReport() {
               <div style={{ fontSize: "14px", color: "#666", marginTop: "8px" }}>
                 Total Responses
               </div>
+              <div style={{ fontSize: "12px", color: "#888", marginTop: "4px" }}>
+                {responses.length}/100 questions
+              </div>
             </div>
             
             <div style={{
               padding: "20px",
               background: "#f8f9fa",
               borderRadius: "8px",
-              textAlign: "center"
+              textAlign: "center",
+              borderTop: "4px solid #4CAF50"
             }}>
               <div style={{ fontSize: "32px", fontWeight: "700", color: "#4CAF50" }}>
                 {candidate.total_score}
@@ -980,13 +1104,17 @@ export default function CandidateReport() {
               <div style={{ fontSize: "14px", color: "#666", marginTop: "8px" }}>
                 Total Score
               </div>
+              <div style={{ fontSize: "12px", color: "#888", marginTop: "4px" }}>
+                Max: 500
+              </div>
             </div>
             
             <div style={{
               padding: "20px",
               background: "#f8f9fa",
               borderRadius: "8px",
-              textAlign: "center"
+              textAlign: "center",
+              borderTop: "4px solid #9C27B0"
             }}>
               <div style={{ fontSize: "32px", fontWeight: "700", color: "#9C27B0" }}>
                 {Object.keys(categoryScores).length}
@@ -994,19 +1122,26 @@ export default function CandidateReport() {
               <div style={{ fontSize: "14px", color: "#666", marginTop: "8px" }}>
                 Categories Assessed
               </div>
+              <div style={{ fontSize: "12px", color: "#888", marginTop: "4px" }}>
+                Out of 5 categories
+              </div>
             </div>
             
             <div style={{
               padding: "20px",
               background: "#f8f9fa",
               borderRadius: "8px",
-              textAlign: "center"
+              textAlign: "center",
+              borderTop: "4px solid #FF9800"
             }}>
               <div style={{ fontSize: "32px", fontWeight: "700", color: "#FF9800" }}>
                 {strengths.length}
               </div>
               <div style={{ fontSize: "14px", color: "#666", marginTop: "8px" }}>
                 Key Strengths
+              </div>
+              <div style={{ fontSize: "12px", color: "#888", marginTop: "4px" }}>
+                Areas ≥70% score
               </div>
             </div>
           </div>
@@ -1019,8 +1154,9 @@ export default function CandidateReport() {
             border: "1px solid #bbdefb"
           }}>
             <p style={{ margin: 0, color: "#1565c0", fontSize: "14px" }}>
-              <strong>Note:</strong> Detailed individual responses are available in the database. 
-              Contact technical support if you need access to specific response data.
+              <strong>Report Generated:</strong> {new Date().toLocaleDateString()} | 
+              <strong> Candidate ID:</strong> {user_id?.substring(0, 8)}... | 
+              <strong> Status:</strong> Completed
             </p>
           </div>
         </div>
