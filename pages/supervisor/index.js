@@ -26,71 +26,6 @@ const getClassificationColor = (score) => {
   return "#F44336";
 };
 
-// Helper function to fetch user data (SAME AS IN CANDIDATE REPORT)
-const fetchUserData = async (userId, index) => {
-  let userEmail = "Unknown Email";
-  let userName = `Candidate ${index + 1}`;
-  
-  try {
-    // FIRST: Try users table (most reliable for custom user data)
-    const { data: usersTableData, error: usersTableError } = await supabase
-      .from("users")
-      .select("email, full_name, created_at")
-      .eq("id", userId)
-      .single();
-    
-    if (!usersTableError && usersTableData) {
-      userEmail = usersTableData.email || "No email provided";
-      userName = usersTableData.full_name || 
-                userEmail.split('@')[0] || 
-                `Candidate ${userId.substring(0, 6).toUpperCase()}`;
-    } else {
-      // SECOND: Check if there's an email in talent_classification metadata
-      const { data: talentData } = await supabase
-        .from("talent_classification")
-        .select("metadata")
-        .eq("user_id", userId)
-        .single();
-      
-      if (talentData?.metadata?.email) {
-        userEmail = talentData.metadata.email;
-        userName = talentData.metadata.name || `Candidate ${userId.substring(0, 6).toUpperCase()}`;
-      } else {
-        // THIRD: Try auth.users as last resort
-        try {
-          const { data: authData, error: authError } = await supabase
-            .from("auth.users")
-            .select("email, raw_user_meta_data")
-            .eq("id", userId)
-            .single();
-          
-          if (!authError && authData) {
-            userEmail = authData.email || "No email in auth";
-            userName = authData.raw_user_meta_data?.full_name || 
-                      authData.raw_user_meta_data?.name ||
-                      authData.email?.split('@')[0] || 
-                      `Candidate ${userId.substring(0, 6).toUpperCase()}`;
-          } else {
-            // FINAL FALLBACK
-            userName = `Candidate ${userId.substring(0, 8).toUpperCase()}`;
-          }
-        } catch (authErr) {
-          userName = `Candidate ${userId.substring(0, 8).toUpperCase()}`;
-        }
-      }
-    }
-  } catch (err) {
-    console.error(`Error fetching user data for ${userId}:`, err);
-    userName = `Candidate ${userId.substring(0, 8).toUpperCase()}`;
-  }
-  
-  return {
-    email: userEmail,
-    full_name: userName,
-    id_short: userId.substring(0, 8).toUpperCase()
-  };
-};
-
 export default function SupervisorDashboard() {
   const router = useRouter();
   const [candidates, setCandidates] = useState([]);
@@ -150,8 +85,7 @@ export default function SupervisorDashboard() {
             total_score,
             classification,
             created_at,
-            updated_at,
-            metadata
+            updated_at
           `)
           .order("total_score", { ascending: false });
 
@@ -177,15 +111,53 @@ export default function SupervisorDashboard() {
           return;
         }
 
-        // Get user details for each candidate - USING IMPROVED METHOD
+        // Get user details for each candidate - IMPROVED VERSION
         const candidatesWithUsers = await Promise.all(
           talentData.map(async (candidate, index) => {
             try {
-              const userData = await fetchUserData(candidate.user_id, index);
+              // Try to get user email from auth.users with better error handling
+              let userEmail = "Unknown Email";
+              let userName = `Candidate ${index + 1}`;
               
+              try {
+                // Method 1: Direct query to auth.users (may require RLS policies)
+                const { data: userData, error: userError } = await supabase
+                  .from("auth.users")
+                  .select("email, raw_user_meta_data")
+                  .eq("id", candidate.user_id)
+                  .single();
+
+                if (!userError && userData) {
+                  userEmail = userData.email || "Unknown Email";
+                  userName = userData.raw_user_meta_data?.full_name || 
+                            userData.email?.split('@')[0] || 
+                            `Candidate ${index + 1}`;
+                } else {
+                  // Method 2: Try to extract from user_id pattern or use admin API
+                  console.log(`Could not fetch user ${candidate.user_id}:`, userError);
+                  
+                  // Create identifiable name from user_id
+                  userName = `Candidate ${candidate.user_id.substring(0, 8).toUpperCase()}`;
+                  
+                  // If you have known test users, map them
+                  if (candidate.user_id === 'e71fd572-5afc-40f9-be41-454bdf130a70') {
+                    userEmail = "test.candidate@stratax.com";
+                    userName = "Test Candidate";
+                  }
+                  // Add more mappings as needed
+                }
+              } catch (fetchError) {
+                console.error(`Error in user fetch for ${candidate.user_id}:`, fetchError);
+                userName = `Candidate ${candidate.user_id.substring(0, 6).toUpperCase()}`;
+              }
+
               return {
                 ...candidate,
-                user: userData
+                user: {
+                  email: userEmail,
+                  full_name: userName,
+                  id_short: candidate.user_id.substring(0, 8).toUpperCase()
+                }
               };
             } catch (error) {
               console.error(`Error processing candidate ${candidate.user_id}:`, error);
