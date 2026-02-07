@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
 import AppLayout from "../../components/AppLayout";
@@ -10,79 +10,107 @@ export default function AddSupervisor() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [isSupervisor, setIsSupervisor] = useState(false);
 
-  // Check if current user is admin
+  // Check supervisor authentication
   useEffect(() => {
-    const checkAdmin = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session) {
-          router.push("/login");
+    const checkSupervisorAuth = () => {
+      if (typeof window !== 'undefined') {
+        const supervisorSession = localStorage.getItem("supervisorSession");
+        if (!supervisorSession) {
+          router.push("/supervisor-login");
           return;
         }
-
-        // Check if user is admin (you can modify this logic based on your admin check)
-        const { data: userData } = await supabase
-          .from("users")
-          .select("role")
-          .eq("id", session.user.id)
-          .single();
-
-        if (userData?.role === "admin") {
-          setIsAdmin(true);
-        } else {
-          router.push("/"); // Redirect non-admins
+        
+        try {
+          const session = JSON.parse(supervisorSession);
+          if (session.loggedIn) {
+            setIsSupervisor(true);
+          } else {
+            router.push("/supervisor-login");
+          }
+        } catch {
+          router.push("/supervisor-login");
         }
-      } catch (error) {
-        console.error("Admin check error:", error);
-        router.push("/login");
-      } finally {
-        setLoading(false);
       }
     };
 
-    checkAdmin();
+    checkSupervisorAuth();
   }, [router]);
 
   const handleAddSupervisor = async (e) => {
     e.preventDefault();
     setError("");
     setSuccess("");
+    setLoading(true);
 
     try {
-      // 1. Create auth user
+      // 1. Create auth account
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
+        email: email,
+        password: password,
         options: {
-          data: { 
-            name,
+          data: {
+            name: name,
             role: "supervisor",
             is_supervisor: true
           }
-        },
+        }
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        // If user already exists, we still add them as supervisor
+        if (authError.message.includes("already registered")) {
+          // Get existing user ID
+          const { data: existingUser } = await supabase
+            .from("auth.users")
+            .select("id")
+            .eq("email", email)
+            .single();
 
-      // 2. Create supervisor record
+          if (existingUser) {
+            // Add to supervisors table
+            const { error: supervisorError } = await supabase
+              .from("supervisors")
+              .upsert({
+                user_id: existingUser.id,
+                email: email,
+                full_name: name,
+                role: "supervisor",
+                is_active: true,
+                permissions: ["view_dashboard", "view_reports", "manage_candidates"]
+              }, { onConflict: "email" });
+
+            if (supervisorError) throw supervisorError;
+
+            setSuccess(`${name} added as supervisor! They already have an auth account and can login with their existing password.`);
+            setName("");
+            setEmail("");
+            setPassword("");
+            setLoading(false);
+            return;
+          }
+        }
+        throw authError;
+      }
+
+      // 2. Add to supervisors table
       const { error: supervisorError } = await supabase
         .from("supervisors")
         .insert({
           user_id: authData.user.id,
           email: email,
           full_name: name,
+          role: "supervisor",
           is_active: true,
           permissions: ["view_dashboard", "view_reports", "manage_candidates"]
         });
 
       if (supervisorError) throw supervisorError;
 
-      // 3. Also add to users table if you use it
-      const { error: usersError } = await supabase
+      // 3. Add to users table
+      await supabase
         .from("users")
         .insert({
           id: authData.user.id,
@@ -91,12 +119,7 @@ export default function AddSupervisor() {
           role: "supervisor"
         });
 
-      if (usersError) {
-        console.warn("Note: Could not add to users table:", usersError.message);
-        // Continue even if this fails
-      }
-
-      setSuccess(`Supervisor added successfully! ${name} can now login at /supervisor-login with email: ${email}`);
+      setSuccess(`✅ ${name} added as supervisor successfully!\n\nEmail: ${email}\nPassword: ${password}\n\nShare these credentials securely. They need to check email for confirmation.`);
       
       // Clear form
       setName("");
@@ -105,11 +128,17 @@ export default function AddSupervisor() {
 
     } catch (err) {
       setError(err.message);
-      console.error(err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (loading) {
+  const handleLogout = () => {
+    localStorage.removeItem("supervisorSession");
+    router.push("/supervisor-login");
+  };
+
+  if (!isSupervisor) {
     return (
       <div style={{ 
         minHeight: "100vh", 
@@ -117,17 +146,13 @@ export default function AddSupervisor() {
         alignItems: "center", 
         justifyContent: "center" 
       }}>
-        <p>Checking permissions...</p>
+        <p style={{ textAlign: "center" }}>Checking authentication...</p>
       </div>
     );
   }
 
-  if (!isAdmin) {
-    return null; // Will redirect from useEffect
-  }
-
   return (
-    <AppLayout background="/images/admin-bg.jpg">
+    <AppLayout background="/images/supervisor-bg.jpg">
       <div style={{ 
         minHeight: "100vh", 
         display: "flex", 
@@ -143,27 +168,55 @@ export default function AddSupervisor() {
           maxWidth: "500px",
           boxShadow: "0 10px 40px rgba(0,0,0,0.1)"
         }}>
-          <h1 style={{ 
-            margin: "0 0 10px 0", 
-            color: "#1565c0", 
-            textAlign: "center"
+          <div style={{ 
+            display: "flex", 
+            justifyContent: "space-between", 
+            alignItems: "center",
+            marginBottom: "20px"
           }}>
-            Add New Supervisor
-          </h1>
-          <p style={{ 
-            textAlign: "center", 
-            color: "#666", 
-            marginBottom: "30px"
-          }}>
-            Create supervisor accounts for dashboard access
+            <h1 style={{ margin: 0, color: "#1565c0" }}>Add New Supervisor</h1>
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button
+                onClick={() => router.push("/supervisor")}
+                style={{
+                  padding: "8px 16px",
+                  background: "#1565c0",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  fontSize: "14px"
+                }}
+              >
+                Back to Dashboard
+              </button>
+              <button
+                onClick={handleLogout}
+                style={{
+                  padding: "8px 16px",
+                  background: "#d32f2f",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  fontSize: "14px"
+                }}
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+
+          <p style={{ color: "#666", marginBottom: "30px" }}>
+            Grant dashboard access to other supervisors
           </p>
 
           {error && (
             <div style={{ 
-              padding: "12px", 
+              padding: "15px", 
               background: "#ffebee", 
               color: "#c62828",
-              borderRadius: "6px",
+              borderRadius: "8px",
               marginBottom: "20px"
             }}>
               {error}
@@ -172,11 +225,12 @@ export default function AddSupervisor() {
 
           {success && (
             <div style={{ 
-              padding: "12px", 
+              padding: "15px", 
               background: "#e8f5e9", 
               color: "#2e7d32",
-              borderRadius: "6px",
-              marginBottom: "20px"
+              borderRadius: "8px",
+              marginBottom: "20px",
+              whiteSpace: "pre-line"
             }}>
               {success}
             </div>
@@ -184,13 +238,8 @@ export default function AddSupervisor() {
 
           <form onSubmit={handleAddSupervisor}>
             <div style={{ marginBottom: "20px" }}>
-              <label style={{ 
-                display: "block", 
-                marginBottom: "8px",
-                fontWeight: "500",
-                color: "#333"
-              }}>
-                Full Name
+              <label style={{ display: "block", marginBottom: "8px", fontWeight: "500" }}>
+                Full Name *
               </label>
               <input
                 type="text"
@@ -210,13 +259,8 @@ export default function AddSupervisor() {
             </div>
 
             <div style={{ marginBottom: "20px" }}>
-              <label style={{ 
-                display: "block", 
-                marginBottom: "8px",
-                fontWeight: "500",
-                color: "#333"
-              }}>
-                Email
+              <label style={{ display: "block", marginBottom: "8px", fontWeight: "500" }}>
+                Email *
               </label>
               <input
                 type="email"
@@ -236,17 +280,12 @@ export default function AddSupervisor() {
             </div>
 
             <div style={{ marginBottom: "30px" }}>
-              <label style={{ 
-                display: "block", 
-                marginBottom: "8px",
-                fontWeight: "500",
-                color: "#333"
-              }}>
-                Temporary Password
+              <label style={{ display: "block", marginBottom: "8px", fontWeight: "500" }}>
+                Temporary Password *
               </label>
               <input
                 type="password"
-                placeholder="Create initial password"
+                placeholder="Set initial password"
                 value={password}
                 required
                 minLength="6"
@@ -260,33 +299,28 @@ export default function AddSupervisor() {
                   boxSizing: "border-box"
                 }}
               />
-              <div style={{ 
-                fontSize: "12px", 
-                color: "#666", 
-                marginTop: "5px"
-              }}>
-                Supervisor will use this password to login
+              <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
+                Minimum 6 characters. Supervisor will use this to login.
               </div>
             </div>
 
             <button
               type="submit"
+              disabled={loading}
               style={{
                 width: "100%",
                 padding: "14px",
-                backgroundColor: "#1565c0",
-                color: "#fff",
+                backgroundColor: loading ? "#ccc" : "#4CAF50",
+                color: "white",
                 border: "none",
                 borderRadius: "8px",
-                cursor: "pointer",
+                cursor: loading ? "not-allowed" : "pointer",
                 fontWeight: "bold",
                 fontSize: "16px",
                 transition: "background 0.2s"
               }}
-              onMouseOver={(e) => e.currentTarget.style.background = "#0d47a1"}
-              onMouseOut={(e) => e.currentTarget.style.background = "#1565c0"}
             >
-              Add Supervisor
+              {loading ? "Adding Supervisor..." : "Add Supervisor"}
             </button>
           </form>
 
@@ -308,29 +342,9 @@ export default function AddSupervisor() {
             }}>
               <li>Login URL: <code>/supervisor-login</code></li>
               <li>Dashboard URL: <code>/supervisor</code></li>
-              <li>Default permissions: View dashboard, reports, and manage candidates</li>
-              <li>Supervisor can change password after first login</li>
+              <li>Permissions: View dashboard, reports, and manage candidates</li>
+              <li>New supervisors need to confirm email before first login</li>
             </ul>
-          </div>
-
-          <div style={{ 
-            textAlign: "center", 
-            marginTop: "30px"
-          }}>
-            <button
-              onClick={() => router.push("/supervisor")}
-              style={{
-                padding: "10px 20px",
-                background: "transparent",
-                color: "#1565c0",
-                border: "1px solid #1565c0",
-                borderRadius: "6px",
-                cursor: "pointer",
-                fontSize: "14px"
-              }}
-            >
-              Go to Supervisor Dashboard
-            </button>
           </div>
         </div>
       </div>
