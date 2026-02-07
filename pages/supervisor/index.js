@@ -186,7 +186,7 @@ export default function SupervisorDashboard() {
           </div>
           <div style={{ display: "flex", gap: "10px" }}>
             <button
-              onClick={() => router.push("/add-supervisor")}
+              onClick={() => router.push("/admin/add-supervisor")}
               style={{
                 background: "#4CAF50",
                 color: "white",
@@ -585,3 +585,4 @@ export default function SupervisorDashboard() {
     </AppLayout>
   );
 }
+
