@@ -46,7 +46,7 @@ export default function CandidateReport() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch candidate data - UPDATED VERSION WITH PROPER USER INFO
+  // Fetch candidate data - WORKING VERSION
   useEffect(() => {
     if (!isSupervisor || !user_id) return;
 
@@ -55,81 +55,45 @@ export default function CandidateReport() {
         setLoading(true);
         setDebugInfo(`Starting fetch for user: ${user_id}`);
         
-        // 1. Get user info with priority: users table -> auth.users -> fallback
-        let userEmail = "Email not found";
-        let userName = "Candidate";
+        // 1. Get user info
+        let userEmail = "Unknown Candidate";
+        let userName = "Unknown Candidate";
         
-        // FIRST: Try users table (most reliable for custom user data)
-        const { data: usersTableData, error: usersTableError } = await supabase
-          .from("users")
-          .select("email, full_name, created_at")
-          .eq("id", user_id)
-          .single();
-        
-        if (!usersTableError && usersTableData) {
-          userEmail = usersTableData.email || "No email provided";
-          userName = usersTableData.full_name || 
-                    userEmail.split('@')[0] || 
-                    `Candidate ${user_id.substring(0, 6).toUpperCase()}`;
-          setDebugInfo(prev => prev + `\n✓ Found in users table: ${userName} (${userEmail})`);
-        } else {
-          // SECOND: Try auth.users (if you have access)
+        try {
+          const { data: authUser, error: authError } = await supabase
+            .from("auth.users")
+            .select("email, raw_user_meta_data")
+            .eq("id", user_id)
+            .single();
+            
+          if (!authError && authUser) {
+            userEmail = authUser.email || "Unknown Email";
+            userName = authUser.raw_user_meta_data?.full_name || 
+                      authUser.email?.split('@')[0] || 
+                      `Candidate ${user_id.substring(0, 6)}`;
+          }
+        } catch (authErr) {
+          // Try users table
           try {
-            const { data: authData, error: authError } = await supabase.auth.admin.getUserById(user_id);
-            if (!authError && authData?.user) {
-              userEmail = authData.user.email || "No email in auth";
-              userName = authData.user.user_metadata?.full_name || 
-                        authData.user.user_metadata?.name ||
-                        authData.user.email?.split('@')[0] || 
-                        `Candidate ${user_id.substring(0, 6).toUpperCase()}`;
-              setDebugInfo(prev => prev + `\n✓ Found in auth: ${userName} (${userEmail})`);
-            } else {
-              // THIRD: Check if there's an email in talent_classification metadata
-              const { data: talentData } = await supabase
-                .from("talent_classification")
-                .select("metadata")
-                .eq("user_id", user_id)
-                .single();
+            const { data: usersTable, error: usersError } = await supabase
+              .from("users")
+              .select("email, full_name")
+              .eq("id", user_id)
+              .single();
               
-              if (talentData?.metadata?.email) {
-                userEmail = talentData.metadata.email;
-                userName = talentData.metadata.name || `Candidate ${user_id.substring(0, 6).toUpperCase()}`;
-                setDebugInfo(prev => prev + `\n✓ Found in classification metadata`);
-              } else {
-                // FINAL FALLBACK
-                userName = `Candidate ${user_id.substring(0, 8).toUpperCase()}`;
-                setDebugInfo(prev => prev + `\n⚠ Using fallback name`);
-              }
+            if (!usersError && usersTable) {
+              userEmail = usersTable.email || "Unknown Email";
+              userName = usersTable.full_name || `Candidate ${user_id.substring(0, 6)}`;
             }
-          } catch (authErr) {
-            // Alternative auth query without admin privileges
-            try {
-              const { data: authData, error: authError } = await supabase
-                .from("auth.users")
-                .select("email, raw_user_meta_data")
-                .eq("id", user_id)
-                .single();
-              
-              if (!authError && authData) {
-                userEmail = authData.email || "No email in auth";
-                userName = authData.raw_user_meta_data?.full_name || 
-                          authData.raw_user_meta_data?.name ||
-                          authData.email?.split('@')[0] || 
-                          `Candidate ${user_id.substring(0, 6).toUpperCase()}`;
-                setDebugInfo(prev => prev + `\n✓ Found in auth.users: ${userName} (${userEmail})`);
-              } else {
-                userName = `Candidate ${user_id.substring(0, 8).toUpperCase()}`;
-                setDebugInfo(prev => prev + `\n⚠ Auth lookup failed`);
-              }
-            } catch (err) {
-              setDebugInfo(prev => prev + `\n⚠ Auth lookup exception: ${err.message}`);
-              userName = `Candidate ${user_id.substring(0, 8).toUpperCase()}`;
-            }
+          } catch (usersErr) {
+            // Use ID-based name
+            userName = `Candidate ${user_id.substring(0, 8).toUpperCase()}`;
           }
         }
         
         setUserEmail(userEmail);
         setUserName(userName);
+        setDebugInfo(prev => prev + `\nUser: ${userName} (${userEmail})`);
 
         // 2. Get candidate classification
         const { data: classificationData, error: classificationError } = await supabase
@@ -1405,36 +1369,10 @@ export default function CandidateReport() {
           }}>
             <p style={{ margin: 0, color: "#1565c0", fontSize: "14px" }}>
               <strong>Report Generated:</strong> {new Date().toLocaleDateString()} | 
-              <strong> Candidate:</strong> {userName} | 
+              <strong> Candidate ID:</strong> {user_id?.substring(0, 8)}... | 
               <strong> Status:</strong> Completed
             </p>
           </div>
-        </div>
-        
-        {/* Debug Panel (Hidden by default - change display to "block" to debug) */}
-        <div style={{ 
-          marginTop: "30px",
-          padding: "15px",
-          background: "#f8f9fa",
-          borderRadius: "8px",
-          border: "1px solid #e0e0e0",
-          fontSize: "12px",
-          color: "#666",
-          display: "none" /* Change to "block" to see debug info */
-        }}>
-          <div style={{ fontWeight: "600", marginBottom: "8px", color: "#333" }}>
-            Debug Information
-          </div>
-          <pre style={{ 
-            margin: 0, 
-            whiteSpace: "pre-wrap",
-            fontSize: "11px",
-            fontFamily: "monospace",
-            maxHeight: "200px",
-            overflow: "auto"
-          }}>
-            {debugInfo}
-          </pre>
         </div>
       </div>
     </AppLayout>
