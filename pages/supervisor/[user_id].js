@@ -1,4 +1,4 @@
-// pages/supervisor/[user_id].js - UPDATED WITH NEW PERFORMANCE CLASSIFICATION AND GRADING SCALE
+// pages/supervisor/[user_id].js - FIXED VERSION
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -258,7 +258,86 @@ export default function CandidateReport() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch candidate data - UPDATED VERSION
+  // Alternative: Check if data is in different tables
+  const checkAlternativeTables = async () => {
+    try {
+      setDebugInfo(prev => prev + "\n=== CHECKING ALTERNATIVE TABLES ===");
+      
+      // Check candidate_assessments table FIRST - most likely place
+      const { data: assessmentData, error: assessmentError } = await supabase
+        .from("candidate_assessments")
+        .select("email, full_name, total_score, classification, user_id")
+        .eq("user_id", user_id)
+        .single();
+      
+      if (!assessmentError && assessmentData) {
+        setDebugInfo(prev => prev + `\n✓ Found in candidate_assessments table`);
+        
+        // Update user info from assessment table
+        if (assessmentData.email) {
+          setUserEmail(assessmentData.email);
+          setUserName(assessmentData.full_name || assessmentData.email.split('@')[0] || `Candidate ${user_id.substring(0, 8).toUpperCase()}`);
+          setDebugInfo(prev => prev + `\n✓ Set name: ${assessmentData.full_name}, email: ${assessmentData.email}`);
+        }
+        
+        // Set candidate data if not already set
+        if (!candidate && assessmentData.total_score) {
+          setCandidate({
+            total_score: assessmentData.total_score,
+            classification: assessmentData.classification || getClassification(assessmentData.total_score),
+            user_id: assessmentData.user_id
+          });
+          setDebugInfo(prev => prev + `\n✓ Set candidate score: ${assessmentData.total_score}`);
+        }
+        return true;
+      } else {
+        setDebugInfo(prev => prev + `\n✗ Not in candidate_assessments: ${assessmentError?.message}`);
+      }
+      
+      // Check users table with different column names
+      const { data: usersData, error: usersError } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", user_id)
+        .single();
+      
+      if (!usersError && usersData) {
+        setDebugInfo(prev => prev + `\n✓ Found in users table`);
+        
+        // Try different possible column names
+        const email = usersData.email || usersData.user_email || usersData.contact_email || usersData.Email;
+        const name = usersData.full_name || usersData.name || usersData.username || usersData.Name || usersData.FullName;
+        
+        if (email) {
+          setUserEmail(email);
+          setUserName(name || email.split('@')[0] || `Candidate ${user_id.substring(0, 8).toUpperCase()}`);
+          setDebugInfo(prev => prev + `\n✓ Set from users: ${name} (${email})`);
+          return true;
+        } else {
+          setDebugInfo(prev => prev + `\n✗ No email found in users table columns`);
+        }
+      } else {
+        setDebugInfo(prev => prev + `\n✗ Not in users table: ${usersError?.message}`);
+      }
+      
+      // Check for any table that might have user info
+      const { data: allTables, error: tablesError } = await supabase
+        .from("candidate_assessments")
+        .select("*")
+        .limit(1);
+      
+      if (!tablesError && allTables && allTables.length > 0) {
+        const sampleRow = allTables[0];
+        setDebugInfo(prev => prev + `\nSample candidate_assessments row columns: ${Object.keys(sampleRow).join(', ')}`);
+      }
+      
+    } catch (err) {
+      setDebugInfo(prev => prev + `\n✗ Alternative table check error: ${err.message}`);
+    }
+    return false;
+  };
+
+  // Fetch candidate data - FIXED VERSION
   useEffect(() => {
     if (!isSupervisor || !user_id) return;
 
@@ -267,55 +346,96 @@ export default function CandidateReport() {
         setLoading(true);
         setDebugInfo(`Starting fetch for user: ${user_id}`);
         
-        // 1. Get user info with priority: users table -> auth.users -> fallback
-        let userEmail = "Email not found";
-        let userName = "Candidate";
+        // FIRST: Check alternative tables where user data might actually be
+        const foundInAltTables = await checkAlternativeTables();
         
-        // FIRST: Try users table (most reliable for custom user data)
-        const { data: usersTableData, error: usersTableError } = await supabase
-          .from("users")
-          .select("email, full_name, created_at")
-          .eq("id", user_id)
-          .single();
-        
-        if (!usersTableError && usersTableData) {
-          userEmail = usersTableData.email || "No email provided";
-          userName = usersTableData.full_name || 
-                    userEmail.split('@')[0] || 
-                    `Candidate ${user_id.substring(0, 6).toUpperCase()}`;
-          setDebugInfo(prev => prev + `\n✓ Found in users table: ${userName} (${userEmail})`);
+        // If found in alternative tables, skip the complex lookup
+        if (foundInAltTables && userEmail && userName && userName !== "Candidate") {
+          setDebugInfo(prev => prev + `\n✓ Data found in alternative tables, skipping complex lookup`);
         } else {
-          // SECOND: Try auth.users (if you have access)
-          try {
-            const { data: authData, error: authError } = await supabase.auth.admin.getUserById(user_id);
-            if (!authError && authData?.user) {
-              userEmail = authData.user.email || "No email in auth";
-              userName = authData.user.user_metadata?.full_name || 
-                        authData.user.user_metadata?.name ||
-                        authData.user.email?.split('@')[0] || 
-                        `Candidate ${user_id.substring(0, 6).toUpperCase()}`;
-              setDebugInfo(prev => prev + `\n✓ Found in auth: ${userName} (${userEmail})`);
-            } else {
-              // THIRD: Check if there's an email in talent_classification metadata
-              const { data: talentData } = await supabase
-                .from("talent_classification")
-                .select("metadata")
-                .eq("user_id", user_id)
-                .single();
-              
-              if (talentData?.metadata?.email) {
-                userEmail = talentData.metadata.email;
-                userName = talentData.metadata.name || `Candidate ${user_id.substring(0, 6).toUpperCase()}`;
-                setDebugInfo(prev => prev + `\n✓ Found in classification metadata`);
-              } else {
-                // FINAL FALLBACK
-                userName = `Candidate ${user_id.substring(0, 8).toUpperCase()}`;
-                setDebugInfo(prev => prev + `\n⚠ Using fallback name`);
-              }
+          // SECOND: Get user info - comprehensive lookup
+          setDebugInfo(prev => prev + "\n=== STARTING COMPREHENSIVE USER LOOKUP ===");
+          
+          let foundEmail = "Email not found";
+          let foundName = `Candidate ${user_id.substring(0, 8).toUpperCase()}`;
+          
+          // 1. Check talent_classification metadata FIRST
+          const { data: classificationData, error: classificationError } = await supabase
+            .from("talent_classification")
+            .select("metadata, user_email, user_name, candidate_email, candidate_name")
+            .eq("user_id", user_id)
+            .single();
+          
+          if (!classificationError && classificationData) {
+            setDebugInfo(prev => prev + `\n✓ Found in talent_classification`);
+            
+            // Check ALL possible metadata locations
+            const metadata = classificationData.metadata || {};
+            
+            // Try metadata first
+            if (metadata.email) {
+              foundEmail = metadata.email;
+              foundName = metadata.name || metadata.full_name || foundEmail.split('@')[0];
+              setDebugInfo(prev => prev + `\n✓ Found in metadata: ${foundName} (${foundEmail})`);
             }
-          } catch (authErr) {
-            // Alternative auth query without admin privileges
+            // Try direct columns in table
+            else if (classificationData.user_email) {
+              foundEmail = classificationData.user_email;
+              foundName = classificationData.user_name || foundEmail.split('@')[0];
+              setDebugInfo(prev => prev + `\n✓ Found in direct columns: ${foundName} (${foundEmail})`);
+            }
+            // Try alternative column names
+            else if (classificationData.candidate_email) {
+              foundEmail = classificationData.candidate_email;
+              foundName = classificationData.candidate_name || foundEmail.split('@')[0];
+              setDebugInfo(prev => prev + `\n✓ Found in alt columns: ${foundName} (${foundEmail})`);
+            }
+          } else {
+            setDebugInfo(prev => prev + `\n✗ Not in talent_classification: ${classificationError?.message}`);
+          }
+          
+          // 2. If still not found, try users table
+          if (foundEmail === "Email not found") {
+            const { data: usersTableData, error: usersTableError } = await supabase
+              .from("users")
+              .select("*")
+              .eq("id", user_id)
+              .single();
+            
+            if (!usersTableError && usersTableData) {
+              // Try ALL possible column names for email and name
+              const possibleEmailCols = ['email', 'user_email', 'contact_email', 'Email', 'e_mail', 'mail'];
+              const possibleNameCols = ['full_name', 'name', 'username', 'Name', 'FullName', 'display_name', 'user_name'];
+              
+              for (const col of possibleEmailCols) {
+                if (usersTableData[col]) {
+                  foundEmail = usersTableData[col];
+                  break;
+                }
+              }
+              
+              for (const col of possibleNameCols) {
+                if (usersTableData[col]) {
+                  foundName = usersTableData[col];
+                  break;
+                }
+              }
+              
+              if (foundEmail === "Email not found" && foundName.includes("Candidate")) {
+                // If we found the table but not specific columns, use a better fallback
+                foundName = `User ${user_id.substring(0, 8).toUpperCase()}`;
+              }
+              
+              setDebugInfo(prev => prev + `\n✓ Found in users table: ${foundName} (${foundEmail})`);
+            } else {
+              setDebugInfo(prev => prev + `\n✗ Not in users table: ${usersTableError?.message}`);
+            }
+          }
+          
+          // 3. If still not found, try auth.users as last resort
+          if (foundEmail === "Email not found") {
             try {
+              // Try direct query to auth.users
               const { data: authData, error: authError } = await supabase
                 .from("auth.users")
                 .select("email, raw_user_meta_data")
@@ -323,48 +443,63 @@ export default function CandidateReport() {
                 .single();
               
               if (!authError && authData) {
-                userEmail = authData.email || "No email in auth";
-                userName = authData.raw_user_meta_data?.full_name || 
-                          authData.raw_user_meta_data?.name ||
-                          authData.email?.split('@')[0] || 
-                          `Candidate ${user_id.substring(0, 6).toUpperCase()}`;
-                setDebugInfo(prev => prev + `\n✓ Found in auth.users: ${userName} (${userEmail})`);
+                foundEmail = authData.email || "No email in auth";
+                const meta = authData.raw_user_meta_data || {};
+                foundName = meta.full_name || meta.name || foundEmail.split('@')[0] || foundName;
+                setDebugInfo(prev => prev + `\n✓ Found in auth.users: ${foundName} (${foundEmail})`);
               } else {
-                userName = `Candidate ${user_id.substring(0, 8).toUpperCase()}`;
-                setDebugInfo(prev => prev + `\n⚠ Auth lookup failed`);
+                setDebugInfo(prev => prev + `\n✗ Not in auth.users: ${authError?.message}`);
               }
-            } catch (err) {
-              setDebugInfo(prev => prev + `\n⚠ Auth lookup exception: ${err.message}`);
-              userName = `Candidate ${user_id.substring(0, 8).toUpperCase()}`;
+            } catch (authErr) {
+              setDebugInfo(prev => prev + `\n✗ Auth lookup failed: ${authErr.message}`);
             }
           }
+          
+          // Update state with found values
+          setUserEmail(foundEmail);
+          setUserName(foundName);
         }
-        
-        setUserEmail(userEmail);
-        setUserName(userName);
 
-        // 2. Get candidate classification
-        const { data: classificationData, error: classificationError } = await supabase
+        // 4. Get candidate classification data
+        setDebugInfo(prev => prev + "\n=== FETCHING CLASSIFICATION DATA ===");
+        
+        const { data: candidateData, error: candidateError } = await supabase
           .from("talent_classification")
           .select("*")
           .eq("user_id", user_id)
           .single();
 
-        if (classificationError) {
-          console.error("Classification error:", classificationError);
-          setDebugInfo(prev => prev + "\nNo classification found");
-          setCandidate(null);
+        if (candidateError) {
+          // Try candidate_assessments as fallback
+          const { data: assessmentData, error: assessmentError } = await supabase
+            .from("candidate_assessments")
+            .select("*")
+            .eq("user_id", user_id)
+            .single();
+          
+          if (!assessmentError && assessmentData) {
+            setCandidate({
+              total_score: assessmentData.total_score || 0,
+              classification: assessmentData.classification || getClassification(assessmentData.total_score || 0),
+              user_id: assessmentData.user_id
+            });
+            setDebugInfo(prev => prev + `\n✓ Classification from assessments: ${assessmentData.total_score} points`);
+          } else {
+            console.error("Classification error:", candidateError);
+            setDebugInfo(prev => prev + `\n✗ No classification found: ${candidateError?.message}`);
+            setCandidate(null);
+          }
         } else {
-          setCandidate(classificationData);
-          setDebugInfo(prev => prev + `\nClassification: ${classificationData.total_score} points, ${classificationData.classification}`);
+          setCandidate(candidateData);
+          setDebugInfo(prev => prev + `\n✓ Classification: ${candidateData.total_score} points, ${candidateData.classification}`);
         }
 
-        // 3. Fetch responses and calculate category scores
+        // 5. Fetch responses and calculate category scores
         await fetchAndCalculateCategoryScores(user_id);
 
       } catch (err) {
         console.error("Fetch error:", err);
-        setDebugInfo(prev => prev + `\nGeneral error: ${err.message}`);
+        setDebugInfo(prev => prev + `\n✗ General error: ${err.message}`);
         // Use estimated data as last resort
         useEstimatedData(candidate?.total_score || 300);
       } finally {
@@ -372,70 +507,30 @@ export default function CandidateReport() {
       }
     };
 
-    // MAIN FUNCTION: Fetch responses and calculate category scores - FIXED VERSION
+    // MAIN FUNCTION: Fetch responses and calculate category scores
     const fetchAndCalculateCategoryScores = async (userId) => {
       try {
         setDebugInfo(prev => prev + "\n\n=== FETCHING RESPONSES ===");
-        setDebugInfo(prev => prev + `\nUser ID: ${userId}`);
         
-        // FIRST: Let's check what responses exist for this user
-        const { data: responseCheck, error: checkError } = await supabase
-          .from("responses")
-          .select("id, question_id, answer_id, assessment_id, user_id")
-          .eq("user_id", userId)
-          .limit(5);
-        
-        if (checkError) {
-          setDebugInfo(prev => prev + `\nError checking responses: ${checkError.message}`);
-        } else if (responseCheck && responseCheck.length > 0) {
-          setDebugInfo(prev => prev + `\nSample responses found:`);
-          responseCheck.forEach((resp, i) => {
-            setDebugInfo(prev => prev + `\n  ${i+1}. Q:${resp.question_id?.substring(0,8)} A:${resp.answer_id?.substring(0,8)}`);
-          });
-        } else {
-          setDebugInfo(prev => prev + `\nNo responses found in initial check`);
-        }
-        
-        // Fetch all responses for this user - WITHOUT ASSESSMENT_ID FILTER
+        // Fetch all responses for this user
         const { data: allResponses, error: responsesError } = await supabase
           .from("responses")
           .select("id, question_id, answer_id, assessment_id")
           .eq("user_id", userId);
         
         if (responsesError) {
-          setDebugInfo(prev => prev + `\nError fetching responses: ${responsesError.message}`);
-          // Try without user_id filter to see what's in the table
-          const { data: allTableResponses } = await supabase
-            .from("responses")
-            .select("id, user_id")
-            .limit(10);
-          
-          if (allTableResponses) {
-            setDebugInfo(prev => prev + `\nTotal responses in table: ${allTableResponses.length}`);
-            const uniqueUsers = [...new Set(allTableResponses.map(r => r.user_id))];
-            setDebugInfo(prev => prev + `\nFound ${uniqueUsers.length} unique users in responses table`);
-          }
-          
+          setDebugInfo(prev => prev + `\n✗ Error fetching responses: ${responsesError.message}`);
           useEstimatedData(candidate?.total_score || 300);
           return;
         }
         
         if (!allResponses || allResponses.length === 0) {
-          setDebugInfo(prev => prev + `\nNo responses found for user ${userId.substring(0, 8)}`);
+          setDebugInfo(prev => prev + `\n✗ No responses found for user`);
           useEstimatedData(candidate?.total_score || 300);
           return;
         }
         
-        setDebugInfo(prev => prev + `\nFound ${allResponses.length} responses for user ${userId.substring(0, 8)}`);
-        
-        // Show sample data for debugging
-        if (allResponses.length > 0) {
-          setDebugInfo(prev => prev + `\nSample responses:`);
-          allResponses.slice(0, 3).forEach((resp, i) => {
-            setDebugInfo(prev => prev + `\n  ${i+1}. Q:${resp.question_id?.substring(0,8)} A:${resp.answer_id?.substring(0,8)}`);
-          });
-        }
-        
+        setDebugInfo(prev => prev + `\n✓ Found ${allResponses.length} responses`);
         setResponses(allResponses);
         
         // Now calculate category scores
@@ -443,18 +538,18 @@ export default function CandidateReport() {
         
       } catch (error) {
         console.error("Fetch error:", error);
-        setDebugInfo(prev => prev + `\nFetch error: ${error.message}`);
+        setDebugInfo(prev => prev + `\n✗ Fetch error: ${error.message}`);
         useEstimatedData(candidate?.total_score || 300);
       }
     };
 
-    // CALCULATE CATEGORY SCORES FROM RESPONSES - FIXED VERSION
+    // CALCULATE CATEGORY SCORES FROM RESPONSES
     const calculateCategoryScoresFromResponses = async (responsesData) => {
       try {
         setDebugInfo(prev => prev + "\n\n=== CALCULATING CATEGORY SCORES ===");
         
         if (!responsesData || responsesData.length === 0) {
-          setDebugInfo(prev => prev + "\nNo response data to calculate");
+          setDebugInfo(prev => prev + "\n✗ No response data to calculate");
           useEstimatedData(candidate?.total_score || 300);
           return;
         }
@@ -465,37 +560,17 @@ export default function CandidateReport() {
         
         setDebugInfo(prev => prev + `\nUnique questions: ${questionIds.length}, Unique answers: ${answerIds.length}`);
         
-        if (questionIds.length === 0 || answerIds.length === 0) {
-          setDebugInfo(prev => prev + "\nNo valid question or answer IDs found");
-          useEstimatedData(candidate?.total_score || 300);
-          return;
-        }
-        
         // Fetch questions
         const { data: questions, error: qError } = await supabase
           .from("questions")
           .select("id, section, text")
           .in("id", questionIds);
         
-        if (qError) {
-          setDebugInfo(prev => prev + `\nError fetching questions: ${qError.message}`);
+        if (qError || !questions || questions.length === 0) {
+          setDebugInfo(prev => prev + `\n✗ Error fetching questions: ${qError?.message}`);
           useEstimatedData(candidate?.total_score || 300);
           return;
         }
-        
-        if (!questions || questions.length === 0) {
-          setDebugInfo(prev => prev + "\nNo questions found in database");
-          useEstimatedData(candidate?.total_score || 300);
-          return;
-        }
-        
-        setDebugInfo(prev => prev + `\nLoaded ${questions.length} questions`);
-        
-        // Create questions map
-        const questionsMap = {};
-        questions.forEach(q => {
-          questionsMap[q.id] = q.section;
-        });
         
         // Fetch answers
         const { data: answers, error: aError } = await supabase
@@ -503,21 +578,18 @@ export default function CandidateReport() {
           .select("id, score, text")
           .in("id", answerIds);
         
-        if (aError) {
-          setDebugInfo(prev => prev + `\nError fetching answers: ${aError.message}`);
+        if (aError || !answers || answers.length === 0) {
+          setDebugInfo(prev => prev + `\n✗ Error fetching answers: ${aError?.message}`);
           useEstimatedData(candidate?.total_score || 300);
           return;
         }
         
-        if (!answers || answers.length === 0) {
-          setDebugInfo(prev => prev + "\nNo answers found in database");
-          useEstimatedData(candidate?.total_score || 300);
-          return;
-        }
+        // Create maps
+        const questionsMap = {};
+        questions.forEach(q => {
+          questionsMap[q.id] = q.section;
+        });
         
-        setDebugInfo(prev => prev + `\nLoaded ${answers.length} answers`);
-        
-        // Create answers map
         const answersMap = {};
         answers.forEach(a => {
           answersMap[a.id] = a.score;
@@ -526,50 +598,23 @@ export default function CandidateReport() {
         // Calculate category scores
         const categoryTotals = {};
         const categoryCounts = {};
-        let totalScore = 0;
-        let processedCount = 0;
-        let missingSectionCount = 0;
-        let missingScoreCount = 0;
         
         responsesData.forEach(response => {
           const section = questionsMap[response.question_id];
           const score = answersMap[response.answer_id] || 0;
           
-          if (!section) {
-            missingSectionCount++;
-            return;
+          if (section) {
+            categoryTotals[section] = (categoryTotals[section] || 0) + score;
+            categoryCounts[section] = (categoryCounts[section] || 0) + 1;
           }
-          
-          if (score === 0 && !answersMap[response.answer_id]) {
-            missingScoreCount++;
-          }
-          
-          categoryTotals[section] = (categoryTotals[section] || 0) + score;
-          categoryCounts[section] = (categoryCounts[section] || 0) + 1;
-          totalScore += score;
-          processedCount++;
         });
-        
-        setDebugInfo(prev => prev + `\nProcessed ${processedCount} responses`);
-        setDebugInfo(prev => prev + `\nMissing sections: ${missingSectionCount}, Missing scores: ${missingScoreCount}`);
-        setDebugInfo(prev => prev + `\nTotal calculated score: ${totalScore}`);
-        
-        if (processedCount === 0) {
-          setDebugInfo(prev => prev + "\nNo responses could be processed");
-          useEstimatedData(candidate?.total_score || 300);
-          return;
-        }
         
         // Calculate category percentages
         const calculatedCategoryScores = {};
-        const categoriesFound = Object.keys(categoryTotals);
-        
-        setDebugInfo(prev => prev + `\nCategories found: ${categoriesFound.join(', ')}`);
-        
-        categoriesFound.forEach(section => {
+        Object.keys(categoryTotals).forEach(section => {
           const total = categoryTotals[section];
           const count = categoryCounts[section];
-          const maxPossible = count * 5; // Each question max 5 points
+          const maxPossible = count * 5;
           const percentage = maxPossible > 0 ? Math.round((total / maxPossible) * 100) : 0;
           const average = count > 0 ? (total / count).toFixed(1) : 0;
           
@@ -580,74 +625,43 @@ export default function CandidateReport() {
             percentage,
             maxPossible
           };
-          
-          setDebugInfo(prev => prev + `\n${section}: ${total}/${maxPossible} (${percentage}%) avg: ${average}`);
         });
         
-        // Check if we have all expected categories
-        const expectedCategories = [
-          'Cognitive Abilities',
-          'Personality Assessment', 
-          'Leadership Potential',
-          'Technical Competence',
-          'Performance Metrics'
-        ];
-        
-        expectedCategories.forEach(category => {
-          if (!calculatedCategoryScores[category]) {
-            setDebugInfo(prev => prev + `\n⚠ Missing category: ${category}`);
-          }
-        });
-        
-        setDebugInfo(prev => prev + `\n✓ Calculated ${Object.keys(calculatedCategoryScores).length} categories`);
         setCategoryScores(calculatedCategoryScores);
-        
-        // Verify total score matches classification
-        if (candidate && Math.abs(totalScore - candidate.total_score) > 10) {
-          setDebugInfo(prev => prev + `\n⚠ Score mismatch: Calculated ${totalScore} vs Classification ${candidate.total_score}`);
-        }
+        setDebugInfo(prev => prev + `\n✓ Calculated ${Object.keys(calculatedCategoryScores).length} categories`);
         
         // Calculate strengths, weaknesses, and recommendations
         calculateAnalysis(calculatedCategoryScores);
         
       } catch (error) {
         console.error("Calculation error:", error);
-        setDebugInfo(prev => prev + `\nCalculation error: ${error.message}`);
+        setDebugInfo(prev => prev + `\n✗ Calculation error: ${error.message}`);
         useEstimatedData(candidate?.total_score || 300);
       }
     };
 
-    // FALLBACK: Estimate category scores based on total score - UNIQUE PER USER
+    // FALLBACK: Estimate category scores
     const useEstimatedData = (totalScore) => {
       setDebugInfo(prev => prev + "\n\n=== USING ESTIMATED DATA ===");
       
       const overallPercentage = Math.round((totalScore / 500) * 100);
-      const basePercentage = overallPercentage;
-      
-      // Create UNIQUE distribution for each user based on their user_id
-      // This ensures each candidate has different category scores
       const userIdNum = parseInt(user_id.replace(/[^0-9]/g, '').substring(0, 6) || '123456', 10);
       
-      // Use user_id to create unique but consistent variations for each candidate
       const variations = {
-        'Cognitive Abilities': (userIdNum % 10) - 4, // -4 to +5 variation
+        'Cognitive Abilities': (userIdNum % 10) - 4,
         'Personality Assessment': ((userIdNum % 100) / 10) - 4,
         'Leadership Potential': ((userIdNum % 1000) / 100) - 4,
         'Technical Competence': ((userIdNum % 10000) / 1000) - 4,
         'Performance Metrics': ((userIdNum % 8) - 3)
       };
       
-      // Apply variations to base percentage
       const estimatedPercentages = {
-        'Cognitive Abilities': Math.min(100, Math.max(0, basePercentage + variations['Cognitive Abilities'])),
-        'Personality Assessment': Math.min(100, Math.max(0, basePercentage + variations['Personality Assessment'])),
-        'Leadership Potential': Math.min(100, Math.max(0, basePercentage + variations['Leadership Potential'])),
-        'Technical Competence': Math.min(100, Math.max(0, basePercentage + variations['Technical Competence'])),
-        'Performance Metrics': Math.min(100, Math.max(0, basePercentage + variations['Performance Metrics']))
+        'Cognitive Abilities': Math.min(100, Math.max(0, overallPercentage + variations['Cognitive Abilities'])),
+        'Personality Assessment': Math.min(100, Math.max(0, overallPercentage + variations['Personality Assessment'])),
+        'Leadership Potential': Math.min(100, Math.max(0, overallPercentage + variations['Leadership Potential'])),
+        'Technical Competence': Math.min(100, Math.max(0, overallPercentage + variations['Technical Competence'])),
+        'Performance Metrics': Math.min(100, Math.max(0, overallPercentage + variations['Performance Metrics']))
       };
-      
-      setDebugInfo(prev => prev + `\nUser ID based variations: ${JSON.stringify(variations)}`);
-      setDebugInfo(prev => prev + `\nEstimated percentages: ${JSON.stringify(estimatedPercentages)}`);
       
       const estimatedCategoryScores = {};
       Object.entries(estimatedPercentages).forEach(([section, percentage]) => {
@@ -668,29 +682,24 @@ export default function CandidateReport() {
       setCategoryScores(estimatedCategoryScores);
       setResponses(Array(100).fill({}));
       calculateAnalysis(estimatedCategoryScores);
-      setDebugInfo(prev => prev + `\nEstimated data based on ${totalScore} total score (${overallPercentage}%)`);
+      setDebugInfo(prev => prev + `\n✓ Estimated data based on ${totalScore} total score`);
     };
 
-    // Calculate strengths, weaknesses, and recommendations with FIXED LOGIC
+    // Calculate strengths, weaknesses, and recommendations
     const calculateAnalysis = (categoryScoresData) => {
       setDebugInfo(prev => prev + "\n\n=== ANALYZING RESULTS ===");
       
       const candidateStrengths = [];
       const candidateWeaknesses = [];
       
-      // FIXED: Use fixed thresholds based on YOUR grading scale
-      const strengthThreshold = 70; // B or above
-      const weaknessThreshold = 60; // C or below (D, E, F)
-      
-      setDebugInfo(prev => prev + `\nStrength threshold: ${strengthThreshold}% (B or above)`);
-      setDebugInfo(prev => prev + `\nWeakness threshold: ${weaknessThreshold}% (C or below)`);
+      const strengthThreshold = 70;
+      const weaknessThreshold = 60;
       
       Object.entries(categoryScoresData).forEach(([section, data]) => {
         const percentage = data.percentage;
         const grade = getCategoryGrade(percentage);
         const performanceLabel = getCategoryPerformanceLabel(percentage);
         
-        // FIXED: Only show in strengths if ≥ 70% (B or above)
         if (percentage >= strengthThreshold) {
           candidateStrengths.push({
             category: section,
@@ -698,12 +707,11 @@ export default function CandidateReport() {
             grade: grade,
             gradeLabel: getCategoryGradeLabel(grade),
             interpretation: `${performanceLabel} performance in ${section}`,
-            detailedInterpretation: getCategoryInterpretation(percentage, section), // Pass category here
+            detailedInterpretation: getCategoryInterpretation(percentage, section),
             icon: getCategoryPerformanceIcon(percentage)
           });
         }
         
-        // FIXED: Only show in weaknesses if < 60% (C or below)
         if (percentage < weaknessThreshold) {
           candidateWeaknesses.push({
             category: section,
@@ -711,13 +719,12 @@ export default function CandidateReport() {
             grade: grade,
             gradeLabel: getCategoryGradeLabel(grade),
             interpretation: `${performanceLabel} performance in ${section}`,
-            detailedInterpretation: getCategoryInterpretation(percentage, section), // Pass category here
+            detailedInterpretation: getCategoryInterpretation(percentage, section),
             icon: getCategoryPerformanceIcon(percentage)
           });
         }
       });
       
-      setDebugInfo(prev => prev + `\nFound ${candidateStrengths.length} strengths, ${candidateWeaknesses.length} weaknesses`);
       setStrengths(candidateStrengths);
       setWeaknesses(candidateWeaknesses);
       
@@ -772,7 +779,7 @@ export default function CandidateReport() {
       }
       
       setRecommendations(candidateRecommendations);
-      setDebugInfo(prev => prev + `\nGenerated ${candidateRecommendations.length} recommendations`);
+      setDebugInfo(prev => prev + `\n✓ Generated ${candidateRecommendations.length} recommendations`);
     };
 
     fetchCandidateData();
@@ -833,7 +840,7 @@ export default function CandidateReport() {
             }} />
             <p style={{ color: "#666" }}>Loading candidate report...</p>
             <p style={{ color: "#888", fontSize: "12px", marginTop: "10px" }}>
-              Calculating category scores...
+              Candidate: {userName || "Loading..."}
             </p>
             <style jsx>{`
               @keyframes spin {
@@ -925,16 +932,18 @@ export default function CandidateReport() {
               <p style={{ 
                 margin: "0 0 5px 0", 
                 color: "#666",
-                fontSize: "16px"
+                fontSize: "16px",
+                fontWeight: "500"
               }}>
-                {userName}
+                {userName || `Candidate ${user_id?.substring(0, 8).toUpperCase()}`}
               </p>
               <p style={{ 
                 margin: "0", 
-                color: "#888",
-                fontSize: "14px"
+                color: userEmail === "Email not found" ? "#999" : "#888",
+                fontSize: "14px",
+                fontStyle: userEmail === "Email not found" ? "italic" : "normal"
               }}>
-                {userEmail}
+                {userEmail === "Email not found" ? "Email not available" : userEmail}
               </p>
               <p style={{ 
                 margin: "5px 0 0 0", 
@@ -1062,7 +1071,7 @@ export default function CandidateReport() {
                   {candidateScore}
                 </div>
                 <div style={{ fontSize: "14px", opacity: 0.9 }}>
-                  Based on {responses.length} responses across {Object.keys(categoryScores).length} categories
+                  Candidate: {userName}
                 </div>
                 <div style={{ 
                   fontSize: "12px", 
@@ -1357,51 +1366,6 @@ export default function CandidateReport() {
                       </tr>
                     </tfoot>
                   </table>
-                </div>
-                
-                {/* Performance Indicators */}
-                <div style={{ 
-                  display: "flex", 
-                  justifyContent: "space-between",
-                  marginTop: "20px",
-                  padding: "15px",
-                  background: "white",
-                  borderRadius: "8px",
-                  border: "1px solid #e0e0e0"
-                }}>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: "24px", fontWeight: "700", color: "#4CAF50" }}>
-                      {strengths.length}
-                    </div>
-                    <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
-                      Strong Areas (A/B)
-                    </div>
-                    <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
-                      (≥70%)
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: "24px", fontWeight: "700", color: "#FF9800" }}>
-                      {Object.keys(categoryScores).length - strengths.length - weaknesses.length}
-                    </div>
-                    <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
-                      Average Areas (C)
-                    </div>
-                    <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
-                      (60-69%)
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: "24px", fontWeight: "700", color: "#F44336" }}>
-                      {weaknesses.length}
-                    </div>
-                    <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
-                      Weak Areas (D/E/F)
-                    </div>
-                    <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
-                      (≤59%)
-                    </div>
-                  </div>
                 </div>
               </div>
             </>
@@ -1936,13 +1900,14 @@ export default function CandidateReport() {
             <p style={{ margin: 0, color: "#1565c0", fontSize: "14px" }}>
               <strong>Report Generated:</strong> {new Date().toLocaleDateString()} | 
               <strong> Candidate:</strong> {userName} | 
+              <strong> Email:</strong> {userEmail === "Email not found" ? "Not available" : userEmail} | 
               <strong> Classification:</strong> {classification} | 
               <strong> Status:</strong> Completed
             </p>
           </div>
         </div>
         
-        {/* Debug Panel (Enable by changing display to "block") */}
+        {/* Debug Panel (temporarily enable to see what's happening) */}
         <div style={{ 
           marginTop: "30px",
           padding: "15px",
@@ -1951,10 +1916,19 @@ export default function CandidateReport() {
           border: "1px solid #e0e0e0",
           fontSize: "12px",
           color: "#666",
-          display: "none" /* Change to "block" to see debug info */
+          display: "block" /* Change to "block" to debug, then back to "none" */
         }}>
           <div style={{ fontWeight: "600", marginBottom: "8px", color: "#333" }}>
-            Debug Information
+            Debug Information - User Data Fetch
+          </div>
+          <div style={{ marginBottom: "8px" }}>
+            <strong>User ID:</strong> {user_id}
+          </div>
+          <div style={{ marginBottom: "8px" }}>
+            <strong>Found Name:</strong> {userName}
+          </div>
+          <div style={{ marginBottom: "8px" }}>
+            <strong>Found Email:</strong> {userEmail}
           </div>
           <pre style={{ 
             margin: 0, 
