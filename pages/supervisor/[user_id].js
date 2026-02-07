@@ -1,4 +1,4 @@
-// pages/supervisor/[user_id].js - UNIVERSAL FIX FOR ALL CANDIDATES
+// pages/supervisor/[user_id].js - COMPLETE FIXED VERSION WITH CATEGORY BREAKDOWN
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -18,9 +18,8 @@ export default function CandidateReport() {
   const [recommendations, setRecommendations] = useState([]);
   const [userEmail, setUserEmail] = useState("");
   const [userName, setUserName] = useState("");
-  const [debugInfo, setDebugInfo] = useState("");
 
-  // Helper function to get classification based on score
+  // Helper functions (same as before)
   const getClassification = (score) => {
     if (score >= 450) return "Elite Talent";
     if (score >= 400) return "Top Talent";
@@ -31,18 +30,16 @@ export default function CandidateReport() {
     return "Needs Improvement";
   };
 
-  // Helper function to get classification color
   const getClassificationColor = (score) => {
-    if (score >= 450) return "#4CAF50"; // Green
-    if (score >= 400) return "#2196F3"; // Blue
-    if (score >= 350) return "#FF9800"; // Orange
-    if (score >= 300) return "#9C27B0"; // Purple
-    if (score >= 250) return "#F57C00"; // Deep Orange
-    if (score >= 200) return "#795548"; // Brown
-    return "#F44336"; // Red
+    if (score >= 450) return "#4CAF50";
+    if (score >= 400) return "#2196F3";
+    if (score >= 350) return "#FF9800";
+    if (score >= 300) return "#9C27B0";
+    if (score >= 250) return "#F57C00";
+    if (score >= 200) return "#795548";
+    return "#F44336";
   };
 
-  // Helper function to get classification description
   const getClassificationDescription = (score) => {
     if (score >= 450) return "Exceptional performer demonstrating mastery across all assessment categories. Consistently exceeds expectations with outstanding analytical, technical, and leadership capabilities.";
     if (score >= 400) return "Outstanding performer with clear strengths across multiple domains. Demonstrates strong leadership potential and technical competence suitable for increased responsibility.";
@@ -53,7 +50,6 @@ export default function CandidateReport() {
     return "Performance below expectations requiring immediate attention. Needs intensive development plan and regular performance reviews to address critical gaps.";
   };
 
-  // Helper function to get performance grade
   const getPerformanceGrade = (score) => {
     if (score >= 450) return "A+";
     if (score >= 400) return "A";
@@ -64,7 +60,6 @@ export default function CandidateReport() {
     return "F";
   };
 
-  // Helper function to get grade label
   const getGradeLabel = (score) => {
     if (score >= 450) return "Elite";
     if (score >= 400) return "Top Talent";
@@ -75,7 +70,7 @@ export default function CandidateReport() {
     return "Needs Improvement";
   };
 
-  // 1. Get category grade based on your scale
+  // Category grading functions
   const getCategoryGrade = (percentage) => {
     if (percentage >= 80) return "A";
     if (percentage >= 70) return "B";
@@ -85,7 +80,6 @@ export default function CandidateReport() {
     return "F";
   };
 
-  // 2. Get category grade label (for dashboards)
   const getCategoryGradeLabel = (grade) => {
     const labels = {
       "A": "High-impact candidate",
@@ -98,7 +92,6 @@ export default function CandidateReport() {
     return labels[grade] || "Unknown";
   };
 
-  // 3. Get interpretive comments based on your scale - CATEGORY SPECIFIC
   const getCategoryInterpretation = (percentage, category) => {
     if (percentage >= 80) {
       switch(category) {
@@ -202,7 +195,6 @@ export default function CandidateReport() {
     }
   };
 
-  // 4. Get performance label for categories
   const getCategoryPerformanceLabel = (percentage) => {
     if (percentage >= 80) return "Exceptional";
     if (percentage >= 70) return "Strong";
@@ -212,17 +204,15 @@ export default function CandidateReport() {
     return "Unsuitable";
   };
 
-  // 5. Get performance color for categories
   const getCategoryPerformanceColor = (percentage) => {
-    if (percentage >= 80) return "#4CAF50"; // Green
-    if (percentage >= 70) return "#2196F3"; // Blue
-    if (percentage >= 60) return "#FF9800"; // Orange
-    if (percentage >= 50) return "#FF5722"; // Deep Orange
-    if (percentage >= 40) return "#795548"; // Brown
-    return "#F44336"; // Red
+    if (percentage >= 80) return "#4CAF50";
+    if (percentage >= 70) return "#2196F3";
+    if (percentage >= 60) return "#FF9800";
+    if (percentage >= 50) return "#FF5722";
+    if (percentage >= 40) return "#795548";
+    return "#F44336";
   };
 
-  // 6. Get performance icon/emoji
   const getCategoryPerformanceIcon = (percentage) => {
     if (percentage >= 80) return "🏆";
     if (percentage >= 70) return "⭐";
@@ -258,7 +248,7 @@ export default function CandidateReport() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch candidate data - UNIVERSAL FIX FOR ALL CANDIDATES
+  // Fetch candidate data - FIXED VERSION
   useEffect(() => {
     if (!isSupervisor || !user_id) return;
 
@@ -266,8 +256,7 @@ export default function CandidateReport() {
       try {
         setLoading(true);
         
-        // METHOD 1: Try candidate_assessments VIEW first (same as index.js)
-        // This works for most candidates
+        // METHOD 1: Try candidate_assessments VIEW first
         const { data: candidateData, error: candidateError } = await supabase
           .from("candidate_assessments")
           .select(`
@@ -291,13 +280,12 @@ export default function CandidateReport() {
             user_id: candidateData.user_id
           });
           
-          // Fetch responses
+          // Fetch responses and calculate category scores
           await fetchAndCalculateCategoryScores(user_id);
           return;
         }
         
         // METHOD 2: If not in candidate_assessments VIEW, check talent_classification + auth.users
-        // This handles candidates who might not be in the VIEW yet
         const { data: classificationData, error: classificationError } = await supabase
           .from("talent_classification")
           .select("total_score, classification")
@@ -307,7 +295,6 @@ export default function CandidateReport() {
         if (!classificationError && classificationData) {
           // Try to get user info from auth.users
           try {
-            // First try admin API
             const { data: authData, error: authError } = await supabase.auth.admin.getUserById(user_id);
             
             if (!authError && authData?.user) {
@@ -348,12 +335,12 @@ export default function CandidateReport() {
             user_id: user_id
           });
           
-          // Fetch responses
+          // Fetch responses and calculate category scores
           await fetchAndCalculateCategoryScores(user_id);
           return;
         }
         
-        // METHOD 3: Candidate not found in either place
+        // METHOD 3: Candidate not found
         setUserEmail("Email not found");
         setUserName(`Candidate ${user_id.substring(0, 8).toUpperCase()}`);
         setCandidate(null);
@@ -367,7 +354,7 @@ export default function CandidateReport() {
       }
     };
 
-    // MAIN FUNCTION: Fetch responses and calculate category scores
+    // Fetch responses and calculate category scores
     const fetchAndCalculateCategoryScores = async (userId) => {
       try {
         // Fetch all responses for this user
@@ -396,7 +383,7 @@ export default function CandidateReport() {
       }
     };
 
-    // CALCULATE CATEGORY SCORES FROM RESPONSES
+    // Calculate category scores from responses
     const calculateCategoryScoresFromResponses = async (responsesData) => {
       try {
         if (!responsesData || responsesData.length === 0) {
@@ -581,12 +568,6 @@ export default function CandidateReport() {
     router.push("/supervisor");
   };
 
-  const getScoreColor = (score) => {
-    if (score >= 4) return "#4CAF50";
-    if (score >= 3) return "#FF9800";
-    return "#F44336";
-  };
-
   const getCategoryColor = (category) => {
     const colors = {
       'Cognitive Abilities': '#4A6FA5',
@@ -598,6 +579,7 @@ export default function CandidateReport() {
     return colors[category] || '#666';
   };
 
+  // Loading and authentication checks (same as before)
   if (!isSupervisor) {
     return (
       <div style={{ 
@@ -688,7 +670,7 @@ export default function CandidateReport() {
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
       <div style={{ width: "90vw", margin: "auto", padding: "30px 20px" }}>
-        {/* Header */}
+        {/* Header Section */}
         <div style={{ marginBottom: "30px" }}>
           <div style={{ 
             display: "flex", 
@@ -907,10 +889,12 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* CATEGORY SCORES BREAKDOWN - Keep the rest of your existing JSX here */}
-        {/* ... rest of your existing component JSX ... */}
-        
-      </div>
-    </AppLayout>
-  );
-}
+        {/* CATEGORY SCORES BREAKDOWN - ADDED BACK */}
+        <div style={{ 
+          background: "white", 
+          padding: "25px", 
+          borderRadius: "12px", 
+          boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+          marginBottom: "30px"
+        }}>
+          <h2 style={{ margin: "0 0 25px
