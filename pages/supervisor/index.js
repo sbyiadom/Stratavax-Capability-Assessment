@@ -77,22 +77,22 @@ export default function SupervisorDashboard() {
 
     const fetchData = async () => {
       try {
-        // Get all talent classification data
-        const { data: talentData, error: talentError } = await supabase
-          .from("talent_classification")
+        // Query candidate_assessments table instead of talent_classification
+        const { data: candidatesData, error: candidatesError } = await supabase
+          .from("candidate_assessments")
           .select(`
             user_id,
             total_score,
             classification,
-            created_at,
-            updated_at
+            email,
+            full_name
           `)
           .order("total_score", { ascending: false });
 
-        if (talentError) throw talentError;
+        if (candidatesError) throw candidatesError;
 
         // If no data, set empty and return
-        if (!talentData || talentData.length === 0) {
+        if (!candidatesData || candidatesData.length === 0) {
           setCandidates([]);
           setStats({
             totalCandidates: 0,
@@ -111,84 +111,31 @@ export default function SupervisorDashboard() {
           return;
         }
 
-        // Get user details for each candidate - IMPROVED VERSION
-        const candidatesWithUsers = await Promise.all(
-          talentData.map(async (candidate, index) => {
-            try {
-              // Try to get user email from auth.users with better error handling
-              let userEmail = "Unknown Email";
-              let userName = `Candidate ${index + 1}`;
-              
-              try {
-                // Method 1: Direct query to auth.users (may require RLS policies)
-                const { data: userData, error: userError } = await supabase
-                  .from("auth.users")
-                  .select("email, raw_user_meta_data")
-                  .eq("id", candidate.user_id)
-                  .single();
-
-                if (!userError && userData) {
-                  userEmail = userData.email || "Unknown Email";
-                  userName = userData.raw_user_meta_data?.full_name || 
-                            userData.email?.split('@')[0] || 
-                            `Candidate ${index + 1}`;
-                } else {
-                  // Method 2: Try to extract from user_id pattern or use admin API
-                  console.log(`Could not fetch user ${candidate.user_id}:`, userError);
-                  
-                  // Create identifiable name from user_id
-                  userName = `Candidate ${candidate.user_id.substring(0, 8).toUpperCase()}`;
-                  
-                  // If you have known test users, map them
-                  if (candidate.user_id === 'e71fd572-5afc-40f9-be41-454bdf130a70') {
-                    userEmail = "test.candidate@stratax.com";
-                    userName = "Test Candidate";
-                  }
-                  // Add more mappings as needed
-                }
-              } catch (fetchError) {
-                console.error(`Error in user fetch for ${candidate.user_id}:`, fetchError);
-                userName = `Candidate ${candidate.user_id.substring(0, 6).toUpperCase()}`;
-              }
-
-              return {
-                ...candidate,
-                user: {
-                  email: userEmail,
-                  full_name: userName,
-                  id_short: candidate.user_id.substring(0, 8).toUpperCase()
-                }
-              };
-            } catch (error) {
-              console.error(`Error processing candidate ${candidate.user_id}:`, error);
-              // Return candidate with identifiable info
-              return {
-                ...candidate,
-                user: {
-                  email: `candidate_${candidate.user_id.substring(0, 6)}@example.com`,
-                  full_name: `Candidate ${candidate.user_id.substring(0, 6).toUpperCase()}`,
-                  id_short: candidate.user_id.substring(0, 8).toUpperCase()
-                }
-              };
-            }
-          })
-        );
+        // Map the data directly - no need for additional user lookups
+        const candidatesWithUsers = candidatesData.map((candidate, index) => ({
+          ...candidate,
+          user: {
+            email: candidate.email || "No email provided",
+            full_name: candidate.full_name || `Candidate ${candidate.user_id.substring(0, 8).toUpperCase()}`,
+            id_short: candidate.user_id.substring(0, 8).toUpperCase()
+          }
+        }));
 
         setCandidates(candidatesWithUsers);
 
         // Calculate statistics using SAME LOGIC as candidate report
         const statsData = {
-          totalCandidates: talentData.length,
-          completed: talentData.length,
+          totalCandidates: candidatesData.length,
+          completed: candidatesData.length,
           inProgress: 0,
           notStarted: 0,
-          eliteTalent: talentData.filter(c => getClassificationFromScore(c.total_score) === 'Elite Talent').length,
-          topTalent: talentData.filter(c => getClassificationFromScore(c.total_score) === 'Top Talent').length,
-          highPotential: talentData.filter(c => getClassificationFromScore(c.total_score) === 'High Potential').length,
-          solidPerformer: talentData.filter(c => getClassificationFromScore(c.total_score) === 'Solid Performer').length,
-          developing: talentData.filter(c => getClassificationFromScore(c.total_score) === 'Developing Talent').length,
-          emergingTalent: talentData.filter(c => getClassificationFromScore(c.total_score) === 'Emerging Talent').length,
-          needsImprovement: talentData.filter(c => getClassificationFromScore(c.total_score) === 'Needs Improvement').length
+          eliteTalent: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'Elite Talent').length,
+          topTalent: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'Top Talent').length,
+          highPotential: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'High Potential').length,
+          solidPerformer: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'Solid Performer').length,
+          developing: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'Developing Talent').length,
+          emergingTalent: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'Emerging Talent').length,
+          needsImprovement: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'Needs Improvement').length
         };
         setStats(statsData);
 
@@ -526,7 +473,7 @@ export default function SupervisorDashboard() {
                         <div style={{ fontSize: "14px", color: "#1565c0" }}>
                           {c.user?.email}
                         </div>
-                        {c.user?.email === "Unknown Email" && (
+                        {c.user?.email === "No email provided" && (
                           <div style={{ fontSize: "11px", color: "#999", marginTop: "3px" }}>
                             ID: {c.user?.id_short}
                           </div>
