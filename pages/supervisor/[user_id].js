@@ -1,4 +1,4 @@
-// pages/supervisor/[user_id].js - FIXED VERSION
+// pages/supervisor/[user_id].js - SIMPLIFIED VERSION USING URL PARAMETERS
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -6,7 +6,7 @@ import AppLayout from "../../components/AppLayout";
 
 export default function CandidateReport() {
   const router = useRouter();
-  const { user_id } = router.query;
+  const { user_id, name: urlName, email: urlEmail } = router.query;
   
   const [loading, setLoading] = useState(true);
   const [isSupervisor, setIsSupervisor] = useState(false);
@@ -258,86 +258,7 @@ export default function CandidateReport() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Alternative: Check if data is in different tables
-  const checkAlternativeTables = async () => {
-    try {
-      setDebugInfo(prev => prev + "\n=== CHECKING ALTERNATIVE TABLES ===");
-      
-      // Check candidate_assessments table FIRST - most likely place
-      const { data: assessmentData, error: assessmentError } = await supabase
-        .from("candidate_assessments")
-        .select("email, full_name, total_score, classification, user_id")
-        .eq("user_id", user_id)
-        .single();
-      
-      if (!assessmentError && assessmentData) {
-        setDebugInfo(prev => prev + `\n✓ Found in candidate_assessments table`);
-        
-        // Update user info from assessment table
-        if (assessmentData.email) {
-          setUserEmail(assessmentData.email);
-          setUserName(assessmentData.full_name || assessmentData.email.split('@')[0] || `Candidate ${user_id.substring(0, 8).toUpperCase()}`);
-          setDebugInfo(prev => prev + `\n✓ Set name: ${assessmentData.full_name}, email: ${assessmentData.email}`);
-        }
-        
-        // Set candidate data if not already set
-        if (!candidate && assessmentData.total_score) {
-          setCandidate({
-            total_score: assessmentData.total_score,
-            classification: assessmentData.classification || getClassification(assessmentData.total_score),
-            user_id: assessmentData.user_id
-          });
-          setDebugInfo(prev => prev + `\n✓ Set candidate score: ${assessmentData.total_score}`);
-        }
-        return true;
-      } else {
-        setDebugInfo(prev => prev + `\n✗ Not in candidate_assessments: ${assessmentError?.message}`);
-      }
-      
-      // Check users table with different column names
-      const { data: usersData, error: usersError } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", user_id)
-        .single();
-      
-      if (!usersError && usersData) {
-        setDebugInfo(prev => prev + `\n✓ Found in users table`);
-        
-        // Try different possible column names
-        const email = usersData.email || usersData.user_email || usersData.contact_email || usersData.Email;
-        const name = usersData.full_name || usersData.name || usersData.username || usersData.Name || usersData.FullName;
-        
-        if (email) {
-          setUserEmail(email);
-          setUserName(name || email.split('@')[0] || `Candidate ${user_id.substring(0, 8).toUpperCase()}`);
-          setDebugInfo(prev => prev + `\n✓ Set from users: ${name} (${email})`);
-          return true;
-        } else {
-          setDebugInfo(prev => prev + `\n✗ No email found in users table columns`);
-        }
-      } else {
-        setDebugInfo(prev => prev + `\n✗ Not in users table: ${usersError?.message}`);
-      }
-      
-      // Check for any table that might have user info
-      const { data: allTables, error: tablesError } = await supabase
-        .from("candidate_assessments")
-        .select("*")
-        .limit(1);
-      
-      if (!tablesError && allTables && allTables.length > 0) {
-        const sampleRow = allTables[0];
-        setDebugInfo(prev => prev + `\nSample candidate_assessments row columns: ${Object.keys(sampleRow).join(', ')}`);
-      }
-      
-    } catch (err) {
-      setDebugInfo(prev => prev + `\n✗ Alternative table check error: ${err.message}`);
-    }
-    return false;
-  };
-
-  // Fetch candidate data - FIXED VERSION
+  // Fetch candidate data - SIMPLIFIED VERSION USING URL PARAMETERS
   useEffect(() => {
     if (!isSupervisor || !user_id) return;
 
@@ -346,123 +267,28 @@ export default function CandidateReport() {
         setLoading(true);
         setDebugInfo(`Starting fetch for user: ${user_id}`);
         
-        // FIRST: Check alternative tables where user data might actually be
-        const foundInAltTables = await checkAlternativeTables();
+        // 1. FIRST: Use URL parameters passed from index.js dashboard
+        let userEmail = "Email not found";
+        let userName = `Candidate ${user_id.substring(0, 8).toUpperCase()}`;
         
-        // If found in alternative tables, skip the complex lookup
-        if (foundInAltTables && userEmail && userName && userName !== "Candidate") {
-          setDebugInfo(prev => prev + `\n✓ Data found in alternative tables, skipping complex lookup`);
-        } else {
-          // SECOND: Get user info - comprehensive lookup
-          setDebugInfo(prev => prev + "\n=== STARTING COMPREHENSIVE USER LOOKUP ===");
-          
-          let foundEmail = "Email not found";
-          let foundName = `Candidate ${user_id.substring(0, 8).toUpperCase()}`;
-          
-          // 1. Check talent_classification metadata FIRST
-          const { data: classificationData, error: classificationError } = await supabase
-            .from("talent_classification")
-            .select("metadata, user_email, user_name, candidate_email, candidate_name")
-            .eq("user_id", user_id)
-            .single();
-          
-          if (!classificationError && classificationData) {
-            setDebugInfo(prev => prev + `\n✓ Found in talent_classification`);
-            
-            // Check ALL possible metadata locations
-            const metadata = classificationData.metadata || {};
-            
-            // Try metadata first
-            if (metadata.email) {
-              foundEmail = metadata.email;
-              foundName = metadata.name || metadata.full_name || foundEmail.split('@')[0];
-              setDebugInfo(prev => prev + `\n✓ Found in metadata: ${foundName} (${foundEmail})`);
-            }
-            // Try direct columns in table
-            else if (classificationData.user_email) {
-              foundEmail = classificationData.user_email;
-              foundName = classificationData.user_name || foundEmail.split('@')[0];
-              setDebugInfo(prev => prev + `\n✓ Found in direct columns: ${foundName} (${foundEmail})`);
-            }
-            // Try alternative column names
-            else if (classificationData.candidate_email) {
-              foundEmail = classificationData.candidate_email;
-              foundName = classificationData.candidate_name || foundEmail.split('@')[0];
-              setDebugInfo(prev => prev + `\n✓ Found in alt columns: ${foundName} (${foundEmail})`);
-            }
-          } else {
-            setDebugInfo(prev => prev + `\n✗ Not in talent_classification: ${classificationError?.message}`);
-          }
-          
-          // 2. If still not found, try users table
-          if (foundEmail === "Email not found") {
-            const { data: usersTableData, error: usersTableError } = await supabase
-              .from("users")
-              .select("*")
-              .eq("id", user_id)
-              .single();
-            
-            if (!usersTableError && usersTableData) {
-              // Try ALL possible column names for email and name
-              const possibleEmailCols = ['email', 'user_email', 'contact_email', 'Email', 'e_mail', 'mail'];
-              const possibleNameCols = ['full_name', 'name', 'username', 'Name', 'FullName', 'display_name', 'user_name'];
-              
-              for (const col of possibleEmailCols) {
-                if (usersTableData[col]) {
-                  foundEmail = usersTableData[col];
-                  break;
-                }
-              }
-              
-              for (const col of possibleNameCols) {
-                if (usersTableData[col]) {
-                  foundName = usersTableData[col];
-                  break;
-                }
-              }
-              
-              if (foundEmail === "Email not found" && foundName.includes("Candidate")) {
-                // If we found the table but not specific columns, use a better fallback
-                foundName = `User ${user_id.substring(0, 8).toUpperCase()}`;
-              }
-              
-              setDebugInfo(prev => prev + `\n✓ Found in users table: ${foundName} (${foundEmail})`);
-            } else {
-              setDebugInfo(prev => prev + `\n✗ Not in users table: ${usersTableError?.message}`);
-            }
-          }
-          
-          // 3. If still not found, try auth.users as last resort
-          if (foundEmail === "Email not found") {
-            try {
-              // Try direct query to auth.users
-              const { data: authData, error: authError } = await supabase
-                .from("auth.users")
-                .select("email, raw_user_meta_data")
-                .eq("id", user_id)
-                .single();
-              
-              if (!authError && authData) {
-                foundEmail = authData.email || "No email in auth";
-                const meta = authData.raw_user_meta_data || {};
-                foundName = meta.full_name || meta.name || foundEmail.split('@')[0] || foundName;
-                setDebugInfo(prev => prev + `\n✓ Found in auth.users: ${foundName} (${foundEmail})`);
-              } else {
-                setDebugInfo(prev => prev + `\n✗ Not in auth.users: ${authError?.message}`);
-              }
-            } catch (authErr) {
-              setDebugInfo(prev => prev + `\n✗ Auth lookup failed: ${authErr.message}`);
-            }
-          }
-          
-          // Update state with found values
-          setUserEmail(foundEmail);
-          setUserName(foundName);
+        if (urlName && urlName !== 'undefined') {
+          userName = decodeURIComponent(urlName);
+          setDebugInfo(prev => prev + `\n✓ Name from URL parameters: ${userName}`);
         }
-
-        // 4. Get candidate classification data
+        
+        if (urlEmail && urlEmail !== 'undefined' && urlEmail !== '') {
+          userEmail = decodeURIComponent(urlEmail);
+          setDebugInfo(prev => prev + `\n✓ Email from URL parameters: ${userEmail}`);
+        }
+        
+        // Set user info immediately from URL params
+        setUserEmail(userEmail);
+        setUserName(userName);
+        
+        // 2. Get candidate classification data
         setDebugInfo(prev => prev + "\n=== FETCHING CLASSIFICATION DATA ===");
         
+        // Try talent_classification table first
         const { data: candidateData, error: candidateError } = await supabase
           .from("talent_classification")
           .select("*")
@@ -494,7 +320,7 @@ export default function CandidateReport() {
           setDebugInfo(prev => prev + `\n✓ Classification: ${candidateData.total_score} points, ${candidateData.classification}`);
         }
 
-        // 5. Fetch responses and calculate category scores
+        // 3. Fetch responses and calculate category scores
         await fetchAndCalculateCategoryScores(user_id);
 
       } catch (err) {
@@ -783,7 +609,7 @@ export default function CandidateReport() {
     };
 
     fetchCandidateData();
-  }, [isSupervisor, user_id]);
+  }, [isSupervisor, user_id, urlName, urlEmail]);
 
   const handleBack = () => {
     router.push("/supervisor");
@@ -1115,6 +941,7 @@ export default function CandidateReport() {
           </div>
         </div>
 
+        {/* Rest of the component remains the same as before */}
         {/* CATEGORY SCORES BREAKDOWN */}
         <div style={{ 
           background: "white", 
@@ -1905,41 +1732,6 @@ export default function CandidateReport() {
               <strong> Status:</strong> Completed
             </p>
           </div>
-        </div>
-        
-        {/* Debug Panel (temporarily enable to see what's happening) */}
-        <div style={{ 
-          marginTop: "30px",
-          padding: "15px",
-          background: "#f8f9fa",
-          borderRadius: "8px",
-          border: "1px solid #e0e0e0",
-          fontSize: "12px",
-          color: "#666",
-          display: "block" /* Change to "block" to debug, then back to "none" */
-        }}>
-          <div style={{ fontWeight: "600", marginBottom: "8px", color: "#333" }}>
-            Debug Information - User Data Fetch
-          </div>
-          <div style={{ marginBottom: "8px" }}>
-            <strong>User ID:</strong> {user_id}
-          </div>
-          <div style={{ marginBottom: "8px" }}>
-            <strong>Found Name:</strong> {userName}
-          </div>
-          <div style={{ marginBottom: "8px" }}>
-            <strong>Found Email:</strong> {userEmail}
-          </div>
-          <pre style={{ 
-            margin: 0, 
-            whiteSpace: "pre-wrap",
-            fontSize: "11px",
-            fontFamily: "monospace",
-            maxHeight: "300px",
-            overflow: "auto"
-          }}>
-            {debugInfo}
-          </pre>
         </div>
       </div>
     </AppLayout>
