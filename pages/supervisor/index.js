@@ -71,75 +71,194 @@ export default function SupervisorDashboard() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch candidates and stats - IMPROVED VERSION
+  // Fetch candidates and stats - FIXED VERSION
   useEffect(() => {
     if (!isSupervisor) return;
 
     const fetchData = async () => {
       try {
-        // Query candidate_assessments table instead of talent_classification
-        const { data: candidatesData, error: candidatesError } = await supabase
-          .from("candidate_assessments")
-          .select(`
-            user_id,
-            total_score,
-            classification,
-            email,
-            full_name
-          `)
+        setLoading(true);
+        
+        // FIRST: Try to get data from talent_classification table WITH user data
+        const { data: classificationData, error: classificationError } = await supabase
+          .from("talent_classification")
+          .select("*")
           .order("total_score", { ascending: false });
 
-        if (candidatesError) throw candidatesError;
+        if (classificationError) throw classificationError;
 
-        // If no data, set empty and return
-        if (!candidatesData || candidatesData.length === 0) {
-          setCandidates([]);
-          setStats({
-            totalCandidates: 0,
-            completed: 0,
+        // If no classification data, try candidate_assessments as fallback
+        if (!classificationData || classificationData.length === 0) {
+          // Fallback to candidate_assessments
+          const { data: assessmentsData, error: assessmentsError } = await supabase
+            .from("candidate_assessments")
+            .select("*")
+            .order("total_score", { ascending: false });
+
+          if (assessmentsError) throw assessmentsError;
+
+          if (!assessmentsData || assessmentsData.length === 0) {
+            setCandidates([]);
+            setStats({
+              totalCandidates: 0,
+              completed: 0,
+              inProgress: 0,
+              notStarted: 0,
+              eliteTalent: 0,
+              topTalent: 0,
+              highPotential: 0,
+              solidPerformer: 0,
+              developing: 0,
+              emergingTalent: 0,
+              needsImprovement: 0
+            });
+            setLoading(false);
+            return;
+          }
+
+          // Process assessments data with user lookup
+          const processedCandidates = await Promise.all(
+            assessmentsData.map(async (assessment) => {
+              let userEmail = "Email not found";
+              let userName = `Candidate ${assessment.user_id.substring(0, 8).toUpperCase()}`;
+
+              // Try to get user info from users table
+              const { data: userData } = await supabase
+                .from("users")
+                .select("email, full_name")
+                .eq("id", assessment.user_id)
+                .single();
+
+              if (userData) {
+                userEmail = userData.email || "No email provided";
+                userName = userData.full_name || userName;
+              } else {
+                // Try auth.users as fallback
+                try {
+                  const { data: authData } = await supabase.auth.admin.getUserById(assessment.user_id);
+                  if (authData?.user) {
+                    userEmail = authData.user.email || "No email in auth";
+                    userName = authData.user.user_metadata?.full_name || 
+                              authData.user.user_metadata?.name ||
+                              userEmail.split('@')[0] || 
+                              userName;
+                  }
+                } catch (authErr) {
+                  // Silently fail and use default values
+                }
+              }
+
+              return {
+                ...assessment,
+                user: {
+                  email: userEmail,
+                  full_name: userName,
+                  id_short: assessment.user_id.substring(0, 8).toUpperCase()
+                }
+              };
+            })
+          );
+
+          setCandidates(processedCandidates);
+          
+          // Calculate statistics
+          const statsData = {
+            totalCandidates: processedCandidates.length,
+            completed: processedCandidates.length,
             inProgress: 0,
             notStarted: 0,
-            eliteTalent: 0,
-            topTalent: 0,
-            highPotential: 0,
-            solidPerformer: 0,
-            developing: 0,
-            emergingTalent: 0,
-            needsImprovement: 0
-          });
+            eliteTalent: processedCandidates.filter(c => getClassificationFromScore(c.total_score) === 'Elite Talent').length,
+            topTalent: processedCandidates.filter(c => getClassificationFromScore(c.total_score) === 'Top Talent').length,
+            highPotential: processedCandidates.filter(c => getClassificationFromScore(c.total_score) === 'High Potential').length,
+            solidPerformer: processedCandidates.filter(c => getClassificationFromScore(c.total_score) === 'Solid Performer').length,
+            developing: processedCandidates.filter(c => getClassificationFromScore(c.total_score) === 'Developing Talent').length,
+            emergingTalent: processedCandidates.filter(c => getClassificationFromScore(c.total_score) === 'Emerging Talent').length,
+            needsImprovement: processedCandidates.filter(c => getClassificationFromScore(c.total_score) === 'Needs Improvement').length
+          };
+          setStats(statsData);
+          
           setLoading(false);
           return;
         }
 
-        // Map the data directly - no need for additional user lookups
-        const candidatesWithUsers = candidatesData.map((candidate, index) => ({
-          ...candidate,
-          user: {
-            email: candidate.email || "No email provided",
-            full_name: candidate.full_name || `Candidate ${candidate.user_id.substring(0, 8).toUpperCase()}`,
-            id_short: candidate.user_id.substring(0, 8).toUpperCase()
-          }
-        }));
+        // Process classification data (MAIN PATH)
+        const processedCandidates = await Promise.all(
+          classificationData.map(async (classification) => {
+            let userEmail = "Email not found";
+            let userName = `Candidate ${classification.user_id.substring(0, 8).toUpperCase()}`;
 
-        setCandidates(candidatesWithUsers);
+            // Try to get user info from users table FIRST
+            const { data: userData } = await supabase
+              .from("users")
+              .select("email, full_name")
+              .eq("id", classification.user_id)
+              .single();
 
-        // Calculate statistics using SAME LOGIC as candidate report
+            if (userData) {
+              userEmail = userData.email || "No email provided";
+              userName = userData.full_name || 
+                        userEmail.split('@')[0] || 
+                        userName;
+            } else {
+              // Check if email is in metadata
+              if (classification.metadata?.email) {
+                userEmail = classification.metadata.email;
+                userName = classification.metadata.name || 
+                          userEmail.split('@')[0] || 
+                          userName;
+              } else {
+                // Try auth.users as last resort
+                try {
+                  const { data: authData } = await supabase
+                    .from("auth.users")
+                    .select("email, raw_user_meta_data")
+                    .eq("id", classification.user_id)
+                    .single();
+
+                  if (authData) {
+                    userEmail = authData.email || "No email in auth";
+                    userName = authData.raw_user_meta_data?.full_name || 
+                              authData.raw_user_meta_data?.name ||
+                              userEmail.split('@')[0] || 
+                              userName;
+                  }
+                } catch (authErr) {
+                  // Silently fail and use default values
+                }
+              }
+            }
+
+            return {
+              ...classification,
+              user: {
+                email: userEmail,
+                full_name: userName,
+                id_short: classification.user_id.substring(0, 8).toUpperCase()
+              }
+            };
+          })
+        );
+
+        setCandidates(processedCandidates);
+        
+        // Calculate statistics
         const statsData = {
-          totalCandidates: candidatesData.length,
-          completed: candidatesData.length,
+          totalCandidates: processedCandidates.length,
+          completed: processedCandidates.length,
           inProgress: 0,
           notStarted: 0,
-          eliteTalent: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'Elite Talent').length,
-          topTalent: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'Top Talent').length,
-          highPotential: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'High Potential').length,
-          solidPerformer: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'Solid Performer').length,
-          developing: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'Developing Talent').length,
-          emergingTalent: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'Emerging Talent').length,
-          needsImprovement: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'Needs Improvement').length
+          eliteTalent: processedCandidates.filter(c => getClassificationFromScore(c.total_score) === 'Elite Talent').length,
+          topTalent: processedCandidates.filter(c => getClassificationFromScore(c.total_score) === 'Top Talent').length,
+          highPotential: processedCandidates.filter(c => getClassificationFromScore(c.total_score) === 'High Potential').length,
+          solidPerformer: processedCandidates.filter(c => getClassificationFromScore(c.total_score) === 'Solid Performer').length,
+          developing: processedCandidates.filter(c => getClassificationFromScore(c.total_score) === 'Developing Talent').length,
+          emergingTalent: processedCandidates.filter(c => getClassificationFromScore(c.total_score) === 'Emerging Talent').length,
+          needsImprovement: processedCandidates.filter(c => getClassificationFromScore(c.total_score) === 'Needs Improvement').length
         };
         setStats(statsData);
-
+        
         setLoading(false);
+
       } catch (err) {
         console.error("Error fetching data:", err);
         setCandidates([]);
@@ -490,7 +609,7 @@ export default function SupervisorDashboard() {
                         <div style={{ fontSize: "14px", color: "#1565c0" }}>
                           {c.user?.email}
                         </div>
-                        {c.user?.email === "No email provided" && (
+                        {c.user?.email === "Email not found" && (
                           <div style={{ fontSize: "11px", color: "#999", marginTop: "3px" }}>
                             ID: {c.user?.id_short}
                           </div>
@@ -585,4 +704,3 @@ export default function SupervisorDashboard() {
     </AppLayout>
   );
 }
-
