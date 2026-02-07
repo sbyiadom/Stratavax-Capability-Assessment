@@ -184,21 +184,38 @@ export default function SupervisorDashboard() {
               Talent Assessment Analytics & Management
             </p>
           </div>
-          <button
-            onClick={handleLogout}
-            style={{
-              background: "#d32f2f",
-              color: "white",
-              border: "none",
-              padding: "10px 20px",
-              borderRadius: "8px",
-              cursor: "pointer",
-              fontSize: "14px",
-              fontWeight: "600"
-            }}
-          >
-            Logout
-          </button>
+          <div style={{ display: "flex", gap: "10px" }}>
+            <button
+              onClick={() => router.push("/add-supervisor")}
+              style={{
+                background: "#4CAF50",
+                color: "white",
+                border: "none",
+                padding: "10px 20px",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontSize: "14px",
+                fontWeight: "600"
+              }}
+            >
+              Add Supervisor
+            </button>
+            <button
+              onClick={handleLogout}
+              style={{
+                background: "#d32f2f",
+                color: "white",
+                border: "none",
+                padding: "10px 20px",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontSize: "14px",
+                fontWeight: "600"
+              }}
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         {/* Statistics Cards */}
