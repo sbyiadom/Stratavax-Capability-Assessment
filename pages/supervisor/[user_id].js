@@ -1,4 +1,4 @@
-// pages/supervisor/[user_id].js - FIXED VERSION WITH UNIQUE CATEGORY SCORES
+// pages/supervisor/[user_id].js - UPDATED WITH NEW PERFORMANCE CLASSIFICATION
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -19,6 +19,61 @@ export default function CandidateReport() {
   const [userEmail, setUserEmail] = useState("");
   const [userName, setUserName] = useState("");
   const [debugInfo, setDebugInfo] = useState("");
+
+  // Helper function to get classification based on score
+  const getClassification = (score) => {
+    if (score >= 450) return "Elite Talent";
+    if (score >= 400) return "Top Talent";
+    if (score >= 350) return "High Potential";
+    if (score >= 300) return "Solid Performer";
+    if (score >= 250) return "Developing Talent";
+    if (score >= 200) return "Emerging Talent";
+    return "Needs Improvement";
+  };
+
+  // Helper function to get classification color
+  const getClassificationColor = (score) => {
+    if (score >= 450) return "#4CAF50"; // Green
+    if (score >= 400) return "#2196F3"; // Blue
+    if (score >= 350) return "#FF9800"; // Orange
+    if (score >= 300) return "#9C27B0"; // Purple
+    if (score >= 250) return "#F57C00"; // Deep Orange
+    if (score >= 200) return "#795548"; // Brown
+    return "#F44336"; // Red
+  };
+
+  // Helper function to get classification description
+  const getClassificationDescription = (score) => {
+    if (score >= 450) return "Exceptional performer demonstrating mastery across all assessment categories. Consistently exceeds expectations with outstanding analytical, technical, and leadership capabilities.";
+    if (score >= 400) return "Outstanding performer with clear strengths across multiple domains. Demonstrates strong leadership potential and technical competence suitable for increased responsibility.";
+    if (score >= 350) return "Strong performer with clear development areas. Shows promise for growth and advancement with targeted development and strategic improvement opportunities.";
+    if (score >= 300) return "Reliable and consistent performer meeting core requirements. Demonstrates competency in key areas with predictable performance and potential for growth.";
+    if (score >= 250) return "Shows foundational skills with clear development needs. Requires structured guidance and skill-building opportunities to reach full potential.";
+    if (score >= 200) return "Early-stage performer requiring significant development. Needs comprehensive training and close supervision to enhance foundational skills.";
+    return "Performance below expectations requiring immediate attention. Needs intensive development plan and regular performance reviews to address critical gaps.";
+  };
+
+  // Helper function to get performance grade
+  const getPerformanceGrade = (score) => {
+    if (score >= 450) return "A+";
+    if (score >= 400) return "A";
+    if (score >= 350) return "B+";
+    if (score >= 300) return "B";
+    if (score >= 250) return "C";
+    if (score >= 200) return "D";
+    return "F";
+  };
+
+  // Helper function to get grade label
+  const getGradeLabel = (score) => {
+    if (score >= 450) return "Elite";
+    if (score >= 400) return "Top Talent";
+    if (score >= 350) return "High Potential";
+    if (score >= 300) return "Solid";
+    if (score >= 250) return "Developing";
+    if (score >= 200) return "Emerging";
+    return "Needs Improvement";
+  };
 
   // Check supervisor authentication
   useEffect(() => {
@@ -459,21 +514,39 @@ export default function CandidateReport() {
       setDebugInfo(prev => prev + `\nEstimated data based on ${totalScore} total score (${overallPercentage}%)`);
     };
 
-    // Calculate strengths, weaknesses, and recommendations
+    // Calculate strengths, weaknesses, and recommendations with dynamic thresholds
     const calculateAnalysis = (categoryScoresData) => {
       setDebugInfo(prev => prev + "\n\n=== ANALYZING RESULTS ===");
       
       const candidateStrengths = [];
       const candidateWeaknesses = [];
       
+      // Adjust thresholds based on overall performance
+      const overallScore = candidate?.total_score || 0;
+      const strengthThreshold = overallScore >= 450 ? 80 : 
+                                overallScore >= 400 ? 75 : 
+                                overallScore >= 350 ? 70 : 
+                                overallScore >= 300 ? 65 : 
+                                overallScore >= 250 ? 60 : 
+                                overallScore >= 200 ? 55 : 50;
+      
+      const weaknessThreshold = overallScore >= 450 ? 70 : 
+                                overallScore >= 400 ? 65 : 
+                                overallScore >= 350 ? 60 : 
+                                overallScore >= 300 ? 55 : 
+                                overallScore >= 250 ? 50 : 
+                                overallScore >= 200 ? 45 : 40;
+      
+      setDebugInfo(prev => prev + `\nStrength threshold: ${strengthThreshold}%, Weakness threshold: ${weaknessThreshold}%`);
+      
       Object.entries(categoryScoresData).forEach(([section, data]) => {
-        if (data.percentage >= 70) {
+        if (data.percentage >= strengthThreshold) {
           candidateStrengths.push({
             category: section,
             score: data.percentage,
             interpretation: `Strong performance in ${section} with ${data.percentage}% score`
           });
-        } else if (data.percentage <= 50) {
+        } else if (data.percentage <= weaknessThreshold) {
           candidateWeaknesses.push({
             category: section,
             score: data.percentage,
@@ -633,6 +706,13 @@ export default function CandidateReport() {
     );
   }
 
+  const candidateScore = candidate.total_score;
+  const classification = getClassification(candidateScore);
+  const classificationColor = getClassificationColor(candidateScore);
+  const classificationDescription = getClassificationDescription(candidateScore);
+  const performanceGrade = getPerformanceGrade(candidateScore);
+  const gradeLabel = getGradeLabel(candidateScore);
+
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
       <div style={{ width: "90vw", margin: "auto", padding: "30px 20px" }}>
@@ -689,7 +769,7 @@ export default function CandidateReport() {
                 fontSize: "12px",
                 fontFamily: "monospace"
               }}>
-                ID: {user_id?.substring(0, 12)}... | Score: {candidate.total_score} | {candidate.classification}
+                ID: {user_id?.substring(0, 12)}... | Score: {candidateScore} | {classification}
               </p>
             </div>
             <div style={{ 
@@ -708,12 +788,84 @@ export default function CandidateReport() {
               <div style={{ 
                 fontSize: "20px", 
                 fontWeight: "700",
-                color: candidate.classification === 'Top Talent' ? "#4CAF50" :
-                       candidate.classification === 'High Potential' ? "#2196F3" :
-                       candidate.classification === 'Solid Performer' ? "#FF9800" :
-                       candidate.classification === 'Developing' ? "#9C27B0" : "#F44336"
+                color: classificationColor
               }}>
-                {candidate.classification}
+                {classification}
+              </div>
+              <div style={{ 
+                fontSize: "12px", 
+                color: "#888", 
+                marginTop: "5px",
+                fontStyle: "italic"
+              }}>
+                Score: {candidateScore}/500
+              </div>
+            </div>
+          </div>
+
+          {/* Performance Classification Details */}
+          <div style={{ 
+            background: "white", 
+            padding: "20px", 
+            borderRadius: "12px", 
+            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+            marginBottom: "30px"
+          }}>
+            <h3 style={{ margin: "0 0 15px 0", color: "#333" }}>Performance Classification</h3>
+            
+            <div style={{ 
+              display: "grid", 
+              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", 
+              gap: "10px",
+              marginBottom: "20px"
+            }}>
+              {[
+                { range: "450-500", label: "Elite Talent", color: "#4CAF50", active: candidateScore >= 450 },
+                { range: "400-449", label: "Top Talent", color: "#2196F3", active: candidateScore >= 400 && candidateScore < 450 },
+                { range: "350-399", label: "High Potential", color: "#FF9800", active: candidateScore >= 350 && candidateScore < 400 },
+                { range: "300-349", label: "Solid Performer", color: "#9C27B0", active: candidateScore >= 300 && candidateScore < 350 },
+                { range: "250-299", label: "Developing Talent", color: "#F57C00", active: candidateScore >= 250 && candidateScore < 300 },
+                { range: "200-249", label: "Emerging Talent", color: "#795548", active: candidateScore >= 200 && candidateScore < 250 },
+                { range: "0-199", label: "Needs Improvement", color: "#F44336", active: candidateScore < 200 }
+              ].map((item, index) => (
+                <div key={index} style={{
+                  padding: "12px",
+                  background: item.active ? item.color : "#f8f9fa",
+                  color: item.active ? "white" : "#666",
+                  borderRadius: "8px",
+                  textAlign: "center",
+                  border: `2px solid ${item.active ? item.color : "#e0e0e0"}`,
+                  fontWeight: item.active ? "600" : "400"
+                }}>
+                  <div style={{ fontSize: "14px" }}>{item.range}</div>
+                  <div style={{ fontSize: "12px", opacity: item.active ? 0.9 : 0.7 }}>
+                    {item.label}
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <div style={{ 
+              padding: "15px",
+              background: candidateScore >= 450 ? "#e8f5e9" :
+                         candidateScore >= 400 ? "#e3f2fd" :
+                         candidateScore >= 350 ? "#fff3e0" :
+                         candidateScore >= 300 ? "#f3e5f5" :
+                         candidateScore >= 250 ? "#fff8e1" :
+                         candidateScore >= 200 ? "#efebe9" : "#ffebee",
+              borderRadius: "8px",
+              borderLeft: `4px solid ${classificationColor}`
+            }}>
+              <div style={{ 
+                fontSize: "14px", 
+                fontWeight: "600",
+                color: "#333",
+                marginBottom: "5px"
+              }}>
+                {classification} - Performance Summary
+              </div>
+              <div style={{ fontSize: "14px", color: "#666", lineHeight: 1.5 }}>
+                {classificationDescription}
               </div>
             </div>
           </div>
@@ -734,7 +886,7 @@ export default function CandidateReport() {
               <div>
                 <div style={{ fontSize: "14px", opacity: 0.9 }}>Overall Assessment Score</div>
                 <div style={{ fontSize: "48px", fontWeight: "700", margin: "10px 0" }}>
-                  {candidate.total_score}
+                  {candidateScore}
                 </div>
                 <div style={{ fontSize: "14px", opacity: 0.9 }}>
                   Based on {responses.length} responses across {Object.keys(categoryScores).length} categories
@@ -748,7 +900,7 @@ export default function CandidateReport() {
                   borderRadius: "4px",
                   display: "inline-block"
                 }}>
-                  Max possible: 500 points • {Math.round((candidate.total_score / 500) * 100)}% overall
+                  Max possible: 500 points • {Math.round((candidateScore / 500) * 100)}% overall • {classification}
                 </div>
               </div>
               <div style={{ textAlign: "center" }}>
@@ -763,15 +915,18 @@ export default function CandidateReport() {
                   border: "5px solid rgba(255,255,255,0.2)"
                 }}>
                   <div style={{ fontSize: "32px", fontWeight: "700" }}>
-                    {candidate.total_score >= 450 ? 'A+' :
-                     candidate.total_score >= 400 ? 'A' :
-                     candidate.total_score >= 350 ? 'B' :
-                     candidate.total_score >= 300 ? 'C' :
-                     candidate.total_score >= 250 ? 'D' : 'E'}
+                    {performanceGrade}
                   </div>
                 </div>
                 <div style={{ marginTop: "10px", fontSize: "12px", opacity: 0.8 }}>
                   Performance Grade
+                </div>
+                <div style={{ 
+                  fontSize: "11px", 
+                  opacity: 0.7,
+                  marginTop: "3px"
+                }}>
+                  {gradeLabel}
                 </div>
               </div>
             </div>
@@ -1018,7 +1173,7 @@ export default function CandidateReport() {
                           fontWeight: "700",
                           color: "#1565c0"
                         }}>
-                          {Math.round((candidate.total_score / 500) * 100)}%
+                          {Math.round((candidateScore / 500) * 100)}%
                         </td>
                         <td style={{ 
                           padding: "12px", 
@@ -1026,7 +1181,7 @@ export default function CandidateReport() {
                           fontWeight: "700",
                           color: "#1565c0"
                         }}>
-                          {candidate.classification}
+                          {classification}
                         </td>
                       </tr>
                     </tfoot>
@@ -1048,7 +1203,10 @@ export default function CandidateReport() {
                       {strengths.length}
                     </div>
                     <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
-                      Strong Areas (≥70%)
+                      Strong Areas
+                    </div>
+                    <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
+                      (≥{candidateScore >= 450 ? 80 : candidateScore >= 400 ? 75 : candidateScore >= 350 ? 70 : candidateScore >= 300 ? 65 : candidateScore >= 250 ? 60 : 55}%)
                     </div>
                   </div>
                   <div style={{ textAlign: "center" }}>
@@ -1064,7 +1222,10 @@ export default function CandidateReport() {
                       {weaknesses.length}
                     </div>
                     <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
-                      Weak Areas (≤50%)
+                      Weak Areas
+                    </div>
+                    <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
+                      (≤{candidateScore >= 450 ? 70 : candidateScore >= 400 ? 65 : candidateScore >= 350 ? 60 : candidateScore >= 300 ? 55 : candidateScore >= 250 ? 50 : 45}%)
                     </div>
                   </div>
                 </div>
@@ -1120,7 +1281,7 @@ export default function CandidateReport() {
               }}>
                 <div style={{ fontSize: "36px", marginBottom: "15px" }}>📈</div>
                 <p style={{ marginBottom: "10px" }}>
-                  No categories scored 70% or above.
+                  No categories scored above strength threshold.
                 </p>
                 <p style={{ fontSize: "13px", color: "#666" }}>
                   Candidate shows consistent but not exceptional performance across categories.
@@ -1224,7 +1385,7 @@ export default function CandidateReport() {
               }}>
                 <div style={{ fontSize: "36px", marginBottom: "15px" }}>🎯</div>
                 <p style={{ marginBottom: "10px" }}>
-                  All categories scored above 50%.
+                  All categories scored above weakness threshold.
                 </p>
                 <p style={{ fontSize: "13px", color: "#666" }}>
                   Candidate shows balanced performance across all areas.
@@ -1476,13 +1637,13 @@ export default function CandidateReport() {
               borderTop: "4px solid #4CAF50"
             }}>
               <div style={{ fontSize: "32px", fontWeight: "700", color: "#4CAF50" }}>
-                {candidate.total_score}
+                {candidateScore}
               </div>
               <div style={{ fontSize: "14px", color: "#666", marginTop: "8px" }}>
                 Total Score
               </div>
               <div style={{ fontSize: "12px", color: "#888", marginTop: "4px" }}>
-                Max: 500 • {Math.round((candidate.total_score / 500) * 100)}%
+                Max: 500 • {Math.round((candidateScore / 500) * 100)}%
               </div>
             </div>
             
@@ -1518,7 +1679,7 @@ export default function CandidateReport() {
                 Key Strengths
               </div>
               <div style={{ fontSize: "12px", color: "#888", marginTop: "4px" }}>
-                Areas ≥70% score
+                Areas above threshold
               </div>
             </div>
           </div>
@@ -1533,6 +1694,7 @@ export default function CandidateReport() {
             <p style={{ margin: 0, color: "#1565c0", fontSize: "14px" }}>
               <strong>Report Generated:</strong> {new Date().toLocaleDateString()} | 
               <strong> Candidate:</strong> {userName} | 
+              <strong> Classification:</strong> {classification} | 
               <strong> Status:</strong> Completed
             </p>
           </div>
