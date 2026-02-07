@@ -4,6 +4,28 @@ import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 
+// Helper function to get classification from score (SAME AS IN CANDIDATE REPORT)
+const getClassificationFromScore = (score) => {
+  if (score >= 450) return "Elite Talent";
+  if (score >= 400) return "Top Talent";
+  if (score >= 350) return "High Potential";
+  if (score >= 300) return "Solid Performer";
+  if (score >= 250) return "Developing Talent";
+  if (score >= 200) return "Emerging Talent";
+  return "Needs Improvement";
+};
+
+// Helper function to get classification color
+const getClassificationColor = (score) => {
+  if (score >= 450) return "#2E7D32";
+  if (score >= 400) return "#4CAF50";
+  if (score >= 350) return "#2196F3";
+  if (score >= 300) return "#FF9800";
+  if (score >= 250) return "#9C27B0";
+  if (score >= 200) return "#795548";
+  return "#F44336";
+};
+
 export default function SupervisorDashboard() {
   const router = useRouter();
   const [candidates, setCandidates] = useState([]);
@@ -14,10 +36,12 @@ export default function SupervisorDashboard() {
     completed: 0,
     inProgress: 0,
     notStarted: 0,
+    eliteTalent: 0,
     topTalent: 0,
     highPotential: 0,
     solidPerformer: 0,
     developing: 0,
+    emergingTalent: 0,
     needsImprovement: 0
   });
 
@@ -75,10 +99,12 @@ export default function SupervisorDashboard() {
             completed: 0,
             inProgress: 0,
             notStarted: 0,
+            eliteTalent: 0,
             topTalent: 0,
             highPotential: 0,
             solidPerformer: 0,
             developing: 0,
+            emergingTalent: 0,
             needsImprovement: 0
           });
           setLoading(false);
@@ -150,17 +176,19 @@ export default function SupervisorDashboard() {
 
         setCandidates(candidatesWithUsers);
 
-        // Calculate statistics
+        // Calculate statistics using SAME LOGIC as candidate report
         const statsData = {
           totalCandidates: talentData.length,
           completed: talentData.length,
           inProgress: 0,
           notStarted: 0,
-          topTalent: talentData.filter(c => c.classification === 'Top Talent').length,
-          highPotential: talentData.filter(c => c.classification === 'High Potential').length,
-          solidPerformer: talentData.filter(c => c.classification === 'Solid Performer').length,
-          developing: talentData.filter(c => c.classification === 'Developing').length,
-          needsImprovement: talentData.filter(c => c.classification === 'Needs Improvement').length
+          eliteTalent: talentData.filter(c => getClassificationFromScore(c.total_score) === 'Elite Talent').length,
+          topTalent: talentData.filter(c => getClassificationFromScore(c.total_score) === 'Top Talent').length,
+          highPotential: talentData.filter(c => getClassificationFromScore(c.total_score) === 'High Potential').length,
+          solidPerformer: talentData.filter(c => getClassificationFromScore(c.total_score) === 'Solid Performer').length,
+          developing: talentData.filter(c => getClassificationFromScore(c.total_score) === 'Developing Talent').length,
+          emergingTalent: talentData.filter(c => getClassificationFromScore(c.total_score) === 'Emerging Talent').length,
+          needsImprovement: talentData.filter(c => getClassificationFromScore(c.total_score) === 'Needs Improvement').length
         };
         setStats(statsData);
 
@@ -296,7 +324,7 @@ export default function SupervisorDashboard() {
               }
             </div>
             <div style={{ fontSize: "12px", opacity: 0.8 }}>
-              Out of maximum 100
+              Out of maximum 500
             </div>
           </div>
         </div>
@@ -316,11 +344,13 @@ export default function SupervisorDashboard() {
             gap: "15px" 
           }}>
             {[
-              { name: 'Top Talent', count: stats.topTalent, color: '#4CAF50' },
-              { name: 'High Potential', count: stats.highPotential, color: '#2196F3' },
-              { name: 'Solid Performer', count: stats.solidPerformer, color: '#FF9800' },
-              { name: 'Developing', count: stats.developing, color: '#9C27B0' },
-              { name: 'Needs Improvement', count: stats.needsImprovement, color: '#F44336' }
+              { name: 'Elite Talent', count: stats.eliteTalent, color: '#2E7D32', scoreRange: '450-500' },
+              { name: 'Top Talent', count: stats.topTalent, color: '#4CAF50', scoreRange: '400-449' },
+              { name: 'High Potential', count: stats.highPotential, color: '#2196F3', scoreRange: '350-399' },
+              { name: 'Solid Performer', count: stats.solidPerformer, color: '#FF9800', scoreRange: '300-349' },
+              { name: 'Developing Talent', count: stats.developing, color: '#9C27B0', scoreRange: '250-299' },
+              { name: 'Emerging Talent', count: stats.emergingTalent, color: '#795548', scoreRange: '200-249' },
+              { name: 'Needs Improvement', count: stats.needsImprovement, color: '#F44336', scoreRange: '0-199' }
             ].map((category) => (
               <div key={category.name} style={{
                 borderLeft: `4px solid ${category.color}`,
@@ -334,7 +364,10 @@ export default function SupervisorDashboard() {
                   alignItems: "center",
                   marginBottom: "5px"
                 }}>
-                  <span style={{ fontWeight: "600", color: "#333" }}>{category.name}</span>
+                  <div>
+                    <div style={{ fontWeight: "600", color: "#333", fontSize: "15px" }}>{category.name}</div>
+                    <div style={{ fontSize: "11px", color: "#888", marginTop: "2px" }}>{category.scoreRange}</div>
+                  </div>
                   <span style={{ 
                     fontWeight: "700", 
                     color: category.color,
@@ -356,12 +389,14 @@ export default function SupervisorDashboard() {
                   }} />
                 </div>
                 <div style={{ 
+                  display: "flex",
+                  justifyContent: "space-between",
                   fontSize: "12px", 
                   color: "#666", 
-                  marginTop: "5px",
-                  textAlign: "right"
+                  marginTop: "5px"
                 }}>
-                  {stats.totalCandidates > 0 ? `${Math.round((category.count / stats.totalCandidates) * 100)}%` : "0%"}
+                  <span>{category.scoreRange}</span>
+                  <span>{stats.totalCandidates > 0 ? `${Math.round((category.count / stats.totalCandidates) * 100)}%` : "0%"}</span>
                 </div>
               </div>
             ))}
@@ -501,33 +536,33 @@ export default function SupervisorDashboard() {
                         <div style={{ 
                           display: "inline-block",
                           padding: "5px 12px",
-                          background: c.total_score >= 75 ? "#e8f5e9" : 
-                                    c.total_score >= 60 ? "#fff3e0" : "#ffebee",
-                          color: c.total_score >= 75 ? "#2e7d32" : 
-                                c.total_score >= 60 ? "#f57c00" : "#c62828",
+                          background: c.total_score >= 400 ? "#e8f5e9" : 
+                                    c.total_score >= 350 ? "#e3f2fd" :
+                                    c.total_score >= 300 ? "#fff3e0" : 
+                                    c.total_score >= 250 ? "#f3e5f5" :
+                                    c.total_score >= 200 ? "#efebe9" : "#ffebee",
+                          color: c.total_score >= 400 ? "#2e7d32" : 
+                                c.total_score >= 350 ? "#1565c0" :
+                                c.total_score >= 300 ? "#f57c00" : 
+                                c.total_score >= 250 ? "#7b1fa2" :
+                                c.total_score >= 200 ? "#5d4037" : "#c62828",
                           borderRadius: "20px",
                           fontWeight: "600",
                           fontSize: "14px"
                         }}>
-                          {c.total_score}/100
+                          {c.total_score}/500
                         </div>
                       </td>
                       <td style={{ padding: "15px" }}>
                         <span style={{ 
-                          color: c.classification === 'Top Talent' ? "#4CAF50" :
-                                c.classification === 'High Potential' ? "#2196F3" :
-                                c.classification === 'Solid Performer' ? "#FF9800" :
-                                c.classification === 'Developing' ? "#9C27B0" : "#F44336",
+                          color: getClassificationColor(c.total_score),
                           fontWeight: "600",
                           padding: "6px 12px",
-                          background: `${c.classification === 'Top Talent' ? "#4CAF50" :
-                                     c.classification === 'High Potential' ? "#2196F3" :
-                                     c.classification === 'Solid Performer' ? "#FF9800" :
-                                     c.classification === 'Developing' ? "#9C27B0" : "#F44336"}15`,
+                          background: `${getClassificationColor(c.total_score)}15`,
                           borderRadius: "6px",
                           display: "inline-block"
                         }}>
-                          {c.classification}
+                          {getClassificationFromScore(c.total_score)}
                         </span>
                       </td>
                       <td style={{ padding: "15px" }}>
