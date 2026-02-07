@@ -98,24 +98,108 @@ export default function CandidateReport() {
     return labels[grade] || "Unknown";
   };
 
-  // 3. Get interpretive comments based on your scale
-  const getCategoryInterpretation = (percentage) => {
+  // 3. Get interpretive comments based on your scale - CATEGORY SPECIFIC
+  const getCategoryInterpretation = (percentage, category) => {
     if (percentage >= 80) {
-      return "Demonstrates exceptional capability across assessed dimensions. Shows strong cognitive reasoning, sound judgment, and consistent performance. Exhibits high leadership potential and strong role alignment. Suitable for high-impact roles and accelerated development.";
+      switch(category) {
+        case 'Cognitive Abilities':
+          return "Demonstrates exceptional cognitive processing, analytical reasoning, and problem-solving capabilities. Shows advanced pattern recognition, logical deduction, and mental agility suitable for complex decision-making roles.";
+        case 'Personality Assessment':
+          return "Exhibits outstanding emotional intelligence, adaptability, and interpersonal skills. Demonstrates strong self-awareness, resilience, and communication abilities ideal for collaborative environments.";
+        case 'Leadership Potential':
+          return "Shows exceptional leadership qualities including strategic vision, influence, and team development capabilities. Demonstrates natural ability to inspire, motivate, and drive organizational success.";
+        case 'Technical Competence':
+          return "Possesses expert-level technical knowledge and application skills. Demonstrates mastery of technical concepts, problem-solving abilities, and capacity for innovation in specialized domains.";
+        case 'Performance Metrics':
+          return "Consistently exceeds performance targets with exceptional results. Demonstrates outstanding productivity, efficiency, and goal achievement capabilities with measurable impact.";
+        default:
+          return "Demonstrates exceptional capability across assessed dimensions. Shows strong reasoning, sound judgment, and consistent performance.";
+      }
     }
+    
     if (percentage >= 70) {
-      return "Displays strong overall capability with minor development areas. Demonstrates effective problem-solving and reliable performance. Leadership and technical skills meet role expectations. Likely to perform well with minimal support.";
+      switch(category) {
+        case 'Cognitive Abilities':
+          return "Displays strong cognitive abilities with effective problem-solving skills. Demonstrates good analytical thinking, logical reasoning, and mental processing suitable for role requirements.";
+        case 'Personality Assessment':
+          return "Shows well-developed interpersonal skills and emotional intelligence. Demonstrates adaptability, reliability, and effective communication in most professional situations.";
+        case 'Leadership Potential':
+          return "Exhibits solid leadership qualities with potential for growth. Demonstrates ability to guide teams, make decisions, and contribute to organizational objectives.";
+        case 'Technical Competence':
+          return "Possesses solid technical knowledge and practical application skills. Demonstrates competence in key technical areas with ability to solve most job-related problems.";
+        case 'Performance Metrics':
+          return "Consistently meets and occasionally exceeds performance expectations. Demonstrates reliable productivity and effective goal achievement capabilities.";
+        default:
+          return "Displays strong overall capability with minor development areas. Demonstrates effective problem-solving and reliable performance.";
+      }
     }
+    
     if (percentage >= 60) {
-      return "Meets baseline requirements across most assessed areas. Cognitive and technical abilities are adequate but inconsistent. Leadership potential is present but requires development. Suitable for the role with structured support and training.";
+      switch(category) {
+        case 'Cognitive Abilities':
+          return "Meets basic cognitive requirements but shows inconsistency in complex problem-solving. Demonstrates adequate reasoning abilities but may struggle with abstract concepts or rapid processing.";
+        case 'Personality Assessment':
+          return "Shows adequate interpersonal skills but may need development in specific areas. Demonstrates basic emotional intelligence but could improve adaptability or communication effectiveness.";
+        case 'Leadership Potential':
+          return "Displays foundational leadership qualities requiring structured development. Shows potential for growth but needs guidance in decision-making and team management.";
+        case 'Technical Competence':
+          return "Possesses basic technical understanding with room for skill development. Demonstrates fundamental knowledge but requires additional training for complex applications.";
+        case 'Performance Metrics':
+          return "Meets minimum performance standards with occasional inconsistency. Demonstrates basic productivity but needs improvement in efficiency or goal achievement.";
+        default:
+          return "Meets baseline requirements across most assessed areas. Cognitive and technical abilities are adequate but inconsistent.";
+      }
     }
+    
     if (percentage >= 50) {
-      return "Performance falls below role expectations in multiple areas. Demonstrates gaps in problem-solving, technical competence, or behavioral fit. Leadership readiness is limited at this stage. Requires targeted development before role readiness.";
+      switch(category) {
+        case 'Cognitive Abilities':
+          return "Shows difficulty with analytical thinking and problem-solving. Demonstrates gaps in logical reasoning, pattern recognition, or mental processing that require targeted development.";
+        case 'Personality Assessment':
+          return "Exhibits limitations in interpersonal effectiveness or adaptability. Demonstrates challenges with emotional intelligence, communication, or professional behavior that need improvement.";
+        case 'Leadership Potential':
+          return "Displays limited leadership readiness requiring significant development. Shows gaps in decision-making, influence, or team management capabilities.";
+        case 'Technical Competence':
+          return "Possesses insufficient technical knowledge for role expectations. Demonstrates significant gaps in technical understanding or practical application skills.";
+        case 'Performance Metrics':
+          return "Falls below performance expectations in productivity or goal achievement. Demonstrates inconsistency in meeting standards or delivering results.";
+        default:
+          return "Performance falls below role expectations in multiple areas. Demonstrates gaps in problem-solving, technical competence, or behavioral fit.";
+      }
     }
+    
     if (percentage >= 40) {
-      return "Shows limited capability across key assessment dimensions. Struggles with cognitive demands and performance consistency. Leadership and role alignment are weak. Not currently suitable without substantial development.";
+      switch(category) {
+        case 'Cognitive Abilities':
+          return "Struggles significantly with cognitive demands and analytical tasks. Demonstrates limited reasoning ability, poor problem-solving skills, and difficulty processing information.";
+        case 'Personality Assessment':
+          return "Shows substantial limitations in professional behavior and interpersonal skills. Demonstrates poor emotional intelligence, communication barriers, or adaptability issues.";
+        case 'Leadership Potential':
+          return "Exhibits minimal leadership capabilities requiring extensive development. Shows little evidence of decision-making ability, influence, or team guidance skills.";
+        case 'Technical Competence':
+          return "Possesses very limited technical understanding and application skills. Demonstrates major deficiencies in technical knowledge relevant to role requirements.";
+        case 'Performance Metrics':
+          return "Consistently underperforms with poor productivity and goal achievement. Demonstrates significant challenges in meeting basic performance standards.";
+        default:
+          return "Shows limited capability across key assessment dimensions. Struggles with cognitive demands and performance consistency.";
+      }
     }
-    return "Does not meet minimum competency thresholds. Significant deficiencies observed across multiple assessment areas. Low alignment with role requirements and performance standards. Not recommended for progression at this stage.";
+    
+    // Below 40%
+    switch(category) {
+      case 'Cognitive Abilities':
+        return "Does not meet minimum cognitive competency thresholds. Shows severe deficiencies in analytical thinking, problem-solving, and information processing capabilities.";
+      case 'Personality Assessment':
+        return "Fails to demonstrate basic interpersonal or professional competencies. Shows critical deficiencies in emotional intelligence, communication, or adaptability.";
+      case 'Leadership Potential':
+        return "Lacks fundamental leadership qualities and readiness. Shows no evidence of decision-making, influence, or team management capabilities.";
+      case 'Technical Competence':
+        return "Does not possess required technical knowledge or skills. Shows complete lack of understanding in core technical areas for the role.";
+      case 'Performance Metrics':
+        return "Fails to meet any performance standards. Demonstrates complete inability to achieve basic productivity or goal targets.";
+      default:
+        return "Does not meet minimum competency thresholds. Significant deficiencies observed across multiple assessment areas.";
+    }
   };
 
   // 4. Get performance label for categories
@@ -614,7 +698,7 @@ export default function CandidateReport() {
             grade: grade,
             gradeLabel: getCategoryGradeLabel(grade),
             interpretation: `${performanceLabel} performance in ${section}`,
-            detailedInterpretation: getCategoryInterpretation(percentage),
+            detailedInterpretation: getCategoryInterpretation(percentage, section), // Pass category here
             icon: getCategoryPerformanceIcon(percentage)
           });
         }
@@ -627,7 +711,7 @@ export default function CandidateReport() {
             grade: grade,
             gradeLabel: getCategoryGradeLabel(grade),
             interpretation: `${performanceLabel} performance in ${section}`,
-            detailedInterpretation: getCategoryInterpretation(percentage),
+            detailedInterpretation: getCategoryInterpretation(percentage, section), // Pass category here
             icon: getCategoryPerformanceIcon(percentage)
           });
         }
@@ -640,30 +724,37 @@ export default function CandidateReport() {
       // Generate recommendations
       const candidateRecommendations = candidateWeaknesses.map(weakness => {
         let recommendation = "";
+        let specificIssue = "";
         
         switch(weakness.category) {
           case 'Cognitive Abilities':
-            recommendation = "Consider cognitive training exercises and problem-solving workshops to enhance analytical thinking.";
+            specificIssue = `Cognitive abilities scored ${weakness.score}% (Grade ${weakness.grade}). ${getCategoryInterpretation(weakness.score, weakness.category)}`;
+            recommendation = "Consider cognitive training exercises, problem-solving workshops, and analytical thinking development programs. Focus on logical reasoning, pattern recognition, and mental agility exercises.";
             break;
           case 'Personality Assessment':
-            recommendation = "Engage in personality development sessions and emotional intelligence training for better interpersonal skills.";
+            specificIssue = `Personality assessment scored ${weakness.score}% (Grade ${weakness.grade}). ${getCategoryInterpretation(weakness.score, weakness.category)}`;
+            recommendation = "Engage in personality development sessions, emotional intelligence training, and communication workshops. Consider role-playing exercises and interpersonal skills development programs.";
             break;
           case 'Leadership Potential':
-            recommendation = "Participate in leadership workshops, mentorship programs, and team management exercises.";
+            specificIssue = `Leadership potential scored ${weakness.score}% (Grade ${weakness.grade}). ${getCategoryInterpretation(weakness.score, weakness.category)}`;
+            recommendation = "Participate in leadership workshops, mentorship programs, and team management exercises. Focus on decision-making, influence development, and strategic thinking training.";
             break;
           case 'Technical Competence':
-            recommendation = "Attend technical training, industry-specific workshops, and hands-on practice sessions.";
+            specificIssue = `Technical competence scored ${weakness.score}% (Grade ${weakness.grade}). ${getCategoryInterpretation(weakness.score, weakness.category)}`;
+            recommendation = "Attend technical training sessions, industry-specific workshops, and hands-on practice programs. Focus on core technical skills, practical applications, and problem-solving in technical domains.";
             break;
           case 'Performance Metrics':
-            recommendation = "Focus on goal-setting strategies, performance tracking improvement, and productivity enhancement techniques.";
+            specificIssue = `Performance metrics scored ${weakness.score}% (Grade ${weakness.grade}). ${getCategoryInterpretation(weakness.score, weakness.category)}`;
+            recommendation = "Focus on goal-setting strategies, performance tracking improvement, time management workshops, and productivity enhancement techniques. Implement regular performance reviews and feedback sessions.";
             break;
           default:
-            recommendation = "Consider targeted training and development programs in this specific area.";
+            specificIssue = `${weakness.category} scored ${weakness.score}% (Grade ${weakness.grade}). ${getCategoryInterpretation(weakness.score, weakness.category)}`;
+            recommendation = "Consider targeted training and development programs in this specific area. Create a personalized development plan with measurable goals and regular progress reviews.";
         }
         
         return {
           category: weakness.category,
-          issue: weakness.interpretation,
+          issue: specificIssue,
           recommendation: recommendation,
           grade: weakness.grade,
           score: weakness.score
@@ -673,8 +764,8 @@ export default function CandidateReport() {
       if (candidateWeaknesses.length === 0 && Object.keys(categoryScoresData).length > 0) {
         candidateRecommendations.push({
           category: "Overall Performance",
-          issue: "Strong overall performance",
-          recommendation: "Continue current development path. Consider advanced training in areas of strength to further enhance expertise.",
+          issue: "Strong overall performance across all categories",
+          recommendation: "Continue current development path. Consider advanced training in areas of strength to further enhance expertise and prepare for increased responsibility.",
           grade: "A/B",
           score: 85
         });
