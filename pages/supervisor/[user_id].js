@@ -1,4 +1,4 @@
-// pages/supervisor/[user_id].js - UPDATED WITH NEW PERFORMANCE CLASSIFICATION
+// pages/supervisor/[user_id].js - UPDATED WITH NEW PERFORMANCE CLASSIFICATION AND GRADING SCALE
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -73,6 +73,79 @@ export default function CandidateReport() {
     if (score >= 250) return "Developing";
     if (score >= 200) return "Emerging";
     return "Needs Improvement";
+  };
+
+  // 1. Get category grade based on your scale
+  const getCategoryGrade = (percentage) => {
+    if (percentage >= 80) return "A";
+    if (percentage >= 70) return "B";
+    if (percentage >= 60) return "C";
+    if (percentage >= 50) return "D";
+    if (percentage >= 40) return "E";
+    return "F";
+  };
+
+  // 2. Get category grade label (for dashboards)
+  const getCategoryGradeLabel = (grade) => {
+    const labels = {
+      "A": "High-impact candidate",
+      "B": "Strong candidate", 
+      "C": "Viable with development",
+      "D": "Development required",
+      "E": "Low readiness",
+      "F": "Not suitable"
+    };
+    return labels[grade] || "Unknown";
+  };
+
+  // 3. Get interpretive comments based on your scale
+  const getCategoryInterpretation = (percentage) => {
+    if (percentage >= 80) {
+      return "Demonstrates exceptional capability across assessed dimensions. Shows strong cognitive reasoning, sound judgment, and consistent performance. Exhibits high leadership potential and strong role alignment. Suitable for high-impact roles and accelerated development.";
+    }
+    if (percentage >= 70) {
+      return "Displays strong overall capability with minor development areas. Demonstrates effective problem-solving and reliable performance. Leadership and technical skills meet role expectations. Likely to perform well with minimal support.";
+    }
+    if (percentage >= 60) {
+      return "Meets baseline requirements across most assessed areas. Cognitive and technical abilities are adequate but inconsistent. Leadership potential is present but requires development. Suitable for the role with structured support and training.";
+    }
+    if (percentage >= 50) {
+      return "Performance falls below role expectations in multiple areas. Demonstrates gaps in problem-solving, technical competence, or behavioral fit. Leadership readiness is limited at this stage. Requires targeted development before role readiness.";
+    }
+    if (percentage >= 40) {
+      return "Shows limited capability across key assessment dimensions. Struggles with cognitive demands and performance consistency. Leadership and role alignment are weak. Not currently suitable without substantial development.";
+    }
+    return "Does not meet minimum competency thresholds. Significant deficiencies observed across multiple assessment areas. Low alignment with role requirements and performance standards. Not recommended for progression at this stage.";
+  };
+
+  // 4. Get performance label for categories
+  const getCategoryPerformanceLabel = (percentage) => {
+    if (percentage >= 80) return "Exceptional";
+    if (percentage >= 70) return "Strong";
+    if (percentage >= 60) return "Adequate";
+    if (percentage >= 50) return "Below Expectations";
+    if (percentage >= 40) return "Low Readiness";
+    return "Unsuitable";
+  };
+
+  // 5. Get performance color for categories
+  const getCategoryPerformanceColor = (percentage) => {
+    if (percentage >= 80) return "#4CAF50"; // Green
+    if (percentage >= 70) return "#2196F3"; // Blue
+    if (percentage >= 60) return "#FF9800"; // Orange
+    if (percentage >= 50) return "#FF5722"; // Deep Orange
+    if (percentage >= 40) return "#795548"; // Brown
+    return "#F44336"; // Red
+  };
+
+  // 6. Get performance icon/emoji
+  const getCategoryPerformanceIcon = (percentage) => {
+    if (percentage >= 80) return "🏆";
+    if (percentage >= 70) return "⭐";
+    if (percentage >= 60) return "✅";
+    if (percentage >= 50) return "⚠️";
+    if (percentage >= 40) return "🔍";
+    return "❌";
   };
 
   // Check supervisor authentication
@@ -514,43 +587,48 @@ export default function CandidateReport() {
       setDebugInfo(prev => prev + `\nEstimated data based on ${totalScore} total score (${overallPercentage}%)`);
     };
 
-    // Calculate strengths, weaknesses, and recommendations with dynamic thresholds
+    // Calculate strengths, weaknesses, and recommendations with FIXED LOGIC
     const calculateAnalysis = (categoryScoresData) => {
       setDebugInfo(prev => prev + "\n\n=== ANALYZING RESULTS ===");
       
       const candidateStrengths = [];
       const candidateWeaknesses = [];
       
-      // Adjust thresholds based on overall performance
-      const overallScore = candidate?.total_score || 0;
-      const strengthThreshold = overallScore >= 450 ? 80 : 
-                                overallScore >= 400 ? 75 : 
-                                overallScore >= 350 ? 70 : 
-                                overallScore >= 300 ? 65 : 
-                                overallScore >= 250 ? 60 : 
-                                overallScore >= 200 ? 55 : 50;
+      // FIXED: Use fixed thresholds based on YOUR grading scale
+      const strengthThreshold = 70; // B or above
+      const weaknessThreshold = 60; // C or below (D, E, F)
       
-      const weaknessThreshold = overallScore >= 450 ? 70 : 
-                                overallScore >= 400 ? 65 : 
-                                overallScore >= 350 ? 60 : 
-                                overallScore >= 300 ? 55 : 
-                                overallScore >= 250 ? 50 : 
-                                overallScore >= 200 ? 45 : 40;
-      
-      setDebugInfo(prev => prev + `\nStrength threshold: ${strengthThreshold}%, Weakness threshold: ${weaknessThreshold}%`);
+      setDebugInfo(prev => prev + `\nStrength threshold: ${strengthThreshold}% (B or above)`);
+      setDebugInfo(prev => prev + `\nWeakness threshold: ${weaknessThreshold}% (C or below)`);
       
       Object.entries(categoryScoresData).forEach(([section, data]) => {
-        if (data.percentage >= strengthThreshold) {
+        const percentage = data.percentage;
+        const grade = getCategoryGrade(percentage);
+        const performanceLabel = getCategoryPerformanceLabel(percentage);
+        
+        // FIXED: Only show in strengths if ≥ 70% (B or above)
+        if (percentage >= strengthThreshold) {
           candidateStrengths.push({
             category: section,
-            score: data.percentage,
-            interpretation: `Strong performance in ${section} with ${data.percentage}% score`
+            score: percentage,
+            grade: grade,
+            gradeLabel: getCategoryGradeLabel(grade),
+            interpretation: `${performanceLabel} performance in ${section}`,
+            detailedInterpretation: getCategoryInterpretation(percentage),
+            icon: getCategoryPerformanceIcon(percentage)
           });
-        } else if (data.percentage <= weaknessThreshold) {
+        }
+        
+        // FIXED: Only show in weaknesses if < 60% (C or below)
+        if (percentage < weaknessThreshold) {
           candidateWeaknesses.push({
             category: section,
-            score: data.percentage,
-            interpretation: `Needs improvement in ${section} with ${data.percentage}% score`
+            score: percentage,
+            grade: grade,
+            gradeLabel: getCategoryGradeLabel(grade),
+            interpretation: `${performanceLabel} performance in ${section}`,
+            detailedInterpretation: getCategoryInterpretation(percentage),
+            icon: getCategoryPerformanceIcon(percentage)
           });
         }
       });
@@ -586,7 +664,9 @@ export default function CandidateReport() {
         return {
           category: weakness.category,
           issue: weakness.interpretation,
-          recommendation: recommendation
+          recommendation: recommendation,
+          grade: weakness.grade,
+          score: weakness.score
         };
       });
       
@@ -594,7 +674,9 @@ export default function CandidateReport() {
         candidateRecommendations.push({
           category: "Overall Performance",
           issue: "Strong overall performance",
-          recommendation: "Continue current development path. Consider advanced training in areas of strength to further enhance expertise."
+          recommendation: "Continue current development path. Consider advanced training in areas of strength to further enhance expertise.",
+          grade: "A/B",
+          score: 85
         });
       }
       
@@ -1028,7 +1110,7 @@ export default function CandidateReport() {
                       marginBottom: "5px"
                     }}>
                       <span>Score: {data.total}/{data.maxPossible}</span>
-                      <span>{data.percentage}% of max</span>
+                      <span>Grade: {getCategoryGrade(data.percentage)} • {data.percentage}% of max</span>
                     </div>
                     
                     <div style={{ 
@@ -1039,8 +1121,7 @@ export default function CandidateReport() {
                       textAlign: "right",
                       marginTop: "5px"
                     }}>
-                      {data.percentage >= 70 ? "✓ Strong Performance" : 
-                       data.percentage >= 60 ? "○ Average Performance" : "⚠ Needs Improvement"}
+                      {getCategoryPerformanceIcon(data.percentage)} {getCategoryPerformanceLabel(data.percentage)} ({getCategoryGrade(data.percentage)})
                     </div>
                   </div>
                 ))}
@@ -1109,7 +1190,7 @@ export default function CandidateReport() {
                               fontWeight: "600",
                               fontSize: "13px"
                             }}>
-                              {data.percentage}%
+                              {getCategoryGrade(data.percentage)} • {data.percentage}%
                             </span>
                           </td>
                           <td style={{ padding: "12px", textAlign: "center" }}>
@@ -1126,8 +1207,7 @@ export default function CandidateReport() {
                               fontSize: "12px",
                               fontWeight: "600"
                             }}>
-                              {data.percentage >= 70 ? "✓ Strong" : 
-                               data.percentage >= 60 ? "○ Average" : "⚠ Weak"}
+                              {getCategoryPerformanceIcon(data.percentage)} {getCategoryPerformanceLabel(data.percentage)}
                             </div>
                           </td>
                         </tr>
@@ -1203,10 +1283,10 @@ export default function CandidateReport() {
                       {strengths.length}
                     </div>
                     <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
-                      Strong Areas
+                      Strong Areas (A/B)
                     </div>
                     <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
-                      (≥{candidateScore >= 450 ? 80 : candidateScore >= 400 ? 75 : candidateScore >= 350 ? 70 : candidateScore >= 300 ? 65 : candidateScore >= 250 ? 60 : 55}%)
+                      (≥70%)
                     </div>
                   </div>
                   <div style={{ textAlign: "center" }}>
@@ -1214,7 +1294,10 @@ export default function CandidateReport() {
                       {Object.keys(categoryScores).length - strengths.length - weaknesses.length}
                     </div>
                     <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
-                      Average Areas
+                      Average Areas (C)
+                    </div>
+                    <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
+                      (60-69%)
                     </div>
                   </div>
                   <div style={{ textAlign: "center" }}>
@@ -1222,10 +1305,10 @@ export default function CandidateReport() {
                       {weaknesses.length}
                     </div>
                     <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
-                      Weak Areas
+                      Weak Areas (D/E/F)
                     </div>
                     <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
-                      (≤{candidateScore >= 450 ? 70 : candidateScore >= 400 ? 65 : candidateScore >= 350 ? 60 : candidateScore >= 300 ? 55 : candidateScore >= 250 ? 50 : 45}%)
+                      (≤59%)
                     </div>
                   </div>
                 </div>
@@ -1281,10 +1364,10 @@ export default function CandidateReport() {
               }}>
                 <div style={{ fontSize: "36px", marginBottom: "15px" }}>📈</div>
                 <p style={{ marginBottom: "10px" }}>
-                  No categories scored above strength threshold.
+                  No categories scored above strength threshold (≥70%).
                 </p>
                 <p style={{ fontSize: "13px", color: "#666" }}>
-                  Candidate shows consistent but not exceptional performance across categories.
+                  Candidate shows adequate or below performance across categories.
                 </p>
               </div>
             ) : (
@@ -1305,39 +1388,73 @@ export default function CandidateReport() {
                     <div style={{ 
                       display: "flex", 
                       justifyContent: "space-between",
-                      marginBottom: "8px"
+                      alignItems: "center",
+                      marginBottom: "10px"
                     }}>
                       <div style={{ 
-                        fontSize: "14px", 
+                        fontSize: "16px", 
                         fontWeight: "600",
-                        color: "#2e7d32"
+                        color: "#2e7d32",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px"
                       }}>
+                        <span style={{ fontSize: "20px" }}>{strength.icon}</span>
                         {strength.category}
                       </div>
-                      <div style={{ 
-                        padding: "3px 8px",
-                        background: "#4CAF50",
-                        color: "white",
-                        borderRadius: "4px",
-                        fontSize: "12px",
-                        fontWeight: "600"
-                      }}>
-                        Score: {strength.score}%
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <div style={{ 
+                          padding: "4px 10px",
+                          background: "#4CAF50",
+                          color: "white",
+                          borderRadius: "4px",
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          minWidth: "40px",
+                          textAlign: "center"
+                        }}>
+                          {strength.grade}
+                        </div>
+                        <div style={{ 
+                          padding: "4px 10px",
+                          background: "rgba(255,255,255,0.9)",
+                          color: "#2e7d32",
+                          borderRadius: "4px",
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          border: "1px solid #4CAF50"
+                        }}>
+                          {strength.score}%
+                        </div>
                       </div>
                     </div>
                     <div style={{ 
                       fontSize: "14px", 
                       color: "#333",
-                      marginBottom: "5px"
+                      marginBottom: "8px",
+                      fontWeight: "500"
                     }}>
                       {strength.interpretation}
                     </div>
                     <div style={{ 
                       fontSize: "12px", 
                       color: "#666",
-                      fontStyle: "italic"
+                      marginBottom: "8px",
+                      fontStyle: "italic",
+                      lineHeight: 1.4
                     }}>
-                      Top {Math.round(strength.score/10)} out of 10 in this category
+                      {strength.gradeLabel}
+                    </div>
+                    <div style={{ 
+                      fontSize: "12px", 
+                      color: "#555",
+                      lineHeight: 1.4,
+                      padding: "8px",
+                      background: "rgba(255,255,255,0.5)",
+                      borderRadius: "4px",
+                      marginTop: "5px"
+                    }}>
+                      {strength.detailedInterpretation}
                     </div>
                   </div>
                 ))}
@@ -1385,10 +1502,10 @@ export default function CandidateReport() {
               }}>
                 <div style={{ fontSize: "36px", marginBottom: "15px" }}>🎯</div>
                 <p style={{ marginBottom: "10px" }}>
-                  All categories scored above weakness threshold.
+                  All categories scored above weakness threshold (≥60%).
                 </p>
                 <p style={{ fontSize: "13px", color: "#666" }}>
-                  Candidate shows balanced performance across all areas.
+                  Candidate shows adequate or better performance across all areas.
                 </p>
               </div>
             ) : (
@@ -1409,39 +1526,73 @@ export default function CandidateReport() {
                     <div style={{ 
                       display: "flex", 
                       justifyContent: "space-between",
-                      marginBottom: "8px"
+                      alignItems: "center",
+                      marginBottom: "10px"
                     }}>
                       <div style={{ 
-                        fontSize: "14px", 
+                        fontSize: "16px", 
                         fontWeight: "600",
-                        color: "#c62828"
+                        color: "#c62828",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px"
                       }}>
+                        <span style={{ fontSize: "20px" }}>{weakness.icon}</span>
                         {weakness.category}
                       </div>
-                      <div style={{ 
-                        padding: "3px 8px",
-                        background: "#F44336",
-                        color: "white",
-                        borderRadius: "4px",
-                        fontSize: "12px",
-                        fontWeight: "600"
-                      }}>
-                        Score: {weakness.score}%
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <div style={{ 
+                          padding: "4px 10px",
+                          background: "#F44336",
+                          color: "white",
+                          borderRadius: "4px",
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          minWidth: "40px",
+                          textAlign: "center"
+                        }}>
+                          {weakness.grade}
+                        </div>
+                        <div style={{ 
+                          padding: "4px 10px",
+                          background: "rgba(255,255,255,0.9)",
+                          color: "#c62828",
+                          borderRadius: "4px",
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          border: "1px solid #F44336"
+                        }}>
+                          {weakness.score}%
+                        </div>
                       </div>
                     </div>
                     <div style={{ 
                       fontSize: "14px", 
                       color: "#333",
-                      marginBottom: "5px"
+                      marginBottom: "8px",
+                      fontWeight: "500"
                     }}>
                       {weakness.interpretation}
                     </div>
                     <div style={{ 
                       fontSize: "12px", 
                       color: "#666",
-                      fontStyle: "italic"
+                      marginBottom: "8px",
+                      fontStyle: "italic",
+                      lineHeight: 1.4
                     }}>
-                      Improvement needed: {100 - weakness.score}% to reach strong performance
+                      {weakness.gradeLabel} • Needs {Math.round(70 - weakness.score)}% improvement to reach strong performance
+                    </div>
+                    <div style={{ 
+                      fontSize: "12px", 
+                      color: "#555",
+                      lineHeight: 1.4,
+                      padding: "8px",
+                      background: "rgba(255,255,255,0.5)",
+                      borderRadius: "4px",
+                      marginTop: "5px"
+                    }}>
+                      {weakness.detailedInterpretation}
                     </div>
                   </div>
                 ))}
@@ -1542,7 +1693,7 @@ export default function CandidateReport() {
                         fontSize: "12px", 
                         color: "#666"
                       }}>
-                        Priority: {index === 0 ? "High" : index === 1 ? "Medium" : "Low"}
+                        Priority: {index === 0 ? "High" : index === 1 ? "Medium" : "Low"} • Grade: {rec.grade}
                       </div>
                     </div>
                   </div>
@@ -1679,7 +1830,7 @@ export default function CandidateReport() {
                 Key Strengths
               </div>
               <div style={{ fontSize: "12px", color: "#888", marginTop: "4px" }}>
-                Areas above threshold
+                Areas ≥70% (A/B)
               </div>
             </div>
           </div>
