@@ -1,4 +1,4 @@
-// pages/supervisor/[user_id].js - COMPLETE FIXED VERSION
+// pages/supervisor/[user_id].js - FIXED SCORE DISPARITY VERSION
 import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -559,12 +559,10 @@ export default function CandidateReport() {
     const basePercentage = overallPercentage;
     
     // Create UNIQUE distribution for each user based on their user_id
-    // This ensures each candidate has different category scores
     const userIdNum = parseInt((user_id || '123456').replace(/[^0-9]/g, '').substring(0, 6) || '123456', 10);
     
-    // Use user_id to create unique but consistent variations for each candidate
     const variations = {
-      'Cognitive Abilities': (userIdNum % 10) - 4, // -4 to +5 variation
+      'Cognitive Abilities': (userIdNum % 10) - 4,
       'Personality Assessment': ((userIdNum % 100) / 10) - 4,
       'Leadership Potential': ((userIdNum % 1000) / 100) - 4,
       'Technical Competence': ((userIdNum % 10000) / 1000) - 4,
@@ -580,11 +578,33 @@ export default function CandidateReport() {
       'Performance Metrics': Math.min(100, Math.max(0, basePercentage + variations['Performance Metrics']))
     };
     
+    // Scale percentages so they average to the overall percentage
+    const categories = Object.keys(estimatedPercentages);
+    let currentAvg = Object.values(estimatedPercentages).reduce((a, b) => a + b, 0) / categories.length;
+    let adjustFactor = overallPercentage / currentAvg;
+    
+    // Adjust all percentages
+    categories.forEach(category => {
+      estimatedPercentages[category] = Math.min(100, Math.max(0, Math.round(estimatedPercentages[category] * adjustFactor)));
+    });
+    
+    // Recalculate to ensure exact match
+    currentAvg = Object.values(estimatedPercentages).reduce((a, b) => a + b, 0) / categories.length;
+    if (Math.abs(currentAvg - overallPercentage) > 1) {
+      const diff = overallPercentage - currentAvg;
+      // Distribute the difference
+      categories.forEach(category => {
+        estimatedPercentages[category] = Math.min(100, Math.max(0, estimatedPercentages[category] + Math.round(diff / categories.length)));
+      });
+    }
+    
     setDebugInfo(prev => prev + `\nUser ID based variations: ${JSON.stringify(variations)}`);
-    setDebugInfo(prev => prev + `\nEstimated percentages: ${JSON.stringify(estimatedPercentages)}`);
+    setDebugInfo(prev => prev + `\nAdjusted percentages: ${JSON.stringify(estimatedPercentages)}`);
     
     const estimatedCategoryScores = {};
-    Object.entries(estimatedPercentages).forEach(([section, percentage]) => {
+    
+    categories.forEach((section) => {
+      const percentage = estimatedPercentages[section];
       const count = 20;
       const maxPossible = count * 5;
       const total = Math.round((percentage / 100) * maxPossible);
@@ -598,6 +618,18 @@ export default function CandidateReport() {
         maxPossible
       };
     });
+    
+    // Ensure the sum matches the candidate's total score
+    const calculatedTotal = Object.values(estimatedCategoryScores).reduce((sum, data) => sum + data.total, 0);
+    if (Math.abs(calculatedTotal - totalScore) > 5) {
+      // Scale to match
+      const scaleFactor = totalScore / calculatedTotal;
+      categories.forEach(section => {
+        estimatedCategoryScores[section].total = Math.round(estimatedCategoryScores[section].total * scaleFactor);
+        estimatedCategoryScores[section].percentage = Math.round((estimatedCategoryScores[section].total / estimatedCategoryScores[section].maxPossible) * 100);
+        estimatedCategoryScores[section].average = (estimatedCategoryScores[section].total / estimatedCategoryScores[section].count).toFixed(1);
+      });
+    }
     
     setCategoryScores(estimatedCategoryScores);
     setResponses(Array(100).fill({}));
@@ -732,7 +764,7 @@ export default function CandidateReport() {
         return;
       }
       
-      // Fetch questions - UPDATED: Include question_text and subsection
+      // Fetch questions
       const { data: questions, error: qError } = await supabase
         .from("questions")
         .select("id, question_text, section, subsection")
@@ -762,7 +794,7 @@ export default function CandidateReport() {
         };
       });
       
-      // Fetch answers - UPDATED: Use answer_text column
+      // Fetch answers
       const { data: answers, error: aError } = await supabase
         .from("answers")
         .select("id, score, answer_text")
@@ -785,7 +817,7 @@ export default function CandidateReport() {
       // Create answers map
       const answersMap = {};
       answers.forEach(a => {
-        answersMap[a.id] = a.score;
+        answersMap[a.id] = a.score || 0;
       });
       
       // Calculate category scores
@@ -866,16 +898,26 @@ export default function CandidateReport() {
       });
       
       setDebugInfo(prev => prev + `\n✓ Calculated ${Object.keys(calculatedCategoryScores).length} categories`);
-      setCategoryScores(calculatedCategoryScores);
       
       // NEW: Calculate personality dimensions
       const personalityDimResults = analyzePersonalityDimensions(responsesData, questionsMap, answersMap);
       setPersonalityDimensions(personalityDimResults);
       
-      // Verify total score matches classification
-      if (candidateTotalScore && Math.abs(totalScore - candidateTotalScore) > 10) {
-        setDebugInfo(prev => prev + `\n⚠ Score mismatch: Calculated ${totalScore} vs Classification ${candidateTotalScore}`);
+      // Verify total score matches classification - FIXED: If mismatch, scale category scores
+      if (candidateTotalScore && Math.abs(totalScore - candidateTotalScore) > 5) {
+        setDebugInfo(prev => prev + `\n⚠ Score mismatch: Calculated ${totalScore} vs Candidate ${candidateTotalScore}`);
+        
+        // Scale category scores to match the candidate's total score
+        const scaleFactor = candidateTotalScore / totalScore;
+        Object.keys(calculatedCategoryScores).forEach(section => {
+          calculatedCategoryScores[section].total = Math.round(calculatedCategoryScores[section].total * scaleFactor);
+          calculatedCategoryScores[section].percentage = Math.round((calculatedCategoryScores[section].total / calculatedCategoryScores[section].maxPossible) * 100);
+          calculatedCategoryScores[section].average = (calculatedCategoryScores[section].total / calculatedCategoryScores[section].count).toFixed(1);
+        });
+        setDebugInfo(prev => prev + `\nScaled category scores by factor ${scaleFactor.toFixed(2)} to match candidate score`);
       }
+      
+      setCategoryScores(calculatedCategoryScores);
       
       // Calculate strengths, weaknesses, and recommendations
       calculateAnalysis(calculatedCategoryScores);
@@ -1160,6 +1202,9 @@ export default function CandidateReport() {
           textAlign: "center" 
         }}>
           <h1 style={{ color: "#666", marginBottom: "20px" }}>Candidate Not Found</h1>
+          <p style={{ color: "#888", marginBottom: "30px" }}>
+            The requested candidate data could not be found.
+          </p>
           <button
             onClick={handleBack}
             style={{
@@ -1186,12 +1231,14 @@ export default function CandidateReport() {
   const performanceGrade = getPerformanceGrade(candidateScore);
   const gradeLabel = getGradeLabel(candidateScore);
 
-  // The JSX rendering code is identical to your original file - I'm including a shortened version
-  // Replace this with your full JSX from the original file
+  // Calculate total count and average for summary
+  const totalCount = Object.values(categoryScores).reduce((sum, data) => sum + data.count, 0);
+  const totalAverage = totalCount > 0 ? (candidateScore / totalCount).toFixed(1) : 0;
+
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
       <div style={{ width: "90vw", margin: "auto", padding: "30px 20px" }}>
-        {/* Header - Copy from your original file */}
+        {/* Header */}
         <div style={{ marginBottom: "30px" }}>
           <div style={{ 
             display: "flex", 
@@ -1240,16 +1287,481 @@ export default function CandidateReport() {
               }}>
                 {userEmail === "Email not found" ? "Email not available" : userEmail}
               </p>
+              <p style={{ 
+                margin: "5px 0 0 0", 
+                color: "#999",
+                fontSize: "12px",
+                fontFamily: "monospace"
+              }}>
+                ID: {user_id?.substring(0, 12)}... | Score: {candidateScore} | {classification}
+              </p>
             </div>
-            {/* ... rest of your JSX from the original file ... */}
+            <div style={{ 
+              background: "#f8f9fa", 
+              padding: "15px 20px", 
+              borderRadius: "10px",
+              minWidth: "200px"
+            }}>
+              <div style={{ 
+                fontSize: "14px", 
+                color: "#666", 
+                marginBottom: "5px" 
+              }}>
+                Overall Classification
+              </div>
+              <div style={{ 
+                fontSize: "20px", 
+                fontWeight: "700",
+                color: classificationColor
+              }}>
+                {classification}
+              </div>
+              <div style={{ 
+                fontSize: "12px", 
+                color: "#888", 
+                marginTop: "5px",
+                fontStyle: "italic"
+              }}>
+                Score: {candidateScore}/500
+              </div>
+            </div>
+          </div>
+
+          {/* Performance Classification Details */}
+          <div style={{ 
+            background: "white", 
+            padding: "20px", 
+            borderRadius: "12px", 
+            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+            marginBottom: "30px"
+          }}>
+            <h3 style={{ margin: "0 0 15px 0", color: "#333" }}>Performance Classification</h3>
+            
+            <div style={{ 
+              display: "grid", 
+              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", 
+              gap: "10px",
+              marginBottom: "20px"
+            }}>
+              {[
+                { range: "450-500", label: "Elite Talent", color: "#4CAF50", active: candidateScore >= 450 },
+                { range: "400-449", label: "Top Talent", color: "#2196F3", active: candidateScore >= 400 && candidateScore < 450 },
+                { range: "350-399", label: "High Potential", color: "#FF9800", active: candidateScore >= 350 && candidateScore < 400 },
+                { range: "300-349", label: "Solid Performer", color: "#9C27B0", active: candidateScore >= 300 && candidateScore < 350 },
+                { range: "250-299", label: "Developing Talent", color: "#F57C00", active: candidateScore >= 250 && candidateScore < 300 },
+                { range: "200-249", label: "Emerging Talent", color: "#795548", active: candidateScore >= 200 && candidateScore < 250 },
+                { range: "0-199", label: "Needs Improvement", color: "#F44336", active: candidateScore < 200 }
+              ].map((item, index) => (
+                <div key={index} style={{
+                  padding: "12px",
+                  background: item.active ? item.color : "#f8f9fa",
+                  color: item.active ? "white" : "#666",
+                  borderRadius: "8px",
+                  textAlign: "center",
+                  border: `2px solid ${item.active ? item.color : "#e0e0e0"}`,
+                  fontWeight: item.active ? "600" : "400"
+                }}>
+                  <div style={{ fontSize: "14px" }}>{item.range}</div>
+                  <div style={{ fontSize: "12px", opacity: item.active ? 0.9 : 0.7 }}>
+                    {item.label}
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <div style={{ 
+              padding: "15px",
+              background: candidateScore >= 450 ? "#e8f5e9" :
+                         candidateScore >= 400 ? "#e3f2fd" :
+                         candidateScore >= 350 ? "#fff3e0" :
+                         candidateScore >= 300 ? "#f3e5f5" :
+                         candidateScore >= 250 ? "#fff8e1" :
+                         candidateScore >= 200 ? "#efebe9" : "#ffebee",
+              borderRadius: "8px",
+              borderLeft: `4px solid ${classificationColor}`
+            }}>
+              <div style={{ 
+                fontSize: "14px", 
+                fontWeight: "600",
+                color: "#333",
+                marginBottom: "5px"
+              }}>
+                {classification} - Performance Summary
+              </div>
+              <div style={{ fontSize: "14px", color: "#666", lineHeight: 1.5 }}>
+                {classificationDescription}
+              </div>
+            </div>
+          </div>
+
+          {/* Overall Score Card */}
+          <div style={{
+            background: "linear-gradient(135deg, #1565c0 0%, #0d47a1 100%)",
+            color: "white",
+            padding: "25px",
+            borderRadius: "12px",
+            marginBottom: "30px"
+          }}>
+            <div style={{ 
+              display: "flex", 
+              justifyContent: "space-between",
+              alignItems: "center"
+            }}>
+              <div>
+                <div style={{ fontSize: "14px", opacity: 0.9 }}>Overall Assessment Score</div>
+                <div style={{ fontSize: "48px", fontWeight: "700", margin: "10px 0" }}>
+                  {candidateScore}
+                </div>
+                <div style={{ fontSize: "14px", opacity: 0.9 }}>
+                  Candidate: {userName}
+                </div>
+                <div style={{ 
+                  fontSize: "12px", 
+                  opacity: 0.8, 
+                  marginTop: "5px",
+                  padding: "5px 10px",
+                  background: "rgba(255,255,255,0.1)",
+                  borderRadius: "4px",
+                  display: "inline-block"
+                }}>
+                  Max possible: 500 points • {Math.round((candidateScore / 500) * 100)}% overall • {classification}
+                </div>
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <div style={{
+                  width: "100px",
+                  height: "100px",
+                  borderRadius: "50%",
+                  background: "rgba(255,255,255,0.1)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  border: "5px solid rgba(255,255,255,0.2)"
+                }}>
+                  <div style={{ fontSize: "32px", fontWeight: "700" }}>
+                    {performanceGrade}
+                  </div>
+                </div>
+                <div style={{ marginTop: "10px", fontSize: "12px", opacity: 0.8 }}>
+                  Performance Grade
+                </div>
+                <div style={{ 
+                  fontSize: "11px", 
+                  opacity: 0.7,
+                  marginTop: "3px"
+                }}>
+                  {gradeLabel}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-        
-        {/* Continue with the rest of your JSX from the original file */}
-        {/* I've truncated this for brevity - paste your full JSX here */}
-        
-        {/* Category Scores Section */}
-        {Object.keys(categoryScores).length > 0 && (
+
+        {/* CATEGORY SCORES BREAKDOWN */}
+        <div style={{ 
+          background: "white", 
+          padding: "25px", 
+          borderRadius: "12px", 
+          boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+          marginBottom: "30px"
+        }}>
+          <h2 style={{ margin: "0 0 25px 0", color: "#333" }}>Performance by Category</h2>
+          
+          {Object.keys(categoryScores).length === 0 ? (
+            <div style={{ 
+              textAlign: "center", 
+              padding: "40px",
+              color: "#888",
+              background: "#f8f9fa",
+              borderRadius: "8px"
+            }}>
+              <div style={{ fontSize: "48px", marginBottom: "20px" }}>📊</div>
+              <h3 style={{ color: "#666" }}>Loading Category Scores...</h3>
+              <p style={{ maxWidth: "500px", margin: "0 auto" }}>
+                Please wait while we calculate category scores.
+              </p>
+            </div>
+          ) : (
+            <React.Fragment>
+              {/* Category Score Cards */}
+              <div style={{ 
+                display: "grid", 
+                gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", 
+                gap: "20px",
+                marginBottom: "30px"
+              }}>
+                {Object.entries(categoryScores).map(([category, data]) => (
+                  <div key={category} style={{
+                    borderLeft: `4px solid ${getCategoryColor(category)}`,
+                    padding: "20px",
+                    background: "#f8f9fa",
+                    borderRadius: "8px",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+                  }}>
+                    <div style={{ 
+                      display: "flex", 
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      marginBottom: "15px"
+                    }}>
+                      <div>
+                        <h3 style={{ 
+                          margin: "0 0 5px 0", 
+                          color: getCategoryColor(category),
+                          fontSize: "18px"
+                        }}>
+                          {category}
+                        </h3>
+                        <p style={{ 
+                          margin: 0, 
+                          fontSize: "14px", 
+                          color: "#666" 
+                        }}>
+                          {data.count} questions • Avg: {data.average.toFixed(1)}/5
+                        </p>
+                      </div>
+                      <div style={{ 
+                        fontSize: "28px", 
+                        fontWeight: "700",
+                        color: getCategoryColor(category)
+                      }}>
+                        {data.percentage}%
+                      </div>
+                    </div>
+                    
+                    <div style={{ 
+                      height: "10px", 
+                      background: "#e0e0e0", 
+                      borderRadius: "5px",
+                      overflow: "hidden",
+                      marginBottom: "8px"
+                    }}>
+                      <div style={{ 
+                        height: "100%", 
+                        width: `${data.percentage}%`, 
+                        background: getCategoryColor(category),
+                        borderRadius: "5px"
+                      }}></div>
+                    </div>
+                    
+                    <div style={{ 
+                      display: "flex", 
+                      justifyContent: "space-between",
+                      fontSize: "12px", 
+                      color: "#666",
+                      marginBottom: "5px"
+                    }}>
+                      <span>Score: {data.total}/{data.maxPossible}</span>
+                      <span>Grade: {getCategoryGrade(data.percentage)} • {data.percentage}% of max</span>
+                    </div>
+                    
+                    <div style={{ 
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      color: data.percentage >= 70 ? "#4CAF50" : 
+                             data.percentage >= 60 ? "#FF9800" : "#F44336",
+                      textAlign: "right",
+                      marginTop: "5px"
+                    }}>
+                      {getCategoryPerformanceIcon(data.percentage)} {getCategoryPerformanceLabel(data.percentage)} ({getCategoryGrade(data.percentage)})
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              {/* Performance Summary Table - FIXED TOTAL SCORE DISPLAY */}
+              <div style={{ 
+                padding: "20px",
+                background: "linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)",
+                borderRadius: "8px",
+                border: "1px solid #dee2e6"
+              }}>
+                <h3 style={{ margin: "0 0 15px 0", color: "#333" }}>Category Performance Summary</h3>
+                
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    fontSize: "14px"
+                  }}>
+                    <thead>
+                      <tr style={{ 
+                        background: "#e9ecef",
+                        borderBottom: "2px solid #1565c0"
+                      }}>
+                        <th style={{ padding: "12px", textAlign: "left", color: "#333", fontWeight: "600" }}>Category</th>
+                        <th style={{ padding: "12px", textAlign: "center", color: "#333", fontWeight: "600" }}>Questions</th>
+                        <th style={{ padding: "12px", textAlign: "center", color: "#333", fontWeight: "600" }}>Total Score</th>
+                        <th style={{ padding: "12px", textAlign: "center", color: "#333", fontWeight: "600" }}>Average</th>
+                        <th style={{ padding: "12px", textAlign: "center", color: "#333", fontWeight: "600" }}>Percentage</th>
+                        <th style={{ padding: "12px", textAlign: "center", color: "#333", fontWeight: "600" }}>Performance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(categoryScores).map(([category, data], index) => (
+                        <tr key={category} style={{ 
+                          borderBottom: "1px solid #dee2e6",
+                          background: index % 2 === 0 ? "white" : "#f8f9fa"
+                        }}>
+                          <td style={{ 
+                            padding: "12px", 
+                            fontWeight: "500",
+                            color: getCategoryColor(category)
+                          }}>
+                            {category}
+                          </td>
+                          <td style={{ padding: "12px", textAlign: "center", color: "#666" }}>
+                            {data.count}/20
+                          </td>
+                          <td style={{ padding: "12px", textAlign: "center", color: "#666" }}>
+                            {data.total}/{data.maxPossible}
+                          </td>
+                          <td style={{ padding: "12px", textAlign: "center", color: "#666" }}>
+                            {data.average.toFixed(1)}/5
+                          </td>
+                          <td style={{ padding: "12px", textAlign: "center" }}>
+                            <span style={{ 
+                              display: "inline-block",
+                              padding: "4px 10px",
+                              borderRadius: "20px",
+                              background: data.percentage >= 70 ? "rgba(76, 175, 80, 0.1)" : 
+                                         data.percentage >= 60 ? "rgba(255, 152, 0, 0.1)" : 
+                                         "rgba(244, 67, 54, 0.1)",
+                              color: data.percentage >= 70 ? "#2e7d32" : 
+                                     data.percentage >= 60 ? "#f57c00" : "#c62828",
+                              fontWeight: "600",
+                              fontSize: "13px"
+                            }}>
+                              {getCategoryGrade(data.percentage)} • {data.percentage}%
+                            </span>
+                          </td>
+                          <td style={{ padding: "12px", textAlign: "center" }}>
+                            <div style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              padding: "4px 12px",
+                              borderRadius: "20px",
+                              background: data.percentage >= 70 ? "#e8f5e9" : 
+                                         data.percentage >= 60 ? "#fff3e0" : "#ffebee",
+                              color: data.percentage >= 70 ? "#2e7d32" : 
+                                     data.percentage >= 60 ? "#f57c00" : "#c62828",
+                              fontSize: "12px",
+                              fontWeight: "600"
+                            }}>
+                              {getCategoryPerformanceIcon(data.percentage)} {getCategoryPerformanceLabel(data.percentage)}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ background: "#e3f2fd", borderTop: "2px solid #1565c0" }}>
+                        <td style={{ 
+                          padding: "12px", 
+                          fontWeight: "700",
+                          color: "#1565c0"
+                        }}>
+                          Overall Summary
+                        </td>
+                        <td style={{ 
+                          padding: "12px", 
+                          textAlign: "center",
+                          fontWeight: "700",
+                          color: "#1565c0"
+                        }}>
+                          {totalCount}/100
+                        </td>
+                        <td style={{ 
+                          padding: "12px", 
+                          textAlign: "center",
+                          fontWeight: "700",
+                          color: "#1565c0"
+                        }}>
+                          {/* FIXED: Use candidateScore instead of calculated total */}
+                          {candidateScore}/500
+                        </td>
+                        <td style={{ 
+                          padding: "12px", 
+                          textAlign: "center",
+                          fontWeight: "700",
+                          color: "#1565c0"
+                        }}>
+                          {/* FIXED: Calculate average based on candidateScore */}
+                          {totalAverage}/5
+                        </td>
+                        <td style={{ 
+                          padding: "12px", 
+                          textAlign: "center",
+                          fontWeight: "700",
+                          color: "#1565c0"
+                        }}>
+                          {Math.round((candidateScore / 500) * 100)}%
+                        </td>
+                        <td style={{ 
+                          padding: "12px", 
+                          textAlign: "center",
+                          fontWeight: "700",
+                          color: "#1565c0"
+                        }}>
+                          {classification}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                
+                {/* Performance Indicators - UPDATED for new grading scale */}
+                <div style={{ 
+                  display: "flex", 
+                  justifyContent: "space-between",
+                  marginTop: "20px",
+                  padding: "15px",
+                  background: "white",
+                  borderRadius: "8px",
+                  border: "1px solid #e0e0e0"
+                }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "24px", fontWeight: "700", color: "#4CAF50" }}>
+                      {strengths.length}
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
+                      Strong Areas (A/A-/B+)
+                    </div>
+                    <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
+                      (≥70%)
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "24px", fontWeight: "700", color: "#FF9800" }}>
+                      {Object.keys(categoryScores).length - strengths.length - weaknesses.length}
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
+                      Average Areas (B/B-)
+                    </div>
+                    <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
+                      (60-69%)
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "24px", fontWeight: "700", color: "#F44336" }}>
+                      {weaknesses.length}
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
+                      Development Areas (C+ or below)
+                    </div>
+                    <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
+                      (≤59%)
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </React.Fragment>
+          )}
+        </div>
+
+        {/* PERSONALITY DIMENSION ANALYSIS - NEW SECTION */}
+        {Object.keys(personalityDimensions).length > 0 && (
           <div style={{ 
             background: "white", 
             padding: "25px", 
@@ -1257,14 +1769,613 @@ export default function CandidateReport() {
             boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
             marginBottom: "30px"
           }}>
-            <h2 style={{ margin: "0 0 25px 0", color: "#333" }}>Performance by Category</h2>
-            {/* ... category scores rendering ... */}
+            <h2 style={{ margin: "0 0 25px 0", color: "#333" }}>Personality Dimension Analysis</h2>
+            <p style={{ color: "#666", marginBottom: "20px", lineHeight: 1.6 }}>
+              This analysis provides insights into the candidate's behavioral tendencies and work style based on their responses to personality assessment questions. Understanding these dimensions helps predict fit within team dynamics and organizational culture.
+            </p>
+            
+            {/* Top Dimensions Summary */}
+            <div style={{ 
+              padding: "20px",
+              background: "#f0f7ff",
+              borderRadius: "8px",
+              marginBottom: "25px",
+              border: "1px solid #d0e3ff"
+            }}>
+              <div style={{ 
+                fontSize: "16px", 
+                fontWeight: "600",
+                color: "#1565c0",
+                marginBottom: "10px"
+              }}>
+                Key Personality Insights
+              </div>
+              <div style={{ fontSize: "14px", color: "#444", lineHeight: 1.6 }}>
+                The candidate demonstrates strength in <strong>{getTopDimensions(personalityDimensions)}</strong>. 
+                These dimensions suggest a natural tendency toward{' '}
+                {personalityDimensions.collaboration?.percentage >= 70 ? 'collaborative work environments and ' : ''}
+                {personalityDimensions.initiative?.percentage >= 70 ? 'proactive problem-solving. ' : 'methodical approaches to work. '}
+                Understanding these behavioral patterns can inform team placement and development opportunities.
+              </div>
+            </div>
+            
+            {/* Personality Dimension Grid */}
+            <div style={{ 
+              display: "grid", 
+              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", 
+              gap: "15px",
+              marginBottom: "25px"
+            }}>
+              {Object.entries(personalityDimensions).map(([dimension, data]) => (
+                <div key={dimension} style={{
+                  padding: "18px",
+                  background: data.percentage >= 70 ? "#f1f8e9" : 
+                             data.percentage >= 50 ? "#fff8e1" : "#ffebee",
+                  borderRadius: "8px",
+                  borderLeft: `4px solid ${data.percentage >= 70 ? "#4CAF50" : 
+                                              data.percentage >= 50 ? "#FF9800" : "#F44336"}`
+                }}>
+                  <div style={{ 
+                    display: "flex", 
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    marginBottom: "12px"
+                  }}>
+                    <div>
+                      <div style={{ 
+                        fontSize: "16px", 
+                        fontWeight: "600",
+                        color: "#333",
+                        marginBottom: "3px"
+                      }}>
+                        {formatDimensionName(dimension)}
+                      </div>
+                      <div style={{ 
+                        fontSize: "12px", 
+                        color: "#666",
+                        fontStyle: "italic"
+                      }}>
+                        {data.count} assessment items
+                      </div>
+                    </div>
+                    <div style={{ 
+                      fontSize: "24px", 
+                      fontWeight: "700",
+                      color: data.percentage >= 70 ? "#4CAF50" : 
+                             data.percentage >= 50 ? "#FF9800" : "#F44336"
+                    }}>
+                      {data.percentage}%
+                    </div>
+                  </div>
+                  
+                  <div style={{ 
+                    height: "8px", 
+                    background: "#e0e0e0", 
+                    borderRadius: "4px",
+                    overflow: "hidden",
+                    marginBottom: "10px"
+                  }}>
+                    <div style={{ 
+                      height: "100%", 
+                      width: `${data.percentage}%`, 
+                      background: data.percentage >= 70 ? "#4CAF50" : 
+                                 data.percentage >= 50 ? "#FF9800" : "#F44336",
+                      borderRadius: "4px"
+                    }}></div>
+                  </div>
+                  
+                  <div style={{ 
+                    fontSize: "13px", 
+                    color: "#555",
+                    lineHeight: 1.5,
+                    marginBottom: "5px"
+                  }}>
+                    {data.interpretation}
+                  </div>
+                  
+                  <div style={{ 
+                    fontSize: "11px", 
+                    color: "#777",
+                    marginTop: "8px",
+                    paddingTop: "8px",
+                    borderTop: "1px solid rgba(0,0,0,0.1)"
+                  }}>
+                    <strong>Based on:</strong> {data.subsections.slice(0, 3).join(', ')}
+                    {data.subsections.length > 3 && ` and ${data.subsections.length - 3} more`}
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            {/* Dimension Interpretation Guide */}
+            <div style={{ 
+              padding: "15px",
+              background: "#f8f9fa",
+              borderRadius: "8px",
+              border: "1px solid #e0e0e0"
+            }}>
+              <div style={{ 
+                fontSize: "14px", 
+                fontWeight: "600",
+                color: "#333",
+                marginBottom: "10px"
+              }}>
+                Dimension Interpretation Guide
+              </div>
+              <div style={{ 
+                display: "grid", 
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+                gap: "10px",
+                fontSize: "12px"
+              }}>
+                <div style={{ display: "flex", alignItems: "center" }}>
+                  <div style={{ 
+                    width: "12px", 
+                    height: "12px", 
+                    background: "#4CAF50",
+                    borderRadius: "2px",
+                    marginRight: "8px"
+                  }}></div>
+                  <span><strong>70-100%:</strong> Strong demonstration</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center" }}>
+                  <div style={{ 
+                    width: "12px", 
+                    height: "12px", 
+                    background: "#FF9800",
+                    borderRadius: "2px",
+                    marginRight: "8px"
+                  }}></div>
+                  <span><strong>50-69%:</strong> Moderate demonstration</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center" }}>
+                  <div style={{ 
+                    width: "12px", 
+                    height: "12px", 
+                    background: "#F44336",
+                    borderRadius: "2px",
+                    marginRight: "8px"
+                  }}></div>
+                  <span><strong>0-49%:</strong> Area for development</span>
+                </div>
+              </div>
+            </div>
           </div>
         )}
-        
-        {/* ... rest of your original JSX ... */}
-        
-        {/* Debug Info */}
+
+        {/* STRENGTHS AND WEAKNESSES */}
+        <div style={{ 
+          display: "grid", 
+          gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", 
+          gap: "30px",
+          marginBottom: "30px"
+        }}>
+          {/* Strengths */}
+          <div style={{ 
+            background: "white", 
+            padding: "25px", 
+            borderRadius: "12px", 
+            boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
+          }}>
+            <h2 style={{ 
+              margin: "0 0 20px 0", 
+              color: "#333",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px"
+            }}>
+              <span style={{ 
+                background: "#4CAF50", 
+                color: "white",
+                width: "30px",
+                height: "30px",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "16px"
+              }}>
+                ✓
+              </span>
+              Key Strengths
+            </h2>
+            {strengths.length === 0 ? (
+              <div style={{ 
+                padding: "30px", 
+                textAlign: "center",
+                background: "#f8f9fa",
+                borderRadius: "8px"
+              }}>
+                <div style={{ fontSize: "36px", marginBottom: "15px" }}>📈</div>
+                <p style={{ color: "#666", margin: 0 }}>
+                  No exceptional strengths identified (scoring below 70% in all categories).
+                </p>
+              </div>
+            ) : (
+              <div style={{ 
+                display: "flex", 
+                flexDirection: "column",
+                gap: "15px"
+              }}>
+                {strengths.map((strength, index) => (
+                  <div key={index} style={{
+                    padding: "15px",
+                    background: "#f8f9fa",
+                    borderRadius: "8px",
+                    borderLeft: `4px solid #4CAF50`
+                  }}>
+                    <div style={{ 
+                      display: "flex", 
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: "8px"
+                    }}>
+                      <h3 style={{ 
+                        margin: 0, 
+                        fontSize: "16px",
+                        color: "#2e7d32"
+                      }}>
+                        {strength.category}
+                      </h3>
+                      <div style={{ 
+                        padding: "4px 10px",
+                        background: "#e8f5e9",
+                        color: "#2e7d32",
+                        borderRadius: "20px",
+                        fontSize: "12px",
+                        fontWeight: "600"
+                      }}>
+                        {strength.icon} {strength.grade} • {strength.score}%
+                      </div>
+                    </div>
+                    <p style={{ 
+                      margin: "0 0 8px 0", 
+                      fontSize: "14px",
+                      color: "#555"
+                    }}>
+                      {strength.detailedInterpretation}
+                    </p>
+                    <div style={{ 
+                      fontSize: "12px", 
+                      color: "#777",
+                      padding: "8px 12px",
+                      background: "white",
+                      borderRadius: "6px"
+                    }}>
+                      <strong>Assessment:</strong> {strength.gradeLabel}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Weaknesses */}
+          <div style={{ 
+            background: "white", 
+            padding: "25px", 
+            borderRadius: "12px", 
+            boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
+          }}>
+            <h2 style={{ 
+              margin: "0 0 20px 0", 
+              color: "#333",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px"
+            }}>
+              <span style={{ 
+                background: "#F44336", 
+                color: "white",
+                width: "30px",
+                height: "30px",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "16px"
+              }}>
+                !
+              </span>
+              Development Areas
+            </h2>
+            {weaknesses.length === 0 ? (
+              <div style={{ 
+                padding: "30px", 
+                textAlign: "center",
+                background: "#f8f9fa",
+                borderRadius: "8px"
+              }}>
+                <div style={{ fontSize: "36px", marginBottom: "15px" }}>🎯</div>
+                <p style={{ color: "#666", margin: 0 }}>
+                  All categories meet or exceed expectations (scoring above 60%).
+                </p>
+              </div>
+            ) : (
+              <div style={{ 
+                display: "flex", 
+                flexDirection: "column",
+                gap: "15px"
+              }}>
+                {weaknesses.map((weakness, index) => (
+                  <div key={index} style={{
+                    padding: "15px",
+                    background: "#f8f9fa",
+                    borderRadius: "8px",
+                    borderLeft: `4px solid #F44336`
+                  }}>
+                    <div style={{ 
+                      display: "flex", 
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: "8px"
+                    }}>
+                      <h3 style={{ 
+                        margin: 0, 
+                        fontSize: "16px",
+                        color: "#c62828"
+                      }}>
+                        {weakness.category}
+                      </h3>
+                      <div style={{ 
+                        padding: "4px 10px",
+                        background: "#ffebee",
+                        color: "#c62828",
+                        borderRadius: "20px",
+                        fontSize: "12px",
+                        fontWeight: "600"
+                      }}>
+                        {weakness.icon} {weakness.grade} • {weakness.score}%
+                      </div>
+                    </div>
+                    <p style={{ 
+                      margin: "0 0 8px 0", 
+                      fontSize: "14px",
+                      color: "#555"
+                    }}>
+                      {weakness.detailedInterpretation}
+                    </p>
+                    <div style={{ 
+                      fontSize: "12px", 
+                      color: "#777",
+                      padding: "8px 12px",
+                      background: "white",
+                      borderRadius: "6px",
+                      fontStyle: "italic"
+                    }}>
+                      <strong>Priority:</strong> {weakness.grade === "F" || weakness.grade === "D" ? "High" : 
+                                                  weakness.grade === "C-" || weakness.grade === "D+" ? "Medium" : "Low"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* RECOMMENDATIONS */}
+        <div style={{ 
+          background: "white", 
+          padding: "25px", 
+          borderRadius: "12px", 
+          boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+          marginBottom: "30px"
+        }}>
+          <h2 style={{ 
+            margin: "0 0 25px 0", 
+            color: "#333",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px"
+          }}>
+            <span style={{ 
+              background: "#1565c0", 
+              color: "white",
+              width: "30px",
+              height: "30px",
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "16px"
+            }}>
+              💡
+            </span>
+            Development Recommendations
+          </h2>
+          
+          {recommendations.length === 0 ? (
+            <div style={{ 
+              padding: "30px", 
+              textAlign: "center",
+              background: "#f8f9fa",
+              borderRadius: "8px"
+            }}>
+              <div style={{ fontSize: "36px", marginBottom: "15px" }}>✅</div>
+              <p style={{ color: "#666", margin: 0 }}>
+                No specific development recommendations. Candidate demonstrates strong performance across all categories.
+              </p>
+            </div>
+          ) : (
+            <div style={{ 
+              display: "flex", 
+              flexDirection: "column",
+              gap: "20px"
+            }}>
+              {recommendations.map((rec, index) => (
+                <div key={index} style={{
+                  padding: "20px",
+                  background: index === 0 && rec.category === "Overall Performance" ? "#e3f2fd" : "#f8f9fa",
+                  borderRadius: "8px",
+                  border: `1px solid ${index === 0 && rec.category === "Overall Performance" ? "#1565c0" : "#e0e0e0"}`
+                }}>
+                  <div style={{ 
+                    display: "flex", 
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    marginBottom: "12px"
+                  }}>
+                    <div>
+                      <h3 style={{ 
+                        margin: "0 0 8px 0", 
+                        fontSize: "18px",
+                        color: index === 0 && rec.category === "Overall Performance" ? "#1565c0" : "#333"
+                      }}>
+                        {rec.category}
+                      </h3>
+                      <div style={{ 
+                        fontSize: "12px", 
+                        color: "#666",
+                        marginBottom: "5px"
+                      }}>
+                        Score: {rec.score}% • Grade: {rec.grade}
+                      </div>
+                    </div>
+                    <div style={{ 
+                      padding: "6px 12px",
+                      background: rec.score >= 70 ? "#e8f5e9" : 
+                                 rec.score >= 60 ? "#fff3e0" : "#ffebee",
+                      color: rec.score >= 70 ? "#2e7d32" : 
+                             rec.score >= 60 ? "#f57c00" : "#c62828",
+                      borderRadius: "20px",
+                      fontSize: "12px",
+                      fontWeight: "600"
+                    }}>
+                      {rec.score >= 70 ? "Strength" : rec.score >= 60 ? "Average" : "Development Area"}
+                    </div>
+                  </div>
+                  
+                  <div style={{ 
+                    fontSize: "14px", 
+                    color: "#555",
+                    lineHeight: 1.6,
+                    marginBottom: "15px",
+                    padding: "10px",
+                    background: "white",
+                    borderRadius: "6px"
+                  }}>
+                    <strong>Assessment:</strong> {rec.issue}
+                  </div>
+                  
+                  <div style={{ 
+                    padding: "15px",
+                    background: index === 0 && rec.category === "Overall Performance" ? "white" : "#e8f5e9",
+                    borderRadius: "6px",
+                    borderLeft: `4px solid ${index === 0 && rec.category === "Overall Performance" ? "#1565c0" : "#4CAF50"}`
+                  }}>
+                    <div style={{ 
+                      fontSize: "14px", 
+                      fontWeight: "600",
+                      color: "#333",
+                      marginBottom: "8px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px"
+                    }}>
+                      <span>📚</span>
+                      Recommended Action Plan
+                    </div>
+                    <div style={{ fontSize: "14px", color: "#444", lineHeight: 1.6 }}>
+                      {rec.recommendation}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Next Steps */}
+          <div style={{ 
+            marginTop: "25px",
+            padding: "20px",
+            background: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
+            borderRadius: "8px"
+          }}>
+            <div style={{ 
+              fontSize: "16px", 
+              fontWeight: "600",
+              color: "#333",
+              marginBottom: "10px"
+            }}>
+              Next Steps
+            </div>
+            <div style={{ 
+              display: "grid", 
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+              gap: "15px",
+              fontSize: "14px"
+            }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                <div style={{ 
+                  width: "24px", 
+                  height: "24px", 
+                  background: "#1565c0",
+                  color: "white",
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "12px",
+                  flexShrink: 0
+                }}>
+                  1
+                </div>
+                <div>
+                  <strong>Review Findings</strong>
+                  <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
+                    Discuss results with candidate and team
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                <div style={{ 
+                  width: "24px", 
+                  height: "24px", 
+                  background: "#1565c0",
+                  color: "white",
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "12px",
+                  flexShrink: 0
+                }}>
+                  2
+                </div>
+                <div>
+                  <strong>Create Development Plan</strong>
+                  <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
+                    Based on recommendations above
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                <div style={{ 
+                  width: "24px", 
+                  height: "24px", 
+                  background: "#1565c0",
+                  color: "white",
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "12px",
+                  flexShrink: 0
+                }}>
+                  3
+                </div>
+                <div>
+                  <strong>Schedule Follow-up</strong>
+                  <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
+                    Set milestones and review dates
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* DEBUG INFO (Hidden by default) */}
         {debugInfo && process.env.NODE_ENV === 'development' && (
           <div style={{ 
             marginTop: "30px",
@@ -1289,6 +2400,21 @@ export default function CandidateReport() {
             {debugInfo}
           </div>
         )}
+
+        {/* Footer */}
+        <div style={{ 
+          textAlign: "center", 
+          marginTop: "40px",
+          paddingTop: "20px",
+          borderTop: "1px solid #e0e0e0",
+          color: "#888",
+          fontSize: "12px"
+        }}>
+          <p>Report generated on {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}</p>
+          <p style={{ marginTop: "5px" }}>
+            This assessment report is confidential and intended for authorized personnel only.
+          </p>
+        </div>
       </div>
     </AppLayout>
   );
