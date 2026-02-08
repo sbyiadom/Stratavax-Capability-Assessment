@@ -75,30 +75,40 @@ export default function CandidateReport() {
     return "Needs Improvement";
   };
 
-  // 1. Get category grade based on your scale
+  // 1. Get category grade based on NEW scale
   const getCategoryGrade = (percentage) => {
     if (percentage >= 80) return "A";
-    if (percentage >= 70) return "B";
-    if (percentage >= 60) return "C";
-    if (percentage >= 50) return "D";
-    if (percentage >= 40) return "E";
+    if (percentage >= 75) return "A-";
+    if (percentage >= 70) return "B+";
+    if (percentage >= 65) return "B";
+    if (percentage >= 60) return "B-";
+    if (percentage >= 55) return "C+";
+    if (percentage >= 50) return "C";
+    if (percentage >= 45) return "C-";
+    if (percentage >= 40) return "D+";
+    if (percentage >= 35) return "D";
     return "F";
   };
 
-  // 2. Get category grade label (for dashboards)
+  // 2. Get category grade label (for dashboards) - UPDATED
   const getCategoryGradeLabel = (grade) => {
     const labels = {
       "A": "High-impact candidate",
-      "B": "Strong candidate", 
-      "C": "Viable with development",
-      "D": "Development required",
-      "E": "Low readiness",
+      "A-": "Strong candidate with minor refinement areas",
+      "B+": "Above average performance",
+      "B": "Solid performance",
+      "B-": "Adequate with some development needs",
+      "C+": "Meets basic requirements",
+      "C": "Development required",
+      "C-": "Significant improvement needed",
+      "D+": "Below expectations",
+      "D": "Low readiness",
       "F": "Not suitable"
     };
     return labels[grade] || "Unknown";
   };
 
-  // 3. Get interpretive comments based on your scale - CATEGORY SPECIFIC
+  // 3. Get interpretive comments based on NEW scale - CATEGORY SPECIFIC
   const getCategoryInterpretation = (percentage, category) => {
     if (percentage >= 80) {
       switch(category) {
@@ -117,119 +127,219 @@ export default function CandidateReport() {
       }
     }
     
+    if (percentage >= 75) {
+      switch(category) {
+        case 'Cognitive Abilities':
+          return "Displays very strong cognitive abilities with excellent problem-solving skills. Demonstrates strong analytical thinking and logical reasoning with minor areas for refinement.";
+        case 'Personality Assessment':
+          return "Exhibits strong interpersonal skills and emotional intelligence. Demonstrates good adaptability and communication abilities suitable for most professional contexts.";
+        case 'Leadership Potential':
+          return "Shows strong leadership qualities with clear potential. Demonstrates ability to guide teams effectively and contribute to organizational goals.";
+        case 'Technical Competence':
+          return "Possesses strong technical knowledge and practical skills. Demonstrates competence in technical areas with ability to handle complex problems.";
+        case 'Performance Metrics':
+          return "Frequently exceeds performance expectations. Demonstrates strong productivity and effective goal achievement.";
+        default:
+          return "Shows strong overall capability with minimal development areas. Demonstrates effective performance across key dimensions.";
+      }
+    }
+    
     if (percentage >= 70) {
       switch(category) {
         case 'Cognitive Abilities':
-          return "Displays strong cognitive abilities with effective problem-solving skills. Demonstrates good analytical thinking, logical reasoning, and mental processing suitable for role requirements.";
+          return "Displays above average cognitive abilities with good problem-solving skills. Demonstrates solid analytical thinking and reasoning capabilities.";
         case 'Personality Assessment':
-          return "Shows well-developed interpersonal skills and emotional intelligence. Demonstrates adaptability, reliability, and effective communication in most professional situations.";
+          return "Exhibits good interpersonal skills and emotional awareness. Demonstrates reliability and appropriate communication in professional settings.";
         case 'Leadership Potential':
-          return "Exhibits solid leadership qualities with potential for growth. Demonstrates ability to guide teams, make decisions, and contribute to organizational objectives.";
+          return "Shows above average leadership qualities. Demonstrates ability to contribute to team success and handle leadership responsibilities.";
         case 'Technical Competence':
-          return "Possesses solid technical knowledge and practical application skills. Demonstrates competence in key technical areas with ability to solve most job-related problems.";
+          return "Possesses good technical understanding and application skills. Demonstrates ability to solve standard job-related problems.";
         case 'Performance Metrics':
-          return "Consistently meets and occasionally exceeds performance expectations. Demonstrates reliable productivity and effective goal achievement capabilities.";
+          return "Meets and occasionally exceeds performance expectations. Demonstrates reliable productivity and goal achievement.";
         default:
-          return "Displays strong overall capability with minor development areas. Demonstrates effective problem-solving and reliable performance.";
+          return "Performs above average across most assessed areas. Demonstrates good understanding and application of required skills.";
+      }
+    }
+    
+    if (percentage >= 65) {
+      switch(category) {
+        case 'Cognitive Abilities':
+          return "Displays solid cognitive abilities meeting baseline requirements. Demonstrates adequate problem-solving and reasoning capabilities for standard tasks.";
+        case 'Personality Assessment':
+          return "Exhibits adequate interpersonal skills for most situations. Demonstrates basic emotional intelligence and professional behavior.";
+        case 'Leadership Potential':
+          return "Shows foundational leadership capabilities. Demonstrates potential for growth with appropriate development.";
+        case 'Technical Competence':
+          return "Possesses basic technical knowledge meeting minimum requirements. Demonstrates ability to handle routine technical tasks.";
+        case 'Performance Metrics':
+          return "Consistently meets performance standards. Demonstrates adequate productivity and goal completion.";
+        default:
+          return "Meets baseline requirements across assessed dimensions. Demonstrates adequate competency for standard expectations.";
       }
     }
     
     if (percentage >= 60) {
       switch(category) {
         case 'Cognitive Abilities':
-          return "Meets basic cognitive requirements but shows inconsistency in complex problem-solving. Demonstrates adequate reasoning abilities but may struggle with abstract concepts or rapid processing.";
+          return "Meets minimum cognitive requirements but shows inconsistency. Demonstrates adequate reasoning but may struggle with complex problem-solving.";
         case 'Personality Assessment':
-          return "Shows adequate interpersonal skills but may need development in specific areas. Demonstrates basic emotional intelligence but could improve adaptability or communication effectiveness.";
+          return "Shows basic interpersonal skills with some limitations. Demonstrates acceptable professional behavior but may need development.";
         case 'Leadership Potential':
-          return "Displays foundational leadership qualities requiring structured development. Shows potential for growth but needs guidance in decision-making and team management.";
+          return "Displays emerging leadership qualities. Shows potential but requires structured development and guidance.";
         case 'Technical Competence':
-          return "Possesses basic technical understanding with room for skill development. Demonstrates fundamental knowledge but requires additional training for complex applications.";
+          return "Possesses fundamental technical understanding. Demonstrates ability to perform basic technical functions.";
         case 'Performance Metrics':
-          return "Meets minimum performance standards with occasional inconsistency. Demonstrates basic productivity but needs improvement in efficiency or goal achievement.";
+          return "Meets minimum performance standards. Demonstrates basic productivity with some inconsistency.";
         default:
-          return "Meets baseline requirements across most assessed areas. Cognitive and technical abilities are adequate but inconsistent.";
+          return "Meets basic requirements but shows inconsistency. Demonstrates fundamental understanding with room for improvement.";
+      }
+    }
+    
+    if (percentage >= 55) {
+      switch(category) {
+        case 'Cognitive Abilities':
+          return "Shows difficulty with some cognitive tasks. Demonstrates gaps in analytical thinking that require targeted improvement.";
+        case 'Personality Assessment':
+          return "Exhibits limitations in interpersonal effectiveness. Demonstrates need for development in communication or adaptability.";
+        case 'Leadership Potential':
+          return "Displays limited leadership readiness. Shows some capability but requires significant development.";
+        case 'Technical Competence':
+          return "Possesses insufficient technical knowledge in some areas. Demonstrates need for additional training and practice.";
+        case 'Performance Metrics':
+          return "Approaches performance standards but falls short consistently. Demonstrates need for improvement in productivity or efficiency.";
+        default:
+          return "Shows some capability but falls short of expectations in multiple areas. Requires focused development.";
       }
     }
     
     if (percentage >= 50) {
       switch(category) {
         case 'Cognitive Abilities':
-          return "Shows difficulty with analytical thinking and problem-solving. Demonstrates gaps in logical reasoning, pattern recognition, or mental processing that require targeted development.";
+          return "Struggles with analytical thinking and problem-solving. Demonstrates significant gaps in reasoning and processing abilities.";
         case 'Personality Assessment':
-          return "Exhibits limitations in interpersonal effectiveness or adaptability. Demonstrates challenges with emotional intelligence, communication, or professional behavior that need improvement.";
+          return "Exhibits clear limitations in professional behavior. Demonstrates challenges with emotional intelligence or communication.";
         case 'Leadership Potential':
-          return "Displays limited leadership readiness requiring significant development. Shows gaps in decision-making, influence, or team management capabilities.";
+          return "Shows minimal leadership capabilities. Requires extensive development to reach basic competency.";
         case 'Technical Competence':
-          return "Possesses insufficient technical knowledge for role expectations. Demonstrates significant gaps in technical understanding or practical application skills.";
+          return "Possesses inadequate technical knowledge. Demonstrates major deficiencies in understanding core concepts.";
         case 'Performance Metrics':
-          return "Falls below performance expectations in productivity or goal achievement. Demonstrates inconsistency in meeting standards or delivering results.";
+          return "Falls below performance expectations. Demonstrates poor productivity or goal achievement.";
         default:
-          return "Performance falls below role expectations in multiple areas. Demonstrates gaps in problem-solving, technical competence, or behavioral fit.";
+          return "Falls below minimum competency standards. Demonstrates significant gaps in required skills and knowledge.";
+      }
+    }
+    
+    if (percentage >= 45) {
+      switch(category) {
+        case 'Cognitive Abilities':
+          return "Demonstrates poor cognitive abilities with severe limitations. Shows difficulty with basic reasoning and problem-solving.";
+        case 'Personality Assessment':
+          return "Exhibits poor interpersonal skills and professional behavior. Demonstrates serious limitations in adaptability or communication.";
+        case 'Leadership Potential':
+          return "Shows very limited leadership potential. Demonstrates little evidence of leadership capabilities.";
+        case 'Technical Competence':
+          return "Possesses very poor technical understanding. Demonstrates inability to apply basic technical concepts.";
+        case 'Performance Metrics':
+          return "Consistently underperforms. Demonstrates very poor productivity and goal achievement.";
+        default:
+          return "Shows very limited capability. Demonstrates serious deficiencies across multiple assessment areas.";
       }
     }
     
     if (percentage >= 40) {
       switch(category) {
         case 'Cognitive Abilities':
-          return "Struggles significantly with cognitive demands and analytical tasks. Demonstrates limited reasoning ability, poor problem-solving skills, and difficulty processing information.";
+          return "Demonstrates severely limited cognitive capabilities. Shows inability to perform basic analytical tasks.";
         case 'Personality Assessment':
-          return "Shows substantial limitations in professional behavior and interpersonal skills. Demonstrates poor emotional intelligence, communication barriers, or adaptability issues.";
+          return "Exhibits unacceptable professional behavior. Demonstrates critical deficiencies in interpersonal skills.";
         case 'Leadership Potential':
-          return "Exhibits minimal leadership capabilities requiring extensive development. Shows little evidence of decision-making ability, influence, or team guidance skills.";
+          return "Shows no evidence of leadership capabilities. Demonstrates complete lack of readiness for leadership roles.";
         case 'Technical Competence':
-          return "Possesses very limited technical understanding and application skills. Demonstrates major deficiencies in technical knowledge relevant to role requirements.";
+          return "Possesses almost no technical knowledge. Demonstrates complete inability to perform technical tasks.";
         case 'Performance Metrics':
-          return "Consistently underperforms with poor productivity and goal achievement. Demonstrates significant challenges in meeting basic performance standards.";
+          return "Fails to meet any performance standards. Demonstrates complete lack of productivity.";
         default:
-          return "Shows limited capability across key assessment dimensions. Struggles with cognitive demands and performance consistency.";
+          return "Demonstrates critical deficiencies. Shows inability to meet basic role requirements.";
       }
     }
     
-    // Below 40%
+    if (percentage >= 35) {
+      switch(category) {
+        case 'Cognitive Abilities':
+          return "Demonstrates extremely poor cognitive abilities. Shows complete lack of analytical thinking skills.";
+        case 'Personality Assessment':
+          return "Exhibits completely unacceptable professional behavior. Demonstrates severe interpersonal deficiencies.";
+        case 'Leadership Potential':
+          return "Shows complete absence of leadership qualities. Demonstrates no potential for leadership development.";
+        case 'Technical Competence':
+          return "Possesses no relevant technical knowledge. Demonstrates complete technical incompetence.";
+        case 'Performance Metrics':
+          return "Completely fails to perform. Demonstrates zero productivity and goal achievement.";
+        default:
+          return "Demonstrates complete lack of required capabilities. Shows no evidence of basic competency.";
+      }
+    }
+    
+    // Below 35% (F)
     switch(category) {
       case 'Cognitive Abilities':
-        return "Does not meet minimum cognitive competency thresholds. Shows severe deficiencies in analytical thinking, problem-solving, and information processing capabilities.";
+        return "Does not meet minimum cognitive competency thresholds. Shows complete inability to perform basic reasoning tasks.";
       case 'Personality Assessment':
-        return "Fails to demonstrate basic interpersonal or professional competencies. Shows critical deficiencies in emotional intelligence, communication, or adaptability.";
+        return "Fails to demonstrate basic interpersonal or professional competencies. Shows complete lack of emotional intelligence.";
       case 'Leadership Potential':
-        return "Lacks fundamental leadership qualities and readiness. Shows no evidence of decision-making, influence, or team management capabilities.";
+        return "Lacks any fundamental leadership qualities. Shows no evidence of leadership capability or potential.";
       case 'Technical Competence':
-        return "Does not possess required technical knowledge or skills. Shows complete lack of understanding in core technical areas for the role.";
+        return "Does not possess any relevant technical knowledge. Shows complete technical incompetence.";
       case 'Performance Metrics':
-        return "Fails to meet any performance standards. Demonstrates complete inability to achieve basic productivity or goal targets.";
+        return "Fails to meet any performance standards. Demonstrates complete inability to achieve basic goals.";
       default:
-        return "Does not meet minimum competency thresholds. Significant deficiencies observed across multiple assessment areas.";
+        return "Does not meet any competency thresholds. Shows complete lack of required skills and knowledge.";
     }
   };
 
-  // 4. Get performance label for categories
+  // 4. Get performance label for categories - UPDATED
   const getCategoryPerformanceLabel = (percentage) => {
     if (percentage >= 80) return "Exceptional";
-    if (percentage >= 70) return "Strong";
+    if (percentage >= 75) return "Outstanding";
+    if (percentage >= 70) return "Above Average";
+    if (percentage >= 65) return "Solid";
     if (percentage >= 60) return "Adequate";
-    if (percentage >= 50) return "Below Expectations";
-    if (percentage >= 40) return "Low Readiness";
+    if (percentage >= 55) return "Developing";
+    if (percentage >= 50) return "Basic";
+    if (percentage >= 45) return "Below Expectations";
+    if (percentage >= 40) return "Poor";
+    if (percentage >= 35) return "Very Poor";
     return "Unsuitable";
   };
 
-  // 5. Get performance color for categories
+  // 5. Get performance color for categories - UPDATED with more granular colors
   const getCategoryPerformanceColor = (percentage) => {
-    if (percentage >= 80) return "#4CAF50"; // Green
-    if (percentage >= 70) return "#2196F3"; // Blue
-    if (percentage >= 60) return "#FF9800"; // Orange
-    if (percentage >= 50) return "#FF5722"; // Deep Orange
-    if (percentage >= 40) return "#795548"; // Brown
-    return "#F44336"; // Red
+    if (percentage >= 80) return "#4CAF50"; // Green - Excellent
+    if (percentage >= 75) return "#66BB6A"; // Light Green - Very Good
+    if (percentage >= 70) return "#2196F3"; // Blue - Good
+    if (percentage >= 65) return "#42A5F5"; // Light Blue - Above Average
+    if (percentage >= 60) return "#FF9800"; // Orange - Average
+    if (percentage >= 55) return "#FFA726"; // Light Orange - Below Average
+    if (percentage >= 50) return "#FF5722"; // Deep Orange - Poor
+    if (percentage >= 45) return "#F44336"; // Red - Very Poor
+    if (percentage >= 40) return "#E53935"; // Dark Red - Critical
+    if (percentage >= 35) return "#C62828"; // Darker Red - Very Critical
+    return "#B71C1C"; // Darkest Red - Unsuitable
   };
 
-  // 6. Get performance icon/emoji
+  // 6. Get performance icon/emoji - UPDATED
   const getCategoryPerformanceIcon = (percentage) => {
     if (percentage >= 80) return "🏆";
-    if (percentage >= 70) return "⭐";
+    if (percentage >= 75) return "⭐";
+    if (percentage >= 70) return "👍";
+    if (percentage >= 65) return "👌";
     if (percentage >= 60) return "✅";
-    if (percentage >= 50) return "⚠️";
-    if (percentage >= 40) return "🔍";
-    return "❌";
+    if (percentage >= 55) return "⚠️";
+    if (percentage >= 50) return "📉";
+    if (percentage >= 45) return "❌";
+    if (percentage >= 40) return "🔴";
+    if (percentage >= 35) return "💀";
+    return "🚫";
   };
 
   // Check supervisor authentication
@@ -669,26 +779,26 @@ export default function CandidateReport() {
       setDebugInfo(prev => prev + `\nEstimated data based on ${totalScore} total score (${overallPercentage}%)`);
     };
 
-    // Calculate strengths, weaknesses, and recommendations with FIXED LOGIC
+    // Calculate strengths, weaknesses, and recommendations with UPDATED LOGIC for new scale
     const calculateAnalysis = (categoryScoresData) => {
       setDebugInfo(prev => prev + "\n\n=== ANALYZING RESULTS ===");
       
       const candidateStrengths = [];
       const candidateWeaknesses = [];
       
-      // FIXED: Use fixed thresholds based on YOUR grading scale
-      const strengthThreshold = 70; // B or above
-      const weaknessThreshold = 60; // C or below (D, E, F)
+      // UPDATED: Adjusted thresholds for new grading scale
+      const strengthThreshold = 70; // B+ or above
+      const weaknessThreshold = 60; // B- or below
       
-      setDebugInfo(prev => prev + `\nStrength threshold: ${strengthThreshold}% (B or above)`);
-      setDebugInfo(prev => prev + `\nWeakness threshold: ${weaknessThreshold}% (C or below)`);
+      setDebugInfo(prev => prev + `\nStrength threshold: ${strengthThreshold}% (B+ or above)`);
+      setDebugInfo(prev => prev + `\nWeakness threshold: ${weaknessThreshold}% (B- or below)`);
       
       Object.entries(categoryScoresData).forEach(([section, data]) => {
         const percentage = data.percentage;
         const grade = getCategoryGrade(percentage);
         const performanceLabel = getCategoryPerformanceLabel(percentage);
         
-        // FIXED: Only show in strengths if ≥ 70% (B or above)
+        // UPDATED: Show in strengths if ≥ 70% (B+ or above)
         if (percentage >= strengthThreshold) {
           candidateStrengths.push({
             category: section,
@@ -696,12 +806,12 @@ export default function CandidateReport() {
             grade: grade,
             gradeLabel: getCategoryGradeLabel(grade),
             interpretation: `${performanceLabel} performance in ${section}`,
-            detailedInterpretation: getCategoryInterpretation(percentage, section), // Pass category here
+            detailedInterpretation: getCategoryInterpretation(percentage, section),
             icon: getCategoryPerformanceIcon(percentage)
           });
         }
         
-        // FIXED: Only show in weaknesses if < 60% (C or below)
+        // UPDATED: Show in weaknesses if < 60% (B- or below)
         if (percentage < weaknessThreshold) {
           candidateWeaknesses.push({
             category: section,
@@ -709,7 +819,7 @@ export default function CandidateReport() {
             grade: grade,
             gradeLabel: getCategoryGradeLabel(grade),
             interpretation: `${performanceLabel} performance in ${section}`,
-            detailedInterpretation: getCategoryInterpretation(percentage, section), // Pass category here
+            detailedInterpretation: getCategoryInterpretation(percentage, section),
             icon: getCategoryPerformanceIcon(percentage)
           });
         }
@@ -764,7 +874,7 @@ export default function CandidateReport() {
           category: "Overall Performance",
           issue: "Strong overall performance across all categories",
           recommendation: "Continue current development path. Consider advanced training in areas of strength to further enhance expertise and prepare for increased responsibility.",
-          grade: "A/B",
+          grade: "A/A-",
           score: 85
         });
       }
@@ -1359,7 +1469,7 @@ export default function CandidateReport() {
                   </table>
                 </div>
                 
-                {/* Performance Indicators */}
+                {/* Performance Indicators - UPDATED for new grading scale */}
                 <div style={{ 
                   display: "flex", 
                   justifyContent: "space-between",
@@ -1374,7 +1484,7 @@ export default function CandidateReport() {
                       {strengths.length}
                     </div>
                     <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
-                      Strong Areas (A/B)
+                      Strong Areas (A/A-/B+)
                     </div>
                     <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
                       (≥70%)
@@ -1385,7 +1495,7 @@ export default function CandidateReport() {
                       {Object.keys(categoryScores).length - strengths.length - weaknesses.length}
                     </div>
                     <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
-                      Average Areas (C)
+                      Average Areas (B/B-)
                     </div>
                     <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
                       (60-69%)
@@ -1396,7 +1506,7 @@ export default function CandidateReport() {
                       {weaknesses.length}
                     </div>
                     <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
-                      Weak Areas (D/E/F)
+                      Weak Areas (C+/C/C-/D+/D/F)
                     </div>
                     <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
                       (≤59%)
@@ -1921,7 +2031,7 @@ export default function CandidateReport() {
                 Key Strengths
               </div>
               <div style={{ fontSize: "12px", color: "#888", marginTop: "4px" }}>
-                Areas ≥70% (A/B)
+                Areas ≥70% (A/A-/B+)
               </div>
             </div>
           </div>
