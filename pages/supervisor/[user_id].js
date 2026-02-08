@@ -938,4 +938,366 @@ export default function CandidateReport() {
                     </div>
                   </div>
                 ))}
-              </div
+              </div>
+
+              {/* Category Performance Grid */}
+              <div style={{ 
+                display: "grid", 
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+                gap: "15px",
+                marginTop: "30px"
+              }}>
+                {Object.entries(categoryScores).map(([category, data]) => {
+                  const percentage = data.percentage;
+                  const grade = getCategoryGrade(percentage);
+                  const color = getCategoryPerformanceColor(percentage);
+                  const icon = getCategoryPerformanceIcon(percentage);
+                  const label = getCategoryPerformanceLabel(percentage);
+                  
+                  return (
+                    <div key={category} style={{
+                      padding: "15px",
+                      background: color + "10",
+                      border: `1px solid ${color}30`,
+                      borderRadius: "10px",
+                      textAlign: "center"
+                    }}>
+                      <div style={{ fontSize: "24px", marginBottom: "5px" }}>
+                        {icon}
+                      </div>
+                      <div style={{ 
+                        fontSize: "14px", 
+                        fontWeight: "600",
+                        color: "#333",
+                        marginBottom: "5px"
+                      }}>
+                        {category}
+                      </div>
+                      <div style={{ 
+                        fontSize: "20px", 
+                        fontWeight: "700",
+                        color: color,
+                        marginBottom: "5px"
+                      }}>
+                        {grade}
+                      </div>
+                      <div style={{ 
+                        fontSize: "12px", 
+                        color: "#666",
+                        marginBottom: "5px"
+                      }}>
+                        {label}
+                      </div>
+                      <div style={{ 
+                        fontSize: "11px", 
+                        color: "#888"
+                      }}>
+                        {percentage}% • {getCategoryGradeLabel(grade)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* STRENGTHS & WEAKNESSES */}
+        <div style={{ 
+          display: "grid", 
+          gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", 
+          gap: "30px",
+          marginBottom: "30px"
+        }}>
+          {/* Strengths */}
+          <div style={{ 
+            background: "white", 
+            padding: "25px", 
+            borderRadius: "12px", 
+            boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
+          }}>
+            <h2 style={{ 
+              margin: "0 0 20px 0", 
+              color: "#333",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px"
+            }}>
+              <span style={{ 
+                background: "#4CAF50", 
+                color: "white",
+                width: "30px",
+                height: "30px",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "16px"
+              }}>
+                ✓
+              </span>
+              Key Strengths
+            </h2>
+            
+            {strengths.length === 0 ? (
+              <div style={{ 
+                textAlign: "center", 
+                padding: "20px",
+                color: "#888",
+                background: "#f8f9fa",
+                borderRadius: "8px"
+              }}>
+                <p>No significant strengths identified.</p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
+                {strengths.map((strength, index) => (
+                  <div key={index} style={{
+                    padding: "15px",
+                    background: "#e8f5e9",
+                    borderRadius: "8px",
+                    borderLeft: `4px solid #4CAF50`
+                  }}>
+                    <div style={{ 
+                      display: "flex", 
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: "8px"
+                    }}>
+                      <div style={{ 
+                        fontSize: "16px", 
+                        fontWeight: "600",
+                        color: "#2E7D32"
+                      }}>
+                        {strength.category}
+                      </div>
+                      <div style={{ 
+                        fontSize: "24px"
+                      }}>
+                        {strength.icon}
+                      </div>
+                    </div>
+                    <div style={{ 
+                      fontSize: "14px", 
+                      color: "#666",
+                      marginBottom: "5px"
+                    }}>
+                      Score: <strong>{strength.score}%</strong> • Grade: <strong>{strength.grade}</strong>
+                    </div>
+                    <div style={{ 
+                      fontSize: "13px", 
+                      color: "#888"
+                    }}>
+                      {strength.interpretation}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Weaknesses */}
+          <div style={{ 
+            background: "white", 
+            padding: "25px", 
+            borderRadius: "12px", 
+            boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
+          }}>
+            <h2 style={{ 
+              margin: "0 0 20px 0", 
+              color: "#333",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px"
+            }}>
+              <span style={{ 
+                background: "#F44336", 
+                color: "white",
+                width: "30px",
+                height: "30px",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "16px"
+              }}>
+                !
+              </span>
+              Development Areas
+            </h2>
+            
+            {weaknesses.length === 0 ? (
+              <div style={{ 
+                textAlign: "center", 
+                padding: "20px",
+                color: "#888",
+                background: "#f8f9fa",
+                borderRadius: "8px"
+              }}>
+                <p>No significant weaknesses identified.</p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
+                {weaknesses.map((weakness, index) => (
+                  <div key={index} style={{
+                    padding: "15px",
+                    background: "#ffebee",
+                    borderRadius: "8px",
+                    borderLeft: `4px solid #F44336`
+                  }}>
+                    <div style={{ 
+                      display: "flex", 
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: "8px"
+                    }}>
+                      <div style={{ 
+                        fontSize: "16px", 
+                        fontWeight: "600",
+                        color: "#C62828"
+                      }}>
+                        {weakness.category}
+                      </div>
+                      <div style={{ 
+                        fontSize: "24px"
+                      }}>
+                        {weakness.icon}
+                      </div>
+                    </div>
+                    <div style={{ 
+                      fontSize: "14px", 
+                      color: "#666",
+                      marginBottom: "5px"
+                    }}>
+                      Score: <strong>{weakness.score}%</strong> • Grade: <strong>{weakness.grade}</strong>
+                    </div>
+                    <div style={{ 
+                      fontSize: "13px", 
+                      color: "#888"
+                    }}>
+                      {weakness.interpretation}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* RECOMMENDATIONS */}
+        <div style={{ 
+          background: "white", 
+          padding: "25px", 
+          borderRadius: "12px", 
+          boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+          marginBottom: "30px"
+        }}>
+          <h2 style={{ 
+            margin: "0 0 20px 0", 
+            color: "#333",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px"
+          }}>
+            <span style={{ 
+              background: "#1565c0", 
+              color: "white",
+              width: "30px",
+              height: "30px",
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "16px"
+            }}>
+              💡
+            </span>
+            Development Recommendations
+          </h2>
+          
+          {recommendations.length === 0 ? (
+            <div style={{ 
+              textAlign: "center", 
+              padding: "30px",
+              color: "#888",
+              background: "#f8f9fa",
+              borderRadius: "8px"
+            }}>
+              <p>No specific recommendations available.</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              {recommendations.map((rec, index) => (
+                <div key={index} style={{
+                  padding: "20px",
+                  background: "#e3f2fd",
+                  borderRadius: "8px",
+                  borderLeft: `4px solid #1565c0`
+                }}>
+                  <div style={{ 
+                    display: "flex", 
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    marginBottom: "10px"
+                  }}>
+                    <div>
+                      <div style={{ 
+                        fontSize: "16px", 
+                        fontWeight: "600",
+                        color: "#1565c0",
+                        marginBottom: "5px"
+                      }}>
+                        {rec.category}
+                      </div>
+                      <div style={{ 
+                        fontSize: "14px", 
+                        color: "#666",
+                        fontStyle: "italic",
+                        marginBottom: "10px"
+                      }}>
+                        {rec.issue}
+                      </div>
+                    </div>
+                    <div style={{ 
+                      background: rec.score >= 70 ? "#4CAF50" : 
+                                 rec.score >= 60 ? "#FF9800" : "#F44336",
+                      color: "white",
+                      padding: "5px 10px",
+                      borderRadius: "4px",
+                      fontSize: "12px",
+                      fontWeight: "600"
+                    }}>
+                      Grade: {rec.grade}
+                    </div>
+                  </div>
+                  <div style={{ 
+                    fontSize: "14px", 
+                    color: "#333",
+                    lineHeight: 1.5
+                  }}>
+                    <strong>Recommendation:</strong> {rec.recommendation}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ 
+          textAlign: "center", 
+          padding: "20px",
+          color: "#666",
+          fontSize: "12px",
+          borderTop: "1px solid #e0e0e0",
+          marginTop: "30px"
+        }}>
+          <p>Candidate Performance Report • Generated on {new Date().toLocaleDateString()} • Supervisor View</p>
+          <p style={{ color: "#888", marginTop: "5px" }}>
+            This report is based on assessment data and is intended for internal use only.
+          </p>
+        </div>
+      </div>
+    </AppLayout>
+  );
+}
