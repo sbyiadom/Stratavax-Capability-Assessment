@@ -1,10 +1,8 @@
-// pages/supervisor/[user_id].js - WITH PDF PRINT FUNCTIONALITY
+// pages/supervisor/[user_id].js - WITH FIXED PDF FUNCTIONALITY
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
 import AppLayout from "../../components/AppLayout";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
 
 export default function CandidateReport() {
   const router = useRouter();
@@ -1133,300 +1131,151 @@ export default function CandidateReport() {
     setGeneratingPDF(true);
     
     try {
-      // Create a temporary div for PDF generation
-      const pdfContent = document.createElement('div');
-      pdfContent.style.width = '210mm'; // A4 width
-      pdfContent.style.padding = '20px';
-      pdfContent.style.background = 'white';
-      pdfContent.style.color = '#333';
-      pdfContent.style.fontFamily = 'Arial, sans-serif';
+      // Dynamically import the libraries (client-side only)
+      const html2canvas = (await import('html2canvas')).default;
+      const { jsPDF } = await import('jspdf');
       
-      // Clone the report content
-      const reportClone = reportRef.current.cloneNode(true);
+      const element = reportRef.current;
       
-      // Remove elements that shouldn't be in PDF
-      const elementsToRemove = reportClone.querySelectorAll('button, .no-print');
-      elementsToRemove.forEach(el => el.remove());
+      // Add print-specific styles temporarily
+      const originalStyle = element.style.cssText;
+      element.style.width = '210mm';
+      element.style.padding = '20px';
+      element.style.background = 'white';
       
-      // Add print-specific styling
-      const style = document.createElement('style');
-      style.textContent = `
-        @media print {
-          body { margin: 0; padding: 0; }
-          * { box-shadow: none !important; }
-          .print-only { display: block !important; }
-          .no-print { display: none !important; }
-        }
-        .pdf-header {
-          border-bottom: 2px solid #1565c0;
-          padding-bottom: 15px;
-          margin-bottom: 20px;
-        }
-        .pdf-title {
-          font-size: 24px;
-          font-weight: bold;
-          color: #1565c0;
-          margin-bottom: 5px;
-        }
-        .pdf-subtitle {
-          font-size: 14px;
-          color: #666;
-        }
-        .pdf-section {
-          margin: 20px 0;
-          page-break-inside: avoid;
-        }
-        .pdf-section-title {
-          font-size: 18px;
-          font-weight: bold;
-          color: #333;
-          border-bottom: 1px solid #ddd;
-          padding-bottom: 8px;
-          margin-bottom: 15px;
-        }
-        .pdf-card {
-          background: #f8f9fa;
-          border-radius: 8px;
-          padding: 15px;
-          margin: 10px 0;
-          border-left: 4px solid #1565c0;
-        }
-        .pdf-table {
-          width: 100%;
-          border-collapse: collapse;
-          margin: 10px 0;
-          font-size: 12px;
-        }
-        .pdf-table th {
-          background: #e9ecef;
-          padding: 8px;
-          text-align: left;
-          border-bottom: 2px solid #1565c0;
-        }
-        .pdf-table td {
-          padding: 8px;
-          border-bottom: 1px solid #dee2e6;
-        }
-        .pdf-footer {
-          margin-top: 30px;
-          padding-top: 15px;
-          border-top: 1px solid #ddd;
-          font-size: 10px;
-          color: #666;
-          text-align: center;
-        }
-      `;
-      pdfContent.appendChild(style);
-      pdfContent.appendChild(reportClone);
-      document.body.appendChild(pdfContent);
-      
-      // Generate PDF
-      const canvas = await html2canvas(pdfContent, {
+      const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
         logging: false,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        width: element.scrollWidth,
+        height: element.scrollHeight,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight
       });
       
+      // Restore original styles
+      element.style.cssText = originalStyle;
+      
       const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
       const imgWidth = 190;
+      const pageHeight = 280;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      let heightLeft = imgHeight;
       let position = 10;
       
       pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
-      
-      // Add additional pages if content is long
-      let heightLeft = imgHeight;
-      let page = 1;
+      heightLeft -= pageHeight;
       
       while (heightLeft > 0) {
         position = heightLeft - imgHeight;
         pdf.addPage();
-        page++;
         pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
-        heightLeft -= 280; // Approximate page height in mm
+        heightLeft -= pageHeight;
       }
       
-      // Save PDF
       const fileName = `Candidate_Report_${userName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
       pdf.save(fileName);
       
-      // Clean up
-      document.body.removeChild(pdfContent);
-      
     } catch (error) {
       console.error('PDF generation error:', error);
-      alert('Error generating PDF. Please try again.');
+      alert('Error generating PDF. Please try again or use the print function.');
     } finally {
       setGeneratingPDF(false);
     }
   };
 
-  // Alternative simpler PDF generation
-  const generateSimplePDF = () => {
-    if (!reportRef.current) return;
+  // Simple browser print function
+  const handlePrint = () => {
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Candidate Report - ${userName}</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            color: #333;
+            line-height: 1.4;
+          }
+          .no-print { display: none !important; }
+          .print-header {
+            border-bottom: 3px solid #1565c0;
+            padding-bottom: 15px;
+            margin-bottom: 25px;
+          }
+          .print-title {
+            font-size: 28px;
+            font-weight: bold;
+            color: #1565c0;
+            margin-bottom: 5px;
+          }
+          .section {
+            margin: 25px 0;
+            page-break-inside: avoid;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+          }
+          th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: left;
+          }
+          th {
+            background: #f5f5f5;
+            font-weight: bold;
+          }
+          @media print {
+            @page { margin: 20mm; }
+            body { margin: 0; padding: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-header">
+          <div class="print-title">Candidate Performance Report</div>
+          <div><strong>Candidate:</strong> ${userName}</div>
+          <div><strong>Email:</strong> ${userEmail}</div>
+          <div><strong>Report Date:</strong> ${new Date().toLocaleDateString()}</div>
+          <div><strong>Overall Score:</strong> ${candidate?.total_score || 0}/500 (${candidate?.classification || 'N/A'})</div>
+        </div>
+        
+        <div>
+          ${reportRef.current?.innerHTML || ''}
+        </div>
+        
+        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 11px; color: #666; text-align: center;">
+          <p>This assessment report is confidential and intended for authorized personnel only.</p>
+          <p>Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
+        </div>
+      </body>
+      </html>
+    `;
     
-    setGeneratingPDF(true);
-    
-    try {
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) {
-        alert('Please allow popups to generate PDF');
-        setGeneratingPDF(false);
-        return;
-      }
-      
-      const reportClone = reportRef.current.cloneNode(true);
-      
-      // Remove elements that shouldn't be in PDF
-      const elementsToRemove = reportClone.querySelectorAll('button, .no-print');
-      elementsToRemove.forEach(el => el.remove());
-      
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Candidate Report - ${userName}</title>
-          <style>
-            @media print {
-              @page { margin: 20mm; }
-              body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
-              .no-print { display: none !important; }
-              .print-break { page-break-before: always; }
-              .print-avoid-break { page-break-inside: avoid; }
-            }
-            body {
-              font-family: Arial, sans-serif;
-              color: #333;
-              line-height: 1.4;
-              margin: 0;
-              padding: 20px;
-            }
-            .header {
-              border-bottom: 3px solid #1565c0;
-              padding-bottom: 15px;
-              margin-bottom: 25px;
-            }
-            .title {
-              font-size: 28px;
-              font-weight: bold;
-              color: #1565c0;
-              margin-bottom: 5px;
-            }
-            .subtitle {
-              font-size: 16px;
-              color: #666;
-              margin-bottom: 10px;
-            }
-            .info {
-              font-size: 14px;
-              color: #444;
-              margin: 5px 0;
-            }
-            .section {
-              margin: 25px 0;
-              page-break-inside: avoid;
-            }
-            .section-title {
-              font-size: 20px;
-              font-weight: bold;
-              color: #333;
-              border-bottom: 2px solid #1565c0;
-              padding-bottom: 8px;
-              margin-bottom: 15px;
-            }
-            .card {
-              background: #f8f9fa;
-              border-radius: 6px;
-              padding: 15px;
-              margin: 10px 0;
-              border-left: 4px solid #1565c0;
-            }
-            .table-container {
-              overflow-x: auto;
-              margin: 15px 0;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              font-size: 12px;
-            }
-            th {
-              background: #e9ecef;
-              padding: 10px;
-              text-align: left;
-              border-bottom: 2px solid #1565c0;
-              font-weight: bold;
-            }
-            td {
-              padding: 10px;
-              border-bottom: 1px solid #dee2e6;
-            }
-            .footer {
-              margin-top: 40px;
-              padding-top: 15px;
-              border-top: 1px solid #ddd;
-              font-size: 11px;
-              color: #666;
-              text-align: center;
-            }
-            .score-badge {
-              display: inline-block;
-              padding: 4px 10px;
-              border-radius: 20px;
-              font-size: 12px;
-              font-weight: bold;
-              margin: 2px;
-            }
-            .strength { background: #e8f5e9; color: #2e7d32; }
-            .weakness { background: #ffebee; color: #c62828; }
-            .average { background: #fff3e0; color: #f57c00; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div class="title">Candidate Performance Report</div>
-            <div class="subtitle">${userName}</div>
-            <div class="info">Email: ${userEmail}</div>
-            <div class="info">Candidate ID: ${user_id?.substring(0, 12)}...</div>
-            <div class="info">Report Date: ${new Date().toLocaleDateString()}</div>
-          </div>
-      `);
-      
-      // Add report content
-      printWindow.document.write(reportClone.innerHTML);
-      
-      // Add footer
-      printWindow.document.write(`
-          <div class="footer">
-            <p>This assessment report is confidential and intended for authorized personnel only.</p>
-            <p>Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
-          </div>
-        </body>
-        </html>
-      `);
-      
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(printContent);
       printWindow.document.close();
-      
-      // Wait for content to load, then trigger print
       printWindow.onload = function() {
         printWindow.focus();
         printWindow.print();
         printWindow.close();
       };
-      
-    } catch (error) {
-      console.error('PDF generation error:', error);
-      alert('Error generating PDF. Please try again.');
-    } finally {
-      setGeneratingPDF(false);
+    } else {
+      // Fallback to direct print
+      window.print();
     }
-  };
-
-  // Direct browser print
-  const handlePrint = () => {
-    window.print();
   };
 
   const handleBack = () => {
@@ -1584,6 +1433,11 @@ export default function CandidateReport() {
         .print-header {
           display: none;
         }
+        
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
       `}</style>
       
       <div style={{ width: "90vw", margin: "auto", padding: "30px 20px" }} id="report-content" ref={reportRef}>
@@ -1671,7 +1525,7 @@ export default function CandidateReport() {
             </button>
             
             <button
-              onClick={generateSimplePDF}
+              onClick={generatePDF}
               style={{
                 padding: "10px 20px",
                 background: "#4CAF50",
