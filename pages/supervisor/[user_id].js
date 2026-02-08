@@ -1,4 +1,4 @@
-// pages/supervisor/[user_id].js - UPDATED WITH NEW PERFORMANCE CLASSIFICATION AND GRADING SCALE
+// pages/supervisor/[user_id].js - FIXED WITH PROPER CANDIDATE NAME & EMAIL
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -108,196 +108,7 @@ export default function CandidateReport() {
     return labels[grade] || "Unknown";
   };
 
-  // 3. Get interpretive comments based on NEW scale - CATEGORY SPECIFIC
-  const getCategoryInterpretation = (percentage, category) => {
-    if (percentage >= 80) {
-      switch(category) {
-        case 'Cognitive Abilities':
-          return "Demonstrates exceptional cognitive processing, analytical reasoning, and problem-solving capabilities. Shows advanced pattern recognition, logical deduction, and mental agility suitable for complex decision-making roles.";
-        case 'Personality Assessment':
-          return "Exhibits outstanding emotional intelligence, adaptability, and interpersonal skills. Demonstrates strong self-awareness, resilience, and communication abilities ideal for collaborative environments.";
-        case 'Leadership Potential':
-          return "Shows exceptional leadership qualities including strategic vision, influence, and team development capabilities. Demonstrates natural ability to inspire, motivate, and drive organizational success.";
-        case 'Technical Competence':
-          return "Possesses expert-level technical knowledge and application skills. Demonstrates mastery of technical concepts, problem-solving abilities, and capacity for innovation in specialized domains.";
-        case 'Performance Metrics':
-          return "Consistently exceeds performance targets with exceptional results. Demonstrates outstanding productivity, efficiency, and goal achievement capabilities with measurable impact.";
-        default:
-          return "Demonstrates exceptional capability across assessed dimensions. Shows strong reasoning, sound judgment, and consistent performance.";
-      }
-    }
-    
-    if (percentage >= 75) {
-      switch(category) {
-        case 'Cognitive Abilities':
-          return "Displays very strong cognitive abilities with excellent problem-solving skills. Demonstrates strong analytical thinking and logical reasoning with minor areas for refinement.";
-        case 'Personality Assessment':
-          return "Exhibits strong interpersonal skills and emotional intelligence. Demonstrates good adaptability and communication abilities suitable for most professional contexts.";
-        case 'Leadership Potential':
-          return "Shows strong leadership qualities with clear potential. Demonstrates ability to guide teams effectively and contribute to organizational goals.";
-        case 'Technical Competence':
-          return "Possesses strong technical knowledge and practical skills. Demonstrates competence in technical areas with ability to handle complex problems.";
-        case 'Performance Metrics':
-          return "Frequently exceeds performance expectations. Demonstrates strong productivity and effective goal achievement.";
-        default:
-          return "Shows strong overall capability with minimal development areas. Demonstrates effective performance across key dimensions.";
-      }
-    }
-    
-    if (percentage >= 70) {
-      switch(category) {
-        case 'Cognitive Abilities':
-          return "Displays above average cognitive abilities with good problem-solving skills. Demonstrates solid analytical thinking and reasoning capabilities.";
-        case 'Personality Assessment':
-          return "Exhibits good interpersonal skills and emotional awareness. Demonstrates reliability and appropriate communication in professional settings.";
-        case 'Leadership Potential':
-          return "Shows above average leadership qualities. Demonstrates ability to contribute to team success and handle leadership responsibilities.";
-        case 'Technical Competence':
-          return "Possesses good technical understanding and application skills. Demonstrates ability to solve standard job-related problems.";
-        case 'Performance Metrics':
-          return "Meets and occasionally exceeds performance expectations. Demonstrates reliable productivity and goal achievement.";
-        default:
-          return "Performs above average across most assessed areas. Demonstrates good understanding and application of required skills.";
-      }
-    }
-    
-    if (percentage >= 65) {
-      switch(category) {
-        case 'Cognitive Abilities':
-          return "Displays solid cognitive abilities meeting baseline requirements. Demonstrates adequate problem-solving and reasoning capabilities for standard tasks.";
-        case 'Personality Assessment':
-          return "Exhibits adequate interpersonal skills for most situations. Demonstrates basic emotional intelligence and professional behavior.";
-        case 'Leadership Potential':
-          return "Shows foundational leadership capabilities. Demonstrates potential for growth with appropriate development.";
-        case 'Technical Competence':
-          return "Possesses basic technical knowledge meeting minimum requirements. Demonstrates ability to handle routine technical tasks.";
-        case 'Performance Metrics':
-          return "Consistently meets performance standards. Demonstrates adequate productivity and goal completion.";
-        default:
-          return "Meets baseline requirements across assessed dimensions. Demonstrates adequate competency for standard expectations.";
-      }
-    }
-    
-    if (percentage >= 60) {
-      switch(category) {
-        case 'Cognitive Abilities':
-          return "Meets minimum cognitive requirements but shows inconsistency. Demonstrates adequate reasoning but may struggle with complex problem-solving.";
-        case 'Personality Assessment':
-          return "Shows basic interpersonal skills with some limitations. Demonstrates acceptable professional behavior but may need development.";
-        case 'Leadership Potential':
-          return "Displays emerging leadership qualities. Shows potential but requires structured development and guidance.";
-        case 'Technical Competence':
-          return "Possesses fundamental technical understanding. Demonstrates ability to perform basic technical functions.";
-        case 'Performance Metrics':
-          return "Meets minimum performance standards. Demonstrates basic productivity with some inconsistency.";
-        default:
-          return "Meets basic requirements but shows inconsistency. Demonstrates fundamental understanding with room for improvement.";
-      }
-    }
-    
-    if (percentage >= 55) {
-      switch(category) {
-        case 'Cognitive Abilities':
-          return "Shows difficulty with some cognitive tasks. Demonstrates gaps in analytical thinking that require targeted improvement.";
-        case 'Personality Assessment':
-          return "Exhibits limitations in interpersonal effectiveness. Demonstrates need for development in communication or adaptability.";
-        case 'Leadership Potential':
-          return "Displays limited leadership readiness. Shows some capability but requires significant development.";
-        case 'Technical Competence':
-          return "Possesses insufficient technical knowledge in some areas. Demonstrates need for additional training and practice.";
-        case 'Performance Metrics':
-          return "Approaches performance standards but falls short consistently. Demonstrates need for improvement in productivity or efficiency.";
-        default:
-          return "Shows some capability but falls short of expectations in multiple areas. Requires focused development.";
-      }
-    }
-    
-    if (percentage >= 50) {
-      switch(category) {
-        case 'Cognitive Abilities':
-          return "Struggles with analytical thinking and problem-solving. Demonstrates significant gaps in reasoning and processing abilities.";
-        case 'Personality Assessment':
-          return "Exhibits clear limitations in professional behavior. Demonstrates challenges with emotional intelligence or communication.";
-        case 'Leadership Potential':
-          return "Shows minimal leadership capabilities. Requires extensive development to reach basic competency.";
-        case 'Technical Competence':
-          return "Possesses inadequate technical knowledge. Demonstrates major deficiencies in understanding core concepts.";
-        case 'Performance Metrics':
-          return "Falls below performance expectations. Demonstrates poor productivity or goal achievement.";
-        default:
-          return "Falls below minimum competency standards. Demonstrates significant gaps in required skills and knowledge.";
-      }
-    }
-    
-    if (percentage >= 45) {
-      switch(category) {
-        case 'Cognitive Abilities':
-          return "Demonstrates poor cognitive abilities with severe limitations. Shows difficulty with basic reasoning and problem-solving.";
-        case 'Personality Assessment':
-          return "Exhibits poor interpersonal skills and professional behavior. Demonstrates serious limitations in adaptability or communication.";
-        case 'Leadership Potential':
-          return "Shows very limited leadership potential. Demonstrates little evidence of leadership capabilities.";
-        case 'Technical Competence':
-          return "Possesses very poor technical understanding. Demonstrates inability to apply basic technical concepts.";
-        case 'Performance Metrics':
-          return "Consistently underperforms. Demonstrates very poor productivity and goal achievement.";
-        default:
-          return "Shows very limited capability. Demonstrates serious deficiencies across multiple assessment areas.";
-      }
-    }
-    
-    if (percentage >= 40) {
-      switch(category) {
-        case 'Cognitive Abilities':
-          return "Demonstrates severely limited cognitive capabilities. Shows inability to perform basic analytical tasks.";
-        case 'Personality Assessment':
-          return "Exhibits unacceptable professional behavior. Demonstrates critical deficiencies in interpersonal skills.";
-        case 'Leadership Potential':
-          return "Shows no evidence of leadership capabilities. Demonstrates complete lack of readiness for leadership roles.";
-        case 'Technical Competence':
-          return "Possesses almost no technical knowledge. Demonstrates complete inability to perform technical tasks.";
-        case 'Performance Metrics':
-          return "Fails to meet any performance standards. Demonstrates complete lack of productivity.";
-        default:
-          return "Demonstrates critical deficiencies. Shows inability to meet basic role requirements.";
-      }
-    }
-    
-    if (percentage >= 35) {
-      switch(category) {
-        case 'Cognitive Abilities':
-          return "Demonstrates extremely poor cognitive abilities. Shows complete lack of analytical thinking skills.";
-        case 'Personality Assessment':
-          return "Exhibits completely unacceptable professional behavior. Demonstrates severe interpersonal deficiencies.";
-        case 'Leadership Potential':
-          return "Shows complete absence of leadership qualities. Demonstrates no potential for leadership development.";
-        case 'Technical Competence':
-          return "Possesses no relevant technical knowledge. Demonstrates complete technical incompetence.";
-        case 'Performance Metrics':
-          return "Completely fails to perform. Demonstrates zero productivity and goal achievement.";
-        default:
-          return "Demonstrates complete lack of required capabilities. Shows no evidence of basic competency.";
-      }
-    }
-    
-    // Below 35% (F)
-    switch(category) {
-      case 'Cognitive Abilities':
-        return "Does not meet minimum cognitive competency thresholds. Shows complete inability to perform basic reasoning tasks.";
-      case 'Personality Assessment':
-        return "Fails to demonstrate basic interpersonal or professional competencies. Shows complete lack of emotional intelligence.";
-      case 'Leadership Potential':
-        return "Lacks any fundamental leadership qualities. Shows no evidence of leadership capability or potential.";
-      case 'Technical Competence':
-        return "Does not possess any relevant technical knowledge. Shows complete technical incompetence.";
-      case 'Performance Metrics':
-        return "Fails to meet any performance standards. Demonstrates complete inability to achieve basic goals.";
-      default:
-        return "Does not meet any competency thresholds. Shows complete lack of required skills and knowledge.";
-    }
-  };
-
-  // 4. Get performance label for categories - UPDATED
+  // 3. Get performance label for categories - UPDATED
   const getCategoryPerformanceLabel = (percentage) => {
     if (percentage >= 80) return "Exceptional";
     if (percentage >= 75) return "Outstanding";
@@ -312,7 +123,7 @@ export default function CandidateReport() {
     return "Unsuitable";
   };
 
-  // 5. Get performance color for categories - UPDATED with more granular colors
+  // 4. Get performance color for categories - UPDATED with more granular colors
   const getCategoryPerformanceColor = (percentage) => {
     if (percentage >= 80) return "#4CAF50"; // Green - Excellent
     if (percentage >= 75) return "#66BB6A"; // Light Green - Very Good
@@ -327,7 +138,7 @@ export default function CandidateReport() {
     return "#B71C1C"; // Darkest Red - Unsuitable
   };
 
-  // 6. Get performance icon/emoji - UPDATED
+  // 5. Get performance icon/emoji - UPDATED
   const getCategoryPerformanceIcon = (percentage) => {
     if (percentage >= 80) return "🏆";
     if (percentage >= 75) return "⭐";
@@ -354,12 +165,15 @@ export default function CandidateReport() {
         
         try {
           const session = JSON.parse(supervisorSession);
-          if (session.loggedIn) {
+          if (session.loggedIn && session.expires > Date.now()) {
             setIsSupervisor(true);
           } else {
+            // Session expired
+            localStorage.removeItem("supervisorSession");
             router.push("/supervisor-login");
           }
         } catch {
+          localStorage.removeItem("supervisorSession");
           router.push("/supervisor-login");
         }
       }
@@ -368,16 +182,14 @@ export default function CandidateReport() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch candidate data - UPDATED VERSION
+  // Fetch candidate data - UNIVERSAL FIX FOR ALL CANDIDATES
   useEffect(() => {
     if (!isSupervisor || !user_id) return;
 
     const fetchCandidateData = async () => {
       try {
         setLoading(true);
-        setDebugInfo(`Starting fetch for user: ${user_id}`);
         
-        // GET CANDIDATE NAME AND EMAIL - FROM CODE 1
         // METHOD 1: Try candidate_assessments VIEW first (same as index.js)
         // This works for most candidates
         const { data: candidateData, error: candidateError } = await supabase
@@ -409,7 +221,6 @@ export default function CandidateReport() {
         }
         
         // METHOD 2: If not in candidate_assessments VIEW, check talent_classification + auth.users
-        // This handles candidates who might not be in the VIEW yet
         const { data: classificationData, error: classificationError } = await supabase
           .from("talent_classification")
           .select("total_score, classification")
@@ -469,79 +280,33 @@ export default function CandidateReport() {
         setUserEmail("Email not found");
         setUserName(`Candidate ${user_id.substring(0, 8).toUpperCase()}`);
         setCandidate(null);
-
+        
       } catch (err) {
         console.error("Fetch error:", err);
-        setDebugInfo(prev => prev + `\nGeneral error: ${err.message}`);
-        // Use estimated data as last resort
-        useEstimatedData(candidate?.total_score || 300);
+        setUserEmail("Email not found");
+        setUserName(`Candidate ${user_id.substring(0, 8).toUpperCase()}`);
       } finally {
         setLoading(false);
       }
     };
 
-    // MAIN FUNCTION: Fetch responses and calculate category scores - FIXED VERSION
+    // MAIN FUNCTION: Fetch responses and calculate category scores
     const fetchAndCalculateCategoryScores = async (userId) => {
       try {
-        setDebugInfo(prev => prev + "\n\n=== FETCHING RESPONSES ===");
-        setDebugInfo(prev => prev + `\nUser ID: ${userId}`);
-        
-        // FIRST: Let's check what responses exist for this user
-        const { data: responseCheck, error: checkError } = await supabase
-          .from("responses")
-          .select("id, question_id, answer_id, assessment_id, user_id")
-          .eq("user_id", userId)
-          .limit(5);
-        
-        if (checkError) {
-          setDebugInfo(prev => prev + `\nError checking responses: ${checkError.message}`);
-        } else if (responseCheck && responseCheck.length > 0) {
-          setDebugInfo(prev => prev + `\nSample responses found:`);
-          responseCheck.forEach((resp, i) => {
-            setDebugInfo(prev => prev + `\n  ${i+1}. Q:${resp.question_id?.substring(0,8)} A:${resp.answer_id?.substring(0,8)}`);
-          });
-        } else {
-          setDebugInfo(prev => prev + `\nNo responses found in initial check`);
-        }
-        
-        // Fetch all responses for this user - WITHOUT ASSESSMENT_ID FILTER
+        // Fetch all responses for this user
         const { data: allResponses, error: responsesError } = await supabase
           .from("responses")
           .select("id, question_id, answer_id, assessment_id")
           .eq("user_id", userId);
         
         if (responsesError) {
-          setDebugInfo(prev => prev + `\nError fetching responses: ${responsesError.message}`);
-          // Try without user_id filter to see what's in the table
-          const { data: allTableResponses } = await supabase
-            .from("responses")
-            .select("id, user_id")
-            .limit(10);
-          
-          if (allTableResponses) {
-            setDebugInfo(prev => prev + `\nTotal responses in table: ${allTableResponses.length}`);
-            const uniqueUsers = [...new Set(allTableResponses.map(r => r.user_id))];
-            setDebugInfo(prev => prev + `\nFound ${uniqueUsers.length} unique users in responses table`);
-          }
-          
-          useEstimatedData(candidate?.total_score || 300);
+          console.error('Error fetching responses:', responsesError);
           return;
         }
         
         if (!allResponses || allResponses.length === 0) {
-          setDebugInfo(prev => prev + `\nNo responses found for user ${userId.substring(0, 8)}`);
-          useEstimatedData(candidate?.total_score || 300);
+          console.log('No responses found for user');
           return;
-        }
-        
-        setDebugInfo(prev => prev + `\nFound ${allResponses.length} responses for user ${userId.substring(0, 8)}`);
-        
-        // Show sample data for debugging
-        if (allResponses.length > 0) {
-          setDebugInfo(prev => prev + `\nSample responses:`);
-          allResponses.slice(0, 3).forEach((resp, i) => {
-            setDebugInfo(prev => prev + `\n  ${i+1}. Q:${resp.question_id?.substring(0,8)} A:${resp.answer_id?.substring(0,8)}`);
-          });
         }
         
         setResponses(allResponses);
@@ -551,19 +316,13 @@ export default function CandidateReport() {
         
       } catch (error) {
         console.error("Fetch error:", error);
-        setDebugInfo(prev => prev + `\nFetch error: ${error.message}`);
-        useEstimatedData(candidate?.total_score || 300);
       }
     };
 
-    // CALCULATE CATEGORY SCORES FROM RESPONSES - FIXED VERSION
+    // CALCULATE CATEGORY SCORES FROM RESPONSES
     const calculateCategoryScoresFromResponses = async (responsesData) => {
       try {
-        setDebugInfo(prev => prev + "\n\n=== CALCULATING CATEGORY SCORES ===");
-        
         if (!responsesData || responsesData.length === 0) {
-          setDebugInfo(prev => prev + "\nNo response data to calculate");
-          useEstimatedData(candidate?.total_score || 300);
           return;
         }
         
@@ -571,39 +330,15 @@ export default function CandidateReport() {
         const questionIds = [...new Set(responsesData.map(r => r.question_id))];
         const answerIds = [...new Set(responsesData.map(r => r.answer_id))];
         
-        setDebugInfo(prev => prev + `\nUnique questions: ${questionIds.length}, Unique answers: ${answerIds.length}`);
-        
-        if (questionIds.length === 0 || answerIds.length === 0) {
-          setDebugInfo(prev => prev + "\nNo valid question or answer IDs found");
-          useEstimatedData(candidate?.total_score || 300);
-          return;
-        }
-        
         // Fetch questions
         const { data: questions, error: qError } = await supabase
           .from("questions")
           .select("id, section, text")
           .in("id", questionIds);
         
-        if (qError) {
-          setDebugInfo(prev => prev + `\nError fetching questions: ${qError.message}`);
-          useEstimatedData(candidate?.total_score || 300);
+        if (qError || !questions || questions.length === 0) {
           return;
         }
-        
-        if (!questions || questions.length === 0) {
-          setDebugInfo(prev => prev + "\nNo questions found in database");
-          useEstimatedData(candidate?.total_score || 300);
-          return;
-        }
-        
-        setDebugInfo(prev => prev + `\nLoaded ${questions.length} questions`);
-        
-        // Create questions map
-        const questionsMap = {};
-        questions.forEach(q => {
-          questionsMap[q.id] = q.section;
-        });
         
         // Fetch answers
         const { data: answers, error: aError } = await supabase
@@ -611,21 +346,16 @@ export default function CandidateReport() {
           .select("id, score, text")
           .in("id", answerIds);
         
-        if (aError) {
-          setDebugInfo(prev => prev + `\nError fetching answers: ${aError.message}`);
-          useEstimatedData(candidate?.total_score || 300);
+        if (aError || !answers || answers.length === 0) {
           return;
         }
         
-        if (!answers || answers.length === 0) {
-          setDebugInfo(prev => prev + "\nNo answers found in database");
-          useEstimatedData(candidate?.total_score || 300);
-          return;
-        }
+        // Create maps
+        const questionsMap = {};
+        questions.forEach(q => {
+          questionsMap[q.id] = q.section;
+        });
         
-        setDebugInfo(prev => prev + `\nLoaded ${answers.length} answers`);
-        
-        // Create answers map
         const answersMap = {};
         answers.forEach(a => {
           answersMap[a.id] = a.score;
@@ -634,50 +364,23 @@ export default function CandidateReport() {
         // Calculate category scores
         const categoryTotals = {};
         const categoryCounts = {};
-        let totalScore = 0;
-        let processedCount = 0;
-        let missingSectionCount = 0;
-        let missingScoreCount = 0;
         
         responsesData.forEach(response => {
           const section = questionsMap[response.question_id];
           const score = answersMap[response.answer_id] || 0;
           
-          if (!section) {
-            missingSectionCount++;
-            return;
+          if (section) {
+            categoryTotals[section] = (categoryTotals[section] || 0) + score;
+            categoryCounts[section] = (categoryCounts[section] || 0) + 1;
           }
-          
-          if (score === 0 && !answersMap[response.answer_id]) {
-            missingScoreCount++;
-          }
-          
-          categoryTotals[section] = (categoryTotals[section] || 0) + score;
-          categoryCounts[section] = (categoryCounts[section] || 0) + 1;
-          totalScore += score;
-          processedCount++;
         });
-        
-        setDebugInfo(prev => prev + `\nProcessed ${processedCount} responses`);
-        setDebugInfo(prev => prev + `\nMissing sections: ${missingSectionCount}, Missing scores: ${missingScoreCount}`);
-        setDebugInfo(prev => prev + `\nTotal calculated score: ${totalScore}`);
-        
-        if (processedCount === 0) {
-          setDebugInfo(prev => prev + "\nNo responses could be processed");
-          useEstimatedData(candidate?.total_score || 300);
-          return;
-        }
         
         // Calculate category percentages
         const calculatedCategoryScores = {};
-        const categoriesFound = Object.keys(categoryTotals);
-        
-        setDebugInfo(prev => prev + `\nCategories found: ${categoriesFound.join(', ')}`);
-        
-        categoriesFound.forEach(section => {
+        Object.keys(categoryTotals).forEach(section => {
           const total = categoryTotals[section];
           const count = categoryCounts[section];
-          const maxPossible = count * 5; // Each question max 5 points
+          const maxPossible = count * 5;
           const percentage = maxPossible > 0 ? Math.round((total / maxPossible) * 100) : 0;
           const average = count > 0 ? (total / count).toFixed(1) : 0;
           
@@ -688,117 +391,31 @@ export default function CandidateReport() {
             percentage,
             maxPossible
           };
-          
-          setDebugInfo(prev => prev + `\n${section}: ${total}/${maxPossible} (${percentage}%) avg: ${average}`);
         });
         
-        // Check if we have all expected categories
-        const expectedCategories = [
-          'Cognitive Abilities',
-          'Personality Assessment', 
-          'Leadership Potential',
-          'Technical Competence',
-          'Performance Metrics'
-        ];
-        
-        expectedCategories.forEach(category => {
-          if (!calculatedCategoryScores[category]) {
-            setDebugInfo(prev => prev + `\n⚠ Missing category: ${category}`);
-          }
-        });
-        
-        setDebugInfo(prev => prev + `\n✓ Calculated ${Object.keys(calculatedCategoryScores).length} categories`);
         setCategoryScores(calculatedCategoryScores);
-        
-        // Verify total score matches classification
-        if (candidate && Math.abs(totalScore - candidate.total_score) > 10) {
-          setDebugInfo(prev => prev + `\n⚠ Score mismatch: Calculated ${totalScore} vs Classification ${candidate.total_score}`);
-        }
         
         // Calculate strengths, weaknesses, and recommendations
         calculateAnalysis(calculatedCategoryScores);
         
       } catch (error) {
         console.error("Calculation error:", error);
-        setDebugInfo(prev => prev + `\nCalculation error: ${error.message}`);
-        useEstimatedData(candidate?.total_score || 300);
       }
     };
 
-    // FALLBACK: Estimate category scores based on total score - UNIQUE PER USER
-    const useEstimatedData = (totalScore) => {
-      setDebugInfo(prev => prev + "\n\n=== USING ESTIMATED DATA ===");
-      
-      const overallPercentage = Math.round((totalScore / 500) * 100);
-      const basePercentage = overallPercentage;
-      
-      // Create UNIQUE distribution for each user based on their user_id
-      // This ensures each candidate has different category scores
-      const userIdNum = parseInt(user_id.replace(/[^0-9]/g, '').substring(0, 6) || '123456', 10);
-      
-      // Use user_id to create unique but consistent variations for each candidate
-      const variations = {
-        'Cognitive Abilities': (userIdNum % 10) - 4, // -4 to +5 variation
-        'Personality Assessment': ((userIdNum % 100) / 10) - 4,
-        'Leadership Potential': ((userIdNum % 1000) / 100) - 4,
-        'Technical Competence': ((userIdNum % 10000) / 1000) - 4,
-        'Performance Metrics': ((userIdNum % 8) - 3)
-      };
-      
-      // Apply variations to base percentage
-      const estimatedPercentages = {
-        'Cognitive Abilities': Math.min(100, Math.max(0, basePercentage + variations['Cognitive Abilities'])),
-        'Personality Assessment': Math.min(100, Math.max(0, basePercentage + variations['Personality Assessment'])),
-        'Leadership Potential': Math.min(100, Math.max(0, basePercentage + variations['Leadership Potential'])),
-        'Technical Competence': Math.min(100, Math.max(0, basePercentage + variations['Technical Competence'])),
-        'Performance Metrics': Math.min(100, Math.max(0, basePercentage + variations['Performance Metrics']))
-      };
-      
-      setDebugInfo(prev => prev + `\nUser ID based variations: ${JSON.stringify(variations)}`);
-      setDebugInfo(prev => prev + `\nEstimated percentages: ${JSON.stringify(estimatedPercentages)}`);
-      
-      const estimatedCategoryScores = {};
-      Object.entries(estimatedPercentages).forEach(([section, percentage]) => {
-        const count = 20;
-        const maxPossible = count * 5;
-        const total = Math.round((percentage / 100) * maxPossible);
-        const average = (total / count).toFixed(1);
-        
-        estimatedCategoryScores[section] = {
-          total,
-          average: parseFloat(average),
-          count,
-          percentage,
-          maxPossible
-        };
-      });
-      
-      setCategoryScores(estimatedCategoryScores);
-      setResponses(Array(100).fill({}));
-      calculateAnalysis(estimatedCategoryScores);
-      setDebugInfo(prev => prev + `\nEstimated data based on ${totalScore} total score (${overallPercentage}%)`);
-    };
-
-    // Calculate strengths, weaknesses, and recommendations with UPDATED LOGIC for new scale
+    // Calculate strengths, weaknesses, and recommendations
     const calculateAnalysis = (categoryScoresData) => {
-      setDebugInfo(prev => prev + "\n\n=== ANALYZING RESULTS ===");
-      
       const candidateStrengths = [];
       const candidateWeaknesses = [];
       
-      // UPDATED: Adjusted thresholds for new grading scale
-      const strengthThreshold = 70; // B+ or above
-      const weaknessThreshold = 60; // B- or below
-      
-      setDebugInfo(prev => prev + `\nStrength threshold: ${strengthThreshold}% (B+ or above)`);
-      setDebugInfo(prev => prev + `\nWeakness threshold: ${weaknessThreshold}% (B- or below)`);
+      const strengthThreshold = 70;
+      const weaknessThreshold = 60;
       
       Object.entries(categoryScoresData).forEach(([section, data]) => {
         const percentage = data.percentage;
         const grade = getCategoryGrade(percentage);
         const performanceLabel = getCategoryPerformanceLabel(percentage);
         
-        // UPDATED: Show in strengths if ≥ 70% (B+ or above)
         if (percentage >= strengthThreshold) {
           candidateStrengths.push({
             category: section,
@@ -806,12 +423,10 @@ export default function CandidateReport() {
             grade: grade,
             gradeLabel: getCategoryGradeLabel(grade),
             interpretation: `${performanceLabel} performance in ${section}`,
-            detailedInterpretation: getCategoryInterpretation(percentage, section),
             icon: getCategoryPerformanceIcon(percentage)
           });
         }
         
-        // UPDATED: Show in weaknesses if < 60% (B- or below)
         if (percentage < weaknessThreshold) {
           candidateWeaknesses.push({
             category: section,
@@ -819,13 +434,11 @@ export default function CandidateReport() {
             grade: grade,
             gradeLabel: getCategoryGradeLabel(grade),
             interpretation: `${performanceLabel} performance in ${section}`,
-            detailedInterpretation: getCategoryInterpretation(percentage, section),
             icon: getCategoryPerformanceIcon(percentage)
           });
         }
       });
       
-      setDebugInfo(prev => prev + `\nFound ${candidateStrengths.length} strengths, ${candidateWeaknesses.length} weaknesses`);
       setStrengths(candidateStrengths);
       setWeaknesses(candidateWeaknesses);
       
@@ -836,28 +449,28 @@ export default function CandidateReport() {
         
         switch(weakness.category) {
           case 'Cognitive Abilities':
-            specificIssue = `Cognitive abilities scored ${weakness.score}% (Grade ${weakness.grade}). ${getCategoryInterpretation(weakness.score, weakness.category)}`;
-            recommendation = "Consider cognitive training exercises, problem-solving workshops, and analytical thinking development programs. Focus on logical reasoning, pattern recognition, and mental agility exercises.";
+            specificIssue = `Cognitive abilities scored ${weakness.score}% (Grade ${weakness.grade}).`;
+            recommendation = "Consider cognitive training exercises, problem-solving workshops, and analytical thinking development programs.";
             break;
           case 'Personality Assessment':
-            specificIssue = `Personality assessment scored ${weakness.score}% (Grade ${weakness.grade}). ${getCategoryInterpretation(weakness.score, weakness.category)}`;
-            recommendation = "Engage in personality development sessions, emotional intelligence training, and communication workshops. Consider role-playing exercises and interpersonal skills development programs.";
+            specificIssue = `Personality assessment scored ${weakness.score}% (Grade ${weakness.grade}).`;
+            recommendation = "Engage in personality development sessions, emotional intelligence training, and communication workshops.";
             break;
           case 'Leadership Potential':
-            specificIssue = `Leadership potential scored ${weakness.score}% (Grade ${weakness.grade}). ${getCategoryInterpretation(weakness.score, weakness.category)}`;
-            recommendation = "Participate in leadership workshops, mentorship programs, and team management exercises. Focus on decision-making, influence development, and strategic thinking training.";
+            specificIssue = `Leadership potential scored ${weakness.score}% (Grade ${weakness.grade}).`;
+            recommendation = "Participate in leadership workshops, mentorship programs, and team management exercises.";
             break;
           case 'Technical Competence':
-            specificIssue = `Technical competence scored ${weakness.score}% (Grade ${weakness.grade}). ${getCategoryInterpretation(weakness.score, weakness.category)}`;
-            recommendation = "Attend technical training sessions, industry-specific workshops, and hands-on practice programs. Focus on core technical skills, practical applications, and problem-solving in technical domains.";
+            specificIssue = `Technical competence scored ${weakness.score}% (Grade ${weakness.grade}).`;
+            recommendation = "Attend technical training sessions, industry-specific workshops, and hands-on practice programs.";
             break;
           case 'Performance Metrics':
-            specificIssue = `Performance metrics scored ${weakness.score}% (Grade ${weakness.grade}). ${getCategoryInterpretation(weakness.score, weakness.category)}`;
-            recommendation = "Focus on goal-setting strategies, performance tracking improvement, time management workshops, and productivity enhancement techniques. Implement regular performance reviews and feedback sessions.";
+            specificIssue = `Performance metrics scored ${weakness.score}% (Grade ${weakness.grade}).`;
+            recommendation = "Focus on goal-setting strategies, performance tracking improvement, time management workshops.";
             break;
           default:
-            specificIssue = `${weakness.category} scored ${weakness.score}% (Grade ${weakness.grade}). ${getCategoryInterpretation(weakness.score, weakness.category)}`;
-            recommendation = "Consider targeted training and development programs in this specific area. Create a personalized development plan with measurable goals and regular progress reviews.";
+            specificIssue = `${weakness.category} scored ${weakness.score}% (Grade ${weakness.grade}).`;
+            recommendation = "Consider targeted training and development programs in this specific area.";
         }
         
         return {
@@ -873,14 +486,13 @@ export default function CandidateReport() {
         candidateRecommendations.push({
           category: "Overall Performance",
           issue: "Strong overall performance across all categories",
-          recommendation: "Continue current development path. Consider advanced training in areas of strength to further enhance expertise and prepare for increased responsibility.",
-          grade: "A/A-",
+          recommendation: "Continue current development path. Consider advanced training in areas of strength.",
+          grade: "A/B",
           score: 85
         });
       }
       
       setRecommendations(candidateRecommendations);
-      setDebugInfo(prev => prev + `\nGenerated ${candidateRecommendations.length} recommendations`);
     };
 
     fetchCandidateData();
@@ -1326,758 +938,4 @@ export default function CandidateReport() {
                     </div>
                   </div>
                 ))}
-              </div>
-              
-              {/* Performance Summary Table */}
-              <div style={{ 
-                padding: "20px",
-                background: "linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)",
-                borderRadius: "8px",
-                border: "1px solid #dee2e6"
-              }}>
-                <h3 style={{ margin: "0 0 15px 0", color: "#333" }}>Category Performance Summary</h3>
-                
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
-                    fontSize: "14px"
-                  }}>
-                    <thead>
-                      <tr style={{ 
-                        background: "#e9ecef",
-                        borderBottom: "2px solid #1565c0"
-                      }}>
-                        <th style={{ padding: "12px", textAlign: "left", color: "#333", fontWeight: "600" }}>Category</th>
-                        <th style={{ padding: "12px", textAlign: "center", color: "#333", fontWeight: "600" }}>Questions</th>
-                        <th style={{ padding: "12px", textAlign: "center", color: "#333", fontWeight: "600" }}>Total Score</th>
-                        <th style={{ padding: "12px", textAlign: "center", color: "#333", fontWeight: "600" }}>Average</th>
-                        <th style={{ padding: "12px", textAlign: "center", color: "#333", fontWeight: "600" }}>Percentage</th>
-                        <th style={{ padding: "12px", textAlign: "center", color: "#333", fontWeight: "600" }}>Performance</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(categoryScores).map(([category, data], index) => (
-                        <tr key={category} style={{ 
-                          borderBottom: "1px solid #dee2e6",
-                          background: index % 2 === 0 ? "white" : "#f8f9fa"
-                        }}>
-                          <td style={{ 
-                            padding: "12px", 
-                            fontWeight: "500",
-                            color: getCategoryColor(category)
-                          }}>
-                            {category}
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center", color: "#666" }}>
-                            {data.count}/20
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center", color: "#666" }}>
-                            {data.total}/{data.maxPossible}
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center", color: "#666" }}>
-                            {data.average.toFixed(1)}/5
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            <span style={{ 
-                              display: "inline-block",
-                              padding: "4px 10px",
-                              borderRadius: "20px",
-                              background: data.percentage >= 70 ? "rgba(76, 175, 80, 0.1)" : 
-                                         data.percentage >= 60 ? "rgba(255, 152, 0, 0.1)" : 
-                                         "rgba(244, 67, 54, 0.1)",
-                              color: data.percentage >= 70 ? "#2e7d32" : 
-                                     data.percentage >= 60 ? "#f57c00" : "#c62828",
-                              fontWeight: "600",
-                              fontSize: "13px"
-                            }}>
-                              {getCategoryGrade(data.percentage)} • {data.percentage}%
-                            </span>
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            <div style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: "6px",
-                              padding: "4px 12px",
-                              borderRadius: "20px",
-                              background: data.percentage >= 70 ? "#e8f5e9" : 
-                                         data.percentage >= 60 ? "#fff3e0" : "#ffebee",
-                              color: data.percentage >= 70 ? "#2e7d32" : 
-                                     data.percentage >= 60 ? "#f57c00" : "#c62828",
-                              fontSize: "12px",
-                              fontWeight: "600"
-                            }}>
-                              {getCategoryPerformanceIcon(data.percentage)} {getCategoryPerformanceLabel(data.percentage)}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr style={{ background: "#e3f2fd", borderTop: "2px solid #1565c0" }}>
-                        <td style={{ 
-                          padding: "12px", 
-                          fontWeight: "700",
-                          color: "#1565c0"
-                        }}>
-                          Overall Summary
-                        </td>
-                        <td style={{ 
-                          padding: "12px", 
-                          textAlign: "center",
-                          fontWeight: "700",
-                          color: "#1565c0"
-                        }}>
-                          {Object.values(categoryScores).reduce((sum, data) => sum + data.count, 0)}/100
-                        </td>
-                        <td style={{ 
-                          padding: "12px", 
-                          textAlign: "center",
-                          fontWeight: "700",
-                          color: "#1565c0"
-                        }}>
-                          {Object.values(categoryScores).reduce((sum, data) => sum + data.total, 0)}/500
-                        </td>
-                        <td style={{ 
-                          padding: "12px", 
-                          textAlign: "center",
-                          fontWeight: "700",
-                          color: "#1565c0"
-                        }}>
-                          {(Object.values(categoryScores).reduce((sum, data) => sum + data.total, 0) / 
-                            Object.values(categoryScores).reduce((sum, data) => sum + data.count, 0)).toFixed(1)}/5
-                        </td>
-                        <td style={{ 
-                          padding: "12px", 
-                          textAlign: "center",
-                          fontWeight: "700",
-                          color: "#1565c0"
-                        }}>
-                          {Math.round((candidateScore / 500) * 100)}%
-                        </td>
-                        <td style={{ 
-                          padding: "12px", 
-                          textAlign: "center",
-                          fontWeight: "700",
-                          color: "#1565c0"
-                        }}>
-                          {classification}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-                
-                {/* Performance Indicators - UPDATED for new grading scale */}
-                <div style={{ 
-                  display: "flex", 
-                  justifyContent: "space-between",
-                  marginTop: "20px",
-                  padding: "15px",
-                  background: "white",
-                  borderRadius: "8px",
-                  border: "1px solid #e0e0e0"
-                }}>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: "24px", fontWeight: "700", color: "#4CAF50" }}>
-                      {strengths.length}
-                    </div>
-                    <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
-                      Strong Areas (A/A-/B+)
-                    </div>
-                    <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
-                      (≥70%)
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: "24px", fontWeight: "700", color: "#FF9800" }}>
-                      {Object.keys(categoryScores).length - strengths.length - weaknesses.length}
-                    </div>
-                    <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
-                      Average Areas (B/B-)
-                    </div>
-                    <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
-                      (60-69%)
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: "24px", fontWeight: "700", color: "#F44336" }}>
-                      {weaknesses.length}
-                    </div>
-                    <div style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
-                      Weak Areas (C+/C/C-/D+/D/F)
-                    </div>
-                    <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
-                      (≤59%)
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Strengths and Weaknesses */}
-        <div style={{ 
-          display: "grid", 
-          gridTemplateColumns: "1fr 1fr", 
-          gap: "30px",
-          marginBottom: "30px"
-        }}>
-          {/* Strengths */}
-          <div style={{ 
-            background: "white", 
-            padding: "25px", 
-            borderRadius: "12px", 
-            boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
-          }}>
-            <h2 style={{ 
-              margin: "0 0 20px 0", 
-              color: "#333",
-              display: "flex",
-              alignItems: "center",
-              gap: "10px"
-            }}>
-              <span style={{ 
-                width: "30px", 
-                height: "30px", 
-                background: "#4CAF50",
-                borderRadius: "50%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "white",
-                fontSize: "16px"
-              }}>
-                ✓
-              </span>
-              Key Strengths ({strengths.length})
-            </h2>
-            
-            {strengths.length === 0 ? (
-              <div style={{ 
-                textAlign: "center", 
-                padding: "30px",
-                color: "#888",
-                background: "#f8f9fa",
-                borderRadius: "8px"
-              }}>
-                <div style={{ fontSize: "36px", marginBottom: "15px" }}>📈</div>
-                <p style={{ marginBottom: "10px" }}>
-                  No categories scored above strength threshold (≥70%).
-                </p>
-                <p style={{ fontSize: "13px", color: "#666" }}>
-                  Candidate shows adequate or below performance across categories.
-                </p>
-              </div>
-            ) : (
-              <div style={{ 
-                display: "grid", 
-                gap: "15px",
-                maxHeight: "400px",
-                overflowY: "auto",
-                paddingRight: "10px"
-              }}>
-                {strengths.map((strength, index) => (
-                  <div key={index} style={{
-                    padding: "15px",
-                    background: "rgba(76, 175, 80, 0.1)",
-                    borderRadius: "8px",
-                    borderLeft: "3px solid #4CAF50"
-                  }}>
-                    <div style={{ 
-                      display: "flex", 
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: "10px"
-                    }}>
-                      <div style={{ 
-                        fontSize: "16px", 
-                        fontWeight: "600",
-                        color: "#2e7d32",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px"
-                      }}>
-                        <span style={{ fontSize: "20px" }}>{strength.icon}</span>
-                        {strength.category}
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        <div style={{ 
-                          padding: "4px 10px",
-                          background: "#4CAF50",
-                          color: "white",
-                          borderRadius: "4px",
-                          fontSize: "14px",
-                          fontWeight: "600",
-                          minWidth: "40px",
-                          textAlign: "center"
-                        }}>
-                          {strength.grade}
-                        </div>
-                        <div style={{ 
-                          padding: "4px 10px",
-                          background: "rgba(255,255,255,0.9)",
-                          color: "#2e7d32",
-                          borderRadius: "4px",
-                          fontSize: "12px",
-                          fontWeight: "600",
-                          border: "1px solid #4CAF50"
-                        }}>
-                          {strength.score}%
-                        </div>
-                      </div>
-                    </div>
-                    <div style={{ 
-                      fontSize: "14px", 
-                      color: "#333",
-                      marginBottom: "8px",
-                      fontWeight: "500"
-                    }}>
-                      {strength.interpretation}
-                    </div>
-                    <div style={{ 
-                      fontSize: "12px", 
-                      color: "#666",
-                      marginBottom: "8px",
-                      fontStyle: "italic",
-                      lineHeight: 1.4
-                    }}>
-                      {strength.gradeLabel}
-                    </div>
-                    <div style={{ 
-                      fontSize: "12px", 
-                      color: "#555",
-                      lineHeight: 1.4,
-                      padding: "8px",
-                      background: "rgba(255,255,255,0.5)",
-                      borderRadius: "4px",
-                      marginTop: "5px"
-                    }}>
-                      {strength.detailedInterpretation}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Weaknesses */}
-          <div style={{ 
-            background: "white", 
-            padding: "25px", 
-            borderRadius: "12px", 
-            boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
-          }}>
-            <h2 style={{ 
-              margin: "0 0 20px 0", 
-              color: "#333",
-              display: "flex",
-              alignItems: "center",
-              gap: "10px"
-            }}>
-              <span style={{ 
-                width: "30px", 
-                height: "30px", 
-                background: "#F44336",
-                borderRadius: "50%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "white",
-                fontSize: "16px"
-              }}>
-                !
-              </span>
-              Areas for Improvement ({weaknesses.length})
-            </h2>
-            
-            {weaknesses.length === 0 ? (
-              <div style={{ 
-                textAlign: "center", 
-                padding: "30px",
-                color: "#888",
-                background: "#f8f9fa",
-                borderRadius: "8px"
-              }}>
-                <div style={{ fontSize: "36px", marginBottom: "15px" }}>🎯</div>
-                <p style={{ marginBottom: "10px" }}>
-                  All categories scored above weakness threshold (≥60%).
-                </p>
-                <p style={{ fontSize: "13px", color: "#666" }}>
-                  Candidate shows adequate or better performance across all areas.
-                </p>
-              </div>
-            ) : (
-              <div style={{ 
-                display: "grid", 
-                gap: "15px",
-                maxHeight: "400px",
-                overflowY: "auto",
-                paddingRight: "10px"
-              }}>
-                {weaknesses.map((weakness, index) => (
-                  <div key={index} style={{
-                    padding: "15px",
-                    background: "rgba(244, 67, 54, 0.1)",
-                    borderRadius: "8px",
-                    borderLeft: "3px solid #F44336"
-                  }}>
-                    <div style={{ 
-                      display: "flex", 
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: "10px"
-                    }}>
-                      <div style={{ 
-                        fontSize: "16px", 
-                        fontWeight: "600",
-                        color: "#c62828",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px"
-                      }}>
-                        <span style={{ fontSize: "20px" }}>{weakness.icon}</span>
-                        {weakness.category}
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        <div style={{ 
-                          padding: "4px 10px",
-                          background: "#F44336",
-                          color: "white",
-                          borderRadius: "4px",
-                          fontSize: "14px",
-                          fontWeight: "600",
-                          minWidth: "40px",
-                          textAlign: "center"
-                        }}>
-                          {weakness.grade}
-                        </div>
-                        <div style={{ 
-                          padding: "4px 10px",
-                          background: "rgba(255,255,255,0.9)",
-                          color: "#c62828",
-                          borderRadius: "4px",
-                          fontSize: "12px",
-                          fontWeight: "600",
-                          border: "1px solid #F44336"
-                        }}>
-                          {weakness.score}%
-                        </div>
-                      </div>
-                    </div>
-                    <div style={{ 
-                      fontSize: "14px", 
-                      color: "#333",
-                      marginBottom: "8px",
-                      fontWeight: "500"
-                    }}>
-                      {weakness.interpretation}
-                    </div>
-                    <div style={{ 
-                      fontSize: "12px", 
-                      color: "#666",
-                      marginBottom: "8px",
-                      fontStyle: "italic",
-                      lineHeight: 1.4
-                    }}>
-                      {weakness.gradeLabel} • Needs {Math.round(70 - weakness.score)}% improvement to reach strong performance
-                    </div>
-                    <div style={{ 
-                      fontSize: "12px", 
-                      color: "#555",
-                      lineHeight: 1.4,
-                      padding: "8px",
-                      background: "rgba(255,255,255,0.5)",
-                      borderRadius: "4px",
-                      marginTop: "5px"
-                    }}>
-                      {weakness.detailedInterpretation}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Recommendations */}
-        <div style={{ 
-          background: "white", 
-          padding: "25px", 
-          borderRadius: "12px", 
-          boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-          marginBottom: "30px"
-        }}>
-          <h2 style={{ 
-            margin: "0 0 20px 0", 
-            color: "#333",
-            display: "flex",
-            alignItems: "center",
-            gap: "10px"
-          }}>
-            <span style={{ 
-              width: "30px", 
-              height: "30px", 
-              background: "#FF9800",
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "white",
-              fontSize: "16px"
-            }}>
-              💡
-            </span>
-            Development Recommendations ({recommendations.length})
-          </h2>
-          
-          {recommendations.length === 0 ? (
-            <div style={{ 
-              textAlign: "center", 
-              padding: "30px",
-              color: "#888",
-              background: "#f8f9fa",
-              borderRadius: "8px"
-            }}>
-              <div style={{ fontSize: "36px", marginBottom: "15px" }}>✅</div>
-              <p style={{ marginBottom: "10px" }}>
-                No specific development recommendations needed.
-              </p>
-              <p style={{ fontSize: "13px", color: "#666" }}>
-                Candidate shows strong overall performance across all categories.
-              </p>
-            </div>
-          ) : (
-            <div style={{ 
-              display: "grid", 
-              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", 
-              gap: "20px" 
-            }}>
-              {recommendations.map((rec, index) => (
-                <div key={index} style={{
-                  padding: "20px",
-                  background: "#fff3e0",
-                  borderRadius: "8px",
-                  border: "1px solid #ffe0b2"
-                }}>
-                  <div style={{ 
-                    display: "flex", 
-                    alignItems: "center",
-                    gap: "10px",
-                    marginBottom: "15px"
-                  }}>
-                    <div style={{
-                      width: "40px",
-                      height: "40px",
-                      borderRadius: "8px",
-                      background: getCategoryColor(rec.category),
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "white",
-                      fontWeight: "600",
-                      fontSize: "14px"
-                    }}>
-                      {rec.category.charAt(0)}
-                    </div>
-                    <div>
-                      <div style={{ 
-                        fontSize: "16px", 
-                        fontWeight: "600",
-                        color: "#333"
-                      }}>
-                        {rec.category}
-                      </div>
-                      <div style={{ 
-                        fontSize: "12px", 
-                        color: "#666"
-                      }}>
-                        Priority: {index === 0 ? "High" : index === 1 ? "Medium" : "Low"} • Grade: {rec.grade}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div style={{ marginBottom: "15px" }}>
-                    <div style={{ 
-                      fontSize: "14px", 
-                      fontWeight: "500",
-                      color: "#666",
-                      marginBottom: "5px"
-                    }}>
-                      Issue:
-                    </div>
-                    <div style={{ 
-                      fontSize: "14px", 
-                      color: "#333",
-                      padding: "8px",
-                      background: "white",
-                      borderRadius: "4px",
-                      borderLeft: "3px solid #FF9800"
-                    }}>
-                      {rec.issue}
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <div style={{ 
-                      fontSize: "14px", 
-                      fontWeight: "500",
-                      color: "#666",
-                      marginBottom: "5px"
-                    }}>
-                      Recommendation:
-                    </div>
-                    <div style={{ 
-                      fontSize: "14px", 
-                      color: "#333",
-                      lineHeight: 1.5,
-                      padding: "8px",
-                      background: "rgba(255, 255, 255, 0.7)",
-                      borderRadius: "4px"
-                    }}>
-                      {rec.recommendation}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Assessment Summary */}
-        <div style={{ 
-          background: "white", 
-          padding: "25px", 
-          borderRadius: "12px", 
-          boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
-        }}>
-          <h2 style={{ margin: "0 0 20px 0", color: "#333" }}>
-            Assessment Summary
-          </h2>
-          
-          <div style={{ 
-            display: "grid", 
-            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
-            gap: "20px",
-            marginBottom: "30px"
-          }}>
-            <div style={{
-              padding: "20px",
-              background: "#f8f9fa",
-              borderRadius: "8px",
-              textAlign: "center",
-              borderTop: "4px solid #1565c0"
-            }}>
-              <div style={{ fontSize: "32px", fontWeight: "700", color: "#1565c0" }}>
-                {responses.length}
-              </div>
-              <div style={{ fontSize: "14px", color: "#666", marginTop: "8px" }}>
-                Total Responses
-              </div>
-              <div style={{ fontSize: "12px", color: "#888", marginTop: "4px" }}>
-                {responses.length}/100 questions
-              </div>
-            </div>
-            
-            <div style={{
-              padding: "20px",
-              background: "#f8f9fa",
-              borderRadius: "8px",
-              textAlign: "center",
-              borderTop: "4px solid #4CAF50"
-            }}>
-              <div style={{ fontSize: "32px", fontWeight: "700", color: "#4CAF50" }}>
-                {candidateScore}
-              </div>
-              <div style={{ fontSize: "14px", color: "#666", marginTop: "8px" }}>
-                Total Score
-              </div>
-              <div style={{ fontSize: "12px", color: "#888", marginTop: "4px" }}>
-                Max: 500 • {Math.round((candidateScore / 500) * 100)}%
-              </div>
-            </div>
-            
-            <div style={{
-              padding: "20px",
-              background: "#f8f9fa",
-              borderRadius: "8px",
-              textAlign: "center",
-              borderTop: "4px solid #9C27B0"
-            }}>
-              <div style={{ fontSize: "32px", fontWeight: "700", color: "#9C27B0" }}>
-                {Object.keys(categoryScores).length}
-              </div>
-              <div style={{ fontSize: "14px", color: "#666", marginTop: "8px" }}>
-                Categories Assessed
-              </div>
-              <div style={{ fontSize: "12px", color: "#888", marginTop: "4px" }}>
-                Out of 5 categories
-              </div>
-            </div>
-            
-            <div style={{
-              padding: "20px",
-              background: "#f8f9fa",
-              borderRadius: "8px",
-              textAlign: "center",
-              borderTop: "4px solid #FF9800"
-            }}>
-              <div style={{ fontSize: "32px", fontWeight: "700", color: "#FF9800" }}>
-                {strengths.length}
-              </div>
-              <div style={{ fontSize: "14px", color: "#666", marginTop: "8px" }}>
-                Key Strengths
-              </div>
-              <div style={{ fontSize: "12px", color: "#888", marginTop: "4px" }}>
-                Areas ≥70% (A/A-/B+)
-              </div>
-            </div>
-          </div>
-          
-          <div style={{ 
-            textAlign: "center",
-            padding: "20px",
-            background: "#e3f2fd",
-            borderRadius: "8px",
-            border: "1px solid #bbdefb"
-          }}>
-            <p style={{ margin: 0, color: "#1565c0", fontSize: "14px" }}>
-              <strong>Report Generated:</strong> {new Date().toLocaleDateString()} | 
-              <strong> Candidate:</strong> {userName} | 
-              <strong> Classification:</strong> {classification} | 
-              <strong> Status:</strong> Completed
-            </p>
-          </div>
-        </div>
-        
-        {/* Debug Panel (Enable by changing display to "block") */}
-        <div style={{ 
-          marginTop: "30px",
-          padding: "15px",
-          background: "#f8f9fa",
-          borderRadius: "8px",
-          border: "1px solid #e0e0e0",
-          fontSize: "12px",
-          color: "#666",
-          display: "none" /* Change to "block" to see debug info */
-        }}>
-          <div style={{ fontWeight: "600", marginBottom: "8px", color: "#333" }}>
-            Debug Information
-          </div>
-          <pre style={{ 
-            margin: 0, 
-            whiteSpace: "pre-wrap",
-            fontSize: "11px",
-            fontFamily: "monospace",
-            maxHeight: "300px",
-            overflow: "auto"
-          }}>
-            {debugInfo}
-          </pre>
-        </div>
-      </div>
-    </AppLayout>
-  );
-}
+              </div
