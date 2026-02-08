@@ -1,4 +1,4 @@
-// utils/scoring.js
+// utils/scoring.js - COMPLETE VERSION WITH ALL EXPORTS
 export function calculateSectionScores(responses) {
   const sections = {
     'Cognitive Abilities': { total: 0, count: 0, max: 80 },
@@ -70,7 +70,7 @@ export function getSectionBreakdown(responses) {
   return breakdown;
 }
 
-// ADD THESE NEW FUNCTIONS:
+// NEW FUNCTIONS YOU NEED:
 export function getCategoryGrade(percentage) {
   if (percentage >= 80) return "A";
   if (percentage >= 75) return "A-";
@@ -124,4 +124,15 @@ export function getStrengths(categoryScores) {
   
   strengths.sort((a, b) => b.score - a.score);
   return strengths;
+}
+
+// Helper function for your API
+export function getOverallClassification(totalScore) {
+  if (totalScore >= 450) return "Elite Talent";
+  if (totalScore >= 400) return "Top Talent";
+  if (totalScore >= 350) return "High Potential";
+  if (totalScore >= 300) return "Solid Performer";
+  if (totalScore >= 250) return "Developing Talent";
+  if (totalScore >= 200) return "Emerging Talent";
+  return "Needs Improvement";
 }
