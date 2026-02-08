@@ -61,7 +61,7 @@ export default function SupervisorSetup() {
     }
 
     // You can set your own admin key here
-    const expectedAdminKey = "TalentAdmin2024!SetupKey@Secure";
+    const expectedAdminKey = "Elizabeth@#!sam880155Gladys@2000GH";
     if (adminKey !== expectedAdminKey) {
       setError("Invalid admin key");
       setLoading(false);
