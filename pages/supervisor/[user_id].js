@@ -1,12 +1,15 @@
-// pages/supervisor/[user_id].js - FIXED SCORE DISPARITY VERSION
-import React, { useEffect, useState, useCallback } from "react";
+// pages/supervisor/[user_id].js - WITH PDF PRINT FUNCTIONALITY
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
 import AppLayout from "../../components/AppLayout";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 
 export default function CandidateReport() {
   const router = useRouter();
   const { user_id } = router.query;
+  const reportRef = useRef(null);
   
   const [loading, setLoading] = useState(true);
   const [isSupervisor, setIsSupervisor] = useState(false);
@@ -20,6 +23,7 @@ export default function CandidateReport() {
   const [userName, setUserName] = useState("");
   const [debugInfo, setDebugInfo] = useState("");
   const [personalityDimensions, setPersonalityDimensions] = useState({});
+  const [generatingPDF, setGeneratingPDF] = useState(false);
 
   // Helper function to get classification based on score
   const getClassification = useCallback((score) => {
@@ -1122,6 +1126,309 @@ export default function CandidateReport() {
     fetchCandidateData();
   }, [isSupervisor, user_id, getClassification, fetchAndCalculateCategoryScores, useEstimatedData]);
 
+  // PDF Generation Function
+  const generatePDF = async () => {
+    if (!reportRef.current) return;
+    
+    setGeneratingPDF(true);
+    
+    try {
+      // Create a temporary div for PDF generation
+      const pdfContent = document.createElement('div');
+      pdfContent.style.width = '210mm'; // A4 width
+      pdfContent.style.padding = '20px';
+      pdfContent.style.background = 'white';
+      pdfContent.style.color = '#333';
+      pdfContent.style.fontFamily = 'Arial, sans-serif';
+      
+      // Clone the report content
+      const reportClone = reportRef.current.cloneNode(true);
+      
+      // Remove elements that shouldn't be in PDF
+      const elementsToRemove = reportClone.querySelectorAll('button, .no-print');
+      elementsToRemove.forEach(el => el.remove());
+      
+      // Add print-specific styling
+      const style = document.createElement('style');
+      style.textContent = `
+        @media print {
+          body { margin: 0; padding: 0; }
+          * { box-shadow: none !important; }
+          .print-only { display: block !important; }
+          .no-print { display: none !important; }
+        }
+        .pdf-header {
+          border-bottom: 2px solid #1565c0;
+          padding-bottom: 15px;
+          margin-bottom: 20px;
+        }
+        .pdf-title {
+          font-size: 24px;
+          font-weight: bold;
+          color: #1565c0;
+          margin-bottom: 5px;
+        }
+        .pdf-subtitle {
+          font-size: 14px;
+          color: #666;
+        }
+        .pdf-section {
+          margin: 20px 0;
+          page-break-inside: avoid;
+        }
+        .pdf-section-title {
+          font-size: 18px;
+          font-weight: bold;
+          color: #333;
+          border-bottom: 1px solid #ddd;
+          padding-bottom: 8px;
+          margin-bottom: 15px;
+        }
+        .pdf-card {
+          background: #f8f9fa;
+          border-radius: 8px;
+          padding: 15px;
+          margin: 10px 0;
+          border-left: 4px solid #1565c0;
+        }
+        .pdf-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 10px 0;
+          font-size: 12px;
+        }
+        .pdf-table th {
+          background: #e9ecef;
+          padding: 8px;
+          text-align: left;
+          border-bottom: 2px solid #1565c0;
+        }
+        .pdf-table td {
+          padding: 8px;
+          border-bottom: 1px solid #dee2e6;
+        }
+        .pdf-footer {
+          margin-top: 30px;
+          padding-top: 15px;
+          border-top: 1px solid #ddd;
+          font-size: 10px;
+          color: #666;
+          text-align: center;
+        }
+      `;
+      pdfContent.appendChild(style);
+      pdfContent.appendChild(reportClone);
+      document.body.appendChild(pdfContent);
+      
+      // Generate PDF
+      const canvas = await html2canvas(pdfContent, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgWidth = 190;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let position = 10;
+      
+      pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+      
+      // Add additional pages if content is long
+      let heightLeft = imgHeight;
+      let page = 1;
+      
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        page++;
+        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+        heightLeft -= 280; // Approximate page height in mm
+      }
+      
+      // Save PDF
+      const fileName = `Candidate_Report_${userName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+      pdf.save(fileName);
+      
+      // Clean up
+      document.body.removeChild(pdfContent);
+      
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      alert('Error generating PDF. Please try again.');
+    } finally {
+      setGeneratingPDF(false);
+    }
+  };
+
+  // Alternative simpler PDF generation
+  const generateSimplePDF = () => {
+    if (!reportRef.current) return;
+    
+    setGeneratingPDF(true);
+    
+    try {
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        alert('Please allow popups to generate PDF');
+        setGeneratingPDF(false);
+        return;
+      }
+      
+      const reportClone = reportRef.current.cloneNode(true);
+      
+      // Remove elements that shouldn't be in PDF
+      const elementsToRemove = reportClone.querySelectorAll('button, .no-print');
+      elementsToRemove.forEach(el => el.remove());
+      
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Candidate Report - ${userName}</title>
+          <style>
+            @media print {
+              @page { margin: 20mm; }
+              body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+              .no-print { display: none !important; }
+              .print-break { page-break-before: always; }
+              .print-avoid-break { page-break-inside: avoid; }
+            }
+            body {
+              font-family: Arial, sans-serif;
+              color: #333;
+              line-height: 1.4;
+              margin: 0;
+              padding: 20px;
+            }
+            .header {
+              border-bottom: 3px solid #1565c0;
+              padding-bottom: 15px;
+              margin-bottom: 25px;
+            }
+            .title {
+              font-size: 28px;
+              font-weight: bold;
+              color: #1565c0;
+              margin-bottom: 5px;
+            }
+            .subtitle {
+              font-size: 16px;
+              color: #666;
+              margin-bottom: 10px;
+            }
+            .info {
+              font-size: 14px;
+              color: #444;
+              margin: 5px 0;
+            }
+            .section {
+              margin: 25px 0;
+              page-break-inside: avoid;
+            }
+            .section-title {
+              font-size: 20px;
+              font-weight: bold;
+              color: #333;
+              border-bottom: 2px solid #1565c0;
+              padding-bottom: 8px;
+              margin-bottom: 15px;
+            }
+            .card {
+              background: #f8f9fa;
+              border-radius: 6px;
+              padding: 15px;
+              margin: 10px 0;
+              border-left: 4px solid #1565c0;
+            }
+            .table-container {
+              overflow-x: auto;
+              margin: 15px 0;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 12px;
+            }
+            th {
+              background: #e9ecef;
+              padding: 10px;
+              text-align: left;
+              border-bottom: 2px solid #1565c0;
+              font-weight: bold;
+            }
+            td {
+              padding: 10px;
+              border-bottom: 1px solid #dee2e6;
+            }
+            .footer {
+              margin-top: 40px;
+              padding-top: 15px;
+              border-top: 1px solid #ddd;
+              font-size: 11px;
+              color: #666;
+              text-align: center;
+            }
+            .score-badge {
+              display: inline-block;
+              padding: 4px 10px;
+              border-radius: 20px;
+              font-size: 12px;
+              font-weight: bold;
+              margin: 2px;
+            }
+            .strength { background: #e8f5e9; color: #2e7d32; }
+            .weakness { background: #ffebee; color: #c62828; }
+            .average { background: #fff3e0; color: #f57c00; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="title">Candidate Performance Report</div>
+            <div class="subtitle">${userName}</div>
+            <div class="info">Email: ${userEmail}</div>
+            <div class="info">Candidate ID: ${user_id?.substring(0, 12)}...</div>
+            <div class="info">Report Date: ${new Date().toLocaleDateString()}</div>
+          </div>
+      `);
+      
+      // Add report content
+      printWindow.document.write(reportClone.innerHTML);
+      
+      // Add footer
+      printWindow.document.write(`
+          <div class="footer">
+            <p>This assessment report is confidential and intended for authorized personnel only.</p>
+            <p>Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
+          </div>
+        </body>
+        </html>
+      `);
+      
+      printWindow.document.close();
+      
+      // Wait for content to load, then trigger print
+      printWindow.onload = function() {
+        printWindow.focus();
+        printWindow.print();
+        printWindow.close();
+      };
+      
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      alert('Error generating PDF. Please try again.');
+    } finally {
+      setGeneratingPDF(false);
+    }
+  };
+
+  // Direct browser print
+  const handlePrint = () => {
+    window.print();
+  };
+
   const handleBack = () => {
     router.push("/supervisor");
   };
@@ -1237,221 +1544,274 @@ export default function CandidateReport() {
 
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
-      <div style={{ width: "90vw", margin: "auto", padding: "30px 20px" }}>
-        {/* Header */}
-        <div style={{ marginBottom: "30px" }}>
-          <div style={{ 
-            display: "flex", 
-            justifyContent: "space-between", 
-            alignItems: "flex-start",
-            marginBottom: "20px" 
+      <style jsx global>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          #report-content, #report-content * {
+            visibility: visible;
+          }
+          #report-content {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            padding: 20px;
+            background: white;
+          }
+          .no-print {
+            display: none !important;
+          }
+          .print-break {
+            page-break-before: always;
+          }
+          .print-avoid-break {
+            page-break-inside: avoid;
+          }
+          .app-layout {
+            background: white !important;
+          }
+          .print-header {
+            display: block !important;
+            border-bottom: 3px solid #1565c0;
+            padding-bottom: 15px;
+            margin-bottom: 25px;
+            page-break-after: avoid;
+          }
+        }
+        
+        .print-header {
+          display: none;
+        }
+      `}</style>
+      
+      <div style={{ width: "90vw", margin: "auto", padding: "30px 20px" }} id="report-content" ref={reportRef}>
+        {/* Print Header (only shows in print) */}
+        <div className="print-header">
+          <h1 style={{ 
+            margin: "0 0 10px 0", 
+            color: "#1565c0",
+            fontSize: "28px"
           }}>
-            <div>
-              <button
-                onClick={handleBack}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#1565c0",
-                  cursor: "pointer",
-                  fontSize: "16px",
-                  padding: "0",
-                  marginBottom: "15px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px"
-                }}
-              >
-                ← Back to Dashboard
-              </button>
-              <h1 style={{ 
-                margin: "0 0 10px 0", 
-                color: "#333",
-                fontSize: "28px"
-              }}>
-                Candidate Performance Report
-              </h1>
-              <p style={{ 
-                margin: "0 0 5px 0", 
-                color: "#666",
+            Candidate Performance Report
+          </h1>
+          <div style={{ fontSize: "16px", color: "#666", marginBottom: "5px" }}>
+            <strong>Candidate:</strong> {userName}
+          </div>
+          <div style={{ fontSize: "14px", color: "#666", marginBottom: "5px" }}>
+            <strong>Email:</strong> {userEmail === "Email not found" ? "Not available" : userEmail}
+          </div>
+          <div style={{ fontSize: "14px", color: "#666", marginBottom: "5px" }}>
+            <strong>Report Date:</strong> {new Date().toLocaleDateString()}
+          </div>
+          <div style={{ fontSize: "14px", color: "#666" }}>
+            <strong>Overall Score:</strong> {candidateScore}/500 ({classification})
+          </div>
+        </div>
+        
+        {/* Action Buttons */}
+        <div style={{ 
+          display: "flex", 
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "25px",
+          flexWrap: "wrap",
+          gap: "15px"
+        }} className="no-print">
+          <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
+            <button
+              onClick={handleBack}
+              style={{
+                padding: "10px 20px",
+                background: "none",
+                border: "2px solid #1565c0",
+                color: "#1565c0",
+                cursor: "pointer",
                 fontSize: "16px",
-                fontWeight: "500"
-              }}>
-                {userName}
-              </p>
-              <p style={{ 
-                margin: "0", 
-                color: userEmail === "Email not found" ? "#999" : "#888",
-                fontSize: "14px",
-                fontStyle: userEmail === "Email not found" ? "italic" : "normal"
-              }}>
-                {userEmail === "Email not found" ? "Email not available" : userEmail}
-              </p>
-              <p style={{ 
-                margin: "5px 0 0 0", 
-                color: "#999",
-                fontSize: "12px",
-                fontFamily: "monospace"
-              }}>
-                ID: {user_id?.substring(0, 12)}... | Score: {candidateScore} | {classification}
-              </p>
-            </div>
+                borderRadius: "8px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                fontWeight: "600"
+              }}
+            >
+              ← Back to Dashboard
+            </button>
             <div style={{ 
               background: "#f8f9fa", 
-              padding: "15px 20px", 
-              borderRadius: "10px",
-              minWidth: "200px"
+              padding: "10px 20px", 
+              borderRadius: "8px",
+              border: "1px solid #dee2e6"
             }}>
-              <div style={{ 
-                fontSize: "14px", 
-                color: "#666", 
-                marginBottom: "5px" 
-              }}>
-                Overall Classification
+              <div style={{ fontSize: "14px", color: "#666" }}>Candidate Report</div>
+              <div style={{ fontSize: "16px", fontWeight: "700", color: "#1565c0" }}>{userName}</div>
+            </div>
+          </div>
+          
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <button
+              onClick={handlePrint}
+              style={{
+                padding: "10px 20px",
+                background: "#2196F3",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontSize: "16px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                fontWeight: "600"
+              }}
+              disabled={generatingPDF}
+            >
+              🖨️ Print Report
+            </button>
+            
+            <button
+              onClick={generateSimplePDF}
+              style={{
+                padding: "10px 20px",
+                background: "#4CAF50",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontSize: "16px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                fontWeight: "600"
+              }}
+              disabled={generatingPDF}
+            >
+              {generatingPDF ? (
+                <>
+                  <div style={{
+                    width: "16px",
+                    height: "16px",
+                    border: "2px solid white",
+                    borderTop: "2px solid transparent",
+                    borderRadius: "50%",
+                    animation: "spin 1s linear infinite"
+                  }} />
+                  Generating PDF...
+                </>
+              ) : (
+                "📄 Generate PDF"
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Performance Classification Details */}
+        <div style={{ 
+          background: "white", 
+          padding: "20px", 
+          borderRadius: "12px", 
+          boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+          marginBottom: "30px",
+          pageBreakInside: "avoid"
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+            <h3 style={{ margin: "0", color: "#333" }}>Performance Classification</h3>
+            <div style={{ 
+              padding: "8px 16px",
+              background: classificationColor,
+              color: "white",
+              borderRadius: "20px",
+              fontSize: "14px",
+              fontWeight: "600"
+            }}>
+              {classification}
+            </div>
+          </div>
+          
+          <div style={{ 
+            padding: "15px",
+            background: candidateScore >= 450 ? "#e8f5e9" :
+                       candidateScore >= 400 ? "#e3f2fd" :
+                       candidateScore >= 350 ? "#fff3e0" :
+                       candidateScore >= 300 ? "#f3e5f5" :
+                       candidateScore >= 250 ? "#fff8e1" :
+                       candidateScore >= 200 ? "#efebe9" : "#ffebee",
+            borderRadius: "8px",
+            borderLeft: `4px solid ${classificationColor}`
+          }}>
+            <div style={{ 
+              fontSize: "14px", 
+              fontWeight: "600",
+              color: "#333",
+              marginBottom: "5px"
+            }}>
+              {classification} - Performance Summary
+            </div>
+            <div style={{ fontSize: "14px", color: "#666", lineHeight: 1.5 }}>
+              {classificationDescription}
+            </div>
+          </div>
+        </div>
+
+        {/* Overall Score Card */}
+        <div style={{
+          background: "linear-gradient(135deg, #1565c0 0%, #0d47a1 100%)",
+          color: "white",
+          padding: "25px",
+          borderRadius: "12px",
+          marginBottom: "30px",
+          pageBreakInside: "avoid"
+        }}>
+          <div style={{ 
+            display: "flex", 
+            justifyContent: "space-between",
+            alignItems: "center"
+          }}>
+            <div>
+              <div style={{ fontSize: "14px", opacity: 0.9 }}>Overall Assessment Score</div>
+              <div style={{ fontSize: "48px", fontWeight: "700", margin: "10px 0" }}>
+                {candidateScore}
               </div>
-              <div style={{ 
-                fontSize: "20px", 
-                fontWeight: "700",
-                color: classificationColor
-              }}>
-                {classification}
+              <div style={{ fontSize: "14px", opacity: 0.9 }}>
+                Candidate: {userName}
               </div>
               <div style={{ 
                 fontSize: "12px", 
-                color: "#888", 
+                opacity: 0.8, 
                 marginTop: "5px",
-                fontStyle: "italic"
+                padding: "5px 10px",
+                background: "rgba(255,255,255,0.1)",
+                borderRadius: "4px",
+                display: "inline-block"
               }}>
-                Score: {candidateScore}/500
+                Max possible: 500 points • {Math.round((candidateScore / 500) * 100)}% overall • {classification}
               </div>
             </div>
-          </div>
-
-          {/* Performance Classification Details */}
-          <div style={{ 
-            background: "white", 
-            padding: "20px", 
-            borderRadius: "12px", 
-            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-            marginBottom: "30px"
-          }}>
-            <h3 style={{ margin: "0 0 15px 0", color: "#333" }}>Performance Classification</h3>
-            
-            <div style={{ 
-              display: "grid", 
-              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", 
-              gap: "10px",
-              marginBottom: "20px"
-            }}>
-              {[
-                { range: "450-500", label: "Elite Talent", color: "#4CAF50", active: candidateScore >= 450 },
-                { range: "400-449", label: "Top Talent", color: "#2196F3", active: candidateScore >= 400 && candidateScore < 450 },
-                { range: "350-399", label: "High Potential", color: "#FF9800", active: candidateScore >= 350 && candidateScore < 400 },
-                { range: "300-349", label: "Solid Performer", color: "#9C27B0", active: candidateScore >= 300 && candidateScore < 350 },
-                { range: "250-299", label: "Developing Talent", color: "#F57C00", active: candidateScore >= 250 && candidateScore < 300 },
-                { range: "200-249", label: "Emerging Talent", color: "#795548", active: candidateScore >= 200 && candidateScore < 250 },
-                { range: "0-199", label: "Needs Improvement", color: "#F44336", active: candidateScore < 200 }
-              ].map((item, index) => (
-                <div key={index} style={{
-                  padding: "12px",
-                  background: item.active ? item.color : "#f8f9fa",
-                  color: item.active ? "white" : "#666",
-                  borderRadius: "8px",
-                  textAlign: "center",
-                  border: `2px solid ${item.active ? item.color : "#e0e0e0"}`,
-                  fontWeight: item.active ? "600" : "400"
-                }}>
-                  <div style={{ fontSize: "14px" }}>{item.range}</div>
-                  <div style={{ fontSize: "12px", opacity: item.active ? 0.9 : 0.7 }}>
-                    {item.label}
-                  </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{
+                width: "100px",
+                height: "100px",
+                borderRadius: "50%",
+                background: "rgba(255,255,255,0.1)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                border: "5px solid rgba(255,255,255,0.2)"
+              }}>
+                <div style={{ fontSize: "32px", fontWeight: "700" }}>
+                  {performanceGrade}
                 </div>
-              ))}
-            </div>
-            
-            <div style={{ 
-              padding: "15px",
-              background: candidateScore >= 450 ? "#e8f5e9" :
-                         candidateScore >= 400 ? "#e3f2fd" :
-                         candidateScore >= 350 ? "#fff3e0" :
-                         candidateScore >= 300 ? "#f3e5f5" :
-                         candidateScore >= 250 ? "#fff8e1" :
-                         candidateScore >= 200 ? "#efebe9" : "#ffebee",
-              borderRadius: "8px",
-              borderLeft: `4px solid ${classificationColor}`
-            }}>
+              </div>
+              <div style={{ marginTop: "10px", fontSize: "12px", opacity: 0.8 }}>
+                Performance Grade
+              </div>
               <div style={{ 
-                fontSize: "14px", 
-                fontWeight: "600",
-                color: "#333",
-                marginBottom: "5px"
+                fontSize: "11px", 
+                opacity: 0.7,
+                marginTop: "3px"
               }}>
-                {classification} - Performance Summary
-              </div>
-              <div style={{ fontSize: "14px", color: "#666", lineHeight: 1.5 }}>
-                {classificationDescription}
-              </div>
-            </div>
-          </div>
-
-          {/* Overall Score Card */}
-          <div style={{
-            background: "linear-gradient(135deg, #1565c0 0%, #0d47a1 100%)",
-            color: "white",
-            padding: "25px",
-            borderRadius: "12px",
-            marginBottom: "30px"
-          }}>
-            <div style={{ 
-              display: "flex", 
-              justifyContent: "space-between",
-              alignItems: "center"
-            }}>
-              <div>
-                <div style={{ fontSize: "14px", opacity: 0.9 }}>Overall Assessment Score</div>
-                <div style={{ fontSize: "48px", fontWeight: "700", margin: "10px 0" }}>
-                  {candidateScore}
-                </div>
-                <div style={{ fontSize: "14px", opacity: 0.9 }}>
-                  Candidate: {userName}
-                </div>
-                <div style={{ 
-                  fontSize: "12px", 
-                  opacity: 0.8, 
-                  marginTop: "5px",
-                  padding: "5px 10px",
-                  background: "rgba(255,255,255,0.1)",
-                  borderRadius: "4px",
-                  display: "inline-block"
-                }}>
-                  Max possible: 500 points • {Math.round((candidateScore / 500) * 100)}% overall • {classification}
-                </div>
-              </div>
-              <div style={{ textAlign: "center" }}>
-                <div style={{
-                  width: "100px",
-                  height: "100px",
-                  borderRadius: "50%",
-                  background: "rgba(255,255,255,0.1)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  border: "5px solid rgba(255,255,255,0.2)"
-                }}>
-                  <div style={{ fontSize: "32px", fontWeight: "700" }}>
-                    {performanceGrade}
-                  </div>
-                </div>
-                <div style={{ marginTop: "10px", fontSize: "12px", opacity: 0.8 }}>
-                  Performance Grade
-                </div>
-                <div style={{ 
-                  fontSize: "11px", 
-                  opacity: 0.7,
-                  marginTop: "3px"
-                }}>
-                  {gradeLabel}
-                </div>
+                {gradeLabel}
               </div>
             </div>
           </div>
@@ -1463,7 +1823,8 @@ export default function CandidateReport() {
           padding: "25px", 
           borderRadius: "12px", 
           boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-          marginBottom: "30px"
+          marginBottom: "30px",
+          pageBreakInside: "avoid"
         }}>
           <h2 style={{ margin: "0 0 25px 0", color: "#333" }}>Performance by Category</h2>
           
@@ -1760,195 +2121,13 @@ export default function CandidateReport() {
           )}
         </div>
 
-        {/* PERSONALITY DIMENSION ANALYSIS - NEW SECTION */}
-        {Object.keys(personalityDimensions).length > 0 && (
-          <div style={{ 
-            background: "white", 
-            padding: "25px", 
-            borderRadius: "12px", 
-            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-            marginBottom: "30px"
-          }}>
-            <h2 style={{ margin: "0 0 25px 0", color: "#333" }}>Personality Dimension Analysis</h2>
-            <p style={{ color: "#666", marginBottom: "20px", lineHeight: 1.6 }}>
-              This analysis provides insights into the candidate's behavioral tendencies and work style based on their responses to personality assessment questions. Understanding these dimensions helps predict fit within team dynamics and organizational culture.
-            </p>
-            
-            {/* Top Dimensions Summary */}
-            <div style={{ 
-              padding: "20px",
-              background: "#f0f7ff",
-              borderRadius: "8px",
-              marginBottom: "25px",
-              border: "1px solid #d0e3ff"
-            }}>
-              <div style={{ 
-                fontSize: "16px", 
-                fontWeight: "600",
-                color: "#1565c0",
-                marginBottom: "10px"
-              }}>
-                Key Personality Insights
-              </div>
-              <div style={{ fontSize: "14px", color: "#444", lineHeight: 1.6 }}>
-                The candidate demonstrates strength in <strong>{getTopDimensions(personalityDimensions)}</strong>. 
-                These dimensions suggest a natural tendency toward{' '}
-                {personalityDimensions.collaboration?.percentage >= 70 ? 'collaborative work environments and ' : ''}
-                {personalityDimensions.initiative?.percentage >= 70 ? 'proactive problem-solving. ' : 'methodical approaches to work. '}
-                Understanding these behavioral patterns can inform team placement and development opportunities.
-              </div>
-            </div>
-            
-            {/* Personality Dimension Grid */}
-            <div style={{ 
-              display: "grid", 
-              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", 
-              gap: "15px",
-              marginBottom: "25px"
-            }}>
-              {Object.entries(personalityDimensions).map(([dimension, data]) => (
-                <div key={dimension} style={{
-                  padding: "18px",
-                  background: data.percentage >= 70 ? "#f1f8e9" : 
-                             data.percentage >= 50 ? "#fff8e1" : "#ffebee",
-                  borderRadius: "8px",
-                  borderLeft: `4px solid ${data.percentage >= 70 ? "#4CAF50" : 
-                                              data.percentage >= 50 ? "#FF9800" : "#F44336"}`
-                }}>
-                  <div style={{ 
-                    display: "flex", 
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    marginBottom: "12px"
-                  }}>
-                    <div>
-                      <div style={{ 
-                        fontSize: "16px", 
-                        fontWeight: "600",
-                        color: "#333",
-                        marginBottom: "3px"
-                      }}>
-                        {formatDimensionName(dimension)}
-                      </div>
-                      <div style={{ 
-                        fontSize: "12px", 
-                        color: "#666",
-                        fontStyle: "italic"
-                      }}>
-                        {data.count} assessment items
-                      </div>
-                    </div>
-                    <div style={{ 
-                      fontSize: "24px", 
-                      fontWeight: "700",
-                      color: data.percentage >= 70 ? "#4CAF50" : 
-                             data.percentage >= 50 ? "#FF9800" : "#F44336"
-                    }}>
-                      {data.percentage}%
-                    </div>
-                  </div>
-                  
-                  <div style={{ 
-                    height: "8px", 
-                    background: "#e0e0e0", 
-                    borderRadius: "4px",
-                    overflow: "hidden",
-                    marginBottom: "10px"
-                  }}>
-                    <div style={{ 
-                      height: "100%", 
-                      width: `${data.percentage}%`, 
-                      background: data.percentage >= 70 ? "#4CAF50" : 
-                                 data.percentage >= 50 ? "#FF9800" : "#F44336",
-                      borderRadius: "4px"
-                    }}></div>
-                  </div>
-                  
-                  <div style={{ 
-                    fontSize: "13px", 
-                    color: "#555",
-                    lineHeight: 1.5,
-                    marginBottom: "5px"
-                  }}>
-                    {data.interpretation}
-                  </div>
-                  
-                  <div style={{ 
-                    fontSize: "11px", 
-                    color: "#777",
-                    marginTop: "8px",
-                    paddingTop: "8px",
-                    borderTop: "1px solid rgba(0,0,0,0.1)"
-                  }}>
-                    <strong>Based on:</strong> {data.subsections.slice(0, 3).join(', ')}
-                    {data.subsections.length > 3 && ` and ${data.subsections.length - 3} more`}
-                  </div>
-                </div>
-              ))}
-            </div>
-            
-            {/* Dimension Interpretation Guide */}
-            <div style={{ 
-              padding: "15px",
-              background: "#f8f9fa",
-              borderRadius: "8px",
-              border: "1px solid #e0e0e0"
-            }}>
-              <div style={{ 
-                fontSize: "14px", 
-                fontWeight: "600",
-                color: "#333",
-                marginBottom: "10px"
-              }}>
-                Dimension Interpretation Guide
-              </div>
-              <div style={{ 
-                display: "grid", 
-                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
-                gap: "10px",
-                fontSize: "12px"
-              }}>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                  <div style={{ 
-                    width: "12px", 
-                    height: "12px", 
-                    background: "#4CAF50",
-                    borderRadius: "2px",
-                    marginRight: "8px"
-                  }}></div>
-                  <span><strong>70-100%:</strong> Strong demonstration</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                  <div style={{ 
-                    width: "12px", 
-                    height: "12px", 
-                    background: "#FF9800",
-                    borderRadius: "2px",
-                    marginRight: "8px"
-                  }}></div>
-                  <span><strong>50-69%:</strong> Moderate demonstration</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                  <div style={{ 
-                    width: "12px", 
-                    height: "12px", 
-                    background: "#F44336",
-                    borderRadius: "2px",
-                    marginRight: "8px"
-                  }}></div>
-                  <span><strong>0-49%:</strong> Area for development</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* STRENGTHS AND WEAKNESSES */}
         <div style={{ 
           display: "grid", 
           gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", 
           gap: "30px",
-          marginBottom: "30px"
+          marginBottom: "30px",
+          pageBreakInside: "avoid"
         }}>
           {/* Strengths */}
           <div style={{ 
@@ -2159,7 +2338,8 @@ export default function CandidateReport() {
           padding: "25px", 
           borderRadius: "12px", 
           boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-          marginBottom: "30px"
+          marginBottom: "30px",
+          pageBreakInside: "avoid"
         }}>
           <h2 style={{ 
             margin: "0 0 25px 0", 
@@ -2375,32 +2555,6 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* DEBUG INFO (Hidden by default) */}
-        {debugInfo && process.env.NODE_ENV === 'development' && (
-          <div style={{ 
-            marginTop: "30px",
-            padding: "20px",
-            background: "#f5f5f5",
-            borderRadius: "8px",
-            fontSize: "12px",
-            fontFamily: "monospace",
-            color: "#666",
-            maxHeight: "300px",
-            overflow: "auto",
-            whiteSpace: "pre-wrap"
-          }}>
-            <div style={{ 
-              fontSize: "14px", 
-              fontWeight: "bold",
-              color: "#333",
-              marginBottom: "10px"
-            }}>
-              Debug Information
-            </div>
-            {debugInfo}
-          </div>
-        )}
-
         {/* Footer */}
         <div style={{ 
           textAlign: "center", 
@@ -2415,6 +2569,32 @@ export default function CandidateReport() {
             This assessment report is confidential and intended for authorized personnel only.
           </p>
         </div>
+
+        {/* DEBUG INFO (Hidden by default) */}
+        {debugInfo && process.env.NODE_ENV === 'development' && (
+          <div style={{ 
+            marginTop: "30px",
+            padding: "20px",
+            background: "#f5f5f5",
+            borderRadius: "8px",
+            fontSize: "12px",
+            fontFamily: "monospace",
+            color: "#666",
+            maxHeight: "300px",
+            overflow: "auto",
+            whiteSpace: "pre-wrap"
+          }} className="no-print">
+            <div style={{ 
+              fontSize: "14px", 
+              fontWeight: "bold",
+              color: "#333",
+              marginBottom: "10px"
+            }}>
+              Debug Information
+            </div>
+            {debugInfo}
+          </div>
+        )}
       </div>
     </AppLayout>
   );
