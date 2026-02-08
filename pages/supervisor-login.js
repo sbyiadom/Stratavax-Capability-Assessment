@@ -1,7 +1,6 @@
-// pages/supervisor-login.js
-import { useState } from "react";
+// pages/supervisor-login.js - ACTUAL AUTHENTICATION
+import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
-import Link from "next/link";
 import { supabase } from "../supabase/client";
 
 export default function SupervisorLogin() {
@@ -10,202 +9,458 @@ export default function SupervisorLogin() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+
+  // Check if already logged in
+  useEffect(() => {
+    const checkExistingSession = () => {
+      if (typeof window !== 'undefined') {
+        const supervisorSession = localStorage.getItem("supervisorSession");
+        if (supervisorSession) {
+          try {
+            const session = JSON.parse(supervisorSession);
+            if (session.loggedIn && session.expires > Date.now()) {
+              router.push("/supervisor");
+            } else {
+              // Session expired, remove it
+              localStorage.removeItem("supervisorSession");
+            }
+          } catch {
+            localStorage.removeItem("supervisorSession");
+          }
+        }
+      }
+    };
+
+    checkExistingSession();
+  }, [router]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
+    // Basic validation
+    if (!email || !password) {
+      setError("Please enter both email and password");
+      setLoading(false);
+      return;
+    }
+
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError("Please enter a valid email address");
+      setLoading(false);
+      return;
+    }
+
     try {
-      // First, check if this is a supervisor email
+      // 1. Check if user exists in supervisors table
       const { data: supervisorData, error: supervisorError } = await supabase
         .from("supervisors")
         .select("*")
-        .eq("email", email)
+        .eq("email", email.toLowerCase().trim())
         .single();
 
       if (supervisorError || !supervisorData) {
-        throw new Error("Access denied. Supervisor credentials only.");
+        setError("Invalid credentials. Please check your email and password.");
+        setLoading(false);
+        return;
       }
 
-      // Simple password check (for demo only)
-      if (password !== "supervisor123") {
-        throw new Error("Invalid credentials");
+      // 2. Verify password (assuming you're storing hashed passwords)
+      // If using Supabase Auth, you'd use supabase.auth.signInWithPassword
+      // For custom auth, you'd verify against stored hash
+      
+      // For this example, let's use Supabase Auth for supervisors
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.toLowerCase().trim(),
+        password: password
+      });
+
+      if (authError) {
+        // Fallback to custom auth if Supabase Auth fails
+        await handleCustomAuth(supervisorData);
+      } else {
+        // Success with Supabase Auth
+        await handleSuccessfulLogin(authData.user, supervisorData);
       }
-
-      // Store supervisor session
-      localStorage.setItem("supervisorSession", JSON.stringify({
-        email: supervisorData.email,
-        name: supervisorData.full_name,
-        role: supervisorData.role,
-        loggedIn: true,
-        timestamp: Date.now()
-      }));
-
-      // Redirect to supervisor dashboard
-      router.push("/supervisor");
 
     } catch (err) {
-      setError(err.message);
-    } finally {
+      console.error("Login error:", err);
+      setError("An error occurred during login. Please try again.");
       setLoading(false);
     }
+  };
+
+  const handleCustomAuth = async (supervisorData) => {
+    try {
+      // This is where you'd verify against your custom password hash
+      // For now, let's check if the password matches a simple hash
+      // In production, use bcrypt or similar
+      
+      // Create a simple hash for demo (use bcrypt in production)
+      const simpleHash = btoa(password);
+      
+      // Check against stored hash (you'd need to store hashes in your supervisors table)
+      if (supervisorData.password_hash !== simpleHash) {
+        setError("Invalid credentials. Please check your email and password.");
+        setLoading(false);
+        return;
+      }
+
+      // Mock user object for custom auth
+      const mockUser = {
+        id: supervisorData.id,
+        email: supervisorData.email,
+        role: 'supervisor',
+        name: supervisorData.name || supervisorData.email.split('@')[0]
+      };
+
+      await handleSuccessfulLogin(mockUser, supervisorData);
+
+    } catch (err) {
+      console.error("Custom auth error:", err);
+      setError("Authentication failed. Please try again.");
+      setLoading(false);
+    }
+  };
+
+  const handleSuccessfulLogin = async (user, supervisorData) => {
+    // Create session data
+    const sessionData = {
+      loggedIn: true,
+      userId: user.id,
+      email: user.email,
+      name: supervisorData.name || user.email.split('@')[0],
+      role: 'supervisor',
+      permissions: supervisorData.permissions || ['view_reports', 'manage_candidates'],
+      expires: rememberMe ? Date.now() + (30 * 24 * 60 * 60 * 1000) : Date.now() + (8 * 60 * 60 * 1000), // 30 days or 8 hours
+      loginTime: new Date().toISOString(),
+      lastActivity: Date.now()
+    };
+
+    // Store session
+    localStorage.setItem("supervisorSession", JSON.stringify(sessionData));
+    
+    // Also store in sessionStorage for security
+    sessionStorage.setItem("supervisorAuth", "true");
+
+    // Log the login event
+    await supabase
+      .from("supervisor_logs")
+      .insert({
+        supervisor_id: user.id,
+        action: "login",
+        ip_address: await getClientIP(),
+        user_agent: navigator.userAgent,
+        timestamp: new Date().toISOString()
+      });
+
+    // Redirect to supervisor dashboard
+    router.push("/supervisor");
+  };
+
+  // Helper to get client IP (approximate)
+  const getClientIP = async () => {
+    try {
+      const response = await fetch('https://api.ipify.org?format=json');
+      const data = await response.json();
+      return data.ip;
+    } catch {
+      return "unknown";
+    }
+  };
+
+  const handleForgotPassword = () => {
+    router.push("/supervisor-forgot-password");
+  };
+
+  const handleDemoLogin = () => {
+    setEmail("admin@talentassess.com");
+    setPassword("demo123");
+    setError("");
   };
 
   return (
     <div style={{
       minHeight: "100vh",
-      background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
+      background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
       padding: "20px"
     }}>
       <div style={{
-        background: "white",
-        padding: "40px",
-        borderRadius: "20px",
-        boxShadow: "0 20px 40px rgba(0,0,0,0.1)",
         width: "100%",
-        maxWidth: "400px"
+        maxWidth: "400px",
+        background: "white",
+        borderRadius: "12px",
+        boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+        overflow: "hidden"
       }}>
-        <div style={{ textAlign: "center", marginBottom: "30px" }}>
-          <h1 style={{ 
-            color: "#1565c0", 
-            margin: "0 0 10px 0",
-            fontSize: "28px"
-          }}>
-            🏢 Stratavax
+        {/* Header */}
+        <div style={{
+          background: "linear-gradient(135deg, #1565c0 0%, #0d47a1 100%)",
+          padding: "30px 20px",
+          textAlign: "center",
+          color: "white"
+        }}>
+          <h1 style={{ margin: 0, fontSize: "28px", fontWeight: "700" }}>
+            Supervisor Portal
           </h1>
-          <p style={{ color: "#666", fontSize: "16px" }}>
-            Supervisor Login
+          <p style={{ 
+            margin: "10px 0 0 0", 
+            opacity: 0.9,
+            fontSize: "14px"
+          }}>
+            Talent Assessment Management System
           </p>
         </div>
 
-        <form onSubmit={handleLogin}>
-          <div style={{ marginBottom: "20px" }}>
-            <label style={{
-              display: "block",
-              marginBottom: "8px",
-              fontWeight: "600",
-              color: "#333"
-            }}>
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              style={{
-                width: "100%",
-                padding: "12px 15px",
-                border: "2px solid #ddd",
-                borderRadius: "8px",
-                fontSize: "16px",
-                boxSizing: "border-box"
-              }}
-              placeholder="supervisor@stratax.com"
-            />
-          </div>
-
-          <div style={{ marginBottom: "25px" }}>
-            <label style={{
-              display: "block",
-              marginBottom: "8px",
-              fontWeight: "600",
-              color: "#333"
-            }}>
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              style={{
-                width: "100%",
-                padding: "12px 15px",
-                border: "2px solid #ddd",
-                borderRadius: "8px",
-                fontSize: "16px",
-                boxSizing: "border-box"
-              }}
-              placeholder="Enter supervisor password"
-            />
-          </div>
+        {/* Login Form */}
+        <div style={{ padding: "30px" }}>
+          <h2 style={{ 
+            margin: "0 0 25px 0", 
+            color: "#333",
+            fontSize: "22px",
+            textAlign: "center"
+          }}>
+            Sign In
+          </h2>
 
           {error && (
             <div style={{
+              padding: "12px 15px",
               background: "#ffebee",
               color: "#c62828",
-              padding: "12px",
-              borderRadius: "8px",
+              borderRadius: "6px",
               marginBottom: "20px",
-              fontSize: "14px"
+              fontSize: "14px",
+              borderLeft: "4px solid #f44336"
             }}>
               {error}
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: "100%",
-              padding: "15px",
-              background: loading ? "#90caf9" : "#1565c0",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              fontSize: "16px",
-              fontWeight: "600",
-              cursor: loading ? "not-allowed" : "pointer",
-              transition: "background 0.3s",
-              marginBottom: "15px"
-            }}
-          >
-            {loading ? "Logging in..." : "Login as Supervisor"}
-          </button>
-
-          <div style={{ textAlign: "center" }}>
-            <Link href="/login" legacyBehavior>
-              <a style={{
-                color: "#1565c0",
-                textDecoration: "none",
-                fontSize: "14px"
+          <form onSubmit={handleLogin}>
+            {/* Email Input */}
+            <div style={{ marginBottom: "20px" }}>
+              <label style={{
+                display: "block",
+                marginBottom: "8px",
+                color: "#555",
+                fontSize: "14px",
+                fontWeight: "500"
               }}>
-                ← Back to Candidate Login
-              </a>
-            </Link>
-          </div>
-        </form>
+                Email Address
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="supervisor@company.com"
+                style={{
+                  width: "100%",
+                  padding: "12px 15px",
+                  border: "1px solid #ddd",
+                  borderRadius: "6px",
+                  fontSize: "16px",
+                  boxSizing: "border-box",
+                  transition: "border-color 0.3s"
+                }}
+                onFocus={(e) => e.target.style.borderColor = "#1565c0"}
+                onBlur={(e) => e.target.style.borderColor = "#ddd"}
+                disabled={loading}
+                required
+              />
+            </div>
 
-        <div style={{
-          marginTop: "25px",
-          paddingTop: "20px",
-          borderTop: "1px solid #eee",
-          textAlign: "center"
-        }}>
-          <p style={{ color: "#666", fontSize: "14px", marginBottom: "10px" }}>
-            <strong>Demo Supervisor Credentials:</strong>
-          </p>
+            {/* Password Input */}
+            <div style={{ marginBottom: "15px" }}>
+              <div style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "8px"
+              }}>
+                <label style={{
+                  color: "#555",
+                  fontSize: "14px",
+                  fontWeight: "500"
+                }}>
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#1565c0",
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    padding: 0
+                  }}
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                style={{
+                  width: "100%",
+                  padding: "12px 15px",
+                  border: "1px solid #ddd",
+                  borderRadius: "6px",
+                  fontSize: "16px",
+                  boxSizing: "border-box",
+                  transition: "border-color 0.3s"
+                }}
+                onFocus={(e) => e.target.style.borderColor = "#1565c0"}
+                onBlur={(e) => e.target.style.borderColor = "#ddd"}
+                disabled={loading}
+                required
+              />
+            </div>
+
+            {/* Remember Me & Forgot Password */}
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "25px"
+            }}>
+              <label style={{
+                display: "flex",
+                alignItems: "center",
+                cursor: "pointer",
+                fontSize: "14px",
+                color: "#555"
+              }}>
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  style={{
+                    marginRight: "8px",
+                    cursor: "pointer"
+                  }}
+                  disabled={loading}
+                />
+                Remember me
+              </label>
+              <button
+                type="button"
+                onClick={handleForgotPassword}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#1565c0",
+                  fontSize: "14px",
+                  cursor: "pointer",
+                  padding: 0
+                }}
+                disabled={loading}
+              >
+                Forgot password?
+              </button>
+            </div>
+
+            {/* Login Button */}
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                width: "100%",
+                padding: "14px",
+                background: loading ? "#999" : "#1565c0",
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                fontSize: "16px",
+                fontWeight: "600",
+                cursor: loading ? "not-allowed" : "pointer",
+                transition: "background 0.3s",
+                marginBottom: "15px"
+              }}
+              onMouseOver={(e) => !loading && (e.target.style.background = "#0d47a1")}
+              onMouseOut={(e) => !loading && (e.target.style.background = "#1565c0")}
+            >
+              {loading ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{
+                    width: "20px",
+                    height: "20px",
+                    border: "2px solid white",
+                    borderTop: "2px solid transparent",
+                    borderRadius: "50%",
+                    animation: "spin 1s linear infinite",
+                    marginRight: "10px"
+                  }} />
+                  Signing In...
+                </div>
+              ) : "Sign In"}
+            </button>
+
+            {/* Demo Login Button */}
+            <button
+              type="button"
+              onClick={handleDemoLogin}
+              style={{
+                width: "100%",
+                padding: "12px",
+                background: "none",
+                color: "#1565c0",
+                border: "1px solid #1565c0",
+                borderRadius: "6px",
+                fontSize: "14px",
+                cursor: "pointer",
+                transition: "all 0.3s",
+                marginBottom: "20px"
+              }}
+              onMouseOver={(e) => {
+                e.target.style.background = "#1565c0";
+                e.target.style.color = "white";
+              }}
+              onMouseOut={(e) => {
+                e.target.style.background = "none";
+                e.target.style.color = "#1565c0";
+              }}
+            >
+              Try Demo Account
+            </button>
+          </form>
+
+          {/* Footer */}
           <div style={{
-            background: "#f8f9fa",
-            padding: "12px",
-            borderRadius: "8px",
-            fontSize: "13px",
-            color: "#333"
+            textAlign: "center",
+            paddingTop: "20px",
+            borderTop: "1px solid #eee",
+            fontSize: "12px",
+            color: "#888"
           }}>
-            <div style={{ marginBottom: "5px" }}>
-              <strong>Email:</strong> supervisor@stratax.com
-            </div>
-            <div>
-              <strong>Password:</strong> supervisor123
-            </div>
+            <p style={{ margin: 0 }}>
+              Need access? Contact your system administrator
+            </p>
+            <p style={{ margin: "5px 0 0 0" }}>
+              © {new Date().getFullYear()} Talent Assessment System
+            </p>
           </div>
         </div>
       </div>
+
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
