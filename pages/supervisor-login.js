@@ -1,4 +1,4 @@
-// pages/supervisor-login.js - ACTUAL AUTHENTICATION
+// pages/supervisor-login.js - FIXED VERSION
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../supabase/client";
@@ -57,7 +57,7 @@ export default function SupervisorLogin() {
     }
 
     try {
-      // 1. Check if user exists in supervisors table
+      // 1. Check if supervisor exists in supervisors table
       const { data: supervisorData, error: supervisorError } = await supabase
         .from("supervisors")
         .select("*")
@@ -70,107 +70,45 @@ export default function SupervisorLogin() {
         return;
       }
 
-      // 2. Verify password (assuming you're storing hashed passwords)
-      // If using Supabase Auth, you'd use supabase.auth.signInWithPassword
-      // For custom auth, you'd verify against stored hash
+      // 2. Verify password using btoa hash
+      const inputHash = btoa(password);
       
-      // For this example, let's use Supabase Auth for supervisors
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: email.toLowerCase().trim(),
-        password: password
-      });
-
-      if (authError) {
-        // Fallback to custom auth if Supabase Auth fails
-        await handleCustomAuth(supervisorData);
-      } else {
-        // Success with Supabase Auth
-        await handleSuccessfulLogin(authData.user, supervisorData);
-      }
-
-    } catch (err) {
-      console.error("Login error:", err);
-      setError("An error occurred during login. Please try again.");
-      setLoading(false);
-    }
-  };
-
-  const handleCustomAuth = async (supervisorData) => {
-    try {
-      // This is where you'd verify against your custom password hash
-      // For now, let's check if the password matches a simple hash
-      // In production, use bcrypt or similar
-      
-      // Create a simple hash for demo (use bcrypt in production)
-      const simpleHash = btoa(password);
-      
-      // Check against stored hash (you'd need to store hashes in your supervisors table)
-      if (supervisorData.password_hash !== simpleHash) {
+      // Check against stored hash in supervisors table
+      if (supervisorData.password_hash !== inputHash) {
         setError("Invalid credentials. Please check your email and password.");
         setLoading(false);
         return;
       }
 
-      // Mock user object for custom auth
-      const mockUser = {
-        id: supervisorData.id,
+      // 3. Create session data
+      const sessionData = {
+        loggedIn: true,
+        userId: supervisorData.id,
         email: supervisorData.email,
+        name: supervisorData.name || supervisorData.email.split('@')[0],
         role: 'supervisor',
-        name: supervisorData.name || supervisorData.email.split('@')[0]
+        permissions: supervisorData.permissions || ['view_reports', 'manage_candidates'],
+        expires: rememberMe ? Date.now() + (30 * 24 * 60 * 60 * 1000) : Date.now() + (8 * 60 * 60 * 1000), // 30 days or 8 hours
+        loginTime: new Date().toISOString(),
+        lastActivity: Date.now()
       };
 
-      await handleSuccessfulLogin(mockUser, supervisorData);
+      // 4. Store session
+      localStorage.setItem("supervisorSession", JSON.stringify(sessionData));
+      
+      // 5. Update last login time in database
+      await supabase
+        .from("supervisors")
+        .update({ last_login: new Date().toISOString() })
+        .eq("id", supervisorData.id);
+
+      // 6. Redirect to supervisor dashboard
+      router.push("/supervisor");
 
     } catch (err) {
-      console.error("Custom auth error:", err);
-      setError("Authentication failed. Please try again.");
+      console.error("Login error:", err);
+      setError("An error occurred during login. Please try again.");
       setLoading(false);
-    }
-  };
-
-  const handleSuccessfulLogin = async (user, supervisorData) => {
-    // Create session data
-    const sessionData = {
-      loggedIn: true,
-      userId: user.id,
-      email: user.email,
-      name: supervisorData.name || user.email.split('@')[0],
-      role: 'supervisor',
-      permissions: supervisorData.permissions || ['view_reports', 'manage_candidates'],
-      expires: rememberMe ? Date.now() + (30 * 24 * 60 * 60 * 1000) : Date.now() + (8 * 60 * 60 * 1000), // 30 days or 8 hours
-      loginTime: new Date().toISOString(),
-      lastActivity: Date.now()
-    };
-
-    // Store session
-    localStorage.setItem("supervisorSession", JSON.stringify(sessionData));
-    
-    // Also store in sessionStorage for security
-    sessionStorage.setItem("supervisorAuth", "true");
-
-    // Log the login event
-    await supabase
-      .from("supervisor_logs")
-      .insert({
-        supervisor_id: user.id,
-        action: "login",
-        ip_address: await getClientIP(),
-        user_agent: navigator.userAgent,
-        timestamp: new Date().toISOString()
-      });
-
-    // Redirect to supervisor dashboard
-    router.push("/supervisor");
-  };
-
-  // Helper to get client IP (approximate)
-  const getClientIP = async () => {
-    try {
-      const response = await fetch('https://api.ipify.org?format=json');
-      const data = await response.json();
-      return data.ip;
-    } catch {
-      return "unknown";
     }
   };
 
@@ -180,7 +118,7 @@ export default function SupervisorLogin() {
 
   const handleDemoLogin = () => {
     setEmail("admin@talentassess.com");
-    setPassword("demo123");
+    setPassword("admin123"); // Changed from demo123 to admin123
     setError("");
   };
 
@@ -261,7 +199,7 @@ export default function SupervisorLogin() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="supervisor@company.com"
+                placeholder="admin@talentassess.com"
                 style={{
                   width: "100%",
                   padding: "12px 15px",
@@ -312,7 +250,7 @@ export default function SupervisorLogin() {
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
+                placeholder="admin123"
                 style={{
                   width: "100%",
                   padding: "12px 15px",
@@ -433,7 +371,7 @@ export default function SupervisorLogin() {
                 e.target.style.color = "#1565c0";
               }}
             >
-              Try Demo Account
+              Use Test Account (admin@talentassess.com / admin123)
             </button>
           </form>
 
