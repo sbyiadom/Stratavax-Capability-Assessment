@@ -88,6 +88,51 @@ async function loadUserResponses(userId) {
   }
 }
 
+// NEW: Check if user has already submitted this assessment
+async function checkIfAlreadySubmitted(userId) {
+  try {
+    const { data, error } = await supabase
+      .from("assessment_submissions")
+      .select("id, submitted_at")
+      .eq("user_id", userId)
+      .eq("assessment_id", '11111111-1111-1111-1111-111111111111')
+      .single();
+
+    if (error && error.code !== 'PGRST116') { // PGRST116 means no rows found
+      console.error("Error checking submission:", error);
+      return false;
+    }
+    
+    return !!data; // Return true if submission exists
+  } catch (error) {
+    console.error("Error in checkIfAlreadySubmitted:", error);
+    return false;
+  }
+}
+
+// NEW: Mark user as submitted
+async function markAsSubmitted(userId) {
+  try {
+    const { error } = await supabase
+      .from("assessment_submissions")
+      .upsert({
+        user_id: userId,
+        assessment_id: '11111111-1111-1111-1111-111111111111',
+        submitted_at: new Date().toISOString(),
+        status: 'completed'
+      }, { onConflict: 'user_id,assessment_id' });
+
+    if (error) {
+      console.error("Error marking as submitted:", error);
+      throw error;
+    }
+    return true;
+  } catch (error) {
+    console.error("Failed to mark as submitted:", error);
+    throw error;
+  }
+}
+
 export default function AssessmentPage() {
   const router = useRouter();
   const assessmentId = '11111111-1111-1111-1111-111111111111';
@@ -104,14 +149,25 @@ export default function AssessmentPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [error, setError] = useState(null);
+  const [alreadySubmitted, setAlreadySubmitted] = useState(false); // NEW STATE
 
-  // Initialize session
+  // Initialize session and check if already submitted
   useEffect(() => {
-    const initSession = async () => {
+    const initSessionAndCheck = async () => {
       try {
         const { data } = await supabase.auth.getSession();
         if (data.session) {
           setSession(data.session);
+          
+          // Check if user has already submitted this assessment
+          const hasSubmitted = await checkIfAlreadySubmitted(data.session.user.id);
+          if (hasSubmitted) {
+            setAlreadySubmitted(true);
+            setError("You have already submitted this assessment. You cannot retake it.");
+            setLoading(false);
+            return;
+          }
+          
           setIsSessionReady(true);
         } else {
           router.push("/login");
@@ -121,12 +177,12 @@ export default function AssessmentPage() {
         setError("Failed to initialize session");
       }
     };
-    initSession();
+    initSessionAndCheck();
   }, [router]);
 
-  // Fetch questions
+  // Fetch questions (only if not already submitted)
   useEffect(() => {
-    if (!isSessionReady || !session?.user?.id) return;
+    if (alreadySubmitted || !isSessionReady || !session?.user?.id) return;
 
     const fetchAssessmentData = async () => {
       try {
@@ -197,17 +253,19 @@ export default function AssessmentPage() {
     };
 
     fetchAssessmentData();
-  }, [assessmentId, isSessionReady, session]);
+  }, [assessmentId, isSessionReady, session, alreadySubmitted]);
 
   // Timer
   useEffect(() => {
+    if (alreadySubmitted) return; // Don't run timer if already submitted
+    
     const timer = setInterval(() => setElapsed(t => t + 1), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [alreadySubmitted]);
 
   // Answer selection
   const handleSelect = async (questionId, answerId) => {
-    if (!isSessionReady || !session?.user?.id) return;
+    if (alreadySubmitted || !isSessionReady || !session?.user?.id) return;
 
     setAnswers(prev => ({ ...prev, [questionId]: answerId }));
     setSaveStatus(prev => ({ ...prev, [questionId]: "saving" }));
@@ -233,19 +291,28 @@ export default function AssessmentPage() {
 
   // Navigation
   const handleNext = () => {
+    if (alreadySubmitted) return;
+    
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(i => i + 1);
     }
   };
 
   const handleBack = () => {
+    if (alreadySubmitted) return;
+    
     if (currentIndex > 0) {
       setCurrentIndex(i => i - 1);
     }
   };
 
-  // Submit assessment - FIXED VERSION
+  // Submit assessment - FIXED VERSION with one-attempt marking
   const submitAssessment = async () => {
+    if (alreadySubmitted) {
+      alert("You have already submitted this assessment.");
+      return;
+    }
+    
     if (!session?.user?.id) {
       alert("Please log in to submit your assessment.");
       router.push("/login");
@@ -256,7 +323,10 @@ export default function AssessmentPage() {
     setShowSubmitModal(false);
     
     try {
-      // Calculate total score from responses
+      // FIRST: Mark user as submitted (PREVENT RE-ATTEMPTS)
+      await markAsSubmitted(session.user.id);
+
+      // THEN: Calculate total score from responses
       const calculateAndStoreScore = async () => {
         try {
           // Calculate total score from responses
@@ -308,6 +378,7 @@ export default function AssessmentPage() {
       
       // Show success modal
       setShowSuccessModal(true);
+      setAlreadySubmitted(true); // Update local state
     } catch (error) {
       console.error("Submission error:", error);
       alert("Assessment submitted but there was an error calculating your score. Please contact support.");
@@ -349,6 +420,64 @@ export default function AssessmentPage() {
               100% { transform: translateX(200%); }
             }
           `}</style>
+        </div>
+      </div>
+    );
+  }
+
+  // Already submitted state - NEW
+  if (alreadySubmitted) {
+    return (
+      <div style={{ 
+        minHeight: "100vh",
+        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "white",
+        padding: "20px"
+      }}>
+        <div style={{ textAlign: "center", padding: "30px", maxWidth: "500px", width: "100%" }}>
+          <div style={{ fontSize: "28px", fontWeight: "700", marginBottom: "20px" }}>
+            🏢 Stratavax
+          </div>
+          <div style={{ fontSize: "22px", marginBottom: "20px" }}>
+            Assessment Already Submitted ✅
+          </div>
+          <div style={{ 
+            fontSize: "16px", 
+            marginBottom: "30px", 
+            lineHeight: 1.5,
+            background: "rgba(255,255,255,0.1)",
+            padding: "20px",
+            borderRadius: "10px"
+          }}>
+            You have already completed and submitted this assessment. 
+            <br /><br />
+            <strong>One attempt only is allowed per candidate.</strong>
+            <br /><br />
+            Your results will be reviewed by our assessment team.
+          </div>
+          <button 
+            onClick={async () => {
+              await supabase.auth.signOut();
+              router.push("/login");
+            }}
+            style={{
+              padding: "15px 35px",
+              backgroundColor: "white",
+              color: "#764ba2",
+              border: "none",
+              borderRadius: "10px",
+              cursor: "pointer",
+              fontSize: "16px",
+              fontWeight: "600",
+              width: "100%",
+              minHeight: "44px"
+            }}
+          >
+            Logout & Return to Login
+          </button>
         </div>
       </div>
     );
@@ -531,6 +660,19 @@ export default function AssessmentPage() {
                 </span>
               </div>
               
+              <div style={{ 
+                fontSize: "14px", 
+                color: "#666", 
+                padding: "12px", 
+                background: "#fff8e1", 
+                borderRadius: "8px",
+                marginBottom: "15px",
+                borderLeft: "4px solid #ff9800"
+              }}>
+                ⚠️ <strong>Important:</strong> You can only submit this assessment once. 
+                After submission, you will not be able to retake it.
+              </div>
+              
               <div style={{ height: "12px", background: "#e0e0e0", borderRadius: "6px", margin: "20px 0" }}>
                 <div style={{ 
                   height: "100%", 
@@ -667,6 +809,19 @@ export default function AssessmentPage() {
                 </span>
               </div>
 
+              <div style={{ 
+                fontSize: "14px", 
+                color: "#666", 
+                margin: "15px 0",
+                padding: "12px",
+                background: "#e3f2fd",
+                borderRadius: "8px",
+                borderLeft: "4px solid #2196f3"
+              }}>
+                ✅ <strong>One-time submission completed:</strong> Your assessment has been successfully submitted. 
+                You cannot retake this assessment.
+              </div>
+              
               <div style={{ 
                 fontSize: "14px", 
                 color: "#666", 
