@@ -1,4 +1,4 @@
-// pages/supervisor/[user_id].js - WITH FIXED PDF FUNCTIONALITY
+// pages/supervisor/[user_id].js - SIMPLIFIED VERSION (NO PDF DEPENDENCIES)
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -21,7 +21,7 @@ export default function CandidateReport() {
   const [userName, setUserName] = useState("");
   const [debugInfo, setDebugInfo] = useState("");
   const [personalityDimensions, setPersonalityDimensions] = useState({});
-  const [generatingPDF, setGeneratingPDF] = useState(false);
+  const [generatingReport, setGeneratingReport] = useState(false);
 
   // Helper function to get classification based on score
   const getClassification = useCallback((score) => {
@@ -1124,138 +1124,157 @@ export default function CandidateReport() {
     fetchCandidateData();
   }, [isSupervisor, user_id, getClassification, fetchAndCalculateCategoryScores, useEstimatedData]);
 
-  // PDF Generation Function
-  const generatePDF = async () => {
-    if (!reportRef.current) return;
-    
-    setGeneratingPDF(true);
-    
-    try {
-      // Dynamically import the libraries (client-side only)
-      const html2canvas = (await import('html2canvas')).default;
-      const { jsPDF } = await import('jspdf');
-      
-      const element = reportRef.current;
-      
-      // Add print-specific styles temporarily
-      const originalStyle = element.style.cssText;
-      element.style.width = '210mm';
-      element.style.padding = '20px';
-      element.style.background = 'white';
-      
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        width: element.scrollWidth,
-        height: element.scrollHeight,
-        windowWidth: element.scrollWidth,
-        windowHeight: element.scrollHeight
-      });
-      
-      // Restore original styles
-      element.style.cssText = originalStyle;
-      
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
-      });
-      
-      const imgWidth = 190;
-      const pageHeight = 280;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
-      let heightLeft = imgHeight;
-      let position = 10;
-      
-      pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-      
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-      }
-      
-      const fileName = `Candidate_Report_${userName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
-      pdf.save(fileName);
-      
-    } catch (error) {
-      console.error('PDF generation error:', error);
-      alert('Error generating PDF. Please try again or use the print function.');
-    } finally {
-      setGeneratingPDF(false);
-    }
-  };
-
   // Simple browser print function
   const handlePrint = () => {
-    const printContent = `
+    setGeneratingReport(true);
+    
+    // Create a new window for printing
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Please allow popups to print the report');
+      setGeneratingReport(false);
+      return;
+    }
+    
+    // Get the report content
+    const reportContent = reportRef.current.innerHTML;
+    
+    // Create a clean HTML document for printing
+    const printDocument = `
       <!DOCTYPE html>
       <html>
       <head>
         <title>Candidate Report - ${userName}</title>
         <style>
+          @media print {
+            @page { margin: 20mm; }
+            body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+            .no-print { display: none !important; }
+            .print-break { page-break-before: always; }
+            .print-avoid-break { page-break-inside: avoid; }
+          }
           body {
             font-family: Arial, sans-serif;
-            padding: 20px;
             color: #333;
             line-height: 1.4;
+            margin: 0;
+            padding: 20px;
+            max-width: 1000px;
+            margin: 0 auto;
           }
-          .no-print { display: none !important; }
-          .print-header {
+          .header {
             border-bottom: 3px solid #1565c0;
             padding-bottom: 15px;
             margin-bottom: 25px;
           }
-          .print-title {
+          .title {
             font-size: 28px;
             font-weight: bold;
             color: #1565c0;
             margin-bottom: 5px;
           }
+          .subtitle {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 10px;
+          }
+          .info {
+            font-size: 14px;
+            color: #444;
+            margin: 5px 0;
+          }
           .section {
             margin: 25px 0;
             page-break-inside: avoid;
           }
+          .section-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #333;
+            border-bottom: 2px solid #1565c0;
+            padding-bottom: 8px;
+            margin-bottom: 15px;
+          }
+          .card {
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 4px solid #1565c0;
+          }
+          .table-container {
+            overflow-x: auto;
+            margin: 15px 0;
+          }
           table {
             width: 100%;
             border-collapse: collapse;
-            margin: 10px 0;
-          }
-          th, td {
-            padding: 10px;
-            border: 1px solid #ddd;
-            text-align: left;
+            font-size: 12px;
           }
           th {
-            background: #f5f5f5;
+            background: #e9ecef;
+            padding: 10px;
+            text-align: left;
+            border-bottom: 2px solid #1565c0;
             font-weight: bold;
           }
-          @media print {
-            @page { margin: 20mm; }
-            body { margin: 0; padding: 0; }
+          td {
+            padding: 10px;
+            border-bottom: 1px solid #dee2e6;
+          }
+          .footer {
+            margin-top: 40px;
+            padding-top: 15px;
+            border-top: 1px solid #ddd;
+            font-size: 11px;
+            color: #666;
+            text-align: center;
+          }
+          .score-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            margin: 2px;
+          }
+          .strength { background: #e8f5e9; color: #2e7d32; }
+          .weakness { background: #ffebee; color: #c62828; }
+          .average { background: #fff3e0; color: #f57c00; }
+          .classification-badge {
+            display: inline-block;
+            padding: 6px 14px;
+            background: ${getClassificationColor(candidate?.total_score || 300)};
+            color: white;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-left: 10px;
+          }
+          .overall-score {
+            font-size: 36px;
+            font-weight: bold;
+            color: #1565c0;
+            margin: 10px 0;
           }
         </style>
       </head>
       <body>
-        <div class="print-header">
-          <div class="print-title">Candidate Performance Report</div>
-          <div><strong>Candidate:</strong> ${userName}</div>
-          <div><strong>Email:</strong> ${userEmail}</div>
-          <div><strong>Report Date:</strong> ${new Date().toLocaleDateString()}</div>
-          <div><strong>Overall Score:</strong> ${candidate?.total_score || 0}/500 (${candidate?.classification || 'N/A'})</div>
+        <div class="header">
+          <div class="title">Candidate Performance Report</div>
+          <div class="subtitle">${userName}</div>
+          <div class="info">Email: ${userEmail}</div>
+          <div class="info">Candidate ID: ${user_id?.substring(0, 12)}...</div>
+          <div class="info">Report Date: ${new Date().toLocaleDateString()}</div>
+          <div class="info">
+            Overall Score: <span class="overall-score">${candidate?.total_score || 0}</span>/500 
+            <span class="classification-badge">${getClassification(candidate?.total_score || 300)}</span>
+          </div>
         </div>
         
-        <div>
-          ${reportRef.current?.innerHTML || ''}
-        </div>
+        ${reportContent}
         
-        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 11px; color: #666; text-align: center;">
+        <div class="footer">
           <p>This assessment report is confidential and intended for authorized personnel only.</p>
           <p>Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
         </div>
@@ -1263,19 +1282,22 @@ export default function CandidateReport() {
       </html>
     `;
     
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-      printWindow.onload = function() {
-        printWindow.focus();
-        printWindow.print();
-        printWindow.close();
-      };
-    } else {
-      // Fallback to direct print
-      window.print();
-    }
+    printWindow.document.write(printDocument);
+    printWindow.document.close();
+    
+    // Wait for content to load, then trigger print
+    printWindow.onload = function() {
+      printWindow.focus();
+      printWindow.print();
+      printWindow.close();
+    };
+    
+    setGeneratingReport(false);
+  };
+
+  // Alternative: Direct browser print (simpler)
+  const handleDirectPrint = () => {
+    window.print();
   };
 
   const handleBack = () => {
@@ -1505,7 +1527,7 @@ export default function CandidateReport() {
           
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
             <button
-              onClick={handlePrint}
+              onClick={handleDirectPrint}
               style={{
                 padding: "10px 20px",
                 background: "#2196F3",
@@ -1519,13 +1541,12 @@ export default function CandidateReport() {
                 gap: "8px",
                 fontWeight: "600"
               }}
-              disabled={generatingPDF}
             >
               🖨️ Print Report
             </button>
             
             <button
-              onClick={generatePDF}
+              onClick={handlePrint}
               style={{
                 padding: "10px 20px",
                 background: "#4CAF50",
@@ -1539,9 +1560,9 @@ export default function CandidateReport() {
                 gap: "8px",
                 fontWeight: "600"
               }}
-              disabled={generatingPDF}
+              disabled={generatingReport}
             >
-              {generatingPDF ? (
+              {generatingReport ? (
                 <>
                   <div style={{
                     width: "16px",
@@ -1551,10 +1572,10 @@ export default function CandidateReport() {
                     borderRadius: "50%",
                     animation: "spin 1s linear infinite"
                   }} />
-                  Generating PDF...
+                  Preparing Report...
                 </>
               ) : (
-                "📄 Generate PDF"
+                "📄 Generate Report"
               )}
             </button>
           </div>
