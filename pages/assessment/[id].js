@@ -38,6 +38,63 @@ const SECTION_CONFIG = {
 const SECTION_ORDER = Object.keys(SECTION_CONFIG);
 const TIME_LIMIT_SECONDS = 10800;
 
+// ===== ANTI-CHEAT FUNCTIONS =====
+function setupAntiCheatProtection() {
+  // 1. Disable Right-Click (Prevents "Inspect Element")
+  document.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    return false;
+  });
+
+  // 2. Disable Text Selection (Prevents highlighting and copying)
+  document.addEventListener('selectstart', (e) => {
+    e.preventDefault();
+    return false;
+  });
+
+  // 3. Disable Copy/Paste Keyboard Shortcuts
+  document.addEventListener('keydown', (e) => {
+    // Block Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A
+    if (
+      (e.ctrlKey || e.metaKey) && 
+      (e.key === 'c' || e.key === 'v' || e.key === 'x' || e.key === 'a')
+    ) {
+      e.preventDefault();
+      return false;
+    }
+    
+    // Block F12 (Dev Tools) and Print Screen
+    if (e.key === 'F12' || e.key === 'PrintScreen') {
+      e.preventDefault();
+      return false;
+    }
+  });
+
+  // 4. Add CSS to prevent text selection
+  const style = document.createElement('style');
+  style.innerHTML = `
+    * {
+      -webkit-user-select: none !important;
+      -moz-user-select: none !important;
+      -ms-user-select: none !important;
+      user-select: none !important;
+    }
+    
+    /* Allow selection only in specific areas if needed */
+    .allow-select {
+      -webkit-user-select: text !important;
+      -moz-user-select: text !important;
+      -ms-user-select: text !important;
+      user-select: text !important;
+    }
+  `;
+  document.head.appendChild(style);
+
+  console.log("🛡️ Anti-cheat protection enabled");
+}
+
+// ===== END ANTI-CHEAT FUNCTIONS =====
+
 // Truly random shuffle function
 function trulyRandomizeAnswers(answers) {
   if (!answers || answers.length === 0) return answers;
@@ -216,6 +273,13 @@ export default function AssessmentPage() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [error, setError] = useState(null);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
+
+  // ===== ADDED: Initialize anti-cheat protection =====
+  useEffect(() => {
+    if (!alreadySubmitted && !loading && isSessionReady) {
+      setupAntiCheatProtection();
+    }
+  }, [alreadySubmitted, loading, isSessionReady]);
 
   // ===== ADDED: Check localStorage first for immediate blocking =====
   useEffect(() => {
@@ -1041,7 +1105,7 @@ export default function AssessmentPage() {
         overflow: "hidden"
       }}>
         
-        {/* Header */}
+        {/* Header with Anti-Cheat Warning */}
         <div style={{
           background: `linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), 
                       url('https://img.freepik.com/free-photo/multiethnic-group-young-happy-students-standing-outdoors_171337-11812.jpg?semt=ais_user_personalization&w=740&q=80')`,
@@ -1125,6 +1189,19 @@ export default function AssessmentPage() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Anti-Cheat Warning Banner */}
+        <div style={{
+          padding: '8px 15px',
+          background: 'linear-gradient(135deg, #ff9800, #f57c00)',
+          color: 'white',
+          textAlign: 'center',
+          fontSize: '12px',
+          fontWeight: '600',
+          borderBottom: '2px solid #e65100'
+        }}>
+          ⚠️ ANTI-CHEAT ACTIVE: Right-click, copy/paste, and text selection disabled.
         </div>
 
         {/* Progress Bar */}
