@@ -85,16 +85,22 @@ async function loadUserResponses(userId) {
   }
 }
 
-// ===== UPDATED: Check if user has already submitted =====
+// ===== UPDATED: STRICT Check if user has already submitted =====
 async function checkIfAlreadySubmitted(userId) {
   try {
+    console.log("🔍 Checking if user has already submitted...");
+    console.log("User ID:", userId);
+    console.log("Assessment ID:", '11111111-1111-1111-1111-111111111111');
+    
     // Primary check: assessments_completed table (has unique constraint)
     const { data, error } = await supabase
       .from("assessments_completed")
-      .select("id, completed_at")
+      .select("id, completed_at, user_id, assessment_id")
       .eq("user_id", userId)
       .eq("assessment_id", '11111111-1111-1111-1111-111111111111')
       .maybeSingle();
+
+    console.log("Database query result:", { data, error });
 
     // If error (not "no rows" error), log it
     if (error && error.code !== 'PGRST116') {
@@ -104,27 +110,30 @@ async function checkIfAlreadySubmitted(userId) {
     
     // If data exists, user has submitted
     if (data) {
-      console.log("Found existing submission in assessments_completed");
+      console.log("✅ Found existing submission in assessments_completed");
+      console.log("Submission details:", data);
       return true;
     }
 
     // Secondary check: assessments table (legacy/backward compatibility)
     const { data: assessmentData } = await supabase
       .from("assessments")
-      .select("status, submitted_at")
+      .select("status, submitted_at, user_id, id")
       .eq("user_id", userId)
       .eq("id", '11111111-1111-1111-1111-111111111111')
       .maybeSingle();
 
+    console.log("Legacy assessments check:", assessmentData);
+
     const isSubmitted = assessmentData?.status === 'submitted' || assessmentData?.submitted_at;
     
     if (isSubmitted) {
-      console.log("Found submitted assessment in assessments table (legacy)");
+      console.log("✅ Found submitted assessment in assessments table (legacy)");
     }
     
     return isSubmitted;
   } catch (error) {
-    console.error("Error in checkIfAlreadySubmitted:", error);
+    console.error("❌ Error in checkIfAlreadySubmitted:", error);
     return false;
   }
 }
@@ -208,6 +217,25 @@ export default function AssessmentPage() {
   const [error, setError] = useState(null);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
 
+  // ===== ADDED: Check localStorage first for immediate blocking =====
+  useEffect(() => {
+    const storedSubmitted = localStorage.getItem(`assessment_submitted_${assessmentId}`);
+    if (storedSubmitted === 'true') {
+      console.log("📦 Found submission in localStorage, blocking immediately");
+      setAlreadySubmitted(true);
+      setError("You have already submitted this assessment. One attempt only allowed.");
+      setLoading(false);
+    }
+  }, []);
+
+  // Debug: Log component state
+  console.log("🔧 DEBUG: Component state", {
+    alreadySubmitted,
+    loading,
+    session: session?.user?.id,
+    isSessionReady
+  });
+
   // Initialize session and check if already submitted
   useEffect(() => {
     const initSessionAndCheck = async () => {
@@ -216,10 +244,14 @@ export default function AssessmentPage() {
         if (data.session) {
           setSession(data.session);
           
+          console.log("🔧 DEBUG: Checking submission for user:", data.session.user.id);
+          
           // Check if user has already submitted this assessment
           const hasSubmitted = await checkIfAlreadySubmitted(data.session.user.id);
           if (hasSubmitted) {
+            console.log("🚫 User has already submitted, blocking access");
             setAlreadySubmitted(true);
+            localStorage.setItem(`assessment_submitted_${assessmentId}`, 'true');
             setError("You have already submitted this assessment. One attempt only allowed.");
             setLoading(false);
             return;
@@ -236,6 +268,26 @@ export default function AssessmentPage() {
     };
     initSessionAndCheck();
   }, [router]);
+
+  // ===== ADDED: Block navigation if already submitted =====
+  useEffect(() => {
+    if (alreadySubmitted && router.pathname.includes('/assessment/')) {
+      console.log("🚫 Navigation blocked - assessment already submitted");
+      
+      // Prevent any further interaction
+      setError("Assessment already submitted. You cannot access this page.");
+      
+      // Clear any timers
+      clearInterval();
+      
+      // Force logout after 3 seconds
+      setTimeout(async () => {
+        await supabase.auth.signOut();
+        localStorage.removeItem(`assessment_submitted_${assessmentId}`);
+        router.push('/login?message=already_submitted');
+      }, 3000);
+    }
+  }, [alreadySubmitted, router]);
 
   // Fetch questions (only if not already submitted)
   useEffect(() => {
@@ -318,9 +370,14 @@ export default function AssessmentPage() {
     return () => clearInterval(timer);
   }, [alreadySubmitted]);
 
-  // Answer selection
+  // Answer selection - BLOCKED if already submitted
   const handleSelect = async (questionId, answerId) => {
-    if (alreadySubmitted || !isSessionReady || !session?.user?.id) return;
+    if (alreadySubmitted) {
+      alert("❌ Assessment already submitted. You cannot change answers.");
+      return;
+    }
+    
+    if (!isSessionReady || !session?.user?.id) return;
 
     setAnswers(prev => ({ ...prev, [questionId]: answerId }));
     setSaveStatus(prev => ({ ...prev, [questionId]: "saving" }));
@@ -344,9 +401,12 @@ export default function AssessmentPage() {
     }
   };
 
-  // Navigation
+  // Navigation - BLOCKED if already submitted
   const handleNext = () => {
-    if (alreadySubmitted) return;
+    if (alreadySubmitted) {
+      alert("❌ Assessment already submitted. Navigation disabled.");
+      return;
+    }
     
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(i => i + 1);
@@ -354,14 +414,17 @@ export default function AssessmentPage() {
   };
 
   const handleBack = () => {
-    if (alreadySubmitted) return;
+    if (alreadySubmitted) {
+      alert("❌ Assessment already submitted. Navigation disabled.");
+      return;
+    }
     
     if (currentIndex > 0) {
       setCurrentIndex(i => i - 1);
     }
   };
 
-  // ===== UPDATED: Submit assessment function =====
+  // ===== UPDATED: Submit assessment function with IMMEDIATE BLOCK =====
   const submitAssessment = async () => {
     // Double-check locally before even trying
     if (alreadySubmitted) {
@@ -382,8 +445,17 @@ export default function AssessmentPage() {
       // This will call the API which has the final check and unique constraint
       await markAsSubmitted(session.user.id);
       
-      // If we get here, submission was successful OR already exists
-      setAlreadySubmitted(true); // Block further attempts
+      // ===== CRITICAL: IMMEDIATELY BLOCK EVERYTHING =====
+      setAlreadySubmitted(true);
+      localStorage.setItem(`assessment_submitted_${assessmentId}`, 'true');
+      console.log("✅ Assessment submitted - immediately blocking all access");
+      
+      // Disable all buttons and interactions
+      document.querySelectorAll('button').forEach(btn => {
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        btn.style.cursor = 'not-allowed';
+      });
       
       // Calculate total score from responses
       const calculateAndStoreScore = async () => {
@@ -431,16 +503,26 @@ export default function AssessmentPage() {
 
       await calculateAndStoreScore();
       
-      // Show success modal
+      // Show success modal (this will appear immediately)
       setShowSuccessModal(true);
+      
+      // Force a page reload after 3 seconds to trigger the "already submitted" check
+      setTimeout(() => {
+        console.log("🔄 Reloading page to enforce submission block");
+        router.reload(); // This will trigger the useEffect check
+      }, 3000);
+      
     } catch (error) {
       console.error("Submission error:", error);
       
       // Check if it's a "already submitted" error
       if (error.message.includes("already submitted") || error.message.includes("One attempt") || error.message.includes("23505")) {
         setAlreadySubmitted(true);
+        localStorage.setItem(`assessment_submitted_${assessmentId}`, 'true');
         setError("Assessment already submitted. You cannot retake it.");
         alert("Assessment already submitted. You cannot retake it.");
+        // Force reload to trigger the check
+        setTimeout(() => router.reload(), 1000);
       } else {
         alert("Assessment submitted but there was an error calculating your score. Please contact support.");
       }
@@ -487,7 +569,7 @@ export default function AssessmentPage() {
     );
   }
 
-  // Already submitted state
+  // Already submitted state - STRICT BLOCK
   if (alreadySubmitted) {
     return (
       <div style={{ 
@@ -512,19 +594,25 @@ export default function AssessmentPage() {
             lineHeight: 1.5,
             background: "rgba(255,255,255,0.1)",
             padding: "20px",
-            borderRadius: "10px"
+            borderRadius: "10px",
+            border: "2px solid rgba(255,255,255,0.2)"
           }}>
-            <strong>One Attempt Only Policy</strong>
+            <strong style={{ color: "#ff9800" }}>ONE ATTEMPT ONLY POLICY</strong>
             <br /><br />
             You have already completed and submitted this assessment. 
             <br />
-            <strong>Each candidate is allowed only one attempt.</strong>
+            <strong style={{ color: "#4caf50" }}>Each candidate is allowed only one attempt.</strong>
             <br /><br />
             Your results will be reviewed by our assessment team.
+            <br /><br />
+            <small style={{ fontSize: "14px", color: "rgba(255,255,255,0.8)" }}>
+              ⚠️ This page will automatically log you out in 5 seconds.
+            </small>
           </div>
           <button 
             onClick={async () => {
               await supabase.auth.signOut();
+              localStorage.removeItem(`assessment_submitted_${assessmentId}`);
               router.push("/login");
             }}
             style={{
@@ -542,6 +630,17 @@ export default function AssessmentPage() {
           >
             Logout & Return to Login
           </button>
+          
+          {/* Auto-logout timer */}
+          <script dangerouslySetInnerHTML={{
+            __html: `
+              setTimeout(() => {
+                supabase.auth.signOut();
+                localStorage.removeItem('assessment_submitted_${assessmentId}');
+                window.location.href = '/login?message=already_submitted';
+              }, 5000);
+            `
+          }} />
         </div>
       </div>
     );
@@ -891,6 +990,8 @@ export default function AssessmentPage() {
                 ✅ <strong>One-time submission completed:</strong> Your assessment has been successfully submitted. 
                 <br />
                 <strong>You cannot retake this assessment.</strong>
+                <br /><br />
+                <small>This page will reload automatically to enforce the one-attempt policy.</small>
               </div>
               
               <div style={{ 
@@ -908,6 +1009,7 @@ export default function AssessmentPage() {
             <button
               onClick={async () => {
                 await supabase.auth.signOut();
+                localStorage.removeItem(`assessment_submitted_${assessmentId}`);
                 router.push("/login");
               }}
               style={{
@@ -1189,13 +1291,13 @@ export default function AssessmentPage() {
                   <button
                     key={option.id}
                     onClick={() => handleSelect(currentQuestion.id, option.id)}
-                    disabled={saveStatus[currentQuestion.id] === 'saving'}
+                    disabled={saveStatus[currentQuestion.id] === 'saving' || alreadySubmitted}
                     style={{
                       padding: '15px 20px',
                       background: isSelected ? sectionConfig.lightBg : 'white',
                       border: `2px solid ${isSelected ? sectionConfig.color : '#e0e0e0'}`,
                       borderRadius: '8px',
-                      cursor: saveStatus[currentQuestion.id] === 'saving' ? 'not-allowed' : 'pointer',
+                      cursor: (saveStatus[currentQuestion.id] === 'saving' || alreadySubmitted) ? 'not-allowed' : 'pointer',
                       textAlign: 'left',
                       fontSize: '15px',
                       lineHeight: 1.4,
@@ -1204,17 +1306,18 @@ export default function AssessmentPage() {
                       alignItems: 'flex-start',
                       gap: '15px',
                       transition: 'all 0.2s',
-                      boxShadow: isSelected ? `0 4px 8px ${sectionConfig.color}40` : 'none'
+                      boxShadow: isSelected ? `0 4px 8px ${sectionConfig.color}40` : 'none',
+                      opacity: alreadySubmitted ? 0.6 : 1
                     }}
                     onMouseOver={(e) => {
-                      if (!saveStatus[currentQuestion.id] && !isSelected) {
+                      if (!saveStatus[currentQuestion.id] && !isSelected && !alreadySubmitted) {
                         e.currentTarget.style.background = '#f8f9fa';
                         e.currentTarget.style.borderColor = sectionConfig.color;
                         e.currentTarget.style.transform = 'translateY(-2px)';
                       }
                     }}
                     onMouseOut={(e) => {
-                      if (!saveStatus[currentQuestion.id] && !isSelected) {
+                      if (!saveStatus[currentQuestion.id] && !isSelected && !alreadySubmitted) {
                         e.currentTarget.style.background = 'white';
                         e.currentTarget.style.borderColor = '#e0e0e0';
                         e.currentTarget.style.transform = 'translateY(0)';
@@ -1262,19 +1365,19 @@ export default function AssessmentPage() {
             }}>
               <button 
                 onClick={handleBack} 
-                disabled={currentIndex === 0} 
+                disabled={currentIndex === 0 || alreadySubmitted} 
                 style={{ 
                   padding: '12px 24px', 
-                  background: currentIndex === 0 ? '#f5f5f5' : sectionConfig.color, 
-                  color: currentIndex === 0 ? '#999' : 'white', 
+                  background: currentIndex === 0 || alreadySubmitted ? '#f5f5f5' : sectionConfig.color, 
+                  color: currentIndex === 0 || alreadySubmitted ? '#999' : 'white', 
                   border: 'none',
                   borderRadius: '6px',
-                  cursor: currentIndex === 0 ? 'not-allowed' : 'pointer',
+                  cursor: currentIndex === 0 || alreadySubmitted ? 'not-allowed' : 'pointer',
                   fontSize: '14px',
                   fontWeight: '600',
                   minWidth: '100px',
                   transition: 'all 0.2s',
-                  opacity: currentIndex === 0 ? 0.6 : 1
+                  opacity: currentIndex === 0 || alreadySubmitted ? 0.6 : 1
                 }}
               >
                 ← Previous Question
@@ -1305,35 +1408,39 @@ export default function AssessmentPage() {
               {isLastQuestion ? (
                 <button 
                   onClick={() => setShowSubmitModal(true)}
+                  disabled={alreadySubmitted}
                   style={{ 
                     padding: '12px 24px', 
-                    background: '#4caf50', 
+                    background: alreadySubmitted ? '#81c784' : '#4caf50', 
                     color: 'white', 
                     border: 'none',
                     borderRadius: '6px',
-                    cursor: 'pointer',
+                    cursor: alreadySubmitted ? 'not-allowed' : 'pointer',
                     fontSize: '14px',
                     fontWeight: '600',
                     minWidth: '100px',
-                    transition: 'all 0.2s'
+                    transition: 'all 0.2s',
+                    opacity: alreadySubmitted ? 0.6 : 1
                   }}
                 >
-                  Submit Assessment →
+                  {alreadySubmitted ? 'Already Submitted' : 'Submit Assessment →'}
                 </button>
               ) : (
                 <button 
                   onClick={handleNext} 
+                  disabled={alreadySubmitted}
                   style={{ 
                     padding: '12px 24px', 
-                    background: sectionConfig.color, 
-                    color: 'white', 
+                    background: alreadySubmitted ? '#f5f5f5' : sectionConfig.color, 
+                    color: alreadySubmitted ? '#999' : 'white', 
                     border: 'none',
                     borderRadius: '6px',
-                    cursor: 'pointer',
+                    cursor: alreadySubmitted ? 'not-allowed' : 'pointer',
                     fontSize: "14px",
                     fontWeight: "600",
                     minWidth: "100px",
-                    transition: "all 0.2s"
+                    transition: "all 0.2s",
+                    opacity: alreadySubmitted ? 0.6 : 1
                   }}
                 >
                   Next Question →
@@ -1430,7 +1537,13 @@ export default function AssessmentPage() {
                 return (
                   <button
                     key={q.id}
-                    onClick={() => setCurrentIndex(index)}
+                    onClick={() => {
+                      if (alreadySubmitted) {
+                        alert("❌ Assessment already submitted. Navigation disabled.");
+                        return;
+                      }
+                      setCurrentIndex(index);
+                    }}
                     style={{
                       width: "100%",
                       height: "32px",
@@ -1442,7 +1555,7 @@ export default function AssessmentPage() {
                       border: `1px solid ${isCurrent ? sectionConfig.color : 
                                isAnswered ? "#4caf50" : "#e0e0e0"}`,
                       borderRadius: "4px",
-                      cursor: "pointer",
+                      cursor: alreadySubmitted ? 'not-allowed' : 'pointer',
                       fontSize: "12px",
                       fontWeight: "600",
                       display: "flex",
@@ -1450,17 +1563,18 @@ export default function AssessmentPage() {
                       justifyContent: "center",
                       padding: "0",
                       transition: "all 0.2s",
-                      position: "relative"
+                      position: "relative",
+                      opacity: alreadySubmitted ? 0.6 : 1
                     }}
-                    title={`Question ${index + 1}${isAnswered ? " (Answered)" : " (Not answered)"}`}
+                    title={alreadySubmitted ? "Assessment submitted - navigation disabled" : `Question ${index + 1}${isAnswered ? " (Answered)" : " (Not answered)"}`}
                     onMouseOver={(e) => {
-                      if (!isCurrent) {
+                      if (!isCurrent && !alreadySubmitted) {
                         e.currentTarget.style.transform = "scale(1.05)";
                         e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.1)";
                       }
                     }}
                     onMouseOut={(e) => {
-                      if (!isCurrent) {
+                      if (!isCurrent && !alreadySubmitted) {
                         e.currentTarget.style.transform = "scale(1)";
                         e.currentTarget.style.boxShadow = "none";
                       }
