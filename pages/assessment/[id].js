@@ -88,7 +88,7 @@ async function loadUserResponses(userId) {
 // ===== UPDATED: Check if user has already submitted =====
 async function checkIfAlreadySubmitted(userId) {
   try {
-    // Primary check: assessments_completed table
+    // Primary check: assessments_completed table (has unique constraint)
     const { data, error } = await supabase
       .from("assessments_completed")
       .select("id, completed_at")
@@ -108,7 +108,7 @@ async function checkIfAlreadySubmitted(userId) {
       return true;
     }
 
-    // Secondary check: assessments table (backward compatibility)
+    // Secondary check: assessments table (legacy/backward compatibility)
     const { data: assessmentData } = await supabase
       .from("assessments")
       .select("status, submitted_at")
@@ -119,7 +119,7 @@ async function checkIfAlreadySubmitted(userId) {
     const isSubmitted = assessmentData?.status === 'submitted' || assessmentData?.submitted_at;
     
     if (isSubmitted) {
-      console.log("Found submitted assessment in assessments table");
+      console.log("Found submitted assessment in assessments table (legacy)");
     }
     
     return isSubmitted;
@@ -132,7 +132,7 @@ async function checkIfAlreadySubmitted(userId) {
 // ===== UPDATED: Mark user as submitted =====
 async function markAsSubmitted(userId) {
   try {
-    // Call the API to handle submission (ensures both frontend and backend checks)
+    // Call the API - it will handle the atomic submission with unique constraint
     const response = await fetch('/api/submit-assessment', {
       method: 'POST',
       headers: {
@@ -147,6 +147,11 @@ async function markAsSubmitted(userId) {
     const result = await response.json();
     
     if (!response.ok) {
+      // Check if it's an "already submitted" error
+      if (result.error?.includes("already submitted") || result.error?.includes("23505")) {
+        console.log("Assessment already submitted (caught by API)");
+        return true; // Return true because submission already exists
+      }
       throw new Error(result.error || 'Submission failed');
     }
 
@@ -155,9 +160,9 @@ async function markAsSubmitted(userId) {
   } catch (error) {
     console.error("Failed to submit assessment:", error);
     
-    // Fallback: Try direct database update if API fails
+    // Fallback: Try direct database insert (will fail if duplicate due to constraint)
     try {
-      console.log("Trying fallback database update...");
+      console.log("Trying fallback direct database insert...");
       const { error: dbError } = await supabase
         .from("assessments_completed")
         .insert({
@@ -168,15 +173,15 @@ async function markAsSubmitted(userId) {
         });
 
       if (dbError) {
-        // If it's a duplicate error, that's actually OK - it means already submitted
+        // If it's a duplicate error (23505), that's OK - assessment already submitted
         if (dbError.code === '23505') {
-          console.log("Assessment already marked as completed (unique constraint)");
+          console.log("Assessment already marked as completed (unique constraint prevented duplicate)");
           return true;
         }
         throw dbError;
       }
       
-      console.log("Fallback database update successful");
+      console.log("Fallback database insert successful");
       return true;
     } catch (fallbackError) {
       console.error("Fallback also failed:", fallbackError);
@@ -360,7 +365,7 @@ export default function AssessmentPage() {
   const submitAssessment = async () => {
     // Double-check locally before even trying
     if (alreadySubmitted) {
-      alert("⚠️ You have already submitted this assessment.");
+      alert("⚠️ You have already submitted this assessment. One attempt only.");
       return;
     }
     
@@ -374,11 +379,11 @@ export default function AssessmentPage() {
     setShowSubmitModal(false);
     
     try {
-      // This will call the API which does the final check
+      // This will call the API which has the final check and unique constraint
       await markAsSubmitted(session.user.id);
       
-      // If we get here, submission was successful
-      setAlreadySubmitted(true);
+      // If we get here, submission was successful OR already exists
+      setAlreadySubmitted(true); // Block further attempts
       
       // Calculate total score from responses
       const calculateAndStoreScore = async () => {
@@ -432,7 +437,7 @@ export default function AssessmentPage() {
       console.error("Submission error:", error);
       
       // Check if it's a "already submitted" error
-      if (error.message.includes("already submitted") || error.message.includes("One attempt")) {
+      if (error.message.includes("already submitted") || error.message.includes("One attempt") || error.message.includes("23505")) {
         setAlreadySubmitted(true);
         setError("Assessment already submitted. You cannot retake it.");
         alert("Assessment already submitted. You cannot retake it.");
