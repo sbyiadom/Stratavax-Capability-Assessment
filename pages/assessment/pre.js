@@ -14,75 +14,38 @@ export default function PreAssessmentPage() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        minHeight: "70vh",
+        minHeight: "100vh",
         padding: "20px"
       }}>
         <div style={{
           width: "70vw",
-          maxWidth: "700px",
-          padding: "40px 30px",
-          backgroundColor: "rgba(255,255,255,0.97)",
-          borderRadius: "12px",
+          maxWidth: "850px",
+          padding: 30,
+          backgroundColor: "rgba(255,255,255,0.95)",
+          borderRadius: 12,
           textAlign: "center",
-          boxShadow: "0 6px 20px rgba(0,0,0,0.15)"
+          boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
         }}>
-          <h1 style={{ color: "#1a237e", marginBottom: "25px" }}>
-            Stratavax Capability Assessment
-          </h1>
-          
-          <div style={{
-            background: "#f8f9fa",
-            padding: "25px",
-            borderRadius: "10px",
-            margin: "25px 0",
-            borderLeft: "4px solid #d32f2f"
-          }}>
-            <p style={{ fontSize: "16px", lineHeight: "1.6", margin: 0 }}>
-              This is a <strong>one-time-only assessment</strong> with a 3-hour timer that pauses when you log off. 
-              You can take breaks, answer questions in any order, and change answers before submitting. 
-              Anti-cheat measures are active, some answers are randomized, and the system auto-submits when time expires. 
-              <strong> You cannot retake this assessment</strong> - after submission, you'll be logged out and your results 
-              will be automatically scored and sent to supervisors. Ensure you have a stable internet connection before starting.
-            </p>
-          </div>
-          
-          <div style={{ marginTop: "30px" }}>
-            <Link href="/assessment/1">
-              <a style={{
-                backgroundColor: "#1565c0",
-                color: "#fff",
-                padding: "12px 35px",
-                borderRadius: "8px",
-                textDecoration: "none",
-                fontWeight: "bold",
-                fontSize: "16px",
-                display: "inline-block",
-                transition: "all 0.3s"
-              }}
-              onMouseOver={(e) => {
-                e.target.style.backgroundColor = "#0d47a1";
-                e.target.style.transform = "translateY(-2px)";
-              }}
-              onMouseOut={(e) => {
-                e.target.style.backgroundColor = "#1565c0";
-                e.target.style.transform = "translateY(0)";
-              }}>
-                Start Assessment
-              </a>
-            </Link>
-            
-            <p style={{ 
-              fontSize: "13px", 
-              color: "#666", 
-              marginTop: "15px",
-              fontStyle: "italic"
-            }}>
-              By clicking "Start Assessment", you acknowledge and accept these terms.
-            </p>
-          </div>
+          <h1>Welcome to the Stratavax Capability Assessment</h1>
+          <p style={{ margin: "20px 0" }}>
+            This assessment will measure cognitive abilities, personality traits, leadership, technical competence, and performance potential.
+            Please ensure you are in a quiet place and can complete it in one sitting.
+          </p>
+          <p style={{ margin: "20px 0", fontWeight: 600 }}>
+            You will not be able to go back once the assessment starts. Take your time and answer honestly.
+          </p>
+          <Link href="/assessment/1"> {/* replace 1 with actual assessment id */}
+            <a style={{
+              backgroundColor: "#1565c0",
+              color: "#fff",
+              padding: "10px 20px",
+              borderRadius: 8,
+              textDecoration: "none",
+              fontWeight: "bold"
+            }}>Start Assessment</a>
+          </Link>
         </div>
       </div>
     </AppLayout>
   );
 }
-
