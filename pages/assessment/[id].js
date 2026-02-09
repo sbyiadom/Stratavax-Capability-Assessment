@@ -1,4 +1,3 @@
-// pages/assessment/[id].js
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -22,7 +21,7 @@ const SECTION_CONFIG = {
     icon: '👑',
     bgImage: 'https://img.freepik.com/free-photo/friends-people-group-teamwork-diversity_53876-31488.jpg?semt=ais_hybrid&w=740&q=80'
   },
-  'Bottled Water Manufacturing': {  // CHANGED FROM 'Technical Competence'
+  'Bottled Water Manufacturing': {
     color: '#388E3C', 
     lightBg: 'rgba(56, 142, 60, 0.1)',
     icon: '⚙️',
@@ -44,8 +43,6 @@ function trulyRandomizeAnswers(answers) {
   if (!answers || answers.length === 0) return answers;
   
   const shuffled = [...answers];
-  
-  // Proper Fisher-Yates shuffle with Math.random()
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
@@ -88,48 +85,103 @@ async function loadUserResponses(userId) {
   }
 }
 
-// NEW: Check if user has already submitted this assessment
+// ===== UPDATED: Check if user has already submitted =====
 async function checkIfAlreadySubmitted(userId) {
   try {
+    // Primary check: assessments_completed table
     const { data, error } = await supabase
-      .from("assessment_submissions")
-      .select("id, submitted_at")
+      .from("assessments_completed")
+      .select("id, completed_at")
       .eq("user_id", userId)
       .eq("assessment_id", '11111111-1111-1111-1111-111111111111')
-      .single();
+      .maybeSingle();
 
-    if (error && error.code !== 'PGRST116') { // PGRST116 means no rows found
-      console.error("Error checking submission:", error);
+    // If error (not "no rows" error), log it
+    if (error && error.code !== 'PGRST116') {
+      console.error("Error checking completion:", error);
       return false;
     }
     
-    return !!data; // Return true if submission exists
+    // If data exists, user has submitted
+    if (data) {
+      console.log("Found existing submission in assessments_completed");
+      return true;
+    }
+
+    // Secondary check: assessments table (backward compatibility)
+    const { data: assessmentData } = await supabase
+      .from("assessments")
+      .select("status, submitted_at")
+      .eq("user_id", userId)
+      .eq("id", '11111111-1111-1111-1111-111111111111')
+      .maybeSingle();
+
+    const isSubmitted = assessmentData?.status === 'submitted' || assessmentData?.submitted_at;
+    
+    if (isSubmitted) {
+      console.log("Found submitted assessment in assessments table");
+    }
+    
+    return isSubmitted;
   } catch (error) {
     console.error("Error in checkIfAlreadySubmitted:", error);
     return false;
   }
 }
 
-// NEW: Mark user as submitted
+// ===== UPDATED: Mark user as submitted =====
 async function markAsSubmitted(userId) {
   try {
-    const { error } = await supabase
-      .from("assessment_submissions")
-      .upsert({
-        user_id: userId,
+    // Call the API to handle submission (ensures both frontend and backend checks)
+    const response = await fetch('/api/submit-assessment', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
         assessment_id: '11111111-1111-1111-1111-111111111111',
-        submitted_at: new Date().toISOString(),
-        status: 'completed'
-      }, { onConflict: 'user_id,assessment_id' });
+        user_id: userId
+      })
+    });
 
-    if (error) {
-      console.error("Error marking as submitted:", error);
-      throw error;
+    const result = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(result.error || 'Submission failed');
     }
+
+    console.log("Submission successful via API:", result.message);
     return true;
   } catch (error) {
-    console.error("Failed to mark as submitted:", error);
-    throw error;
+    console.error("Failed to submit assessment:", error);
+    
+    // Fallback: Try direct database update if API fails
+    try {
+      console.log("Trying fallback database update...");
+      const { error: dbError } = await supabase
+        .from("assessments_completed")
+        .insert({
+          user_id: userId,
+          assessment_id: '11111111-1111-1111-1111-111111111111',
+          completed_at: new Date().toISOString(),
+          status: 'completed'
+        });
+
+      if (dbError) {
+        // If it's a duplicate error, that's actually OK - it means already submitted
+        if (dbError.code === '23505') {
+          console.log("Assessment already marked as completed (unique constraint)");
+          return true;
+        }
+        throw dbError;
+      }
+      
+      console.log("Fallback database update successful");
+      return true;
+    } catch (fallbackError) {
+      console.error("Fallback also failed:", fallbackError);
+      throw new Error("Could not submit assessment. Please contact support.");
+    }
   }
 }
 
@@ -149,7 +201,7 @@ export default function AssessmentPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [error, setError] = useState(null);
-  const [alreadySubmitted, setAlreadySubmitted] = useState(false); // NEW STATE
+  const [alreadySubmitted, setAlreadySubmitted] = useState(false);
 
   // Initialize session and check if already submitted
   useEffect(() => {
@@ -163,7 +215,7 @@ export default function AssessmentPage() {
           const hasSubmitted = await checkIfAlreadySubmitted(data.session.user.id);
           if (hasSubmitted) {
             setAlreadySubmitted(true);
-            setError("You have already submitted this assessment. You cannot retake it.");
+            setError("You have already submitted this assessment. One attempt only allowed.");
             setLoading(false);
             return;
           }
@@ -218,10 +270,8 @@ export default function AssessmentPage() {
           if (q.section === 'Bottled Water Manufacturing') {
             console.log(`Randomizing answers for Bottled Water Manufacturing question ${q.id}`);
             
-            // Use truly random shuffle for Bottled Water Manufacturing
             const randomizedOptions = trulyRandomizeAnswers(baseQuestion.options);
             
-            // Log for debugging
             console.log('Original order:', baseQuestion.options.map(opt => ({ 
               id: opt.id, 
               text: opt.answer_text.substring(0, 50) + '...' 
@@ -255,9 +305,9 @@ export default function AssessmentPage() {
     fetchAssessmentData();
   }, [assessmentId, isSessionReady, session, alreadySubmitted]);
 
-  // Timer
+  // Timer (don't run if already submitted)
   useEffect(() => {
-    if (alreadySubmitted) return; // Don't run timer if already submitted
+    if (alreadySubmitted) return;
     
     const timer = setInterval(() => setElapsed(t => t + 1), 1000);
     return () => clearInterval(timer);
@@ -306,10 +356,11 @@ export default function AssessmentPage() {
     }
   };
 
-  // Submit assessment - FIXED VERSION with one-attempt marking
+  // ===== UPDATED: Submit assessment function =====
   const submitAssessment = async () => {
+    // Double-check locally before even trying
     if (alreadySubmitted) {
-      alert("You have already submitted this assessment.");
+      alert("⚠️ You have already submitted this assessment.");
       return;
     }
     
@@ -323,13 +374,15 @@ export default function AssessmentPage() {
     setShowSubmitModal(false);
     
     try {
-      // FIRST: Mark user as submitted (PREVENT RE-ATTEMPTS)
+      // This will call the API which does the final check
       await markAsSubmitted(session.user.id);
-
-      // THEN: Calculate total score from responses
+      
+      // If we get here, submission was successful
+      setAlreadySubmitted(true);
+      
+      // Calculate total score from responses
       const calculateAndStoreScore = async () => {
         try {
-          // Calculate total score from responses
           const { data: responsesData, error: responsesError } = await supabase
             .from("responses")
             .select(`
@@ -343,14 +396,12 @@ export default function AssessmentPage() {
 
           const totalScore = responsesData?.reduce((sum, r) => sum + (r.answers?.score || 0), 0) || 0;
 
-          // Determine classification
           const classification = 
             totalScore >= 90 ? 'Top Talent' :
             totalScore >= 75 ? 'High Potential' :
             totalScore >= 60 ? 'Solid Performer' :
             totalScore >= 40 ? 'Developing' : 'Needs Improvement';
 
-          // Save to talent_classification table
           const { error: classificationError } = await supabase
             .from("talent_classification")
             .upsert({
@@ -373,15 +424,21 @@ export default function AssessmentPage() {
         }
       };
 
-      // Call the function to calculate and store score
       await calculateAndStoreScore();
       
       // Show success modal
       setShowSuccessModal(true);
-      setAlreadySubmitted(true); // Update local state
     } catch (error) {
       console.error("Submission error:", error);
-      alert("Assessment submitted but there was an error calculating your score. Please contact support.");
+      
+      // Check if it's a "already submitted" error
+      if (error.message.includes("already submitted") || error.message.includes("One attempt")) {
+        setAlreadySubmitted(true);
+        setError("Assessment already submitted. You cannot retake it.");
+        alert("Assessment already submitted. You cannot retake it.");
+      } else {
+        alert("Assessment submitted but there was an error calculating your score. Please contact support.");
+      }
       setIsSubmitting(false);
     }
   };
@@ -425,7 +482,7 @@ export default function AssessmentPage() {
     );
   }
 
-  // Already submitted state - NEW
+  // Already submitted state
   if (alreadySubmitted) {
     return (
       <div style={{ 
@@ -452,9 +509,11 @@ export default function AssessmentPage() {
             padding: "20px",
             borderRadius: "10px"
           }}>
-            You have already completed and submitted this assessment. 
+            <strong>One Attempt Only Policy</strong>
             <br /><br />
-            <strong>One attempt only is allowed per candidate.</strong>
+            You have already completed and submitted this assessment. 
+            <br />
+            <strong>Each candidate is allowed only one attempt.</strong>
             <br /><br />
             Your results will be reviewed by our assessment team.
           </div>
@@ -500,7 +559,7 @@ export default function AssessmentPage() {
             🏢 Stratavax
           </div>
           <div style={{ fontSize: "22px", marginBottom: "20px" }}>
-            Error Loading Assessment
+            {error.includes("already submitted") ? "Assessment Already Submitted" : "Error Loading Assessment"}
           </div>
           <div style={{ 
             fontSize: "16px", 
@@ -511,6 +570,12 @@ export default function AssessmentPage() {
             borderRadius: "10px"
           }}>
             {error}
+            {error.includes("already submitted") && (
+              <>
+                <br /><br />
+                <strong>One attempt only is allowed per candidate.</strong>
+              </>
+            )}
           </div>
           <button 
             onClick={() => router.push("/")}
@@ -624,7 +689,7 @@ export default function AssessmentPage() {
               marginBottom: "20px",
               fontWeight: "700"
             }}>
-              📋 Submit Assessment?
+              📋 Final Submission
             </h2>
             
             <div style={{ 
@@ -669,8 +734,8 @@ export default function AssessmentPage() {
                 marginBottom: "15px",
                 borderLeft: "4px solid #ff9800"
               }}>
-                ⚠️ <strong>Important:</strong> You can only submit this assessment once. 
-                After submission, you will not be able to retake it.
+                ⚠️ <strong>ONE ATTEMPT ONLY:</strong> After submission, you <strong>cannot</strong> retake this assessment. 
+                This is your final submission.
               </div>
               
               <div style={{ height: "12px", background: "#e0e0e0", borderRadius: "6px", margin: "20px 0" }}>
@@ -720,14 +785,14 @@ export default function AssessmentPage() {
                   minHeight: "44px"
                 }}
               >
-                {isSubmitting ? "Submitting..." : "Submit Assessment"}
+                {isSubmitting ? "Submitting..." : "Final Submit"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Success Modal - UPDATED VERSION */}
+      {/* Success Modal */}
       {showSuccessModal && (
         <div style={{
           position: "fixed",
@@ -819,7 +884,8 @@ export default function AssessmentPage() {
                 borderLeft: "4px solid #2196f3"
               }}>
                 ✅ <strong>One-time submission completed:</strong> Your assessment has been successfully submitted. 
-                You cannot retake this assessment.
+                <br />
+                <strong>You cannot retake this assessment.</strong>
               </div>
               
               <div style={{ 
@@ -830,7 +896,7 @@ export default function AssessmentPage() {
                 background: "#e3f2fd",
                 borderRadius: "8px"
               }}>
-                <strong>📊 Supervisor Access:</strong> Your results are now available in the supervisor dashboard for review and analysis.
+                <strong>📊 Results:</strong> Your results are now available in the supervisor dashboard for review.
               </div>
             </div>
 
@@ -868,7 +934,7 @@ export default function AssessmentPage() {
         overflow: "hidden"
       }}>
         
-        {/* ULTRA COMPACT HEADER */}
+        {/* Header */}
         <div style={{
           background: `linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), 
                       url('https://img.freepik.com/free-photo/multiethnic-group-young-happy-students-standing-outdoors_171337-11812.jpg?semt=ais_user_personalization&w=740&q=80')`,
@@ -928,7 +994,7 @@ export default function AssessmentPage() {
               </div>
             </div>
             
-            {/* ULTRA COMPACT TIMER */}
+            {/* Timer */}
             <div style={{
               padding: '4px 8px',
               background: 'rgba(255, 255, 255, 0.9)',
@@ -954,7 +1020,7 @@ export default function AssessmentPage() {
           </div>
         </div>
 
-        {/* MINIMAL PROGRESS BAR */}
+        {/* Progress Bar */}
         <div style={{ 
           height: '4px', 
           background: '#e0e0e0',
@@ -968,7 +1034,7 @@ export default function AssessmentPage() {
           }} />
         </div>
 
-        {/* MAIN CONTENT - OPTIMIZED FOR VISIBILITY */}
+        {/* Main Content */}
         <div style={{ 
           flex: 1,
           padding: '10px',
@@ -976,9 +1042,9 @@ export default function AssessmentPage() {
           overflow: 'hidden',
           gap: '10px'
         }}>
-          {/* QUESTION & ANSWERS - 70% WIDTH (Better font sizes) */}
+          {/* Question & Answers */}
           <div style={{
-            flex: 7, // 70% width
+            flex: 7,
             background: `linear-gradient(rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.95)), 
                         url('${sectionConfig.bgImage}')`,
             backgroundSize: 'cover',
@@ -990,7 +1056,7 @@ export default function AssessmentPage() {
             overflow: 'hidden',
             padding: '20px'
           }}>
-            {/* QUESTION HEADER - Good visibility */}
+            {/* Question Header */}
             <div style={{
               marginBottom: '20px',
               paddingBottom: '15px',
@@ -1057,7 +1123,7 @@ export default function AssessmentPage() {
               </div>
             </div>
 
-            {/* Save Status - Visible but not intrusive */}
+            {/* Save Status */}
             {saveStatus[currentQuestion?.id] && (
               <div style={{
                 padding: '8px 12px',
@@ -1103,7 +1169,7 @@ export default function AssessmentPage() {
               </div>
             )}
 
-            {/* ANSWERS - Good readability */}
+            {/* Answers */}
             <div style={{ 
               display: 'flex',
               flexDirection: 'column',
@@ -1180,7 +1246,7 @@ export default function AssessmentPage() {
               })}
             </div>
 
-            {/* NAVIGATION - Clear and accessible */}
+            {/* Navigation */}
             <div style={{ 
               marginTop: '25px',
               paddingTop: '15px',
@@ -1271,9 +1337,9 @@ export default function AssessmentPage() {
             </div>
           </div>
 
-          {/* QUESTION NAVIGATOR - 30% WIDTH (8 questions per line) */}
+          {/* Question Navigator */}
           <div style={{
-            flex: 3, // 30% width
+            flex: 3,
             background: "white",
             borderRadius: "8px",
             border: "1px solid #e0e0e0",
@@ -1294,7 +1360,7 @@ export default function AssessmentPage() {
               📋 Question Navigator
             </div>
             
-            {/* Progress Summary - Clear */}
+            {/* Progress Summary */}
             <div style={{
               display: "flex",
               justifyContent: "space-between",
@@ -1343,7 +1409,7 @@ export default function AssessmentPage() {
               </div>
             </div>
             
-            {/* QUESTION GRID - 8 PER LINE (NO SCROLLING) */}
+            {/* Question Grid */}
             <div style={{ 
               flex: 1,
               display: "grid",
@@ -1413,7 +1479,7 @@ export default function AssessmentPage() {
               })}
             </div>
             
-            {/* Legend - Helpful */}
+            {/* Legend */}
             <div style={{
               marginTop: "15px",
               paddingTop: "15px",
