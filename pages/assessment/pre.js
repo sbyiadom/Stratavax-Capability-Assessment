@@ -19,7 +19,7 @@ export default function PreAssessmentPage() {
       }}>
         <div style={{
           width: "70vw",
-          maxWidth: "600px",
+          maxWidth: "850px",
           padding: 30,
           backgroundColor: "rgba(255,255,255,0.95)",
           borderRadius: 12,
@@ -49,3 +49,4 @@ export default function PreAssessmentPage() {
     </AppLayout>
   );
 }
+
