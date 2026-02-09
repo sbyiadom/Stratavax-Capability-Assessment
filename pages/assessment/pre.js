@@ -17,133 +17,193 @@ export default function PreAssessmentPage() {
         right: 0,
         bottom: 0,
         backgroundImage: "url('/images/preassessmentbg.jpg')",
-        backgroundSize: "contain",  // Changed from "cover" to "contain" to see full image
+        backgroundSize: "cover",  // Cover the entire screen
         backgroundPosition: "center",
         backgroundRepeat: "no-repeat",
-        backgroundAttachment: "fixed",  // Keeps image fixed while scrolling
-        backgroundColor: "#f8f9fa",  // Fallback color if image doesn't cover
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "20px",
-        overflow: "auto"  // Changed to auto to allow scrolling if needed
+        padding: "20px"
       }}>
+        {/* Semi-transparent overlay for better readability */}
+        <div style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.3)",  // Dark overlay
+          backdropFilter: "blur(2px)"
+        }} />
+        
+        {/* Transparent message card */}
         <div style={{
           width: "90%",
           maxWidth: "500px",
-          maxHeight: "90vh",  // Limit height to 90% of viewport
           padding: "30px",
-          backgroundColor: "rgba(255,255,255,0.95)",
+          backgroundColor: "rgba(255, 255, 255, 0.85)",  // Semi-transparent white
           borderRadius: "12px",
           textAlign: "center",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-          overflow: "auto",  // Allow scrolling inside card if content is too long
-          margin: "20px 0"  // Add vertical margin to see more background
+          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+          border: "1px solid rgba(255, 255, 255, 0.3)",
+          backdropFilter: "blur(10px)",
+          position: "relative",
+          zIndex: 1
         }}>
           <h1 style={{ 
             color: "#1a237e", 
-            marginBottom: "20px",
-            fontSize: "24px"
+            marginBottom: "15px",
+            fontSize: "26px",
+            fontWeight: "700",
+            textShadow: "0 1px 2px rgba(255,255,255,0.5)"
           }}>
             Stratavax Capability Assessment
           </h1>
+          
           <div style={{ 
-            height: "2px", 
-            width: "60px", 
-            background: "#1565c0", 
-            margin: "0 auto 25px" 
+            height: "3px", 
+            width: "80px", 
+            background: "linear-gradient(to right, #1565c0, #2196f3)", 
+            margin: "0 auto 25px",
+            borderRadius: "2px"
           }} />
           
-          <p style={{ margin: "15px 0", fontSize: "15px", lineHeight: "1.6" }}>
-            This assessment measures cognitive abilities, personality traits, leadership, 
-            technical competence, and performance potential.
+          <p style={{ 
+            margin: "15px 0", 
+            fontSize: "16px", 
+            lineHeight: "1.6",
+            color: "#333",
+            fontWeight: "500"
+          }}>
+            This assessment measures cognitive abilities, personality traits, 
+            leadership, technical competence, and performance potential.
           </p>
           
+          {/* Warning section with slight transparency */}
           <div style={{ 
-            background: "#f8f9fa", 
-            padding: "15px", 
-            borderRadius: "8px",
-            margin: "20px 0",
-            borderLeft: "4px solid #1565c0"
+            background: "rgba(248, 249, 250, 0.7)", 
+            padding: "20px", 
+            borderRadius: "10px",
+            margin: "25px 0",
+            borderLeft: "4px solid #d32f2f",
+            border: "1px solid rgba(211, 47, 47, 0.2)"
           }}>
             <p style={{ 
-              fontWeight: "600", 
+              fontWeight: "700", 
               color: "#d32f2f",
-              marginBottom: "10px",
-              fontSize: "14px"
+              marginBottom: "12px",
+              fontSize: "16px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px"
             }}>
-              ⚠️ IMPORTANT: ONE ATTEMPT ONLY
+              <span>⚠️</span> IMPORTANT: ONE ATTEMPT ONLY
             </p>
-            <p style={{ margin: "8px 0", fontSize: "14px" }}>
-              • 3-hour total time limit<br />
-              • Timer pauses when you log off<br />
-              • Can take breaks (timer pauses)<br />
-              • Auto-submits when time expires
-            </p>
+            <div style={{ 
+              fontSize: "15px",
+              lineHeight: "1.8",
+              textAlign: "left",
+              paddingLeft: "10px"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: "8px" }}>
+                <span style={{ marginRight: "8px" }}>•</span>
+                <span>3-hour total time limit</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: "8px" }}>
+                <span style={{ marginRight: "8px" }}>•</span>
+                <span>Timer pauses when you log off</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: "8px" }}>
+                <span style={{ marginRight: "8px" }}>•</span>
+                <span>Can take breaks (timer pauses)</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: "8px" }}>
+                <span style={{ marginRight: "8px" }}>•</span>
+                <span>Auto-submits when time expires</span>
+              </div>
+            </div>
             <p style={{ 
-              fontSize: "13px", 
+              fontSize: "14px", 
               color: "#666", 
-              marginTop: "10px",
-              fontStyle: "italic"
+              marginTop: "15px",
+              fontStyle: "italic",
+              fontWeight: "500"
             }}>
               You cannot retake this assessment once submitted.
             </p>
           </div>
           
+          {/* Internet requirement */}
           <p style={{ 
             margin: "20px 0", 
-            fontWeight: 600,
-            fontSize: "15px",
-            color: "#333"
+            fontWeight: "600",
+            fontSize: "16px",
+            color: "#333",
+            background: "rgba(33, 150, 243, 0.1)",
+            padding: "12px",
+            borderRadius: "6px",
+            borderLeft: "4px solid #2196f3"
           }}>
-            Please ensure you have a stable internet connection before starting.
+            ⚡ Please ensure you have a stable internet connection before starting.
           </p>
           
+          {/* Start button */}
           <Link href="/assessment/1">
             <a style={{
               backgroundColor: "#1565c0",
               color: "#fff",
-              padding: "12px 30px",
-              borderRadius: 8,
+              padding: "14px 40px",
+              borderRadius: "8px",
               textDecoration: "none",
-              fontWeight: "bold",
+              fontWeight: "700",
               fontSize: "16px",
               display: "inline-block",
-              marginTop: "10px",
-              marginBottom: "10px",
-              transition: "all 0.3s"
+              marginTop: "15px",
+              marginBottom: "5px",
+              transition: "all 0.3s",
+              border: "none",
+              cursor: "pointer",
+              boxShadow: "0 4px 12px rgba(21, 101, 192, 0.3)"
             }}
             onMouseOver={(e) => {
               e.target.style.backgroundColor = "#0d47a1";
               e.target.style.transform = "translateY(-2px)";
+              e.target.style.boxShadow = "0 6px 16px rgba(21, 101, 192, 0.4)";
             }}
             onMouseOut={(e) => {
               e.target.style.backgroundColor = "#1565c0";
               e.target.style.transform = "translateY(0)";
+              e.target.style.boxShadow = "0 4px 12px rgba(21, 101, 192, 0.3)";
             }}>
               Start Assessment
             </a>
           </Link>
+          
+          <p style={{ 
+            fontSize: "13px", 
+            color: "#666", 
+            marginTop: "15px",
+            fontStyle: "italic",
+            opacity: "0.9"
+          }}>
+            By clicking above, you confirm you understand the instructions.
+          </p>
         </div>
 
-        {/* Remove global scrollbar hiding since we want to see full image */}
+        {/* Remove scrollbars */}
         <style jsx global>{`
           body {
+            overflow: hidden;
             margin: 0;
             padding: 0;
           }
           ::-webkit-scrollbar {
-            width: 8px;
+            display: none;
           }
-          ::-webkit-scrollbar-track {
-            background: #f1f1f1;
-          }
-          ::-webkit-scrollbar-thumb {
-            background: #888;
-            border-radius: 4px;
-          }
-          ::-webkit-scrollbar-thumb:hover {
-            background: #555;
+          * {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
           }
         `}</style>
       </div>
