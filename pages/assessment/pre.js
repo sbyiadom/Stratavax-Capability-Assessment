@@ -17,22 +17,28 @@ export default function PreAssessmentPage() {
         right: 0,
         bottom: 0,
         backgroundImage: "url('/images/preassessmentbg.jpg')",
-        backgroundSize: "cover",
+        backgroundSize: "contain",  // Changed from "cover" to "contain" to see full image
         backgroundPosition: "center",
         backgroundRepeat: "no-repeat",
+        backgroundAttachment: "fixed",  // Keeps image fixed while scrolling
+        backgroundColor: "#f8f9fa",  // Fallback color if image doesn't cover
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "20px"
+        padding: "20px",
+        overflow: "auto"  // Changed to auto to allow scrolling if needed
       }}>
         <div style={{
           width: "90%",
           maxWidth: "500px",
+          maxHeight: "90vh",  // Limit height to 90% of viewport
           padding: "30px",
           backgroundColor: "rgba(255,255,255,0.95)",
           borderRadius: "12px",
           textAlign: "center",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
+          boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+          overflow: "auto",  // Allow scrolling inside card if content is too long
+          margin: "20px 0"  // Add vertical margin to see more background
         }}>
           <h1 style={{ 
             color: "#1a237e", 
@@ -90,7 +96,7 @@ export default function PreAssessmentPage() {
             fontSize: "15px",
             color: "#333"
           }}>
-            Please ensure you are in a quiet place before starting.
+            Please ensure you have a stable internet connection before starting.
           </p>
           
           <Link href="/assessment/1">
@@ -104,6 +110,7 @@ export default function PreAssessmentPage() {
               fontSize: "16px",
               display: "inline-block",
               marginTop: "10px",
+              marginBottom: "10px",
               transition: "all 0.3s"
             }}
             onMouseOver={(e) => {
@@ -119,13 +126,24 @@ export default function PreAssessmentPage() {
           </Link>
         </div>
 
-        {/* Hide scrollbar globally for this page */}
+        {/* Remove global scrollbar hiding since we want to see full image */}
         <style jsx global>{`
           body {
-            overflow: hidden;
+            margin: 0;
+            padding: 0;
           }
           ::-webkit-scrollbar {
-            display: none;
+            width: 8px;
+          }
+          ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+          }
+          ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+          }
+          ::-webkit-scrollbar-thumb:hover {
+            background: #555;
           }
         `}</style>
       </div>
