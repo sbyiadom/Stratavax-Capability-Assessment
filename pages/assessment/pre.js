@@ -14,7 +14,7 @@ export default function PreAssessmentPage() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        minHeight: "100vh",
+        minHeight: "70vh",
         padding: "20px"
       }}>
         <div style={{
@@ -85,3 +85,4 @@ export default function PreAssessmentPage() {
     </AppLayout>
   );
 }
+
