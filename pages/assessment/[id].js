@@ -36,7 +36,84 @@ const SECTION_CONFIG = {
 };
 
 const SECTION_ORDER = Object.keys(SECTION_CONFIG);
-const TIME_LIMIT_SECONDS = 10800;
+const TIME_LIMIT_SECONDS = 10800; // 3 hours
+
+// ===== TIMER DATABASE FUNCTIONS =====
+async function startOrResumeTimer(userId, assessmentId) {
+  try {
+    // Check if timer already exists
+    const { data: existingTimer, error: fetchError } = await supabase
+      .from("assessment_timer_progress")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("assessment_id", assessmentId)
+      .maybeSingle();
+
+    if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
+
+    if (existingTimer) {
+      // Resume timer - return elapsed seconds so far
+      console.log("Resuming timer from:", existingTimer.elapsed_seconds, "seconds");
+      return existingTimer.elapsed_seconds;
+    } else {
+      // Start new timer
+      const { error } = await supabase
+        .from("assessment_timer_progress")
+        .insert({
+          user_id: userId,
+          assessment_id: assessmentId,
+          started_at: new Date().toISOString(),
+          elapsed_seconds: 0,
+          status: 'in_progress'
+        });
+
+      if (error) throw error;
+      console.log("New timer started");
+      return 0;
+    }
+  } catch (error) {
+    console.error("Timer error:", error);
+    return 0; // Default to 0 if error
+  }
+}
+
+async function saveTimerProgress(userId, assessmentId, elapsedSeconds) {
+  try {
+    const { error } = await supabase
+      .from("assessment_timer_progress")
+      .upsert({
+        user_id: userId,
+        assessment_id: assessmentId,
+        elapsed_seconds: elapsedSeconds,
+        last_saved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id,assessment_id' });
+
+    if (error) throw error;
+    console.log("Timer progress saved:", elapsedSeconds, "seconds");
+  } catch (error) {
+    console.error("Failed to save timer:", error);
+  }
+}
+
+async function markTimerAsCompleted(userId, assessmentId) {
+  try {
+    const { error } = await supabase
+      .from("assessment_timer_progress")
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq("user_id", userId)
+      .eq("assessment_id", assessmentId);
+
+    if (error) throw error;
+    console.log("Timer marked as completed");
+  } catch (error) {
+    console.error("Failed to mark timer as completed:", error);
+  }
+}
 
 // ===== ANTI-CHEAT FUNCTIONS =====
 function setupAntiCheatProtection() {
@@ -142,7 +219,7 @@ async function loadUserResponses(userId) {
   }
 }
 
-// ===== UPDATED: STRICT Check if user has already submitted =====
+// ===== STRICT Check if user has already submitted =====
 async function checkIfAlreadySubmitted(userId) {
   try {
     console.log("🔍 Checking if user has already submitted...");
@@ -195,7 +272,7 @@ async function checkIfAlreadySubmitted(userId) {
   }
 }
 
-// ===== UPDATED: Mark user as submitted =====
+// ===== Mark user as submitted =====
 async function markAsSubmitted(userId) {
   try {
     // Call the API - it will handle the atomic submission with unique constraint
@@ -273,6 +350,7 @@ export default function AssessmentPage() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [error, setError] = useState(null);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
+  const [timerLoaded, setTimerLoaded] = useState(false);
 
   // ===== ADDED: Initialize anti-cheat protection =====
   useEffect(() => {
@@ -297,7 +375,8 @@ export default function AssessmentPage() {
     alreadySubmitted,
     loading,
     session: session?.user?.id,
-    isSessionReady
+    isSessionReady,
+    timerLoaded
   });
 
   // Initialize session and check if already submitted
@@ -340,9 +419,6 @@ export default function AssessmentPage() {
       
       // Prevent any further interaction
       setError("Assessment already submitted. You cannot access this page.");
-      
-      // Clear any timers
-      clearInterval();
       
       // Force logout after 3 seconds
       setTimeout(async () => {
@@ -426,13 +502,77 @@ export default function AssessmentPage() {
     fetchAssessmentData();
   }, [assessmentId, isSessionReady, session, alreadySubmitted]);
 
-  // Timer (don't run if already submitted)
+  // ===== UPDATED: Pause-Resume Timer (don't run if already submitted) =====
   useEffect(() => {
-    if (alreadySubmitted) return;
+    if (alreadySubmitted || !session?.user?.id || !isSessionReady) return;
+
+    let timerInterval;
+    let localElapsed = 0; // Local counter
     
-    const timer = setInterval(() => setElapsed(t => t + 1), 1000);
-    return () => clearInterval(timer);
-  }, [alreadySubmitted]);
+    const initializeTimer = async () => {
+      try {
+        // Load saved timer progress from database
+        const savedElapsed = await startOrResumeTimer(session.user.id, assessmentId);
+        localElapsed = savedElapsed;
+        setElapsed(savedElapsed);
+        setTimerLoaded(true);
+        
+        console.log("⏰ Timer initialized with", savedElapsed, "seconds elapsed");
+        
+        // Start timer that increments every second
+        timerInterval = setInterval(async () => {
+          localElapsed += 1;
+          setElapsed(localElapsed);
+          
+          // Save progress every 30 seconds
+          if (localElapsed % 30 === 0) {
+            await saveTimerProgress(session.user.id, assessmentId, localElapsed);
+          }
+          
+          // Check if time is up (3 hours = 10800 seconds)
+          if (localElapsed >= TIME_LIMIT_SECONDS) {
+            clearInterval(timerInterval);
+            console.log("⏰ Time's up! Auto-submitting...");
+            
+            // Auto-submit assessment
+            if (!alreadySubmitted) {
+              await submitAssessment();
+            }
+          }
+        }, 1000);
+      } catch (error) {
+        console.error("Failed to initialize timer:", error);
+        // Fallback to local timer
+        timerInterval = setInterval(() => {
+          setElapsed(t => t + 1);
+        }, 1000);
+      }
+    };
+
+    initializeTimer();
+
+    // Save on page unload/refresh (when user closes browser/tab)
+    const handleBeforeUnload = async () => {
+      if (session?.user?.id && localElapsed > 0) {
+        console.log("💾 Saving timer progress before unload:", localElapsed, "seconds");
+        await saveTimerProgress(session.user.id, assessmentId, localElapsed);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    // Cleanup
+    return () => {
+      clearInterval(timerInterval);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      
+      // Save final timer state when component unmounts (user logs off)
+      if (session?.user?.id && localElapsed > 0 && !alreadySubmitted) {
+        console.log("💾 Saving final timer progress:", localElapsed, "seconds");
+        saveTimerProgress(session.user.id, assessmentId, localElapsed);
+      }
+    };
+  }, [alreadySubmitted, session, isSessionReady, assessmentId]);
 
   // Answer selection - BLOCKED if already submitted
   const handleSelect = async (questionId, answerId) => {
@@ -488,7 +628,7 @@ export default function AssessmentPage() {
     }
   };
 
-  // ===== UPDATED: Submit assessment function with IMMEDIATE BLOCK =====
+  // ===== UPDATED: Submit assessment function with timer completion =====
   const submitAssessment = async () => {
     // Double-check locally before even trying
     if (alreadySubmitted) {
@@ -508,6 +648,9 @@ export default function AssessmentPage() {
     try {
       // This will call the API which has the final check and unique constraint
       await markAsSubmitted(session.user.id);
+      
+      // ===== CRITICAL: Mark timer as completed =====
+      await markTimerAsCompleted(session.user.id, assessmentId);
       
       // ===== CRITICAL: IMMEDIATELY BLOCK EVERYTHING =====
       setAlreadySubmitted(true);
@@ -818,12 +961,17 @@ export default function AssessmentPage() {
   const isLastQuestion = currentIndex === questions.length - 1;
   const progressPercentage = questions.length > 0 ? Math.round((totalAnswered / questions.length) * 100) : 0;
 
-  // Calculate time
+  // Calculate time with pause-resume functionality
   const timeRemaining = Math.max(0, TIME_LIMIT_SECONDS - elapsed);
   const hours = Math.floor(timeRemaining / 3600);
   const minutes = Math.floor((timeRemaining % 3600) / 60);
   const seconds = timeRemaining % 60;
   const formatTime = (time) => time.toString().padStart(2, '0');
+
+  // Calculate time used percentage for warning colors
+  const timeUsedPercentage = (elapsed / TIME_LIMIT_SECONDS) * 100;
+  const isTimeWarning = timeUsedPercentage > 80;
+  const isTimeCritical = timeUsedPercentage > 90;
 
   return (
     <>
@@ -890,6 +1038,23 @@ export default function AssessmentPage() {
                 <span style={{ color: "#555" }}>Completion Rate:</span>
                 <span style={{ fontWeight: "700", color: "#2196f3" }}>
                   {progressPercentage}%
+                </span>
+              </div>
+              
+              {/* Timer Status */}
+              <div style={{ 
+                display: "flex", 
+                justifyContent: "space-between", 
+                marginBottom: "15px",
+                fontSize: "16px",
+                fontWeight: "600"
+              }}>
+                <span style={{ color: "#555" }}>Time Used:</span>
+                <span style={{ 
+                  fontWeight: "700", 
+                  color: isTimeCritical ? "#d32f2f" : isTimeWarning ? "#ff9800" : "#4caf50" 
+                }}>
+                  {formatTime(Math.floor(elapsed / 3600))}:{formatTime(Math.floor((elapsed % 3600) / 60))}:{formatTime(elapsed % 60)}
                 </span>
               </div>
               
@@ -1041,6 +1206,19 @@ export default function AssessmentPage() {
                   {progressPercentage}%
                 </span>
               </div>
+              
+              <div style={{ 
+                display: "flex", 
+                justifyContent: "space-between", 
+                marginBottom: "15px",
+                fontSize: "18px",
+                fontWeight: "600"
+              }}>
+                <span>Time Used:</span>
+                <span style={{ color: "#4caf50" }}>
+                  {formatTime(Math.floor(elapsed / 3600))}:{formatTime(Math.floor((elapsed % 3600) / 60))}:{formatTime(elapsed % 60)}
+                </span>
+              </div>
 
               <div style={{ 
                 fontSize: "14px", 
@@ -1161,31 +1339,53 @@ export default function AssessmentPage() {
                       (Randomized)
                     </span>
                   )}
+                  {timerLoaded && (
+                    <span style={{ marginLeft: '5px', color: '#4caf50' }}>
+                      • Timer: {formatTime(Math.floor(elapsed / 3600))}:{formatTime(Math.floor((elapsed % 3600) / 60))}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
             
-            {/* Timer */}
+            {/* Timer with Pause-Resume Status */}
             <div style={{
               padding: '4px 8px',
-              background: 'rgba(255, 255, 255, 0.9)',
+              background: isTimeCritical ? 'rgba(255, 255, 255, 0.9)' : 
+                         isTimeWarning ? 'rgba(255, 255, 255, 0.9)' : 
+                         'rgba(255, 255, 255, 0.9)',
               borderRadius: '4px',
               textAlign: 'center',
-              minWidth: '70px'
+              minWidth: '70px',
+              border: isTimeCritical ? '1px solid #d32f2f' : 
+                      isTimeWarning ? '1px solid #ff9800' : 
+                      '1px solid #2196f3'
             }}>
               <div style={{ 
                 fontSize: '10px', 
                 fontWeight: '600', 
-                color: timeRemaining < 1800 ? '#ff9800' : '#2196f3'
+                color: isTimeCritical ? '#d32f2f' : 
+                       isTimeWarning ? '#ff9800' : 
+                       '#2196f3'
               }}>
-                TIME
+                TIME REMAINING
               </div>
               <div style={{ 
                 fontSize: '12px', 
                 fontWeight: '700', 
-                color: timeRemaining < 1800 ? '#d84315' : '#1565c0'
+                color: isTimeCritical ? '#d32f2f' : 
+                       isTimeWarning ? '#ff9800' : 
+                       '#1565c0'
               }}>
                 {formatTime(hours)}:{formatTime(minutes)}
+                <div style={{ 
+                  fontSize: '8px', 
+                  fontWeight: '500', 
+                  color: '#666',
+                  marginTop: '2px'
+                }}>
+                  {timerLoaded ? 'Pause-Resume Active' : 'Loading...'}
+                </div>
               </div>
             </div>
           </div>
@@ -1201,7 +1401,7 @@ export default function AssessmentPage() {
           fontWeight: '600',
           borderBottom: '2px solid #e65100'
         }}>
-          ⚠️ ANTI-CHEAT ACTIVE: Right-click, copy/paste, and text selection disabled.
+          ⚠️ ANTI-CHEAT ACTIVE: Right-click, copy/paste, and text selection disabled. Timer pauses when you log off.
         </div>
 
         {/* Progress Bar */}
@@ -1306,6 +1506,41 @@ export default function AssessmentPage() {
                 {currentQuestion?.question_text}
               </div>
             </div>
+
+            {/* Timer Status Note */}
+            {timerLoaded && elapsed > 0 && (
+              <div style={{
+                padding: '8px 12px',
+                background: 'rgba(33, 150, 243, 0.1)',
+                border: '1px solid #2196f3',
+                borderRadius: '5px',
+                marginBottom: '15px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '13px',
+                color: '#1565c0',
+                fontWeight: '500'
+              }}>
+                <div style={{
+                  width: '20px',
+                  height: '20px',
+                  borderRadius: '50%',
+                  background: '#2196f3',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontSize: '10px'
+                }}>
+                  ⏰
+                </div>
+                <span>
+                  Timer active: {formatTime(Math.floor(elapsed / 3600))}:{formatTime(Math.floor((elapsed % 3600) / 60))}:{formatTime(elapsed % 60)} used. 
+                  Timer pauses when you log off and resumes when you return.
+                </span>
+              </div>
+            )}
 
             {/* Save Status */}
             {saveStatus[currentQuestion?.id] && (
@@ -1480,6 +1715,13 @@ export default function AssessmentPage() {
                 }}>
                   {progressPercentage}% Complete
                 </div>
+                <div style={{ 
+                  fontSize: '10px', 
+                  fontWeight: '400', 
+                  color: '#999'
+                }}>
+                  Time: {formatTime(Math.floor(elapsed / 3600))}:{formatTime(Math.floor((elapsed % 3600) / 60))}
+                </div>
               </div>
               
               {isLastQuestion ? (
@@ -1595,6 +1837,69 @@ export default function AssessmentPage() {
                 <div style={{ color: "#666", fontSize: "11px", marginTop: "2px" }}>
                   Complete
                 </div>
+              </div>
+            </div>
+            
+            {/* Timer Progress */}
+            <div style={{
+              marginBottom: "15px",
+              padding: "10px",
+              background: isTimeCritical ? "rgba(211, 47, 47, 0.1)" : 
+                         isTimeWarning ? "rgba(255, 152, 0, 0.1)" : 
+                         "rgba(33, 150, 243, 0.1)",
+              borderRadius: "6px",
+              border: `1px solid ${isTimeCritical ? "#d32f2f" : 
+                       isTimeWarning ? "#ff9800" : 
+                       "#2196f3"}`
+            }}>
+              <div style={{ 
+                display: "flex", 
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "8px"
+              }}>
+                <div style={{ 
+                  fontSize: "12px", 
+                  fontWeight: "600",
+                  color: isTimeCritical ? "#d32f2f" : 
+                         isTimeWarning ? "#ff9800" : 
+                         "#1565c0"
+                }}>
+                  ⏰ TIMER: {formatTime(hours)}:{formatTime(minutes)}:{formatTime(seconds)} left
+                </div>
+                <div style={{ 
+                  fontSize: "10px", 
+                  fontWeight: "500",
+                  color: "#666",
+                  background: "#f5f5f5",
+                  padding: "2px 6px",
+                  borderRadius: "3px"
+                }}>
+                  Pause-Resume
+                </div>
+              </div>
+              <div style={{ 
+                height: "6px", 
+                background: "#e0e0e0", 
+                borderRadius: "3px",
+                overflow: "hidden"
+              }}>
+                <div style={{ 
+                  height: "100%", 
+                  width: `${100 - (elapsed / TIME_LIMIT_SECONDS) * 100}%`, 
+                  background: isTimeCritical ? "#d32f2f" : 
+                             isTimeWarning ? "#ff9800" : 
+                             "#2196f3",
+                  borderRadius: "3px"
+                }} />
+              </div>
+              <div style={{ 
+                fontSize: "10px", 
+                color: "#666", 
+                marginTop: "6px",
+                textAlign: "center"
+              }}>
+                {Math.round((elapsed / TIME_LIMIT_SECONDS) * 100)}% used • Timer pauses when you log off
               </div>
             </div>
             
@@ -1784,9 +2089,9 @@ export default function AssessmentPage() {
                     fontSize: "10px",
                     fontWeight: "bold"
                   }}>
-                    %
+                    ⏰
                   </div>
-                  <span>Progress</span>
+                  <span>Timer</span>
                 </div>
               </div>
             </div>
