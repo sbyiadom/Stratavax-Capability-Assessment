@@ -9,7 +9,7 @@ export default function PreAssessmentPage() {
   if (!session) return null; // redirect handled in requireAuth
 
   return (
-    <AppLayout background="/images/pre-assessment-bg.jpg">
+    <AppLayout background="/images/preassessmentbg.jpg">
       <div style={{
         width: "90vw",
         maxWidth: "500px",
@@ -142,3 +142,4 @@ export default function PreAssessmentPage() {
     </AppLayout>
   );
 }
+
