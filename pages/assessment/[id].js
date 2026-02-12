@@ -1,8 +1,19 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
+import {
+  getAssessmentById,
+  getAssessmentQuestions,
+  startAssessment,
+  saveAnswer,
+  updateAssessmentTimer,
+  completeAssessment,
+  hasCompletedAssessment
+} from "../../supabase/assessment";
 
+// Section configurations for different assessment types
 const SECTION_CONFIG = {
+  // General Assessment Sections
   'Cognitive Abilities': { 
     color: '#4A6FA5', 
     lightBg: 'rgba(74, 111, 165, 0.1)',
@@ -19,7 +30,7 @@ const SECTION_CONFIG = {
     color: '#D32F2F', 
     lightBg: 'rgba(211, 47, 47, 0.1)',
     icon: '👑',
-    bgImage: 'https://img.freepik.com/free-photo/friends-people-group-teamwork-diversity_53876-31488.jpg?semt=ais_hybrid&w=740&q=80'
+    bgImage: 'https://img.freepik.com/free-photo/friends-people-group-teamwork-diversity_53876-31488.jpg'
   },
   'Bottled Water Manufacturing': {
     color: '#388E3C', 
@@ -32,16 +43,131 @@ const SECTION_CONFIG = {
     lightBg: 'rgba(245, 124, 0, 0.1)',
     icon: '📊',
     bgImage: '/images/backgrounds/performance-bg.jpg'
+  },
+  
+  // Behavioral Assessment Sections
+  'Communication': {
+    color: '#0077B6',
+    lightBg: 'rgba(0, 119, 182, 0.1)',
+    icon: '💬',
+    bgImage: '/images/backgrounds/communication-bg.jpg'
+  },
+  'Teamwork': {
+    color: '#2A9D8F',
+    lightBg: 'rgba(42, 157, 143, 0.1)',
+    icon: '🤝',
+    bgImage: '/images/backgrounds/teamwork-bg.jpg'
+  },
+  'Emotional Intelligence': {
+    color: '#E76F51',
+    lightBg: 'rgba(231, 111, 81, 0.1)',
+    icon: '🧘',
+    bgImage: '/images/backgrounds/eq-bg.jpg'
+  },
+  
+  // Cognitive Assessment Sections
+  'Problem Solving': {
+    color: '#6A4C93',
+    lightBg: 'rgba(106, 76, 147, 0.1)',
+    icon: '🔍',
+    bgImage: '/images/backgrounds/problem-solving-bg.jpg'
+  },
+  'Critical Thinking': {
+    color: '#1982C4',
+    lightBg: 'rgba(25, 130, 196, 0.1)',
+    icon: '🎯',
+    bgImage: '/images/backgrounds/critical-thinking-bg.jpg'
+  },
+  'Analytical Reasoning': {
+    color: '#8AC926',
+    lightBg: 'rgba(138, 201, 38, 0.1)',
+    icon: '📐',
+    bgImage: '/images/backgrounds/analytical-bg.jpg'
+  },
+  
+  // Cultural Assessment Sections
+  'Values Alignment': {
+    color: '#9C89B8',
+    lightBg: 'rgba(156, 137, 184, 0.1)',
+    icon: '🎯',
+    bgImage: '/images/backgrounds/values-bg.jpg'
+  },
+  'Work Ethic': {
+    color: '#F0A6CA',
+    lightBg: 'rgba(240, 166, 202, 0.1)',
+    icon: '💪',
+    bgImage: '/images/backgrounds/work-ethic-bg.jpg'
+  },
+  
+  // Manufacturing Technical Sections
+  'Blowing Machines': {
+    color: '#3D5A80',
+    lightBg: 'rgba(61, 90, 128, 0.1)',
+    icon: '💨',
+    bgImage: '/images/backgrounds/blowing-bg.jpg'
+  },
+  'Labeler': {
+    color: '#EE6C4D',
+    lightBg: 'rgba(238, 108, 77, 0.1)',
+    icon: '🏷️',
+    bgImage: '/images/backgrounds/labeler-bg.jpg'
+  },
+  'Filling': {
+    color: '#98C1D9',
+    lightBg: 'rgba(152, 193, 217, 0.1)',
+    icon: '💧',
+    bgImage: '/images/backgrounds/filling-bg.jpg'
+  },
+  'Conveyors': {
+    color: '#293241',
+    lightBg: 'rgba(41, 50, 65, 0.1)',
+    icon: '📦',
+    bgImage: '/images/backgrounds/conveyor-bg.jpg'
+  },
+  'Stretchwrappers': {
+    color: '#E0FBFC',
+    lightBg: 'rgba(224, 251, 252, 0.1)',
+    icon: '🔄',
+    bgImage: '/images/backgrounds/stretchwrapper-bg.jpg'
+  },
+  'Date Coders': {
+    color: '#C81D25',
+    lightBg: 'rgba(200, 29, 37, 0.1)',
+    icon: '📅',
+    bgImage: '/images/backgrounds/datecoder-bg.jpg'
+  },
+  'Raw Materials': {
+    color: '#725AC1',
+    lightBg: 'rgba(114, 90, 193, 0.1)',
+    icon: '🧪',
+    bgImage: '/images/backgrounds/raw-materials-bg.jpg'
   }
 };
 
-const SECTION_ORDER = Object.keys(SECTION_CONFIG);
-const TIME_LIMIT_SECONDS = 10800; // 3 hours
+// Assessment type to default section order mapping
+const ASSESSMENT_TYPE_SECTIONS = {
+  'general': ['Cognitive Abilities', 'Personality Assessment', 'Leadership Potential', 'Bottled Water Manufacturing', 'Performance Metrics'],
+  'behavioral': ['Communication', 'Teamwork', 'Emotional Intelligence'],
+  'cognitive': ['Problem Solving', 'Critical Thinking', 'Analytical Reasoning'],
+  'cultural': ['Values Alignment', 'Work Ethic'],
+  'manufacturing': ['Blowing Machines', 'Labeler', 'Filling', 'Conveyors', 'Stretchwrappers', 'Date Coders', 'Raw Materials']
+};
+
+// Truly random shuffle function
+function trulyRandomizeAnswers(answers) {
+  if (!answers || answers.length === 0) return answers;
+  
+  const shuffled = [...answers];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
 
 // ===== TIMER DATABASE FUNCTIONS =====
 async function startOrResumeTimer(userId, assessmentId) {
   try {
-    // Check if timer already exists
     const { data: existingTimer, error: fetchError } = await supabase
       .from("assessment_timer_progress")
       .select("*")
@@ -52,11 +178,8 @@ async function startOrResumeTimer(userId, assessmentId) {
     if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
 
     if (existingTimer) {
-      // Resume timer - return elapsed seconds so far
-      console.log("Resuming timer from:", existingTimer.elapsed_seconds, "seconds");
       return existingTimer.elapsed_seconds;
     } else {
-      // Start new timer
       const { error } = await supabase
         .from("assessment_timer_progress")
         .insert({
@@ -66,14 +189,12 @@ async function startOrResumeTimer(userId, assessmentId) {
           elapsed_seconds: 0,
           status: 'in_progress'
         });
-
       if (error) throw error;
-      console.log("New timer started");
       return 0;
     }
   } catch (error) {
     console.error("Timer error:", error);
-    return 0; // Default to 0 if error
+    return 0;
   }
 }
 
@@ -88,9 +209,7 @@ async function saveTimerProgress(userId, assessmentId, elapsedSeconds) {
         last_saved_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }, { onConflict: 'user_id,assessment_id' });
-
     if (error) throw error;
-    console.log("Timer progress saved:", elapsedSeconds, "seconds");
   } catch (error) {
     console.error("Failed to save timer:", error);
   }
@@ -107,9 +226,7 @@ async function markTimerAsCompleted(userId, assessmentId) {
       })
       .eq("user_id", userId)
       .eq("assessment_id", assessmentId);
-
     if (error) throw error;
-    console.log("Timer marked as completed");
   } catch (error) {
     console.error("Failed to mark timer as completed:", error);
   }
@@ -117,226 +234,34 @@ async function markTimerAsCompleted(userId, assessmentId) {
 
 // ===== ANTI-CHEAT FUNCTIONS =====
 function setupAntiCheatProtection() {
-  // 1. Disable Right-Click (Prevents "Inspect Element")
-  document.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    return false;
-  });
-
-  // 2. Disable Text Selection (Prevents highlighting and copying)
-  document.addEventListener('selectstart', (e) => {
-    e.preventDefault();
-    return false;
-  });
-
-  // 3. Disable Copy/Paste Keyboard Shortcuts
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+  document.addEventListener('selectstart', (e) => e.preventDefault());
+  
   document.addEventListener('keydown', (e) => {
-    // Block Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A
-    if (
-      (e.ctrlKey || e.metaKey) && 
-      (e.key === 'c' || e.key === 'v' || e.key === 'x' || e.key === 'a')
-    ) {
+    if ((e.ctrlKey || e.metaKey) && 
+        (e.key === 'c' || e.key === 'v' || e.key === 'x' || e.key === 'a')) {
       e.preventDefault();
       return false;
     }
-    
-    // Block F12 (Dev Tools) and Print Screen
     if (e.key === 'F12' || e.key === 'PrintScreen') {
       e.preventDefault();
       return false;
     }
   });
 
-  // 4. Add CSS to prevent text selection
   const style = document.createElement('style');
   style.innerHTML = `
-    * {
-      -webkit-user-select: none !important;
-      -moz-user-select: none !important;
-      -ms-user-select: none !important;
-      user-select: none !important;
-    }
-    
-    /* Allow selection only in specific areas if needed */
-    .allow-select {
-      -webkit-user-select: text !important;
-      -moz-user-select: text !important;
-      -ms-user-select: text !important;
-      user-select: text !important;
-    }
+    * { -webkit-user-select: none !important; -moz-user-select: none !important; -ms-user-select: none !important; user-select: none !important; }
+    .allow-select { -webkit-user-select: text !important; -moz-user-select: text !important; -ms-user-select: text !important; user-select: text !important; }
   `;
   document.head.appendChild(style);
-
-  console.log("🛡️ Anti-cheat protection enabled");
-}
-
-// ===== END ANTI-CHEAT FUNCTIONS =====
-
-// Truly random shuffle function
-function trulyRandomizeAnswers(answers) {
-  if (!answers || answers.length === 0) return answers;
-  
-  const shuffled = [...answers];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  
-  return shuffled;
-}
-
-async function saveResponse(assessmentId, questionId, answerId, userId) {
-  try {
-    const { error } = await supabase.from("responses").upsert({
-      assessment_id: assessmentId,
-      question_id: parseInt(questionId),
-      answer_id: parseInt(answerId),
-      user_id: userId,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'assessment_id,question_id,user_id' });
-
-    if (error) throw new Error(`Save failed: ${error.message}`);
-    return { success: true };
-  } catch (error) {
-    console.error("Save error:", error);
-    throw error;
-  }
-}
-
-async function loadUserResponses(userId) {
-  try {
-    const { data } = await supabase
-      .from("responses")
-      .select("question_id, answer_id")
-      .eq("assessment_id", '11111111-1111-1111-1111-111111111111')
-      .eq("user_id", userId);
-
-    const responses = {};
-    data?.forEach(r => responses[r.question_id] = r.answer_id);
-    return responses;
-  } catch (error) {
-    return {};
-  }
-}
-
-// ===== STRICT Check if user has already submitted =====
-async function checkIfAlreadySubmitted(userId) {
-  try {
-    console.log("🔍 Checking if user has already submitted...");
-    console.log("User ID:", userId);
-    console.log("Assessment ID:", '11111111-1111-1111-1111-111111111111');
-    
-    // Primary check: assessments_completed table (has unique constraint)
-    const { data, error } = await supabase
-      .from("assessments_completed")
-      .select("id, completed_at, user_id, assessment_id")
-      .eq("user_id", userId)
-      .eq("assessment_id", '11111111-1111-1111-1111-111111111111')
-      .maybeSingle();
-
-    console.log("Database query result:", { data, error });
-
-    // If error (not "no rows" error), log it
-    if (error && error.code !== 'PGRST116') {
-      console.error("Error checking completion:", error);
-      return false;
-    }
-    
-    // If data exists, user has submitted
-    if (data) {
-      console.log("✅ Found existing submission in assessments_completed");
-      console.log("Submission details:", data);
-      return true;
-    }
-
-    // Secondary check: assessments table (legacy/backward compatibility)
-    const { data: assessmentData } = await supabase
-      .from("assessments")
-      .select("status, submitted_at, user_id, id")
-      .eq("user_id", userId)
-      .eq("id", '11111111-1111-1111-1111-111111111111')
-      .maybeSingle();
-
-    console.log("Legacy assessments check:", assessmentData);
-
-    const isSubmitted = assessmentData?.status === 'submitted' || assessmentData?.submitted_at;
-    
-    if (isSubmitted) {
-      console.log("✅ Found submitted assessment in assessments table (legacy)");
-    }
-    
-    return isSubmitted;
-  } catch (error) {
-    console.error("❌ Error in checkIfAlreadySubmitted:", error);
-    return false;
-  }
-}
-
-// ===== Mark user as submitted =====
-async function markAsSubmitted(userId) {
-  try {
-    // Call the API - it will handle the atomic submission with unique constraint
-    const response = await fetch('/api/submit-assessment', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        assessment_id: '11111111-1111-1111-1111-111111111111',
-        user_id: userId
-      })
-    });
-
-    const result = await response.json();
-    
-    if (!response.ok) {
-      // Check if it's an "already submitted" error
-      if (result.error?.includes("already submitted") || result.error?.includes("23505")) {
-        console.log("Assessment already submitted (caught by API)");
-        return true; // Return true because submission already exists
-      }
-      throw new Error(result.error || 'Submission failed');
-    }
-
-    console.log("Submission successful via API:", result.message);
-    return true;
-  } catch (error) {
-    console.error("Failed to submit assessment:", error);
-    
-    // Fallback: Try direct database insert (will fail if duplicate due to constraint)
-    try {
-      console.log("Trying fallback direct database insert...");
-      const { error: dbError } = await supabase
-        .from("assessments_completed")
-        .insert({
-          user_id: userId,
-          assessment_id: '11111111-1111-1111-1111-111111111111',
-          completed_at: new Date().toISOString(),
-          status: 'completed'
-        });
-
-      if (dbError) {
-        // If it's a duplicate error (23505), that's OK - assessment already submitted
-        if (dbError.code === '23505') {
-          console.log("Assessment already marked as completed (unique constraint prevented duplicate)");
-          return true;
-        }
-        throw dbError;
-      }
-      
-      console.log("Fallback database insert successful");
-      return true;
-    } catch (fallbackError) {
-      console.error("Fallback also failed:", fallbackError);
-      throw new Error("Could not submit assessment. Please contact support.");
-    }
-  }
 }
 
 export default function AssessmentPage() {
   const router = useRouter();
-  const assessmentId = '11111111-1111-1111-1111-111111111111';
+  const { id: assessmentId } = router.query;
 
+  const [assessment, setAssessment] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -351,48 +276,50 @@ export default function AssessmentPage() {
   const [error, setError] = useState(null);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
   const [timerLoaded, setTimerLoaded] = useState(false);
+  const [resultId, setResultId] = useState(null);
+  const [sectionOrder, setSectionOrder] = useState([]);
 
-  // ===== ADDED: Initialize anti-cheat protection =====
+  // Get section order based on assessment type
+  useEffect(() => {
+    if (assessment?.assessment_type) {
+      const order = ASSESSMENT_TYPE_SECTIONS[assessment.assessment_type] || 
+                   ASSESSMENT_TYPE_SECTIONS.general;
+      setSectionOrder(order);
+    }
+  }, [assessment]);
+
+  // Initialize anti-cheat protection
   useEffect(() => {
     if (!alreadySubmitted && !loading && isSessionReady) {
       setupAntiCheatProtection();
     }
   }, [alreadySubmitted, loading, isSessionReady]);
 
-  // ===== ADDED: Check localStorage first for immediate blocking =====
+  // Check localStorage for submission
   useEffect(() => {
-    const storedSubmitted = localStorage.getItem(`assessment_submitted_${assessmentId}`);
-    if (storedSubmitted === 'true') {
-      console.log("📦 Found submission in localStorage, blocking immediately");
-      setAlreadySubmitted(true);
-      setError("You have already submitted this assessment. One attempt only allowed.");
-      setLoading(false);
+    if (assessmentId) {
+      const storedSubmitted = localStorage.getItem(`assessment_submitted_${assessmentId}`);
+      if (storedSubmitted === 'true') {
+        setAlreadySubmitted(true);
+        setError("You have already submitted this assessment. One attempt only allowed.");
+        setLoading(false);
+      }
     }
-  }, []);
-
-  // Debug: Log component state
-  console.log("🔧 DEBUG: Component state", {
-    alreadySubmitted,
-    loading,
-    session: session?.user?.id,
-    isSessionReady,
-    timerLoaded
-  });
+  }, [assessmentId]);
 
   // Initialize session and check if already submitted
   useEffect(() => {
     const initSessionAndCheck = async () => {
+      if (!assessmentId) return;
+      
       try {
         const { data } = await supabase.auth.getSession();
         if (data.session) {
           setSession(data.session);
           
-          console.log("🔧 DEBUG: Checking submission for user:", data.session.user.id);
-          
-          // Check if user has already submitted this assessment
-          const hasSubmitted = await checkIfAlreadySubmitted(data.session.user.id);
+          // Check if user has already completed this assessment
+          const hasSubmitted = await hasCompletedAssessment(data.session.user.id, assessmentId);
           if (hasSubmitted) {
-            console.log("🚫 User has already submitted, blocking access");
             setAlreadySubmitted(true);
             localStorage.setItem(`assessment_submitted_${assessmentId}`, 'true');
             setError("You have already submitted this assessment. One attempt only allowed.");
@@ -410,78 +337,77 @@ export default function AssessmentPage() {
       }
     };
     initSessionAndCheck();
-  }, [router]);
+  }, [assessmentId, router]);
 
-  // ===== ADDED: Block navigation if already submitted =====
+  // Block navigation if already submitted
   useEffect(() => {
     if (alreadySubmitted && router.pathname.includes('/assessment/')) {
-      console.log("🚫 Navigation blocked - assessment already submitted");
-      
-      // Prevent any further interaction
       setError("Assessment already submitted. You cannot access this page.");
-      
-      // Force logout after 3 seconds
       setTimeout(async () => {
         await supabase.auth.signOut();
         localStorage.removeItem(`assessment_submitted_${assessmentId}`);
         router.push('/login?message=already_submitted');
       }, 3000);
     }
-  }, [alreadySubmitted, router]);
+  }, [alreadySubmitted, assessmentId, router]);
 
-  // Fetch questions (only if not already submitted)
+  // Fetch assessment details and questions
   useEffect(() => {
-    if (alreadySubmitted || !isSessionReady || !session?.user?.id) return;
+    if (alreadySubmitted || !isSessionReady || !session?.user?.id || !assessmentId) return;
 
     const fetchAssessmentData = async () => {
       try {
         setLoading(true);
-        const { data: questionsData, error: questionsError } = await supabase
-          .from("questions")
-          .select(`
-            id,
-            question_text,
-            section,
-            subsection,
-            answers!inner (id, answer_text, score)
-          `)
-          .eq("assessment_id", assessmentId)
-          .order("id");
 
-        if (questionsError) throw new Error(`Failed to load questions: ${questionsError.message}`);
+        // Get assessment details
+        const assessmentData = await getAssessmentById(assessmentId);
+        setAssessment(assessmentData);
+
+        // Start or get existing assessment attempt
+        const result = await startAssessment(
+          session.user.id,
+          session.user.email,
+          session.user.user_metadata?.full_name || session.user.email,
+          assessmentId
+        );
+        setResultId(result.id);
+
+        // Get questions for this assessment
+        const questionsData = await getAssessmentQuestions(assessmentId);
 
         if (!questionsData || questionsData.length === 0) {
-          throw new Error("Assessment questions not found. Please run the setup scripts.");
+          throw new Error("Assessment questions not found.");
         }
 
-        const savedAnswers = await loadUserResponses(session.user.id);
+        // Load saved answers from the result
+        const savedAnswers = {};
+        if (result.responses) {
+          Object.keys(result.responses).forEach(qId => {
+            savedAnswers[qId] = result.responses[qId].answer_id;
+          });
+        }
 
+        // Process questions - randomize answers for manufacturing section
         const processedQuestions = questionsData.map(q => {
           const baseQuestion = {
             ...q,
             id: parseInt(q.id),
-            options: q.answers.map(a => ({ ...a, id: parseInt(a.id) }))
+            options: q.answers.map(a => ({ 
+              ...a, 
+              id: parseInt(a.id),
+              answer_text: a.answer_text
+            }))
           };
           
-          // Randomize ONLY for Bottled Water Manufacturing section
-          if (q.section === 'Bottled Water Manufacturing') {
-            console.log(`Randomizing answers for Bottled Water Manufacturing question ${q.id}`);
-            
-            const randomizedOptions = trulyRandomizeAnswers(baseQuestion.options);
-            
-            console.log('Original order:', baseQuestion.options.map(opt => ({ 
-              id: opt.id, 
-              text: opt.answer_text.substring(0, 50) + '...' 
-            })));
-            console.log('Randomized order:', randomizedOptions.map(opt => ({ 
-              id: opt.id, 
-              text: opt.answer_text.substring(0, 50) + '...' 
-            })));
-            
-            return {
-              ...baseQuestion,
-              options: randomizedOptions
-            };
+          // Randomize only for manufacturing-related sections
+          if (q.section.includes('Blowing') || 
+              q.section.includes('Labeler') || 
+              q.section.includes('Filling') || 
+              q.section.includes('Conveyor') || 
+              q.section.includes('Stretchwrapper') || 
+              q.section.includes('Date Coder') ||
+              q.section === 'Bottled Water Manufacturing') {
+            baseQuestion.options = trulyRandomizeAnswers(baseQuestion.options);
           }
           
           return baseQuestion;
@@ -502,39 +428,34 @@ export default function AssessmentPage() {
     fetchAssessmentData();
   }, [assessmentId, isSessionReady, session, alreadySubmitted]);
 
-  // ===== UPDATED: Pause-Resume Timer (don't run if already submitted) =====
+  // Timer with pause-resume
   useEffect(() => {
-    if (alreadySubmitted || !session?.user?.id || !isSessionReady) return;
+    if (alreadySubmitted || !session?.user?.id || !isSessionReady || !assessmentId || !assessment) return;
 
     let timerInterval;
-    let localElapsed = 0; // Local counter
+    let localElapsed = 0;
     
     const initializeTimer = async () => {
       try {
-        // Load saved timer progress from database
         const savedElapsed = await startOrResumeTimer(session.user.id, assessmentId);
         localElapsed = savedElapsed;
         setElapsed(savedElapsed);
         setTimerLoaded(true);
         
-        console.log("⏰ Timer initialized with", savedElapsed, "seconds elapsed");
-        
-        // Start timer that increments every second
         timerInterval = setInterval(async () => {
           localElapsed += 1;
           setElapsed(localElapsed);
           
-          // Save progress every 30 seconds
           if (localElapsed % 30 === 0) {
             await saveTimerProgress(session.user.id, assessmentId, localElapsed);
+            if (resultId) {
+              await updateAssessmentTimer(resultId, localElapsed);
+            }
           }
           
-          // Check if time is up (3 hours = 10800 seconds)
-          if (localElapsed >= TIME_LIMIT_SECONDS) {
+          // Auto-submit if time is up
+          if (localElapsed >= (assessment.duration_minutes * 60)) {
             clearInterval(timerInterval);
-            console.log("⏰ Time's up! Auto-submitting...");
-            
-            // Auto-submit assessment
             if (!alreadySubmitted) {
               await submitAssessment();
             }
@@ -542,7 +463,6 @@ export default function AssessmentPage() {
         }, 1000);
       } catch (error) {
         console.error("Failed to initialize timer:", error);
-        // Fallback to local timer
         timerInterval = setInterval(() => {
           setElapsed(t => t + 1);
         }, 1000);
@@ -551,33 +471,34 @@ export default function AssessmentPage() {
 
     initializeTimer();
 
-    // Save on page unload/refresh (when user closes browser/tab)
     const handleBeforeUnload = async () => {
       if (session?.user?.id && localElapsed > 0) {
-        console.log("💾 Saving timer progress before unload:", localElapsed, "seconds");
         await saveTimerProgress(session.user.id, assessmentId, localElapsed);
+        if (resultId) {
+          await updateAssessmentTimer(resultId, localElapsed);
+        }
       }
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
 
-    // Cleanup
     return () => {
       clearInterval(timerInterval);
       window.removeEventListener('beforeunload', handleBeforeUnload);
       
-      // Save final timer state when component unmounts (user logs off)
       if (session?.user?.id && localElapsed > 0 && !alreadySubmitted) {
-        console.log("💾 Saving final timer progress:", localElapsed, "seconds");
         saveTimerProgress(session.user.id, assessmentId, localElapsed);
+        if (resultId) {
+          updateAssessmentTimer(resultId, localElapsed);
+        }
       }
     };
-  }, [alreadySubmitted, session, isSessionReady, assessmentId]);
+  }, [alreadySubmitted, session, isSessionReady, assessmentId, resultId, assessment]);
 
-  // Answer selection - BLOCKED if already submitted
-  const handleSelect = async (questionId, answerId) => {
-    if (alreadySubmitted) {
-      alert("❌ Assessment already submitted. You cannot change answers.");
+  // Handle answer selection
+  const handleSelect = async (questionId, answerId, score, section) => {
+    if (alreadySubmitted || !resultId) {
+      alert("❌ Cannot save answer.");
       return;
     }
     
@@ -587,7 +508,7 @@ export default function AssessmentPage() {
     setSaveStatus(prev => ({ ...prev, [questionId]: "saving" }));
 
     try {
-      await saveResponse(assessmentId, questionId, answerId, session.user.id);
+      await saveAnswer(resultId, questionId, answerId, score, section);
       setSaveStatus(prev => ({ ...prev, [questionId]: "saved" }));
       
       setTimeout(() => {
@@ -597,7 +518,6 @@ export default function AssessmentPage() {
           return newStatus;
         });
       }, 1500);
-
     } catch (error) {
       console.error("Save failed:", error);
       setSaveStatus(prev => ({ ...prev, [questionId]: "error" }));
@@ -605,13 +525,12 @@ export default function AssessmentPage() {
     }
   };
 
-  // Navigation - BLOCKED if already submitted
+  // Navigation
   const handleNext = () => {
     if (alreadySubmitted) {
       alert("❌ Assessment already submitted. Navigation disabled.");
       return;
     }
-    
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(i => i + 1);
     }
@@ -622,17 +541,15 @@ export default function AssessmentPage() {
       alert("❌ Assessment already submitted. Navigation disabled.");
       return;
     }
-    
     if (currentIndex > 0) {
       setCurrentIndex(i => i - 1);
     }
   };
 
-  // ===== UPDATED: Submit assessment function with timer completion =====
+  // Submit assessment
   const submitAssessment = async () => {
-    // Double-check locally before even trying
-    if (alreadySubmitted) {
-      alert("⚠️ You have already submitted this assessment. One attempt only.");
+    if (alreadySubmitted || !resultId || !assessment) {
+      alert("⚠️ Cannot submit assessment.");
       return;
     }
     
@@ -646,93 +563,79 @@ export default function AssessmentPage() {
     setShowSubmitModal(false);
     
     try {
-      // This will call the API which has the final check and unique constraint
-      await markAsSubmitted(session.user.id);
+      // Calculate scores
+      const categoryScores = {};
+      let totalScore = 0;
+      let totalQuestions = 0;
+      const strengths = [];
+      const weaknesses = [];
+
+      // Process all answers to calculate scores by section
+      Object.keys(answers).forEach(questionId => {
+        const question = questions.find(q => q.id === parseInt(questionId));
+        if (question) {
+          const answer = question.options.find(a => a.id === answers[questionId]);
+          if (answer) {
+            const score = answer.score || 0;
+            totalScore += score;
+            totalQuestions++;
+            
+            const section = question.section;
+            if (!categoryScores[section]) {
+              categoryScores[section] = { total: 0, count: 0, average: 0 };
+            }
+            categoryScores[section].total += score;
+            categoryScores[section].count += 1;
+            categoryScores[section].average = 
+              Math.round((categoryScores[section].total / categoryScores[section].count) * 100) / 100;
+          }
+        }
+      });
+
+      const overallScore = totalQuestions > 0 ? 
+        Math.round((totalScore / (totalQuestions * 5)) * 100) : 0;
+
+      // Determine risk level and readiness
+      let riskLevel = 'low';
+      let readiness = 'ready';
       
-      // ===== CRITICAL: Mark timer as completed =====
+      if (overallScore < 40) {
+        riskLevel = 'high';
+        readiness = 'not_ready';
+      } else if (overallScore < 60) {
+        riskLevel = 'medium';
+        readiness = 'needs_development';
+      }
+
+      // Complete the assessment
+      await completeAssessment(
+        resultId,
+        overallScore,
+        categoryScores,
+        strengths,
+        weaknesses,
+        riskLevel,
+        readiness
+      );
+
+      // Mark timer as completed
       await markTimerAsCompleted(session.user.id, assessmentId);
       
-      // ===== CRITICAL: IMMEDIATELY BLOCK EVERYTHING =====
+      // Block further access
       setAlreadySubmitted(true);
       localStorage.setItem(`assessment_submitted_${assessmentId}`, 'true');
-      console.log("✅ Assessment submitted - immediately blocking all access");
       
-      // Disable all buttons and interactions
-      document.querySelectorAll('button').forEach(btn => {
-        btn.disabled = true;
-        btn.style.opacity = '0.5';
-        btn.style.cursor = 'not-allowed';
-      });
-      
-      // Calculate total score from responses
-      const calculateAndStoreScore = async () => {
-        try {
-          const { data: responsesData, error: responsesError } = await supabase
-            .from("responses")
-            .select(`
-              answer_id,
-              answers (score)
-            `)
-            .eq("user_id", session.user.id)
-            .eq("assessment_id", assessmentId);
-
-          if (responsesError) throw responsesError;
-
-          const totalScore = responsesData?.reduce((sum, r) => sum + (r.answers?.score || 0), 0) || 0;
-
-          const classification = 
-            totalScore >= 90 ? 'Top Talent' :
-            totalScore >= 75 ? 'High Potential' :
-            totalScore >= 60 ? 'Solid Performer' :
-            totalScore >= 40 ? 'Developing' : 'Needs Improvement';
-
-          const { error: classificationError } = await supabase
-            .from("talent_classification")
-            .upsert({
-              user_id: session.user.id,
-              total_score: totalScore,
-              classification: classification,
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'user_id' });
-
-          if (classificationError) {
-            console.error("Failed to save classification:", classificationError);
-            throw classificationError;
-          }
-
-          console.log("Score calculated and saved:", { totalScore, classification });
-          return { totalScore, classification };
-        } catch (error) {
-          console.error("Score calculation error:", error);
-          throw error;
-        }
-      };
-
-      await calculateAndStoreScore();
-      
-      // Show success modal (this will appear immediately)
+      // Show success modal
       setShowSuccessModal(true);
       
-      // Force a page reload after 3 seconds to trigger the "already submitted" check
+      // Redirect after delay
       setTimeout(() => {
-        console.log("🔄 Reloading page to enforce submission block");
-        router.reload(); // This will trigger the useEffect check
-      }, 3000);
+        router.push('/candidate/dashboard');
+      }, 5000);
       
     } catch (error) {
       console.error("Submission error:", error);
-      
-      // Check if it's a "already submitted" error
-      if (error.message.includes("already submitted") || error.message.includes("One attempt") || error.message.includes("23505")) {
-        setAlreadySubmitted(true);
-        localStorage.setItem(`assessment_submitted_${assessmentId}`, 'true');
-        setError("Assessment already submitted. You cannot retake it.");
-        alert("Assessment already submitted. You cannot retake it.");
-        // Force reload to trigger the check
-        setTimeout(() => router.reload(), 1000);
-      } else {
-        alert("Assessment submitted but there was an error calculating your score. Please contact support.");
-      }
+      alert("Assessment submitted but there was an error saving your score. Please contact support.");
       setIsSubmitting(false);
     }
   };
@@ -754,9 +657,15 @@ export default function AssessmentPage() {
             🏢 Stratavax
           </div>
           <div style={{ fontSize: "22px", fontWeight: "600", marginBottom: "20px" }}>
-            Loading Assessment...
+            {assessment ? `Loading ${assessment.name}...` : 'Loading Assessment...'}
           </div>
-          <div style={{ width: "100%", height: "6px", backgroundColor: "rgba(255,255,255,0.2)", borderRadius: "3px", overflow: "hidden" }}>
+          <div style={{ 
+            width: "100%", 
+            height: "6px", 
+            backgroundColor: "rgba(255,255,255,0.2)", 
+            borderRadius: "3px", 
+            overflow: "hidden" 
+          }}>
             <div style={{ 
               width: "60%", 
               height: "100%", 
@@ -776,7 +685,7 @@ export default function AssessmentPage() {
     );
   }
 
-  // Already submitted state - STRICT BLOCK
+  // Already submitted state
   if (alreadySubmitted) {
     return (
       <div style={{ 
@@ -806,22 +715,16 @@ export default function AssessmentPage() {
           }}>
             <strong style={{ color: "#ff9800" }}>ONE ATTEMPT ONLY POLICY</strong>
             <br /><br />
-            You have already completed and submitted this assessment. 
+            You have already completed and submitted this assessment.
             <br />
             <strong style={{ color: "#4caf50" }}>Each candidate is allowed only one attempt.</strong>
             <br /><br />
-            Your results will be reviewed by our assessment team.
-            <br /><br />
             <small style={{ fontSize: "14px", color: "rgba(255,255,255,0.8)" }}>
-              ⚠️ This page will automatically log you out in 5 seconds.
+              ⚠️ Redirecting to dashboard...
             </small>
           </div>
           <button 
-            onClick={async () => {
-              await supabase.auth.signOut();
-              localStorage.removeItem(`assessment_submitted_${assessmentId}`);
-              router.push("/login");
-            }}
+            onClick={() => router.push('/candidate/dashboard')}
             style={{
               padding: "15px 35px",
               backgroundColor: "white",
@@ -835,19 +738,8 @@ export default function AssessmentPage() {
               minHeight: "44px"
             }}
           >
-            Logout & Return to Login
+            Return to Dashboard
           </button>
-          
-          {/* Auto-logout timer */}
-          <script dangerouslySetInnerHTML={{
-            __html: `
-              setTimeout(() => {
-                supabase.auth.signOut();
-                localStorage.removeItem('assessment_submitted_${assessmentId}');
-                window.location.href = '/login?message=already_submitted';
-              }, 5000);
-            `
-          }} />
         </div>
       </div>
     );
@@ -881,15 +773,9 @@ export default function AssessmentPage() {
             borderRadius: "10px"
           }}>
             {error}
-            {error.includes("already submitted") && (
-              <>
-                <br /><br />
-                <strong>One attempt only is allowed per candidate.</strong>
-              </>
-            )}
           </div>
           <button 
-            onClick={() => router.push("/")}
+            onClick={() => router.push("/candidate/dashboard")}
             style={{
               padding: "15px 35px",
               backgroundColor: "white",
@@ -929,10 +815,10 @@ export default function AssessmentPage() {
             No Questions Available
           </div>
           <div style={{ fontSize: "16px", marginBottom: "30px", lineHeight: 1.5 }}>
-            No assessment questions found. Please run the setup scripts.
+            No assessment questions found for {assessment?.name || 'this assessment'}.
           </div>
           <button 
-            onClick={() => router.push("/")}
+            onClick={() => router.push("/candidate/dashboard")}
             style={{
               padding: "15px 35px",
               backgroundColor: "white",
@@ -953,23 +839,27 @@ export default function AssessmentPage() {
     );
   }
 
-  // Get current question data
   const currentQuestion = questions[currentIndex];
-  const currentSection = currentQuestion?.section || SECTION_ORDER[0];
-  const sectionConfig = SECTION_CONFIG[currentSection] || SECTION_CONFIG[SECTION_ORDER[0]];
+  const currentSection = currentQuestion?.section || sectionOrder[0] || 'General';
+  const sectionConfig = SECTION_CONFIG[currentSection] || {
+    color: '#4A6FA5',
+    lightBg: 'rgba(74, 111, 165, 0.1)',
+    icon: '📝',
+    bgImage: '/images/backgrounds/default-bg.jpg'
+  };
+  
   const totalAnswered = Object.keys(answers).length;
-  const isLastQuestion = currentIndex === questions.length - 1;
   const progressPercentage = questions.length > 0 ? Math.round((totalAnswered / questions.length) * 100) : 0;
 
-  // Calculate time with pause-resume functionality
-  const timeRemaining = Math.max(0, TIME_LIMIT_SECONDS - elapsed);
+  // Time calculations
+  const timeLimitSeconds = assessment?.duration_minutes ? assessment.duration_minutes * 60 : 10800;
+  const timeRemaining = Math.max(0, timeLimitSeconds - elapsed);
   const hours = Math.floor(timeRemaining / 3600);
   const minutes = Math.floor((timeRemaining % 3600) / 60);
   const seconds = timeRemaining % 60;
   const formatTime = (time) => time.toString().padStart(2, '0');
-
-  // Calculate time used percentage for warning colors
-  const timeUsedPercentage = (elapsed / TIME_LIMIT_SECONDS) * 100;
+  
+  const timeUsedPercentage = (elapsed / timeLimitSeconds) * 100;
   const isTimeWarning = timeUsedPercentage > 80;
   const isTimeCritical = timeUsedPercentage > 90;
 
@@ -1041,7 +931,6 @@ export default function AssessmentPage() {
                 </span>
               </div>
               
-              {/* Timer Status */}
               <div style={{ 
                 display: "flex", 
                 justifyContent: "space-between", 
@@ -1067,8 +956,7 @@ export default function AssessmentPage() {
                 marginBottom: "15px",
                 borderLeft: "4px solid #ff9800"
               }}>
-                ⚠️ <strong>ONE ATTEMPT ONLY:</strong> After submission, you <strong>cannot</strong> retake this assessment. 
-                This is your final submission.
+                ⚠️ <strong>ONE ATTEMPT ONLY:</strong> After submission, you <strong>cannot</strong> retake this assessment.
               </div>
               
               <div style={{ height: "12px", background: "#e0e0e0", borderRadius: "6px", margin: "20px 0" }}>
@@ -1182,45 +1070,6 @@ export default function AssessmentPage() {
               border: "3px solid #4caf50"
             }}>
               <div style={{ 
-                display: "flex", 
-                justifyContent: "space-between", 
-                marginBottom: "15px",
-                fontSize: "18px",
-                fontWeight: "600"
-              }}>
-                <span>Questions Answered:</span>
-                <span style={{ color: "#2e7d32" }}>
-                  {totalAnswered}/{questions.length}
-                </span>
-              </div>
-              
-              <div style={{ 
-                display: "flex", 
-                justifyContent: "space-between", 
-                marginBottom: "20px",
-                fontSize: "18px",
-                fontWeight: "600"
-              }}>
-                <span>Completion Rate:</span>
-                <span style={{ color: "#2196f3" }}>
-                  {progressPercentage}%
-                </span>
-              </div>
-              
-              <div style={{ 
-                display: "flex", 
-                justifyContent: "space-between", 
-                marginBottom: "15px",
-                fontSize: "18px",
-                fontWeight: "600"
-              }}>
-                <span>Time Used:</span>
-                <span style={{ color: "#4caf50" }}>
-                  {formatTime(Math.floor(elapsed / 3600))}:{formatTime(Math.floor((elapsed % 3600) / 60))}:{formatTime(elapsed % 60)}
-                </span>
-              </div>
-
-              <div style={{ 
                 fontSize: "14px", 
                 color: "#666", 
                 margin: "15px 0",
@@ -1229,31 +1078,16 @@ export default function AssessmentPage() {
                 borderRadius: "8px",
                 borderLeft: "4px solid #2196f3"
               }}>
-                ✅ <strong>One-time submission completed:</strong> Your assessment has been successfully submitted. 
+                ✅ <strong>One-time submission completed:</strong> Your {assessment?.name} has been successfully submitted.
                 <br />
                 <strong>You cannot retake this assessment.</strong>
                 <br /><br />
-                <small>This page will reload automatically to enforce the one-attempt policy.</small>
-              </div>
-              
-              <div style={{ 
-                fontSize: "14px", 
-                color: "#666", 
-                margin: "15px 0",
-                padding: "12px",
-                background: "#e3f2fd",
-                borderRadius: "8px"
-              }}>
-                <strong>📊 Results:</strong> Your results are now available in the supervisor dashboard for review.
+                <small>Redirecting to dashboard in 5 seconds...</small>
               </div>
             </div>
 
             <button
-              onClick={async () => {
-                await supabase.auth.signOut();
-                localStorage.removeItem(`assessment_submitted_${assessmentId}`);
-                router.push("/login");
-              }}
+              onClick={() => router.push("/candidate/dashboard")}
               style={{
                 padding: "18px 45px",
                 background: "linear-gradient(135deg, #2196f3 0%, #0d47a1 100%)",
@@ -1267,7 +1101,7 @@ export default function AssessmentPage() {
                 width: "100%"
               }}
             >
-              Logout Now
+              Go to Dashboard
             </button>
           </div>
         </div>
@@ -1283,10 +1117,10 @@ export default function AssessmentPage() {
         overflow: "hidden"
       }}>
         
-        {/* Header with Anti-Cheat Warning */}
+        {/* Header */}
         <div style={{
           background: `linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), 
-                      url('https://img.freepik.com/free-photo/multiethnic-group-young-happy-students-standing-outdoors_171337-11812.jpg?semt=ais_user_personalization&w=740&q=80')`,
+                      url('https://img.freepik.com/free-photo/multiethnic-group-young-happy-students-standing-outdoors_171337-11812.jpg')`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           padding: '8px 15px',
@@ -1317,7 +1151,7 @@ export default function AssessmentPage() {
                 color: '#1a237e',
                 fontSize: '16px'
               }}>
-                😊
+                {sectionConfig.icon}
               </div>
               
               <div>
@@ -1327,28 +1161,29 @@ export default function AssessmentPage() {
                   color: 'white',
                   lineHeight: 1.2
                 }}>
-                  Stratavax Capability Assessment
+                  {assessment?.name || 'Stratavax Assessment'}
                 </div>
                 <div style={{
                   fontSize: '11px',
                   color: 'rgba(255, 255, 255, 0.9)'
                 }}>
                   Q{currentIndex + 1}/{questions.length} • {currentSection}
-                  {currentSection === 'Bottled Water Manufacturing' && (
+                  {(currentSection.includes('Blowing') || 
+                    currentSection.includes('Labeler') || 
+                    currentSection.includes('Filling') || 
+                    currentSection.includes('Conveyor') || 
+                    currentSection.includes('Stretchwrapper') || 
+                    currentSection.includes('Date Coder') ||
+                    currentSection === 'Bottled Water Manufacturing') && (
                     <span style={{ marginLeft: '5px', fontStyle: 'italic' }}>
                       (Randomized)
-                    </span>
-                  )}
-                  {timerLoaded && (
-                    <span style={{ marginLeft: '5px', color: '#4caf50' }}>
-                      • Timer: {formatTime(Math.floor(elapsed / 3600))}:{formatTime(Math.floor((elapsed % 3600) / 60))}
                     </span>
                   )}
                 </div>
               </div>
             </div>
             
-            {/* Timer with Pause-Resume Status */}
+            {/* Timer */}
             <div style={{
               padding: '4px 8px',
               background: isTimeCritical ? 'rgba(255, 255, 255, 0.9)' : 
@@ -1377,21 +1212,13 @@ export default function AssessmentPage() {
                        isTimeWarning ? '#ff9800' : 
                        '#1565c0'
               }}>
-                {formatTime(hours)}:{formatTime(minutes)}
-                <div style={{ 
-                  fontSize: '8px', 
-                  fontWeight: '500', 
-                  color: '#666',
-                  marginTop: '2px'
-                }}>
-                  {timerLoaded ? 'Pause-Resume Active' : 'Loading...'}
-                </div>
+                {formatTime(hours)}:{formatTime(minutes)}:{formatTime(seconds)}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Anti-Cheat Warning Banner */}
+        {/* Anti-Cheat Warning */}
         <div style={{
           padding: '8px 15px',
           background: 'linear-gradient(135deg, #ff9800, #f57c00)',
@@ -1418,7 +1245,7 @@ export default function AssessmentPage() {
           }} />
         </div>
 
-        {/* Main Content */}
+        {/* Main Content - Question Display */}
         <div style={{ 
           flex: 1,
           padding: '10px',
@@ -1426,7 +1253,8 @@ export default function AssessmentPage() {
           overflow: 'hidden',
           gap: '10px'
         }}>
-          {/* Question & Answers */}
+          
+          {/* Question & Answers Panel */}
           <div style={{
             flex: 7,
             background: `linear-gradient(rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.95)), 
@@ -1473,30 +1301,9 @@ export default function AssessmentPage() {
                   letterSpacing: '0.5px'
                 }}>
                   {currentSection}
-                  {currentSection === 'Bottled Water Manufacturing' && (
-                    <span style={{
-                      fontSize: '10px',
-                      fontWeight: '400',
-                      color: '#666',
-                      marginLeft: '8px',
-                      textTransform: 'none',
-                      fontStyle: 'italic'
-                    }}>
-                      (Answers are randomized for fairness)
-                    </span>
-                  )}
                 </div>
               </div>
               
-              <div style={{ 
-                fontSize: '18px', 
-                lineHeight: 1.5,
-                color: '#333',
-                fontWeight: '500',
-                marginBottom: '5px'
-              }}>
-                <strong style={{ color: sectionConfig.color }}>Question {currentIndex + 1}:</strong>
-              </div>
               <div style={{ 
                 fontSize: '16px', 
                 lineHeight: 1.6,
@@ -1506,41 +1313,6 @@ export default function AssessmentPage() {
                 {currentQuestion?.question_text}
               </div>
             </div>
-
-            {/* Timer Status Note */}
-            {timerLoaded && elapsed > 0 && (
-              <div style={{
-                padding: '8px 12px',
-                background: 'rgba(33, 150, 243, 0.1)',
-                border: '1px solid #2196f3',
-                borderRadius: '5px',
-                marginBottom: '15px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: '13px',
-                color: '#1565c0',
-                fontWeight: '500'
-              }}>
-                <div style={{
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '50%',
-                  background: '#2196f3',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'white',
-                  fontSize: '10px'
-                }}>
-                  ⏰
-                </div>
-                <span>
-                  Timer active: {formatTime(Math.floor(elapsed / 3600))}:{formatTime(Math.floor((elapsed % 3600) / 60))}:{formatTime(elapsed % 60)} used. 
-                  Timer pauses when you log off and resumes when you return.
-                </span>
-              </div>
-            )}
 
             {/* Save Status */}
             {saveStatus[currentQuestion?.id] && (
@@ -1588,7 +1360,7 @@ export default function AssessmentPage() {
               </div>
             )}
 
-            {/* Answers */}
+            {/* Answer Options */}
             <div style={{ 
               display: 'flex',
               flexDirection: 'column',
@@ -1602,7 +1374,12 @@ export default function AssessmentPage() {
                 return (
                   <button
                     key={option.id}
-                    onClick={() => handleSelect(currentQuestion.id, option.id)}
+                    onClick={() => handleSelect(
+                      currentQuestion.id, 
+                      option.id, 
+                      option.score || 0, 
+                      currentSection
+                    )}
                     disabled={saveStatus[currentQuestion.id] === 'saving' || alreadySubmitted}
                     style={{
                       padding: '15px 20px',
@@ -1621,20 +1398,6 @@ export default function AssessmentPage() {
                       boxShadow: isSelected ? `0 4px 8px ${sectionConfig.color}40` : 'none',
                       opacity: alreadySubmitted ? 0.6 : 1
                     }}
-                    onMouseOver={(e) => {
-                      if (!saveStatus[currentQuestion.id] && !isSelected && !alreadySubmitted) {
-                        e.currentTarget.style.background = '#f8f9fa';
-                        e.currentTarget.style.borderColor = sectionConfig.color;
-                        e.currentTarget.style.transform = 'translateY(-2px)';
-                      }
-                    }}
-                    onMouseOut={(e) => {
-                      if (!saveStatus[currentQuestion.id] && !isSelected && !alreadySubmitted) {
-                        e.currentTarget.style.background = 'white';
-                        e.currentTarget.style.borderColor = '#e0e0e0';
-                        e.currentTarget.style.transform = 'translateY(0)';
-                      }
-                    }}
                   >
                     <div style={{
                       width: '28px',
@@ -1647,8 +1410,7 @@ export default function AssessmentPage() {
                       justifyContent: 'center',
                       fontSize: '14px',
                       fontWeight: '700',
-                      flexShrink: 0,
-                      marginTop: '2px'
+                      flexShrink: 0
                     }}>
                       {optionLetter}
                     </div>
@@ -1666,7 +1428,7 @@ export default function AssessmentPage() {
               })}
             </div>
 
-            {/* Navigation */}
+            {/* Navigation Buttons */}
             <div style={{ 
               marginTop: '25px',
               paddingTop: '15px',
@@ -1687,12 +1449,10 @@ export default function AssessmentPage() {
                   cursor: currentIndex === 0 || alreadySubmitted ? 'not-allowed' : 'pointer',
                   fontSize: '14px',
                   fontWeight: '600',
-                  minWidth: '100px',
-                  transition: 'all 0.2s',
-                  opacity: currentIndex === 0 || alreadySubmitted ? 0.6 : 1
+                  minWidth: '100px'
                 }}
               >
-                ← Previous Question
+                ← Previous
               </button>
               
               <div style={{ 
@@ -1706,7 +1466,7 @@ export default function AssessmentPage() {
                   fontWeight: '600', 
                   color: '#666'
                 }}>
-                  Question {currentIndex + 1} of {questions.length}
+                  {currentIndex + 1} of {questions.length}
                 </div>
                 <div style={{ 
                   fontSize: '12px', 
@@ -1715,16 +1475,9 @@ export default function AssessmentPage() {
                 }}>
                   {progressPercentage}% Complete
                 </div>
-                <div style={{ 
-                  fontSize: '10px', 
-                  fontWeight: '400', 
-                  color: '#999'
-                }}>
-                  Time: {formatTime(Math.floor(elapsed / 3600))}:{formatTime(Math.floor((elapsed % 3600) / 60))}
-                </div>
               </div>
               
-              {isLastQuestion ? (
+              {currentIndex === questions.length - 1 ? (
                 <button 
                   onClick={() => setShowSubmitModal(true)}
                   disabled={alreadySubmitted}
@@ -1737,12 +1490,10 @@ export default function AssessmentPage() {
                     cursor: alreadySubmitted ? 'not-allowed' : 'pointer',
                     fontSize: '14px',
                     fontWeight: '600',
-                    minWidth: '100px',
-                    transition: 'all 0.2s',
-                    opacity: alreadySubmitted ? 0.6 : 1
+                    minWidth: '100px'
                   }}
                 >
-                  {alreadySubmitted ? 'Already Submitted' : 'Submit Assessment →'}
+                  Submit
                 </button>
               ) : (
                 <button 
@@ -1755,20 +1506,18 @@ export default function AssessmentPage() {
                     border: 'none',
                     borderRadius: '6px',
                     cursor: alreadySubmitted ? 'not-allowed' : 'pointer',
-                    fontSize: "14px",
-                    fontWeight: "600",
-                    minWidth: "100px",
-                    transition: "all 0.2s",
-                    opacity: alreadySubmitted ? 0.6 : 1
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    minWidth: '100px'
                   }}
                 >
-                  Next Question →
+                  Next →
                 </button>
               )}
             </div>
           </div>
 
-          {/* Question Navigator */}
+          {/* Question Navigator Panel */}
           <div style={{
             flex: 3,
             background: "white",
@@ -1799,107 +1548,25 @@ export default function AssessmentPage() {
               padding: "12px 15px",
               background: "linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)",
               borderRadius: "6px",
-              fontSize: "14px",
-              border: "1px solid #e0e0e0"
+              fontSize: "14px"
             }}>
-              <div style={{ 
-                display: "flex", 
-                flexDirection: "column",
-                alignItems: "center"
-              }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                 <div style={{ color: "#4caf50", fontWeight: "700", fontSize: "18px" }}>
                   {totalAnswered}
                 </div>
-                <div style={{ color: "#666", fontSize: "11px", marginTop: "2px" }}>
-                  Answered
-                </div>
+                <div style={{ color: "#666", fontSize: "11px" }}>Answered</div>
               </div>
-              <div style={{ 
-                display: "flex", 
-                flexDirection: "column",
-                alignItems: "center"
-              }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                 <div style={{ color: "#666", fontWeight: "700", fontSize: "18px" }}>
                   {questions.length - totalAnswered}
                 </div>
-                <div style={{ color: "#666", fontSize: "11px", marginTop: "2px" }}>
-                  Remaining
-                </div>
+                <div style={{ color: "#666", fontSize: "11px" }}>Remaining</div>
               </div>
-              <div style={{ 
-                display: "flex", 
-                flexDirection: "column",
-                alignItems: "center"
-              }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                 <div style={{ color: "#2196f3", fontWeight: "700", fontSize: "18px" }}>
                   {progressPercentage}%
                 </div>
-                <div style={{ color: "#666", fontSize: "11px", marginTop: "2px" }}>
-                  Complete
-                </div>
-              </div>
-            </div>
-            
-            {/* Timer Progress */}
-            <div style={{
-              marginBottom: "15px",
-              padding: "10px",
-              background: isTimeCritical ? "rgba(211, 47, 47, 0.1)" : 
-                         isTimeWarning ? "rgba(255, 152, 0, 0.1)" : 
-                         "rgba(33, 150, 243, 0.1)",
-              borderRadius: "6px",
-              border: `1px solid ${isTimeCritical ? "#d32f2f" : 
-                       isTimeWarning ? "#ff9800" : 
-                       "#2196f3"}`
-            }}>
-              <div style={{ 
-                display: "flex", 
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "8px"
-              }}>
-                <div style={{ 
-                  fontSize: "12px", 
-                  fontWeight: "600",
-                  color: isTimeCritical ? "#d32f2f" : 
-                         isTimeWarning ? "#ff9800" : 
-                         "#1565c0"
-                }}>
-                  ⏰ TIMER: {formatTime(hours)}:{formatTime(minutes)}:{formatTime(seconds)} left
-                </div>
-                <div style={{ 
-                  fontSize: "10px", 
-                  fontWeight: "500",
-                  color: "#666",
-                  background: "#f5f5f5",
-                  padding: "2px 6px",
-                  borderRadius: "3px"
-                }}>
-                  Pause-Resume
-                </div>
-              </div>
-              <div style={{ 
-                height: "6px", 
-                background: "#e0e0e0", 
-                borderRadius: "3px",
-                overflow: "hidden"
-              }}>
-                <div style={{ 
-                  height: "100%", 
-                  width: `${100 - (elapsed / TIME_LIMIT_SECONDS) * 100}%`, 
-                  background: isTimeCritical ? "#d32f2f" : 
-                             isTimeWarning ? "#ff9800" : 
-                             "#2196f3",
-                  borderRadius: "3px"
-                }} />
-              </div>
-              <div style={{ 
-                fontSize: "10px", 
-                color: "#666", 
-                marginTop: "6px",
-                textAlign: "center"
-              }}>
-                {Math.round((elapsed / TIME_LIMIT_SECONDS) * 100)}% used • Timer pauses when you log off
+                <div style={{ color: "#666", fontSize: "11px" }}>Complete</div>
               </div>
             </div>
             
@@ -1919,13 +1586,8 @@ export default function AssessmentPage() {
                 return (
                   <button
                     key={q.id}
-                    onClick={() => {
-                      if (alreadySubmitted) {
-                        alert("❌ Assessment already submitted. Navigation disabled.");
-                        return;
-                      }
-                      setCurrentIndex(index);
-                    }}
+                    onClick={() => !alreadySubmitted && setCurrentIndex(index)}
+                    disabled={alreadySubmitted}
                     style={{
                       width: "100%",
                       height: "32px",
@@ -1944,37 +1606,10 @@ export default function AssessmentPage() {
                       alignItems: "center",
                       justifyContent: "center",
                       padding: "0",
-                      transition: "all 0.2s",
-                      position: "relative",
                       opacity: alreadySubmitted ? 0.6 : 1
-                    }}
-                    title={alreadySubmitted ? "Assessment submitted - navigation disabled" : `Question ${index + 1}${isAnswered ? " (Answered)" : " (Not answered)"}`}
-                    onMouseOver={(e) => {
-                      if (!isCurrent && !alreadySubmitted) {
-                        e.currentTarget.style.transform = "scale(1.05)";
-                        e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.1)";
-                      }
-                    }}
-                    onMouseOut={(e) => {
-                      if (!isCurrent && !alreadySubmitted) {
-                        e.currentTarget.style.transform = "scale(1)";
-                        e.currentTarget.style.boxShadow = "none";
-                      }
                     }}
                   >
                     {index + 1}
-                    {isCurrent && (
-                      <div style={{
-                        position: "absolute",
-                        top: "-4px",
-                        right: "-4px",
-                        width: "12px",
-                        height: "12px",
-                        borderRadius: "50%",
-                        background: sectionConfig.color,
-                        border: "2px solid white"
-                      }} />
-                    )}
                   </button>
                 );
               })}
@@ -1987,111 +1622,22 @@ export default function AssessmentPage() {
               borderTop: "2px solid #e0e0e0"
             }}>
               <div style={{
-                fontSize: "12px",
-                fontWeight: "600",
-                color: "#666",
-                marginBottom: "8px",
-                textAlign: "center"
-              }}>
-                Navigation Guide
-              </div>
-              <div style={{
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
                 gap: "8px",
                 fontSize: "11px"
               }}>
-                <div style={{ 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: "6px",
-                  padding: "6px",
-                  background: "#f8f9fa",
-                  borderRadius: "4px"
-                }}>
-                  <div style={{ 
-                    width: "16px", 
-                    height: "16px", 
-                    borderRadius: "4px", 
-                    background: "#4caf50",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "white",
-                    fontSize: "10px"
-                  }}>
-                    ✓
-                  </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <div style={{ width: "16px", height: "16px", borderRadius: "4px", background: "#4caf50" }} />
                   <span>Answered</span>
                 </div>
-                <div style={{ 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: "6px",
-                  padding: "6px",
-                  background: "#f8f9fa",
-                  borderRadius: "4px"
-                }}>
-                  <div style={{ 
-                    width: "16px", 
-                    height: "16px", 
-                    borderRadius: "4px", 
-                    background: sectionConfig.color,
-                    position: "relative"
-                  }}>
-                    <div style={{
-                      position: "absolute",
-                      top: "-3px",
-                      right: "-3px",
-                      width: "8px",
-                      height: "8px",
-                      borderRadius: "50%",
-                      background: "white",
-                      border: "1px solid" + sectionConfig.color
-                    }} />
-                  </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <div style={{ width: "16px", height: "16px", borderRadius: "4px", background: sectionConfig.color }} />
                   <span>Current</span>
                 </div>
-                <div style={{ 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: "6px",
-                  padding: "6px",
-                  background: "#f8f9fa",
-                  borderRadius: "4px"
-                }}>
-                  <div style={{ 
-                    width: "16px", 
-                    height: "16px", 
-                    borderRadius: "4px", 
-                    background: "#f5f5f5",
-                    border: "1px solid #e0e0e0"
-                  }} />
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <div style={{ width: "16px", height: "16px", borderRadius: "4px", background: "#f5f5f5", border: "1px solid #e0e0e0" }} />
                   <span>Pending</span>
-                </div>
-                <div style={{ 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: "6px",
-                  padding: "6px",
-                  background: "#f8f9fa",
-                  borderRadius: "4px"
-                }}>
-                  <div style={{ 
-                    width: "16px", 
-                    height: "16px", 
-                    borderRadius: "4px", 
-                    background: "#2196f3",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "white",
-                    fontSize: "10px",
-                    fontWeight: "bold"
-                  }}>
-                    ⏰
-                  </div>
-                  <span>Timer</span>
                 </div>
               </div>
             </div>
