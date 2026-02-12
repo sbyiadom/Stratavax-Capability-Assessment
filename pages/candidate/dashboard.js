@@ -15,7 +15,7 @@ export default function CandidateDashboard() {
   const [inProgressAssessments, setInProgressAssessments] = useState([]);
   const [userName, setUserName] = useState("");
 
-  // Assessment type configuration with icons and colors
+  // Assessment type configuration with icons and colors - ONE PER TYPE
   const assessmentTypes = [
     { 
       id: 'general', 
@@ -75,30 +75,33 @@ export default function CandidateDashboard() {
     }
   }, [session]);
 
+  // Fetch assessments - ENSURE ONLY ONE PER TYPE
   const fetchAssessments = async () => {
     try {
       const { data, error } = await supabase
         .from("assessments")
         .select("*")
-        .eq("is_active", true)
-        .order("created_at");
+        .eq("is_active", true);
 
       if (error) throw error;
       
       if (data) {
-        // If no assessments exist in DB yet, use our config as fallback
+        // If no assessments exist, create default ones
         if (data.length === 0) {
-          // Create default assessments if they don't exist
           await createDefaultAssessments();
           // Fetch again
           const { data: newData } = await supabase
             .from("assessments")
             .select("*")
-            .eq("is_active", true)
-            .order("created_at");
-          setAssessments(newData || []);
+            .eq("is_active", true);
+          
+          // Ensure only one per type
+          const uniqueAssessments = removeDuplicateAssessments(newData || []);
+          setAssessments(uniqueAssessments);
         } else {
-          setAssessments(data);
+          // Ensure only one per type
+          const uniqueAssessments = removeDuplicateAssessments(data);
+          setAssessments(uniqueAssessments);
         }
       }
     } catch (error) {
@@ -108,6 +111,22 @@ export default function CandidateDashboard() {
     }
   };
 
+  // Remove duplicate assessments - KEEP ONLY THE LATEST
+  const removeDuplicateAssessments = (assessments) => {
+    const assessmentMap = new Map();
+    
+    assessments.forEach(assessment => {
+      const existing = assessmentMap.get(assessment.assessment_type);
+      // Keep the most recently created one
+      if (!existing || new Date(assessment.created_at) > new Date(existing.created_at)) {
+        assessmentMap.set(assessment.assessment_type, assessment);
+      }
+    });
+    
+    return Array.from(assessmentMap.values());
+  };
+
+  // Create default assessments - USING UPSERT TO AVOID DUPLICATES
   const createDefaultAssessments = async () => {
     const defaultAssessments = [
       {
@@ -179,9 +198,26 @@ export default function CandidateDashboard() {
     ];
 
     for (const assessment of defaultAssessments) {
+      // UPSERT - update if exists, insert if not
       const { error } = await supabase
         .from("assessments")
-        .insert(assessment);
+        .upsert(
+          {
+            assessment_type: assessment.assessment_type,
+            name: assessment.name,
+            description: assessment.description,
+            category_description: assessment.category_description,
+            icon_name: assessment.icon_name,
+            total_questions: assessment.total_questions,
+            duration_minutes: assessment.duration_minutes,
+            passing_score: assessment.passing_score,
+            is_active: assessment.is_active
+          },
+          { 
+            onConflict: 'assessment_type',
+            ignoreDuplicates: false 
+          }
+        );
       
       if (error) console.error(`Error creating ${assessment.assessment_type} assessment:`, error);
     }
@@ -233,12 +269,12 @@ export default function CandidateDashboard() {
     return inProgress?.time_spent || 0;
   };
 
-  // Group assessments by type
-  const getAssessmentsByType = (type) => {
-    return assessments.filter(a => a.assessment_type === type);
+  // Get assessment by type - RETURNS ONLY ONE
+  const getAssessmentByType = (type) => {
+    return assessments.find(a => a.assessment_type === type);
   };
 
-  // Get count of completed assessments for progress tracking
+  // Get count of completed assessments
   const getCompletedCount = () => {
     return completedAssessments.length;
   };
@@ -282,7 +318,7 @@ export default function CandidateDashboard() {
   if (!session) return null;
 
   const activeTypeConfig = assessmentTypes.find(t => t.id === activeTab) || assessmentTypes[0];
-  const activeAssessments = getAssessmentsByType(activeTab);
+  const activeAssessment = getAssessmentByType(activeTab);
   const completedCount = getCompletedCount();
   const totalAssessments = getTotalAssessments();
   const progressPercentage = totalAssessments > 0 ? Math.round((completedCount / totalAssessments) * 100) : 0;
@@ -387,7 +423,7 @@ export default function CandidateDashboard() {
             </div>
           </div>
 
-          {/* Assessment Type Tabs */}
+          {/* Assessment Type Tabs - SHOWING 1 ASSESSMENT PER TYPE */}
           <div style={{
             background: "white",
             borderRadius: "12px",
@@ -403,28 +439,27 @@ export default function CandidateDashboard() {
             }}>
               {assessmentTypes.map(tab => {
                 const isActive = activeTab === tab.id;
-                const typeAssessments = getAssessmentsByType(tab.id);
-                const hasAssessments = typeAssessments.length > 0;
+                const hasAssessment = !!getAssessmentByType(tab.id);
                 
                 return (
                   <button
                     key={tab.id}
-                    onClick={() => hasAssessments && setActiveTab(tab.id)}
-                    disabled={!hasAssessments}
+                    onClick={() => hasAssessment && setActiveTab(tab.id)}
+                    disabled={!hasAssessment}
                     style={{
                       padding: "15px 25px",
                       background: isActive ? tab.color : "white",
                       color: isActive ? "white" : "#64748b",
                       border: isActive ? "none" : "2px solid #e2e8f0",
                       borderRadius: "12px",
-                      cursor: hasAssessments ? "pointer" : "not-allowed",
+                      cursor: hasAssessment ? "pointer" : "not-allowed",
                       fontWeight: isActive ? "600" : "400",
                       fontSize: "15px",
                       display: "flex",
                       alignItems: "center",
                       gap: "10px",
                       transition: "all 0.2s",
-                      opacity: hasAssessments ? 1 : 0.5,
+                      opacity: hasAssessment ? 1 : 0.5,
                       minWidth: "200px",
                       flex: "0 0 auto"
                     }}
@@ -437,7 +472,7 @@ export default function CandidateDashboard() {
                         opacity: isActive ? 0.9 : 0.7,
                         marginTop: "2px"
                       }}>
-                        {typeAssessments.length} {typeAssessments.length === 1 ? 'assessment' : 'assessments'}
+                        {hasAssessment ? '1 assessment' : 'Coming soon'}
                       </div>
                     </div>
                   </button>
@@ -483,19 +518,20 @@ export default function CandidateDashboard() {
                 fontSize: "14px",
                 fontWeight: "500"
               }}>
-                Completed: {activeAssessments.filter(a => isAssessmentCompleted(a.id)).length}/{activeAssessments.length}
+                {activeAssessment ? (isAssessmentCompleted(activeAssessment.id) ? '✓ Completed' : '📝 Not Started') : 'No assessment'}
               </div>
             </div>
           </div>
 
-          {/* Assessment Cards Grid */}
-          {activeAssessments.length > 0 ? (
+          {/* Single Assessment Card - ONLY ONE PER TYPE */}
+          {activeAssessment ? (
             <div style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))",
+              gridTemplateColumns: "1fr",
               gap: "25px"
             }}>
-              {activeAssessments.map(assessment => {
+              {(() => {
+                const assessment = activeAssessment;
                 const completed = isAssessmentCompleted(assessment.id);
                 const inProgress = isAssessmentInProgress(assessment.id);
                 const score = getAssessmentScore(assessment.id);
@@ -510,7 +546,7 @@ export default function CandidateDashboard() {
                     style={{
                       background: "white",
                       borderRadius: "16px",
-                      padding: "25px",
+                      padding: "30px",
                       boxShadow: "0 4px 6px rgba(0,0,0,0.05)",
                       transition: "all 0.3s ease",
                       border: completed 
@@ -534,11 +570,11 @@ export default function CandidateDashboard() {
                     {/* Status Badge */}
                     <div style={{
                       position: "absolute",
-                      top: "15px",
-                      right: "15px",
-                      padding: "6px 12px",
-                      borderRadius: "20px",
-                      fontSize: "12px",
+                      top: "20px",
+                      right: "20px",
+                      padding: "8px 16px",
+                      borderRadius: "30px",
+                      fontSize: "13px",
                       fontWeight: "600",
                       background: completed 
                         ? passed 
@@ -563,38 +599,39 @@ export default function CandidateDashboard() {
                     <div style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: "15px",
-                      marginBottom: "20px"
+                      gap: "20px",
+                      marginBottom: "25px"
                     }}>
                       <div style={{
-                        width: "50px",
-                        height: "50px",
-                        borderRadius: "12px",
+                        width: "70px",
+                        height: "70px",
+                        borderRadius: "16px",
                         background: activeTypeConfig.lightColor,
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        fontSize: "28px"
+                        fontSize: "36px"
                       }}>
                         {assessment.icon_name || activeTypeConfig.icon}
                       </div>
                       <div>
                         <h3 style={{ 
-                          margin: "0 0 5px 0", 
+                          margin: "0 0 8px 0", 
                           color: "#1a2639",
-                          fontSize: "18px",
+                          fontSize: "24px",
                           fontWeight: "600"
                         }}>
                           {assessment.name}
                         </h3>
                         <div style={{
                           display: "flex",
-                          gap: "10px",
-                          fontSize: "12px",
+                          gap: "20px",
+                          fontSize: "14px",
                           color: "#64748b"
                         }}>
-                          <span>⏱️ {assessment.duration_minutes} mins</span>
+                          <span>⏱️ {assessment.duration_minutes} minutes</span>
                           <span>📝 {assessment.total_questions} questions</span>
+                          <span>🎯 Pass: {assessment.passing_score}%</span>
                         </div>
                       </div>
                     </div>
@@ -602,9 +639,10 @@ export default function CandidateDashboard() {
                     {/* Description */}
                     <p style={{ 
                       color: "#64748b", 
-                      fontSize: "14px",
+                      fontSize: "16px",
                       lineHeight: "1.6",
-                      marginBottom: "20px"
+                      marginBottom: "25px",
+                      maxWidth: "800px"
                     }}>
                       {assessment.category_description || assessment.description}
                     </p>
@@ -613,25 +651,26 @@ export default function CandidateDashboard() {
                     {completed ? (
                       <div style={{
                         background: passed ? "#E8F5E9" : "#FFF3E0",
-                        borderRadius: "10px",
-                        padding: "15px",
-                        marginBottom: "20px"
+                        borderRadius: "12px",
+                        padding: "20px",
+                        marginBottom: "25px",
+                        maxWidth: "400px"
                       }}>
                         <div style={{
                           display: "flex",
                           justifyContent: "space-between",
                           alignItems: "center",
-                          marginBottom: "10px"
+                          marginBottom: "12px"
                         }}>
                           <span style={{ 
-                            fontSize: "14px", 
+                            fontSize: "16px", 
                             fontWeight: "600",
                             color: passed ? "#2E7D32" : "#E65100"
                           }}>
                             Final Score
                           </span>
                           <span style={{ 
-                            fontSize: "24px", 
+                            fontSize: "32px", 
                             fontWeight: "700",
                             color: passed ? "#2E7D32" : "#E65100"
                           }}>
@@ -639,62 +678,64 @@ export default function CandidateDashboard() {
                           </span>
                         </div>
                         <div style={{
-                          height: "8px",
+                          height: "10px",
                           background: "#E0E0E0",
-                          borderRadius: "4px",
+                          borderRadius: "5px",
                           overflow: "hidden"
                         }}>
                           <div style={{
                             height: "100%",
                             width: `${score}%`,
                             background: passed ? "#4CAF50" : "#FF9800",
-                            borderRadius: "4px"
+                            borderRadius: "5px"
                           }} />
                         </div>
                         <div style={{
-                          fontSize: "12px",
+                          fontSize: "13px",
                           color: passed ? "#2E7D32" : "#E65100",
-                          marginTop: "8px",
+                          marginTop: "10px",
                           textAlign: "right"
                         }}>
-                          {passed ? "✓ Passed" : "⚡ Below passing score"}
+                          {passed ? "✓ Passed - Congratulations!" : "⚡ Below passing score - Review recommended"}
                         </div>
                       </div>
                     ) : inProgress ? (
                       <div style={{
                         background: activeTypeConfig.lightColor,
-                        borderRadius: "10px",
-                        padding: "15px",
-                        marginBottom: "20px"
+                        borderRadius: "12px",
+                        padding: "20px",
+                        marginBottom: "25px",
+                        maxWidth: "400px"
                       }}>
                         <div style={{
                           display: "flex",
                           justifyContent: "space-between",
                           alignItems: "center",
-                          marginBottom: "10px"
+                          marginBottom: "12px"
                         }}>
                           <span style={{ 
-                            fontSize: "14px", 
+                            fontSize: "16px", 
                             fontWeight: "600",
                             color: activeTypeConfig.color
                           }}>
                             In Progress
                           </span>
                           <span style={{ 
-                            fontSize: "14px",
-                            color: "#64748b"
+                            fontSize: "16px",
+                            fontWeight: "600",
+                            color: activeTypeConfig.color
                           }}>
-                            Time spent: {Math.floor(timeSpent / 60)}m
+                            {Math.floor(timeSpent / 60)}m used
                           </span>
                         </div>
                         <div style={{
-                          fontSize: "14px",
+                          fontSize: "15px",
                           color: activeTypeConfig.color,
                           display: "flex",
                           alignItems: "center",
-                          gap: "5px"
+                          gap: "8px"
                         }}>
-                          <span>🕐</span> Resume where you left off
+                          <span>🕐</span> You have an in-progress assessment. Click to resume.
                         </div>
                       </div>
                     ) : null}
@@ -703,15 +744,14 @@ export default function CandidateDashboard() {
                     {!completed && (
                       <Link href={`/assessment/${assessment.id}`} legacyBehavior>
                         <a style={{
-                          display: "block",
+                          display: "inline-block",
                           background: inProgress ? activeTypeConfig.color : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                           color: "white",
-                          padding: "14px",
+                          padding: "14px 40px",
                           borderRadius: "10px",
-                          textAlign: "center",
                           textDecoration: "none",
                           fontWeight: "600",
-                          fontSize: "15px",
+                          fontSize: "16px",
                           transition: "all 0.3s",
                           border: "none",
                           cursor: "pointer"
@@ -731,20 +771,20 @@ export default function CandidateDashboard() {
 
                     {completed && (
                       <div style={{
-                        padding: "14px",
+                        display: "inline-block",
+                        padding: "14px 40px",
                         background: "#f8fafc",
                         borderRadius: "10px",
-                        textAlign: "center",
                         color: "#64748b",
-                        fontSize: "14px",
+                        fontSize: "15px",
                         fontWeight: "500"
                       }}>
-                        ✓ Completed on {new Date(completedAssessments.find(a => a.assessment_id === assessment.id)?.completed_at).toLocaleDateString()}
+                        ✓ Completed on {new Date(completedAssessments.find(a => a.assessment_id === assessment.id)?.completed_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                       </div>
                     )}
                   </div>
                 );
-              })}
+              })()}
             </div>
           ) : (
             <div style={{
@@ -754,17 +794,17 @@ export default function CandidateDashboard() {
               textAlign: "center",
               boxShadow: "0 4px 6px rgba(0,0,0,0.05)"
             }}>
-              <div style={{ fontSize: "48px", marginBottom: "20px" }}>📭</div>
-              <h3 style={{ color: "#1a2639", marginBottom: "10px" }}>
-                No Assessments Available
+              <div style={{ fontSize: "48px", marginBottom: "20px" }}>🔧</div>
+              <h3 style={{ color: "#1a2639", marginBottom: "10px", fontSize: "24px" }}>
+                Assessment Coming Soon
               </h3>
-              <p style={{ color: "#64748b", maxWidth: "400px", margin: "0 auto" }}>
-                There are no {activeTypeConfig.label.toLowerCase()} available at this time. Please check back later.
+              <p style={{ color: "#64748b", maxWidth: "400px", margin: "0 auto", fontSize: "16px" }}>
+                The {activeTypeConfig.label.toLowerCase()} is being prepared. Please check back later.
               </p>
             </div>
           )}
 
-          {/* Footer with Progress Summary */}
+          {/* Footer with Progress Summary - SHOWING 0/1 or 1/1 */}
           <div style={{
             marginTop: "40px",
             background: "white",
@@ -775,7 +815,8 @@ export default function CandidateDashboard() {
             <h3 style={{ 
               margin: "0 0 20px 0", 
               color: "#1a2639",
-              fontSize: "18px"
+              fontSize: "20px",
+              fontWeight: "600"
             }}>
               Your Assessment Journey
             </h3>
@@ -786,60 +827,87 @@ export default function CandidateDashboard() {
               gap: "20px"
             }}>
               {assessmentTypes.map(type => {
-                const typeAssessments = getAssessmentsByType(type.id);
-                const completedCount = typeAssessments.filter(a => isAssessmentCompleted(a.id)).length;
-                const totalCount = typeAssessments.length;
-                const progress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+                const typeAssessment = getAssessmentByType(type.id);
+                const hasAssessment = !!typeAssessment;
+                const isCompleted = typeAssessment ? isAssessmentCompleted(typeAssessment.id) : false;
+                const completedCount = isCompleted ? 1 : 0;
+                const progress = isCompleted ? 100 : 0;
                 
                 return (
                   <div key={type.id} style={{
-                    padding: "15px",
+                    padding: "20px",
                     background: type.lightColor,
-                    borderRadius: "10px"
+                    borderRadius: "12px",
+                    opacity: hasAssessment ? 1 : 0.6,
+                    border: isCompleted ? `2px solid ${type.color}` : 'none'
                   }}>
                     <div style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: "10px",
-                      marginBottom: "10px"
+                      gap: "12px",
+                      marginBottom: "15px"
                     }}>
-                      <span style={{ fontSize: "20px" }}>{type.icon}</span>
-                      <span style={{ 
-                        fontSize: "14px", 
-                        fontWeight: "600",
-                        color: type.color
-                      }}>
-                        {type.label.split(' ').slice(0, 2).join(' ')}
-                      </span>
+                      <span style={{ fontSize: "24px" }}>{type.icon}</span>
+                      <div>
+                        <span style={{ 
+                          fontSize: "15px", 
+                          fontWeight: "600",
+                          color: type.color
+                        }}>
+                          {type.label.split(' ').slice(0, 2).join(' ')}
+                        </span>
+                        {isCompleted && (
+                          <span style={{
+                            display: "block",
+                            fontSize: "11px",
+                            color: type.color,
+                            marginTop: "2px"
+                          }}>
+                            ✓ Completed
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div style={{
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
-                      marginBottom: "8px"
+                      marginBottom: "10px"
                     }}>
-                      <span style={{ fontSize: "12px", color: "#64748b" }}>Progress</span>
+                      <span style={{ fontSize: "13px", color: "#64748b" }}>Progress</span>
                       <span style={{ 
-                        fontSize: "16px", 
+                        fontSize: "20px", 
                         fontWeight: "700",
                         color: type.color
                       }}>
-                        {completedCount}/{totalCount}
+                        {completedCount}/1
                       </span>
                     </div>
                     <div style={{
-                      height: "6px",
+                      height: "8px",
                       background: "#e2e8f0",
-                      borderRadius: "3px",
+                      borderRadius: "4px",
                       overflow: "hidden"
                     }}>
                       <div style={{
                         height: "100%",
                         width: `${progress}%`,
                         background: type.color,
-                        borderRadius: "3px"
+                        borderRadius: "4px",
+                        transition: "width 0.3s ease"
                       }} />
                     </div>
+                    {!hasAssessment && (
+                      <div style={{
+                        fontSize: "12px",
+                        color: "#94a3b8",
+                        marginTop: "12px",
+                        textAlign: "center",
+                        fontStyle: "italic"
+                      }}>
+                        Coming soon
+                      </div>
+                    )}
                   </div>
                 );
               })}
