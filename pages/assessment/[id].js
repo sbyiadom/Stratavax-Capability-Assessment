@@ -2,59 +2,296 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
 
-// ===== SECTION CONFIGURATIONS FOR ALL ASSESSMENT TYPES =====
+// ===== SECTION CONFIGURATIONS WITH BEAUTIFUL BACKGROUNDS =====
 const SECTION_CONFIG = {
   // General Assessment
-  'Cognitive Abilities': { color: '#4A6FA5', lightBg: 'rgba(74, 111, 165, 0.1)', icon: '🧠', bgImage: '/images/backgrounds/cognitive-bg.jpg' },
-  'Personality Assessment': { color: '#9C27B0', lightBg: 'rgba(156, 39, 176, 0.1)', icon: '😊', bgImage: 'https://img.freepik.com/free-photo/people-studying-together-communicating_23-2147656354.jpg' },
-  'Leadership Potential': { color: '#D32F2F', lightBg: 'rgba(211, 47, 47, 0.1)', icon: '👑', bgImage: 'https://img.freepik.com/free-photo/friends-people-group-teamwork-diversity_53876-31488.jpg' },
-  'Bottled Water Manufacturing': { color: '#388E3C', lightBg: 'rgba(56, 142, 60, 0.1)', icon: '⚙️', bgImage: 'https://thumbs.dreamstime.com/b/happy-students-giving-high-five-school-education-friendship-concept-33187252.jpg' },
-  'Performance Metrics': { color: '#F57C00', lightBg: 'rgba(245, 124, 0, 0.1)', icon: '📊', bgImage: '/images/backgrounds/performance-bg.jpg' },
+  'Cognitive Abilities': { 
+    color: '#4A6FA5', 
+    lightBg: 'rgba(74, 111, 165, 0.1)', 
+    icon: '🧠', 
+    bgImage: 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+  },
+  'Personality Assessment': { 
+    color: '#9C27B0', 
+    lightBg: 'rgba(156, 39, 176, 0.1)', 
+    icon: '😊', 
+    bgImage: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #da22ff 0%, #9733ee 100%)'
+  },
+  'Leadership Potential': { 
+    color: '#D32F2F', 
+    lightBg: 'rgba(211, 47, 47, 0.1)', 
+    icon: '👑', 
+    bgImage: 'https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)'
+  },
+  'Bottled Water Manufacturing': { 
+    color: '#388E3C', 
+    lightBg: 'rgba(56, 142, 60, 0.1)', 
+    icon: '⚙️', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)'
+  },
+  'Performance Metrics': { 
+    color: '#F57C00', 
+    lightBg: 'rgba(245, 124, 0, 0.1)', 
+    icon: '📊', 
+    bgImage: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)'
+  },
   
   // Behavioral
-  'Adaptability & Flexibility': { color: '#FF6B6B', lightBg: 'rgba(255, 107, 107, 0.1)', icon: '🔄', bgImage: '/images/backgrounds/adaptability-bg.jpg' },
-  'Emotional Intelligence': { color: '#4ECDC4', lightBg: 'rgba(78, 205, 196, 0.1)', icon: '🧘', bgImage: '/images/backgrounds/eq-bg.jpg' },
-  'Communication Skills': { color: '#45B7D1', lightBg: 'rgba(69, 183, 209, 0.1)', icon: '💬', bgImage: '/images/backgrounds/communication-bg.jpg' },
-  'Teamwork & Collaboration': { color: '#96CEB4', lightBg: 'rgba(150, 206, 180, 0.1)', icon: '🤝', bgImage: '/images/backgrounds/teamwork-bg.jpg' },
-  'Initiative & Proactivity': { color: '#FFEAA7', lightBg: 'rgba(255, 234, 167, 0.1)', icon: '⚡', bgImage: '/images/backgrounds/initiative-bg.jpg' },
-  'Time Management': { color: '#DDA0DD', lightBg: 'rgba(221, 160, 221, 0.1)', icon: '⏰', bgImage: '/images/backgrounds/time-bg.jpg' },
-  'Resilience': { color: '#F08A5D', lightBg: 'rgba(240, 138, 93, 0.1)', icon: '💪', bgImage: '/images/backgrounds/resilience-bg.jpg' },
+  'Adaptability & Flexibility': { 
+    color: '#FF6B6B', 
+    lightBg: 'rgba(255, 107, 107, 0.1)', 
+    icon: '🔄', 
+    bgImage: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #ee0979 0%, #ff6a00 100%)'
+  },
+  'Emotional Intelligence': { 
+    color: '#4ECDC4', 
+    lightBg: 'rgba(78, 205, 196, 0.1)', 
+    icon: '🧘', 
+    bgImage: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #56ab2f 0%, #a8e063 100%)'
+  },
+  'Communication Skills': { 
+    color: '#45B7D1', 
+    lightBg: 'rgba(69, 183, 209, 0.1)', 
+    icon: '💬', 
+    bgImage: 'https://images.unsplash.com/photo-1521791136064-7986c2920216?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%)'
+  },
+  'Teamwork & Collaboration': { 
+    color: '#96CEB4', 
+    lightBg: 'rgba(150, 206, 180, 0.1)', 
+    icon: '🤝', 
+    bgImage: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)'
+  },
+  'Initiative & Proactivity': { 
+    color: '#FFEAA7', 
+    lightBg: 'rgba(255, 234, 167, 0.1)', 
+    icon: '⚡', 
+    bgImage: 'https://images.unsplash.com/photo-1533743983669-94fa5c4338ec?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #f46b45 0%, #eea849 100%)'
+  },
+  'Time Management': { 
+    color: '#DDA0DD', 
+    lightBg: 'rgba(221, 160, 221, 0.1)', 
+    icon: '⏰', 
+    bgImage: 'https://images.unsplash.com/photo-1510130315046-1e47cc196aa0?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #8e2de2 0%, #4a00e0 100%)'
+  },
+  'Resilience': { 
+    color: '#F08A5D', 
+    lightBg: 'rgba(240, 138, 93, 0.1)', 
+    icon: '💪', 
+    bgImage: 'https://images.unsplash.com/photo-1551632811-561732d4dfdb?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #f12711 0%, #f5af19 100%)'
+  },
   
   // Cognitive
-  'Problem-Solving': { color: '#6A4C93', lightBg: 'rgba(106, 76, 147, 0.1)', icon: '🔍', bgImage: '/images/backgrounds/problem-solving-bg.jpg' },
-  'Critical Thinking': { color: '#1982C4', lightBg: 'rgba(25, 130, 196, 0.1)', icon: '🎯', bgImage: '/images/backgrounds/critical-thinking-bg.jpg' },
-  'Learning Agility': { color: '#8AC926', lightBg: 'rgba(138, 201, 38, 0.1)', icon: '📚', bgImage: '/images/backgrounds/learning-bg.jpg' },
-  'Creativity & Innovation': { color: '#FFCA3A', lightBg: 'rgba(255, 202, 58, 0.1)', icon: '💡', bgImage: '/images/backgrounds/creativity-bg.jpg' },
+  'Problem-Solving': { 
+    color: '#6A4C93', 
+    lightBg: 'rgba(106, 76, 147, 0.1)', 
+    icon: '🔍', 
+    bgImage: 'https://images.unsplash.com/photo-1581291518633-83b4ebd1d83e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #654ea3 0%, #eaafc8 100%)'
+  },
+  'Critical Thinking': { 
+    color: '#1982C4', 
+    lightBg: 'rgba(25, 130, 196, 0.1)', 
+    icon: '🎯', 
+    bgImage: 'https://images.unsplash.com/photo-1507413245164-6160d8298b31?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%)'
+  },
+  'Learning Agility': { 
+    color: '#8AC926', 
+    lightBg: 'rgba(138, 201, 38, 0.1)', 
+    icon: '📚', 
+    bgImage: 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #1d976c 0%, #93f9b9 100%)'
+  },
+  'Creativity & Innovation': { 
+    color: '#FFCA3A', 
+    lightBg: 'rgba(255, 202, 58, 0.1)', 
+    icon: '💡', 
+    bgImage: 'https://images.unsplash.com/photo-1453928582365-b6ad33cbcf64?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)'
+  },
   
   // Cultural
-  'Core Values Alignment': { color: '#9C89B8', lightBg: 'rgba(156, 137, 184, 0.1)', icon: '🎯', bgImage: '/images/backgrounds/values-bg.jpg' },
-  'Organizational Citizenship': { color: '#F0A6CA', lightBg: 'rgba(240, 166, 202, 0.1)', icon: '🤲', bgImage: '/images/backgrounds/citizenship-bg.jpg' },
-  'Reliability & Dependability': { color: '#B8F2E6', lightBg: 'rgba(184, 242, 230, 0.1)', icon: '✓', bgImage: '/images/backgrounds/reliability-bg.jpg' },
-  'Customer Focus': { color: '#A9D6E5', lightBg: 'rgba(169, 214, 229, 0.1)', icon: '👥', bgImage: '/images/backgrounds/customer-bg.jpg' },
-  'Safety Awareness': { color: '#FCA17D', lightBg: 'rgba(252, 161, 125, 0.1)', icon: '⚠️', bgImage: '/images/backgrounds/safety-bg.jpg' },
-  'Commercial Awareness': { color: '#86A788', lightBg: 'rgba(134, 167, 136, 0.1)', icon: '💰', bgImage: '/images/backgrounds/commercial-bg.jpg' },
+  'Core Values Alignment': { 
+    color: '#9C89B8', 
+    lightBg: 'rgba(156, 137, 184, 0.1)', 
+    icon: '🎯', 
+    bgImage: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #834d9b 0%, #d04ed6 100%)'
+  },
+  'Organizational Citizenship': { 
+    color: '#F0A6CA', 
+    lightBg: 'rgba(240, 166, 202, 0.1)', 
+    icon: '🤲', 
+    bgImage: 'https://images.unsplash.com/photo-1469571486292-0ba58a3f068b?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)'
+  },
+  'Reliability & Dependability': { 
+    color: '#B8F2E6', 
+    lightBg: 'rgba(184, 242, 230, 0.1)', 
+    icon: '✓', 
+    bgImage: 'https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #00b09b 0%, #96c93d 100%)'
+  },
+  'Customer Focus': { 
+    color: '#A9D6E5', 
+    lightBg: 'rgba(169, 214, 229, 0.1)', 
+    icon: '👥', 
+    bgImage: 'https://images.unsplash.com/photo-1552581234-26160f608093?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #2980b9 0%, #6dd5fa 100%)'
+  },
+  'Safety Awareness': { 
+    color: '#FCA17D', 
+    lightBg: 'rgba(252, 161, 125, 0.1)', 
+    icon: '⚠️', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #f12711 0%, #f5af19 100%)'
+  },
+  'Commercial Awareness': { 
+    color: '#86A788', 
+    lightBg: 'rgba(134, 167, 136, 0.1)', 
+    icon: '💰', 
+    bgImage: 'https://images.unsplash.com/photo-1567427017947-545c5f8d16ad?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #0f2027 0%, #203a43 100%)'
+  },
   
   // Manufacturing
-  'Blowing Machines': { color: '#3D5A80', lightBg: 'rgba(61, 90, 128, 0.1)', icon: '💨', bgImage: '/images/backgrounds/blowing-bg.jpg' },
-  'Labeler': { color: '#EE6C4D', lightBg: 'rgba(238, 108, 77, 0.1)', icon: '🏷️', bgImage: '/images/backgrounds/labeler-bg.jpg' },
-  'Filling': { color: '#98C1D9', lightBg: 'rgba(152, 193, 217, 0.1)', icon: '💧', bgImage: '/images/backgrounds/filling-bg.jpg' },
-  'Conveyors': { color: '#293241', lightBg: 'rgba(41, 50, 65, 0.1)', icon: '📦', bgImage: '/images/backgrounds/conveyor-bg.jpg' },
-  'Stretchwrappers': { color: '#E0FBFC', lightBg: 'rgba(224, 251, 252, 0.1)', icon: '🔄', bgImage: '/images/backgrounds/stretchwrapper-bg.jpg' },
-  'Shrinkwrappers': { color: '#C81D25', lightBg: 'rgba(200, 29, 37, 0.1)', icon: '🔥', bgImage: '/images/backgrounds/shrinkwrapper-bg.jpg' },
-  'Date Coders': { color: '#725AC1', lightBg: 'rgba(114, 90, 193, 0.1)', icon: '📅', bgImage: '/images/backgrounds/datecoder-bg.jpg' },
-  'Raw Materials': { color: '#5D576B', lightBg: 'rgba(93, 87, 107, 0.1)', icon: '🧪', bgImage: '/images/backgrounds/raw-materials-bg.jpg' },
+  'Blowing Machines': { 
+    color: '#3D5A80', 
+    lightBg: 'rgba(61, 90, 128, 0.1)', 
+    icon: '💨', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #2c3e50 0%, #3498db 100%)'
+  },
+  'Labeler': { 
+    color: '#EE6C4D', 
+    lightBg: 'rgba(238, 108, 77, 0.1)', 
+    icon: '🏷️', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #f46b45 0%, #eea849 100%)'
+  },
+  'Filling': { 
+    color: '#98C1D9', 
+    lightBg: 'rgba(152, 193, 217, 0.1)', 
+    icon: '💧', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%)'
+  },
+  'Conveyors': { 
+    color: '#293241', 
+    lightBg: 'rgba(41, 50, 65, 0.1)', 
+    icon: '📦', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #283048 0%, #859398 100%)'
+  },
+  'Stretchwrappers': { 
+    color: '#E0FBFC', 
+    lightBg: 'rgba(224, 251, 252, 0.1)', 
+    icon: '🔄', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #56ab2f 0%, #a8e063 100%)'
+  },
+  'Shrinkwrappers': { 
+    color: '#C81D25', 
+    lightBg: 'rgba(200, 29, 37, 0.1)', 
+    icon: '🔥', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #cb2d3e 0%, #ef473a 100%)'
+  },
+  'Date Coders': { 
+    color: '#725AC1', 
+    lightBg: 'rgba(114, 90, 193, 0.1)', 
+    icon: '📅', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #834d9b 0%, #d04ed6 100%)'
+  },
+  'Raw Materials': { 
+    color: '#5D576B', 
+    lightBg: 'rgba(93, 87, 107, 0.1)', 
+    icon: '🧪', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #0f2027 0%, #203a43 100%)'
+  },
   
   // Leadership
-  'Vision & Strategic Thinking': { color: '#FFB347', lightBg: 'rgba(255, 179, 71, 0.1)', icon: '🎯', bgImage: '/images/backgrounds/vision-bg.jpg' },
-  'Team Development': { color: '#5F9EA0', lightBg: 'rgba(95, 158, 160, 0.1)', icon: '🌱', bgImage: '/images/backgrounds/team-dev-bg.jpg' },
-  'Decision-Making': { color: '#C23B22', lightBg: 'rgba(194, 59, 34, 0.1)', icon: '⚖️', bgImage: '/images/backgrounds/decision-bg.jpg' },
-  'Influence': { color: '#6B5B95', lightBg: 'rgba(107, 91, 149, 0.1)', icon: '🗣️', bgImage: '/images/backgrounds/influence-bg.jpg' },
-  'Leadership EQ': { color: '#88B04B', lightBg: 'rgba(136, 176, 75, 0.1)', icon: '💖', bgImage: '/images/backgrounds/leadership-eq-bg.jpg' },
-  'Conflict Resolution': { color: '#FF6F61', lightBg: 'rgba(255, 111, 97, 0.1)', icon: '🤝', bgImage: '/images/backgrounds/conflict-bg.jpg' },
-  'Delegation': { color: '#92A8D1', lightBg: 'rgba(146, 168, 209, 0.1)', icon: '📤', bgImage: '/images/backgrounds/delegation-bg.jpg' },
-  'Leadership Integrity': { color: '#955251', lightBg: 'rgba(149, 82, 81, 0.1)', icon: '🛡️', bgImage: '/images/backgrounds/integrity-bg.jpg' },
-  'Innovation Leadership': { color: '#B565A7', lightBg: 'rgba(181, 101, 167, 0.1)', icon: '💫', bgImage: '/images/backgrounds/innovation-bg.jpg' }
+  'Vision & Strategic Thinking': { 
+    color: '#FFB347', 
+    lightBg: 'rgba(255, 179, 71, 0.1)', 
+    icon: '🎯', 
+    bgImage: 'https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)'
+  },
+  'Team Development': { 
+    color: '#5F9EA0', 
+    lightBg: 'rgba(95, 158, 160, 0.1)', 
+    icon: '🌱', 
+    bgImage: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)'
+  },
+  'Decision-Making': { 
+    color: '#C23B22', 
+    lightBg: 'rgba(194, 59, 34, 0.1)', 
+    icon: '⚖️', 
+    bgImage: 'https://images.unsplash.com/photo-1589829085413-56de8ae18c73?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #f12711 0%, #f5af19 100%)'
+  },
+  'Influence': { 
+    color: '#6B5B95', 
+    lightBg: 'rgba(107, 91, 149, 0.1)', 
+    icon: '🗣️', 
+    bgImage: 'https://images.unsplash.com/photo-1521791136064-7986c2920216?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #654ea3 0%, #eaafc8 100%)'
+  },
+  'Leadership EQ': { 
+    color: '#88B04B', 
+    lightBg: 'rgba(136, 176, 75, 0.1)', 
+    icon: '💖', 
+    bgImage: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #56ab2f 0%, #a8e063 100%)'
+  },
+  'Conflict Resolution': { 
+    color: '#FF6F61', 
+    lightBg: 'rgba(255, 111, 97, 0.1)', 
+    icon: '🤝', 
+    bgImage: 'https://images.unsplash.com/photo-1573497620053-ea5300f94f21?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #ee0979 0%, #ff6a00 100%)'
+  },
+  'Delegation': { 
+    color: '#92A8D1', 
+    lightBg: 'rgba(146, 168, 209, 0.1)', 
+    icon: '📤', 
+    bgImage: 'https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%)'
+  },
+  'Leadership Integrity': { 
+    color: '#955251', 
+    lightBg: 'rgba(149, 82, 81, 0.1)', 
+    icon: '🛡️', 
+    bgImage: 'https://images.unsplash.com/photo-1507925921958-8a62f3d1a50d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #8e2de2 0%, #4a00e0 100%)'
+  },
+  'Innovation Leadership': { 
+    color: '#B565A7', 
+    lightBg: 'rgba(181, 101, 167, 0.1)', 
+    icon: '💫', 
+    bgImage: 'https://images.unsplash.com/photo-1453928582365-b6ad33cbcf64?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80',
+    gradient: 'linear-gradient(135deg, #da22ff 0%, #9733ee 100%)'
+  }
 };
+
+// Default background for unmapped sections
+const DEFAULT_BG = 'https://images.unsplash.com/photo-1557683316-973673baf926?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80';
 
 // ===== FIXED TIMER FUNCTIONS =====
 async function startOrResumeTimer(userId, assessmentId) {
@@ -291,7 +528,7 @@ export default function AssessmentPage() {
         
         if (data) {
           setAssessment(data);
-          // FORCE 180 MINUTES FOR ALL ASSESSMENT TYPES
+          // FORCE 180 MINUTES FOR ALL ASSESSMENT TYPES - OVERRIDE DATABASE
           setTimeLimitSeconds(10800); // 180 minutes = 10800 seconds
           document.title = `${data.name} - Stratavax Assessment`;
         }
@@ -432,1169 +669,4 @@ export default function AssessmentPage() {
             }
           }
         }, 1000);
-      } catch (error) {
-        console.error("Failed to initialize timer:", error);
-      }
-    };
-
-    initializeTimer();
-
-    const handleBeforeUnload = () => {
-      if (session?.user?.id && localElapsed > 0) {
-        saveTimerProgress(session.user.id, assessmentId, localElapsed);
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      isMounted = false;
-      clearInterval(timerInterval);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [alreadySubmitted, session?.user?.id, isSessionReady, assessmentId, assessment, timeLimitSeconds]);
-
-  // ===== ANTI-CHEAT =====
-  useEffect(() => {
-    if (!alreadySubmitted && !loading && isSessionReady && questions.length > 0) {
-      setupAntiCheatProtection();
-    }
-  }, [alreadySubmitted, loading, isSessionReady, questions.length]);
-
-  // ===== HANDLE ANSWER SELECTION =====
-  const handleSelect = async (questionId, answerId) => {
-    if (alreadySubmitted || !isSessionReady || !session?.user?.id || !assessmentId) return;
-
-    setAnswers(prev => ({ ...prev, [questionId]: answerId }));
-    setSaveStatus(prev => ({ ...prev, [questionId]: "saving" }));
-
-    try {
-      await saveResponse(assessmentId, questionId, answerId, session.user.id);
-      setSaveStatus(prev => ({ ...prev, [questionId]: "saved" }));
-      
-      setTimeout(() => {
-        setSaveStatus(prev => {
-          const newStatus = { ...prev };
-          delete newStatus[questionId];
-          return newStatus;
-        });
-      }, 1500);
-    } catch (error) {
-      console.error("Save failed:", error);
-      setSaveStatus(prev => ({ ...prev, [questionId]: "error" }));
-    }
-  };
-
-  // ===== NAVIGATION =====
-  const handleNext = () => {
-    if (alreadySubmitted) return;
-    if (currentIndex < questions.length - 1) {
-      setCurrentIndex(i => i + 1);
-    }
-  };
-
-  const handleBack = () => {
-    if (alreadySubmitted) return;
-    if (currentIndex > 0) {
-      setCurrentIndex(i => i - 1);
-    }
-  };
-
-  // ===== SUBMIT ASSESSMENT =====
-  const submitAssessment = async () => {
-    if (alreadySubmitted || !session?.user?.id || !assessmentId) return;
-
-    setIsSubmitting(true);
-    setShowSubmitModal(false);
-    
-    try {
-      await markAsSubmitted(session.user.id, assessmentId);
-      await markTimerAsCompleted(session.user.id, assessmentId);
-      
-      setAlreadySubmitted(true);
-      localStorage.setItem(`assessment_submitted_${assessmentId}`, 'true');
-      
-      setShowSuccessModal(true);
-      
-      setTimeout(() => {
-        router.push('/assessment/pre');
-      }, 3000);
-    } catch (error) {
-      console.error("Submission error:", error);
-      alert("Submission failed. Please contact support.");
-      setIsSubmitting(false);
-    }
-  };
-
-  // ===== LOADING STATE =====
-  if (loading) {
-    return (
-      <div style={loadingContainerStyle}>
-        <div style={loadingContentStyle}>
-          <div style={loadingTitleStyle}>
-            {assessment?.name || 'Loading Assessment...'}
-          </div>
-          <div style={loadingSubtitleStyle}>
-            Please wait while we prepare your assessment
-          </div>
-          <div style={loadingSpinnerStyle} />
-        </div>
-      </div>
-    );
-  }
-
-  // ===== ALREADY SUBMITTED =====
-  if (alreadySubmitted) {
-    return (
-      <div style={errorContainerStyle}>
-        <div style={errorCardStyle}>
-          <div style={successIconStyle}>✅</div>
-          <h2 style={errorTitleStyle}>Assessment Already Completed</h2>
-          <p style={errorTextStyle}>
-            You have already submitted this assessment. Each assessment can only be taken once.
-          </p>
-          <button
-            onClick={() => router.push('/assessment/pre')}
-            style={primaryButtonStyle}
-          >
-            Return to Assessment Selection
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ===== ERROR STATE =====
-  if (error) {
-    return (
-      <div style={errorContainerStyle}>
-        <div style={errorCardStyle}>
-          <div style={errorIconStyle}>⚠️</div>
-          <h2 style={errorTitleStyle}>
-            {error.includes("already submitted") ? "Already Submitted" : "Error"}
-          </h2>
-          <p style={errorTextStyle}>{error}</p>
-          <button
-            onClick={() => router.push('/assessment/pre')}
-            style={primaryButtonStyle}
-          >
-            Return to Assessment Selection
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (questions.length === 0) {
-    return (
-      <div style={errorContainerStyle}>
-        <div style={errorCardStyle}>
-          <div style={errorIconStyle}>📭</div>
-          <h2 style={errorTitleStyle}>No Questions Available</h2>
-          <p style={errorTextStyle}>
-            This assessment doesn't have any questions yet. Please contact support.
-          </p>
-          <button
-            onClick={() => router.push('/assessment/pre')}
-            style={primaryButtonStyle}
-          >
-            Return to Assessment Selection
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const currentQuestion = questions[currentIndex];
-  const currentSection = currentQuestion?.section || 'General';
-  const sectionConfig = SECTION_CONFIG[currentSection] || {
-    color: '#4A6FA5',
-    lightBg: 'rgba(74, 111, 165, 0.1)',
-    icon: '📝',
-    bgImage: '/images/backgrounds/default-bg.jpg'
-  };
-
-  const totalAnswered = Object.keys(answers).length;
-  const progressPercentage = Math.round((totalAnswered / questions.length) * 100);
-  const isLastQuestion = currentIndex === questions.length - 1;
-
-  // Time calculations
-  const timeRemaining = Math.max(0, timeLimitSeconds - elapsed);
-  const hours = Math.floor(timeRemaining / 3600);
-  const minutes = Math.floor((timeRemaining % 3600) / 60);
-  const seconds = timeRemaining % 60;
-  const formatTime = (t) => t.toString().padStart(2, '0');
-
-  const timeUsedPercentage = (elapsed / timeLimitSeconds) * 100;
-  const isTimeWarning = timeUsedPercentage > 80;
-  const isTimeCritical = timeUsedPercentage > 90;
-
-  return (
-    <>
-      {/* Submit Modal */}
-      {showSubmitModal && (
-        <div style={modalOverlayStyle}>
-          <div style={modalContentStyle}>
-            <h2 style={modalTitleStyle}>📋 Final Submission</h2>
-            <div style={modalBodyStyle}>
-              <div style={modalRowStyle}>
-                <span>Questions Answered:</span>
-                <span style={{ color: '#4caf50', fontWeight: '700' }}>{totalAnswered}/{questions.length}</span>
-              </div>
-              <div style={modalRowStyle}>
-                <span>Completion Rate:</span>
-                <span style={{ color: '#2196f3', fontWeight: '700' }}>{progressPercentage}%</span>
-              </div>
-              <div style={modalRowStyle}>
-                <span>Time Used:</span>
-                <span style={{ 
-                  color: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : '#4caf50',
-                  fontWeight: '700'
-                }}>
-                  {formatTime(Math.floor(elapsed / 3600))}:{formatTime(Math.floor((elapsed % 3600) / 60))}:{formatTime(elapsed % 60)}
-                </span>
-              </div>
-              <div style={modalWarningStyle}>
-                ⚠️ <strong>ONE ATTEMPT ONLY:</strong> After submission, you cannot retake this assessment.
-              </div>
-            </div>
-            <div style={modalButtonContainerStyle}>
-              <button onClick={() => setShowSubmitModal(false)} style={modalSecondaryButtonStyle}>
-                Continue
-              </button>
-              <button onClick={submitAssessment} disabled={isSubmitting} style={modalPrimaryButtonStyle}>
-                {isSubmitting ? 'Submitting...' : 'Submit Assessment'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Success Modal */}
-      {showSuccessModal && (
-        <div style={modalOverlayStyle}>
-          <div style={{ ...modalContentStyle, textAlign: 'center' }}>
-            <div style={successIconLargeStyle}>✓</div>
-            <h2 style={{ ...modalTitleStyle, color: '#2e7d32' }}>Assessment Complete! 🎉</h2>
-            <div style={modalBodyStyle}>
-              <p style={{ fontSize: '16px', marginBottom: '20px' }}>
-                Your {assessment?.name || 'assessment'} has been successfully submitted.
-              </p>
-              <p style={{ fontSize: '14px', color: '#666' }}>
-                Redirecting to assessment selection...
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Assessment Layout */}
-      <div style={mainContainerStyle}>
-        {/* Header with Back Button */}
-        <div style={headerStyle}>
-          <div style={headerLeftStyle}>
-            {/* Back Button to return to assessment selection */}
-            <button
-              onClick={() => router.push('/assessment/pre')}
-              style={backButtonStyle}
-              onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
-              onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-              title="Back to Assessment Selection"
-            >
-              ←
-            </button>
-            
-            <div style={headerIconStyle}>{sectionConfig.icon}</div>
-            <div>
-              <div style={headerTitleStyle}>{assessment?.name || 'Assessment'}</div>
-              <div style={headerSubtitleStyle}>
-                Q{currentIndex + 1}/{questions.length} • {currentSection}
-                {(currentSection === 'Blowing Machines' || 
-                  currentSection === 'Labeler' ||
-                  currentSection === 'Filling' ||
-                  currentSection === 'Conveyors' ||
-                  currentSection === 'Stretchwrappers' ||
-                  currentSection === 'Shrinkwrappers' ||
-                  currentSection === 'Date Coders' ||
-                  currentSection === 'Raw Materials' ||
-                  currentSection === 'Bottled Water Manufacturing') && (
-                  <span style={{ marginLeft: '8px', fontStyle: 'italic' }}>(Randomized)</span>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          {/* Timer - Fixed at 180 mins for all assessments */}
-          <div style={{
-            ...timerStyle,
-            borderColor: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : '#2196f3'
-          }}>
-            <div style={{ 
-              fontSize: '10px', 
-              fontWeight: '600', 
-              color: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : '#2196f3'
-            }}>
-              TIME REMAINING (180 MINS)
-            </div>
-            <div style={{ 
-              fontSize: '18px', 
-              fontWeight: '700', 
-              color: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : '#1565c0'
-            }}>
-              {formatTime(hours)}:{formatTime(minutes)}:{formatTime(seconds)}
-            </div>
-          </div>
-        </div>
-
-        {/* Anti-Cheat Banner */}
-        <div style={antiCheatStyle}>
-          ⚠️ ANTI-CHEAT ACTIVE: Right-click, copy/paste, and text selection disabled.
-        </div>
-
-        {/* Progress Bar */}
-        <div style={progressBarContainerStyle}>
-          <div style={{ 
-            ...progressBarFillStyle, 
-            width: `${progressPercentage}%`, 
-            background: sectionConfig.color 
-          }} />
-        </div>
-
-        {/* Main Content */}
-        <div style={contentContainerStyle}>
-          {/* Question Panel */}
-          <div style={{
-            ...questionPanelStyle,
-            background: `linear-gradient(rgba(255,255,255,0.98), rgba(255,255,255,0.98)), url('${sectionConfig.bgImage}')`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center'
-          }}>
-            {/* Question Header */}
-            <div style={questionHeaderStyle}>
-              <div style={sectionBadgeStyle}>
-                <div style={{ ...sectionIconStyle, background: sectionConfig.color }}>
-                  {sectionConfig.icon}
-                </div>
-                <div style={{ ...sectionTitleStyle, color: sectionConfig.color }}>
-                  {currentSection}
-                </div>
-              </div>
-              <div style={questionTextStyle}>
-                <strong style={{ color: sectionConfig.color }}>
-                  Question {currentIndex + 1}:
-                </strong>
-                <div style={{ marginTop: '10px' }}>{currentQuestion?.question_text}</div>
-              </div>
-            </div>
-
-            {/* Save Status */}
-            {saveStatus[currentQuestion?.id] && (
-              <div style={{
-                ...saveStatusStyle,
-                background: saveStatus[currentQuestion.id] === 'saved' 
-                  ? 'rgba(76,175,80,0.1)' 
-                  : 'rgba(255,152,0,0.1)',
-                borderColor: saveStatus[currentQuestion.id] === 'saved' 
-                  ? '#4caf50' 
-                  : '#ff9800',
-                color: saveStatus[currentQuestion.id] === 'saved' 
-                  ? '#2e7d32' 
-                  : '#f57c00'
-              }}>
-                <div style={saveStatusIconStyle}>
-                  {saveStatus[currentQuestion.id] === 'saved' ? '✓' : '⏳'}
-                </div>
-                <span>
-                  {saveStatus[currentQuestion.id] === 'saved' 
-                    ? 'Answer saved' 
-                    : 'Saving...'}
-                </span>
-              </div>
-            )}
-
-            {/* Answer Options */}
-            <div style={answersContainerStyle}>
-              {currentQuestion?.options?.map((option, index) => {
-                const isSelected = answers[currentQuestion.id] === option.id;
-                const optionLetter = String.fromCharCode(65 + index);
-                
-                return (
-                  <button
-                    key={option.id}
-                    onClick={() => handleSelect(currentQuestion.id, option.id)}
-                    disabled={saveStatus[currentQuestion.id] === 'saving' || alreadySubmitted}
-                    style={{
-                      ...answerButtonStyle,
-                      background: isSelected ? sectionConfig.lightBg : 'white',
-                      borderColor: isSelected ? sectionConfig.color : '#e2e8f0',
-                      boxShadow: isSelected ? `0 4px 12px ${sectionConfig.color}30` : 'none'
-                    }}
-                  >
-                    <div style={{ 
-                      ...answerLetterStyle, 
-                      background: isSelected ? sectionConfig.color : '#f1f5f9',
-                      color: isSelected ? 'white' : '#64748b'
-                    }}>
-                      {optionLetter}
-                    </div>
-                    <div style={answerTextStyle}>{option.answer_text}</div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Navigation */}
-            <div style={navigationContainerStyle}>
-              <button 
-                onClick={handleBack} 
-                disabled={currentIndex === 0 || alreadySubmitted}
-                style={{
-                  ...navButtonStyle,
-                  background: currentIndex === 0 || alreadySubmitted ? '#f1f5f9' : sectionConfig.color,
-                  color: currentIndex === 0 || alreadySubmitted ? '#94a3b8' : 'white',
-                  cursor: currentIndex === 0 || alreadySubmitted ? 'not-allowed' : 'pointer'
-                }}
-              >
-                ← Previous
-              </button>
-              
-              <div style={navInfoStyle}>
-                <div style={{ fontWeight: '600' }}>
-                  {currentIndex + 1} of {questions.length}
-                </div>
-                <div style={{ color: sectionConfig.color, fontSize: '12px' }}>
-                  {progressPercentage}% Complete
-                </div>
-              </div>
-              
-              {isLastQuestion ? (
-                <button 
-                  onClick={() => setShowSubmitModal(true)}
-                  disabled={alreadySubmitted}
-                  style={{
-                    ...navButtonStyle,
-                    background: alreadySubmitted ? '#f1f5f9' : '#4caf50',
-                    color: alreadySubmitted ? '#94a3b8' : 'white',
-                    cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
-                  }}
-                >
-                  Submit
-                </button>
-              ) : (
-                <button 
-                  onClick={handleNext} 
-                  disabled={alreadySubmitted}
-                  style={{
-                    ...navButtonStyle,
-                    background: alreadySubmitted ? '#f1f5f9' : sectionConfig.color,
-                    color: alreadySubmitted ? '#94a3b8' : 'white',
-                    cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
-                  }}
-                >
-                  Next →
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Navigator Panel */}
-          <div style={navigatorPanelStyle}>
-            <div style={navigatorTitleStyle}>📋 Question Navigator</div>
-            
-            {/* Stats Summary */}
-            <div style={statsSummaryStyle}>
-              <div style={statItemStyle}>
-                <div style={{ color: '#4caf50', fontSize: '24px', fontWeight: '700' }}>
-                  {totalAnswered}
-                </div>
-                <div style={statLabelStyle}>Answered</div>
-              </div>
-              <div style={statItemStyle}>
-                <div style={{ color: '#64748b', fontSize: '24px', fontWeight: '700' }}>
-                  {questions.length - totalAnswered}
-                </div>
-                <div style={statLabelStyle}>Remaining</div>
-              </div>
-              <div style={statItemStyle}>
-                <div style={{ color: '#2196f3', fontSize: '24px', fontWeight: '700' }}>
-                  {progressPercentage}%
-                </div>
-                <div style={statLabelStyle}>Complete</div>
-              </div>
-            </div>
-
-            {/* Timer Progress */}
-            <div style={timerProgressStyle}>
-              <div style={timerProgressHeaderStyle}>
-                <span>⏰ Time Remaining (180 mins)</span>
-                <span style={{ fontWeight: '700' }}>
-                  {formatTime(hours)}:{formatTime(minutes)}:{formatTime(seconds)}
-                </span>
-              </div>
-              <div style={timerProgressBarContainerStyle}>
-                <div style={{
-                  ...timerProgressBarFillStyle,
-                  width: `${(elapsed / timeLimitSeconds) * 100}%`,
-                  background: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : '#2196f3'
-                }} />
-              </div>
-              <div style={{ 
-                fontSize: '11px', 
-                color: '#64748b', 
-                marginTop: '8px',
-                textAlign: 'center'
-              }}>
-                {Math.round((elapsed / timeLimitSeconds) * 100)}% used
-              </div>
-            </div>
-
-            {/* Question Grid */}
-            <div style={questionGridStyle}>
-              {questions.map((q, index) => {
-                const isAnswered = answers[q.id];
-                const isCurrent = index === currentIndex;
-                
-                return (
-                  <button
-                    key={q.id}
-                    onClick={() => !alreadySubmitted && setCurrentIndex(index)}
-                    disabled={alreadySubmitted}
-                    style={{
-                      ...gridItemStyle,
-                      background: isCurrent 
-                        ? sectionConfig.color 
-                        : isAnswered 
-                          ? '#4caf50' 
-                          : '#f1f5f9',
-                      color: isCurrent || isAnswered ? 'white' : '#64748b',
-                      borderColor: isCurrent 
-                        ? sectionConfig.color 
-                        : isAnswered 
-                          ? '#4caf50' 
-                          : '#e2e8f0',
-                      cursor: alreadySubmitted ? 'not-allowed' : 'pointer',
-                      opacity: alreadySubmitted ? 0.6 : 1
-                    }}
-                    title={`Question ${index + 1}${isAnswered ? ' (Answered)' : ' (Not answered)'}`}
-                  >
-                    {index + 1}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Legend */}
-            <div style={legendStyle}>
-              <div style={legendItemStyle}>
-                <div style={{ ...legendDotStyle, background: '#4caf50' }} />
-                <span style={{ fontSize: '11px' }}>Answered</span>
-              </div>
-              <div style={legendItemStyle}>
-                <div style={{ ...legendDotStyle, background: sectionConfig.color }} />
-                <span style={{ fontSize: '11px' }}>Current</span>
-              </div>
-              <div style={legendItemStyle}>
-                <div style={{ 
-                  ...legendDotStyle, 
-                  background: '#f1f5f9', 
-                  border: '1px solid #e2e8f0' 
-                }} />
-                <span style={{ fontSize: '11px' }}>Pending</span>
-              </div>
-              <div style={legendItemStyle}>
-                <div style={{ 
-                  ...legendDotStyle, 
-                  background: 'transparent',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '12px'
-                }}>
-                  ⏰
-                </div>
-                <span style={{ fontSize: '11px' }}>180 mins</span>
-              </div>
-            </div>
-            
-            {/* Back to Selection Button (Mobile/Quick Access) */}
-            <button
-              onClick={() => router.push('/assessment/pre')}
-              style={{
-                marginTop: '15px',
-                padding: '10px',
-                background: 'transparent',
-                color: '#64748b',
-                border: '1px solid #e2e8f0',
-                borderRadius: '8px',
-                fontSize: '13px',
-                fontWeight: '500',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                transition: 'all 0.2s'
-              }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.background = '#f8fafc';
-                e.currentTarget.style.borderColor = '#94a3b8';
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.borderColor = '#e2e8f0';
-              }}
-            >
-              ← Back to Assessment Selection
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
-    </>
-  );
-}
-
-// ===== STYLES =====
-const loadingContainerStyle = {
-  minHeight: '100vh',
-  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center'
-};
-
-const loadingContentStyle = {
-  textAlign: 'center',
-  color: 'white',
-  padding: '40px',
-  maxWidth: '500px'
-};
-
-const loadingTitleStyle = {
-  fontSize: '28px',
-  fontWeight: '700',
-  marginBottom: '20px'
-};
-
-const loadingSubtitleStyle = {
-  fontSize: '18px',
-  marginBottom: '30px'
-};
-
-const loadingSpinnerStyle = {
-  width: '60px',
-  height: '60px',
-  border: '5px solid rgba(255,255,255,0.3)',
-  borderTop: '5px solid white',
-  borderRadius: '50%',
-  animation: 'spin 1s linear infinite',
-  margin: '0 auto'
-};
-
-const errorContainerStyle = {
-  minHeight: '100vh',
-  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: '20px'
-};
-
-const errorCardStyle = {
-  background: 'white',
-  padding: '40px',
-  borderRadius: '20px',
-  maxWidth: '500px',
-  width: '100%',
-  textAlign: 'center',
-  boxShadow: '0 20px 60px rgba(0,0,0,0.2)'
-};
-
-const errorIconStyle = {
-  fontSize: '48px',
-  marginBottom: '20px'
-};
-
-const errorTitleStyle = {
-  color: '#1a2639',
-  marginBottom: '15px',
-  fontSize: '24px',
-  fontWeight: '700'
-};
-
-const errorTextStyle = {
-  color: '#64748b',
-  marginBottom: '25px',
-  fontSize: '16px',
-  lineHeight: '1.6'
-};
-
-const primaryButtonStyle = {
-  padding: '12px 30px',
-  background: '#667eea',
-  color: 'white',
-  border: 'none',
-  borderRadius: '10px',
-  fontSize: '16px',
-  fontWeight: '600',
-  cursor: 'pointer',
-  transition: 'all 0.2s'
-};
-
-const successIconStyle = {
-  fontSize: '48px',
-  marginBottom: '20px'
-};
-
-const successIconLargeStyle = {
-  width: '100px',
-  height: '100px',
-  background: 'linear-gradient(135deg, #4caf50, #2e7d32)',
-  borderRadius: '50%',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  margin: '0 auto 25px',
-  fontSize: '50px',
-  color: 'white'
-};
-
-const modalOverlayStyle = {
-  position: 'fixed',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  background: 'rgba(0,0,0,0.8)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 2000,
-  padding: '20px'
-};
-
-const modalContentStyle = {
-  background: 'white',
-  padding: '40px',
-  borderRadius: '20px',
-  maxWidth: '500px',
-  width: '100%',
-  boxShadow: '0 25px 50px rgba(0,0,0,0.25)'
-};
-
-const modalTitleStyle = {
-  margin: '0 0 20px 0',
-  color: '#1565c0',
-  fontSize: '28px',
-  fontWeight: '700'
-};
-
-const modalBodyStyle = {
-  margin: '25px 0',
-  padding: '25px',
-  background: '#f8f9fa',
-  borderRadius: '15px',
-  border: '2px solid #e3f2fd'
-};
-
-const modalRowStyle = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  marginBottom: '15px',
-  fontSize: '16px'
-};
-
-const modalWarningStyle = {
-  fontSize: '14px',
-  color: '#666',
-  padding: '12px',
-  background: '#fff8e1',
-  borderRadius: '8px',
-  borderLeft: '4px solid #ff9800',
-  marginTop: '15px'
-};
-
-const modalButtonContainerStyle = {
-  display: 'flex',
-  justifyContent: 'flex-end',
-  gap: '15px'
-};
-
-const modalSecondaryButtonStyle = {
-  padding: '12px 24px',
-  background: '#f1f5f9',
-  color: '#64748b',
-  border: 'none',
-  borderRadius: '10px',
-  cursor: 'pointer',
-  fontWeight: '600',
-  fontSize: '16px'
-};
-
-const modalPrimaryButtonStyle = {
-  padding: '12px 24px',
-  background: 'linear-gradient(135deg, #4caf50, #2e7d32)',
-  color: 'white',
-  border: 'none',
-  borderRadius: '10px',
-  cursor: 'pointer',
-  fontWeight: '700',
-  fontSize: '16px'
-};
-
-const mainContainerStyle = {
-  minHeight: '100vh',
-  background: '#f8fafc',
-  display: 'flex',
-  flexDirection: 'column',
-  fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-};
-
-const headerStyle = {
-  background: 'linear-gradient(135deg, #1a2639 0%, #2d3748 100%)',
-  padding: '15px 25px',
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  borderBottom: '1px solid rgba(255,255,255,0.1)'
-};
-
-const headerLeftStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '15px'
-};
-
-const backButtonStyle = {
-  background: 'rgba(255,255,255,0.1)',
-  border: 'none',
-  color: 'white',
-  width: '36px',
-  height: '36px',
-  borderRadius: '8px',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  cursor: 'pointer',
-  fontSize: '18px',
-  marginRight: '5px',
-  transition: 'all 0.2s'
-};
-
-const headerIconStyle = {
-  width: '45px',
-  height: '45px',
-  borderRadius: '10px',
-  background: 'rgba(255,255,255,0.1)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  fontSize: '24px'
-};
-
-const headerTitleStyle = {
-  fontSize: '18px',
-  fontWeight: '700',
-  color: 'white',
-  marginBottom: '4px'
-};
-
-const headerSubtitleStyle = {
-  fontSize: '12px',
-  color: 'rgba(255,255,255,0.7)'
-};
-
-const timerStyle = {
-  padding: '8px 15px',
-  background: 'rgba(255,255,255,0.1)',
-  borderRadius: '8px',
-  textAlign: 'center',
-  border: '1px solid',
-  minWidth: '140px'
-};
-
-const antiCheatStyle = {
-  padding: '8px 15px',
-  background: 'linear-gradient(135deg, #ff9800, #f57c00)',
-  color: 'white',
-  textAlign: 'center',
-  fontSize: '12px',
-  fontWeight: '600'
-};
-
-const progressBarContainerStyle = {
-  height: '4px',
-  background: '#e2e8f0',
-  overflow: 'hidden'
-};
-
-const progressBarFillStyle = {
-  height: '100%',
-  transition: 'width 0.3s ease'
-};
-
-const contentContainerStyle = {
-  flex: 1,
-  padding: '20px',
-  display: 'flex',
-  gap: '20px',
-  overflow: 'hidden'
-};
-
-const questionPanelStyle = {
-  flex: 7,
-  background: 'white',
-  borderRadius: '16px',
-  border: '1px solid #e2e8f0',
-  display: 'flex',
-  flexDirection: 'column',
-  overflow: 'hidden',
-  padding: '25px',
-  boxShadow: '0 4px 6px rgba(0,0,0,0.05)'
-};
-
-const questionHeaderStyle = {
-  marginBottom: '25px',
-  paddingBottom: '20px',
-  borderBottom: '2px solid #f1f5f9'
-};
-
-const sectionBadgeStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '10px',
-  marginBottom: '15px'
-};
-
-const sectionIconStyle = {
-  width: '32px',
-  height: '32px',
-  borderRadius: '8px',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  color: 'white',
-  fontSize: '16px'
-};
-
-const sectionTitleStyle = {
-  fontSize: '14px',
-  fontWeight: '600',
-  textTransform: 'uppercase',
-  letterSpacing: '0.5px'
-};
-
-const questionTextStyle = {
-  fontSize: '18px',
-  lineHeight: '1.6',
-  color: '#1e293b'
-};
-
-const saveStatusStyle = {
-  padding: '10px 15px',
-  border: '1px solid',
-  borderRadius: '8px',
-  marginBottom: '20px',
-  display: 'flex',
-  alignItems: 'center',
-  gap: '10px',
-  fontSize: '14px',
-  fontWeight: '500'
-};
-
-const saveStatusIconStyle = {
-  width: '22px',
-  height: '22px',
-  borderRadius: '50%',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  color: 'white',
-  fontSize: '12px'
-};
-
-const answersContainerStyle = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '12px',
-  flex: 1
-};
-
-const answerButtonStyle = {
-  padding: '16px 20px',
-  border: '2px solid',
-  borderRadius: '12px',
-  cursor: 'pointer',
-  textAlign: 'left',
-  fontSize: '15px',
-  display: 'flex',
-  alignItems: 'flex-start',
-  gap: '15px',
-  transition: 'all 0.2s'
-};
-
-const answerLetterStyle = {
-  width: '28px',
-  height: '28px',
-  borderRadius: '6px',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  fontSize: '14px',
-  fontWeight: '700',
-  flexShrink: 0
-};
-
-const answerTextStyle = {
-  flex: 1,
-  fontSize: '15px',
-  lineHeight: '1.5',
-  color: '#334155'
-};
-
-const navigationContainerStyle = {
-  marginTop: '30px',
-  paddingTop: '20px',
-  borderTop: '2px solid #f1f5f9',
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center'
-};
-
-const navButtonStyle = {
-  padding: '12px 28px',
-  border: 'none',
-  borderRadius: '10px',
-  fontSize: '15px',
-  fontWeight: '600',
-  transition: 'all 0.2s'
-};
-
-const navInfoStyle = {
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  gap: '4px',
-  fontSize: '14px',
-  color: '#64748b'
-};
-
-const navigatorPanelStyle = {
-  flex: 3,
-  background: 'white',
-  borderRadius: '16px',
-  border: '1px solid #e2e8f0',
-  padding: '20px',
-  display: 'flex',
-  flexDirection: 'column',
-  minWidth: '280px',
-  boxShadow: '0 4px 6px rgba(0,0,0,0.05)'
-};
-
-const navigatorTitleStyle = {
-  fontSize: '16px',
-  fontWeight: '600',
-  color: '#1e293b',
-  textAlign: 'center',
-  paddingBottom: '15px',
-  borderBottom: '2px solid #f1f5f9',
-  marginBottom: '15px'
-};
-
-const statsSummaryStyle = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  background: '#f8fafc',
-  borderRadius: '12px',
-  padding: '15px',
-  marginBottom: '15px'
-};
-
-const statItemStyle = {
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  gap: '4px'
-};
-
-const statLabelStyle = {
-  fontSize: '11px',
-  color: '#64748b'
-};
-
-const timerProgressStyle = {
-  background: '#f8fafc',
-  borderRadius: '12px',
-  padding: '15px',
-  marginBottom: '20px'
-};
-
-const timerProgressHeaderStyle = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  marginBottom: '10px',
-  fontSize: '12px',
-  color: '#64748b'
-};
-
-const timerProgressBarContainerStyle = {
-  height: '8px',
-  background: '#e2e8f0',
-  borderRadius: '4px',
-  overflow: 'hidden'
-};
-
-const timerProgressBarFillStyle = {
-  height: '100%',
-  borderRadius: '4px',
-  transition: 'width 0.3s ease'
-};
-
-const questionGridStyle = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(8, 1fr)',
-  gap: '6px',
-  marginBottom: '20px'
-};
-
-const gridItemStyle = {
-  aspectRatio: '1',
-  border: '2px solid',
-  borderRadius: '8px',
-  fontSize: '12px',
-  fontWeight: '600',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  transition: 'all 0.2s'
-};
-
-const legendStyle = {
-  display: 'grid',
-  gridTemplateColumns: '1fr 1fr',
-  gap: '10px',
-  paddingTop: '15px',
-  borderTop: '2px solid #f1f5f9',
-  fontSize: '11px'
-};
-
-const legendItemStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '8px',
-  padding: '6px',
-  background: '#f8fafc',
-  borderRadius: '6px'
-};
-
-const legendDotStyle = {
-  width: '14px',
-  height: '14px',
-  borderRadius: '4px'
-};
+      } catch
