@@ -28,8 +28,8 @@ export default function Login() {
       return;
     }
 
-    // Redirect to pre-assessment page
-    router.push("/assessment/pre");
+    // Redirect to candidate dashboard instead of pre-assessment
+router.push("/candidate/dashboard");
   };
 
   return (
@@ -214,3 +214,4 @@ export default function Login() {
     </AppLayout>
   );
 }
+
