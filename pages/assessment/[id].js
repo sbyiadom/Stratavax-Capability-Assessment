@@ -2,144 +2,65 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
 
+// ===== SECTION CONFIGURATIONS FOR ALL ASSESSMENT TYPES =====
 const SECTION_CONFIG = {
-  'Cognitive Abilities': { 
-    color: '#4A6FA5', 
-    lightBg: 'rgba(74, 111, 165, 0.1)',
-    icon: '🧠',
-    bgImage: '/images/backgrounds/cognitive-bg.jpg'
-  },
-  'Personality Assessment': { 
-    color: '#9C27B0', 
-    lightBg: 'rgba(156, 39, 176, 0.1)',
-    icon: '😊',
-    bgImage: 'https://img.freepik.com/free-photo/people-studying-together-communicating_23-2147656354.jpg'
-  },
-  'Leadership Potential': { 
-    color: '#D32F2F', 
-    lightBg: 'rgba(211, 47, 47, 0.1)',
-    icon: '👑',
-    bgImage: 'https://img.freepik.com/free-photo/friends-people-group-teamwork-diversity_53876-31488.jpg?semt=ais_hybrid&w=740&q=80'
-  },
-  'Bottled Water Manufacturing': {
-    color: '#388E3C', 
-    lightBg: 'rgba(56, 142, 60, 0.1)',
-    icon: '⚙️',
-    bgImage: 'https://thumbs.dreamstime.com/b/happy-students-giving-high-five-school-education-friendship-concept-33187252.jpg'
-  },
-  'Performance Metrics': { 
-    color: '#F57C00', 
-    lightBg: 'rgba(245, 124, 0, 0.1)',
-    icon: '📊',
-    bgImage: '/images/backgrounds/performance-bg.jpg'
-  },
-  'Communication': {
-    color: '#0077B6',
-    lightBg: 'rgba(0, 119, 182, 0.1)',
-    icon: '💬',
-    bgImage: '/images/backgrounds/communication-bg.jpg'
-  },
-  'Teamwork': {
-    color: '#2A9D8F',
-    lightBg: 'rgba(42, 157, 143, 0.1)',
-    icon: '🤝',
-    bgImage: '/images/backgrounds/teamwork-bg.jpg'
-  },
-  'Emotional Intelligence': {
-    color: '#E76F51',
-    lightBg: 'rgba(231, 111, 81, 0.1)',
-    icon: '🧘',
-    bgImage: '/images/backgrounds/eq-bg.jpg'
-  },
-  'Problem Solving': {
-    color: '#6A4C93',
-    lightBg: 'rgba(106, 76, 147, 0.1)',
-    icon: '🔍',
-    bgImage: '/images/backgrounds/problem-solving-bg.jpg'
-  },
-  'Critical Thinking': {
-    color: '#1982C4',
-    lightBg: 'rgba(25, 130, 196, 0.1)',
-    icon: '🎯',
-    bgImage: '/images/backgrounds/critical-thinking-bg.jpg'
-  },
-  'Analytical Reasoning': {
-    color: '#8AC926',
-    lightBg: 'rgba(138, 201, 38, 0.1)',
-    icon: '📐',
-    bgImage: '/images/backgrounds/analytical-bg.jpg'
-  },
-  'Values Alignment': {
-    color: '#9C89B8',
-    lightBg: 'rgba(156, 137, 184, 0.1)',
-    icon: '🎯',
-    bgImage: '/images/backgrounds/values-bg.jpg'
-  },
-  'Work Ethic': {
-    color: '#F0A6CA',
-    lightBg: 'rgba(240, 166, 202, 0.1)',
-    icon: '💪',
-    bgImage: '/images/backgrounds/work-ethic-bg.jpg'
-  },
-  'Blowing Machines': {
-    color: '#3D5A80',
-    lightBg: 'rgba(61, 90, 128, 0.1)',
-    icon: '💨',
-    bgImage: '/images/backgrounds/blowing-bg.jpg'
-  },
-  'Labeler': {
-    color: '#EE6C4D',
-    lightBg: 'rgba(238, 108, 77, 0.1)',
-    icon: '🏷️',
-    bgImage: '/images/backgrounds/labeler-bg.jpg'
-  },
-  'Filling': {
-    color: '#98C1D9',
-    lightBg: 'rgba(152, 193, 217, 0.1)',
-    icon: '💧',
-    bgImage: '/images/backgrounds/filling-bg.jpg'
-  },
-  'Conveyors': {
-    color: '#293241',
-    lightBg: 'rgba(41, 50, 65, 0.1)',
-    icon: '📦',
-    bgImage: '/images/backgrounds/conveyor-bg.jpg'
-  },
-  'Stretchwrappers': {
-    color: '#E0FBFC',
-    lightBg: 'rgba(224, 251, 252, 0.1)',
-    icon: '🔄',
-    bgImage: '/images/backgrounds/stretchwrapper-bg.jpg'
-  },
-  'Shrinkwrappers': {
-    color: '#C81D25',
-    lightBg: 'rgba(200, 29, 37, 0.1)',
-    icon: '🔥',
-    bgImage: '/images/backgrounds/shrinkwrapper-bg.jpg'
-  },
-  'Date Coders': {
-    color: '#C81D25',
-    lightBg: 'rgba(200, 29, 37, 0.1)',
-    icon: '📅',
-    bgImage: '/images/backgrounds/datecoder-bg.jpg'
-  },
-  'Raw Materials': {
-    color: '#725AC1',
-    lightBg: 'rgba(114, 90, 193, 0.1)',
-    icon: '🧪',
-    bgImage: '/images/backgrounds/raw-materials-bg.jpg'
-  }
+  // General Assessment
+  'Cognitive Abilities': { color: '#4A6FA5', lightBg: 'rgba(74, 111, 165, 0.1)', icon: '🧠', bgImage: '/images/backgrounds/cognitive-bg.jpg' },
+  'Personality Assessment': { color: '#9C27B0', lightBg: 'rgba(156, 39, 176, 0.1)', icon: '😊', bgImage: 'https://img.freepik.com/free-photo/people-studying-together-communicating_23-2147656354.jpg' },
+  'Leadership Potential': { color: '#D32F2F', lightBg: 'rgba(211, 47, 47, 0.1)', icon: '👑', bgImage: 'https://img.freepik.com/free-photo/friends-people-group-teamwork-diversity_53876-31488.jpg' },
+  'Bottled Water Manufacturing': { color: '#388E3C', lightBg: 'rgba(56, 142, 60, 0.1)', icon: '⚙️', bgImage: 'https://thumbs.dreamstime.com/b/happy-students-giving-high-five-school-education-friendship-concept-33187252.jpg' },
+  'Performance Metrics': { color: '#F57C00', lightBg: 'rgba(245, 124, 0, 0.1)', icon: '📊', bgImage: '/images/backgrounds/performance-bg.jpg' },
+  
+  // Behavioral
+  'Adaptability & Flexibility': { color: '#FF6B6B', lightBg: 'rgba(255, 107, 107, 0.1)', icon: '🔄', bgImage: '/images/backgrounds/adaptability-bg.jpg' },
+  'Emotional Intelligence': { color: '#4ECDC4', lightBg: 'rgba(78, 205, 196, 0.1)', icon: '🧘', bgImage: '/images/backgrounds/eq-bg.jpg' },
+  'Communication Skills': { color: '#45B7D1', lightBg: 'rgba(69, 183, 209, 0.1)', icon: '💬', bgImage: '/images/backgrounds/communication-bg.jpg' },
+  'Teamwork & Collaboration': { color: '#96CEB4', lightBg: 'rgba(150, 206, 180, 0.1)', icon: '🤝', bgImage: '/images/backgrounds/teamwork-bg.jpg' },
+  'Initiative & Proactivity': { color: '#FFEAA7', lightBg: 'rgba(255, 234, 167, 0.1)', icon: '⚡', bgImage: '/images/backgrounds/initiative-bg.jpg' },
+  'Time Management': { color: '#DDA0DD', lightBg: 'rgba(221, 160, 221, 0.1)', icon: '⏰', bgImage: '/images/backgrounds/time-bg.jpg' },
+  'Resilience': { color: '#F08A5D', lightBg: 'rgba(240, 138, 93, 0.1)', icon: '💪', bgImage: '/images/backgrounds/resilience-bg.jpg' },
+  
+  // Cognitive
+  'Problem-Solving': { color: '#6A4C93', lightBg: 'rgba(106, 76, 147, 0.1)', icon: '🔍', bgImage: '/images/backgrounds/problem-solving-bg.jpg' },
+  'Critical Thinking': { color: '#1982C4', lightBg: 'rgba(25, 130, 196, 0.1)', icon: '🎯', bgImage: '/images/backgrounds/critical-thinking-bg.jpg' },
+  'Learning Agility': { color: '#8AC926', lightBg: 'rgba(138, 201, 38, 0.1)', icon: '📚', bgImage: '/images/backgrounds/learning-bg.jpg' },
+  'Creativity & Innovation': { color: '#FFCA3A', lightBg: 'rgba(255, 202, 58, 0.1)', icon: '💡', bgImage: '/images/backgrounds/creativity-bg.jpg' },
+  
+  // Cultural
+  'Core Values Alignment': { color: '#9C89B8', lightBg: 'rgba(156, 137, 184, 0.1)', icon: '🎯', bgImage: '/images/backgrounds/values-bg.jpg' },
+  'Organizational Citizenship': { color: '#F0A6CA', lightBg: 'rgba(240, 166, 202, 0.1)', icon: '🤲', bgImage: '/images/backgrounds/citizenship-bg.jpg' },
+  'Reliability & Dependability': { color: '#B8F2E6', lightBg: 'rgba(184, 242, 230, 0.1)', icon: '✓', bgImage: '/images/backgrounds/reliability-bg.jpg' },
+  'Customer Focus': { color: '#A9D6E5', lightBg: 'rgba(169, 214, 229, 0.1)', icon: '👥', bgImage: '/images/backgrounds/customer-bg.jpg' },
+  'Safety Awareness': { color: '#FCA17D', lightBg: 'rgba(252, 161, 125, 0.1)', icon: '⚠️', bgImage: '/images/backgrounds/safety-bg.jpg' },
+  'Commercial Awareness': { color: '#86A788', lightBg: 'rgba(134, 167, 136, 0.1)', icon: '💰', bgImage: '/images/backgrounds/commercial-bg.jpg' },
+  
+  // Manufacturing
+  'Blowing Machines': { color: '#3D5A80', lightBg: 'rgba(61, 90, 128, 0.1)', icon: '💨', bgImage: '/images/backgrounds/blowing-bg.jpg' },
+  'Labeler': { color: '#EE6C4D', lightBg: 'rgba(238, 108, 77, 0.1)', icon: '🏷️', bgImage: '/images/backgrounds/labeler-bg.jpg' },
+  'Filling': { color: '#98C1D9', lightBg: 'rgba(152, 193, 217, 0.1)', icon: '💧', bgImage: '/images/backgrounds/filling-bg.jpg' },
+  'Conveyors': { color: '#293241', lightBg: 'rgba(41, 50, 65, 0.1)', icon: '📦', bgImage: '/images/backgrounds/conveyor-bg.jpg' },
+  'Stretchwrappers': { color: '#E0FBFC', lightBg: 'rgba(224, 251, 252, 0.1)', icon: '🔄', bgImage: '/images/backgrounds/stretchwrapper-bg.jpg' },
+  'Shrinkwrappers': { color: '#C81D25', lightBg: 'rgba(200, 29, 37, 0.1)', icon: '🔥', bgImage: '/images/backgrounds/shrinkwrapper-bg.jpg' },
+  'Date Coders': { color: '#725AC1', lightBg: 'rgba(114, 90, 193, 0.1)', icon: '📅', bgImage: '/images/backgrounds/datecoder-bg.jpg' },
+  'Raw Materials': { color: '#5D576B', lightBg: 'rgba(93, 87, 107, 0.1)', icon: '🧪', bgImage: '/images/backgrounds/raw-materials-bg.jpg' },
+  
+  // Leadership
+  'Vision & Strategic Thinking': { color: '#FFB347', lightBg: 'rgba(255, 179, 71, 0.1)', icon: '🎯', bgImage: '/images/backgrounds/vision-bg.jpg' },
+  'Team Development': { color: '#5F9EA0', lightBg: 'rgba(95, 158, 160, 0.1)', icon: '🌱', bgImage: '/images/backgrounds/team-dev-bg.jpg' },
+  'Decision-Making': { color: '#C23B22', lightBg: 'rgba(194, 59, 34, 0.1)', icon: '⚖️', bgImage: '/images/backgrounds/decision-bg.jpg' },
+  'Influence': { color: '#6B5B95', lightBg: 'rgba(107, 91, 149, 0.1)', icon: '🗣️', bgImage: '/images/backgrounds/influence-bg.jpg' },
+  'Leadership EQ': { color: '#88B04B', lightBg: 'rgba(136, 176, 75, 0.1)', icon: '💖', bgImage: '/images/backgrounds/leadership-eq-bg.jpg' },
+  'Conflict Resolution': { color: '#FF6F61', lightBg: 'rgba(255, 111, 97, 0.1)', icon: '🤝', bgImage: '/images/backgrounds/conflict-bg.jpg' },
+  'Delegation': { color: '#92A8D1', lightBg: 'rgba(146, 168, 209, 0.1)', icon: '📤', bgImage: '/images/backgrounds/delegation-bg.jpg' },
+  'Leadership Integrity': { color: '#955251', lightBg: 'rgba(149, 82, 81, 0.1)', icon: '🛡️', bgImage: '/images/backgrounds/integrity-bg.jpg' },
+  'Innovation Leadership': { color: '#B565A7', lightBg: 'rgba(181, 101, 167, 0.1)', icon: '💫', bgImage: '/images/backgrounds/innovation-bg.jpg' }
 };
 
-// ===== FIXED TIMER DATABASE FUNCTIONS =====
+// ===== FIXED TIMER FUNCTIONS =====
 async function startOrResumeTimer(userId, assessmentId) {
   try {
-    if (!userId || !assessmentId) {
-      console.error("Missing userId or assessmentId for timer");
-      return 0;
-    }
+    if (!userId || !assessmentId) return 0;
 
-    // Check if timer already exists
     const { data: existingTimer, error: fetchError } = await supabase
       .from("assessment_timer_progress")
       .select("*")
@@ -153,11 +74,9 @@ async function startOrResumeTimer(userId, assessmentId) {
     }
 
     if (existingTimer) {
-      console.log("Resuming timer from:", existingTimer.elapsed_seconds, "seconds");
       return existingTimer.elapsed_seconds;
     } else {
-      // Start new timer
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("assessment_timer_progress")
         .insert({
           user_id: userId,
@@ -166,16 +85,9 @@ async function startOrResumeTimer(userId, assessmentId) {
           elapsed_seconds: 0,
           status: 'in_progress',
           updated_at: new Date().toISOString()
-        })
-        .select()
-        .single();
+        });
 
-      if (error) {
-        console.error("Timer insert error:", error);
-        return 0;
-      }
-      
-      console.log("New timer started");
+      if (error) throw error;
       return 0;
     }
   } catch (error) {
@@ -202,7 +114,6 @@ async function saveTimerProgress(userId, assessmentId, elapsedSeconds) {
       });
 
     if (error) throw error;
-    console.log("Timer progress saved:", elapsedSeconds, "seconds");
   } catch (error) {
     console.error("Failed to save timer:", error);
   }
@@ -223,83 +134,45 @@ async function markTimerAsCompleted(userId, assessmentId) {
       .eq("assessment_id", assessmentId);
 
     if (error) throw error;
-    console.log("Timer marked as completed");
   } catch (error) {
     console.error("Failed to mark timer as completed:", error);
   }
 }
 
-// ===== FIXED ANTI-CHEAT FUNCTIONS =====
+// ===== ANTI-CHEAT FUNCTIONS =====
 function setupAntiCheatProtection() {
-  // 1. Disable Right-Click
-  document.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    return false;
-  });
-
-  // 2. Disable Text Selection
-  document.addEventListener('selectstart', (e) => {
-    e.preventDefault();
-    return false;
-  });
-
-  // 3. Disable Copy/Paste Keyboard Shortcuts
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+  document.addEventListener('selectstart', (e) => e.preventDefault());
+  
   document.addEventListener('keydown', (e) => {
-    if (
-      (e.ctrlKey || e.metaKey) && 
-      (e.key === 'c' || e.key === 'v' || e.key === 'x' || e.key === 'a')
-    ) {
+    if ((e.ctrlKey || e.metaKey) && 
+        (e.key === 'c' || e.key === 'v' || e.key === 'x' || e.key === 'a')) {
       e.preventDefault();
-      return false;
     }
-    
     if (e.key === 'F12' || e.key === 'PrintScreen') {
       e.preventDefault();
-      return false;
     }
   });
 
-  // 4. Add CSS to prevent text selection
   const style = document.createElement('style');
-  style.innerHTML = `
-    * {
-      -webkit-user-select: none !important;
-      -moz-user-select: none !important;
-      -ms-user-select: none !important;
-      user-select: none !important;
-    }
-    .allow-select {
-      -webkit-user-select: text !important;
-      -moz-user-select: text !important;
-      -ms-user-select: text !important;
-      user-select: text !important;
-    }
-  `;
+  style.innerHTML = `* { user-select: none !important; }`;
   document.head.appendChild(style);
-
-  console.log("🛡️ Anti-cheat protection enabled");
 }
 
-// Truly random shuffle function
+// ===== RANDOMIZE ANSWERS =====
 function trulyRandomizeAnswers(answers) {
   if (!answers || answers.length === 0) return answers;
-  
   const shuffled = [...answers];
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
-  
   return shuffled;
 }
 
-// ===== FIXED Save Response Function =====
+// ===== SAVE RESPONSE =====
 async function saveResponse(assessmentId, questionId, answerId, userId) {
   try {
-    if (!assessmentId || !questionId || !answerId || !userId) {
-      throw new Error("Missing required parameters for saveResponse");
-    }
-
     const { error } = await supabase.from("responses").upsert({
       assessment_id: assessmentId,
       question_id: parseInt(questionId),
@@ -308,7 +181,7 @@ async function saveResponse(assessmentId, questionId, answerId, userId) {
       updated_at: new Date().toISOString()
     }, { onConflict: 'assessment_id,question_id,user_id' });
 
-    if (error) throw new Error(`Save failed: ${error.message}`);
+    if (error) throw error;
     return { success: true };
   } catch (error) {
     console.error("Save error:", error);
@@ -318,8 +191,6 @@ async function saveResponse(assessmentId, questionId, answerId, userId) {
 
 async function loadUserResponses(userId, assessmentId) {
   try {
-    if (!userId || !assessmentId) return {};
-    
     const { data } = await supabase
       .from("responses")
       .select("question_id, answer_id")
@@ -335,86 +206,47 @@ async function loadUserResponses(userId, assessmentId) {
   }
 }
 
-// ===== FIXED Check if user has already submitted =====
+// ===== CHECK SUBMISSION =====
 async function checkIfAlreadySubmitted(userId, assessmentId) {
   try {
-    if (!userId || !assessmentId) return false;
-    
-    console.log("🔍 Checking if user has already submitted...");
-    console.log("User ID:", userId);
-    console.log("Assessment ID:", assessmentId);
-    
-    // Primary check: assessment_results table
     const { data, error } = await supabase
       .from("assessment_results")
-      .select("id, completed_at, user_id, assessment_id, status")
+      .select("id")
       .eq("user_id", userId)
       .eq("assessment_id", assessmentId)
       .eq("status", "completed")
       .maybeSingle();
-
-    console.log("Database query result:", { data, error });
 
     if (error && error.code !== 'PGRST116') {
       console.error("Error checking completion:", error);
       return false;
     }
     
-    if (data) {
-      console.log("✅ Found existing submission in assessment_results");
-      return true;
-    }
-
-    // Secondary check: assessments_completed table (backward compatibility)
-    const { data: legacyData } = await supabase
-      .from("assessments_completed")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("assessment_id", assessmentId)
-      .maybeSingle();
-
-    if (legacyData) {
-      console.log("✅ Found existing submission in assessments_completed (legacy)");
-      return true;
-    }
-    
-    return false;
+    return !!data;
   } catch (error) {
-    console.error("❌ Error in checkIfAlreadySubmitted:", error);
+    console.error("Error in checkIfAlreadySubmitted:", error);
     return false;
   }
 }
 
-// ===== FIXED Mark user as submitted =====
+// ===== MARK AS SUBMITTED =====
 async function markAsSubmitted(userId, assessmentId) {
   try {
-    if (!userId || !assessmentId) {
-      throw new Error("Missing userId or assessmentId");
-    }
-
-    // Call the API
     const response = await fetch('/api/submit-assessment', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        assessment_id: assessmentId,
-        user_id: userId
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assessment_id: assessmentId, user_id: userId })
     });
 
     const result = await response.json();
     
     if (!response.ok) {
-      if (result.error?.includes("already submitted") || result.error?.includes("23505")) {
-        console.log("Assessment already submitted (caught by API)");
+      if (result.error?.includes("already submitted")) {
         return true;
       }
       throw new Error(result.error || 'Submission failed');
     }
 
-    console.log("Submission successful via API:", result.message);
     return true;
   } catch (error) {
     console.error("Failed to submit assessment:", error);
@@ -426,6 +258,7 @@ export default function AssessmentPage() {
   const router = useRouter();
   const { id: assessmentId } = router.query;
 
+  const [assessment, setAssessment] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -440,30 +273,9 @@ export default function AssessmentPage() {
   const [error, setError] = useState(null);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
   const [timerLoaded, setTimerLoaded] = useState(false);
-  const [assessment, setAssessment] = useState(null);
-  const [timeLimitSeconds, setTimeLimitSeconds] = useState(10800); // Default 3 hours
+  const [timeLimitSeconds, setTimeLimitSeconds] = useState(10800);
 
-  // ===== FIXED: Initialize anti-cheat protection =====
-  useEffect(() => {
-    if (!alreadySubmitted && !loading && isSessionReady && questions.length > 0) {
-      setupAntiCheatProtection();
-    }
-  }, [alreadySubmitted, loading, isSessionReady, questions.length]);
-
-  // ===== FIXED: Check localStorage first for immediate blocking =====
-  useEffect(() => {
-    if (assessmentId) {
-      const storedSubmitted = localStorage.getItem(`assessment_submitted_${assessmentId}`);
-      if (storedSubmitted === 'true') {
-        console.log("📦 Found submission in localStorage, blocking immediately");
-        setAlreadySubmitted(true);
-        setError("You have already submitted this assessment. One attempt only allowed.");
-        setLoading(false);
-      }
-    }
-  }, [assessmentId]);
-
-  // ===== FIXED: Fetch assessment details =====
+  // ===== FETCH ASSESSMENT DETAILS =====
   useEffect(() => {
     const fetchAssessmentDetails = async () => {
       if (!assessmentId || !isSessionReady || alreadySubmitted) return;
@@ -480,6 +292,7 @@ export default function AssessmentPage() {
         if (data) {
           setAssessment(data);
           setTimeLimitSeconds(data.duration_minutes * 60 || 10800);
+          document.title = `${data.name} - Stratavax Assessment`;
         }
       } catch (error) {
         console.error("Error fetching assessment details:", error);
@@ -489,7 +302,7 @@ export default function AssessmentPage() {
     fetchAssessmentDetails();
   }, [assessmentId, isSessionReady, alreadySubmitted]);
 
-  // ===== FIXED: Initialize session and check if already submitted =====
+  // ===== INITIALIZE SESSION =====
   useEffect(() => {
     const initSessionAndCheck = async () => {
       if (!assessmentId) return;
@@ -499,10 +312,8 @@ export default function AssessmentPage() {
         if (data.session) {
           setSession(data.session);
           
-          // Check if user has already submitted this assessment
           const hasSubmitted = await checkIfAlreadySubmitted(data.session.user.id, assessmentId);
           if (hasSubmitted) {
-            console.log("🚫 User has already submitted, blocking access");
             setAlreadySubmitted(true);
             localStorage.setItem(`assessment_submitted_${assessmentId}`, 'true');
             setError("You have already submitted this assessment. One attempt only allowed.");
@@ -523,21 +334,7 @@ export default function AssessmentPage() {
     initSessionAndCheck();
   }, [assessmentId, router]);
 
-  // ===== FIXED: Block navigation if already submitted =====
-  useEffect(() => {
-    if (alreadySubmitted && router.pathname.includes('/assessment/')) {
-      console.log("🚫 Navigation blocked - assessment already submitted");
-      setError("Assessment already submitted. You cannot access this page.");
-      
-      setTimeout(async () => {
-        await supabase.auth.signOut();
-        localStorage.removeItem(`assessment_submitted_${assessmentId}`);
-        router.push('/login?message=already_submitted');
-      }, 3000);
-    }
-  }, [alreadySubmitted, assessmentId, router]);
-
-  // ===== FIXED: Fetch questions - ADDED assessmentId dependency =====
+  // ===== FETCH QUESTIONS =====
   useEffect(() => {
     if (alreadySubmitted || !isSessionReady || !session?.user?.id || !assessmentId) return;
 
@@ -558,10 +355,7 @@ export default function AssessmentPage() {
           .order("id");
 
         if (questionsError) throw new Error(`Failed to load questions: ${questionsError.message}`);
-
-        if (!questionsData || questionsData.length === 0) {
-          throw new Error("Assessment questions not found. Please contact support.");
-        }
+        if (!questionsData || questionsData.length === 0) throw new Error("Assessment questions not found.");
 
         const savedAnswers = await loadUserResponses(session.user.id, assessmentId);
 
@@ -582,12 +376,7 @@ export default function AssessmentPage() {
               q.section === 'Shrinkwrappers' ||
               q.section === 'Date Coders' ||
               q.section === 'Raw Materials') {
-            
-            const randomizedOptions = trulyRandomizeAnswers(baseQuestion.options);
-            return {
-              ...baseQuestion,
-              options: randomizedOptions
-            };
+            return { ...baseQuestion, options: trulyRandomizeAnswers(baseQuestion.options) };
           }
           
           return baseQuestion;
@@ -596,7 +385,6 @@ export default function AssessmentPage() {
         setQuestions(processedQuestions);
         setAnswers(savedAnswers);
         setError(null);
-
       } catch (error) {
         console.error("Assessment loading error:", error);
         setError(error.message);
@@ -608,7 +396,7 @@ export default function AssessmentPage() {
     fetchAssessmentData();
   }, [assessmentId, isSessionReady, session?.user?.id, alreadySubmitted]);
 
-  // ===== FIXED: Pause-Resume Timer =====
+  // ===== TIMER =====
   useEffect(() => {
     if (alreadySubmitted || !session?.user?.id || !isSessionReady || !assessmentId || !assessment) return;
 
@@ -632,16 +420,12 @@ export default function AssessmentPage() {
           localElapsed += 1;
           setElapsed(localElapsed);
           
-          // Save progress every 30 seconds
           if (localElapsed % 30 === 0) {
             await saveTimerProgress(session.user.id, assessmentId, localElapsed);
           }
           
-          // Check if time is up
           if (localElapsed >= timeLimitSeconds) {
             clearInterval(timerInterval);
-            console.log("⏰ Time's up! Auto-submitting...");
-            
             if (!alreadySubmitted && isMounted) {
               await submitAssessment();
             }
@@ -649,45 +433,36 @@ export default function AssessmentPage() {
         }, 1000);
       } catch (error) {
         console.error("Failed to initialize timer:", error);
-        // Fallback to local timer
-        timerInterval = setInterval(() => {
-          if (isMounted) {
-            setElapsed(t => t + 1);
-          }
-        }, 1000);
       }
     };
 
     initializeTimer();
 
-    const handleBeforeUnload = async () => {
+    const handleBeforeUnload = () => {
       if (session?.user?.id && localElapsed > 0) {
-        await saveTimerProgress(session.user.id, assessmentId, localElapsed);
+        saveTimerProgress(session.user.id, assessmentId, localElapsed);
       }
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
 
-    // Cleanup
     return () => {
       isMounted = false;
       clearInterval(timerInterval);
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      
-      if (session?.user?.id && localElapsed > 0 && !alreadySubmitted) {
-        saveTimerProgress(session.user.id, assessmentId, localElapsed);
-      }
     };
   }, [alreadySubmitted, session?.user?.id, isSessionReady, assessmentId, assessment, timeLimitSeconds]);
 
-  // ===== FIXED: Answer selection =====
-  const handleSelect = async (questionId, answerId) => {
-    if (alreadySubmitted) {
-      alert("❌ Assessment already submitted. You cannot change answers.");
-      return;
+  // ===== ANTI-CHEAT =====
+  useEffect(() => {
+    if (!alreadySubmitted && !loading && isSessionReady && questions.length > 0) {
+      setupAntiCheatProtection();
     }
-    
-    if (!isSessionReady || !session?.user?.id || !assessmentId) return;
+  }, [alreadySubmitted, loading, isSessionReady, questions.length]);
+
+  // ===== HANDLE ANSWER SELECTION =====
+  const handleSelect = async (questionId, answerId) => {
+    if (alreadySubmitted || !isSessionReady || !session?.user?.id || !assessmentId) return;
 
     setAnswers(prev => ({ ...prev, [questionId]: answerId }));
     setSaveStatus(prev => ({ ...prev, [questionId]: "saving" }));
@@ -703,171 +478,83 @@ export default function AssessmentPage() {
           return newStatus;
         });
       }, 1500);
-
     } catch (error) {
       console.error("Save failed:", error);
       setSaveStatus(prev => ({ ...prev, [questionId]: "error" }));
-      alert("Failed to save answer. Please try again.");
     }
   };
 
-  // ===== FIXED: Navigation =====
+  // ===== NAVIGATION =====
   const handleNext = () => {
-    if (alreadySubmitted) {
-      alert("❌ Assessment already submitted. Navigation disabled.");
-      return;
-    }
-    
+    if (alreadySubmitted) return;
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(i => i + 1);
     }
   };
 
   const handleBack = () => {
-    if (alreadySubmitted) {
-      alert("❌ Assessment already submitted. Navigation disabled.");
-      return;
-    }
-    
+    if (alreadySubmitted) return;
     if (currentIndex > 0) {
       setCurrentIndex(i => i - 1);
     }
   };
 
-  // ===== FIXED: Submit assessment function =====
+  // ===== SUBMIT ASSESSMENT =====
   const submitAssessment = async () => {
-    if (alreadySubmitted) {
-      alert("⚠️ You have already submitted this assessment. One attempt only.");
-      return;
-    }
-    
-    if (!session?.user?.id || !assessmentId) {
-      alert("Please log in to submit your assessment.");
-      router.push("/login");
-      return;
-    }
+    if (alreadySubmitted || !session?.user?.id || !assessmentId) return;
 
     setIsSubmitting(true);
     setShowSubmitModal(false);
     
     try {
       await markAsSubmitted(session.user.id, assessmentId);
-      
       await markTimerAsCompleted(session.user.id, assessmentId);
       
       setAlreadySubmitted(true);
       localStorage.setItem(`assessment_submitted_${assessmentId}`, 'true');
-      console.log("✅ Assessment submitted - immediately blocking all access");
-      
-      // Calculate total score from responses
-      const calculateAndStoreScore = async () => {
-        try {
-          const { data: responsesData, error: responsesError } = await supabase
-            .from("responses")
-            .select(`
-              answer_id,
-              answers (score)
-            `)
-            .eq("user_id", session.user.id)
-            .eq("assessment_id", assessmentId);
-
-          if (responsesError) throw responsesError;
-
-          const totalScore = responsesData?.reduce((sum, r) => sum + (r.answers?.score || 0), 0) || 0;
-          const maxPossible = responsesData?.length * 4 || 1;
-          const percentageScore = Math.round((totalScore / maxPossible) * 100);
-
-          const classification = 
-            percentageScore >= 90 ? 'Top Talent' :
-            percentageScore >= 75 ? 'High Potential' :
-            percentageScore >= 60 ? 'Solid Performer' :
-            percentageScore >= 40 ? 'Developing' : 'Needs Improvement';
-
-          const { error: classificationError } = await supabase
-            .from("talent_classification")
-            .upsert({
-              user_id: session.user.id,
-              total_score: percentageScore,
-              classification: classification,
-              assessment_id: assessmentId,
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'user_id' });
-
-          if (classificationError) {
-            console.error("Failed to save classification:", classificationError);
-          }
-
-          console.log("Score calculated and saved:", { totalScore: percentageScore, classification });
-          return { totalScore: percentageScore, classification };
-        } catch (error) {
-          console.error("Score calculation error:", error);
-          throw error;
-        }
-      };
-
-      await calculateAndStoreScore();
       
       setShowSuccessModal(true);
       
       setTimeout(() => {
-        console.log("🔄 Redirecting to dashboard");
-        router.push('/candidate/dashboard');
+        router.push('/assessment/pre');
       }, 3000);
-      
     } catch (error) {
       console.error("Submission error:", error);
-      
-      if (error.message?.includes("already submitted") || error.message?.includes("23505")) {
-        setAlreadySubmitted(true);
-        localStorage.setItem(`assessment_submitted_${assessmentId}`, 'true');
-        setError("Assessment already submitted. You cannot retake it.");
-        alert("Assessment already submitted. You cannot retake it.");
-        setTimeout(() => router.push('/candidate/dashboard'), 1000);
-      } else {
-        alert("Assessment submitted but there was an error calculating your score. Please contact support.");
-      }
+      alert("Submission failed. Please contact support.");
       setIsSubmitting(false);
     }
   };
 
-  // ===== FIXED: Loading state =====
+  // ===== LOADING STATE =====
   if (loading) {
     return (
-      <div style={{ 
+      <div style={{
         minHeight: "100vh",
         background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
         display: "flex",
         alignItems: "center",
-        justifyContent: "center",
-        color: "white",
-        padding: "20px"
+        justifyContent: "center"
       }}>
-        <div style={{ textAlign: "center", padding: "40px", maxWidth: "500px", width: "100%" }}>
+        <div style={{ textAlign: "center", color: "white" }}>
           <div style={{ fontSize: "28px", fontWeight: "700", marginBottom: "20px" }}>
-            🏢 Stratavax
+            {assessment?.name || 'Loading Assessment...'}
           </div>
-          <div style={{ fontSize: "22px", fontWeight: "600", marginBottom: "20px" }}>
-            {assessment ? `Loading ${assessment.name}...` : 'Loading Assessment...'}
+          <div style={{ fontSize: "18px", marginBottom: "30px" }}>
+            Please wait while we prepare your assessment
           </div>
           <div style={{ 
-            width: "100%", 
-            height: "6px", 
-            backgroundColor: "rgba(255,255,255,0.2)", 
-            borderRadius: "3px", 
-            overflow: "hidden" 
-          }}>
-            <div style={{ 
-              width: "60%", 
-              height: "100%", 
-              backgroundColor: "white",
-              borderRadius: "3px",
-              animation: "loading 1.5s infinite"
-            }} />
-          </div>
+            width: "60px", 
+            height: "60px", 
+            border: "5px solid rgba(255,255,255,0.3)",
+            borderTop: "5px solid white",
+            borderRadius: "50%",
+            animation: "spin 1s linear infinite",
+            margin: "0 auto"
+          }} />
           <style jsx>{`
-            @keyframes loading {
-              0% { transform: translateX(-100%); }
-              100% { transform: translateX(200%); }
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
             }
           `}</style>
         </div>
@@ -875,154 +562,131 @@ export default function AssessmentPage() {
     );
   }
 
-  // ===== FIXED: Already submitted state =====
+  // ===== ALREADY SUBMITTED =====
   if (alreadySubmitted) {
     return (
-      <div style={{ 
+      <div style={{
         minHeight: "100vh",
         background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
         display: "flex",
         alignItems: "center",
-        justifyContent: "center",
-        color: "white",
-        padding: "20px"
+        justifyContent: "center"
       }}>
-        <div style={{ textAlign: "center", padding: "30px", maxWidth: "500px", width: "100%" }}>
-          <div style={{ fontSize: "28px", fontWeight: "700", marginBottom: "20px" }}>
-            🏢 Stratavax
-          </div>
-          <div style={{ fontSize: "22px", marginBottom: "20px" }}>
-            Assessment Already Submitted ✅
-          </div>
-          <div style={{ 
-            fontSize: "16px", 
-            marginBottom: "30px", 
-            lineHeight: 1.5,
-            background: "rgba(255,255,255,0.1)",
-            padding: "20px",
-            borderRadius: "10px",
-            border: "2px solid rgba(255,255,255,0.2)"
-          }}>
-            <strong style={{ color: "#ff9800" }}>ONE ATTEMPT ONLY POLICY</strong>
-            <br /><br />
-            You have already completed and submitted this assessment.
-            <br />
-            <strong style={{ color: "#4caf50" }}>Each candidate is allowed only one attempt.</strong>
-            <br /><br />
-            <small style={{ fontSize: "14px", color: "rgba(255,255,255,0.8)" }}>
-              ⚠️ Redirecting to dashboard...
-            </small>
-          </div>
-          <button 
-            onClick={() => router.push('/candidate/dashboard')}
+        <div style={{
+          background: "white",
+          padding: "40px",
+          borderRadius: "20px",
+          maxWidth: "500px",
+          textAlign: "center"
+        }}>
+          <div style={{ fontSize: "48px", marginBottom: "20px" }}>✅</div>
+          <h2 style={{ color: "#1a2639", marginBottom: "15px" }}>
+            Assessment Already Completed
+          </h2>
+          <p style={{ color: "#64748b", marginBottom: "25px" }}>
+            You have already submitted this assessment. Each assessment can only be taken once.
+          </p>
+          <button
+            onClick={() => router.push('/assessment/pre')}
             style={{
-              padding: "15px 35px",
-              backgroundColor: "white",
-              color: "#764ba2",
+              padding: "12px 30px",
+              background: "#667eea",
+              color: "white",
               border: "none",
-              borderRadius: "10px",
-              cursor: "pointer",
+              borderRadius: "8px",
               fontSize: "16px",
               fontWeight: "600",
-              width: "100%",
-              minHeight: "44px"
+              cursor: "pointer"
             }}
           >
-            Return to Dashboard
+            Return to Assessment Selection
           </button>
         </div>
       </div>
     );
   }
 
-  // ===== FIXED: Error state =====
+  // ===== ERROR STATE =====
   if (error) {
     return (
-      <div style={{ 
+      <div style={{
         minHeight: "100vh",
         background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
         display: "flex",
         alignItems: "center",
-        justifyContent: "center",
-        color: "white",
-        padding: "20px"
+        justifyContent: "center"
       }}>
-        <div style={{ textAlign: "center", padding: "30px", maxWidth: "500px", width: "100%" }}>
-          <div style={{ fontSize: "28px", fontWeight: "700", marginBottom: "20px" }}>
-            🏢 Stratavax
-          </div>
-          <div style={{ fontSize: "22px", marginBottom: "20px" }}>
-            {error.includes("already submitted") ? "Assessment Already Submitted" : "Error Loading Assessment"}
-          </div>
-          <div style={{ 
-            fontSize: "16px", 
-            marginBottom: "30px", 
-            lineHeight: 1.5,
-            background: "rgba(255,255,255,0.1)",
-            padding: "20px",
-            borderRadius: "10px"
-          }}>
+        <div style={{
+          background: "white",
+          padding: "40px",
+          borderRadius: "20px",
+          maxWidth: "500px",
+          textAlign: "center"
+        }}>
+          <div style={{ fontSize: "48px", marginBottom: "20px" }}>⚠️</div>
+          <h2 style={{ color: "#1a2639", marginBottom: "15px" }}>
+            {error.includes("already submitted") ? "Already Submitted" : "Error"}
+          </h2>
+          <p style={{ color: "#64748b", marginBottom: "25px" }}>
             {error}
-          </div>
-          <button 
-            onClick={() => router.push("/candidate/dashboard")}
+          </p>
+          <button
+            onClick={() => router.push('/assessment/pre')}
             style={{
-              padding: "15px 35px",
-              backgroundColor: "white",
-              color: "#764ba2",
+              padding: "12px 30px",
+              background: "#667eea",
+              color: "white",
               border: "none",
-              borderRadius: "10px",
-              cursor: "pointer",
+              borderRadius: "8px",
               fontSize: "16px",
               fontWeight: "600",
-              width: "100%",
-              minHeight: "44px"
+              cursor: "pointer"
             }}
           >
-            Return to Dashboard
+            Return to Assessment Selection
           </button>
         </div>
       </div>
     );
   }
 
-  if (questions.length === 0 && !loading) {
+  if (questions.length === 0) {
     return (
-      <div style={{ 
+      <div style={{
         minHeight: "100vh",
         background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
         display: "flex",
         alignItems: "center",
-        justifyContent: "center",
-        color: "white",
-        padding: "20px"
+        justifyContent: "center"
       }}>
-        <div style={{ textAlign: "center", padding: "30px", maxWidth: "500px", width: "100%" }}>
-          <div style={{ fontSize: "28px", fontWeight: "700", marginBottom: "20px" }}>
-            🏢 Stratavax
-          </div>
-          <div style={{ fontSize: "22px", marginBottom: "20px" }}>
+        <div style={{
+          background: "white",
+          padding: "40px",
+          borderRadius: "20px",
+          maxWidth: "500px",
+          textAlign: "center"
+        }}>
+          <div style={{ fontSize: "48px", marginBottom: "20px" }}>📭</div>
+          <h2 style={{ color: "#1a2639", marginBottom: "15px" }}>
             No Questions Available
-          </div>
-          <div style={{ fontSize: "16px", marginBottom: "30px", lineHeight: 1.5 }}>
-            No assessment questions found for {assessment?.name || 'this assessment'}.
-          </div>
-          <button 
-            onClick={() => router.push("/candidate/dashboard")}
+          </h2>
+          <p style={{ color: "#64748b", marginBottom: "25px" }}>
+            This assessment doesn't have any questions yet. Please contact support.
+          </p>
+          <button
+            onClick={() => router.push('/assessment/pre')}
             style={{
-              padding: "15px 35px",
-              backgroundColor: "white",
-              color: "#764ba2",
+              padding: "12px 30px",
+              background: "#667eea",
+              color: "white",
               border: "none",
-              borderRadius: "10px",
-              cursor: "pointer",
+              borderRadius: "8px",
               fontSize: "16px",
               fontWeight: "600",
-              width: "100%",
-              minHeight: "44px"
+              cursor: "pointer"
             }}
           >
-            Return to Dashboard
+            Return to Assessment Selection
           </button>
         </div>
       </div>
@@ -1030,10 +694,16 @@ export default function AssessmentPage() {
   }
 
   const currentQuestion = questions[currentIndex];
-  const currentSection = currentQuestion?.section || 'Cognitive Abilities';
-  const sectionConfig = SECTION_CONFIG[currentSection] || SECTION_CONFIG['Cognitive Abilities'];
+  const currentSection = currentQuestion?.section || 'General';
+  const sectionConfig = SECTION_CONFIG[currentSection] || {
+    color: '#4A6FA5',
+    lightBg: 'rgba(74, 111, 165, 0.1)',
+    icon: '📝',
+    bgImage: '/images/backgrounds/default-bg.jpg'
+  };
+
   const totalAnswered = Object.keys(answers).length;
-  const progressPercentage = questions.length > 0 ? Math.round((totalAnswered / questions.length) * 100) : 0;
+  const progressPercentage = Math.round((totalAnswered / questions.length) * 100);
   const isLastQuestion = currentIndex === questions.length - 1;
 
   // Time calculations
@@ -1041,7 +711,7 @@ export default function AssessmentPage() {
   const hours = Math.floor(timeRemaining / 3600);
   const minutes = Math.floor((timeRemaining % 3600) / 60);
   const seconds = timeRemaining % 60;
-  const formatTime = (time) => time.toString().padStart(2, '0');
+  const formatTime = (t) => t.toString().padStart(2, '0');
 
   const timeUsedPercentage = (elapsed / timeLimitSeconds) * 100;
   const isTimeWarning = timeUsedPercentage > 80;
@@ -1049,148 +719,39 @@ export default function AssessmentPage() {
 
   return (
     <>
-      {/* Submit Confirmation Modal */}
+      {/* Submit Modal */}
       {showSubmitModal && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: "rgba(0,0,0,0.8)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 2000,
-          padding: "20px"
-        }}>
-          <div style={{
-            background: "white",
-            padding: "40px",
-            borderRadius: "20px",
-            maxWidth: "500px",
-            width: "100%",
-            boxShadow: "0 25px 50px rgba(0,0,0,0.25)"
-          }}>
-            <h2 style={{ 
-              marginTop: 0, 
-              color: "#1565c0", 
-              fontSize: "28px",
-              marginBottom: "20px",
-              fontWeight: "700"
-            }}>
-              📋 Final Submission
-            </h2>
-            
-            <div style={{ 
-              margin: "25px 0", 
-              padding: "25px", 
-              background: "#f8f9fa", 
-              borderRadius: "15px",
-              border: "2px solid #e3f2fd"
-            }}>
-              <div style={{ 
-                display: "flex", 
-                justifyContent: "space-between", 
-                marginBottom: "15px",
-                fontSize: "16px",
-                fontWeight: "600"
-              }}>
-                <span style={{ color: "#555" }}>Questions Answered:</span>
-                <span style={{ fontWeight: "700", color: "#4caf50" }}>
-                  {totalAnswered}/{questions.length}
-                </span>
+        <div style={modalOverlayStyle}>
+          <div style={modalContentStyle}>
+            <h2 style={modalTitleStyle}>📋 Final Submission</h2>
+            <div style={modalBodyStyle}>
+              <div style={modalRowStyle}>
+                <span>Questions Answered:</span>
+                <span style={{ color: '#4caf50', fontWeight: '700' }}>{totalAnswered}/{questions.length}</span>
               </div>
-              
-              <div style={{ 
-                display: "flex", 
-                justifyContent: "space-between", 
-                marginBottom: "20px",
-                fontSize: "16px",
-                fontWeight: "600"
-              }}>
-                <span style={{ color: "#555" }}>Completion Rate:</span>
-                <span style={{ fontWeight: "700", color: "#2196f3" }}>
-                  {progressPercentage}%
-                </span>
+              <div style={modalRowStyle}>
+                <span>Completion Rate:</span>
+                <span style={{ color: '#2196f3', fontWeight: '700' }}>{progressPercentage}%</span>
               </div>
-              
-              <div style={{ 
-                display: "flex", 
-                justifyContent: "space-between", 
-                marginBottom: "15px",
-                fontSize: "16px",
-                fontWeight: "600"
-              }}>
-                <span style={{ color: "#555" }}>Time Used:</span>
+              <div style={modalRowStyle}>
+                <span>Time Used:</span>
                 <span style={{ 
-                  fontWeight: "700", 
-                  color: isTimeCritical ? "#d32f2f" : isTimeWarning ? "#ff9800" : "#4caf50" 
+                  color: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : '#4caf50',
+                  fontWeight: '700'
                 }}>
                   {formatTime(Math.floor(elapsed / 3600))}:{formatTime(Math.floor((elapsed % 3600) / 60))}:{formatTime(elapsed % 60)}
                 </span>
               </div>
-              
-              <div style={{ 
-                fontSize: "14px", 
-                color: "#666", 
-                padding: "12px", 
-                background: "#fff8e1", 
-                borderRadius: "8px",
-                marginBottom: "15px",
-                borderLeft: "4px solid #ff9800"
-              }}>
-                ⚠️ <strong>ONE ATTEMPT ONLY:</strong> After submission, you <strong>cannot</strong> retake this assessment.
-              </div>
-              
-              <div style={{ height: "12px", background: "#e0e0e0", borderRadius: "6px", margin: "20px 0" }}>
-                <div style={{ 
-                  height: "100%", 
-                  width: `${progressPercentage}%`, 
-                  background: "linear-gradient(90deg, #4caf50, #2e7d32)", 
-                  borderRadius: "6px"
-                }} />
+              <div style={modalWarningStyle}>
+                ⚠️ <strong>ONE ATTEMPT ONLY:</strong> After submission, you cannot retake this assessment.
               </div>
             </div>
-
-            <div style={{ 
-              display: "flex", 
-              justifyContent: "flex-end", 
-              gap: "15px"
-            }}>
-              <button
-                onClick={() => setShowSubmitModal(false)}
-                disabled={isSubmitting}
-                style={{
-                  padding: "12px 24px",
-                  background: "#f5f5f5",
-                  color: "#333",
-                  border: "none",
-                  borderRadius: "10px",
-                  cursor: "pointer",
-                  fontWeight: "600",
-                  fontSize: "16px",
-                  minHeight: "44px"
-                }}
-              >
-                Continue Assessment
+            <div style={modalButtonContainerStyle}>
+              <button onClick={() => setShowSubmitModal(false)} style={modalSecondaryButtonStyle}>
+                Continue
               </button>
-              <button
-                onClick={submitAssessment}
-                disabled={isSubmitting}
-                style={{
-                  padding: "12px 24px",
-                  background: isSubmitting ? "#81c784" : "linear-gradient(135deg, #4caf50, #2e7d32)",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "10px",
-                  cursor: isSubmitting ? "not-allowed" : "pointer",
-                  fontWeight: "700",
-                  fontSize: "16px",
-                  minHeight: "44px"
-                }}
-              >
-                {isSubmitting ? "Submitting..." : "Final Submit"}
+              <button onClick={submitAssessment} disabled={isSubmitting} style={modalPrimaryButtonStyle}>
+                {isSubmitting ? 'Submitting...' : 'Submit Assessment'}
               </button>
             </div>
           </div>
@@ -1199,393 +760,109 @@ export default function AssessmentPage() {
 
       {/* Success Modal */}
       {showSuccessModal && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: "rgba(0,0,0,0.9)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 3000,
-          padding: "20px"
-        }}>
-          <div style={{
-            background: "white",
-            padding: "50px",
-            borderRadius: "25px",
-            maxWidth: "500px",
-            width: "100%",
-            textAlign: "center",
-            boxShadow: "0 30px 60px rgba(0,0,0,0.3)"
-          }}>
-            <div style={{
-              width: "100px",
-              height: "100px",
-              background: "linear-gradient(135deg, #4caf50 0%, #2e7d32 100%)",
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              margin: "0 auto 25px",
-              fontSize: "50px",
-              color: "white"
-            }}>
-              ✓
+        <div style={modalOverlayStyle}>
+          <div style={{ ...modalContentStyle, textAlign: 'center' }}>
+            <div style={successIconStyle}>✓</div>
+            <h2 style={{ ...modalTitleStyle, color: '#2e7d32' }}>Assessment Complete! 🎉</h2>
+            <div style={modalBodyStyle}>
+              <p style={{ fontSize: '16px', marginBottom: '20px' }}>
+                Your {assessment?.name || 'assessment'} has been successfully submitted.
+              </p>
+              <p style={{ fontSize: '14px', color: '#666' }}>
+                Redirecting to assessment selection...
+              </p>
             </div>
-            
-            <h2 style={{ 
-              marginTop: 0, 
-              marginBottom: "20px", 
-              color: "#1a237e",
-              fontSize: "32px",
-              fontWeight: "800"
-            }}>
-              Assessment Complete! 🎉
-            </h2>
-            
-            <div style={{ 
-              margin: "25px 0", 
-              padding: "30px", 
-              background: "linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)", 
-              borderRadius: "15px",
-              border: "3px solid #4caf50"
-            }}>
-              <div style={{ 
-                fontSize: "14px", 
-                color: "#666", 
-                margin: "15px 0",
-                padding: "12px",
-                background: "#e3f2fd",
-                borderRadius: "8px",
-                borderLeft: "4px solid #2196f3"
-              }}>
-                ✅ <strong>One-time submission completed:</strong> Your {assessment?.name || 'assessment'} has been successfully submitted.
-                <br />
-                <strong>You cannot retake this assessment.</strong>
-                <br /><br />
-                <small>Redirecting to dashboard in 3 seconds...</small>
-              </div>
-            </div>
-
-            <button
-              onClick={() => router.push("/candidate/dashboard")}
-              style={{
-                padding: "18px 45px",
-                background: "linear-gradient(135deg, #2196f3 0%, #0d47a1 100%)",
-                color: "white",
-                border: "none",
-                borderRadius: "12px",
-                cursor: "pointer",
-                fontSize: "18px",
-                fontWeight: "700",
-                minHeight: "50px",
-                width: "100%"
-              }}
-            >
-              Go to Dashboard
-            </button>
           </div>
         </div>
       )}
 
       {/* Main Assessment Layout */}
-      <div style={{
-        minHeight: "100vh",
-        background: "linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)",
-        display: "flex",
-        flexDirection: "column",
-        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-        overflow: "hidden"
-      }}>
-        
-        {/* Header with Anti-Cheat Warning */}
-        <div style={{
-          background: `linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), 
-                      url('https://img.freepik.com/free-photo/multiethnic-group-young-happy-students-standing-outdoors_171337-11812.jpg?semt=ais_user_personalization&w=740&q=80')`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          padding: '8px 15px',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
-          height: '70px',
-          display: 'flex',
-          alignItems: 'center'
-        }}>
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center',
-            width: '100%'
-          }}>
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '8px'
-            }}>
-              <div style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '6px',
-                background: 'rgba(255, 255, 255, 0.9)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#1a237e',
-                fontSize: '16px'
-              }}>
-                {sectionConfig.icon}
-              </div>
-              
-              <div>
-                <div style={{ 
-                  fontSize: '14px', 
-                  fontWeight: '700', 
-                  color: 'white',
-                  lineHeight: 1.2
-                }}>
-                  {assessment?.name || 'Stratavax Assessment'}
-                </div>
-                <div style={{
-                  fontSize: '11px',
-                  color: 'rgba(255, 255, 255, 0.9)'
-                }}>
-                  Q{currentIndex + 1}/{questions.length} • {currentSection}
-                  {(currentSection === 'Bottled Water Manufacturing' || 
-                    currentSection === 'Blowing Machines' ||
-                    currentSection === 'Labeler' ||
-                    currentSection === 'Filling' ||
-                    currentSection === 'Conveyors' ||
-                    currentSection === 'Stretchwrappers' ||
-                    currentSection === 'Shrinkwrappers' ||
-                    currentSection === 'Date Coders' ||
-                    currentSection === 'Raw Materials') && (
-                    <span style={{ marginLeft: '5px', fontStyle: 'italic' }}>
-                      (Randomized)
-                    </span>
-                  )}
-                  {timerLoaded && (
-                    <span style={{ marginLeft: '5px', color: '#4caf50' }}>
-                      • Timer: {formatTime(Math.floor(elapsed / 3600))}:{formatTime(Math.floor((elapsed % 3600) / 60))}
-                    </span>
-                  )}
-                </div>
+      <div style={mainContainerStyle}>
+        {/* Header */}
+        <div style={headerStyle}>
+          <div style={headerLeftStyle}>
+            <div style={headerIconStyle}>{sectionConfig.icon}</div>
+            <div>
+              <div style={headerTitleStyle}>{assessment?.name || 'Assessment'}</div>
+              <div style={headerSubtitleStyle}>
+                Q{currentIndex + 1}/{questions.length} • {currentSection}
+                {(currentSection === 'Blowing Machines' || 
+                  currentSection === 'Labeler' ||
+                  currentSection === 'Filling' ||
+                  currentSection === 'Conveyors' ||
+                  currentSection === 'Stretchwrappers' ||
+                  currentSection === 'Shrinkwrappers' ||
+                  currentSection === 'Date Coders' ||
+                  currentSection === 'Raw Materials' ||
+                  currentSection === 'Bottled Water Manufacturing') && (
+                  <span style={{ marginLeft: '8px', fontStyle: 'italic' }}>(Randomized)</span>
+                )}
               </div>
             </div>
-            
-            {/* Timer */}
-            <div style={{
-              padding: '4px 8px',
-              background: isTimeCritical ? 'rgba(255, 255, 255, 0.9)' : 
-                         isTimeWarning ? 'rgba(255, 255, 255, 0.9)' : 
-                         'rgba(255, 255, 255, 0.9)',
-              borderRadius: '4px',
-              textAlign: 'center',
-              minWidth: '70px',
-              border: isTimeCritical ? '1px solid #d32f2f' : 
-                      isTimeWarning ? '1px solid #ff9800' : 
-                      '1px solid #2196f3'
-            }}>
-              <div style={{ 
-                fontSize: '10px', 
-                fontWeight: '600', 
-                color: isTimeCritical ? '#d32f2f' : 
-                       isTimeWarning ? '#ff9800' : 
-                       '#2196f3'
-              }}>
-                TIME REMAINING
-              </div>
-              <div style={{ 
-                fontSize: '12px', 
-                fontWeight: '700', 
-                color: isTimeCritical ? '#d32f2f' : 
-                       isTimeWarning ? '#ff9800' : 
-                       '#1565c0'
-              }}>
-                {formatTime(hours)}:{formatTime(minutes)}:{formatTime(seconds)}
-              </div>
+          </div>
+          <div style={{
+            ...timerStyle,
+            borderColor: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : '#2196f3'
+          }}>
+            <div style={{ fontSize: '10px', fontWeight: '600', color: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : '#2196f3' }}>
+              TIME REMAINING
+            </div>
+            <div style={{ fontSize: '18px', fontWeight: '700', color: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : '#1565c0' }}>
+              {formatTime(hours)}:{formatTime(minutes)}:{formatTime(seconds)}
             </div>
           </div>
         </div>
 
-        {/* Anti-Cheat Warning Banner */}
-        <div style={{
-          padding: '8px 15px',
-          background: 'linear-gradient(135deg, #ff9800, #f57c00)',
-          color: 'white',
-          textAlign: 'center',
-          fontSize: '12px',
-          fontWeight: '600',
-          borderBottom: '2px solid #e65100'
-        }}>
-          ⚠️ ANTI-CHEAT ACTIVE: Right-click, copy/paste, and text selection disabled. Timer pauses when you log off.
+        {/* Anti-Cheat Banner */}
+        <div style={antiCheatStyle}>
+          ⚠️ ANTI-CHEAT ACTIVE: Right-click, copy/paste, and text selection disabled.
         </div>
 
         {/* Progress Bar */}
-        <div style={{ 
-          height: '4px', 
-          background: '#e0e0e0',
-          overflow: 'hidden'
-        }}>
-          <div style={{ 
-            height: '100%', 
-            width: `${progressPercentage}%`, 
-            background: sectionConfig.color,
-            transition: 'width 0.3s'
-          }} />
+        <div style={progressBarContainerStyle}>
+          <div style={{ ...progressBarFillStyle, width: `${progressPercentage}%`, background: sectionConfig.color }} />
         </div>
 
         {/* Main Content */}
-        <div style={{ 
-          flex: 1,
-          padding: '10px',
-          display: 'flex',
-          overflow: 'hidden',
-          gap: '10px'
-        }}>
-          {/* Question & Answers */}
+        <div style={contentContainerStyle}>
+          {/* Question Panel */}
           <div style={{
-            flex: 7,
-            background: `linear-gradient(rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.95)), 
-                        url('${sectionConfig.bgImage}')`,
+            ...questionPanelStyle,
+            background: `linear-gradient(rgba(255,255,255,0.98), rgba(255,255,255,0.98)), url('${sectionConfig.bgImage}')`,
             backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            borderRadius: '8px',
-            border: '1px solid #e0e0e0',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            padding: '20px'
+            backgroundPosition: 'center'
           }}>
             {/* Question Header */}
-            <div style={{
-              marginBottom: '20px',
-              paddingBottom: '15px',
-              borderBottom: '2px solid rgba(0, 0, 0, 0.1)'
-            }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                marginBottom: '10px'
-              }}>
-                <div style={{
-                  width: '30px',
-                  height: '30px',
-                  borderRadius: '6px',
-                  background: sectionConfig.color,
-                  color: 'white',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '14px'
-                }}>
-                  {sectionConfig.icon}
-                </div>
-                <div style={{
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: sectionConfig.color,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px'
-                }}>
-                  {currentSection}
-                  {(currentSection === 'Bottled Water Manufacturing' || 
-                    currentSection === 'Blowing Machines' ||
-                    currentSection === 'Labeler' ||
-                    currentSection === 'Filling' ||
-                    currentSection === 'Conveyors' ||
-                    currentSection === 'Stretchwrappers' ||
-                    currentSection === 'Shrinkwrappers' ||
-                    currentSection === 'Date Coders' ||
-                    currentSection === 'Raw Materials') && (
-                    <span style={{
-                      fontSize: '10px',
-                      fontWeight: '400',
-                      color: '#666',
-                      marginLeft: '8px',
-                      textTransform: 'none',
-                      fontStyle: 'italic'
-                    }}>
-                      (Answers are randomized for fairness)
-                    </span>
-                  )}
-                </div>
+            <div style={questionHeaderStyle}>
+              <div style={sectionBadgeStyle}>
+                <div style={{ ...sectionIconStyle, background: sectionConfig.color }}>{sectionConfig.icon}</div>
+                <div style={{ ...sectionTitleStyle, color: sectionConfig.color }}>{currentSection}</div>
               </div>
-              
-              <div style={{ 
-                fontSize: '18px', 
-                lineHeight: 1.5,
-                color: '#333',
-                fontWeight: '500',
-                marginBottom: '5px'
-              }}>
+              <div style={questionTextStyle}>
                 <strong style={{ color: sectionConfig.color }}>Question {currentIndex + 1}:</strong>
-              </div>
-              <div style={{ 
-                fontSize: '16px', 
-                lineHeight: 1.6,
-                color: '#444',
-                fontWeight: '400'
-              }}>
-                {currentQuestion?.question_text}
+                <div style={{ marginTop: '10px' }}>{currentQuestion?.question_text}</div>
               </div>
             </div>
 
             {/* Save Status */}
             {saveStatus[currentQuestion?.id] && (
               <div style={{
-                padding: '8px 12px',
-                background: saveStatus[currentQuestion.id] === 'saved' ? 'rgba(76, 175, 80, 0.15)' : 
-                           saveStatus[currentQuestion.id] === 'saving' ? 'rgba(255, 152, 0, 0.15)' : 
-                           'rgba(211, 47, 47, 0.15)',
-                border: `1px solid ${saveStatus[currentQuestion.id] === 'saved' ? '#4caf50' : 
-                         saveStatus[currentQuestion.id] === 'saving' ? '#ff9800' : 
-                         '#d32f2f'}`,
-                borderRadius: '5px',
-                marginBottom: '15px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: '14px',
-                color: saveStatus[currentQuestion.id] === 'saved' ? '#2e7d32' : 
-                       saveStatus[currentQuestion.id] === 'saving' ? '#f57c00' : 
-                       '#d32f2f',
-                fontWeight: '500'
+                ...saveStatusStyle,
+                background: saveStatus[currentQuestion.id] === 'saved' ? 'rgba(76,175,80,0.1)' : 'rgba(255,152,0,0.1)',
+                borderColor: saveStatus[currentQuestion.id] === 'saved' ? '#4caf50' : '#ff9800',
+                color: saveStatus[currentQuestion.id] === 'saved' ? '#2e7d32' : '#f57c00'
               }}>
-                <div style={{
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '50%',
-                  background: saveStatus[currentQuestion.id] === 'saved' ? '#4caf50' : 
-                             saveStatus[currentQuestion.id] === 'saving' ? '#ff9800' : 
-                             '#d32f2f',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'white',
-                  fontSize: '12px'
-                }}>
-                  {saveStatus[currentQuestion.id] === 'saved' ? '✓' : 
-                   saveStatus[currentQuestion.id] === 'saving' ? '⏳' : 
-                   '⚠️'}
+                <div style={saveStatusIconStyle}>
+                  {saveStatus[currentQuestion.id] === 'saved' ? '✓' : '⏳'}
                 </div>
                 <span>
-                  {saveStatus[currentQuestion.id] === 'saved' ? 'Answer saved successfully' : 
-                   saveStatus[currentQuestion.id] === 'saving' ? 'Saving answer...' : 
-                   'Failed to save answer'}
+                  {saveStatus[currentQuestion.id] === 'saved' ? 'Answer saved' : 'Saving...'}
                 </span>
               </div>
             )}
 
-            {/* Answers */}
-            <div style={{ 
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '10px',
-              flex: 1
-            }}>
+            {/* Answer Options */}
+            <div style={answersContainerStyle}>
               {currentQuestion?.options?.map((option, index) => {
                 const isSelected = answers[currentQuestion.id] === option.id;
                 const optionLetter = String.fromCharCode(65 + index);
@@ -1596,313 +873,105 @@ export default function AssessmentPage() {
                     onClick={() => handleSelect(currentQuestion.id, option.id)}
                     disabled={saveStatus[currentQuestion.id] === 'saving' || alreadySubmitted}
                     style={{
-                      padding: '15px 20px',
+                      ...answerButtonStyle,
                       background: isSelected ? sectionConfig.lightBg : 'white',
-                      border: `2px solid ${isSelected ? sectionConfig.color : '#e0e0e0'}`,
-                      borderRadius: '8px',
-                      cursor: (saveStatus[currentQuestion.id] === 'saving' || alreadySubmitted) ? 'not-allowed' : 'pointer',
-                      textAlign: 'left',
-                      fontSize: '15px',
-                      lineHeight: 1.4,
-                      color: isSelected ? sectionConfig.color : '#333',
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: '15px',
-                      transition: 'all 0.2s',
-                      boxShadow: isSelected ? `0 4px 8px ${sectionConfig.color}40` : 'none',
-                      opacity: alreadySubmitted ? 0.6 : 1
-                    }}
-                    onMouseOver={(e) => {
-                      if (!saveStatus[currentQuestion.id] && !isSelected && !alreadySubmitted) {
-                        e.currentTarget.style.background = '#f8f9fa';
-                        e.currentTarget.style.borderColor = sectionConfig.color;
-                        e.currentTarget.style.transform = 'translateY(-2px)';
-                      }
-                    }}
-                    onMouseOut={(e) => {
-                      if (!saveStatus[currentQuestion.id] && !isSelected && !alreadySubmitted) {
-                        e.currentTarget.style.background = 'white';
-                        e.currentTarget.style.borderColor = '#e0e0e0';
-                        e.currentTarget.style.transform = 'translateY(0)';
-                      }
+                      borderColor: isSelected ? sectionConfig.color : '#e2e8f0',
+                      boxShadow: isSelected ? `0 4px 12px ${sectionConfig.color}30` : 'none'
                     }}
                   >
-                    <div style={{
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '6px',
-                      background: isSelected ? sectionConfig.color : '#f5f5f5',
-                      color: isSelected ? 'white' : '#666',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '14px',
-                      fontWeight: '700',
-                      flexShrink: 0,
-                      marginTop: '2px'
-                    }}>
+                    <div style={{ ...answerLetterStyle, background: isSelected ? sectionConfig.color : '#f1f5f9' }}>
                       {optionLetter}
                     </div>
-                    
-                    <div style={{ 
-                      flex: 1,
-                      fontSize: '15px',
-                      lineHeight: 1.5,
-                      textAlign: 'left'
-                    }}>
-                      {option.answer_text}
-                    </div>
+                    <div style={answerTextStyle}>{option.answer_text}</div>
                   </button>
                 );
               })}
             </div>
 
             {/* Navigation */}
-            <div style={{ 
-              marginTop: '25px',
-              paddingTop: '15px',
-              borderTop: '2px solid #e0e0e0',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}>
+            <div style={navigationContainerStyle}>
               <button 
                 onClick={handleBack} 
-                disabled={currentIndex === 0 || alreadySubmitted} 
-                style={{ 
-                  padding: '12px 24px', 
-                  background: currentIndex === 0 || alreadySubmitted ? '#f5f5f5' : sectionConfig.color, 
-                  color: currentIndex === 0 || alreadySubmitted ? '#999' : 'white', 
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: currentIndex === 0 || alreadySubmitted ? 'not-allowed' : 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  minWidth: '100px',
-                  transition: 'all 0.2s',
-                  opacity: currentIndex === 0 || alreadySubmitted ? 0.6 : 1
+                disabled={currentIndex === 0 || alreadySubmitted}
+                style={{
+                  ...navButtonStyle,
+                  background: currentIndex === 0 || alreadySubmitted ? '#f1f5f9' : sectionConfig.color,
+                  color: currentIndex === 0 || alreadySubmitted ? '#94a3b8' : 'white'
                 }}
               >
-                ← Previous Question
+                ← Previous
               </button>
               
-              <div style={{ 
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '4px'
-              }}>
-                <div style={{ 
-                  fontSize: '14px', 
-                  fontWeight: '600', 
-                  color: '#666'
-                }}>
-                  Question {currentIndex + 1} of {questions.length}
-                </div>
-                <div style={{ 
-                  fontSize: '12px', 
-                  fontWeight: '500', 
-                  color: sectionConfig.color
-                }}>
-                  {progressPercentage}% Complete
-                </div>
-                <div style={{ 
-                  fontSize: '10px', 
-                  fontWeight: '400', 
-                  color: '#999'
-                }}>
-                  Time: {formatTime(Math.floor(elapsed / 3600))}:{formatTime(Math.floor((elapsed % 3600) / 60))}
-                </div>
+              <div style={navInfoStyle}>
+                <div>{currentIndex + 1} of {questions.length}</div>
+                <div style={{ color: sectionConfig.color }}>{progressPercentage}% Complete</div>
               </div>
               
               {isLastQuestion ? (
                 <button 
                   onClick={() => setShowSubmitModal(true)}
                   disabled={alreadySubmitted}
-                  style={{ 
-                    padding: '12px 24px', 
-                    background: alreadySubmitted ? '#81c784' : '#4caf50', 
-                    color: 'white', 
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: alreadySubmitted ? 'not-allowed' : 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    minWidth: '100px',
-                    transition: 'all 0.2s',
-                    opacity: alreadySubmitted ? 0.6 : 1
+                  style={{
+                    ...navButtonStyle,
+                    background: alreadySubmitted ? '#f1f5f9' : '#4caf50',
+                    color: alreadySubmitted ? '#94a3b8' : 'white'
                   }}
                 >
-                  Submit Assessment →
+                  Submit
                 </button>
               ) : (
                 <button 
                   onClick={handleNext} 
                   disabled={alreadySubmitted}
-                  style={{ 
-                    padding: '12px 24px', 
-                    background: alreadySubmitted ? '#f5f5f5' : sectionConfig.color, 
-                    color: alreadySubmitted ? '#999' : 'white', 
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: alreadySubmitted ? 'not-allowed' : 'pointer',
-                    fontSize: "14px",
-                    fontWeight: "600",
-                    minWidth: "100px",
-                    transition: "all 0.2s",
-                    opacity: alreadySubmitted ? 0.6 : 1
+                  style={{
+                    ...navButtonStyle,
+                    background: alreadySubmitted ? '#f1f5f9' : sectionConfig.color,
+                    color: alreadySubmitted ? '#94a3b8' : 'white'
                   }}
                 >
-                  Next Question →
+                  Next →
                 </button>
               )}
             </div>
           </div>
 
-          {/* Question Navigator */}
-          <div style={{
-            flex: 3,
-            background: "white",
-            borderRadius: "8px",
-            border: "1px solid #e0e0e0",
-            padding: "15px",
-            display: "flex",
-            flexDirection: "column",
-            minWidth: "250px"
-          }}>
-            <div style={{ 
-              fontSize: "16px",
-              fontWeight: "600", 
-              marginBottom: "15px",
-              color: "#333",
-              textAlign: "center",
-              paddingBottom: "10px",
-              borderBottom: "2px solid #f0f0f0"
-            }}>
-              📋 Question Navigator
-            </div>
+          {/* Navigator Panel */}
+          <div style={navigatorPanelStyle}>
+            <div style={navigatorTitleStyle}>📋 Question Navigator</div>
             
-            {/* Progress Summary */}
-            <div style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginBottom: "15px",
-              padding: "12px 15px",
-              background: "linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)",
-              borderRadius: "6px",
-              fontSize: "14px",
-              border: "1px solid #e0e0e0"
-            }}>
-              <div style={{ 
-                display: "flex", 
-                flexDirection: "column",
-                alignItems: "center"
-              }}>
-                <div style={{ color: "#4caf50", fontWeight: "700", fontSize: "18px" }}>
-                  {totalAnswered}
-                </div>
-                <div style={{ color: "#666", fontSize: "11px", marginTop: "2px" }}>
-                  Answered
-                </div>
+            {/* Stats Summary */}
+            <div style={statsSummaryStyle}>
+              <div style={statItemStyle}>
+                <div style={{ color: '#4caf50', fontSize: '24px', fontWeight: '700' }}>{totalAnswered}</div>
+                <div style={statLabelStyle}>Answered</div>
               </div>
-              <div style={{ 
-                display: "flex", 
-                flexDirection: "column",
-                alignItems: "center"
-              }}>
-                <div style={{ color: "#666", fontWeight: "700", fontSize: "18px" }}>
-                  {questions.length - totalAnswered}
-                </div>
-                <div style={{ color: "#666", fontSize: "11px", marginTop: "2px" }}>
-                  Remaining
-                </div>
+              <div style={statItemStyle}>
+                <div style={{ color: '#64748b', fontSize: '24px', fontWeight: '700' }}>{questions.length - totalAnswered}</div>
+                <div style={statLabelStyle}>Remaining</div>
               </div>
-              <div style={{ 
-                display: "flex", 
-                flexDirection: "column",
-                alignItems: "center"
-              }}>
-                <div style={{ color: "#2196f3", fontWeight: "700", fontSize: "18px" }}>
-                  {progressPercentage}%
-                </div>
-                <div style={{ color: "#666", fontSize: "11px", marginTop: "2px" }}>
-                  Complete
-                </div>
+              <div style={statItemStyle}>
+                <div style={{ color: '#2196f3', fontSize: '24px', fontWeight: '700' }}>{progressPercentage}%</div>
+                <div style={statLabelStyle}>Complete</div>
               </div>
             </div>
-            
+
             {/* Timer Progress */}
-            <div style={{
-              marginBottom: "15px",
-              padding: "10px",
-              background: isTimeCritical ? "rgba(211, 47, 47, 0.1)" : 
-                         isTimeWarning ? "rgba(255, 152, 0, 0.1)" : 
-                         "rgba(33, 150, 243, 0.1)",
-              borderRadius: "6px",
-              border: `1px solid ${isTimeCritical ? "#d32f2f" : 
-                       isTimeWarning ? "#ff9800" : 
-                       "#2196f3"}`
-            }}>
-              <div style={{ 
-                display: "flex", 
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "8px"
-              }}>
-                <div style={{ 
-                  fontSize: "12px", 
-                  fontWeight: "600",
-                  color: isTimeCritical ? "#d32f2f" : 
-                         isTimeWarning ? "#ff9800" : 
-                         "#1565c0"
-                }}>
-                  ⏰ TIME REMAINING
-                </div>
-                <div style={{ 
-                  fontSize: "10px", 
-                  fontWeight: "500",
-                  color: "#666",
-                  background: "#f5f5f5",
-                  padding: "2px 6px",
-                  borderRadius: "3px"
-                }}>
-                  {formatTime(hours)}:{formatTime(minutes)}:{formatTime(seconds)}
-                </div>
+            <div style={timerProgressStyle}>
+              <div style={timerProgressHeaderStyle}>
+                <span>⏰ Time Remaining</span>
+                <span style={{ fontWeight: '700' }}>{formatTime(hours)}:{formatTime(minutes)}:{formatTime(seconds)}</span>
               </div>
-              <div style={{ 
-                height: "6px", 
-                background: "#e0e0e0", 
-                borderRadius: "3px",
-                overflow: "hidden"
-              }}>
-                <div style={{ 
-                  height: "100%", 
-                  width: `${(elapsed / timeLimitSeconds) * 100}%`, 
-                  background: isTimeCritical ? "#d32f2f" : 
-                             isTimeWarning ? "#ff9800" : 
-                             "#2196f3",
-                  borderRadius: "3px"
+              <div style={timerProgressBarContainerStyle}>
+                <div style={{
+                  ...timerProgressBarFillStyle,
+                  width: `${(elapsed / timeLimitSeconds) * 100}%`,
+                  background: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : '#2196f3'
                 }} />
               </div>
-              <div style={{ 
-                fontSize: "10px", 
-                color: "#666", 
-                marginTop: "6px",
-                textAlign: "center"
-              }}>
-                {Math.round((elapsed / timeLimitSeconds) * 100)}% used
-              </div>
             </div>
-            
+
             {/* Question Grid */}
-            <div style={{ 
-              flex: 1,
-              display: "grid",
-              gridTemplateColumns: "repeat(8, 1fr)",
-              gap: "4px",
-              gridAutoRows: "minmax(32px, auto)",
-              alignContent: "start"
-            }}>
+            <div style={questionGridStyle}>
               {questions.map((q, index) => {
                 const isAnswered = answers[q.id];
                 const isCurrent = index === currentIndex;
@@ -1910,185 +979,479 @@ export default function AssessmentPage() {
                 return (
                   <button
                     key={q.id}
-                    onClick={() => {
-                      if (alreadySubmitted) {
-                        alert("❌ Assessment already submitted. Navigation disabled.");
-                        return;
-                      }
-                      setCurrentIndex(index);
-                    }}
+                    onClick={() => !alreadySubmitted && setCurrentIndex(index)}
+                    disabled={alreadySubmitted}
                     style={{
-                      width: "100%",
-                      height: "32px",
-                      minHeight: "32px",
-                      background: isCurrent ? sectionConfig.color : 
-                                 isAnswered ? "#4caf50" : "#f5f5f5",
-                      color: isCurrent ? "white" : 
-                             isAnswered ? "white" : "#666",
-                      border: `1px solid ${isCurrent ? sectionConfig.color : 
-                               isAnswered ? "#4caf50" : "#e0e0e0"}`,
-                      borderRadius: "4px",
-                      cursor: alreadySubmitted ? 'not-allowed' : 'pointer',
-                      fontSize: "12px",
-                      fontWeight: "600",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      padding: "0",
-                      transition: "all 0.2s",
-                      position: "relative",
-                      opacity: alreadySubmitted ? 0.6 : 1
-                    }}
-                    title={alreadySubmitted ? "Assessment submitted - navigation disabled" : `Question ${index + 1}${isAnswered ? " (Answered)" : " (Not answered)"}`}
-                    onMouseOver={(e) => {
-                      if (!isCurrent && !alreadySubmitted) {
-                        e.currentTarget.style.transform = "scale(1.05)";
-                        e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.1)";
-                      }
-                    }}
-                    onMouseOut={(e) => {
-                      if (!isCurrent && !alreadySubmitted) {
-                        e.currentTarget.style.transform = "scale(1)";
-                        e.currentTarget.style.boxShadow = "none";
-                      }
+                      ...gridItemStyle,
+                      background: isCurrent ? sectionConfig.color : isAnswered ? '#4caf50' : '#f1f5f9',
+                      color: isCurrent || isAnswered ? 'white' : '#64748b',
+                      borderColor: isCurrent ? sectionConfig.color : isAnswered ? '#4caf50' : '#e2e8f0'
                     }}
                   >
                     {index + 1}
-                    {isCurrent && (
-                      <div style={{
-                        position: "absolute",
-                        top: "-4px",
-                        right: "-4px",
-                        width: "12px",
-                        height: "12px",
-                        borderRadius: "50%",
-                        background: sectionConfig.color,
-                        border: "2px solid white"
-                      }} />
-                    )}
                   </button>
                 );
               })}
             </div>
-            
+
             {/* Legend */}
-            <div style={{
-              marginTop: "15px",
-              paddingTop: "15px",
-              borderTop: "2px solid #e0e0e0"
-            }}>
-              <div style={{
-                fontSize: "12px",
-                fontWeight: "600",
-                color: "#666",
-                marginBottom: "8px",
-                textAlign: "center"
-              }}>
-                Navigation Guide
+            <div style={legendStyle}>
+              <div style={legendItemStyle}>
+                <div style={{ ...legendDotStyle, background: '#4caf50' }} />
+                <span>Answered</span>
               </div>
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "8px",
-                fontSize: "11px"
-              }}>
-                <div style={{ 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: "6px",
-                  padding: "6px",
-                  background: "#f8f9fa",
-                  borderRadius: "4px"
-                }}>
-                  <div style={{ 
-                    width: "16px", 
-                    height: "16px", 
-                    borderRadius: "4px", 
-                    background: "#4caf50",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "white",
-                    fontSize: "10px"
-                  }}>
-                    ✓
-                  </div>
-                  <span>Answered</span>
-                </div>
-                <div style={{ 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: "6px",
-                  padding: "6px",
-                  background: "#f8f9fa",
-                  borderRadius: "4px"
-                }}>
-                  <div style={{ 
-                    width: "16px", 
-                    height: "16px", 
-                    borderRadius: "4px", 
-                    background: sectionConfig.color,
-                    position: "relative"
-                  }}>
-                    <div style={{
-                      position: "absolute",
-                      top: "-3px",
-                      right: "-3px",
-                      width: "8px",
-                      height: "8px",
-                      borderRadius: "50%",
-                      background: "white",
-                      border: "1px solid" + sectionConfig.color
-                    }} />
-                  </div>
-                  <span>Current</span>
-                </div>
-                <div style={{ 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: "6px",
-                  padding: "6px",
-                  background: "#f8f9fa",
-                  borderRadius: "4px"
-                }}>
-                  <div style={{ 
-                    width: "16px", 
-                    height: "16px", 
-                    borderRadius: "4px", 
-                    background: "#f5f5f5",
-                    border: "1px solid #e0e0e0"
-                  }} />
-                  <span>Pending</span>
-                </div>
-                <div style={{ 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: "6px",
-                  padding: "6px",
-                  background: "#f8f9fa",
-                  borderRadius: "4px"
-                }}>
-                  <div style={{ 
-                    width: "16px", 
-                    height: "16px", 
-                    borderRadius: "4px", 
-                    background: "#2196f3",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "white",
-                    fontSize: "10px",
-                    fontWeight: "bold"
-                  }}>
-                    ⏰
-                  </div>
-                  <span>Timer</span>
-                </div>
+              <div style={legendItemStyle}>
+                <div style={{ ...legendDotStyle, background: sectionConfig.color }} />
+                <span>Current</span>
+              </div>
+              <div style={legendItemStyle}>
+                <div style={{ ...legendDotStyle, background: '#f1f5f9', border: '1px solid #e2e8f0' }} />
+                <span>Pending</span>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </>
   );
 }
+
+// ===== STYLES =====
+const modalOverlayStyle = {
+  position: 'fixed',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  background: 'rgba(0,0,0,0.8)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 2000,
+  padding: '20px'
+};
+
+const modalContentStyle = {
+  background: 'white',
+  padding: '40px',
+  borderRadius: '20px',
+  maxWidth: '500px',
+  width: '100%',
+  boxShadow: '0 25px 50px rgba(0,0,0,0.25)'
+};
+
+const modalTitleStyle = {
+  margin: '0 0 20px 0',
+  color: '#1565c0',
+  fontSize: '28px',
+  fontWeight: '700'
+};
+
+const modalBodyStyle = {
+  margin: '25px 0',
+  padding: '25px',
+  background: '#f8f9fa',
+  borderRadius: '15px',
+  border: '2px solid #e3f2fd'
+};
+
+const modalRowStyle = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  marginBottom: '15px',
+  fontSize: '16px'
+};
+
+const modalWarningStyle = {
+  fontSize: '14px',
+  color: '#666',
+  padding: '12px',
+  background: '#fff8e1',
+  borderRadius: '8px',
+  borderLeft: '4px solid #ff9800',
+  marginTop: '15px'
+};
+
+const modalButtonContainerStyle = {
+  display: 'flex',
+  justifyContent: 'flex-end',
+  gap: '15px'
+};
+
+const modalSecondaryButtonStyle = {
+  padding: '12px 24px',
+  background: '#f1f5f9',
+  color: '#64748b',
+  border: 'none',
+  borderRadius: '10px',
+  cursor: 'pointer',
+  fontWeight: '600',
+  fontSize: '16px'
+};
+
+const modalPrimaryButtonStyle = {
+  padding: '12px 24px',
+  background: 'linear-gradient(135deg, #4caf50, #2e7d32)',
+  color: 'white',
+  border: 'none',
+  borderRadius: '10px',
+  cursor: 'pointer',
+  fontWeight: '700',
+  fontSize: '16px'
+};
+
+const successIconStyle = {
+  width: '100px',
+  height: '100px',
+  background: 'linear-gradient(135deg, #4caf50, #2e7d32)',
+  borderRadius: '50%',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  margin: '0 auto 25px',
+  fontSize: '50px',
+  color: 'white'
+};
+
+const mainContainerStyle = {
+  minHeight: '100vh',
+  background: '#f8fafc',
+  display: 'flex',
+  flexDirection: 'column',
+  fontFamily: "'Inter', sans-serif"
+};
+
+const headerStyle = {
+  background: 'linear-gradient(135deg, #1a2639 0%, #2d3748 100%)',
+  padding: '15px 25px',
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  borderBottom: '1px solid rgba(255,255,255,0.1)'
+};
+
+const headerLeftStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '15px'
+};
+
+const headerIconStyle = {
+  width: '45px',
+  height: '45px',
+  borderRadius: '10px',
+  background: 'rgba(255,255,255,0.1)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontSize: '24px'
+};
+
+const headerTitleStyle = {
+  fontSize: '18px',
+  fontWeight: '700',
+  color: 'white',
+  marginBottom: '4px'
+};
+
+const headerSubtitleStyle = {
+  fontSize: '12px',
+  color: 'rgba(255,255,255,0.7)'
+};
+
+const timerStyle = {
+  padding: '8px 15px',
+  background: 'rgba(255,255,255,0.1)',
+  borderRadius: '8px',
+  textAlign: 'center',
+  border: '1px solid'
+};
+
+const antiCheatStyle = {
+  padding: '8px 15px',
+  background: 'linear-gradient(135deg, #ff9800, #f57c00)',
+  color: 'white',
+  textAlign: 'center',
+  fontSize: '12px',
+  fontWeight: '600'
+};
+
+const progressBarContainerStyle = {
+  height: '4px',
+  background: '#e2e8f0',
+  overflow: 'hidden'
+};
+
+const progressBarFillStyle = {
+  height: '100%',
+  transition: 'width 0.3s ease'
+};
+
+const contentContainerStyle = {
+  flex: 1,
+  padding: '20px',
+  display: 'flex',
+  gap: '20px',
+  overflow: 'hidden'
+};
+
+const questionPanelStyle = {
+  flex: 7,
+  background: 'white',
+  borderRadius: '16px',
+  border: '1px solid #e2e8f0',
+  display: 'flex',
+  flexDirection: 'column',
+  overflow: 'hidden',
+  padding: '25px',
+  boxShadow: '0 4px 6px rgba(0,0,0,0.05)'
+};
+
+const questionHeaderStyle = {
+  marginBottom: '25px',
+  paddingBottom: '20px',
+  borderBottom: '2px solid #f1f5f9'
+};
+
+const sectionBadgeStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '10px',
+  marginBottom: '15px'
+};
+
+const sectionIconStyle = {
+  width: '32px',
+  height: '32px',
+  borderRadius: '8px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  color: 'white',
+  fontSize: '16px'
+};
+
+const sectionTitleStyle = {
+  fontSize: '14px',
+  fontWeight: '600',
+  textTransform: 'uppercase',
+  letterSpacing: '0.5px'
+};
+
+const questionTextStyle = {
+  fontSize: '18px',
+  lineHeight: '1.6',
+  color: '#1e293b'
+};
+
+const saveStatusStyle = {
+  padding: '10px 15px',
+  border: '1px solid',
+  borderRadius: '8px',
+  marginBottom: '20px',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '10px',
+  fontSize: '14px',
+  fontWeight: '500'
+};
+
+const saveStatusIconStyle = {
+  width: '22px',
+  height: '22px',
+  borderRadius: '50%',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  color: 'white',
+  fontSize: '12px'
+};
+
+const answersContainerStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '12px',
+  flex: 1
+};
+
+const answerButtonStyle = {
+  padding: '16px 20px',
+  border: '2px solid',
+  borderRadius: '12px',
+  cursor: 'pointer',
+  textAlign: 'left',
+  fontSize: '15px',
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: '15px',
+  transition: 'all 0.2s'
+};
+
+const answerLetterStyle = {
+  width: '28px',
+  height: '28px',
+  borderRadius: '6px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontSize: '14px',
+  fontWeight: '700',
+  flexShrink: 0
+};
+
+const answerTextStyle = {
+  flex: 1,
+  fontSize: '15px',
+  lineHeight: '1.5',
+  color: '#334155'
+};
+
+const navigationContainerStyle = {
+  marginTop: '30px',
+  paddingTop: '20px',
+  borderTop: '2px solid #f1f5f9',
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center'
+};
+
+const navButtonStyle = {
+  padding: '12px 28px',
+  border: 'none',
+  borderRadius: '10px',
+  fontSize: '15px',
+  fontWeight: '600',
+  cursor: 'pointer',
+  transition: 'all 0.2s'
+};
+
+const navInfoStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  gap: '4px',
+  fontSize: '14px',
+  color: '#64748b'
+};
+
+const navigatorPanelStyle = {
+  flex: 3,
+  background: 'white',
+  borderRadius: '16px',
+  border: '1px solid #e2e8f0',
+  padding: '20px',
+  display: 'flex',
+  flexDirection: 'column',
+  minWidth: '280px',
+  boxShadow: '0 4px 6px rgba(0,0,0,0.05)'
+};
+
+const navigatorTitleStyle = {
+  fontSize: '16px',
+  fontWeight: '600',
+  color: '#1e293b',
+  textAlign: 'center',
+  paddingBottom: '15px',
+  borderBottom: '2px solid #f1f5f9',
+  marginBottom: '15px'
+};
+
+const statsSummaryStyle = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  background: '#f8fafc',
+  borderRadius: '12px',
+  padding: '15px',
+  marginBottom: '15px'
+};
+
+const statItemStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  gap: '4px'
+};
+
+const statLabelStyle = {
+  fontSize: '11px',
+  color: '#64748b'
+};
+
+const timerProgressStyle = {
+  background: '#f8fafc',
+  borderRadius: '12px',
+  padding: '15px',
+  marginBottom: '20px'
+};
+
+const timerProgressHeaderStyle = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  marginBottom: '10px',
+  fontSize: '12px',
+  color: '#64748b'
+};
+
+const timerProgressBarContainerStyle = {
+  height: '8px',
+  background: '#e2e8f0',
+  borderRadius: '4px',
+  overflow: 'hidden'
+};
+
+const timerProgressBarFillStyle = {
+  height: '100%',
+  borderRadius: '4px',
+  transition: 'width 0.3s ease'
+};
+
+const questionGridStyle = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(8, 1fr)',
+  gap: '6px',
+  marginBottom: '20px'
+};
+
+const gridItemStyle = {
+  aspectRatio: '1',
+  border: '2px solid',
+  borderRadius: '8px',
+  fontSize: '12px',
+  fontWeight: '600',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+  transition: 'all 0.2s'
+};
+
+const legendStyle = {
+  display: 'grid',
+  gridTemplateColumns: '1fr 1fr',
+  gap: '10px',
+  paddingTop: '15px',
+  borderTop: '2px solid #f1f5f9',
+  fontSize: '11px'
+};
+
+const legendItemStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  padding: '6px',
+  background: '#f8fafc',
+  borderRadius: '6px'
+};
+
+const legendDotStyle = {
+  width: '14px',
+  height: '14px',
+  borderRadius: '4px'
+};
