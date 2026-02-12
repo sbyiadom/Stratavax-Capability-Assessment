@@ -273,9 +273,9 @@ export default function AssessmentPage() {
   const [error, setError] = useState(null);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
   const [timerLoaded, setTimerLoaded] = useState(false);
-  const [timeLimitSeconds, setTimeLimitSeconds] = useState(10800);
+  const [timeLimitSeconds, setTimeLimitSeconds] = useState(10800); // 180 minutes fixed
 
-  // ===== FETCH ASSESSMENT DETAILS =====
+  // ===== FETCH ASSESSMENT DETAILS - FORCED 180 MINS =====
   useEffect(() => {
     const fetchAssessmentDetails = async () => {
       if (!assessmentId || !isSessionReady || alreadySubmitted) return;
@@ -291,7 +291,8 @@ export default function AssessmentPage() {
         
         if (data) {
           setAssessment(data);
-          setTimeLimitSeconds(data.duration_minutes * 60 || 10800);
+          // FORCE 180 MINUTES FOR ALL ASSESSMENT TYPES
+          setTimeLimitSeconds(10800); // 180 minutes = 10800 seconds
           document.title = `${data.name} - Stratavax Assessment`;
         }
       } catch (error) {
@@ -528,35 +529,15 @@ export default function AssessmentPage() {
   // ===== LOADING STATE =====
   if (loading) {
     return (
-      <div style={{
-        minHeight: "100vh",
-        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center"
-      }}>
-        <div style={{ textAlign: "center", color: "white" }}>
-          <div style={{ fontSize: "28px", fontWeight: "700", marginBottom: "20px" }}>
+      <div style={loadingContainerStyle}>
+        <div style={loadingContentStyle}>
+          <div style={loadingTitleStyle}>
             {assessment?.name || 'Loading Assessment...'}
           </div>
-          <div style={{ fontSize: "18px", marginBottom: "30px" }}>
+          <div style={loadingSubtitleStyle}>
             Please wait while we prepare your assessment
           </div>
-          <div style={{ 
-            width: "60px", 
-            height: "60px", 
-            border: "5px solid rgba(255,255,255,0.3)",
-            borderTop: "5px solid white",
-            borderRadius: "50%",
-            animation: "spin 1s linear infinite",
-            margin: "0 auto"
-          }} />
-          <style jsx>{`
-            @keyframes spin {
-              0% { transform: rotate(0deg); }
-              100% { transform: rotate(360deg); }
-            }
-          `}</style>
+          <div style={loadingSpinnerStyle} />
         </div>
       </div>
     );
@@ -565,39 +546,16 @@ export default function AssessmentPage() {
   // ===== ALREADY SUBMITTED =====
   if (alreadySubmitted) {
     return (
-      <div style={{
-        minHeight: "100vh",
-        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center"
-      }}>
-        <div style={{
-          background: "white",
-          padding: "40px",
-          borderRadius: "20px",
-          maxWidth: "500px",
-          textAlign: "center"
-        }}>
-          <div style={{ fontSize: "48px", marginBottom: "20px" }}>✅</div>
-          <h2 style={{ color: "#1a2639", marginBottom: "15px" }}>
-            Assessment Already Completed
-          </h2>
-          <p style={{ color: "#64748b", marginBottom: "25px" }}>
+      <div style={errorContainerStyle}>
+        <div style={errorCardStyle}>
+          <div style={successIconStyle}>✅</div>
+          <h2 style={errorTitleStyle}>Assessment Already Completed</h2>
+          <p style={errorTextStyle}>
             You have already submitted this assessment. Each assessment can only be taken once.
           </p>
           <button
             onClick={() => router.push('/assessment/pre')}
-            style={{
-              padding: "12px 30px",
-              background: "#667eea",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              fontSize: "16px",
-              fontWeight: "600",
-              cursor: "pointer"
-            }}
+            style={primaryButtonStyle}
           >
             Return to Assessment Selection
           </button>
@@ -609,39 +567,16 @@ export default function AssessmentPage() {
   // ===== ERROR STATE =====
   if (error) {
     return (
-      <div style={{
-        minHeight: "100vh",
-        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center"
-      }}>
-        <div style={{
-          background: "white",
-          padding: "40px",
-          borderRadius: "20px",
-          maxWidth: "500px",
-          textAlign: "center"
-        }}>
-          <div style={{ fontSize: "48px", marginBottom: "20px" }}>⚠️</div>
-          <h2 style={{ color: "#1a2639", marginBottom: "15px" }}>
+      <div style={errorContainerStyle}>
+        <div style={errorCardStyle}>
+          <div style={errorIconStyle}>⚠️</div>
+          <h2 style={errorTitleStyle}>
             {error.includes("already submitted") ? "Already Submitted" : "Error"}
           </h2>
-          <p style={{ color: "#64748b", marginBottom: "25px" }}>
-            {error}
-          </p>
+          <p style={errorTextStyle}>{error}</p>
           <button
             onClick={() => router.push('/assessment/pre')}
-            style={{
-              padding: "12px 30px",
-              background: "#667eea",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              fontSize: "16px",
-              fontWeight: "600",
-              cursor: "pointer"
-            }}
+            style={primaryButtonStyle}
           >
             Return to Assessment Selection
           </button>
@@ -652,39 +587,16 @@ export default function AssessmentPage() {
 
   if (questions.length === 0) {
     return (
-      <div style={{
-        minHeight: "100vh",
-        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center"
-      }}>
-        <div style={{
-          background: "white",
-          padding: "40px",
-          borderRadius: "20px",
-          maxWidth: "500px",
-          textAlign: "center"
-        }}>
-          <div style={{ fontSize: "48px", marginBottom: "20px" }}>📭</div>
-          <h2 style={{ color: "#1a2639", marginBottom: "15px" }}>
-            No Questions Available
-          </h2>
-          <p style={{ color: "#64748b", marginBottom: "25px" }}>
+      <div style={errorContainerStyle}>
+        <div style={errorCardStyle}>
+          <div style={errorIconStyle}>📭</div>
+          <h2 style={errorTitleStyle}>No Questions Available</h2>
+          <p style={errorTextStyle}>
             This assessment doesn't have any questions yet. Please contact support.
           </p>
           <button
             onClick={() => router.push('/assessment/pre')}
-            style={{
-              padding: "12px 30px",
-              background: "#667eea",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              fontSize: "16px",
-              fontWeight: "600",
-              cursor: "pointer"
-            }}
+            style={primaryButtonStyle}
           >
             Return to Assessment Selection
           </button>
@@ -762,7 +674,7 @@ export default function AssessmentPage() {
       {showSuccessModal && (
         <div style={modalOverlayStyle}>
           <div style={{ ...modalContentStyle, textAlign: 'center' }}>
-            <div style={successIconStyle}>✓</div>
+            <div style={successIconLargeStyle}>✓</div>
             <h2 style={{ ...modalTitleStyle, color: '#2e7d32' }}>Assessment Complete! 🎉</h2>
             <div style={modalBodyStyle}>
               <p style={{ fontSize: '16px', marginBottom: '20px' }}>
@@ -778,9 +690,20 @@ export default function AssessmentPage() {
 
       {/* Main Assessment Layout */}
       <div style={mainContainerStyle}>
-        {/* Header */}
+        {/* Header with Back Button */}
         <div style={headerStyle}>
           <div style={headerLeftStyle}>
+            {/* Back Button to return to assessment selection */}
+            <button
+              onClick={() => router.push('/assessment/pre')}
+              style={backButtonStyle}
+              onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+              onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+              title="Back to Assessment Selection"
+            >
+              ←
+            </button>
+            
             <div style={headerIconStyle}>{sectionConfig.icon}</div>
             <div>
               <div style={headerTitleStyle}>{assessment?.name || 'Assessment'}</div>
@@ -800,14 +723,24 @@ export default function AssessmentPage() {
               </div>
             </div>
           </div>
+          
+          {/* Timer - Fixed at 180 mins for all assessments */}
           <div style={{
             ...timerStyle,
             borderColor: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : '#2196f3'
           }}>
-            <div style={{ fontSize: '10px', fontWeight: '600', color: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : '#2196f3' }}>
-              TIME REMAINING
+            <div style={{ 
+              fontSize: '10px', 
+              fontWeight: '600', 
+              color: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : '#2196f3'
+            }}>
+              TIME REMAINING (180 MINS)
             </div>
-            <div style={{ fontSize: '18px', fontWeight: '700', color: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : '#1565c0' }}>
+            <div style={{ 
+              fontSize: '18px', 
+              fontWeight: '700', 
+              color: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : '#1565c0'
+            }}>
               {formatTime(hours)}:{formatTime(minutes)}:{formatTime(seconds)}
             </div>
           </div>
@@ -820,7 +753,11 @@ export default function AssessmentPage() {
 
         {/* Progress Bar */}
         <div style={progressBarContainerStyle}>
-          <div style={{ ...progressBarFillStyle, width: `${progressPercentage}%`, background: sectionConfig.color }} />
+          <div style={{ 
+            ...progressBarFillStyle, 
+            width: `${progressPercentage}%`, 
+            background: sectionConfig.color 
+          }} />
         </div>
 
         {/* Main Content */}
@@ -835,11 +772,17 @@ export default function AssessmentPage() {
             {/* Question Header */}
             <div style={questionHeaderStyle}>
               <div style={sectionBadgeStyle}>
-                <div style={{ ...sectionIconStyle, background: sectionConfig.color }}>{sectionConfig.icon}</div>
-                <div style={{ ...sectionTitleStyle, color: sectionConfig.color }}>{currentSection}</div>
+                <div style={{ ...sectionIconStyle, background: sectionConfig.color }}>
+                  {sectionConfig.icon}
+                </div>
+                <div style={{ ...sectionTitleStyle, color: sectionConfig.color }}>
+                  {currentSection}
+                </div>
               </div>
               <div style={questionTextStyle}>
-                <strong style={{ color: sectionConfig.color }}>Question {currentIndex + 1}:</strong>
+                <strong style={{ color: sectionConfig.color }}>
+                  Question {currentIndex + 1}:
+                </strong>
                 <div style={{ marginTop: '10px' }}>{currentQuestion?.question_text}</div>
               </div>
             </div>
@@ -848,15 +791,23 @@ export default function AssessmentPage() {
             {saveStatus[currentQuestion?.id] && (
               <div style={{
                 ...saveStatusStyle,
-                background: saveStatus[currentQuestion.id] === 'saved' ? 'rgba(76,175,80,0.1)' : 'rgba(255,152,0,0.1)',
-                borderColor: saveStatus[currentQuestion.id] === 'saved' ? '#4caf50' : '#ff9800',
-                color: saveStatus[currentQuestion.id] === 'saved' ? '#2e7d32' : '#f57c00'
+                background: saveStatus[currentQuestion.id] === 'saved' 
+                  ? 'rgba(76,175,80,0.1)' 
+                  : 'rgba(255,152,0,0.1)',
+                borderColor: saveStatus[currentQuestion.id] === 'saved' 
+                  ? '#4caf50' 
+                  : '#ff9800',
+                color: saveStatus[currentQuestion.id] === 'saved' 
+                  ? '#2e7d32' 
+                  : '#f57c00'
               }}>
                 <div style={saveStatusIconStyle}>
                   {saveStatus[currentQuestion.id] === 'saved' ? '✓' : '⏳'}
                 </div>
                 <span>
-                  {saveStatus[currentQuestion.id] === 'saved' ? 'Answer saved' : 'Saving...'}
+                  {saveStatus[currentQuestion.id] === 'saved' 
+                    ? 'Answer saved' 
+                    : 'Saving...'}
                 </span>
               </div>
             )}
@@ -879,7 +830,11 @@ export default function AssessmentPage() {
                       boxShadow: isSelected ? `0 4px 12px ${sectionConfig.color}30` : 'none'
                     }}
                   >
-                    <div style={{ ...answerLetterStyle, background: isSelected ? sectionConfig.color : '#f1f5f9' }}>
+                    <div style={{ 
+                      ...answerLetterStyle, 
+                      background: isSelected ? sectionConfig.color : '#f1f5f9',
+                      color: isSelected ? 'white' : '#64748b'
+                    }}>
                       {optionLetter}
                     </div>
                     <div style={answerTextStyle}>{option.answer_text}</div>
@@ -896,15 +851,20 @@ export default function AssessmentPage() {
                 style={{
                   ...navButtonStyle,
                   background: currentIndex === 0 || alreadySubmitted ? '#f1f5f9' : sectionConfig.color,
-                  color: currentIndex === 0 || alreadySubmitted ? '#94a3b8' : 'white'
+                  color: currentIndex === 0 || alreadySubmitted ? '#94a3b8' : 'white',
+                  cursor: currentIndex === 0 || alreadySubmitted ? 'not-allowed' : 'pointer'
                 }}
               >
                 ← Previous
               </button>
               
               <div style={navInfoStyle}>
-                <div>{currentIndex + 1} of {questions.length}</div>
-                <div style={{ color: sectionConfig.color }}>{progressPercentage}% Complete</div>
+                <div style={{ fontWeight: '600' }}>
+                  {currentIndex + 1} of {questions.length}
+                </div>
+                <div style={{ color: sectionConfig.color, fontSize: '12px' }}>
+                  {progressPercentage}% Complete
+                </div>
               </div>
               
               {isLastQuestion ? (
@@ -914,7 +874,8 @@ export default function AssessmentPage() {
                   style={{
                     ...navButtonStyle,
                     background: alreadySubmitted ? '#f1f5f9' : '#4caf50',
-                    color: alreadySubmitted ? '#94a3b8' : 'white'
+                    color: alreadySubmitted ? '#94a3b8' : 'white',
+                    cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
                   }}
                 >
                   Submit
@@ -926,7 +887,8 @@ export default function AssessmentPage() {
                   style={{
                     ...navButtonStyle,
                     background: alreadySubmitted ? '#f1f5f9' : sectionConfig.color,
-                    color: alreadySubmitted ? '#94a3b8' : 'white'
+                    color: alreadySubmitted ? '#94a3b8' : 'white',
+                    cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
                   }}
                 >
                   Next →
@@ -942,15 +904,21 @@ export default function AssessmentPage() {
             {/* Stats Summary */}
             <div style={statsSummaryStyle}>
               <div style={statItemStyle}>
-                <div style={{ color: '#4caf50', fontSize: '24px', fontWeight: '700' }}>{totalAnswered}</div>
+                <div style={{ color: '#4caf50', fontSize: '24px', fontWeight: '700' }}>
+                  {totalAnswered}
+                </div>
                 <div style={statLabelStyle}>Answered</div>
               </div>
               <div style={statItemStyle}>
-                <div style={{ color: '#64748b', fontSize: '24px', fontWeight: '700' }}>{questions.length - totalAnswered}</div>
+                <div style={{ color: '#64748b', fontSize: '24px', fontWeight: '700' }}>
+                  {questions.length - totalAnswered}
+                </div>
                 <div style={statLabelStyle}>Remaining</div>
               </div>
               <div style={statItemStyle}>
-                <div style={{ color: '#2196f3', fontSize: '24px', fontWeight: '700' }}>{progressPercentage}%</div>
+                <div style={{ color: '#2196f3', fontSize: '24px', fontWeight: '700' }}>
+                  {progressPercentage}%
+                </div>
                 <div style={statLabelStyle}>Complete</div>
               </div>
             </div>
@@ -958,8 +926,10 @@ export default function AssessmentPage() {
             {/* Timer Progress */}
             <div style={timerProgressStyle}>
               <div style={timerProgressHeaderStyle}>
-                <span>⏰ Time Remaining</span>
-                <span style={{ fontWeight: '700' }}>{formatTime(hours)}:{formatTime(minutes)}:{formatTime(seconds)}</span>
+                <span>⏰ Time Remaining (180 mins)</span>
+                <span style={{ fontWeight: '700' }}>
+                  {formatTime(hours)}:{formatTime(minutes)}:{formatTime(seconds)}
+                </span>
               </div>
               <div style={timerProgressBarContainerStyle}>
                 <div style={{
@@ -967,6 +937,14 @@ export default function AssessmentPage() {
                   width: `${(elapsed / timeLimitSeconds) * 100}%`,
                   background: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : '#2196f3'
                 }} />
+              </div>
+              <div style={{ 
+                fontSize: '11px', 
+                color: '#64748b', 
+                marginTop: '8px',
+                textAlign: 'center'
+              }}>
+                {Math.round((elapsed / timeLimitSeconds) * 100)}% used
               </div>
             </div>
 
@@ -983,10 +961,21 @@ export default function AssessmentPage() {
                     disabled={alreadySubmitted}
                     style={{
                       ...gridItemStyle,
-                      background: isCurrent ? sectionConfig.color : isAnswered ? '#4caf50' : '#f1f5f9',
+                      background: isCurrent 
+                        ? sectionConfig.color 
+                        : isAnswered 
+                          ? '#4caf50' 
+                          : '#f1f5f9',
                       color: isCurrent || isAnswered ? 'white' : '#64748b',
-                      borderColor: isCurrent ? sectionConfig.color : isAnswered ? '#4caf50' : '#e2e8f0'
+                      borderColor: isCurrent 
+                        ? sectionConfig.color 
+                        : isAnswered 
+                          ? '#4caf50' 
+                          : '#e2e8f0',
+                      cursor: alreadySubmitted ? 'not-allowed' : 'pointer',
+                      opacity: alreadySubmitted ? 0.6 : 1
                     }}
+                    title={`Question ${index + 1}${isAnswered ? ' (Answered)' : ' (Not answered)'}`}
                   >
                     {index + 1}
                   </button>
@@ -998,17 +987,65 @@ export default function AssessmentPage() {
             <div style={legendStyle}>
               <div style={legendItemStyle}>
                 <div style={{ ...legendDotStyle, background: '#4caf50' }} />
-                <span>Answered</span>
+                <span style={{ fontSize: '11px' }}>Answered</span>
               </div>
               <div style={legendItemStyle}>
                 <div style={{ ...legendDotStyle, background: sectionConfig.color }} />
-                <span>Current</span>
+                <span style={{ fontSize: '11px' }}>Current</span>
               </div>
               <div style={legendItemStyle}>
-                <div style={{ ...legendDotStyle, background: '#f1f5f9', border: '1px solid #e2e8f0' }} />
-                <span>Pending</span>
+                <div style={{ 
+                  ...legendDotStyle, 
+                  background: '#f1f5f9', 
+                  border: '1px solid #e2e8f0' 
+                }} />
+                <span style={{ fontSize: '11px' }}>Pending</span>
+              </div>
+              <div style={legendItemStyle}>
+                <div style={{ 
+                  ...legendDotStyle, 
+                  background: 'transparent',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '12px'
+                }}>
+                  ⏰
+                </div>
+                <span style={{ fontSize: '11px' }}>180 mins</span>
               </div>
             </div>
+            
+            {/* Back to Selection Button (Mobile/Quick Access) */}
+            <button
+              onClick={() => router.push('/assessment/pre')}
+              style={{
+                marginTop: '15px',
+                padding: '10px',
+                background: 'transparent',
+                color: '#64748b',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                transition: 'all 0.2s'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.background = '#f8fafc';
+                e.currentTarget.style.borderColor = '#94a3b8';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.borderColor = '#e2e8f0';
+              }}
+            >
+              ← Back to Assessment Selection
+            </button>
           </div>
         </div>
       </div>
@@ -1024,6 +1061,110 @@ export default function AssessmentPage() {
 }
 
 // ===== STYLES =====
+const loadingContainerStyle = {
+  minHeight: '100vh',
+  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center'
+};
+
+const loadingContentStyle = {
+  textAlign: 'center',
+  color: 'white',
+  padding: '40px',
+  maxWidth: '500px'
+};
+
+const loadingTitleStyle = {
+  fontSize: '28px',
+  fontWeight: '700',
+  marginBottom: '20px'
+};
+
+const loadingSubtitleStyle = {
+  fontSize: '18px',
+  marginBottom: '30px'
+};
+
+const loadingSpinnerStyle = {
+  width: '60px',
+  height: '60px',
+  border: '5px solid rgba(255,255,255,0.3)',
+  borderTop: '5px solid white',
+  borderRadius: '50%',
+  animation: 'spin 1s linear infinite',
+  margin: '0 auto'
+};
+
+const errorContainerStyle = {
+  minHeight: '100vh',
+  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '20px'
+};
+
+const errorCardStyle = {
+  background: 'white',
+  padding: '40px',
+  borderRadius: '20px',
+  maxWidth: '500px',
+  width: '100%',
+  textAlign: 'center',
+  boxShadow: '0 20px 60px rgba(0,0,0,0.2)'
+};
+
+const errorIconStyle = {
+  fontSize: '48px',
+  marginBottom: '20px'
+};
+
+const errorTitleStyle = {
+  color: '#1a2639',
+  marginBottom: '15px',
+  fontSize: '24px',
+  fontWeight: '700'
+};
+
+const errorTextStyle = {
+  color: '#64748b',
+  marginBottom: '25px',
+  fontSize: '16px',
+  lineHeight: '1.6'
+};
+
+const primaryButtonStyle = {
+  padding: '12px 30px',
+  background: '#667eea',
+  color: 'white',
+  border: 'none',
+  borderRadius: '10px',
+  fontSize: '16px',
+  fontWeight: '600',
+  cursor: 'pointer',
+  transition: 'all 0.2s'
+};
+
+const successIconStyle = {
+  fontSize: '48px',
+  marginBottom: '20px'
+};
+
+const successIconLargeStyle = {
+  width: '100px',
+  height: '100px',
+  background: 'linear-gradient(135deg, #4caf50, #2e7d32)',
+  borderRadius: '50%',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  margin: '0 auto 25px',
+  fontSize: '50px',
+  color: 'white'
+};
+
 const modalOverlayStyle = {
   position: 'fixed',
   top: 0,
@@ -1107,25 +1248,12 @@ const modalPrimaryButtonStyle = {
   fontSize: '16px'
 };
 
-const successIconStyle = {
-  width: '100px',
-  height: '100px',
-  background: 'linear-gradient(135deg, #4caf50, #2e7d32)',
-  borderRadius: '50%',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  margin: '0 auto 25px',
-  fontSize: '50px',
-  color: 'white'
-};
-
 const mainContainerStyle = {
   minHeight: '100vh',
   background: '#f8fafc',
   display: 'flex',
   flexDirection: 'column',
-  fontFamily: "'Inter', sans-serif"
+  fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 };
 
 const headerStyle = {
@@ -1141,6 +1269,22 @@ const headerLeftStyle = {
   display: 'flex',
   alignItems: 'center',
   gap: '15px'
+};
+
+const backButtonStyle = {
+  background: 'rgba(255,255,255,0.1)',
+  border: 'none',
+  color: 'white',
+  width: '36px',
+  height: '36px',
+  borderRadius: '8px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+  fontSize: '18px',
+  marginRight: '5px',
+  transition: 'all 0.2s'
 };
 
 const headerIconStyle = {
@@ -1171,7 +1315,8 @@ const timerStyle = {
   background: 'rgba(255,255,255,0.1)',
   borderRadius: '8px',
   textAlign: 'center',
-  border: '1px solid'
+  border: '1px solid',
+  minWidth: '140px'
 };
 
 const antiCheatStyle = {
@@ -1328,7 +1473,6 @@ const navButtonStyle = {
   borderRadius: '10px',
   fontSize: '15px',
   fontWeight: '600',
-  cursor: 'pointer',
   transition: 'all 0.2s'
 };
 
@@ -1428,7 +1572,6 @@ const gridItemStyle = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  cursor: 'pointer',
   transition: 'all 0.2s'
 };
 
