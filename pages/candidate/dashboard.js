@@ -164,7 +164,7 @@ export default function CandidateDashboard() {
       },
       {
         name: 'Cultural & Attitudinal Fit Assessment',
-        description: 'Evaluate alignment with company values, work ethic, and organizational citizenship',
+        description: ' alignment with company values, work ethic, and organizational citizenship',
         assessment_type: 'cultural',
         category_description: 'Measures core values alignment, OCB, reliability, customer focus, safety awareness, and commercial acumen',
         icon_name: '🤝',
@@ -282,6 +282,15 @@ export default function CandidateDashboard() {
   // Get total available assessments
   const getTotalAssessments = () => {
     return assessments.length;
+  };
+
+  // FIXED: Navigation handler - prevents loading loop
+  const handleStartAssessment = (e, assessmentId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (assessmentId) {
+      router.push(`/assessment/${assessmentId}`);
+    }
   };
 
   if (authLoading || loading) {
@@ -557,14 +566,8 @@ export default function CandidateDashboard() {
                           ? `2px solid ${activeTypeConfig.color}`
                           : "2px solid transparent",
                       opacity: completed ? 0.9 : 1,
-                      cursor: completed ? "default" : "pointer",
                       position: "relative",
                       overflow: "hidden"
-                    }}
-                    onClick={() => {
-                      if (!completed) {
-                        router.push(`/assessment/${assessment.id}`);
-                      }
                     }}
                   >
                     {/* Status Badge */}
@@ -735,25 +738,25 @@ export default function CandidateDashboard() {
                           alignItems: "center",
                           gap: "8px"
                         }}>
-                          <span>🕐</span> You have an in-progress assessment. Click to resume.
+                          <span>🕐</span> You have an in-progress assessment. Click below to resume.
                         </div>
                       </div>
                     ) : null}
 
-                    {/* Action Button */}
+                    {/* FIXED: Action Button - Proper navigation without loading loop */}
                     {!completed && (
-                      <Link href={`/assessment/${assessment.id}`} legacyBehavior>
-                        <a style={{
+                      <button
+                        onClick={(e) => handleStartAssessment(e, assessment.id)}
+                        style={{
                           display: "inline-block",
                           background: inProgress ? activeTypeConfig.color : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                           color: "white",
                           padding: "14px 40px",
                           borderRadius: "10px",
-                          textDecoration: "none",
+                          border: "none",
                           fontWeight: "600",
                           fontSize: "16px",
                           transition: "all 0.3s",
-                          border: "none",
                           cursor: "pointer"
                         }}
                         onMouseOver={(e) => {
@@ -763,10 +766,10 @@ export default function CandidateDashboard() {
                         onMouseOut={(e) => {
                           e.currentTarget.style.transform = "translateY(0)";
                           e.currentTarget.style.boxShadow = "none";
-                        }}>
-                          {inProgress ? "🕐 Continue Assessment" : "🚀 Start Assessment"}
-                        </a>
-                      </Link>
+                        }}
+                      >
+                        {inProgress ? "🕐 Continue Assessment" : "🚀 Start Assessment"}
+                      </button>
                     )}
 
                     {completed && (
