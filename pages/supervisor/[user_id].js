@@ -13,59 +13,70 @@ const BACKGROUND_CONFIG = {
 // ===== ASSESSMENT TYPE CONFIGURATIONS =====
 const assessmentTypes = [
   { 
-    id: 'all', 
-    label: 'All Assessments', 
-    icon: '📋', 
-    color: '#64748b',
-    gradient: 'linear-gradient(135deg, #64748b, #475569)'
-  },
-  { 
     id: 'general', 
-    label: 'General', 
+    label: 'General Assessment', 
+    shortLabel: 'General',
     icon: '📋', 
     color: '#4A6FA5',
     gradient: 'linear-gradient(135deg, #4A6FA5, #6B8EC9)',
-    description: 'Comprehensive 5-area evaluation'
+    lightGradient: 'linear-gradient(135deg, #4A6FA520, #6B8EC920)',
+    description: 'Comprehensive 5-area evaluation',
+    features: ['Cognitive Abilities', 'Personality', 'Leadership', 'Technical', 'Performance']
   },
   { 
     id: 'behavioral', 
-    label: 'Behavioral', 
+    label: 'Behavioral & Soft Skills', 
+    shortLabel: 'Behavioral',
     icon: '🧠', 
     color: '#9C27B0',
     gradient: 'linear-gradient(135deg, #9C27B0, #BA68C8)',
-    description: 'Communication, teamwork, emotional intelligence'
+    lightGradient: 'linear-gradient(135deg, #9C27B020, #BA68C820)',
+    description: 'Communication, teamwork, emotional intelligence',
+    features: ['Adaptability', 'Emotional Intelligence', 'Communication', 'Teamwork', 'Initiative', 'Time Management', 'Resilience']
   },
   { 
     id: 'cognitive', 
-    label: 'Cognitive', 
+    label: 'Cognitive & Thinking Skills', 
+    shortLabel: 'Cognitive',
     icon: '💡', 
-    color: '#4A6FA5',
-    gradient: 'linear-gradient(135deg, #4A6FA5, #6B8EC9)',
-    description: 'Problem-solving, critical thinking, analysis'
+    color: '#FF9800',
+    gradient: 'linear-gradient(135deg, #FF9800, #FFB74D)',
+    lightGradient: 'linear-gradient(135deg, #FF980020, #FFB74D20)',
+    description: 'Problem-solving, critical thinking, analysis',
+    features: ['Problem-Solving', 'Critical Thinking', 'Learning Agility', 'Creativity']
   },
   { 
     id: 'cultural', 
-    label: 'Cultural', 
+    label: 'Cultural & Attitudinal Fit', 
+    shortLabel: 'Cultural',
     icon: '🤝', 
     color: '#4CAF50',
     gradient: 'linear-gradient(135deg, #4CAF50, #81C784)',
-    description: 'Values alignment, organizational fit'
+    lightGradient: 'linear-gradient(135deg, #4CAF5020, #81C78420)',
+    description: 'Values alignment, organizational fit',
+    features: ['Values Alignment', 'Citizenship', 'Reliability', 'Customer Focus', 'Safety', 'Commercial Acumen']
   },
   { 
     id: 'manufacturing', 
-    label: 'Manufacturing', 
+    label: 'Manufacturing Technical Skills', 
+    shortLabel: 'Manufacturing',
     icon: '⚙️', 
     color: '#F44336',
     gradient: 'linear-gradient(135deg, #F44336, #EF5350)',
-    description: 'Technical skills, equipment knowledge'
+    lightGradient: 'linear-gradient(135deg, #F4433620, #EF535020)',
+    description: 'Technical skills, equipment knowledge',
+    features: ['Blowing Machines', 'Labeler', 'Filling', 'Conveyors', 'Stretchwrappers', 'Shrinkwrappers', 'Date Coders', 'Raw Materials']
   },
   { 
     id: 'leadership', 
-    label: 'Leadership', 
+    label: 'Leadership Potential', 
+    shortLabel: 'Leadership',
     icon: '👑', 
     color: '#FFC107',
     gradient: 'linear-gradient(135deg, #FFC107, #FFD54F)',
-    description: 'Vision, influence, team development'
+    lightGradient: 'linear-gradient(135deg, #FFC10720, #FFD54F20)',
+    description: 'Vision, influence, team development',
+    features: ['Vision', 'Team Development', 'Coaching', 'Decision-Making', 'Influence', 'Strategic Thinking']
   }
 ];
 
@@ -204,303 +215,340 @@ const StatCard = ({ title, value, subtitle, icon, gradient, trend, color }) => (
   </div>
 );
 
-// Assessment Type Card Component
-const AssessmentTypeCard = ({ type, stats, onClick, isSelected }) => {
-  const typeStats = stats || { count: 0, average: 0 };
+// Assessment Type Summary Card
+const AssessmentSummaryCard = ({ type, candidates }) => {
+  // Filter assessments of this type
+  const typeAssessments = [];
+  candidates.forEach(candidate => {
+    candidate.assessments.forEach(assessment => {
+      if (assessment.assessments?.assessment_type === type.id) {
+        typeAssessments.push({
+          ...assessment,
+          candidateName: candidate.user_name,
+          candidateEmail: candidate.user_email,
+          candidateId: candidate.user_id
+        });
+      }
+    });
+  });
+
+  const totalCount = typeAssessments.length;
+  const passedCount = typeAssessments.filter(a => a.passed).length;
+  const failedCount = totalCount - passedCount;
+  const averageScore = totalCount > 0 
+    ? Math.round(typeAssessments.reduce((sum, a) => sum + a.overall_score, 0) / totalCount) 
+    : 0;
   
+  const highPerformers = typeAssessments.filter(a => a.overall_score >= 80).length;
+  const needsImprovement = typeAssessments.filter(a => a.overall_score < 60).length;
+
   return (
-    <div
-      onClick={onClick}
-      style={{
-        background: isSelected ? type.gradient : 'white',
-        borderRadius: '20px',
-        padding: '20px',
-        boxShadow: '0 8px 20px rgba(0,0,0,0.06)',
-        border: isSelected ? 'none' : `2px solid ${type.color}20`,
-        cursor: 'pointer',
-        transition: 'all 0.3s ease',
-        position: 'relative',
-        overflow: 'hidden'
-      }}
-      onMouseOver={(e) => {
-        if (!isSelected) {
-          e.currentTarget.style.transform = 'translateY(-2px)';
-          e.currentTarget.style.boxShadow = '0 15px 30px rgba(0,0,0,0.1)';
-          e.currentTarget.style.borderColor = type.color;
-        }
-      }}
-      onMouseOut={(e) => {
-        if (!isSelected) {
-          e.currentTarget.style.transform = 'translateY(0)';
-          e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.06)';
-          e.currentTarget.style.borderColor = `${type.color}20`;
-        }
-      }}
-    >
+    <div style={{
+      background: 'white',
+      borderRadius: '20px',
+      padding: '25px',
+      boxShadow: '0 8px 20px rgba(0,0,0,0.06)',
+      border: `2px solid ${type.color}20`,
+      transition: 'all 0.3s ease'
+    }}
+    onMouseOver={(e) => {
+      e.currentTarget.style.transform = 'translateY(-4px)';
+      e.currentTarget.style.boxShadow = `0 15px 30px ${type.color}30`;
+      e.currentTarget.style.borderColor = type.color;
+    }}
+    onMouseOut={(e) => {
+      e.currentTarget.style.transform = 'translateY(0)';
+      e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.06)';
+      e.currentTarget.style.borderColor = `${type.color}20`;
+    }}>
+      {/* Header */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         gap: '15px',
-        marginBottom: '15px'
+        marginBottom: '20px'
       }}>
         <div style={{
-          width: '48px',
-          height: '48px',
-          borderRadius: '14px',
-          background: isSelected ? 'rgba(255,255,255,0.2)' : type.gradient,
+          width: '60px',
+          height: '60px',
+          borderRadius: '18px',
+          background: type.gradient,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: '24px',
-          color: isSelected ? 'white' : 'white'
+          fontSize: '32px',
+          color: 'white',
+          boxShadow: `0 10px 20px ${type.color}60`
         }}>
           {type.icon}
         </div>
         <div>
-          <h4 style={{
-            margin: 0,
-            fontSize: '16px',
-            fontWeight: '600',
-            color: isSelected ? 'white' : '#1a2639'
-          }}>
+          <h3 style={{ margin: '0 0 5px 0', fontSize: '18px', fontWeight: '700', color: '#1a2639' }}>
             {type.label}
-          </h4>
-          <p style={{
-            margin: '5px 0 0',
-            fontSize: '12px',
-            color: isSelected ? 'rgba(255,255,255,0.8)' : '#64748b'
-          }}>
+          </h3>
+          <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
             {type.description}
           </p>
         </div>
       </div>
-      
+
+      {/* Stats Grid */}
       <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '15px',
+        marginBottom: '20px'
       }}>
-        <div>
-          <div style={{
-            fontSize: '13px',
-            color: isSelected ? 'rgba(255,255,255,0.8)' : '#64748b',
-            marginBottom: '5px'
-          }}>
-            Completed
+        <div style={{
+          background: '#f8fafc',
+          borderRadius: '12px',
+          padding: '15px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '28px', fontWeight: '700', color: type.color }}>
+            {totalCount}
           </div>
-          <div style={{
-            fontSize: '28px',
-            fontWeight: '700',
-            color: isSelected ? 'white' : type.color
-          }}>
-            {typeStats.count}
-          </div>
+          <div style={{ fontSize: '12px', color: '#64748b' }}>Total Taken</div>
         </div>
         <div style={{
-          width: '70px',
-          height: '70px',
-          borderRadius: '50%',
-          background: `conic-gradient(${isSelected ? 'white' : type.color} ${typeStats.average * 3.6}deg, ${isSelected ? 'rgba(255,255,255,0.2)' : '#f1f5f9'} 0deg)`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
+          background: '#f8fafc',
+          borderRadius: '12px',
+          padding: '15px',
+          textAlign: 'center'
         }}>
-          <div style={{
-            width: '50px',
-            height: '50px',
-            borderRadius: '50%',
-            background: isSelected ? 'rgba(255,255,255,0.2)' : 'white',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '16px',
-            fontWeight: '700',
-            color: isSelected ? 'white' : type.color
-          }}>
-            {typeStats.average}%
+          <div style={{ fontSize: '28px', fontWeight: '700', color: getScoreColor(averageScore) }}>
+            {averageScore}%
           </div>
+          <div style={{ fontSize: '12px', color: '#64748b' }}>Avg Score</div>
         </div>
       </div>
-      
-      {typeStats.count === 0 && (
-        <div style={{
-          marginTop: '15px',
-          fontSize: '12px',
-          color: isSelected ? 'rgba(255,255,255,0.8)' : '#94a3b8',
-          fontStyle: 'italic',
-          textAlign: 'center',
-          padding: '8px',
-          background: isSelected ? 'rgba(255,255,255,0.1)' : '#f8fafc',
-          borderRadius: '8px'
-        }}>
-          No completed assessments yet
+
+      {/* Progress Bars */}
+      <div style={{ marginBottom: '15px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#64748b', marginBottom: '5px' }}>
+          <span>✅ Passed ({passedCount})</span>
+          <span>❌ Failed ({failedCount})</span>
         </div>
-      )}
+        <div style={{ display: 'flex', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
+          <div style={{
+            width: totalCount > 0 ? `${(passedCount / totalCount) * 100}%` : '0%',
+            background: 'linear-gradient(90deg, #4CAF50, #2E7D32)'
+          }} />
+          <div style={{
+            width: totalCount > 0 ? `${(failedCount / totalCount) * 100}%` : '0%',
+            background: 'linear-gradient(90deg, #F44336, #C62828)'
+          }} />
+        </div>
+      </div>
+
+      {/* Performance Indicators */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ color: '#4CAF50' }}>⭐</span>
+          <span><strong>{highPerformers}</strong> High Potential</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ color: '#F44336' }}>📚</span>
+          <span><strong>{needsImprovement}</strong> Needs Improvement</span>
+        </div>
+      </div>
     </div>
   );
 };
 
-// Candidate Row Component
-const CandidateRow = ({ candidate, onSelect, isSelected, hoveredRow, setHoveredRow }) => {
-  const isHovered = hoveredRow === candidate.user_id;
+// Assessment Detail Table Component
+const AssessmentDetailTable = ({ type, assessments, candidates }) => {
+  const [expandedCandidate, setExpandedCandidate] = useState(null);
   
+  // Get all assessments of this type
+  const typeAssessments = [];
+  candidates.forEach(candidate => {
+    candidate.assessments.forEach(assessment => {
+      if (assessment.assessments?.assessment_type === type.id) {
+        typeAssessments.push({
+          ...assessment,
+          candidateName: candidate.user_name,
+          candidateEmail: candidate.user_email,
+          candidateId: candidate.user_id,
+          candidateColor: candidate.color
+        });
+      }
+    });
+  });
+
+  // Sort by date (newest first)
+  typeAssessments.sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at));
+
   return (
-    <tr
-      onMouseEnter={() => setHoveredRow(candidate.user_id)}
-      onMouseLeave={() => setHoveredRow(null)}
-      style={{
-        borderBottom: '1px solid #f1f5f9',
-        background: isSelected ? '#f8fafc' : 'white',
-        transition: 'all 0.2s ease',
-        transform: isHovered ? 'scale(1.01)' : 'scale(1)',
-        boxShadow: isHovered ? '0 4px 12px rgba(0,0,0,0.05)' : 'none',
-        cursor: 'pointer'
-      }}
-      onClick={() => onSelect(candidate)}
-    >
-      <td style={{ padding: '20px 15px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          <div style={{
-            width: '48px',
-            height: '48px',
-            borderRadius: '16px',
-            background: `linear-gradient(135deg, ${candidate.color || '#667eea'}, ${candidate.color ? candidate.color + 'dd' : '#764ba2'})`,
-            color: 'white',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '20px',
-            fontWeight: '600',
-            boxShadow: `0 8px 16px ${candidate.color || '#667eea'}40`
-          }}>
-            {candidate.user_name?.charAt(0).toUpperCase() || 'C'}
-          </div>
-          <div>
-            <div style={{ fontWeight: '600', color: '#1a2639', fontSize: '16px', marginBottom: '4px' }}>
-              {candidate.user_name}
-            </div>
-            <div style={{ fontSize: '13px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span>🆔 {candidate.user_id.substring(0, 8)}...</span>
-            </div>
-          </div>
-        </div>
-      </td>
-      <td style={{ padding: '20px 15px' }}>
-        <div style={{ color: '#2563eb', fontSize: '14px', fontWeight: '500' }}>
-          {candidate.user_email}
-        </div>
-      </td>
-      <td style={{ padding: '20px 15px', textAlign: 'center' }}>
+    <div style={{
+      background: 'white',
+      borderRadius: '24px',
+      padding: '30px',
+      boxShadow: '0 10px 30px rgba(0,0,0,0.08)',
+      border: '1px solid #f1f5f9'
+    }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '15px',
+        marginBottom: '25px',
+        paddingBottom: '20px',
+        borderBottom: `2px solid ${type.color}20`
+      }}>
         <div style={{
-          background: '#E8F5E9',
-          padding: '6px 16px',
-          borderRadius: '30px',
-          display: 'inline-flex',
+          width: '50px',
+          height: '50px',
+          borderRadius: '14px',
+          background: type.gradient,
+          display: 'flex',
           alignItems: 'center',
-          gap: '6px'
+          justifyContent: 'center',
+          fontSize: '24px',
+          color: 'white'
         }}>
-          <span style={{ fontSize: '14px' }}>✅</span>
-          <span style={{ fontWeight: '600', color: '#2E7D32' }}>
-            {candidate.completedCount}/6
-          </span>
-          {candidate.resetCount > 0 && (
-            <span style={{
-              marginLeft: '4px',
-              fontSize: '11px',
-              background: '#FF980020',
-              color: '#F57C00',
-              padding: '2px 6px',
-              borderRadius: '12px',
-              fontWeight: '500'
-            }}>
-              ↻ {candidate.resetCount} reset
-            </span>
-          )}
+          {type.icon}
         </div>
-      </td>
-      <td style={{ padding: '20px 15px', textAlign: 'center' }}>
-        <div style={{
-          background: getScoreColor(candidate.averageScore) + '15',
-          padding: '8px 16px',
-          borderRadius: '30px',
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '8px'
-        }}>
-          <span style={{
-            width: '8px',
-            height: '8px',
-            borderRadius: '50%',
-            background: getScoreColor(candidate.averageScore)
-          }} />
-          <span style={{
-            fontWeight: '700',
-            fontSize: '18px',
-            color: getScoreColor(candidate.averageScore)
-          }}>
-            {Math.round(candidate.averageScore)}%
-          </span>
+        <div>
+          <h3 style={{ margin: '0 0 5px 0', fontSize: '20px', fontWeight: '700', color: '#1a2639' }}>
+            {type.label} - Detailed Results
+          </h3>
+          <p style={{ margin: 0, fontSize: '14px', color: '#64748b' }}>
+            {typeAssessments.length} completed assessments • {typeAssessments.filter(a => a.passed).length} passed • {typeAssessments.filter(a => !a.passed).length} failed
+          </p>
         </div>
-      </td>
-      <td style={{ padding: '20px 15px', textAlign: 'center' }}>
-        {candidate.assessments[0] && (
-          <div style={{
-            background: getRiskBadge(candidate.assessments[0].risk_level || 'low').bg,
-            padding: '6px 14px',
-            borderRadius: '30px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            border: `1px solid ${getRiskBadge(candidate.assessments[0].risk_level || 'low').color}30`
-          }}>
-            <span style={{ fontSize: '14px' }}>
-              {getRiskBadge(candidate.assessments[0].risk_level || 'low').icon}
-            </span>
-            <span style={{
-              color: getRiskBadge(candidate.assessments[0].risk_level || 'low').color,
-              fontSize: '12px',
-              fontWeight: '600'
-            }}>
-              {getRiskBadge(candidate.assessments[0].risk_level || 'low').label}
-            </span>
-          </div>
-        )}
-      </td>
-      <td style={{ padding: '20px 15px', textAlign: 'center' }}>
-        {candidate.assessments[0] && (
-          <div style={{
-            background: getReadinessBadge(candidate.assessments[0].readiness || 'pending').bg,
-            padding: '6px 14px',
-            borderRadius: '30px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            border: `1px solid ${getReadinessBadge(candidate.assessments[0].readiness || 'pending').color}30`
-          }}>
-            <span style={{ fontSize: '14px' }}>
-              {getReadinessBadge(candidate.assessments[0].readiness || 'pending').icon}
-            </span>
-            <span style={{
-              color: getReadinessBadge(candidate.assessments[0].readiness || 'pending').color,
-              fontSize: '12px',
-              fontWeight: '600'
-            }}>
-              {getReadinessBadge(candidate.assessments[0].readiness || 'pending').label}
-            </span>
-          </div>
-        )}
-      </td>
-      <td style={{ padding: '20px 15px', textAlign: 'center', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-          <span style={{ fontSize: '14px' }}>📅</span>
-          {candidate.lastActive ? new Date(candidate.lastActive).toLocaleDateString('en-US', { 
-            month: 'short', 
-            day: 'numeric',
-            year: 'numeric'
-          }) : 'N/A'}
-        </div>
-      </td>
-    </tr>
+      </div>
+
+      {/* Table */}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+              <th style={{ textAlign: 'left', padding: '15px 10px', color: '#475569', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase' }}>
+                Candidate
+              </th>
+              <th style={{ textAlign: 'left', padding: '15px 10px', color: '#475569', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase' }}>
+                Email
+              </th>
+              <th style={{ textAlign: 'center', padding: '15px 10px', color: '#475569', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase' }}>
+                Score
+              </th>
+              <th style={{ textAlign: 'center', padding: '15px 10px', color: '#475569', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase' }}>
+                Status
+              </th>
+              <th style={{ textAlign: 'center', padding: '15px 10px', color: '#475569', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase' }}>
+                Risk Level
+              </th>
+              <th style={{ textAlign: 'center', padding: '15px 10px', color: '#475569', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase' }}>
+                Readiness
+              </th>
+              <th style={{ textAlign: 'center', padding: '15px 10px', color: '#475569', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase' }}>
+                Completed
+              </th>
+              <th style={{ textAlign: 'center', padding: '15px 10px', color: '#475569', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase' }}>
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {typeAssessments.map((assessment, index) => (
+              <tr key={index} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                <td style={{ padding: '15px 10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      background: `linear-gradient(135deg, ${assessment.candidateColor || '#667eea'}, ${assessment.candidateColor ? assessment.candidateColor + 'dd' : '#764ba2'})`,
+                      color: 'white',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '14px',
+                      fontWeight: '600'
+                    }}>
+                      {assessment.candidateName?.charAt(0).toUpperCase() || 'C'}
+                    </div>
+                    <span style={{ fontWeight: '500', color: '#1a2639' }}>
+                      {assessment.candidateName}
+                    </span>
+                  </div>
+                </td>
+                <td style={{ padding: '15px 10px', color: '#2563eb', fontSize: '13px' }}>
+                  {assessment.candidateEmail}
+                </td>
+                <td style={{ padding: '15px 10px', textAlign: 'center' }}>
+                  <span style={{
+                    fontWeight: '700',
+                    fontSize: '16px',
+                    color: getScoreColor(assessment.overall_score)
+                  }}>
+                    {assessment.overall_score}%
+                  </span>
+                </td>
+                <td style={{ padding: '15px 10px', textAlign: 'center' }}>
+                  <span style={{
+                    padding: '4px 12px',
+                    borderRadius: '20px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    background: assessment.passed ? '#E8F5E9' : '#FFEBEE',
+                    color: assessment.passed ? '#2E7D32' : '#C62828'
+                  }}>
+                    {assessment.passed ? '✓ Passed' : '✗ Failed'}
+                  </span>
+                </td>
+                <td style={{ padding: '15px 10px', textAlign: 'center' }}>
+                  <span style={{
+                    padding: '4px 12px',
+                    borderRadius: '20px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    background: getRiskBadge(assessment.risk_level || 'low').bg,
+                    color: getRiskBadge(assessment.risk_level || 'low').color
+                  }}>
+                    {getRiskBadge(assessment.risk_level || 'low').label}
+                  </span>
+                </td>
+                <td style={{ padding: '15px 10px', textAlign: 'center' }}>
+                  <span style={{
+                    padding: '4px 12px',
+                    borderRadius: '20px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    background: getReadinessBadge(assessment.readiness || 'pending').bg,
+                    color: getReadinessBadge(assessment.readiness || 'pending').color
+                  }}>
+                    {getReadinessBadge(assessment.readiness || 'pending').label}
+                  </span>
+                </td>
+                <td style={{ padding: '15px 10px', textAlign: 'center', color: '#64748b', fontSize: '12px' }}>
+                  {new Date(assessment.completed_at).toLocaleDateString()}
+                </td>
+                <td style={{ padding: '15px 10px', textAlign: 'center' }}>
+                  <button
+                    onClick={() => setExpandedCandidate(expandedCandidate === assessment.candidateId ? null : assessment.candidateId)}
+                    style={{
+                      padding: '6px 12px',
+                      background: 'transparent',
+                      color: type.color,
+                      border: `1px solid ${type.color}`,
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    View
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 };
 
@@ -673,7 +721,7 @@ const CandidateDetailModal = ({ candidate, onClose }) => {
           </div>
         </div>
 
-        {/* Assessment History */}
+        {/* Assessment History by Type */}
         <h3 style={{
           margin: '0 0 20px',
           fontSize: '20px',
@@ -695,87 +743,84 @@ const CandidateDetailModal = ({ candidate, onClose }) => {
           }}>
             📋
           </span>
-          Assessment History
+          Assessment History by Type
         </h3>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '35px' }}>
-          {candidate.assessments.map((assessment, index) => {
-            const typeConfig = assessmentTypes.find(t => t.id === assessment.assessments?.assessment_type) || assessmentTypes[0];
-            const scoreColor = getScoreColor(assessment.overall_score);
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '35px' }}>
+          {assessmentTypes.map(type => {
+            const typeAssessments = candidate.assessments.filter(
+              a => a.assessments?.assessment_type === type.id
+            );
+            
+            if (typeAssessments.length === 0) return null;
             
             return (
-              <div key={index} style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '20px',
-                background: '#f8fafc',
+              <div key={type.id} style={{
+                border: `1px solid ${type.color}30`,
                 borderRadius: '16px',
-                borderLeft: `6px solid ${typeConfig.color}`,
-                flexWrap: 'wrap',
-                gap: '15px',
-                transition: 'transform 0.2s ease'
-              }}
-              onMouseOver={(e) => e.currentTarget.style.transform = 'translateX(5px)'}
-              onMouseOut={(e) => e.currentTarget.style.transform = 'translateX(0)'}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                overflow: 'hidden'
+              }}>
+                <div style={{
+                  background: type.lightGradient,
+                  padding: '15px 20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '15px',
+                  borderBottom: `1px solid ${type.color}30`
+                }}>
                   <div style={{
-                    width: '50px',
-                    height: '50px',
-                    borderRadius: '12px',
-                    background: `${typeConfig.color}20`,
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '10px',
+                    background: type.gradient,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '24px'
+                    fontSize: '20px',
+                    color: 'white'
                   }}>
-                    {typeConfig.icon}
+                    {type.icon}
                   </div>
                   <div>
-                    <div style={{ fontWeight: '600', color: '#1a2639', marginBottom: '5px', fontSize: '16px' }}>
-                      {assessment.assessments?.name || 'General Assessment'}
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#64748b', display: 'flex', gap: '15px' }}>
-                      <span>📅 {assessment.completed_at ? new Date(assessment.completed_at).toLocaleDateString('en-US', { 
-                        month: 'short', 
-                        day: 'numeric', 
-                        year: 'numeric' 
-                      }) : 'Date not available'}</span>
-                      <span>⏱️ {Math.floor(assessment.time_spent / 60) || 0}m {assessment.time_spent % 60 || 0}s</span>
-                    </div>
+                    <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#1a2639' }}>
+                      {type.label}
+                    </h4>
+                    <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748b' }}>
+                      {typeAssessments.length} attempt{typeAssessments.length > 1 ? 's' : ''}
+                    </p>
                   </div>
                 </div>
                 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                  <div style={{
-                    textAlign: 'center',
-                    background: scoreColor + '10',
-                    padding: '10px 20px',
-                    borderRadius: '12px'
-                  }}>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: scoreColor }}>
-                      {assessment.overall_score || 0}%
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Score
-                    </div>
-                  </div>
-                  
-                  <span style={{
-                    padding: '8px 20px',
-                    borderRadius: '30px',
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    background: assessment.passed ? '#E8F5E9' : '#FFEBEE',
-                    color: assessment.passed ? '#2E7D32' : '#C62828',
-                    border: `1px solid ${assessment.passed ? '#4CAF5030' : '#F4433630'}`,
+                {typeAssessments.map((assessment, idx) => (
+                  <div key={idx} style={{
+                    padding: '15px 20px',
+                    background: idx % 2 === 0 ? '#f8fafc' : 'white',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px'
+                    justifyContent: 'space-between'
                   }}>
-                    {assessment.passed ? '✓ Passed' : '✗ Failed'}
-                  </span>
-                </div>
+                    <div>
+                      <div style={{ fontWeight: '500', color: '#1a2639' }}>
+                        Score: <span style={{ color: getScoreColor(assessment.overall_score), fontWeight: '700' }}>
+                          {assessment.overall_score}%
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>
+                        Completed: {new Date(assessment.completed_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <span style={{
+                      padding: '4px 12px',
+                      borderRadius: '20px',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      background: assessment.passed ? '#E8F5E9' : '#FFEBEE',
+                      color: assessment.passed ? '#2E7D32' : '#C62828'
+                    }}>
+                      {assessment.passed ? 'Passed' : 'Failed'}
+                    </span>
+                  </div>
+                ))}
               </div>
             );
           })}
@@ -894,7 +939,8 @@ export default function SupervisorDashboard() {
   const { user_id } = router.query;
   const [supervisor, setSupervisor] = useState(null);
   const [candidates, setCandidates] = useState([]);
-  const [selectedAssessmentType, setSelectedAssessmentType] = useState("all");
+  const [selectedView, setSelectedView] = useState("overview"); // "overview", "by-type", "candidates"
+  const [selectedAssessmentType, setSelectedAssessmentType] = useState("general");
   const [selectedCandidate, setSelectedCandidate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState("week");
@@ -919,7 +965,7 @@ export default function SupervisorDashboard() {
     if (candidates.length > 0) {
       calculateStats();
     }
-  }, [candidates, selectedAssessmentType, dateRange]);
+  }, [candidates, dateRange]);
 
   const fetchSupervisorData = async () => {
     try {
@@ -936,12 +982,11 @@ export default function SupervisorDashboard() {
     }
   };
 
-  // ===== UPDATED: Fetch from both new and old tables =====
   const fetchCandidates = async () => {
     try {
       setLoading(true);
       
-      // ===== FETCH FROM NEW assessment_results TABLE =====
+      // Fetch from new assessment_results table
       const { data: newResults, error: newError } = await supabase
         .from("assessment_results")
         .select(`
@@ -961,7 +1006,7 @@ export default function SupervisorDashboard() {
         console.error("Error fetching new results:", newError);
       }
 
-      // ===== FETCH FROM OLD assessments_completed TABLE =====
+      // Fetch from old assessments_completed table
       const { data: oldResults, error: oldError } = await supabase
         .from("assessments_completed")
         .select(`
@@ -982,7 +1027,7 @@ export default function SupervisorDashboard() {
 
       const candidateMap = new Map();
       
-      // ===== PROCESS NEW RESULTS =====
+      // Process new results
       newResults?.forEach(result => {
         if (!candidateMap.has(result.user_id)) {
           candidateMap.set(result.user_id, {
@@ -1017,17 +1062,15 @@ export default function SupervisorDashboard() {
           candidate.resetCount++;
         }
         
-        // Update last active if this result is newer
         const resultDate = result.completed_at || result.reset_at || result.created_at;
         if (resultDate && new Date(resultDate) > new Date(candidate.lastActive)) {
           candidate.lastActive = resultDate;
         }
       });
 
-      // ===== PROCESS OLD RESULTS =====
+      // Process old results
       oldResults?.forEach(result => {
         if (!candidateMap.has(result.user_id)) {
-          // Try to get user email from profiles or use placeholder
           candidateMap.set(result.user_id, {
             user_id: result.user_id,
             user_name: 'Unknown',
@@ -1044,7 +1087,6 @@ export default function SupervisorDashboard() {
         
         const candidate = candidateMap.get(result.user_id);
         
-        // For old results, map the fields appropriately
         candidate.assessments.push({
           id: result.id,
           user_id: result.user_id,
@@ -1065,7 +1107,6 @@ export default function SupervisorDashboard() {
         candidate.completedCount++;
         candidate.averageScore = candidate.assessments.reduce((sum, a) => sum + (a.overall_score || 0), 0) / candidate.completedCount;
         
-        // Update last active
         if (result.completed_at && new Date(result.completed_at) > new Date(candidate.lastActive)) {
           candidate.lastActive = result.completed_at;
         }
@@ -1084,32 +1125,28 @@ export default function SupervisorDashboard() {
     
     candidates.forEach(candidate => {
       candidate.assessments.forEach(assessment => {
-        const assessmentType = assessment.assessments?.assessment_type || 'general';
-        if (selectedAssessmentType === "all" || assessmentType === selectedAssessmentType) {
-          
-          const completedDate = new Date(assessment.completed_at);
-          const now = new Date();
-          let include = true;
-          
-          switch(dateRange) {
-            case "today":
-              include = completedDate.toDateString() === now.toDateString();
-              break;
-            case "week":
-              const weekAgo = new Date(now.setDate(now.getDate() - 7));
-              include = completedDate >= weekAgo;
-              break;
-            case "month":
-              const monthAgo = new Date(now.setMonth(now.getMonth() - 1));
-              include = completedDate >= monthAgo;
-              break;
-            default:
-              include = true;
-          }
-          
-          if (include) {
-            filteredAssessments.push(assessment);
-          }
+        const completedDate = new Date(assessment.completed_at);
+        const now = new Date();
+        let include = true;
+        
+        switch(dateRange) {
+          case "today":
+            include = completedDate.toDateString() === now.toDateString();
+            break;
+          case "week":
+            const weekAgo = new Date(now.setDate(now.getDate() - 7));
+            include = completedDate >= weekAgo;
+            break;
+          case "month":
+            const monthAgo = new Date(now.setMonth(now.getMonth() - 1));
+            include = completedDate >= monthAgo;
+            break;
+          default:
+            include = true;
+        }
+        
+        if (include) {
+          filteredAssessments.push(assessment);
         }
       });
     });
@@ -1142,10 +1179,7 @@ export default function SupervisorDashboard() {
     });
   };
 
-  const filteredCandidates = candidates.filter(candidate => {
-    if (selectedAssessmentType === "all") return true;
-    return candidate.assessments.some(a => a.assessments?.assessment_type === selectedAssessmentType);
-  }).filter(candidate => 
+  const filteredCandidates = candidates.filter(candidate => 
     (candidate.user_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
     (candidate.user_email?.toLowerCase() || '').includes(searchTerm.toLowerCase())
   );
@@ -1180,7 +1214,7 @@ export default function SupervisorDashboard() {
             Loading Dashboard
           </div>
           <div style={{ fontSize: '14px', color: '#64748b' }}>
-            Fetching candidate data from both new and legacy tables...
+            Fetching candidate data...
           </div>
           <style jsx>{`
             @keyframes spin {
@@ -1277,16 +1311,67 @@ export default function SupervisorDashboard() {
                   👋 Welcome, {supervisor?.name || 'Supervisor'}
                 </h1>
                 <p style={{ color: "#64748b", margin: 0, fontSize: "16px", display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span>📊 Overview of candidate assessments and performance metrics</span>
+                  <span>📊 Overview of candidate assessments by category</span>
                   <span style={{ width: '4px', height: '4px', background: '#cbd5e1', borderRadius: '50%' }} />
                   <span>🕒 Last updated: {new Date().toLocaleTimeString()}</span>
                 </p>
-                <p style={{ color: "#4CAF50", margin: "5px 0 0", fontSize: "14px", display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <span>✅</span>
-                  <span>Showing data from both new and legacy assessment tables</span>
-                </p>
               </div>
               
+              {/* View Selector */}
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  onClick={() => setSelectedView("overview")}
+                  style={{
+                    padding: "12px 25px",
+                    borderRadius: "40px",
+                    border: "none",
+                    background: selectedView === "overview" ? "linear-gradient(135deg, #667eea, #764ba2)" : "white",
+                    color: selectedView === "overview" ? "white" : "#64748b",
+                    fontWeight: "600",
+                    fontSize: "14px",
+                    cursor: "pointer",
+                    boxShadow: selectedView === "overview" ? "0 8px 16px rgba(102,126,234,0.3)" : "none",
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  📊 Overview
+                </button>
+                <button
+                  onClick={() => setSelectedView("by-type")}
+                  style={{
+                    padding: "12px 25px",
+                    borderRadius: "40px",
+                    border: "none",
+                    background: selectedView === "by-type" ? "linear-gradient(135deg, #667eea, #764ba2)" : "white",
+                    color: selectedView === "by-type" ? "white" : "#64748b",
+                    fontWeight: "600",
+                    fontSize: "14px",
+                    cursor: "pointer",
+                    boxShadow: selectedView === "by-type" ? "0 8px 16px rgba(102,126,234,0.3)" : "none",
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  📋 By Assessment Type
+                </button>
+                <button
+                  onClick={() => setSelectedView("candidates")}
+                  style={{
+                    padding: "12px 25px",
+                    borderRadius: "40px",
+                    border: "none",
+                    background: selectedView === "candidates" ? "linear-gradient(135deg, #667eea, #764ba2)" : "white",
+                    color: selectedView === "candidates" ? "white" : "#64748b",
+                    fontWeight: "600",
+                    fontSize: "14px",
+                    cursor: "pointer",
+                    boxShadow: selectedView === "candidates" ? "0 8px 16px rgba(102,126,234,0.3)" : "none",
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  👥 By Candidate
+                </button>
+              </div>
+
               {/* Date Range Filter */}
               <div style={{ display: "flex", gap: "10px" }}>
                 <select
@@ -1376,205 +1461,411 @@ export default function SupervisorDashboard() {
             />
           </div>
 
-          {/* Assessment Type Cards - 6 CARDS */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-            gap: "20px",
-            marginBottom: "30px"
-          }}>
-            {assessmentTypes.filter(t => t.id !== 'all').map(type => (
-              <AssessmentTypeCard
-                key={type.id}
-                type={type}
-                stats={stats.byType[type.id]}
-                isSelected={selectedAssessmentType === type.id}
-                onClick={() => setSelectedAssessmentType(type.id)}
-              />
-            ))}
-          </div>
-
-          {/* Candidates Table */}
-          <div style={{
-            background: "rgba(255,255,255,0.98)",
-            backdropFilter: 'blur(10px)',
-            borderRadius: "24px",
-            padding: "30px",
-            boxShadow: "0 20px 40px rgba(0,0,0,0.1)",
-            border: "1px solid rgba(255,255,255,0.2)",
-            animation: 'slideIn 0.5s ease'
-          }}>
-            {/* Table Header */}
+          {/* OVERVIEW VIEW - Summary Cards for Each Assessment Type */}
+          {selectedView === "overview" && (
             <div style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "25px",
-              flexWrap: "wrap",
-              gap: "15px"
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))",
+              gap: "25px",
+              marginBottom: "30px"
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                <h2 style={{ margin: 0, fontSize: "24px", color: "#1a2639", fontWeight: "600" }}>
-                  Candidate Performance
-                </h2>
-                <span style={{
-                  background: '#667eea20',
-                  padding: '6px 16px',
-                  borderRadius: '30px',
-                  fontSize: '14px',
-                  color: '#667eea',
-                  fontWeight: '600'
-                }}>
-                  {filteredCandidates.length} candidates
-                </span>
-              </div>
-              
-              <div style={{ display: "flex", gap: "15px", flexWrap: "wrap" }}>
-                <div style={{ position: 'relative' }}>
-                  <span style={{
-                    position: 'absolute',
-                    left: '15px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    fontSize: '16px',
-                    color: '#94a3b8'
-                  }}>🔍</span>
-                  <input
-                    type="text"
-                    placeholder="Search candidates..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    style={{
-                      padding: "14px 20px 14px 45px",
-                      borderRadius: "40px",
-                      border: "2px solid #e2e8f0",
-                      width: "300px",
-                      fontSize: "14px",
-                      outline: "none",
-                      transition: 'all 0.2s ease'
-                    }}
-                    onFocus={(e) => {
-                      e.currentTarget.style.borderColor = '#667eea';
-                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(102,126,234,0.1)';
-                    }}
-                    onBlur={(e) => {
-                      e.currentTarget.style.borderColor = '#e2e8f0';
-                      e.currentTarget.style.boxShadow = 'none';
-                    }}
-                  />
-                </div>
-                
-                <button style={{
-                  padding: "14px 30px",
-                  background: "linear-gradient(135deg, #667eea, #764ba2)",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "40px",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                  fontWeight: "600",
-                  transition: "all 0.2s ease",
-                  boxShadow: "0 8px 20px rgba(102,126,234,0.3)",
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px'
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 12px 25px rgba(102,126,234,0.4)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 8px 20px rgba(102,126,234,0.3)';
-                }}>
-                  <span style={{ fontSize: '18px' }}>📊</span>
-                  Export Report
-                </button>
-              </div>
+              {assessmentTypes.map(type => (
+                <AssessmentSummaryCard
+                  key={type.id}
+                  type={type}
+                  candidates={candidates}
+                />
+              ))}
             </div>
+          )}
 
-            {filteredCandidates.length === 0 ? (
-              <div style={{ 
-                textAlign: "center", 
-                padding: "80px 20px",
-                background: "#f8fafc",
-                borderRadius: "16px"
+          {/* BY ASSESSMENT TYPE VIEW - Detailed Tables for Each Type */}
+          {selectedView === "by-type" && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+              {/* Type Selector Tabs */}
+              <div style={{
+                display: 'flex',
+                gap: '10px',
+                flexWrap: 'wrap',
+                background: 'white',
+                padding: '20px',
+                borderRadius: '60px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
               }}>
-                <div style={{ fontSize: "64px", marginBottom: "20px", opacity: 0.5 }}>📊</div>
-                <h3 style={{ color: "#1a2639", marginBottom: "10px", fontSize: "20px" }}>
-                  {searchTerm ? 'No matching candidates' : 'No Data Available'}
-                </h3>
-                <p style={{ color: "#64748b", fontSize: "16px" }}>
-                  {searchTerm 
-                    ? `No candidates found matching "${searchTerm}"`
-                    : "Candidates haven't completed any assessments yet."}
-                </p>
-                {searchTerm && (
+                {assessmentTypes.map(type => (
                   <button
-                    onClick={() => setSearchTerm('')}
+                    key={type.id}
+                    onClick={() => setSelectedAssessmentType(type.id)}
                     style={{
-                      marginTop: '20px',
-                      padding: '12px 30px',
-                      background: 'linear-gradient(135deg, #667eea, #764ba2)',
-                      color: 'white',
-                      border: 'none',
+                      padding: '12px 25px',
                       borderRadius: '40px',
-                      cursor: 'pointer',
+                      border: 'none',
+                      background: selectedAssessmentType === type.id ? type.gradient : 'white',
+                      color: selectedAssessmentType === type.id ? 'white' : type.color,
+                      fontWeight: '600',
                       fontSize: '14px',
-                      fontWeight: '600'
+                      cursor: 'pointer',
+                      boxShadow: selectedAssessmentType === type.id ? `0 8px 16px ${type.color}60` : 'none',
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
                     }}
                   >
-                    Clear Search
+                    <span>{type.icon}</span>
+                    {type.shortLabel}
                   </button>
-                )}
+                ))}
               </div>
-            ) : (
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr style={{ 
-                      borderBottom: "2px solid #e2e8f0",
-                      background: '#f8fafc'
-                    }}>
-                      <th style={{ textAlign: "left", padding: "20px 15px", color: "#475569", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                        Candidate
-                      </th>
-                      <th style={{ textAlign: "left", padding: "20px 15px", color: "#475569", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                        Email
-                      </th>
-                      <th style={{ textAlign: "center", padding: "20px 15px", color: "#475569", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                        Completed
-                      </th>
-                      <th style={{ textAlign: "center", padding: "20px 15px", color: "#475569", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                        Avg Score
-                      </th>
-                      <th style={{ textAlign: "center", padding: "20px 15px", color: "#475569", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                        Risk Level
-                      </th>
-                      <th style={{ textAlign: "center", padding: "20px 15px", color: "#475569", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                        Readiness
-                      </th>
-                      <th style={{ textAlign: "center", padding: "20px 15px", color: "#475569", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                        Last Active
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredCandidates.map(candidate => (
-                      <CandidateRow
-                        key={candidate.user_id}
-                        candidate={candidate}
-                        onSelect={setSelectedCandidate}
-                        isSelected={selectedCandidate?.user_id === candidate.user_id}
-                        hoveredRow={hoveredRow}
-                        setHoveredRow={setHoveredRow}
-                      />
-                    ))}
-                  </tbody>
-                </table>
+
+              {/* Detailed Table for Selected Type */}
+              <AssessmentDetailTable
+                type={assessmentTypes.find(t => t.id === selectedAssessmentType)}
+                assessments={[]}
+                candidates={candidates}
+              />
+            </div>
+          )}
+
+          {/* CANDIDATES VIEW - Original Candidate Table */}
+          {selectedView === "candidates" && (
+            <div style={{
+              background: "rgba(255,255,255,0.98)",
+              backdropFilter: 'blur(10px)',
+              borderRadius: "24px",
+              padding: "30px",
+              boxShadow: "0 20px 40px rgba(0,0,0,0.1)",
+              border: "1px solid rgba(255,255,255,0.2)",
+              animation: 'slideIn 0.5s ease'
+            }}>
+              {/* Table Header */}
+              <div style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "25px",
+                flexWrap: "wrap",
+                gap: "15px"
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <h2 style={{ margin: 0, fontSize: "24px", color: "#1a2639", fontWeight: "600" }}>
+                    Candidate Performance
+                  </h2>
+                  <span style={{
+                    background: '#667eea20',
+                    padding: '6px 16px',
+                    borderRadius: '30px',
+                    fontSize: '14px',
+                    color: '#667eea',
+                    fontWeight: '600'
+                  }}>
+                    {filteredCandidates.length} candidates
+                  </span>
+                </div>
+                
+                <div style={{ display: "flex", gap: "15px", flexWrap: "wrap" }}>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{
+                      position: 'absolute',
+                      left: '15px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      fontSize: '16px',
+                      color: '#94a3b8'
+                    }}>🔍</span>
+                    <input
+                      type="text"
+                      placeholder="Search candidates..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      style={{
+                        padding: "14px 20px 14px 45px",
+                        borderRadius: "40px",
+                        border: "2px solid #e2e8f0",
+                        width: "300px",
+                        fontSize: "14px",
+                        outline: "none",
+                        transition: 'all 0.2s ease'
+                      }}
+                      onFocus={(e) => {
+                        e.currentTarget.style.borderColor = '#667eea';
+                        e.currentTarget.style.boxShadow = '0 0 0 3px rgba(102,126,234,0.1)';
+                      }}
+                      onBlur={(e) => {
+                        e.currentTarget.style.borderColor = '#e2e8f0';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                    />
+                  </div>
+                  
+                  <button style={{
+                    padding: "14px 30px",
+                    background: "linear-gradient(135deg, #667eea, #764ba2)",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "40px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "600",
+                    transition: "all 0.2s ease",
+                    boxShadow: "0 8px 20px rgba(102,126,234,0.3)",
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px'
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 12px 25px rgba(102,126,234,0.4)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 8px 20px rgba(102,126,234,0.3)';
+                  }}>
+                    <span style={{ fontSize: '18px' }}>📊</span>
+                    Export Report
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
+
+              {filteredCandidates.length === 0 ? (
+                <div style={{ 
+                  textAlign: "center", 
+                  padding: "80px 20px",
+                  background: "#f8fafc",
+                  borderRadius: "16px"
+                }}>
+                  <div style={{ fontSize: "64px", marginBottom: "20px", opacity: 0.5 }}>📊</div>
+                  <h3 style={{ color: "#1a2639", marginBottom: "10px", fontSize: "20px" }}>
+                    {searchTerm ? 'No matching candidates' : 'No Data Available'}
+                  </h3>
+                  <p style={{ color: "#64748b", fontSize: "16px" }}>
+                    {searchTerm 
+                      ? `No candidates found matching "${searchTerm}"`
+                      : "Candidates haven't completed any assessments yet."}
+                  </p>
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm('')}
+                      style={{
+                        marginTop: '20px',
+                        padding: '12px 30px',
+                        background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '40px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: '600'
+                      }}
+                    >
+                      Clear Search
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ 
+                        borderBottom: "2px solid #e2e8f0",
+                        background: '#f8fafc'
+                      }}>
+                        <th style={{ textAlign: "left", padding: "20px 15px", color: "#475569", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                          Candidate
+                        </th>
+                        <th style={{ textAlign: "left", padding: "20px 15px", color: "#475569", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                          Email
+                        </th>
+                        <th style={{ textAlign: "center", padding: "20px 15px", color: "#475569", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                          Completed
+                        </th>
+                        <th style={{ textAlign: "center", padding: "20px 15px", color: "#475569", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                          Avg Score
+                        </th>
+                        <th style={{ textAlign: "center", padding: "20px 15px", color: "#475569", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                          Risk Level
+                        </th>
+                        <th style={{ textAlign: "center", padding: "20px 15px", color: "#475569", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                          Readiness
+                        </th>
+                        <th style={{ textAlign: "center", padding: "20px 15px", color: "#475569", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                          Last Active
+                        </th>
+                        <th style={{ textAlign: "center", padding: "20px 15px", color: "#475569", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredCandidates.map(candidate => (
+                        <tr
+                          key={candidate.user_id}
+                          onMouseEnter={() => setHoveredRow(candidate.user_id)}
+                          onMouseLeave={() => setHoveredRow(null)}
+                          style={{
+                            borderBottom: '1px solid #f1f5f9',
+                            background: hoveredRow === candidate.user_id ? '#f8fafc' : 'white',
+                            transition: 'all 0.2s ease',
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => setSelectedCandidate(candidate)}
+                        >
+                          <td style={{ padding: '20px 15px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                              <div style={{
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '16px',
+                                background: `linear-gradient(135deg, ${candidate.color || '#667eea'}, ${candidate.color ? candidate.color + 'dd' : '#764ba2'})`,
+                                color: 'white',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '20px',
+                                fontWeight: '600',
+                                boxShadow: `0 8px 16px ${candidate.color || '#667eea'}40`
+                              }}>
+                                {candidate.user_name?.charAt(0).toUpperCase() || 'C'}
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: '600', color: '#1a2639', fontSize: '16px', marginBottom: '4px' }}>
+                                  {candidate.user_name}
+                                </div>
+                                <div style={{ fontSize: '13px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span>🆔 {candidate.user_id.substring(0, 8)}...</span>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ padding: '20px 15px' }}>
+                            <div style={{ color: '#2563eb', fontSize: '14px', fontWeight: '500' }}>
+                              {candidate.user_email}
+                            </div>
+                          </td>
+                          <td style={{ padding: '20px 15px', textAlign: 'center' }}>
+                            <div style={{
+                              background: '#E8F5E9',
+                              padding: '6px 16px',
+                              borderRadius: '30px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px'
+                            }}>
+                              <span style={{ fontSize: '14px' }}>✅</span>
+                              <span style={{ fontWeight: '600', color: '#2E7D32' }}>
+                                {candidate.completedCount}/6
+                              </span>
+                              {candidate.resetCount > 0 && (
+                                <span style={{
+                                  marginLeft: '4px',
+                                  fontSize: '11px',
+                                  background: '#FF980020',
+                                  color: '#F57C00',
+                                  padding: '2px 6px',
+                                  borderRadius: '12px',
+                                  fontWeight: '500'
+                                }}>
+                                  ↻ {candidate.resetCount}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ padding: '20px 15px', textAlign: 'center' }}>
+                            <div style={{
+                              background: getScoreColor(candidate.averageScore) + '15',
+                              padding: '8px 16px',
+                              borderRadius: '30px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '8px'
+                            }}>
+                              <span style={{
+                                width: '8px',
+                                height: '8px',
+                                borderRadius: '50%',
+                                background: getScoreColor(candidate.averageScore)
+                              }} />
+                              <span style={{
+                                fontWeight: '700',
+                                fontSize: '18px',
+                                color: getScoreColor(candidate.averageScore)
+                              }}>
+                                {Math.round(candidate.averageScore)}%
+                              </span>
+                            </div>
+                          </td>
+                          <td style={{ padding: '20px 15px', textAlign: 'center' }}>
+                            {candidate.assessments[0] && (
+                              <span style={{
+                                padding: '6px 14px',
+                                borderRadius: '30px',
+                                fontSize: '12px',
+                                fontWeight: '600',
+                                background: getRiskBadge(candidate.assessments[0].risk_level || 'low').bg,
+                                color: getRiskBadge(candidate.assessments[0].risk_level || 'low').color
+                              }}>
+                                {getRiskBadge(candidate.assessments[0].risk_level || 'low').label}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: '20px 15px', textAlign: 'center' }}>
+                            {candidate.assessments[0] && (
+                              <span style={{
+                                padding: '6px 14px',
+                                borderRadius: '30px',
+                                fontSize: '12px',
+                                fontWeight: '600',
+                                background: getReadinessBadge(candidate.assessments[0].readiness || 'pending').bg,
+                                color: getReadinessBadge(candidate.assessments[0].readiness || 'pending').color
+                              }}>
+                                {getReadinessBadge(candidate.assessments[0].readiness || 'pending').label}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: '20px 15px', textAlign: 'center', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>
+                            {candidate.lastActive ? new Date(candidate.lastActive).toLocaleDateString('en-US', { 
+                              month: 'short', 
+                              day: 'numeric',
+                              year: 'numeric'
+                            }) : 'N/A'}
+                          </td>
+                          <td style={{ padding: '20px 15px', textAlign: 'center' }}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedCandidate(candidate);
+                              }}
+                              style={{
+                                padding: '8px 16px',
+                                background: 'transparent',
+                                color: '#667eea',
+                                border: '1px solid #667eea',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                fontWeight: '600',
+                                transition: 'all 0.2s'
+                              }}
+                              onMouseOver={(e) => {
+                                e.currentTarget.style.background = '#667eea';
+                                e.currentTarget.style.color = 'white';
+                              }}
+                              onMouseOut={(e) => {
+                                e.currentTarget.style.background = 'transparent';
+                                e.currentTarget.style.color = '#667eea';
+                              }}
+                            >
+                              View
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
