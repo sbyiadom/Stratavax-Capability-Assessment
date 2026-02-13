@@ -2,7 +2,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../supabase/client";
-import Link from "next/link";
 
 export default function PreAssessment() {
   const router = useRouter();
