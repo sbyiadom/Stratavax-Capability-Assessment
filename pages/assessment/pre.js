@@ -1,7 +1,7 @@
-// pages/pre.js
+// pages/assessment/pre.js
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "../supabase/client";
+import { supabase } from "../../supabase/client"; // ✅ CORRECT: Go up two levels
 
 export default function PreAssessment() {
   const router = useRouter();
