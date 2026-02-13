@@ -1,12 +1,11 @@
-// pages/assessment/[id].js - COMPLETE CORRECTED FILE
+// pages/assessment/[id].js
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "../../supabase/client";
-import DebugPanel from "../../components/DebugPanel";
+import { supabase } from "../../supabase/client"; // Correct import path
 
 // ===== SECTION CONFIGURATIONS WITH BACKGROUND IMAGES =====
 const SECTION_CONFIG = {
-  // General Assessment
+  // ... (keep your existing SECTION_CONFIG object exactly as is)
   'Cognitive Abilities': { 
     color: '#4A6FA5', 
     lightBg: 'rgba(74, 111, 165, 0.1)', 
@@ -15,520 +14,49 @@ const SECTION_CONFIG = {
     pattern: 'https://www.transparenttextures.com/patterns/cubes.png',
     description: 'Measuring analytical thinking, memory, and logical reasoning'
   },
-  'Personality Assessment': { 
-    color: '#9C27B0', 
-    lightBg: 'rgba(156, 39, 176, 0.1)', 
-    icon: '😊', 
-    bgImage: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/always-grey.png',
-    description: 'Evaluating traits, behaviors, and interpersonal dynamics'
-  },
-  'Leadership Potential': { 
-    color: '#D32F2F', 
-    lightBg: 'rgba(211, 47, 47, 0.1)', 
-    icon: '👑', 
-    bgImage: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/dark-mosaic.png',
-    description: 'Assessing vision, influence, and team development'
-  },
-  'Bottled Water Manufacturing': { 
-    color: '#388E3C', 
-    lightBg: 'rgba(56, 142, 60, 0.1)', 
-    icon: '⚙️', 
-    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/industrial.png',
-    description: 'Testing knowledge of manufacturing equipment and processes'
-  },
-  'Performance Metrics': { 
-    color: '#F57C00', 
-    lightBg: 'rgba(245, 124, 0, 0.1)', 
-    icon: '📊', 
-    bgImage: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/graphy.png',
-    description: 'Evaluating KPI achievement and results orientation'
-  },
-  
-  // Behavioral
-  'Adaptability & Flexibility': { 
-    color: '#FF6B6B', 
-    lightBg: 'rgba(255, 107, 107, 0.1)', 
-    icon: '🔄', 
-    bgImage: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/light-wool.png',
-    description: 'Handling change, ambiguity, and new situations'
-  },
-  'Emotional Intelligence': { 
-    color: '#4ECDC4', 
-    lightBg: 'rgba(78, 205, 196, 0.1)', 
-    icon: '🧘', 
-    bgImage: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/clean-gray-paper.png',
-    description: 'Self-awareness, empathy, and social skills'
-  },
-  'Communication Skills': { 
-    color: '#45B7D1', 
-    lightBg: 'rgba(69, 183, 209, 0.1)', 
-    icon: '💬', 
-    bgImage: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/white-diamond.png',
-    description: 'Verbal, written, and active listening abilities'
-  },
-  'Teamwork & Collaboration': { 
-    color: '#96CEB4', 
-    lightBg: 'rgba(150, 206, 180, 0.1)', 
-    icon: '🤝', 
-    bgImage: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/cardboard.png',
-    description: 'Working with others and resolving conflicts'
-  },
-  'Initiative & Proactivity': { 
-    color: '#FFEAA7', 
-    lightBg: 'rgba(255, 234, 167, 0.1)', 
-    icon: '⚡', 
-    bgImage: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/light-honeycomb.png',
-    description: 'Taking ownership and going above and beyond'
-  },
-  'Time Management': { 
-    color: '#DDA0DD', 
-    lightBg: 'rgba(221, 160, 221, 0.1)', 
-    icon: '⏰', 
-    bgImage: 'https://images.unsplash.com/photo-1484480974693-6ca0a78fb36b?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/diamond-upholstery.png',
-    description: 'Prioritizing tasks and meeting deadlines'
-  },
-  'Resilience': { 
-    color: '#F08A5D', 
-    lightBg: 'rgba(240, 138, 93, 0.1)', 
-    icon: '💪', 
-    bgImage: 'https://images.unsplash.com/photo-1552674605-db6a2c6a7a7e?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/wood-pattern.png',
-    description: 'Bouncing back from setbacks and stress'
-  },
-  
-  // Cognitive
-  'Problem-Solving': { 
-    color: '#6A4C93', 
-    lightBg: 'rgba(106, 76, 147, 0.1)', 
-    icon: '🔍', 
-    bgImage: 'https://images.unsplash.com/photo-1456406644174-8ddd4cd52a06?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/stardust.png',
-    description: 'Identifying and resolving complex issues'
-  },
-  'Critical Thinking': { 
-    color: '#1982C4', 
-    lightBg: 'rgba(25, 130, 196, 0.1)', 
-    icon: '🎯', 
-    bgImage: 'https://images.unsplash.com/photo-1507413245164-6160d8298b31?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/brick-wall.png',
-    description: 'Analyzing information and making sound decisions'
-  },
-  'Learning Agility': { 
-    color: '#8AC926', 
-    lightBg: 'rgba(138, 201, 38, 0.1)', 
-    icon: '📚', 
-    bgImage: 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/45-degree-fabric-light.png',
-    description: 'Quickly learning and adapting to new information'
-  },
-  'Creativity & Innovation': { 
-    color: '#FFCA3A', 
-    lightBg: 'rgba(255, 202, 58, 0.1)', 
-    icon: '💡', 
-    bgImage: 'https://images.unsplash.com/photo-1455849318743-b2233052fcff?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/confetti.png',
-    description: 'Thinking outside the box and generating ideas'
-  },
-  
-  // Cultural
-  'Core Values Alignment': { 
-    color: '#9C89B8', 
-    lightBg: 'rgba(156, 137, 184, 0.1)', 
-    icon: '🎯', 
-    bgImage: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/clean-gray-paper.png',
-    description: 'Acting in accordance with company ethics'
-  },
-  'Organizational Citizenship': { 
-    color: '#F0A6CA', 
-    lightBg: 'rgba(240, 166, 202, 0.1)', 
-    icon: '🤲', 
-    bgImage: 'https://images.unsplash.com/photo-1559027615-cd4628902d4a?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/cross-scratches.png',
-    description: 'Supporting colleagues beyond formal duties'
-  },
-  'Reliability & Dependability': { 
-    color: '#B8F2E6', 
-    lightBg: 'rgba(184, 242, 230, 0.1)', 
-    icon: '✓', 
-    bgImage: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/checkerboard.png',
-    description: 'Consistent punctuality and work output'
-  },
-  'Customer Focus': { 
-    color: '#A9D6E5', 
-    lightBg: 'rgba(169, 214, 229, 0.1)', 
-    icon: '👥', 
-    bgImage: 'https://images.unsplash.com/photo-1556740714-a8395b3bf30f?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/white-diamond.png',
-    description: 'Empathy and dedication to client needs'
-  },
-  'Safety Awareness': { 
-    color: '#FCA17D', 
-    lightBg: 'rgba(252, 161, 125, 0.1)', 
-    icon: '⚠️', 
-    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/warning.png',
-    description: 'Adherence to safety protocols'
-  },
-  'Commercial Awareness': { 
-    color: '#86A788', 
-    lightBg: 'rgba(134, 167, 136, 0.1)', 
-    icon: '💰', 
-    bgImage: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/money.png',
-    description: 'Understanding industry and business model'
-  },
-  
-  // Manufacturing
-  'Blowing Machines': { 
-    color: '#3D5A80', 
-    lightBg: 'rgba(61, 90, 128, 0.1)', 
-    icon: '💨', 
-    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/industrial.png',
-    description: 'PET preform heating and bottle forming'
-  },
-  'Labeler': { 
-    color: '#EE6C4D', 
-    lightBg: 'rgba(238, 108, 77, 0.1)', 
-    icon: '🏷️', 
-    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/label.png',
-    description: 'Pressure-sensitive and shrink sleeve application'
-  },
-  'Filling': { 
-    color: '#98C1D9', 
-    lightBg: 'rgba(152, 193, 217, 0.1)', 
-    icon: '💧', 
-    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/water.png',
-    description: 'Volumetric filling and CIP sanitation'
-  },
-  'Conveyors': { 
-    color: '#293241', 
-    lightBg: 'rgba(41, 50, 65, 0.1)', 
-    icon: '📦', 
-    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/concrete.png',
-    description: 'Air conveyors and accumulation tables'
-  },
-  'Stretchwrappers': { 
-    color: '#E0FBFC', 
-    lightBg: 'rgba(224, 251, 252, 0.1)', 
-    icon: '🔄', 
-    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/stretch.png',
-    description: 'Film pre-stretch and pallet stabilization'
-  },
-  'Shrinkwrappers': { 
-    color: '#C81D25', 
-    lightBg: 'rgba(200, 29, 37, 0.1)', 
-    icon: '🔥', 
-    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/heat.png',
-    description: 'Heat tunnels and film contraction'
-  },
-  'Date Coders': { 
-    color: '#725AC1', 
-    lightBg: 'rgba(114, 90, 193, 0.1)', 
-    icon: '📅', 
-    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/code.png',
-    description: 'CIJ printers and thermal transfer'
-  },
-  'Raw Materials': { 
-    color: '#5D576B', 
-    lightBg: 'rgba(93, 87, 107, 0.1)', 
-    icon: '🧪', 
-    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/material.png',
-    description: 'PET properties and rPET sustainability'
-  },
-  
-  // Leadership
-  'Vision & Strategic Thinking': { 
-    color: '#FFB347', 
-    lightBg: 'rgba(255, 179, 71, 0.1)', 
-    icon: '🎯', 
-    bgImage: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/strategy.png',
-    description: 'Setting direction and long-term planning'
-  },
-  'Team Development': { 
-    color: '#5F9EA0', 
-    lightBg: 'rgba(95, 158, 160, 0.1)', 
-    icon: '🌱', 
-    bgImage: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/growth.png',
-    description: 'Coaching and building team capabilities'
-  },
-  'Decision-Making': { 
-    color: '#C23B22', 
-    lightBg: 'rgba(194, 59, 34, 0.1)', 
-    icon: '⚖️', 
-    bgImage: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/decision.png',
-    description: 'Making sound judgments under uncertainty'
-  },
-  'Influence': { 
-    color: '#6B5B95', 
-    lightBg: 'rgba(107, 91, 149, 0.1)', 
-    icon: '🗣️', 
-    bgImage: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/influence.png',
-    description: 'Persuading and building stakeholder buy-in'
-  },
-  'Leadership EQ': { 
-    color: '#88B04B', 
-    lightBg: 'rgba(136, 176, 75, 0.1)', 
-    icon: '💖', 
-    bgImage: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/eq.png',
-    description: 'Empathy and social awareness in leadership'
-  },
-  'Conflict Resolution': { 
-    color: '#FF6F61', 
-    lightBg: 'rgba(255, 111, 97, 0.1)', 
-    icon: '🤝', 
-    bgImage: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/conflict.png',
-    description: 'Mediating disputes and finding common ground'
-  },
-  'Delegation': { 
-    color: '#92A8D1', 
-    lightBg: 'rgba(146, 168, 209, 0.1)', 
-    icon: '📤', 
-    bgImage: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/delegate.png',
-    description: 'Empowering others and distributing work'
-  },
-  'Leadership Integrity': { 
-    color: '#955251', 
-    lightBg: 'rgba(149, 82, 81, 0.1)', 
-    icon: '🛡️', 
-    bgImage: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/integrity.png',
-    description: 'Ethical courage and role modeling'
-  },
-  'Innovation Leadership': { 
-    color: '#B565A7', 
-    lightBg: 'rgba(181, 101, 167, 0.1)', 
-    icon: '💫', 
-    bgImage: 'https://images.unsplash.com/photo-1455849318743-b2233052fcff?auto=format&fit=crop&w=1920&q=80',
-    pattern: 'https://www.transparenttextures.com/patterns/innovation.png',
-    description: 'Fostering creativity and change'
-  }
+  // ... continue with all your existing section configs
 };
 
 // ===== TIMER FUNCTIONS =====
 async function startOrResumeTimer(userId, assessmentId) {
-  try {
-    if (!userId || !assessmentId) return 0;
-
-    const { data: existingTimer, error: fetchError } = await supabase
-      .from("assessment_timer_progress")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("assessment_id", assessmentId)
-      .maybeSingle();
-
-    if (fetchError && fetchError.code !== 'PGRST116') {
-      console.error("Timer fetch error:", fetchError);
-      return 0;
-    }
-
-    if (existingTimer) {
-      return existingTimer.elapsed_seconds;
-    } else {
-      const { error } = await supabase
-        .from("assessment_timer_progress")
-        .insert({
-          user_id: userId,
-          assessment_id: assessmentId,
-          started_at: new Date().toISOString(),
-          elapsed_seconds: 0,
-          status: 'in_progress',
-          updated_at: new Date().toISOString()
-        });
-
-      if (error) throw error;
-      return 0;
-    }
-  } catch (error) {
-    console.error("Timer error:", error);
-    return 0;
-  }
+  // ... keep your existing timer functions
 }
 
 async function saveTimerProgress(userId, assessmentId, elapsedSeconds) {
-  try {
-    if (!userId || !assessmentId) return;
-    
-    const { error } = await supabase
-      .from("assessment_timer_progress")
-      .upsert({
-        user_id: userId,
-        assessment_id: assessmentId,
-        elapsed_seconds: elapsedSeconds,
-        last_saved_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }, { 
-        onConflict: 'user_id,assessment_id',
-        ignoreDuplicates: false 
-      });
-
-    if (error) throw error;
-  } catch (error) {
-    console.error("Failed to save timer:", error);
-  }
+  // ... keep your existing timer functions
 }
 
 async function markTimerAsCompleted(userId, assessmentId) {
-  try {
-    if (!userId || !assessmentId) return;
-    
-    const { error } = await supabase
-      .from("assessment_timer_progress")
-      .update({
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .eq("user_id", userId)
-      .eq("assessment_id", assessmentId);
-
-    if (error) throw error;
-  } catch (error) {
-    console.error("Failed to mark timer as completed:", error);
-  }
+  // ... keep your existing timer functions
 }
 
 // ===== ANTI-CHEAT FUNCTIONS =====
 function setupAntiCheatProtection() {
-  if (typeof window === 'undefined') return;
-  
-  document.addEventListener('contextmenu', (e) => e.preventDefault());
-  document.addEventListener('selectstart', (e) => e.preventDefault());
-  
-  document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && 
-        (e.key === 'c' || e.key === 'v' || e.key === 'x' || e.key === 'a')) {
-      e.preventDefault();
-    }
-    if (e.key === 'F12' || e.key === 'PrintScreen') {
-      e.preventDefault();
-    }
-  });
-
-  const style = document.createElement('style');
-  style.innerHTML = `* { user-select: none !important; }`;
-  document.head.appendChild(style);
+  // ... keep your existing anti-cheat functions
 }
 
 // ===== RANDOMIZE ANSWERS =====
 function trulyRandomizeAnswers(answers) {
-  if (!answers || answers.length === 0) return answers;
-  const shuffled = [...answers];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
+  // ... keep your existing randomization function
 }
 
 // ===== SAVE RESPONSE =====
 async function saveResponse(assessmentId, questionId, answerId, userId) {
-  try {
-    const { error } = await supabase.from("responses").upsert({
-      assessment_id: assessmentId,
-      question_id: parseInt(questionId),
-      answer_id: parseInt(answerId),
-      user_id: userId,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'assessment_id,question_id,user_id' });
-
-    if (error) throw error;
-    return { success: true };
-  } catch (error) {
-    console.error("Save error:", error);
-    throw error;
-  }
+  // ... keep your existing save response function
 }
 
 async function loadUserResponses(userId, assessmentId) {
-  try {
-    const { data } = await supabase
-      .from("responses")
-      .select("question_id, answer_id")
-      .eq("assessment_id", assessmentId)
-      .eq("user_id", userId);
-
-    const responses = {};
-    data?.forEach(r => responses[r.question_id] = r.answer_id);
-    return responses;
-  } catch (error) {
-    console.error("Error loading responses:", error);
-    return {};
-  }
+  // ... keep your existing load responses function
 }
 
 // ===== CHECK SUBMISSION =====
 async function checkIfAlreadySubmitted(userId, assessmentId) {
-  try {
-    const { data, error } = await supabase
-      .from("assessment_results")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("assessment_id", assessmentId)
-      .eq("status", "completed")
-      .maybeSingle();
-
-    if (error && error.code !== 'PGRST116') {
-      console.error("Error checking completion:", error);
-      return false;
-    }
-    
-    return !!data;
-  } catch (error) {
-    console.error("Error in checkIfAlreadySubmitted:", error);
-    return false;
-  }
+  // ... keep your existing check submission function
 }
 
 // ===== MARK AS SUBMITTED =====
 async function markAsSubmitted(userId, assessmentId) {
-  try {
-    const response = await fetch('/api/submit-assessment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assessment_id: assessmentId, user_id: userId })
-    });
-
-    const result = await response.json();
-    
-    if (!response.ok) {
-      if (result.error?.includes("already submitted")) {
-        return true;
-      }
-      throw new Error(result.error || 'Submission failed');
-    }
-
-    return true;
-  } catch (error) {
-    console.error("Failed to submit assessment:", error);
-    throw error;
-  }
+  // ... keep your existing mark as submitted function
 }
 
 export default function AssessmentPage() {
@@ -552,16 +80,13 @@ export default function AssessmentPage() {
   const [timerLoaded, setTimerLoaded] = useState(false);
   const [timeLimitSeconds, setTimeLimitSeconds] = useState(10800);
   const [hoveredQuestion, setHoveredQuestion] = useState(null);
-  const [showDebug, setShowDebug] = useState(false);
   const [expectedQuestionCount, setExpectedQuestionCount] = useState(null);
   const [fetchAttempted, setFetchAttempted] = useState(false);
 
   // ===== FETCH ASSESSMENT DETAILS =====
   useEffect(() => {
     const fetchAssessmentDetails = async () => {
-      if (!assessmentId || !isSessionReady || alreadySubmitted || !assessmentId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-        return;
-      }
+      if (!assessmentId || !isSessionReady || alreadySubmitted) return;
       
       try {
         const { data, error } = await supabase
@@ -675,7 +200,7 @@ export default function AssessmentPage() {
         console.log(`📋 Received ${questionsData.length} questions`);
         
         if (count && questionsData.length !== count) {
-          console.warn(`⚠️ Expected ${count} questions but got ${questionsData.length}. Check question_order column.`);
+          console.warn(`⚠️ Expected ${count} questions but got ${questionsData.length}.`);
         }
 
         // Load saved answers
@@ -1069,41 +594,6 @@ export default function AssessmentPage() {
 
   return (
     <>
-      {/* Debug Panel */}
-      {process.env.NODE_ENV === 'development' && (
-        <>
-          <button
-            onClick={() => setShowDebug(!showDebug)}
-            style={{
-              position: 'fixed',
-              bottom: '20px',
-              left: '20px',
-              padding: '12px 20px',
-              background: 'linear-gradient(135deg, #ff9800, #f57c00)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '30px',
-              cursor: 'pointer',
-              zIndex: 9998,
-              fontWeight: '600',
-              boxShadow: '0 4px 12px rgba(255,152,0,0.3)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-          >
-            <span style={{ fontSize: '18px' }}>🔍</span> Debug Panel
-          </button>
-          
-          {showDebug && (
-            <DebugPanel 
-              assessmentId={assessmentId} 
-              onClose={() => setShowDebug(false)} 
-            />
-          )}
-        </>
-      )}
-
       {/* Submit Modal */}
       {showSubmitModal && (
         <div style={styles.modalOverlay}>
