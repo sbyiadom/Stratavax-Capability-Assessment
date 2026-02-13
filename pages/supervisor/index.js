@@ -12,37 +12,120 @@ const BACKGROUND_CONFIG = {
   overlay: 'rgba(0,0,0,0.8)'
 };
 
-// Assessment type configurations for badges
+// Define all 6 assessment types with their configurations
 const ASSESSMENT_TYPES = [
-  { id: 'general', name: 'General', color: '#4A6FA5', icon: '📋' },
-  { id: 'behavioral', name: 'Behavioral', color: '#9C27B0', icon: '🧠' },
-  { id: 'cognitive', name: 'Cognitive', color: '#FF9800', icon: '💡' },
-  { id: 'cultural', name: 'Cultural', color: '#4CAF50', icon: '🤝' },
-  { id: 'manufacturing', name: 'Manufacturing', color: '#F44336', icon: '⚙️' },
-  { id: 'leadership', name: 'Leadership', color: '#FFC107', icon: '👑' }
+  { 
+    id: 'general',
+    name: 'General Assessment',
+    icon: '📋',
+    color: '#4A6FA5',
+    gradient: 'linear-gradient(135deg, #4A6FA5, #6B8EC9)',
+    lightBg: '#E8EEF5',
+    description: 'Comprehensive evaluation across core competencies',
+    maxScore: 500
+  },
+  { 
+    id: 'behavioral',
+    name: 'Behavioral & Soft Skills',
+    icon: '🧠',
+    color: '#9C27B0',
+    gradient: 'linear-gradient(135deg, #9C27B0, #BA68C8)',
+    lightBg: '#F3E5F5',
+    description: 'Communication, teamwork, emotional intelligence',
+    maxScore: 100
+  },
+  { 
+    id: 'cognitive',
+    name: 'Cognitive & Thinking Skills',
+    icon: '💡',
+    color: '#FF9800',
+    gradient: 'linear-gradient(135deg, #FF9800, #FFB74D)',
+    lightBg: '#FFF3E0',
+    description: 'Problem-solving, critical thinking, analysis',
+    maxScore: 100
+  },
+  { 
+    id: 'cultural',
+    name: 'Cultural & Attitudinal Fit',
+    icon: '🤝',
+    color: '#4CAF50',
+    gradient: 'linear-gradient(135deg, #4CAF50, #81C784)',
+    lightBg: '#E8F5E9',
+    description: 'Values alignment, organizational fit',
+    maxScore: 100
+  },
+  { 
+    id: 'manufacturing',
+    name: 'Manufacturing Technical Skills',
+    icon: '⚙️',
+    color: '#F44336',
+    gradient: 'linear-gradient(135deg, #F44336, #EF5350)',
+    lightBg: '#FFEBEE',
+    description: 'Technical skills across different machines and equipment',
+    maxScore: 100
+  },
+  { 
+    id: 'leadership',
+    name: 'Leadership Potential',
+    icon: '👑',
+    color: '#FFC107',
+    gradient: 'linear-gradient(135deg, #FFC107, #FFD54F)',
+    lightBg: '#FFF8E1',
+    description: 'Vision, influence, team development',
+    maxScore: 100
+  }
 ];
 
-// Helper function to get classification from score (out of 500)
-const getClassificationFromScore = (score) => {
-  if (score >= 480) return { name: "Elite Talent", color: "#00B894" };
-  if (score >= 450) return { name: "Top Talent", color: "#0984E3" };
-  if (score >= 400) return { name: "High Potential", color: "#FDCB6E" };
-  if (score >= 350) return { name: "Solid Performer", color: "#00CEC9" };
-  if (score >= 300) return { name: "Developing Talent", color: "#6C5CE7" };
-  if (score >= 250) return { name: "Emerging Talent", color: "#E84342" };
-  return { name: "Needs Improvement", color: "#D63031" };
+// Helper function to get classification based on score and assessment type
+const getClassification = (score, assessmentType) => {
+  // For General Assessment (500 points)
+  if (assessmentType === 'General Assessment') {
+    if (score >= 480) return { name: "Elite Talent", color: "#00B894" };
+    if (score >= 450) return { name: "Top Talent", color: "#0984E3" };
+    if (score >= 400) return { name: "High Potential", color: "#FDCB6E" };
+    if (score >= 350) return { name: "Solid Performer", color: "#00CEC9" };
+    if (score >= 300) return { name: "Developing Talent", color: "#6C5CE7" };
+    if (score >= 250) return { name: "Emerging Talent", color: "#E84342" };
+    return { name: "Needs Improvement", color: "#D63031" };
+  }
+  
+  // For Technical/Manufacturing Assessment (100 points)
+  if (assessmentType === 'Manufacturing Technical Skills') {
+    if (score >= 90) return { name: "Technical Expert", color: "#00B894" };
+    if (score >= 80) return { name: "Advanced", color: "#0984E3" };
+    if (score >= 70) return { name: "Proficient", color: "#FDCB6E" };
+    if (score >= 60) return { name: "Competent", color: "#00CEC9" };
+    if (score >= 50) return { name: "Developing", color: "#6C5CE7" };
+    return { name: "Needs Training", color: "#D63031" };
+  }
+  
+  // For Cognitive Assessment (100 points)
+  if (assessmentType === 'Cognitive & Thinking Skills') {
+    if (score >= 90) return { name: "Exceptional", color: "#00B894" };
+    if (score >= 80) return { name: "Strong", color: "#0984E3" };
+    if (score >= 70) return { name: "Good", color: "#FDCB6E" };
+    if (score >= 60) return { name: "Satisfactory", color: "#00CEC9" };
+    if (score >= 50) return { name: "Developing", color: "#6C5CE7" };
+    return { name: "Needs Development", color: "#D63031" };
+  }
+  
+  // For Personality-based assessments (Behavioral, Cultural, Leadership)
+  if (score >= 80) return { name: "Strong Indicator", color: "#00B894" };
+  if (score >= 70) return { name: "Moderate Indicator", color: "#0984E3" };
+  if (score >= 60) return { name: "Balanced", color: "#FDCB6E" };
+  if (score >= 50) return { name: "Developing", color: "#00CEC9" };
+  return { name: "Area for Growth", color: "#6C5CE7" };
 };
 
 // Metric Card Component
-const MetricCard = ({ title, value, subtitle, trend, color = '#2563eb' }) => (
+const MetricCard = ({ title, value, subtitle, color = '#2563eb' }) => (
   <div style={{
     background: 'white',
     borderRadius: '16px',
     padding: '24px',
     boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
     border: '1px solid #eef2f6',
-    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-    cursor: 'default'
+    transition: 'transform 0.2s ease, box-shadow 0.2s ease'
   }}
   onMouseOver={(e) => {
     e.currentTarget.style.transform = 'translateY(-4px)';
@@ -61,71 +144,38 @@ const MetricCard = ({ title, value, subtitle, trend, color = '#2563eb' }) => (
     <div style={{ fontSize: '13px', color: '#94a3b8' }}>
       {subtitle}
     </div>
-    {trend && (
-      <div style={{
-        marginTop: '12px',
-        fontSize: '12px',
-        color: color,
-        background: `${color}10`,
-        padding: '4px 12px',
-        borderRadius: '20px',
-        display: 'inline-block',
-        fontWeight: '500'
-      }}>
-        {trend}
-      </div>
-    )}
   </div>
 );
 
 // Status Badge Component
-const StatusBadge = ({ assessments }) => {
-  const completedCount = assessments?.length || 0;
-  const colors = {
-    0: { bg: '#f1f5f9', text: '#64748b', label: 'No assessments' },
-    1: { bg: '#fee2e2', text: '#b91c1c', label: '1 completed' },
-    2: { bg: '#fed7aa', text: '#9a3412', label: '2 completed' },
-    3: { bg: '#fef08a', text: '#854d0e', label: '3 completed' },
-    4: { bg: '#d9f99d', text: '#3f6212', label: '4 completed' },
-    5: { bg: '#a7f3d0', text: '#065f46', label: '5 completed' },
-    6: { bg: '#c7d2fe', text: '#3730a3', label: 'All 6 completed' }
-  };
-  const style = colors[completedCount] || colors[0];
-  
-  return (
-    <span style={{
-      padding: "4px 12px",
-      background: style.bg,
-      color: style.text,
-      borderRadius: "30px",
-      fontSize: "12px",
-      fontWeight: "600",
-      display: 'inline-block'
-    }}>
-      {style.label}
-    </span>
-  );
-};
+const StatusBadge = ({ status, color }) => (
+  <span style={{
+    padding: "4px 12px",
+    background: `${color}15`,
+    color: color,
+    borderRadius: "30px",
+    fontSize: "12px",
+    fontWeight: "600",
+    display: 'inline-block'
+  }}>
+    {status}
+  </span>
+);
 
 export default function SupervisorDashboard() {
   const router = useRouter();
   const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isSupervisor, setIsSupervisor] = useState(false);
+  const [selectedAssessment, setSelectedAssessment] = useState('General Assessment');
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterClassification, setFilterClassification] = useState('all');
   const [sortBy, setSortBy] = useState('score_desc');
   const [hoveredRow, setHoveredRow] = useState(null);
   const [stats, setStats] = useState({
     totalCandidates: 0,
-    completed: 0,
-    eliteTalent: 0,
-    topTalent: 0,
-    highPotential: 0,
-    solidPerformer: 0,
-    developing: 0,
-    emergingTalent: 0,
-    needsImprovement: 0
+    averageScore: 0,
+    topPerformers: 0,
+    needsDevelopment: 0
   });
 
   // Check supervisor authentication
@@ -156,116 +206,133 @@ export default function SupervisorDashboard() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch candidates and their assessment status
+  // Fetch candidates who have taken the selected assessment
   useEffect(() => {
     if (!isSupervisor) return;
 
-    const fetchData = async () => {
+    const fetchCandidatesByAssessment = async () => {
       try {
-        // Get all candidates from candidate_assessments
-        const { data: candidatesData, error: candidatesError } = await supabase
-          .from("candidate_assessments")
+        setLoading(true);
+        
+        // First, get all users who have responses for the selected assessment type
+        const { data: responses, error: responsesError } = await supabase
+          .from("responses")
           .select(`
             user_id,
-            total_score,
-            classification,
-            email,
-            full_name
+            questions!inner (
+              assessment_type
+            ),
+            answers!inner (
+              score
+            )
           `)
-          .order("total_score", { ascending: false });
+          .eq("questions.assessment_type", selectedAssessment);
 
-        if (candidatesError) throw candidatesError;
+        if (responsesError) throw responsesError;
 
-        if (!candidatesData || candidatesData.length === 0) {
+        if (!responses || responses.length === 0) {
           setCandidates([]);
           setStats({
             totalCandidates: 0,
-            completed: 0,
-            eliteTalent: 0,
-            topTalent: 0,
-            highPotential: 0,
-            solidPerformer: 0,
-            developing: 0,
-            emergingTalent: 0,
-            needsImprovement: 0
+            averageScore: 0,
+            topPerformers: 0,
+            needsDevelopment: 0
           });
           setLoading(false);
           return;
         }
 
-        // For each candidate, fetch their completed assessments
-        const candidatesWithDetails = await Promise.all(
-          candidatesData.map(async (candidate) => {
-            // Get unique assessment types from responses
-            const { data: responses } = await supabase
-              .from("responses")
-              .select(`
-                questions!inner (
-                  assessment_type
-                )
-              `)
-              .eq("user_id", candidate.user_id);
+        // Group responses by user and calculate scores
+        const userScores = {};
+        const userResponseCounts = {};
 
-            const completedAssessments = responses 
-              ? [...new Set(responses.map(r => r.questions.assessment_type))] 
-              : [];
+        responses.forEach(response => {
+          const userId = response.user_id;
+          const score = response.answers.score;
+          
+          if (!userScores[userId]) {
+            userScores[userId] = 0;
+            userResponseCounts[userId] = 0;
+          }
+          
+          userScores[userId] += score;
+          userResponseCounts[userId] += 1;
+        });
 
-            return {
-              ...candidate,
-              completedAssessments,
-              classificationObj: getClassificationFromScore(candidate.total_score),
-              displayName: candidate.full_name || `Candidate ${candidate.user_id.substring(0, 8)}`,
-              displayId: candidate.user_id.substring(0, 12) + '...'
-            };
-          })
-        );
+        // Calculate total possible score for this assessment
+        const questionsPerUser = Math.max(...Object.values(userResponseCounts));
+        const maxPossibleScore = questionsPerUser * 5;
 
-        setCandidates(candidatesWithDetails);
+        // Get user details from candidate_assessments
+        const userIds = Object.keys(userScores);
+        const { data: candidatesData, error: candidatesError } = await supabase
+          .from("candidate_assessments")
+          .select("user_id, full_name, email")
+          .in("user_id", userIds);
 
-        // Calculate statistics
-        const statsData = {
-          totalCandidates: candidatesData.length,
-          completed: candidatesData.length,
-          eliteTalent: candidatesData.filter(c => getClassificationFromScore(c.total_score).name === 'Elite Talent').length,
-          topTalent: candidatesData.filter(c => getClassificationFromScore(c.total_score).name === 'Top Talent').length,
-          highPotential: candidatesData.filter(c => getClassificationFromScore(c.total_score).name === 'High Potential').length,
-          solidPerformer: candidatesData.filter(c => getClassificationFromScore(c.total_score).name === 'Solid Performer').length,
-          developing: candidatesData.filter(c => getClassificationFromScore(c.total_score).name === 'Developing Talent').length,
-          emergingTalent: candidatesData.filter(c => getClassificationFromScore(c.total_score).name === 'Emerging Talent').length,
-          needsImprovement: candidatesData.filter(c => getClassificationFromScore(c.total_score).name === 'Needs Improvement').length
-        };
-        setStats(statsData);
-        setLoading(false);
+        if (candidatesError) throw candidatesError;
+
+        // Build candidate list with their scores for this assessment
+        const candidatesWithScores = userIds.map(userId => {
+          const candidateInfo = candidatesData?.find(c => c.user_id === userId) || {};
+          const totalScore = userScores[userId];
+          const percentage = Math.round((totalScore / maxPossibleScore) * 100);
+          const classification = getClassification(percentage, selectedAssessment);
+          
+          return {
+            user_id: userId,
+            full_name: candidateInfo.full_name || `Candidate ${userId.substring(0, 8)}`,
+            email: candidateInfo.email || "Email not available",
+            totalScore,
+            maxPossible: maxPossibleScore,
+            percentage,
+            classification,
+            questionCount: userResponseCounts[userId]
+          };
+        });
+
+        // Sort by score (highest first)
+        candidatesWithScores.sort((a, b) => b.totalScore - a.totalScore);
+        setCandidates(candidatesWithScores);
+
+        // Calculate stats
+        const avgScore = candidatesWithScores.reduce((sum, c) => sum + c.percentage, 0) / candidatesWithScores.length;
+        const topPerformers = candidatesWithScores.filter(c => c.percentage >= 80).length;
+        const needsDev = candidatesWithScores.filter(c => c.percentage < 60).length;
+
+        setStats({
+          totalCandidates: candidatesWithScores.length,
+          averageScore: Math.round(avgScore),
+          topPerformers,
+          needsDevelopment: needsDev
+        });
 
       } catch (err) {
-        console.error("Error fetching data:", err);
+        console.error("Error fetching candidates:", err);
         setCandidates([]);
+      } finally {
         setLoading(false);
       }
     };
 
-    fetchData();
-  }, [isSupervisor]);
+    fetchCandidatesByAssessment();
+  }, [isSupervisor, selectedAssessment]);
 
   // Filter and sort candidates
   const filteredCandidates = candidates
     .filter(candidate => {
       const matchesSearch = 
         (candidate.full_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-        (candidate.email?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-        candidate.user_id?.toLowerCase().includes(searchTerm.toLowerCase());
+        (candidate.email?.toLowerCase() || '').includes(searchTerm.toLowerCase());
       
-      const matchesFilter = filterClassification === 'all' || 
-        candidate.classificationObj.name === filterClassification;
-      
-      return matchesSearch && matchesFilter;
+      return matchesSearch;
     })
     .sort((a, b) => {
       switch(sortBy) {
         case 'score_desc':
-          return b.total_score - a.total_score;
+          return b.totalScore - a.totalScore;
         case 'score_asc':
-          return a.total_score - b.total_score;
+          return a.totalScore - b.totalScore;
         case 'name_asc':
           return (a.full_name || '').localeCompare(b.full_name || '');
         case 'name_desc':
@@ -280,10 +347,7 @@ export default function SupervisorDashboard() {
     router.push("/supervisor-login");
   };
 
-  // Calculate average score
-  const averageScore = candidates.length > 0 
-    ? Math.round(candidates.reduce((sum, c) => sum + c.total_score, 0) / candidates.length)
-    : 0;
+  const currentAssessmentConfig = ASSESSMENT_TYPES.find(a => a.name === selectedAssessment) || ASSESSMENT_TYPES[0];
 
   if (!isSupervisor) {
     return (
@@ -374,71 +438,139 @@ export default function SupervisorDashboard() {
               Supervisor Dashboard
             </h1>
             <p style={{ margin: "4px 0 0 0", color: "#64748b", fontSize: "14px" }}>
-              Talent Assessment Overview
+              View candidates by assessment type
             </p>
           </div>
           
-          <div style={{ display: "flex", gap: "12px" }}>
+          <button
+            onClick={handleLogout}
+            style={{
+              background: "white",
+              color: "#dc2626",
+              border: "1px solid #dc2626",
+              padding: "10px 20px",
+              borderRadius: "8px",
+              cursor: "pointer",
+              fontSize: "14px",
+              fontWeight: "500",
+              transition: 'all 0.2s ease'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = "#dc2626";
+              e.currentTarget.style.color = "white";
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = "white";
+              e.currentTarget.style.color = "#dc2626";
+            }}
+          >
+            Logout
+          </button>
+        </div>
+
+        {/* Assessment Type Selector */}
+        <div style={{
+          background: "white",
+          borderRadius: "60px",
+          padding: "8px",
+          marginBottom: "30px",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "5px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+          border: "1px solid #eef2f6"
+        }}>
+          {ASSESSMENT_TYPES.map(assessment => (
             <button
-              onClick={handleLogout}
+              key={assessment.id}
+              onClick={() => setSelectedAssessment(assessment.name)}
               style={{
-                background: "white",
-                color: "#dc2626",
-                border: "1px solid #dc2626",
-                padding: "10px 20px",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontSize: "14px",
-                fontWeight: "500",
-                transition: 'all 0.2s ease'
-              }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.background = "#dc2626";
-                e.currentTarget.style.color = "white";
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.background = "white";
-                e.currentTarget.style.color = "#dc2626";
+                padding: "12px 24px",
+                background: selectedAssessment === assessment.name ? assessment.gradient : 'transparent',
+                color: selectedAssessment === assessment.name ? 'white' : '#4a5568',
+                border: 'none',
+                borderRadius: "50px",
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                flex: '1 1 auto',
+                justifyContent: 'center',
+                transition: 'all 0.3s'
               }}
             >
-              Logout
+              <span>{assessment.icon}</span>
+              <span>{assessment.name}</span>
             </button>
+          ))}
+        </div>
+
+        {/* Assessment Info Card */}
+        <div style={{
+          background: currentAssessmentConfig.gradient,
+          borderRadius: "16px",
+          padding: "25px",
+          marginBottom: "30px",
+          color: "white",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center"
+        }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '10px' }}>
+              <span style={{ fontSize: '32px' }}>{currentAssessmentConfig.icon}</span>
+              <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>{selectedAssessment}</h2>
+            </div>
+            <p style={{ margin: 0, opacity: 0.9, fontSize: '15px' }}>
+              {currentAssessmentConfig.description}
+            </p>
+          </div>
+          <div style={{
+            background: 'rgba(255,255,255,0.2)',
+            padding: '15px 25px',
+            borderRadius: '12px',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '13px', opacity: 0.9 }}>Max Score</div>
+            <div style={{ fontSize: '28px', fontWeight: '700' }}>{currentAssessmentConfig.maxScore}</div>
           </div>
         </div>
 
         {/* Statistics Cards */}
         <div style={{ 
           display: "grid", 
-          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", 
+          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
           gap: "20px", 
           marginBottom: "30px" 
         }}>
           <MetricCard
             title="Total Candidates"
             value={stats.totalCandidates}
-            subtitle="Registered in system"
+            subtitle={`Took ${selectedAssessment}`}
             color="#2563eb"
           />
           
           <MetricCard
-            title="Completed Assessments"
-            value={stats.completed}
-            subtitle={`${stats.totalCandidates > 0 ? '100%' : '0%'} completion rate`}
+            title="Average Score"
+            value={`${stats.averageScore}%`}
+            subtitle="Across all candidates"
             color="#10b981"
           />
           
           <MetricCard
-            title="Top Talent"
-            value={stats.eliteTalent + stats.topTalent}
-            subtitle={`${stats.totalCandidates > 0 ? Math.round(((stats.eliteTalent + stats.topTalent) / stats.totalCandidates) * 100) : 0}% of candidates`}
+            title="Top Performers"
+            value={stats.topPerformers}
+            subtitle="Scored 80% or above"
             color="#f59e0b"
           />
           
           <MetricCard
-            title="Average Score"
-            value={averageScore}
-            subtitle="Out of 500 points"
-            color="#8b5cf6"
+            title="Needs Development"
+            value={stats.needsDevelopment}
+            subtitle="Scored below 60%"
+            color="#ef4444"
           />
         </div>
 
@@ -460,7 +592,7 @@ export default function SupervisorDashboard() {
             gap: "15px"
           }}>
             <h2 style={{ margin: 0, color: "#1e293b", fontSize: '18px', fontWeight: '600' }}>
-              Candidate Assessments
+              Candidates who completed {selectedAssessment}
             </h2>
             
             <div style={{ display: 'flex', gap: "12px", flexWrap: 'wrap' }}>
@@ -476,8 +608,7 @@ export default function SupervisorDashboard() {
                   borderRadius: '8px',
                   fontSize: '14px',
                   width: '240px',
-                  outline: 'none',
-                  transition: 'border-color 0.2s ease'
+                  outline: 'none'
                 }}
                 onFocus={(e) => {
                   e.currentTarget.style.borderColor = '#2563eb';
@@ -486,31 +617,6 @@ export default function SupervisorDashboard() {
                   e.currentTarget.style.borderColor = '#e2e8f0';
                 }}
               />
-
-              {/* Filter by Classification */}
-              <select
-                value={filterClassification}
-                onChange={(e) => setFilterClassification(e.target.value)}
-                style={{
-                  padding: '10px 16px',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  background: 'white',
-                  cursor: 'pointer',
-                  outline: 'none',
-                  color: '#1e293b'
-                }}
-              >
-                <option value="all">All Classifications</option>
-                <option value="Elite Talent">Elite Talent</option>
-                <option value="Top Talent">Top Talent</option>
-                <option value="High Potential">High Potential</option>
-                <option value="Solid Performer">Solid Performer</option>
-                <option value="Developing Talent">Developing Talent</option>
-                <option value="Emerging Talent">Emerging Talent</option>
-                <option value="Needs Improvement">Needs Improvement</option>
-              </select>
 
               {/* Sort By */}
               <select
@@ -550,11 +656,6 @@ export default function SupervisorDashboard() {
             <span>
               Showing <strong>{filteredCandidates.length}</strong> of <strong>{candidates.length}</strong> candidates
             </span>
-            {filteredCandidates.length > 0 && (
-              <span>
-                Average Score: <strong>{Math.round(filteredCandidates.reduce((sum, c) => sum + c.total_score, 0) / filteredCandidates.length)}</strong>
-              </span>
-            )}
           </div>
 
           {loading ? (
@@ -568,7 +669,7 @@ export default function SupervisorDashboard() {
                 animation: "spin 1s linear infinite",
                 margin: "0 auto 16px"
               }} />
-              <p style={{ color: "#64748b", fontSize: "14px" }}>Loading candidate data...</p>
+              <p style={{ color: "#64748b", fontSize: "14px" }}>Loading candidates...</p>
             </div>
           ) : filteredCandidates.length === 0 ? (
             <div style={{ 
@@ -577,20 +678,18 @@ export default function SupervisorDashboard() {
               background: "#f8fafc",
               borderRadius: "12px"
             }}>
+              <div style={{ fontSize: '48px', marginBottom: '20px' }}>{currentAssessmentConfig.icon}</div>
               <h3 style={{ color: "#1e293b", marginBottom: "8px", fontSize: '16px', fontWeight: '600' }}>
                 No Candidates Found
               </h3>
               <p style={{ color: "#64748b", fontSize: "14px", marginBottom: "20px" }}>
-                {searchTerm || filterClassification !== 'all' 
-                  ? "Try adjusting your search or filter criteria"
-                  : "No candidates have completed assessments yet"}
+                {searchTerm 
+                  ? "Try adjusting your search criteria"
+                  : `No candidates have completed ${selectedAssessment} yet`}
               </p>
-              {(searchTerm || filterClassification !== 'all') && (
+              {searchTerm && (
                 <button
-                  onClick={() => {
-                    setSearchTerm('');
-                    setFilterClassification('all');
-                  }}
+                  onClick={() => setSearchTerm('')}
                   style={{
                     padding: '10px 20px',
                     background: '#2563eb',
@@ -602,7 +701,7 @@ export default function SupervisorDashboard() {
                     cursor: 'pointer'
                   }}
                 >
-                  Clear Filters
+                  Clear Search
                 </button>
               )}
             </div>
@@ -613,7 +712,7 @@ export default function SupervisorDashboard() {
                 borderCollapse: "collapse",
                 textAlign: "left",
                 fontSize: "14px",
-                minWidth: "1000px"
+                minWidth: "800px"
               }}>
                 <thead>
                   <tr style={{ 
@@ -622,9 +721,10 @@ export default function SupervisorDashboard() {
                   }}>
                     <th style={{ padding: "14px 16px", fontWeight: "600", color: "#475569" }}>Candidate</th>
                     <th style={{ padding: "14px 16px", fontWeight: "600", color: "#475569" }}>Contact</th>
-                    <th style={{ padding: "14px 16px", fontWeight: "600", color: "#475569" }}>Total Score</th>
+                    <th style={{ padding: "14px 16px", fontWeight: "600", color: "#475569" }}>Score</th>
+                    <th style={{ padding: "14px 16px", fontWeight: "600", color: "#475569" }}>Percentage</th>
                     <th style={{ padding: "14px 16px", fontWeight: "600", color: "#475569" }}>Classification</th>
-                    <th style={{ padding: "14px 16px", fontWeight: "600", color: "#475569" }}>Completed Assessments</th>
+                    <th style={{ padding: "14px 16px", fontWeight: "600", color: "#475569" }}>Questions</th>
                     <th style={{ padding: "14px 16px", fontWeight: "600", color: "#475569" }}>Action</th>
                   </tr>
                 </thead>
@@ -643,93 +743,70 @@ export default function SupervisorDashboard() {
                         }}
                         onMouseEnter={() => setHoveredRow(candidate.user_id)}
                         onMouseLeave={() => setHoveredRow(null)}
-                        onClick={() => router.push(`/supervisor/${candidate.user_id}`)}
+                        onClick={() => router.push(`/supervisor/${candidate.user_id}?assessment=${encodeURIComponent(selectedAssessment)}`)}
                       >
                         <td style={{ padding: "16px" }}>
                           <div style={{ fontWeight: "500", color: "#1e293b" }}>
-                            {candidate.full_name || 'Unnamed Candidate'}
-                          </div>
-                          <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>
-                            ID: {candidate.displayId}
+                            {candidate.full_name}
                           </div>
                         </td>
                         <td style={{ padding: "16px" }}>
-                          <div style={{ color: "#2563eb" }}>
-                            {candidate.email || 'No email'}
+                          <div style={{ color: "#2563eb", fontSize: '13px' }}>
+                            {candidate.email}
                           </div>
+                        </td>
+                        <td style={{ padding: "16px" }}>
+                          <span style={{ fontWeight: "600", color: "#1e293b" }}>
+                            {candidate.totalScore}/{candidate.maxPossible}
+                          </span>
                         </td>
                         <td style={{ padding: "16px" }}>
                           <div style={{ 
                             display: "inline-block",
                             padding: "6px 14px",
-                            background: `${candidate.classificationObj.color}15`,
-                            color: candidate.classificationObj.color,
+                            background: `${candidate.classification.color}15`,
+                            color: candidate.classification.color,
                             borderRadius: "30px",
                             fontWeight: "600",
-                            fontSize: "14px"
+                            fontSize: "13px"
                           }}>
-                            {candidate.total_score}/500
+                            {candidate.percentage}%
                           </div>
                         </td>
                         <td style={{ padding: "16px" }}>
-                          <span style={{ 
-                            color: candidate.classificationObj.color,
-                            fontWeight: "500"
-                          }}>
-                            {candidate.classificationObj.name}
-                          </span>
+                          <StatusBadge 
+                            status={candidate.classification.name} 
+                            color={candidate.classification.color}
+                          />
                         </td>
-                        <td style={{ padding: "16px" }}>
-                          <StatusBadge assessments={candidate.completedAssessments} />
-                          {candidate.completedAssessments?.length > 0 && (
-                            <div style={{ marginTop: '6px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                              {candidate.completedAssessments.slice(0, 3).map((type, i) => {
-                                const assessment = ASSESSMENT_TYPES.find(a => a.name === type) || ASSESSMENT_TYPES[0];
-                                return (
-                                  <span key={i} style={{
-                                    fontSize: '11px',
-                                    padding: '2px 6px',
-                                    background: `${assessment.color}15`,
-                                    color: assessment.color,
-                                    borderRadius: '4px'
-                                  }}>
-                                    {assessment.icon} {type.split(' ')[0]}
-                                  </span>
-                                );
-                              })}
-                              {candidate.completedAssessments.length > 3 && (
-                                <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-                                  +{candidate.completedAssessments.length - 3}
-                                </span>
-                              )}
-                            </div>
-                          )}
+                        <td style={{ padding: "16px", color: "#64748b" }}>
+                          {candidate.questionCount}
                         </td>
                         <td style={{ padding: "16px" }}>
                           <button style={{ 
                             background: "transparent",
-                            color: "#2563eb", 
+                            color: currentAssessmentConfig.color, 
                             padding: "8px 16px", 
                             borderRadius: "6px",
-                            border: "1px solid #2563eb",
+                            border: `1px solid ${currentAssessmentConfig.color}`,
                             cursor: "pointer",
                             fontSize: "13px",
                             fontWeight: "500",
                             transition: "all 0.2s ease"
                           }}
                           onMouseOver={(e) => {
-                            e.currentTarget.style.background = "#2563eb";
+                            e.currentTarget.style.background = currentAssessmentConfig.color;
                             e.currentTarget.style.color = "white";
                           }}
                           onMouseOut={(e) => {
                             e.currentTarget.style.background = "transparent";
-                            e.currentTarget.style.color = "#2563eb";
+                            e.currentTarget.style.color = currentAssessmentConfig.color;
                           }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            router.push(`/supervisor/${candidate.user_id}`);
+                            router.push(`/supervisor/${candidate.user_id}?assessment=${encodeURIComponent(selectedAssessment)}`);
                           }}>
-                            View Reports
+                            View Detailed Report
                           </button>
                         </td>
                       </tr>
@@ -753,7 +830,7 @@ export default function SupervisorDashboard() {
           border: "1px solid #eef2f6"
         }}>
           <p style={{ margin: 0 }}>
-            Talent Assessment System • {stats.totalCandidates} candidates • Last updated: {new Date().toLocaleDateString()}
+            Talent Assessment System • Viewing {selectedAssessment} • {stats.totalCandidates} candidates
           </p>
         </div>
       </div>
