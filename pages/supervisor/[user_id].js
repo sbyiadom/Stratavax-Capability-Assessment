@@ -359,6 +359,7 @@ export default function SupervisorDashboard() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [hoveredRow, setHoveredRow] = useState(null);
+  const [error, setError] = useState(null);
   const [stats, setStats] = useState({
     totalCandidates: 0,
     averageScore: 0,
@@ -366,60 +367,140 @@ export default function SupervisorDashboard() {
     highPotential: 0
   });
 
+  // Debug state changes
+  useEffect(() => {
+    console.log("🔄 candidates state updated:", candidates.length, "candidates");
+    if (candidates.length > 0) {
+      console.log("First candidate in state:", candidates[0]);
+    }
+  }, [candidates]);
+
+  useEffect(() => {
+    console.log("🔄 stats state updated:", stats);
+  }, [stats]);
+
+  useEffect(() => {
+    console.log("🔄 loading state:", loading);
+  }, [loading]);
+
+  useEffect(() => {
+    console.log("🔄 error state:", error);
+  }, [error]);
+
   useEffect(() => {
     if (user_id) {
+      console.log("🔍 User ID from router:", user_id);
       fetchSupervisorData();
       fetchCandidates();
+    } else {
+      console.log("⚠️ No user_id in router query");
     }
   }, [user_id]);
 
   const fetchSupervisorData = async () => {
     try {
+      console.log("👤 Fetching supervisor data for ID:", user_id);
+      
       const { data, error } = await supabase
         .from("supervisors")
         .select("*")
         .eq("id", user_id)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error("❌ Supervisor fetch error:", error);
+        throw error;
+      }
+
+      console.log("✅ Supervisor data received:", data);
       setSupervisor(data);
     } catch (error) {
       console.error("Error fetching supervisor:", error);
+      setError("Failed to load supervisor data");
     }
   };
 
-  // ===== UPDATED: Fetch from candidate_assessments table =====
+  // ===== FETCH FROM candidate_assessments TABLE WITH DEBUGGING =====
   const fetchCandidates = async () => {
     try {
       setLoading(true);
+      setError(null);
+      console.log("🔍🔍🔍 FETCHING CANDIDATES FROM Supabase...");
+      console.log("📊 Table: candidate_assessments");
+      
+      // Log Supabase connection info
+      console.log("Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
       
       const { data, error } = await supabase
         .from("candidate_assessments")
         .select("*")
         .order("total_score", { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error("❌❌❌ SUPABASE ERROR:", error);
+        console.error("Error code:", error.code);
+        console.error("Error message:", error.message);
+        console.error("Error details:", error.details);
+        setError(`Database error: ${error.message}`);
+        throw error;
+      }
 
-      if (data) {
+      console.log("✅✅✅ DATA RECEIVED FROM SUPABASE:");
+      console.log("📊 Number of records:", data?.length);
+      console.log("📦 Raw data:", data);
+
+      if (data && data.length > 0) {
+        console.log("🎯 First record:", data[0]);
+        console.log("📋 All records:", data.map(c => ({
+          name: c.full_name,
+          email: c.email,
+          score: c.total_score,
+          classification: c.classification
+        })));
+        
         setCandidates(data);
         
         // Calculate stats
         const totalCandidates = data.length;
         const avgScore = data.reduce((sum, c) => sum + getScoreFromTotal(c.total_score), 0) / totalCandidates;
-        const topTalent = data.filter(c => c.classification === "Top Talent").length;
-        const highPotential = data.filter(c => c.classification === "High Potential").length;
+        const topTalent = data.filter(c => c.classification?.toLowerCase() === "top talent").length;
+        const highPotential = data.filter(c => c.classification?.toLowerCase() === "high potential").length;
 
-        setStats({
+        const newStats = {
           totalCandidates,
           averageScore: Math.round(avgScore),
           topTalent,
           highPotential
+        };
+        
+        console.log("📊 Calculated stats:", newStats);
+        setStats(newStats);
+        
+        console.log("✅ State updated with", data.length, "candidates");
+      } else {
+        console.log("⚠️⚠️⚠️ NO DATA FOUND in candidate_assessments table");
+        console.log("Please check if:");
+        console.log("1. The table 'candidate_assessments' exists");
+        console.log("2. The table has records");
+        console.log("3. You have proper permissions to read from it");
+        
+        setCandidates([]);
+        setStats({
+          totalCandidates: 0,
+          averageScore: 0,
+          topTalent: 0,
+          highPotential: 0
         });
       }
     } catch (error) {
-      console.error("Error fetching candidates:", error);
+      console.error("❌❌❌ FATAL ERROR in fetchCandidates:", error);
+      console.error("Error name:", error.name);
+      console.error("Error message:", error.message);
+      console.error("Error stack:", error.stack);
+      setError(`Failed to fetch candidates: ${error.message}`);
     } finally {
       setLoading(false);
+      console.log("🏁 Loading complete, loading set to false");
     }
   };
 
@@ -458,7 +539,7 @@ export default function SupervisorDashboard() {
             Loading Dashboard
           </div>
           <div style={{ fontSize: '14px', color: '#64748b' }}>
-            Fetching {candidates.length} candidate records...
+            Fetching candidate records...
           </div>
         </div>
       </div>
@@ -541,6 +622,19 @@ export default function SupervisorDashboard() {
                 <p style={{ color: "#64748b", margin: 0, fontSize: "16px" }}>
                   📊 Viewing {candidates.length} candidate records from General Assessment
                 </p>
+                {error && (
+                  <div style={{
+                    marginTop: '15px',
+                    padding: '10px 15px',
+                    background: '#fee2e2',
+                    border: '1px solid #ef4444',
+                    borderRadius: '8px',
+                    color: '#b91c1c',
+                    fontSize: '14px'
+                  }}>
+                    ❌ Error: {error}
+                  </div>
+                )}
               </div>
             </div>
           </div>
