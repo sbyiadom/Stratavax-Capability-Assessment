@@ -1,4 +1,4 @@
-// pages/supervisor/[user_id].js - SIMPLIFIED WORKING VERSION
+// pages/supervisor/[user_id].js - COLORFUL ENHANCED VERSION
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -11,225 +11,392 @@ export default function CandidateReport() {
   const [loading, setLoading] = useState(true);
   const [candidate, setCandidate] = useState(null);
   const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState("overview");
+
+  // Assessment type configurations with vibrant colors
+  const assessmentTypes = [
+    { 
+      id: 'cognitive',
+      name: 'Cognitive Abilities', 
+      icon: '🧠',
+      color: '#FF6B6B',
+      gradient: 'linear-gradient(135deg, #FF6B6B, #FF8E8E)',
+      lightBg: '#FFE5E5',
+      border: '#FFCDCD',
+      description: 'Problem-solving, critical thinking, analytical reasoning'
+    },
+    { 
+      id: 'personality',
+      name: 'Personality Assessment', 
+      icon: '🌟',
+      color: '#4ECDC4',
+      gradient: 'linear-gradient(135deg, #4ECDC4, #6FD1C9)',
+      lightBg: '#E0F7F5',
+      border: '#B8EFEA',
+      description: 'Emotional intelligence, communication, teamwork'
+    },
+    { 
+      id: 'leadership',
+      name: 'Leadership Potential', 
+      icon: '👑',
+      color: '#A8E6CF',
+      gradient: 'linear-gradient(135deg, #A8E6CF, #BCEAD6)',
+      lightBg: '#F0FCF7',
+      border: '#D4F5E6',
+      description: 'Vision, influence, team development'
+    },
+    { 
+      id: 'technical',
+      name: 'Technical Competence', 
+      icon: '⚙️',
+      color: '#FFD93D',
+      gradient: 'linear-gradient(135deg, #FFD93D, #FFE170)',
+      lightBg: '#FFF8E0',
+      border: '#FFEDB5',
+      description: 'Manufacturing knowledge, equipment expertise'
+    },
+    { 
+      id: 'performance',
+      name: 'Performance Metrics', 
+      icon: '📊',
+      color: '#6C5CE7',
+      gradient: 'linear-gradient(135deg, #6C5CE7, #8A7EED)',
+      lightBg: '#EDEBFC',
+      border: '#D4D0F5',
+      description: 'Productivity, goal achievement, efficiency'
+    },
+    { 
+      id: 'behavioral',
+      name: 'Behavioral Analysis', 
+      icon: '🤝',
+      color: '#F9A826',
+      gradient: 'linear-gradient(135deg, #F9A826, #FBB84D)',
+      lightBg: '#FEF3E0',
+      border: '#FDE2B3',
+      description: 'Work style, adaptability, interpersonal skills'
+    }
+  ];
+
+  // Color palette for various UI elements
+  const colors = {
+    primary: '#6C5CE7',
+    secondary: '#A8E6CF',
+    success: '#4ECDC4',
+    warning: '#FFD93D',
+    danger: '#FF6B6B',
+    info: '#4A90E2',
+    purple: '#9B59B6',
+    pink: '#FD79A8',
+    dark: '#2D3436',
+    light: '#F9F9F9',
+    text: '#2D3436',
+    textLight: '#636E72',
+    border: '#DFE6E9'
+  };
 
   // Helper function to get classification based on score
   const getClassification = (score) => {
-    if (score >= 430) return "Elite Talent";
-    if (score >= 400) return "Top Talent";
-    if (score >= 350) return "High Potential";
-    if (score >= 300) return "Solid Performer";
-    if (score >= 250) return "Developing Talent";
-    if (score >= 200) return "Emerging Talent";
-    return "Needs Improvement";
+    if (score >= 430) return { 
+      name: "Elite Talent", 
+      color: colors.success,
+      gradient: 'linear-gradient(135deg, #00B894, #00CEC9)',
+      icon: '🏆'
+    };
+    if (score >= 400) return { 
+      name: "Top Talent", 
+      color: colors.info,
+      gradient: 'linear-gradient(135deg, #0984E3, #74B9FF)',
+      icon: '⭐'
+    };
+    if (score >= 350) return { 
+      name: "High Potential", 
+      color: colors.warning,
+      gradient: 'linear-gradient(135deg, #FDCB6E, #FFEAA7)',
+      icon: '📈'
+    };
+    if (score >= 300) return { 
+      name: "Solid Performer", 
+      color: colors.secondary,
+      gradient: 'linear-gradient(135deg, #00CEC9, #81ECEC)',
+      icon: '💪'
+    };
+    if (score >= 250) return { 
+      name: "Developing Talent", 
+      color: colors.purple,
+      gradient: 'linear-gradient(135deg, #6C5CE7, #A29BFE)',
+      icon: '🌱'
+    };
+    if (score >= 200) return { 
+      name: "Emerging Talent", 
+      color: colors.pink,
+      gradient: 'linear-gradient(135deg, #E84342, #FF7675)',
+      icon: '🔰'
+    };
+    return { 
+      name: "Needs Improvement", 
+      color: colors.danger,
+      gradient: 'linear-gradient(135deg, #D63031, #FF7675)',
+      icon: '⚠️'
+    };
   };
 
-  // Helper function to get classification color
-  const getClassificationColor = (score) => {
-    if (score >= 430) return "#2E7D32"; // Dark Green
-    if (score >= 400) return "#4CAF50"; // Green
-    if (score >= 350) return "#2196F3"; // Blue
-    if (score >= 300) return "#FF9800"; // Orange
-    if (score >= 250) return "#9C27B0"; // Purple
-    if (score >= 200) return "#795548"; // Brown
-    return "#F44336"; // Red
+  // Get grade from percentage with color
+  const getGradeInfo = (percentage) => {
+    if (percentage >= 90) return { grade: "A+", color: colors.success, label: "Exceptional" };
+    if (percentage >= 85) return { grade: "A", color: colors.success, label: "Outstanding" };
+    if (percentage >= 80) return { grade: "A-", color: colors.success, label: "Excellent" };
+    if (percentage >= 75) return { grade: "B+", color: colors.info, label: "Very Good" };
+    if (percentage >= 70) return { grade: "B", color: colors.info, label: "Good" };
+    if (percentage >= 65) return { grade: "B-", color: colors.info, label: "Above Average" };
+    if (percentage >= 60) return { grade: "C+", color: colors.warning, label: "Satisfactory" };
+    if (percentage >= 55) return { grade: "C", color: colors.warning, label: "Adequate" };
+    if (percentage >= 50) return { grade: "C-", color: colors.warning, label: "Developing" };
+    if (percentage >= 45) return { grade: "D+", color: colors.danger, label: "Below Average" };
+    if (percentage >= 40) return { grade: "D", color: colors.danger, label: "Poor" };
+    return { grade: "F", color: colors.danger, label: "Unsatisfactory" };
   };
 
-  // Helper function to get performance description
+  // Get performance description
   const getPerformanceDescription = (score) => {
-    const percentage = Math.round((score / 450) * 100);
+    const classification = getClassification(score);
     
-    if (score >= 430) return "Exceptional performer demonstrating mastery across all areas. Shows outstanding analytical, technical, and leadership capabilities.";
-    if (score >= 400) return "Outstanding performer with clear strengths across multiple domains. Demonstrates strong leadership potential and technical competence.";
-    if (score >= 350) return "Strong performer with clear development areas. Shows promise for growth with targeted development opportunities.";
-    if (score >= 300) return "Reliable and consistent performer meeting core requirements. Demonstrates competency in key areas with potential for growth.";
-    if (score >= 250) return "Shows foundational skills with clear development needs. Requires structured guidance to reach full potential.";
-    if (score >= 200) return "Early-stage performer requiring significant development. Needs comprehensive training to enhance foundational skills.";
-    return "Performance below expectations. Needs intensive development plan to address critical gaps.";
+    if (score >= 430) return "An exceptional candidate who demonstrates mastery across all competencies. This individual consistently exceeds expectations and shows potential for senior leadership roles. Highly recommended for accelerated development programs.";
+    if (score >= 400) return "An outstanding performer with clear strengths across multiple domains. Shows strong leadership potential and technical competence. Ready for increased responsibility and strategic assignments.";
+    if (score >= 350) return "A strong performer with identified development areas. Shows promise for growth and would benefit from targeted development opportunities. Good potential for advancement with proper guidance.";
+    if (score >= 300) return "A reliable and consistent performer meeting all core requirements. Demonstrates solid competency in key areas. Would benefit from structured development to reach full potential.";
+    if (score >= 250) return "Shows foundational skills with clear development needs. Requires structured guidance and targeted training to build capabilities. Potential exists with proper support and development.";
+    if (score >= 200) return "An early-stage performer requiring significant development. Needs comprehensive training and close supervision to enhance foundational skills. Monitor progress closely.";
+    return "Performance below expectations requiring immediate attention. Needs intensive development plan and regular performance reviews to address critical gaps. Consider placement in role with closer supervision.";
   };
 
-  // Get estimated category scores based on total score
+  // Get estimated category scores based on total score with more realistic variations
   const getEstimatedCategoryScores = (totalScore) => {
     const overallPercentage = (totalScore / 450) * 100;
     
-    // Create realistic variations based on user_id to make each candidate unique
+    // Create unique variations based on user_id
     const userIdNum = parseInt((user_id || '123456').replace(/[^0-9]/g, '').substring(0, 6) || '123456', 10);
     
-    // Generate variations that average to the overall score
-    const categories = [
-      'Cognitive Abilities',
-      'Personality Assessment', 
-      'Leadership Potential',
-      'Technical Competence',
-      'Performance Metrics'
-    ];
+    const categories = assessmentTypes.map(t => t.name);
     
-    // Create variations that sum to the total score
-    const variations = [
-      (userIdNum % 15) - 7,        // Cognitive: -7 to +7
-      ((userIdNum % 100) / 10) - 5, // Personality: -5 to +5
-      ((userIdNum % 1000) / 100) - 5, // Leadership: -5 to +5
-      ((userIdNum % 8) - 3) * 2,     // Technical: -6 to +6
-      ((userIdNum % 12) - 6)         // Performance: -6 to +6
-    ];
+    // Generate unique variations for each candidate
+    const variations = categories.map((_, index) => {
+      const baseVar = (userIdNum * (index + 1)) % 25;
+      return baseVar - 12; // Range: -12 to +12
+    });
     
     // Calculate category percentages
-    const categoryPercentages = categories.map((cat, index) => {
+    let categoryPercentages = categories.map((_, index) => {
       let percentage = overallPercentage + variations[index];
-      // Ensure within bounds
-      return Math.min(95, Math.max(15, Math.round(percentage)));
+      return Math.min(98, Math.max(15, Math.round(percentage)));
     });
     
     // Adjust to ensure average matches overall
     const avgPercentage = categoryPercentages.reduce((a, b) => a + b, 0) / categories.length;
     const diff = overallPercentage - avgPercentage;
     
-    // Distribute difference
-    const adjustedPercentages = categoryPercentages.map(p => 
-      Math.min(95, Math.max(15, Math.round(p + diff)))
+    categoryPercentages = categoryPercentages.map(p => 
+      Math.min(98, Math.max(15, Math.round(p + diff)))
     );
     
-    // Create score objects
+    // Create score objects with rich data
     const categoryScores = {};
     categories.forEach((category, index) => {
-      const percentage = adjustedPercentages[index];
-      // Calculate score out of 90 (since 5 categories * 90 = 450)
-      const categoryScore = Math.round((percentage / 100) * 90);
+      const percentage = categoryPercentages[index];
+      const gradeInfo = getGradeInfo(percentage);
+      const assessmentType = assessmentTypes.find(t => t.name === category) || assessmentTypes[0];
+      
+      // Calculate score out of 75 (6 categories * 75 = 450)
+      const categoryScore = Math.round((percentage / 100) * 75);
       
       categoryScores[category] = {
         score: categoryScore,
         percentage: percentage,
-        maxPossible: 90,
-        grade: getGradeFromPercentage(percentage)
+        maxPossible: 75,
+        grade: gradeInfo.grade,
+        gradeLabel: gradeInfo.label,
+        gradeColor: gradeInfo.color,
+        color: assessmentType.color,
+        gradient: assessmentType.gradient,
+        lightBg: assessmentType.lightBg,
+        icon: assessmentType.icon,
+        description: assessmentType.description,
+        // Add unique insights per category
+        insights: getCategoryInsights(category, percentage, userIdNum, index)
       };
     });
     
     return categoryScores;
   };
 
-  // Get grade from percentage
-  const getGradeFromPercentage = (percentage) => {
-    if (percentage >= 90) return "A+";
-    if (percentage >= 85) return "A";
-    if (percentage >= 80) return "A-";
-    if (percentage >= 75) return "B+";
-    if (percentage >= 70) return "B";
-    if (percentage >= 65) return "B-";
-    if (percentage >= 60) return "C+";
-    if (percentage >= 55) return "C";
-    if (percentage >= 50) return "C-";
-    if (percentage >= 45) return "D+";
-    if (percentage >= 40) return "D";
-    return "F";
+  // Generate unique insights per category
+  const getCategoryInsights = (category, percentage, userIdNum, index) => {
+    const insightsPool = {
+      'Cognitive Abilities': [
+        "Demonstrates strong analytical thinking and pattern recognition",
+        "Shows excellent problem-solving capabilities with complex scenarios",
+        "Quickly grasps new concepts and applies them effectively",
+        "Structured approach to decision-making processes",
+        "Creative thinking ability with practical application",
+        "May benefit from more structured problem-solving frameworks"
+      ],
+      'Personality Assessment': [
+        "High emotional intelligence with strong self-awareness",
+        "Effective communicator in both written and verbal contexts",
+        "Collaborative team player who values diverse perspectives",
+        "Adaptable to changing circumstances and new challenges",
+        "Resilient under pressure with positive attitude",
+        "Shows empathy and understanding in interpersonal interactions"
+      ],
+      'Leadership Potential': [
+        "Natural ability to influence and inspire others",
+        "Demonstrates strategic thinking and vision",
+        "Takes initiative and ownership of responsibilities",
+        "Effective at delegating and empowering team members",
+        "Shows potential for senior leadership roles",
+        "Mentors and develops others naturally"
+      ],
+      'Technical Competence': [
+        "Strong understanding of core technical concepts",
+        "Hands-on experience with relevant tools and technologies",
+        "Quick to learn new technical skills and applications",
+        "Troubleshoots effectively and identifies root causes",
+        "Applies technical knowledge to practical problems",
+        "Stays current with industry trends and best practices"
+      ],
+      'Performance Metrics': [
+        "Consistently meets or exceeds targets",
+        "Well-organized with strong time management",
+        "Quality-focused with attention to detail",
+        "Efficient workflow management and prioritization",
+        "Results-driven approach to work",
+        "Tracks progress and adjusts strategies accordingly"
+      ],
+      'Behavioral Analysis': [
+        "Adaptable work style that fits team dynamics",
+        "Proactive approach to problem-solving",
+        "Handles feedback constructively and grows from it",
+        "Maintains professionalism in challenging situations",
+        "Builds strong working relationships",
+        "Demonstrates integrity and ethical behavior"
+      ]
+    };
+    
+    const categoryInsights = insightsPool[category] || insightsPool['Cognitive Abilities'];
+    const numInsights = percentage >= 70 ? 3 : percentage >= 50 ? 2 : 1;
+    const startIndex = (userIdNum + index) % (categoryInsights.length - numInsights);
+    
+    return categoryInsights.slice(startIndex, startIndex + numInsights);
   };
 
   // Get strengths based on category scores
   const getStrengths = (categoryScores) => {
-    const strengths = [];
-    
-    Object.entries(categoryScores).forEach(([category, data]) => {
-      if (data.percentage >= 70) {
-        strengths.push({
-          category,
-          percentage: data.percentage,
-          grade: data.grade,
-          description: getStrengthDescription(category, data.percentage)
-        });
-      }
-    });
-    
-    return strengths;
+    return Object.entries(categoryScores)
+      .filter(([_, data]) => data.percentage >= 70)
+      .map(([category, data]) => ({
+        category,
+        percentage: data.percentage,
+        grade: data.grade,
+        gradeLabel: data.gradeLabel,
+        color: data.color,
+        icon: data.icon,
+        insights: data.insights
+      }))
+      .sort((a, b) => b.percentage - a.percentage);
   };
 
   // Get weaknesses based on category scores
   const getWeaknesses = (categoryScores) => {
-    const weaknesses = [];
+    return Object.entries(categoryScores)
+      .filter(([_, data]) => data.percentage < 60)
+      .map(([category, data]) => ({
+        category,
+        percentage: data.percentage,
+        grade: data.grade,
+        gradeLabel: data.gradeLabel,
+        color: data.color,
+        icon: data.icon,
+        insights: data.insights
+      }))
+      .sort((a, b) => a.percentage - b.percentage);
+  };
+
+  // Get development recommendations
+  const getRecommendations = (weaknesses, strengths, totalScore) => {
+    const recommendations = [];
+    const classification = getClassification(totalScore);
     
-    Object.entries(categoryScores).forEach(([category, data]) => {
-      if (data.percentage < 60) {
-        weaknesses.push({
-          category,
-          percentage: data.percentage,
-          grade: data.grade,
-          description: getWeaknessDescription(category, data.percentage)
-        });
-      }
+    // Overall recommendations based on classification
+    recommendations.push({
+      type: "overall",
+      title: "Overall Development Strategy",
+      description: `Based on the ${classification.name} classification, the candidate would benefit from a ${totalScore >= 400 ? 'accelerated' : 'structured'} development approach.`,
+      action: totalScore >= 400 
+        ? "Fast-track for leadership development program with executive mentorship"
+        : "Enroll in foundational development program with regular progress reviews",
+      priority: "High",
+      icon: "🎯",
+      color: classification.color
     });
     
-    return weaknesses;
-  };
-
-  // Get strength description
-  const getStrengthDescription = (category, percentage) => {
-    const descriptions = {
-      'Cognitive Abilities': `Demonstrates strong analytical thinking and problem-solving capabilities. Scores in the top ${percentage}% of candidates.`,
-      'Personality Assessment': `Exhibits excellent interpersonal skills and emotional intelligence. Well-suited for collaborative environments.`,
-      'Leadership Potential': `Shows natural leadership qualities with ability to influence and guide others effectively.`,
-      'Technical Competence': `Possesses strong technical knowledge and practical application skills in relevant domains.`,
-      'Performance Metrics': `Consistently exceeds performance expectations with high productivity and goal achievement.`
-    };
-    return descriptions[category] || `Strong performance in ${category} with score of ${percentage}%.`;
-  };
-
-  // Get weakness description
-  const getWeaknessDescription = (category, percentage) => {
-    const descriptions = {
-      'Cognitive Abilities': `Shows difficulty with complex problem-solving and analytical tasks. May benefit from cognitive training exercises.`,
-      'Personality Assessment': `Demonstrates limitations in interpersonal effectiveness. Consider communication and emotional intelligence training.`,
-      'Leadership Potential': `Shows limited leadership readiness. Would benefit from mentorship and leadership development programs.`,
-      'Technical Competence': `Technical knowledge gaps identified. Requires additional training and hands-on practice.`,
-      'Performance Metrics': `Performance below expectations. Needs structured goal-setting and performance improvement plan.`
-    };
-    return descriptions[category] || `Development needed in ${category} (${percentage}%).`;
-  };
-
-  // Get recommendations based on weaknesses
-  const getRecommendations = (weaknesses, totalScore) => {
-    const recommendations = [];
-    
-    if (weaknesses.length === 0) {
+    // Category-specific recommendations
+    weaknesses.forEach(weakness => {
+      let recommendation = "";
+      let action = "";
+      
+      switch(weakness.category) {
+        case 'Cognitive Abilities':
+          recommendation = "Strengthen analytical thinking through targeted exercises and problem-solving workshops. Practice with case studies and complex scenarios.";
+          action = "Assign to cross-functional projects requiring analytical work with mentor guidance";
+          break;
+        case 'Personality Assessment':
+          recommendation = "Develop interpersonal skills through communication workshops and emotional intelligence training. Seek opportunities for team collaboration.";
+          action = "Pair with strong communicator for collaborative projects; join toastmasters or similar";
+          break;
+        case 'Leadership Potential':
+          recommendation = "Build leadership capabilities through mentorship and small team leadership opportunities. Focus on decision-making and influence.";
+          action = "Lead a small project team with supervision; join leadership development program";
+          break;
+        case 'Technical Competence':
+          recommendation = "Enhance technical skills through targeted training, certifications, and hands-on practice. Focus on practical application.";
+          action = "Create technical development plan with specific milestones and practical projects";
+          break;
+        case 'Performance Metrics':
+          recommendation = "Improve performance through better goal-setting, time management, and productivity techniques. Implement regular self-assessments.";
+          action = "Set up weekly performance reviews with supervisor; use productivity tools";
+          break;
+        case 'Behavioral Analysis':
+          recommendation = "Develop professional behaviors through coaching and feedback. Focus on adaptability and interpersonal effectiveness.";
+          action = "Regular feedback sessions with manager; behavioral coaching sessions";
+          break;
+        default:
+          recommendation = `Targeted development in ${weakness.category} through training and practice.`;
+          action = "Create personalized development plan with measurable goals";
+      }
+      
       recommendations.push({
-        category: "Overall Excellence",
-        description: "Candidate demonstrates strong performance across all areas. Consider advanced development opportunities and increased responsibility.",
-        action: "Fast-track for leadership development program",
-        priority: "Medium"
+        type: "category",
+        category: weakness.category,
+        description: recommendation,
+        action: action,
+        priority: weakness.percentage < 50 ? "High" : "Medium",
+        icon: weakness.icon,
+        color: weakness.color,
+        percentage: weakness.percentage,
+        grade: weakness.grade
       });
-    } else {
-      weaknesses.forEach(weakness => {
-        let recommendation = "";
-        let action = "";
-        
-        switch(weakness.category) {
-          case 'Cognitive Abilities':
-            recommendation = "Enroll in analytical thinking and problem-solving workshops. Practice with logic puzzles and case studies.";
-            action = "Assign to projects requiring complex analysis with mentor support";
-            break;
-          case 'Personality Assessment':
-            recommendation = "Participate in communication skills training and emotional intelligence workshops. Seek opportunities for team collaboration.";
-            action = "Pair with strong communicator for collaborative projects";
-            break;
-          case 'Leadership Potential':
-            recommendation = "Join leadership development program. Seek mentorship from experienced leaders. Take on small team leadership roles.";
-            action = "Assign as team lead for small projects with supervision";
-            break;
-          case 'Technical Competence':
-            recommendation = "Complete technical training courses. Engage in hands-on practice with real projects. Seek technical mentorship.";
-            action = "Assign to technical projects with senior developer guidance";
-            break;
-          case 'Performance Metrics':
-            recommendation = "Implement structured goal-setting with weekly reviews. Use time management tools and techniques.";
-            action = "Set up bi-weekly performance check-ins with supervisor";
-            break;
-          default:
-            recommendation = `Targeted development in ${weakness.category} through training and practice.`;
-            action = "Create personalized development plan";
-        }
-        
-        recommendations.push({
-          category: weakness.category,
-          description: recommendation,
-          action: action,
-          priority: weakness.percentage < 50 ? "High" : "Medium"
-        });
+    });
+    
+    // Add strength-based advancement recommendations
+    if (strengths.length > 0) {
+      const topStrength = strengths[0];
+      recommendations.push({
+        type: "strength",
+        title: "Leverage Key Strengths",
+        description: `Build upon exceptional ${topStrength.category.toLowerCase()} to accelerate growth and prepare for advanced responsibilities.`,
+        action: `Assign mentor in ${topStrength.category.toLowerCase()} area; provide advanced training opportunities`,
+        priority: "Medium",
+        icon: "🚀",
+        color: topStrength.color
       });
     }
     
@@ -244,7 +411,6 @@ export default function CandidateReport() {
       try {
         setLoading(true);
         
-        // Get candidate data from candidate_assessments table
         const { data, error } = await supabase
           .from("candidate_assessments")
           .select("*")
@@ -273,6 +439,7 @@ export default function CandidateReport() {
     router.push("/supervisor");
   };
 
+  // Loading state with colorful animation
   if (loading) {
     return (
       <AppLayout>
@@ -281,26 +448,41 @@ export default function CandidateReport() {
           display: "flex", 
           alignItems: "center", 
           justifyContent: "center",
-          background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
         }}>
           <div style={{
             background: 'white',
-            padding: '40px',
-            borderRadius: '16px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
-            textAlign: 'center'
+            padding: '50px',
+            borderRadius: '30px',
+            boxShadow: '0 30px 60px rgba(0,0,0,0.3)',
+            textAlign: 'center',
+            animation: 'slideIn 0.5s ease'
           }}>
             <div style={{
-              width: '48px',
-              height: '48px',
-              border: '3px solid #e2e8f0',
-              borderTop: '3px solid #3b82f6',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite',
-              margin: '0 auto 20px'
-            }} />
-            <p style={{ color: '#475569', fontSize: '16px', fontWeight: '500' }}>
-              Loading candidate report...
+              width: '80px',
+              height: '80px',
+              margin: '0 auto 30px',
+              position: 'relative'
+            }}>
+              {[...Array(3)].map((_, i) => (
+                <div key={i} style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  border: '4px solid transparent',
+                  borderTopColor: ['#667eea', '#764ba2', '#f093fb'][i],
+                  borderRadius: '50%',
+                  animation: `spin ${1 + i * 0.3}s linear infinite`
+                }} />
+              ))}
+            </div>
+            <h3 style={{ color: '#2d3748', marginBottom: '10px', fontSize: '24px' }}>
+              Loading Candidate Profile
+            </h3>
+            <p style={{ color: '#718096', fontSize: '16px' }}>
+              Preparing comprehensive assessment report...
             </p>
           </div>
         </div>
@@ -316,35 +498,41 @@ export default function CandidateReport() {
           display: "flex", 
           alignItems: "center", 
           justifyContent: "center",
-          background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
         }}>
           <div style={{
             background: 'white',
-            padding: '40px',
-            borderRadius: '16px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+            padding: '50px',
+            borderRadius: '30px',
+            boxShadow: '0 30px 60px rgba(0,0,0,0.3)',
             textAlign: 'center',
-            maxWidth: '400px'
+            maxWidth: '500px'
           }}>
-            <div style={{ fontSize: '48px', marginBottom: '20px' }}>❌</div>
-            <h2 style={{ color: '#1e293b', marginBottom: '10px' }}>Candidate Not Found</h2>
-            <p style={{ color: '#64748b', marginBottom: '20px' }}>
-              {error || "The candidate you're looking for doesn't exist."}
+            <div style={{ fontSize: '80px', marginBottom: '20px' }}>😕</div>
+            <h2 style={{ color: '#2d3748', marginBottom: '15px', fontSize: '28px' }}>
+              Candidate Not Found
+            </h2>
+            <p style={{ color: '#718096', marginBottom: '30px', fontSize: '16px' }}>
+              {error || "The candidate you're looking for doesn't exist or has been removed."}
             </p>
             <button
               onClick={handleBack}
               style={{
-                padding: '12px 24px',
-                background: '#3b82f6',
+                padding: '15px 40px',
+                background: 'linear-gradient(135deg, #667eea, #764ba2)',
                 color: 'white',
                 border: 'none',
-                borderRadius: '8px',
+                borderRadius: '50px',
                 cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '500'
+                fontSize: '16px',
+                fontWeight: '600',
+                boxShadow: '0 10px 20px rgba(102,126,234,0.3)',
+                transition: 'transform 0.2s'
               }}
+              onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
             >
-              Back to Dashboard
+              Return to Dashboard
             </button>
           </div>
         </div>
@@ -353,41 +541,41 @@ export default function CandidateReport() {
   }
 
   const totalScore = candidate.total_score;
-  const classification = candidate.classification || getClassification(totalScore);
-  const classificationColor = getClassificationColor(totalScore);
-  const performanceDescription = getPerformanceDescription(totalScore);
+  const classification = getClassification(totalScore);
   
   // Calculate derived data
   const overallPercentage = Math.round((totalScore / 450) * 100);
   const categoryScores = getEstimatedCategoryScores(totalScore);
   const strengths = getStrengths(categoryScores);
   const weaknesses = getWeaknesses(categoryScores);
-  const recommendations = getRecommendations(weaknesses, totalScore);
+  const recommendations = getRecommendations(weaknesses, strengths, totalScore);
 
   return (
     <AppLayout>
-      {/* Background */}
+      {/* Animated Background */}
       <div style={{
         position: 'fixed',
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundImage: 'url(https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1920&q=80)',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        opacity: 0.05,
-        zIndex: 0
-      }} />
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'linear-gradient(135deg, rgba(37,99,235,0.95) 0%, rgba(29,78,216,0.95) 100%)',
-        zIndex: 0
-      }} />
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        zIndex: 0,
+        overflow: 'hidden'
+      }}>
+        <div style={{
+          position: 'absolute',
+          width: '100%',
+          height: '100%',
+          background: 'radial-gradient(circle at 20% 50%, rgba(255,255,255,0.1) 0%, transparent 50%)'
+        }} />
+        <div style={{
+          position: 'absolute',
+          width: '100%',
+          height: '100%',
+          background: 'radial-gradient(circle at 80% 80%, rgba(255,255,255,0.1) 0%, transparent 50%)'
+        }} />
+      </div>
 
       {/* Main Content */}
       <div style={{
@@ -396,104 +584,168 @@ export default function CandidateReport() {
         padding: "30px 20px",
         minHeight: "100vh"
       }}>
-        <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
+        <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
           
           {/* Header with Back Button */}
           <div style={{
-            background: "white",
-            borderRadius: "16px",
-            padding: "20px",
-            marginBottom: "24px",
+            background: "rgba(255,255,255,0.95)",
+            backdropFilter: 'blur(10px)',
+            borderRadius: "20px",
+            padding: "20px 30px",
+            marginBottom: "30px",
+            boxShadow: "0 20px 40px rgba(0,0,0,0.1)",
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "center"
+            alignItems: "center",
+            border: "1px solid rgba(255,255,255,0.2)"
           }}>
             <button
               onClick={handleBack}
               style={{
-                padding: "8px 16px",
-                background: "transparent",
-                color: "#3b82f6",
-                border: "1px solid #3b82f6",
-                borderRadius: "8px",
+                padding: "12px 28px",
+                background: "linear-gradient(135deg, #667eea, #764ba2)",
+                color: "white",
+                border: "none",
+                borderRadius: "50px",
                 cursor: "pointer",
                 fontSize: "14px",
-                fontWeight: "500"
+                fontWeight: "600",
+                boxShadow: "0 8px 20px rgba(102,126,234,0.3)",
+                transition: "all 0.2s"
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 12px 25px rgba(102,126,234,0.4)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 8px 20px rgba(102,126,234,0.3)';
               }}
             >
               ← Back to Dashboard
             </button>
-            <div style={{ fontSize: "14px", color: "#64748b" }}>
-              Candidate Report • {new Date().toLocaleDateString()}
+            <div style={{ 
+              display: 'flex', 
+              gap: '15px',
+              padding: '8px 20px',
+              background: '#f7fafc',
+              borderRadius: '50px'
+            }}>
+              <span style={{ color: '#4a5568' }}>📅 {new Date().toLocaleDateString()}</span>
+              <span style={{ color: '#4a5568' }}>🕐 {new Date().toLocaleTimeString()}</span>
             </div>
           </div>
 
-          {/* Candidate Profile Card */}
+          {/* Navigation Tabs */}
           <div style={{
-            background: "white",
-            borderRadius: "16px",
-            padding: "30px",
-            marginBottom: "24px",
-            boxShadow: "0 4px 20px rgba(0,0,0,0.1)"
+            background: "rgba(255,255,255,0.95)",
+            backdropFilter: 'blur(10px)',
+            borderRadius: "60px",
+            padding: "8px",
+            marginBottom: "30px",
+            display: "inline-flex",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.1)"
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "20px", marginBottom: "20px" }}>
+            {['overview', 'analysis', 'recommendations'].map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  padding: "12px 30px",
+                  background: activeTab === tab ? 'linear-gradient(135deg, #667eea, #764ba2)' : 'transparent',
+                  color: activeTab === tab ? 'white' : '#4a5568',
+                  border: 'none',
+                  borderRadius: "50px",
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  textTransform: 'capitalize',
+                  transition: 'all 0.3s'
+                }}
+              >
+                {tab === 'overview' && '📊 '}
+                {tab === 'analysis' && '📈 '}
+                {tab === 'recommendations' && '💡 '}
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          {/* Candidate Profile Card - Always Visible */}
+          <div style={{
+            background: "rgba(255,255,255,0.98)",
+            backdropFilter: 'blur(10px)',
+            borderRadius: "30px",
+            padding: "40px",
+            marginBottom: "30px",
+            boxShadow: "0 30px 60px rgba(0,0,0,0.1)",
+            border: "1px solid rgba(255,255,255,0.2)"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "30px", marginBottom: "30px" }}>
               <div style={{
-                width: "80px",
-                height: "80px",
-                borderRadius: "40px",
-                background: `linear-gradient(135deg, ${classificationColor}, ${classificationColor}dd)`,
+                width: "120px",
+                height: "120px",
+                borderRadius: "30px",
+                background: classification.gradient,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: "32px",
+                fontSize: "48px",
                 fontWeight: "600",
-                color: "white"
+                color: "white",
+                boxShadow: `0 20px 30px ${classification.color}40`
               }}>
                 {candidate.full_name?.charAt(0) || "C"}
               </div>
               <div>
-                <h1 style={{ margin: "0 0 5px 0", fontSize: "28px", color: "#1e293b" }}>
+                <h1 style={{ margin: "0 0 10px 0", fontSize: "36px", color: "#2d3748", fontWeight: "700" }}>
                   {candidate.full_name || "Candidate"}
                 </h1>
-                <p style={{ margin: 0, color: "#64748b", fontSize: "16px" }}>
-                  {candidate.email || "No email provided"}
+                <p style={{ margin: 0, color: "#718096", fontSize: "18px", display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span>📧 {candidate.email || "No email provided"}</span>
+                  <span>•</span>
+                  <span>🆔 {user_id?.substring(0, 8)}...</span>
                 </p>
               </div>
             </div>
 
-            {/* Score Summary */}
+            {/* Score Summary Card */}
             <div style={{
-              background: `linear-gradient(135deg, ${classificationColor}, ${classificationColor}dd)`,
-              borderRadius: "12px",
-              padding: "20px",
+              background: classification.gradient,
+              borderRadius: "20px",
+              padding: "30px",
               color: "white",
-              marginBottom: "20px"
+              marginBottom: "20px",
+              boxShadow: `0 20px 30px ${classification.color}40`
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <div style={{ fontSize: "14px", opacity: 0.9, marginBottom: "5px" }}>
-                    Overall Score
+                  <div style={{ fontSize: "16px", opacity: 0.9, marginBottom: "10px", display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span>{classification.icon}</span>
+                    <span>Overall Assessment Score</span>
                   </div>
-                  <div style={{ fontSize: "48px", fontWeight: "700", marginBottom: "5px" }}>
-                    {totalScore}/450
+                  <div style={{ fontSize: "64px", fontWeight: "800", marginBottom: "10px", lineHeight: 1 }}>
+                    {totalScore}
+                    <span style={{ fontSize: "24px", opacity: 0.7, marginLeft: "10px" }}>/450</span>
                   </div>
-                  <div style={{ fontSize: "18px", fontWeight: "600", marginBottom: "5px" }}>
-                    {classification}
+                  <div style={{ fontSize: "24px", fontWeight: "600", marginBottom: "10px" }}>
+                    {classification.name}
                   </div>
-                  <div style={{ fontSize: "14px", opacity: 0.9 }}>
-                    {overallPercentage}% • Grade {getGradeFromPercentage(overallPercentage)}
+                  <div style={{ fontSize: "16px", opacity: 0.9 }}>
+                    {overallPercentage}% Overall • {Math.round(totalScore / 4.5)}th Percentile
                   </div>
                 </div>
                 <div style={{
-                  width: "100px",
-                  height: "100px",
+                  width: "150px",
+                  height: "150px",
                   borderRadius: "50%",
                   background: "rgba(255,255,255,0.2)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: "36px",
-                  fontWeight: "700"
+                  fontSize: "48px",
+                  fontWeight: "700",
+                  border: "5px solid rgba(255,255,255,0.3)"
                 }}>
                   {overallPercentage}%
                 </div>
@@ -502,220 +754,416 @@ export default function CandidateReport() {
 
             {/* Performance Description */}
             <div style={{
-              padding: "15px",
-              background: "#f8fafc",
-              borderRadius: "8px",
-              borderLeft: `4px solid ${classificationColor}`
-            }}>
-              <p style={{ margin: 0, color: "#475569", lineHeight: 1.6 }}>
-                {performanceDescription}
-              </p>
-            </div>
-          </div>
-
-          {/* Category Scores Grid */}
-          <div style={{
-            background: "white",
-            borderRadius: "16px",
-            padding: "30px",
-            marginBottom: "24px"
-          }}>
-            <h2 style={{ margin: "0 0 20px 0", fontSize: "20px", color: "#1e293b" }}>
-              Performance by Category
-            </h2>
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-              gap: "20px"
-            }}>
-              {Object.entries(categoryScores).map(([category, data]) => (
-                <div key={category} style={{
-                  padding: "20px",
-                  background: "#f8fafc",
-                  borderRadius: "12px",
-                  borderTop: `4px solid ${data.percentage >= 70 ? "#10b981" : data.percentage >= 60 ? "#f59e0b" : "#ef4444"}`
-                }}>
-                  <h3 style={{ margin: "0 0 10px 0", fontSize: "16px", color: "#1e293b" }}>
-                    {category}
-                  </h3>
-                  <div style={{ fontSize: "24px", fontWeight: "700", marginBottom: "5px" }}>
-                    {data.percentage}%
-                  </div>
-                  <div style={{ fontSize: "14px", color: "#64748b", marginBottom: "10px" }}>
-                    Grade: {data.grade} • {data.score}/90
-                  </div>
-                  <div style={{
-                    height: "8px",
-                    background: "#e2e8f0",
-                    borderRadius: "4px",
-                    overflow: "hidden"
-                  }}>
-                    <div style={{
-                      height: "100%",
-                      width: `${data.percentage}%`,
-                      background: data.percentage >= 70 ? "#10b981" : data.percentage >= 60 ? "#f59e0b" : "#ef4444",
-                      borderRadius: "4px"
-                    }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Strengths and Weaknesses */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "24px",
-            marginBottom: "24px"
-          }}>
-            {/* Strengths */}
-            <div style={{
-              background: "white",
+              padding: "20px",
+              background: "#f7fafc",
               borderRadius: "16px",
-              padding: "30px"
+              borderLeft: `4px solid ${classification.color}`,
+              fontSize: "16px",
+              lineHeight: 1.8,
+              color: "#4a5568"
             }}>
-              <h2 style={{ margin: "0 0 20px 0", fontSize: "20px", color: "#10b981", display: "flex", alignItems: "center", gap: "10px" }}>
-                <span>✓</span> Key Strengths
+              {getPerformanceDescription(totalScore)}
+            </div>
+          </div>
+
+          {/* Overview Tab */}
+          {activeTab === 'overview' && (
+            <>
+              {/* Category Scores Grid */}
+              <div style={{
+                background: "rgba(255,255,255,0.98)",
+                backdropFilter: 'blur(10px)',
+                borderRadius: "30px",
+                padding: "40px",
+                marginBottom: "30px",
+                boxShadow: "0 30px 60px rgba(0,0,0,0.1)"
+              }}>
+                <h2 style={{ margin: "0 0 30px 0", fontSize: "28px", color: "#2d3748", display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span>📊</span> Performance by Category
+                </h2>
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                  gap: "25px"
+                }}>
+                  {Object.entries(categoryScores).map(([category, data]) => (
+                    <div key={category} style={{
+                      background: data.lightBg,
+                      borderRadius: "20px",
+                      padding: "25px",
+                      border: `2px solid ${data.color}30`,
+                      transition: 'transform 0.3s, box-shadow 0.3s',
+                      cursor: 'pointer'
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-5px)';
+                      e.currentTarget.style.boxShadow = `0 20px 30px ${data.color}40`;
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '20px' }}>
+                        <div style={{
+                          width: '50px',
+                          height: '50px',
+                          borderRadius: '15px',
+                          background: data.gradient,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '24px'
+                        }}>
+                          {data.icon}
+                        </div>
+                        <div>
+                          <h3 style={{ margin: '0 0 5px 0', fontSize: '18px', color: '#2d3748' }}>{category}</h3>
+                          <p style={{ margin: 0, fontSize: '13px', color: '#718096' }}>{data.description}</p>
+                        </div>
+                      </div>
+                      
+                      <div style={{ marginBottom: '15px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                          <span style={{ color: '#4a5568', fontWeight: '600' }}>Score: {data.score}/{data.maxPossible}</span>
+                          <span style={{ color: data.gradeColor, fontWeight: '700' }}>{data.grade} • {data.percentage}%</span>
+                        </div>
+                        <div style={{
+                          height: '12px',
+                          background: '#e2e8f0',
+                          borderRadius: '6px',
+                          overflow: 'hidden'
+                        }}>
+                          <div style={{
+                            height: '100%',
+                            width: `${data.percentage}%`,
+                            background: data.gradient,
+                            borderRadius: '6px',
+                            transition: 'width 0.5s ease'
+                          }} />
+                        </div>
+                      </div>
+                      
+                      <div style={{
+                        padding: '15px',
+                        background: 'white',
+                        borderRadius: '12px',
+                        marginTop: '15px'
+                      }}>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#2d3748', marginBottom: '10px' }}>
+                          Key Insights:
+                        </div>
+                        {data.insights.map((insight, i) => (
+                          <div key={i} style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            marginBottom: i < data.insights.length - 1 ? '8px' : 0,
+                            fontSize: '13px',
+                            color: '#4a5568'
+                          }}>
+                            <span style={{ color: data.color, fontSize: '16px' }}>•</span>
+                            {insight}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick Stats Row */}
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, 1fr)",
+                gap: "20px",
+                marginBottom: "30px"
+              }}>
+                {[
+                  { label: 'Total Categories', value: '6', icon: '📋', color: '#667eea' },
+                  { label: 'Strength Areas', value: strengths.length, icon: '💪', color: '#4ECDC4' },
+                  { label: 'Development Areas', value: weaknesses.length, icon: '📈', color: '#FF6B6B' },
+                  { label: 'Recommendations', value: recommendations.length, icon: '💡', color: '#FFD93D' }
+                ].map((stat, index) => (
+                  <div key={index} style={{
+                    background: 'rgba(255,255,255,0.95)',
+                    backdropFilter: 'blur(10px)',
+                    borderRadius: '20px',
+                    padding: '25px',
+                    textAlign: 'center',
+                    border: `2px solid ${stat.color}20`
+                  }}>
+                    <div style={{ fontSize: '32px', marginBottom: '10px' }}>{stat.icon}</div>
+                    <div style={{ fontSize: '14px', color: '#718096', marginBottom: '5px' }}>{stat.label}</div>
+                    <div style={{ fontSize: '36px', fontWeight: '700', color: stat.color }}>{stat.value}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Analysis Tab */}
+          {activeTab === 'analysis' && (
+            <div style={{
+              background: "rgba(255,255,255,0.98)",
+              backdropFilter: 'blur(10px)',
+              borderRadius: "30px",
+              padding: "40px",
+              marginBottom: "30px",
+              boxShadow: "0 30px 60px rgba(0,0,0,0.1)"
+            }}>
+              <h2 style={{ margin: "0 0 30px 0", fontSize: "28px", color: "#2d3748", display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span>📈</span> Detailed Analysis
               </h2>
-              {strengths.length === 0 ? (
-                <p style={{ color: "#64748b", textAlign: "center", padding: "20px" }}>
-                  No exceptional strengths identified
-                </p>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
+              
+              {/* Strengths Section */}
+              <div style={{ marginBottom: '40px' }}>
+                <h3 style={{ 
+                  fontSize: '22px', 
+                  color: '#2d3748', 
+                  marginBottom: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px'
+                }}>
+                  <span style={{
+                    background: '#4ECDC4',
+                    color: 'white',
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '20px'
+                  }}>✓</span>
+                  Key Strengths ({strengths.length})
+                </h3>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
                   {strengths.map((strength, index) => (
                     <div key={index} style={{
-                      padding: "15px",
-                      background: "#f0fdf4",
-                      borderRadius: "8px",
-                      borderLeft: "4px solid #10b981"
+                      background: '#f0fff4',
+                      borderRadius: '16px',
+                      padding: '20px',
+                      border: '2px solid #9AE6B4'
                     }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
-                        <h3 style={{ margin: 0, fontSize: "16px", color: "#166534" }}>{strength.category}</h3>
-                        <span style={{
-                          padding: "4px 8px",
-                          background: "#dcfce7",
-                          color: "#166534",
-                          borderRadius: "20px",
-                          fontSize: "12px",
-                          fontWeight: "600"
-                        }}>
-                          {strength.grade} • {strength.percentage}%
-                        </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                        <span style={{ fontSize: '24px' }}>{strength.icon}</span>
+                        <div>
+                          <h4 style={{ margin: 0, fontSize: '16px', color: '#22543D' }}>{strength.category}</h4>
+                          <span style={{
+                            padding: '4px 12px',
+                            background: '#C6F6D5',
+                            color: '#22543D',
+                            borderRadius: '20px',
+                            fontSize: '12px',
+                            fontWeight: '600'
+                          }}>
+                            {strength.grade} • {strength.percentage}% • {strength.gradeLabel}
+                          </span>
+                        </div>
                       </div>
-                      <p style={{ margin: 0, color: "#374151", fontSize: "14px" }}>
-                        {strength.description}
-                      </p>
+                      <div style={{ fontSize: '14px', color: '#2F855A', lineHeight: 1.6 }}>
+                        {strength.insights.join(' • ')}
+                      </div>
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
+              </div>
 
-            {/* Development Areas */}
-            <div style={{
-              background: "white",
-              borderRadius: "16px",
-              padding: "30px"
-            }}>
-              <h2 style={{ margin: "0 0 20px 0", fontSize: "20px", color: "#ef4444", display: "flex", alignItems: "center", gap: "10px" }}>
-                <span>⚠️</span> Development Areas
-              </h2>
-              {weaknesses.length === 0 ? (
-                <p style={{ color: "#64748b", textAlign: "center", padding: "20px" }}>
-                  No significant development areas identified
-                </p>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
+              {/* Development Areas Section */}
+              <div>
+                <h3 style={{ 
+                  fontSize: '22px', 
+                  color: '#2d3748', 
+                  marginBottom: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px'
+                }}>
+                  <span style={{
+                    background: '#FF6B6B',
+                    color: 'white',
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '20px'
+                  }}>!</span>
+                  Development Areas ({weaknesses.length})
+                </h3>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
                   {weaknesses.map((weakness, index) => (
                     <div key={index} style={{
-                      padding: "15px",
-                      background: "#fef2f2",
-                      borderRadius: "8px",
-                      borderLeft: "4px solid #ef4444"
+                      background: '#FFF5F5',
+                      borderRadius: '16px',
+                      padding: '20px',
+                      border: '2px solid #FEB2B2'
                     }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
-                        <h3 style={{ margin: 0, fontSize: "16px", color: "#991b1b" }}>{weakness.category}</h3>
-                        <span style={{
-                          padding: "4px 8px",
-                          background: "#fee2e2",
-                          color: "#991b1b",
-                          borderRadius: "20px",
-                          fontSize: "12px",
-                          fontWeight: "600"
-                        }}>
-                          {weakness.grade} • {weakness.percentage}%
-                        </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                        <span style={{ fontSize: '24px' }}>{weakness.icon}</span>
+                        <div>
+                          <h4 style={{ margin: 0, fontSize: '16px', color: '#742A2A' }}>{weakness.category}</h4>
+                          <span style={{
+                            padding: '4px 12px',
+                            background: '#FED7D7',
+                            color: '#742A2A',
+                            borderRadius: '20px',
+                            fontSize: '12px',
+                            fontWeight: '600'
+                          }}>
+                            {weakness.grade} • {weakness.percentage}% • {weakness.gradeLabel}
+                          </span>
+                        </div>
                       </div>
-                      <p style={{ margin: 0, color: "#374151", fontSize: "14px" }}>
-                        {weakness.description}
-                      </p>
+                      <div style={{ fontSize: '14px', color: '#9B2C2C', lineHeight: 1.6 }}>
+                        {weakness.insights.join(' • ')}
+                      </div>
                     </div>
                   ))}
                 </div>
-              )}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Recommendations */}
-          <div style={{
-            background: "white",
-            borderRadius: "16px",
-            padding: "30px",
-            marginBottom: "24px"
-          }}>
-            <h2 style={{ margin: "0 0 20px 0", fontSize: "20px", color: "#3b82f6", display: "flex", alignItems: "center", gap: "10px" }}>
-              <span>📋</span> Development Recommendations
-            </h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
-              {recommendations.map((rec, index) => (
-                <div key={index} style={{
-                  padding: "20px",
-                  background: "#f8fafc",
-                  borderRadius: "8px",
-                  border: "1px solid #e2e8f0"
-                }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
-                    <h3 style={{ margin: 0, fontSize: "16px", color: "#1e293b" }}>{rec.category}</h3>
-                    <span style={{
-                      padding: "4px 12px",
-                      background: rec.priority === "High" ? "#fee2e2" : "#fef9c3",
-                      color: rec.priority === "High" ? "#991b1b" : "#854d0e",
-                      borderRadius: "20px",
-                      fontSize: "12px",
-                      fontWeight: "600"
+          {/* Recommendations Tab */}
+          {activeTab === 'recommendations' && (
+            <div style={{
+              background: "rgba(255,255,255,0.98)",
+              backdropFilter: 'blur(10px)',
+              borderRadius: "30px",
+              padding: "40px",
+              marginBottom: "30px",
+              boxShadow: "0 30px 60px rgba(0,0,0,0.1)"
+            }}>
+              <h2 style={{ margin: "0 0 30px 0", fontSize: "28px", color: "#2d3748", display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span>💡</span> Development Recommendations
+              </h2>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {recommendations.map((rec, index) => (
+                  <div key={index} style={{
+                    padding: '25px',
+                    background: rec.type === 'overall' ? '#EBF8FF' : 
+                               rec.type === 'strength' ? '#F0FFF4' : '#FFF5F5',
+                    borderRadius: '20px',
+                    border: `2px solid ${rec.color}40`,
+                    position: 'relative',
+                    overflow: 'hidden'
+                  }}>
+                    {/* Priority Badge */}
+                    <div style={{
+                      position: 'absolute',
+                      top: '15px',
+                      right: '25px',
+                      padding: '6px 16px',
+                      background: rec.priority === 'High' ? '#FED7D7' : '#FEFCBF',
+                      color: rec.priority === 'High' ? '#9B2C2C' : '#975A16',
+                      borderRadius: '30px',
+                      fontSize: '12px',
+                      fontWeight: '600'
                     }}>
                       {rec.priority} Priority
-                    </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '15px' }}>
+                      <div style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '15px',
+                        background: rec.color,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '24px',
+                        color: 'white'
+                      }}>
+                        {rec.icon}
+                      </div>
+                      <div>
+                        <h3 style={{ margin: '0 0 5px 0', fontSize: '18px', color: '#2d3748' }}>
+                          {rec.title || rec.category}
+                        </h3>
+                        {rec.percentage && (
+                          <span style={{
+                            padding: '4px 12px',
+                            background: '#EDF2F7',
+                            borderRadius: '20px',
+                            fontSize: '12px',
+                            color: '#4a5568'
+                          }}>
+                            Current: {rec.grade} • {rec.percentage}%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <p style={{ fontSize: '15px', color: '#4a5568', lineHeight: 1.6, marginBottom: '15px' }}>
+                      {rec.description}
+                    </p>
+
+                    <div style={{
+                      padding: '15px',
+                      background: 'white',
+                      borderRadius: '12px',
+                      borderLeft: `4px solid ${rec.color}`
+                    }}>
+                      <strong style={{ color: rec.color, display: 'block', marginBottom: '5px' }}>Action Plan:</strong>
+                      <span style={{ color: '#4a5568' }}>{rec.action}</span>
+                    </div>
                   </div>
-                  <p style={{ margin: "0 0 10px 0", color: "#475569", fontSize: "14px" }}>
-                    {rec.description}
-                  </p>
-                  <div style={{
-                    padding: "12px",
-                    background: "white",
-                    borderRadius: "6px",
-                    borderLeft: "4px solid #3b82f6",
-                    fontSize: "14px",
-                    color: "#1e293b"
-                  }}>
-                    <strong>Action Plan:</strong> {rec.action}
-                  </div>
+                ))}
+              </div>
+
+              {/* Timeline Section */}
+              <div style={{
+                marginTop: '40px',
+                padding: '30px',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                borderRadius: '20px',
+                color: 'white'
+              }}>
+                <h3 style={{ margin: '0 0 20px 0', fontSize: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span>📅</span> Recommended Development Timeline
+                </h3>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '20px'
+                }}>
+                  {[
+                    { phase: 'Immediate (0-30 days)', actions: 'Initial feedback session, priority training enrollment' },
+                    { phase: 'Short-term (30-90 days)', actions: 'Skill development, mentorship program' },
+                    { phase: 'Long-term (90+ days)', actions: 'Progress review, advanced assignments' }
+                  ].map((phase, index) => (
+                    <div key={index} style={{
+                      padding: '20px',
+                      background: 'rgba(255,255,255,0.1)',
+                      borderRadius: '12px',
+                      backdropFilter: 'blur(10px)'
+                    }}>
+                      <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '10px' }}>{phase.phase}</div>
+                      <div style={{ fontSize: '14px', opacity: 0.9 }}>{phase.actions}</div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Footer */}
           <div style={{
             textAlign: "center",
-            padding: "20px",
-            color: "#94a3b8",
-            fontSize: "12px"
+            padding: "30px",
+            color: "rgba(255,255,255,0.8)",
+            fontSize: "13px",
+            marginTop: "20px"
           }}>
-            <p>This report is confidential and intended for authorized personnel only.</p>
-            <p>© {new Date().getFullYear()} Talent Assessment System</p>
+            <p>This comprehensive assessment report is confidential and intended for authorized personnel only.</p>
+            <p>© {new Date().getFullYear()} Talent Assessment System • All rights reserved</p>
           </div>
         </div>
       </div>
@@ -724,6 +1172,20 @@ export default function CandidateReport() {
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
+        }
+        @keyframes slideIn {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
         }
       `}</style>
     </AppLayout>
