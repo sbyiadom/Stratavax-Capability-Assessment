@@ -10,76 +10,6 @@ const BACKGROUND_CONFIG = {
   overlay: 'linear-gradient(135deg, rgba(102,126,234,0.95) 0%, rgba(118,75,162,0.95) 100%)'
 };
 
-// ===== ASSESSMENT TYPE CONFIGURATIONS =====
-const assessmentTypes = [
-  { 
-    id: 'general', 
-    label: 'General Assessment', 
-    shortLabel: 'General',
-    icon: '📋', 
-    color: '#4A6FA5',
-    gradient: 'linear-gradient(135deg, #4A6FA5, #6B8EC9)',
-    lightGradient: 'linear-gradient(135deg, #4A6FA520, #6B8EC920)',
-    description: 'Comprehensive 5-area evaluation',
-    passingScore: 60
-  },
-  { 
-    id: 'behavioral', 
-    label: 'Behavioral & Soft Skills', 
-    shortLabel: 'Behavioral',
-    icon: '🧠', 
-    color: '#9C27B0',
-    gradient: 'linear-gradient(135deg, #9C27B0, #BA68C8)',
-    lightGradient: 'linear-gradient(135deg, #9C27B020, #BA68C820)',
-    description: 'Communication, teamwork, emotional intelligence',
-    passingScore: 70
-  },
-  { 
-    id: 'cognitive', 
-    label: 'Cognitive & Thinking Skills', 
-    shortLabel: 'Cognitive',
-    icon: '💡', 
-    color: '#FF9800',
-    gradient: 'linear-gradient(135deg, #FF9800, #FFB74D)',
-    lightGradient: 'linear-gradient(135deg, #FF980020, #FFB74D20)',
-    description: 'Problem-solving, critical thinking, analysis',
-    passingScore: 65
-  },
-  { 
-    id: 'cultural', 
-    label: 'Cultural & Attitudinal Fit', 
-    shortLabel: 'Cultural',
-    icon: '🤝', 
-    color: '#4CAF50',
-    gradient: 'linear-gradient(135deg, #4CAF50, #81C784)',
-    lightGradient: 'linear-gradient(135deg, #4CAF5020, #81C78420)',
-    description: 'Values alignment, organizational fit',
-    passingScore: 75
-  },
-  { 
-    id: 'manufacturing', 
-    label: 'Manufacturing Technical Skills', 
-    shortLabel: 'Manufacturing',
-    icon: '⚙️', 
-    color: '#F44336',
-    gradient: 'linear-gradient(135deg, #F44336, #EF5350)',
-    lightGradient: 'linear-gradient(135deg, #F4433620, #EF535020)',
-    description: 'Technical skills, equipment knowledge',
-    passingScore: 75
-  },
-  { 
-    id: 'leadership', 
-    label: 'Leadership Potential', 
-    shortLabel: 'Leadership',
-    icon: '👑', 
-    color: '#FFC107',
-    gradient: 'linear-gradient(135deg, #FFC107, #FFD54F)',
-    lightGradient: 'linear-gradient(135deg, #FFC10720, #FFD54F20)',
-    description: 'Vision, influence, team development',
-    passingScore: 75
-  }
-];
-
 // Helper functions
 const getScoreColor = (score) => {
   if (score >= 80) return '#4CAF50';
@@ -367,52 +297,22 @@ export default function SupervisorDashboard() {
     highPotential: 0
   });
 
-  // Debug state changes
-  useEffect(() => {
-    console.log("🔄 candidates state updated:", candidates.length, "candidates");
-    if (candidates.length > 0) {
-      console.log("First candidate in state:", candidates[0]);
-    }
-  }, [candidates]);
-
-  useEffect(() => {
-    console.log("🔄 stats state updated:", stats);
-  }, [stats]);
-
-  useEffect(() => {
-    console.log("🔄 loading state:", loading);
-  }, [loading]);
-
-  useEffect(() => {
-    console.log("🔄 error state:", error);
-  }, [error]);
-
   useEffect(() => {
     if (user_id) {
-      console.log("🔍 User ID from router:", user_id);
       fetchSupervisorData();
       fetchCandidates();
-    } else {
-      console.log("⚠️ No user_id in router query");
     }
   }, [user_id]);
 
   const fetchSupervisorData = async () => {
     try {
-      console.log("👤 Fetching supervisor data for ID:", user_id);
-      
       const { data, error } = await supabase
         .from("supervisors")
         .select("*")
         .eq("id", user_id)
         .single();
 
-      if (error) {
-        console.error("❌ Supervisor fetch error:", error);
-        throw error;
-      }
-
-      console.log("✅ Supervisor data received:", data);
+      if (error) throw error;
       setSupervisor(data);
     } catch (error) {
       console.error("Error fetching supervisor:", error);
@@ -420,16 +320,10 @@ export default function SupervisorDashboard() {
     }
   };
 
-  // ===== FETCH FROM candidate_assessments TABLE WITH DEBUGGING =====
   const fetchCandidates = async () => {
     try {
       setLoading(true);
       setError(null);
-      console.log("🔍🔍🔍 FETCHING CANDIDATES FROM Supabase...");
-      console.log("📊 Table: candidate_assessments");
-      
-      // Log Supabase connection info
-      console.log("Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
       
       const { data, error } = await supabase
         .from("candidate_assessments")
@@ -437,27 +331,12 @@ export default function SupervisorDashboard() {
         .order("total_score", { ascending: false });
 
       if (error) {
-        console.error("❌❌❌ SUPABASE ERROR:", error);
-        console.error("Error code:", error.code);
-        console.error("Error message:", error.message);
-        console.error("Error details:", error.details);
+        console.error("Supabase error:", error);
         setError(`Database error: ${error.message}`);
-        throw error;
+        return;
       }
 
-      console.log("✅✅✅ DATA RECEIVED FROM SUPABASE:");
-      console.log("📊 Number of records:", data?.length);
-      console.log("📦 Raw data:", data);
-
       if (data && data.length > 0) {
-        console.log("🎯 First record:", data[0]);
-        console.log("📋 All records:", data.map(c => ({
-          name: c.full_name,
-          email: c.email,
-          score: c.total_score,
-          classification: c.classification
-        })));
-        
         setCandidates(data);
         
         // Calculate stats
@@ -466,41 +345,20 @@ export default function SupervisorDashboard() {
         const topTalent = data.filter(c => c.classification?.toLowerCase() === "top talent").length;
         const highPotential = data.filter(c => c.classification?.toLowerCase() === "high potential").length;
 
-        const newStats = {
+        setStats({
           totalCandidates,
           averageScore: Math.round(avgScore),
           topTalent,
           highPotential
-        };
-        
-        console.log("📊 Calculated stats:", newStats);
-        setStats(newStats);
-        
-        console.log("✅ State updated with", data.length, "candidates");
-      } else {
-        console.log("⚠️⚠️⚠️ NO DATA FOUND in candidate_assessments table");
-        console.log("Please check if:");
-        console.log("1. The table 'candidate_assessments' exists");
-        console.log("2. The table has records");
-        console.log("3. You have proper permissions to read from it");
-        
-        setCandidates([]);
-        setStats({
-          totalCandidates: 0,
-          averageScore: 0,
-          topTalent: 0,
-          highPotential: 0
         });
+      } else {
+        setCandidates([]);
       }
     } catch (error) {
-      console.error("❌❌❌ FATAL ERROR in fetchCandidates:", error);
-      console.error("Error name:", error.name);
-      console.error("Error message:", error.message);
-      console.error("Error stack:", error.stack);
-      setError(`Failed to fetch candidates: ${error.message}`);
+      console.error("Error fetching candidates:", error);
+      setError(error.message);
     } finally {
       setLoading(false);
-      console.log("🏁 Loading complete, loading set to false");
     }
   };
 
