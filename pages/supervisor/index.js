@@ -12,9 +12,9 @@ const BACKGROUND_CONFIG = {
   overlay: 'rgba(0,0,0,0.7)'
 };
 
-// Helper function to get classification from score
+// Helper function to get classification from score (max 450)
 const getClassificationFromScore = (score) => {
-  if (score >= 450) return "Elite Talent";
+  if (score >= 430) return "Elite Talent";
   if (score >= 400) return "Top Talent";
   if (score >= 350) return "High Potential";
   if (score >= 300) return "Solid Performer";
@@ -25,7 +25,7 @@ const getClassificationFromScore = (score) => {
 
 // Helper function to get classification color and gradient
 const getClassificationConfig = (score) => {
-  if (score >= 450) return { 
+  if (score >= 430) return { 
     color: '#2E7D32', 
     gradient: 'linear-gradient(135deg, #2E7D32, #4CAF50)',
     lightBg: 'rgba(46, 125, 50, 0.1)',
@@ -80,11 +80,7 @@ const MetricCard = ({ title, value, subtitle, gradient, icon, trend }) => (
     position: 'relative',
     overflow: 'hidden',
     transition: 'transform 0.3s ease, box-shadow 0.3s ease',
-    cursor: 'pointer',
-    ':hover': {
-      transform: 'translateY(-5px)',
-      boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
-    }
+    cursor: 'pointer'
   }}
   onMouseOver={(e) => {
     e.currentTarget.style.transform = 'translateY(-5px)';
@@ -181,8 +177,8 @@ const ClassificationCard = ({ category, count, total, config }) => {
       }}>
         <div style={{ 
           height: "100%", 
-          width: `${percentage}%`, 
-          background: config.gradient,
+          width: `${percentage}%, 
+          background: ${config.gradient}`,
           borderRadius: "4px",
           transition: 'width 0.3s ease'
         }} />
@@ -261,6 +257,7 @@ export default function SupervisorDashboard() {
 
     const fetchData = async () => {
       try {
+        // Select only the columns that exist in your table
         const { data: candidatesData, error: candidatesError } = await supabase
           .from("candidate_assessments")
           .select(`
@@ -268,8 +265,7 @@ export default function SupervisorDashboard() {
             total_score,
             classification,
             email,
-            full_name,
-            created_at
+            full_name
           `)
           .order("total_score", { ascending: false });
 
@@ -295,7 +291,7 @@ export default function SupervisorDashboard() {
         }
 
         // Enhance candidate data with additional info
-        const candidatesWithDetails = candidatesData.map((candidate, index) => {
+        const candidatesWithDetails = candidatesData.map((candidate) => {
           const config = getClassificationConfig(candidate.total_score);
           return {
             ...candidate,
@@ -306,8 +302,8 @@ export default function SupervisorDashboard() {
             },
             config,
             displayId: candidate.user_id.substring(0, 12) + '...',
-            displayName: candidate.full_name || `Candidate ${index + 1}`,
-            completedDate: candidate.created_at ? new Date(candidate.created_at).toLocaleDateString() : 'N/A'
+            displayName: candidate.full_name || `Candidate ${candidate.user_id.substring(0, 8)}`,
+            completedDate: 'N/A' // Since created_at doesn't exist
           };
         });
 
@@ -364,9 +360,7 @@ export default function SupervisorDashboard() {
         case 'name_desc':
           return (b.user?.full_name || '').localeCompare(a.user?.full_name || '');
         case 'date_desc':
-          return new Date(b.created_at || 0) - new Date(a.created_at || 0);
         case 'date_asc':
-          return new Date(a.created_at || 0) - new Date(b.created_at || 0);
         default:
           return 0;
       }
@@ -404,16 +398,15 @@ export default function SupervisorDashboard() {
             margin: '0 auto 20px'
           }} />
           <p style={{ color: '#333', fontSize: '16px' }}>Checking authentication...</p>
-          <style jsx>{`
-            @keyframes spin {
-              0% { transform: rotate(0deg); }
-              100% { transform: rotate(360deg); }
-            }
-          `}</style>
         </div>
       </div>
     );
   }
+
+  // Calculate average score
+  const averageScore = candidates.length > 0 
+    ? Math.round(candidates.reduce((sum, c) => sum + c.total_score, 0) / candidates.length)
+    : 0;
 
   return (
     <AppLayout background={BACKGROUND_CONFIG.bgImage}>
@@ -588,11 +581,8 @@ export default function SupervisorDashboard() {
           
           <MetricCard
             title="Average Score"
-            value={candidates.length > 0 
-              ? Math.round(candidates.reduce((sum, c) => sum + c.total_score, 0) / candidates.length)
-              : "0"
-            }
-            subtitle="Out of 500 points"
+            value={averageScore}
+            subtitle="Out of 450 points"
             gradient="linear-gradient(135deg, #2196F3 0%, #0D47A1 100%)"
             icon="📊"
           />
@@ -634,8 +624,8 @@ export default function SupervisorDashboard() {
             gap: "20px" 
           }}>
             {[
-              { name: 'Elite Talent', count: stats.eliteTalent, config: getClassificationConfig(475), scoreRange: '450-500' },
-              { name: 'Top Talent', count: stats.topTalent, config: getClassificationConfig(425), scoreRange: '400-449' },
+              { name: 'Elite Talent', count: stats.eliteTalent, config: getClassificationConfig(440), scoreRange: '430-450' },
+              { name: 'Top Talent', count: stats.topTalent, config: getClassificationConfig(415), scoreRange: '400-429' },
               { name: 'High Potential', count: stats.highPotential, config: getClassificationConfig(375), scoreRange: '350-399' },
               { name: 'Solid Performer', count: stats.solidPerformer, config: getClassificationConfig(325), scoreRange: '300-349' },
               { name: 'Developing Talent', count: stats.developing, config: getClassificationConfig(275), scoreRange: '250-299' },
@@ -753,8 +743,6 @@ export default function SupervisorDashboard() {
                 <option value="score_asc">Score: Low to High</option>
                 <option value="name_asc">Name: A to Z</option>
                 <option value="name_desc">Name: Z to A</option>
-                <option value="date_desc">Date: Newest First</option>
-                <option value="date_asc">Date: Oldest First</option>
               </select>
             </div>
           </div>
@@ -869,7 +857,7 @@ export default function SupervisorDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCandidates.map((c, index) => {
+                  {filteredCandidates.map((c) => {
                     const config = c.config;
                     const isHovered = hoveredRow === c.user_id;
                     
@@ -918,7 +906,7 @@ export default function SupervisorDashboard() {
                             fontSize: "14px",
                             border: `1px solid ${config.color}30`
                           }}>
-                            {c.total_score}/500
+                            {c.total_score}/450
                           </div>
                         </td>
                         <td style={{ padding: "16px" }}>
