@@ -56,7 +56,7 @@ export default function CandidateDashboard() {
     }
   };
 
-  // Assessment type configuration with icons and colors - ONE PER TYPE
+  // ===== FIXED: Standardized 80% passing score for ALL assessment types =====
   const assessmentTypes = [
     { 
       id: 'general', 
@@ -70,7 +70,7 @@ export default function CandidateDashboard() {
       lightColor: 'rgba(102, 126, 234, 0.1)',
       duration: 180,
       questions: 100,
-      passing: 60,
+      passing: 80, // CHANGED from 60 to 80
       features: ['Cognitive Abilities', 'Personality Traits', 'Leadership Potential', 'Technical Competence', 'Performance Metrics']
     },
     { 
@@ -85,7 +85,7 @@ export default function CandidateDashboard() {
       lightColor: 'rgba(245, 87, 108, 0.1)',
       duration: 180,
       questions: 100,
-      passing: 70,
+      passing: 80, // CHANGED from 70 to 80
       features: ['Adaptability', 'Emotional Intelligence', 'Communication', 'Teamwork', 'Initiative', 'Time Management', 'Resilience']
     },
     { 
@@ -100,7 +100,7 @@ export default function CandidateDashboard() {
       lightColor: 'rgba(79, 172, 254, 0.1)',
       duration: 180,
       questions: 100,
-      passing: 65,
+      passing: 80, // CHANGED from 65 to 80
       features: ['Problem-Solving', 'Critical Thinking', 'Learning Agility', 'Creativity', 'Analytical Reasoning']
     },
     { 
@@ -115,7 +115,7 @@ export default function CandidateDashboard() {
       lightColor: 'rgba(67, 233, 123, 0.1)',
       duration: 180,
       questions: 100,
-      passing: 75,
+      passing: 80, // CHANGED from 75 to 80
       features: ['Values Alignment', 'Citizenship', 'Reliability', 'Customer Focus', 'Safety', 'Commercial Acumen']
     },
     { 
@@ -130,7 +130,7 @@ export default function CandidateDashboard() {
       lightColor: 'rgba(250, 112, 154, 0.1)',
       duration: 180,
       questions: 100,
-      passing: 75,
+      passing: 80, // CHANGED from 75 to 80
       features: ['Blowing Machines', 'Labeler', 'Filling', 'Conveyors', 'Stretchwrappers', 'Shrinkwrappers', 'Date Coders', 'Raw Materials']
     },
     { 
@@ -145,7 +145,7 @@ export default function CandidateDashboard() {
       lightColor: 'rgba(255, 154, 158, 0.1)',
       duration: 180,
       questions: 100,
-      passing: 75,
+      passing: 80, // CHANGED from 75 to 80
       features: ['Vision', 'Team Development', 'Coaching', 'Decision-Making', 'Influence', 'Strategic Thinking']
     }
   ];
@@ -255,6 +255,11 @@ export default function CandidateDashboard() {
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
     return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+  };
+
+  // ===== FIXED: Use 80% as the passing threshold for all assessments =====
+  const isPassed = (score) => {
+    return score >= 80;
   };
 
   if (authLoading || loading) {
@@ -419,7 +424,8 @@ export default function CandidateDashboard() {
                 const completed = isAssessmentCompleted(assessment.id);
                 const inProgress = isAssessmentInProgress(assessment.id);
                 const score = getAssessmentScore(assessment.id);
-                const passed = completed && score >= (assessment.passing_score || 60);
+                // ===== FIXED: Use 80% passing score =====
+                const passed = completed && score >= 80;
                 const bgConfig = assessmentBackgrounds[activeTab];
                 const isHovered = hoveredCard === assessment.id;
 
@@ -500,7 +506,7 @@ export default function CandidateDashboard() {
                             <span style={styles.metaIcon}>📝</span> 100 Q
                           </span>
                           <span style={styles.metaItem}>
-                            <span style={styles.metaIcon}>🎯</span> {activeTypeConfig.passing}% pass
+                            <span style={styles.metaIcon}>🎯</span> 80% pass
                           </span>
                         </div>
                       </div>
@@ -550,11 +556,7 @@ export default function CandidateDashboard() {
                           }} />
                         </div>
                         <div style={styles.scoreDate}>
-                          Completed on {new Date(completedAssessments.find(a => a.assessment_id === assessment.id)?.completed_at).toLocaleDateString('en-US', { 
-                            month: 'short', 
-                            day: 'numeric', 
-                            year: 'numeric' 
-                          })}
+                          {passed ? '✓ Passed' : '⚡ Below passing score (80%)'}
                         </div>
                       </div>
                     )}
