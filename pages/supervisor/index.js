@@ -23,7 +23,7 @@ const ASSESSMENT_TYPES = [
     lightBg: '#E8EEF5',
     description: 'Comprehensive evaluation across core competencies',
     maxScore: 500,
-    dbValue: 'General Assessment' // The actual value in your database
+    dbValue: 'General Assessment'
   },
   { 
     id: 'behavioral',
@@ -222,121 +222,117 @@ export default function SupervisorDashboard() {
     const fetchAllCandidates = async () => {
       try {
         setLoading(true);
-        setDebug('Fetching data...');
+        setDebug('Fetching data...\n');
         
-        // First, let's get the structure of the questions table to see the column name
-        const { data: columns, error: columnsError } = await supabase
-          .from('questions')
-          .select('*')
-          .limit(1);
+        // First, get all candidates from candidate_assessments
+        const { data: allCandidates, error: candidatesError } = await supabase
+          .from("candidate_assessments")
+          .select("*");
 
-        if (columnsError) {
-          setDebug(`Error accessing questions table: ${columnsError.message}`);
-        } else if (columns && columns.length > 0) {
-          setDebug(`Questions table columns: ${Object.keys(columns[0]).join(', ')}`);
+        if (candidatesError) {
+          setDebug(prev => prev + `Error fetching candidates: ${candidatesError.message}\n`);
+        } else {
+          setDebug(prev => prev + `Found ${allCandidates?.length || 0} candidates in candidate_assessments\n`);
         }
 
-        // Let's try a simpler approach - first get all responses with questions
+        // Get all responses
         const { data: allResponses, error: responsesError } = await supabase
           .from("responses")
           .select(`
             user_id,
             question_id,
             answer_id,
-            questions (
-              id,
-              section,
-              subsection
-            ),
             answers (
               score
             )
           `);
 
         if (responsesError) {
-          setDebug(`Error fetching responses: ${responsesError.message}`);
+          setDebug(prev => prev + `Error fetching responses: ${responsesError.message}\n`);
           throw responsesError;
         }
 
-        if (!allResponses || allResponses.length === 0) {
-          setDebug('No responses found in the database');
-          setCandidates([]);
-          setStats({
-            totalCandidates: 0,
-            averageScore: 0,
-            topPerformers: 0,
-            needsDevelopment: 0
-          });
-          setLoading(false);
-          return;
-        }
-
-        setDebug(`Found ${allResponses.length} total responses`);
+        setDebug(prev => prev + `Found ${allResponses?.length || 0} total responses\n`);
 
         // Get unique user IDs from responses
-        const uniqueUserIds = [...new Set(allResponses.map(r => r.user_id))];
-        setDebug(prev => `${prev}\nUnique users: ${uniqueUserIds.length}`);
+        const responseUserIds = allResponses ? [...new Set(allResponses.map(r => r.user_id))] : [];
+        setDebug(prev => prev + `Unique users with responses: ${responseUserIds.length}\n`);
 
-        // For now, since we don't know the assessment type column, 
-        // we'll assume all responses belong to General Assessment
-        // and we'll manually map based on question IDs or sections later
+        // Combine all unique user IDs from both sources
+        const allUserIds = new Set();
         
-        // Get user details from candidate_assessments
-        const { data: candidatesData, error: candidatesError } = await supabase
-          .from("candidate_assessments")
-          .select("user_id, full_name, email")
-          .in("user_id", uniqueUserIds);
-
-        if (candidatesError) {
-          setDebug(prev => `${prev}\nError fetching candidate details: ${candidatesError.message}`);
+        // Add from candidate_assessments
+        if (allCandidates) {
+          allCandidates.forEach(c => allUserIds.add(c.user_id));
         }
+        
+        // Add from responses
+        responseUserIds.forEach(id => allUserIds.add(id));
+        
+        const uniqueUserIds = Array.from(allUserIds);
+        setDebug(prev => prev + `Total unique users across both tables: ${uniqueUserIds.length}\n`);
 
         // Group responses by user
-        const userData = {};
-
-        allResponses.forEach(response => {
-          const userId = response.user_id;
-          const score = response.answers?.score || 0;
-          
-          if (!userData[userId]) {
-            userData[userId] = {
-              totalScore: 0,
-              totalQuestions: 0,
-              // For now, assume all responses are for General Assessment
-              assessments: {
-                'General Assessment': {
-                  totalScore: 0,
-                  questionCount: 0
+        const userResponses = {};
+        
+        if (allResponses) {
+          allResponses.forEach(response => {
+            const userId = response.user_id;
+            const score = response.answers?.score || 0;
+            
+            if (!userResponses[userId]) {
+              userResponses[userId] = {
+                totalScore: 0,
+                totalQuestions: 0,
+                // For now, assume all responses are for General Assessment
+                // We'll need to know how to identify assessment types
+                assessments: {
+                  'General Assessment': {
+                    totalScore: 0,
+                    questionCount: 0
+                  }
                 }
-              }
-            };
-          }
-          
-          userData[userId].totalScore += score;
-          userData[userId].totalQuestions += 1;
-          userData[userId].assessments['General Assessment'].totalScore += score;
-          userData[userId].assessments['General Assessment'].questionCount += 1;
-        });
+              };
+            }
+            
+            userResponses[userId].totalScore += score;
+            userResponses[userId].totalQuestions += 1;
+            userResponses[userId].assessments['General Assessment'].totalScore += score;
+            userResponses[userId].assessments['General Assessment'].questionCount += 1;
+          });
+        }
 
-        setDebug(prev => `${prev}\nProcessed ${Object.keys(userData).length} users`);
+        setDebug(prev => prev + `Processed responses for ${Object.keys(userResponses).length} users\n`);
 
-        // Build candidate list
+        // Build candidate list combining both sources
         const candidatesList = uniqueUserIds.map(userId => {
-          const candidateInfo = candidatesData?.find(c => c.user_id === userId) || {};
-          const userAssessmentData = userData[userId] || { assessments: {} };
+          // Get data from candidate_assessments if available
+          const candidateFromTable = allCandidates?.find(c => c.user_id === userId) || {};
           
-          // Get completed assessments list
-          const completedAssessments = Object.keys(userAssessmentData.assessments || {});
+          // Get response data if available
+          const responseData = userResponses[userId] || { 
+            assessments: {}, 
+            totalScore: 0, 
+            totalQuestions: 0 
+          };
           
           // Calculate score for selected assessment
           let score = 0;
           let maxPossible = 0;
           let questionCount = 0;
           
-          if (userAssessmentData.assessments && userAssessmentData.assessments[selectedAssessment]) {
-            const assessmentData = userAssessmentData.assessments[selectedAssessment];
+          if (responseData.assessments && responseData.assessments[selectedAssessment]) {
+            const assessmentData = responseData.assessments[selectedAssessment];
             score = assessmentData.totalScore;
             questionCount = assessmentData.questionCount;
+            maxPossible = questionCount * 5;
+          }
+          
+          // If no response data but candidate exists in table, use their total_score
+          if (score === 0 && candidateFromTable.total_score && selectedAssessment === 'General Assessment') {
+            score = candidateFromTable.total_score;
+            // Estimate question count based on score (assuming 5 points per question)
+            questionCount = Math.round(score / 5);
             maxPossible = questionCount * 5;
           }
           
@@ -346,36 +342,37 @@ export default function SupervisorDashboard() {
           
           return {
             user_id: userId,
-            full_name: candidateInfo.full_name || `Candidate ${userId.substring(0, 8)}`,
-            email: candidateInfo.email || "Email not available",
+            full_name: candidateFromTable.full_name || `Candidate ${userId.substring(0, 8)}`,
+            email: candidateFromTable.email || "Email not available",
             score,
             maxPossible,
             percentage,
             classification,
             questionCount,
-            completedAssessments,
-            hasAssessment: questionCount > 0 // If they have any questions, they've taken it
+            hasResponse: responseData.totalQuestions > 0,
+            hasCandidateRecord: !!candidateFromTable.user_id
           };
         });
 
-        // Filter to only include candidates who have taken the selected assessment
-        const filteredCandidates = candidatesList.filter(c => c.hasAssessment);
-        
-        setDebug(prev => `${prev}\nCandidates for ${selectedAssessment}: ${filteredCandidates.length}`);
+        // Filter to only include candidates who have either responses OR a candidate record
+        // For now, show all candidates
+        setDebug(prev => prev + `Total candidates in list: ${candidatesList.length}\n`);
 
         // Sort by score
-        filteredCandidates.sort((a, b) => b.score - a.score);
-        setCandidates(filteredCandidates);
+        candidatesList.sort((a, b) => b.score - a.score);
+        setCandidates(candidatesList);
 
-        // Calculate stats
-        const avgScore = filteredCandidates.length > 0 
-          ? filteredCandidates.reduce((sum, c) => sum + c.percentage, 0) / filteredCandidates.length 
+        // Calculate stats for selected assessment
+        const candidatesWithScore = candidatesList.filter(c => c.score > 0);
+        
+        const avgScore = candidatesWithScore.length > 0 
+          ? candidatesWithScore.reduce((sum, c) => sum + c.percentage, 0) / candidatesWithScore.length 
           : 0;
-        const topPerformers = filteredCandidates.filter(c => c.percentage >= 80).length;
-        const needsDev = filteredCandidates.filter(c => c.percentage < 60).length;
+        const topPerformers = candidatesWithScore.filter(c => c.percentage >= 80).length;
+        const needsDev = candidatesWithScore.filter(c => c.percentage < 60).length;
 
         setStats({
-          totalCandidates: filteredCandidates.length,
+          totalCandidates: candidatesList.length,
           averageScore: Math.round(avgScore),
           topPerformers,
           needsDevelopment: needsDev
@@ -383,7 +380,7 @@ export default function SupervisorDashboard() {
 
       } catch (err) {
         console.error("Error fetching candidates:", err);
-        setDebug(prev => `${prev}\nError: ${err.message}`);
+        setDebug(prev => prev + `\nError: ${err.message}`);
         setCandidates([]);
       } finally {
         setLoading(false);
@@ -513,7 +510,7 @@ export default function SupervisorDashboard() {
               Supervisor Dashboard
             </h1>
             <p style={{ margin: "4px 0 0 0", color: "#64748b", fontSize: "14px" }}>
-              View candidates and their assessment reports
+              View all candidates and their assessment reports
             </p>
           </div>
           
@@ -543,7 +540,7 @@ export default function SupervisorDashboard() {
           </button>
         </div>
 
-        {/* Debug Info - Shows what's happening */}
+        {/* Debug Info */}
         <div style={{
           background: '#f1f5f9',
           padding: '15px',
@@ -572,8 +569,15 @@ export default function SupervisorDashboard() {
           border: "1px solid #eef2f6"
         }}>
           {ASSESSMENT_TYPES.map(assessment => {
-            // Count candidates for this assessment type
-            const count = candidates.filter(c => c.completedAssessments?.includes(assessment.name)).length;
+            // Count candidates who have scores for this assessment
+            const count = candidates.filter(c => {
+              if (assessment.name === 'General Assessment') {
+                // For General Assessment, include candidates with scores from either source
+                return c.score > 0;
+              }
+              // For other assessments, we need to implement proper filtering later
+              return false;
+            }).length;
             
             return (
               <button
@@ -653,14 +657,14 @@ export default function SupervisorDashboard() {
             <MetricCard
               title="Total Candidates"
               value={stats.totalCandidates}
-              subtitle={`Took ${selectedAssessment}`}
+              subtitle="In database"
               color="#2563eb"
             />
             
             <MetricCard
               title="Average Score"
               value={`${stats.averageScore}%`}
-              subtitle="Across all candidates"
+              subtitle="For selected assessment"
               color="#10b981"
             />
             
@@ -698,7 +702,7 @@ export default function SupervisorDashboard() {
             gap: "15px"
           }}>
             <h2 style={{ margin: 0, color: "#1e293b", fontSize: '18px', fontWeight: '600' }}>
-              Candidates who completed {selectedAssessment}
+              All Candidates
             </h2>
             
             <div style={{ display: 'flex', gap: "12px", flexWrap: 'wrap' }}>
@@ -760,7 +764,10 @@ export default function SupervisorDashboard() {
             alignItems: 'center'
           }}>
             <span>
-              Showing <strong>{filteredCandidates.length}</strong> candidates for {selectedAssessment}
+              Showing <strong>{filteredCandidates.length}</strong> of <strong>{candidates.length}</strong> candidates
+            </span>
+            <span>
+              Showing scores for: <strong>{selectedAssessment}</strong>
             </span>
           </div>
 
@@ -791,7 +798,7 @@ export default function SupervisorDashboard() {
               <p style={{ color: "#64748b", fontSize: "14px", marginBottom: "20px" }}>
                 {searchTerm 
                   ? "Try adjusting your search criteria"
-                  : `No candidates have completed ${selectedAssessment} yet`}
+                  : "No candidates in the database"}
               </p>
               {searchTerm && (
                 <button
@@ -866,30 +873,38 @@ export default function SupervisorDashboard() {
                         </td>
                         <td style={{ padding: "16px" }}>
                           <span style={{ fontWeight: "600", color: "#1e293b" }}>
-                            {candidate.score}/{candidate.maxPossible}
+                            {candidate.score > 0 ? `${candidate.score}/${candidate.maxPossible}` : 'No data'}
                           </span>
                         </td>
                         <td style={{ padding: "16px" }}>
-                          <div style={{ 
-                            display: "inline-block",
-                            padding: "6px 14px",
-                            background: `${candidate.classification.color}15`,
-                            color: candidate.classification.color,
-                            borderRadius: "30px",
-                            fontWeight: "600",
-                            fontSize: "13px"
-                          }}>
-                            {candidate.percentage}%
-                          </div>
+                          {candidate.score > 0 ? (
+                            <div style={{ 
+                              display: "inline-block",
+                              padding: "6px 14px",
+                              background: `${candidate.classification.color}15`,
+                              color: candidate.classification.color,
+                              borderRadius: "30px",
+                              fontWeight: "600",
+                              fontSize: "13px"
+                            }}>
+                              {candidate.percentage}%
+                            </div>
+                          ) : (
+                            <span style={{ color: '#94a3b8' }}>—</span>
+                          )}
                         </td>
                         <td style={{ padding: "16px" }}>
-                          <StatusBadge 
-                            status={candidate.classification.name} 
-                            color={candidate.classification.color}
-                          />
+                          {candidate.score > 0 ? (
+                            <StatusBadge 
+                              status={candidate.classification.name} 
+                              color={candidate.classification.color}
+                            />
+                          ) : (
+                            <span style={{ color: '#94a3b8' }}>Not taken</span>
+                          )}
                         </td>
                         <td style={{ padding: "16px", color: "#64748b" }}>
-                          {candidate.questionCount}
+                          {candidate.questionCount > 0 ? candidate.questionCount : '—'}
                         </td>
                         <td style={{ padding: "16px" }}>
                           <button style={{ 
@@ -939,7 +954,7 @@ export default function SupervisorDashboard() {
           border: "1px solid #eef2f6"
         }}>
           <p style={{ margin: 0 }}>
-            Talent Assessment System • {stats.totalCandidates} candidates completed {selectedAssessment}
+            Talent Assessment System • {candidates.length} total candidates
           </p>
         </div>
       </div>
