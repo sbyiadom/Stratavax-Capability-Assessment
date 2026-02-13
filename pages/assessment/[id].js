@@ -1,7 +1,7 @@
 // pages/assessment/[id].js
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "../../supabase/client"; // ✅ CORRECT: Go up two levels
+import { supabase } from "../../supabase/client";
 
 // ===== SECTION CONFIGURATIONS WITH BACKGROUND IMAGES =====
 const SECTION_CONFIG = {
@@ -602,7 +602,7 @@ export default function AssessmentPage() {
     initSessionAndCheck();
   }, [assessmentId, router]);
 
-  // ===== FETCH QUESTIONS - FIXED VERSION =====
+  // ===== FETCH QUESTIONS - FIXED VERSION - REMOVED answers!inner =====
   useEffect(() => {
     if (alreadySubmitted || !isSessionReady || !session?.user?.id || !assessmentId || fetchAttempted) {
       return;
@@ -626,7 +626,8 @@ export default function AssessmentPage() {
         setExpectedQuestionCount(count);
         console.log(`📊 Expected ${count} questions for assessment ${assessmentId}`);
         
-        // Fetch questions with proper ordering - THIS IS THE CRITICAL PART
+        // ===== CRITICAL FIX: REMOVED !inner FROM answers =====
+        // This was the bug! answers!inner was filtering out questions without answers
         const { data: questionsData, error: questionsError } = await supabase
           .from("questions")
           .select(`
@@ -635,7 +636,7 @@ export default function AssessmentPage() {
             section,
             subsection,
             question_order,
-            answers!inner (
+            answers (
               id, 
               answer_text, 
               score
@@ -682,7 +683,7 @@ export default function AssessmentPage() {
 
         const processedQuestions = questionsData.map((q, index) => {
           // Ensure answers array exists and has items
-          const options = q.answers && Array.isArray(q.answers) 
+          const options = q.answers && Array.isArray(q.answers) && q.answers.length > 0
             ? q.answers.map(a => ({ 
                 ...a, 
                 id: parseInt(a.id),
