@@ -20,6 +20,14 @@ const assessmentTypes = [
     gradient: 'linear-gradient(135deg, #64748b, #475569)'
   },
   { 
+    id: 'general', 
+    label: 'General', 
+    icon: '📋', 
+    color: '#4A6FA5',
+    gradient: 'linear-gradient(135deg, #4A6FA5, #6B8EC9)',
+    description: 'Comprehensive 5-area evaluation'
+  },
+  { 
     id: 'behavioral', 
     label: 'Behavioral', 
     icon: '🧠', 
@@ -395,6 +403,19 @@ const CandidateRow = ({ candidate, onSelect, isSelected, hoveredRow, setHoveredR
           <span style={{ fontWeight: '600', color: '#2E7D32' }}>
             {candidate.completedCount}/6
           </span>
+          {candidate.resetCount > 0 && (
+            <span style={{
+              marginLeft: '4px',
+              fontSize: '11px',
+              background: '#FF980020',
+              color: '#F57C00',
+              padding: '2px 6px',
+              borderRadius: '12px',
+              fontWeight: '500'
+            }}>
+              ↻ {candidate.resetCount} reset
+            </span>
+          )}
         </div>
       </td>
       <td style={{ padding: '20px 15px', textAlign: 'center' }}>
@@ -424,23 +445,23 @@ const CandidateRow = ({ candidate, onSelect, isSelected, hoveredRow, setHoveredR
       <td style={{ padding: '20px 15px', textAlign: 'center' }}>
         {candidate.assessments[0] && (
           <div style={{
-            background: getRiskBadge(candidate.assessments[0].risk_level).bg,
+            background: getRiskBadge(candidate.assessments[0].risk_level || 'low').bg,
             padding: '6px 14px',
             borderRadius: '30px',
             display: 'inline-flex',
             alignItems: 'center',
             gap: '6px',
-            border: `1px solid ${getRiskBadge(candidate.assessments[0].risk_level).color}30`
+            border: `1px solid ${getRiskBadge(candidate.assessments[0].risk_level || 'low').color}30`
           }}>
             <span style={{ fontSize: '14px' }}>
-              {getRiskBadge(candidate.assessments[0].risk_level).icon}
+              {getRiskBadge(candidate.assessments[0].risk_level || 'low').icon}
             </span>
             <span style={{
-              color: getRiskBadge(candidate.assessments[0].risk_level).color,
+              color: getRiskBadge(candidate.assessments[0].risk_level || 'low').color,
               fontSize: '12px',
               fontWeight: '600'
             }}>
-              {getRiskBadge(candidate.assessments[0].risk_level).label}
+              {getRiskBadge(candidate.assessments[0].risk_level || 'low').label}
             </span>
           </div>
         )}
@@ -448,23 +469,23 @@ const CandidateRow = ({ candidate, onSelect, isSelected, hoveredRow, setHoveredR
       <td style={{ padding: '20px 15px', textAlign: 'center' }}>
         {candidate.assessments[0] && (
           <div style={{
-            background: getReadinessBadge(candidate.assessments[0].readiness).bg,
+            background: getReadinessBadge(candidate.assessments[0].readiness || 'pending').bg,
             padding: '6px 14px',
             borderRadius: '30px',
             display: 'inline-flex',
             alignItems: 'center',
             gap: '6px',
-            border: `1px solid ${getReadinessBadge(candidate.assessments[0].readiness).color}30`
+            border: `1px solid ${getReadinessBadge(candidate.assessments[0].readiness || 'pending').color}30`
           }}>
             <span style={{ fontSize: '14px' }}>
-              {getReadinessBadge(candidate.assessments[0].readiness).icon}
+              {getReadinessBadge(candidate.assessments[0].readiness || 'pending').icon}
             </span>
             <span style={{
-              color: getReadinessBadge(candidate.assessments[0].readiness).color,
+              color: getReadinessBadge(candidate.assessments[0].readiness || 'pending').color,
               fontSize: '12px',
               fontWeight: '600'
             }}>
-              {getReadinessBadge(candidate.assessments[0].readiness).label}
+              {getReadinessBadge(candidate.assessments[0].readiness || 'pending').label}
             </span>
           </div>
         )}
@@ -472,11 +493,11 @@ const CandidateRow = ({ candidate, onSelect, isSelected, hoveredRow, setHoveredR
       <td style={{ padding: '20px 15px', textAlign: 'center', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
           <span style={{ fontSize: '14px' }}>📅</span>
-          {new Date(candidate.lastActive).toLocaleDateString('en-US', { 
+          {candidate.lastActive ? new Date(candidate.lastActive).toLocaleDateString('en-US', { 
             month: 'short', 
             day: 'numeric',
             year: 'numeric'
-          })}
+          }) : 'N/A'}
         </div>
       </td>
     </tr>
@@ -622,6 +643,19 @@ const CandidateDetailModal = ({ candidate, onClose }) => {
             <div style={{ fontSize: '13px', color: '#64748b' }}>
               Assessments completed
             </div>
+            {candidate.resetCount > 0 && (
+              <div style={{
+                marginTop: '10px',
+                fontSize: '13px',
+                color: '#F57C00',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}>
+                <span>↻</span>
+                <span>{candidate.resetCount} reset {candidate.resetCount === 1 ? 'attempt' : 'attempts'}</span>
+              </div>
+            )}
             <div style={{
               marginTop: '15px',
               height: '6px',
@@ -699,15 +733,15 @@ const CandidateDetailModal = ({ candidate, onClose }) => {
                   </div>
                   <div>
                     <div style={{ fontWeight: '600', color: '#1a2639', marginBottom: '5px', fontSize: '16px' }}>
-                      {assessment.assessments?.name || 'Assessment'}
+                      {assessment.assessments?.name || 'General Assessment'}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b', display: 'flex', gap: '15px' }}>
-                      <span>📅 {new Date(assessment.completed_at).toLocaleDateString('en-US', { 
+                      <span>📅 {assessment.completed_at ? new Date(assessment.completed_at).toLocaleDateString('en-US', { 
                         month: 'short', 
                         day: 'numeric', 
                         year: 'numeric' 
-                      })}</span>
-                      <span>⏱️ {Math.floor(assessment.time_spent / 60)}m {assessment.time_spent % 60}s</span>
+                      }) : 'Date not available'}</span>
+                      <span>⏱️ {Math.floor(assessment.time_spent / 60) || 0}m {assessment.time_spent % 60 || 0}s</span>
                     </div>
                   </div>
                 </div>
@@ -720,7 +754,7 @@ const CandidateDetailModal = ({ candidate, onClose }) => {
                     borderRadius: '12px'
                   }}>
                     <div style={{ fontSize: '28px', fontWeight: '700', color: scoreColor }}>
-                      {assessment.overall_score}%
+                      {assessment.overall_score || 0}%
                     </div>
                     <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       Score
@@ -745,6 +779,48 @@ const CandidateDetailModal = ({ candidate, onClose }) => {
               </div>
             );
           })}
+          
+          {/* Show reset assessments if any */}
+          {candidate.resetAssessments && candidate.resetAssessments.length > 0 && (
+            <>
+              <div style={{
+                marginTop: '10px',
+                padding: '10px',
+                background: '#FFF3E0',
+                borderRadius: '8px',
+                color: '#F57C00',
+                fontSize: '14px',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px'
+              }}>
+                <span>↻</span>
+                <span>Reset History ({candidate.resetCount} {candidate.resetCount === 1 ? 'time' : 'times'})</span>
+              </div>
+              
+              {candidate.resetAssessments.map((assessment, index) => (
+                <div key={`reset-${index}`} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '15px',
+                  background: '#FFF8E1',
+                  borderRadius: '12px',
+                  border: '1px dashed #FFB74D',
+                  marginLeft: '20px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '20px' }}>↻</span>
+                    <div>
+                      <div style={{ fontWeight: '500', color: '#F57C00' }}>Reset on {new Date(assessment.resetAt).toLocaleDateString()}</div>
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>Reason: {assessment.resetReason || 'Not specified'}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
         </div>
 
         {/* Action Buttons */}
@@ -860,11 +936,13 @@ export default function SupervisorDashboard() {
     }
   };
 
+  // ===== UPDATED: Fetch from both new and old tables =====
   const fetchCandidates = async () => {
     try {
       setLoading(true);
       
-      const { data: results, error } = await supabase
+      // ===== FETCH FROM NEW assessment_results TABLE =====
+      const { data: newResults, error: newError } = await supabase
         .from("assessment_results")
         .select(`
           *,
@@ -876,34 +954,121 @@ export default function SupervisorDashboard() {
             icon_name
           )
         `)
-        .eq("status", "completed")
+        .in("status", ["completed", "reset"])
         .order("completed_at", { ascending: false });
 
-      if (error) throw error;
+      if (newError) {
+        console.error("Error fetching new results:", newError);
+      }
+
+      // ===== FETCH FROM OLD assessments_completed TABLE =====
+      const { data: oldResults, error: oldError } = await supabase
+        .from("assessments_completed")
+        .select(`
+          *,
+          assessments (
+            id,
+            name,
+            assessment_type,
+            passing_score,
+            icon_name
+          )
+        `)
+        .order("completed_at", { ascending: false });
+
+      if (oldError) {
+        console.error("Error fetching old results:", oldError);
+      }
 
       const candidateMap = new Map();
       
-      results?.forEach(result => {
+      // ===== PROCESS NEW RESULTS =====
+      newResults?.forEach(result => {
         if (!candidateMap.has(result.user_id)) {
           candidateMap.set(result.user_id, {
             user_id: result.user_id,
             user_name: result.user_name || result.user_email?.split('@')[0] || 'Unknown',
-            user_email: result.user_email,
+            user_email: result.user_email || `${result.user_id.substring(0, 8)}...@email.com`,
             assessments: [],
+            resetAssessments: [],
             averageScore: 0,
             completedCount: 0,
+            resetCount: 0,
+            lastActive: result.completed_at || result.created_at,
+            color: `hsl(${Math.random() * 360}, 70%, 60%)`
+          });
+        }
+        
+        const candidate = candidateMap.get(result.user_id);
+        
+        if (result.status === 'completed') {
+          candidate.assessments.push({
+            ...result,
+            passed: result.overall_score >= (result.assessments?.passing_score || 60)
+          });
+          candidate.completedCount++;
+          candidate.averageScore = candidate.assessments.reduce((sum, a) => sum + a.overall_score, 0) / candidate.completedCount;
+        } else if (result.status === 'reset') {
+          candidate.resetAssessments.push({
+            ...result,
+            resetAt: result.reset_at,
+            resetReason: result.reset_reason
+          });
+          candidate.resetCount++;
+        }
+        
+        // Update last active if this result is newer
+        const resultDate = result.completed_at || result.reset_at || result.created_at;
+        if (resultDate && new Date(resultDate) > new Date(candidate.lastActive)) {
+          candidate.lastActive = resultDate;
+        }
+      });
+
+      // ===== PROCESS OLD RESULTS =====
+      oldResults?.forEach(result => {
+        if (!candidateMap.has(result.user_id)) {
+          // Try to get user email from profiles or use placeholder
+          candidateMap.set(result.user_id, {
+            user_id: result.user_id,
+            user_name: 'Unknown',
+            user_email: `${result.user_id.substring(0, 8)}...@email.com`,
+            assessments: [],
+            resetAssessments: [],
+            averageScore: 0,
+            completedCount: 0,
+            resetCount: 0,
             lastActive: result.completed_at,
             color: `hsl(${Math.random() * 360}, 70%, 60%)`
           });
         }
         
         const candidate = candidateMap.get(result.user_id);
+        
+        // For old results, map the fields appropriately
         candidate.assessments.push({
-          ...result,
-          passed: result.overall_score >= (result.assessments?.passing_score || 60)
+          id: result.id,
+          user_id: result.user_id,
+          assessment_id: result.assessment_id,
+          overall_score: result.score || 0,
+          completed_at: result.completed_at,
+          time_spent: result.time_spent || 0,
+          status: 'completed',
+          passed: (result.score || 0) >= (result.assessments?.passing_score || 60),
+          assessments: result.assessments || {
+            name: 'General Assessment',
+            assessment_type: 'general',
+            passing_score: 60,
+            icon_name: '📋'
+          }
         });
+        
         candidate.completedCount++;
-        candidate.averageScore = candidate.assessments.reduce((sum, a) => sum + a.overall_score, 0) / candidate.completedCount;
+        candidate.averageScore = candidate.assessments.reduce((sum, a) => sum + (a.overall_score || 0), 0) / candidate.completedCount;
+        
+        // Update last active
+        if (result.completed_at && new Date(result.completed_at) > new Date(candidate.lastActive)) {
+          candidate.lastActive = result.completed_at;
+        }
       });
 
       setCandidates(Array.from(candidateMap.values()));
@@ -919,7 +1084,8 @@ export default function SupervisorDashboard() {
     
     candidates.forEach(candidate => {
       candidate.assessments.forEach(assessment => {
-        if (selectedAssessmentType === "all" || assessment.assessments?.assessment_type === selectedAssessmentType) {
+        const assessmentType = assessment.assessments?.assessment_type || 'general';
+        if (selectedAssessmentType === "all" || assessmentType === selectedAssessmentType) {
           
           const completedDate = new Date(assessment.completed_at);
           const now = new Date();
@@ -949,22 +1115,22 @@ export default function SupervisorDashboard() {
     });
 
     const total = filteredAssessments.length;
-    const totalScore = filteredAssessments.reduce((sum, a) => sum + a.overall_score, 0);
+    const totalScore = filteredAssessments.reduce((sum, a) => sum + (a.overall_score || 0), 0);
     const avgScore = total > 0 ? Math.round(totalScore / total) : 0;
-    const highPotential = filteredAssessments.filter(a => a.overall_score >= 80).length;
+    const highPotential = filteredAssessments.filter(a => (a.overall_score || 0) >= 80).length;
 
     const byType = {};
     filteredAssessments.forEach(assessment => {
-      const type = assessment.assessments?.assessment_type || 'unknown';
+      const type = assessment.assessments?.assessment_type || 'general';
       if (!byType[type]) {
         byType[type] = { count: 0, totalScore: 0, average: 0 };
       }
       byType[type].count++;
-      byType[type].totalScore += assessment.overall_score;
+      byType[type].totalScore += (assessment.overall_score || 0);
     });
 
     Object.keys(byType).forEach(type => {
-      byType[type].average = Math.round(byType[type].totalScore / byType[type].count);
+      byType[type].average = byType[type].count > 0 ? Math.round(byType[type].totalScore / byType[type].count) : 0;
     });
 
     setStats({
@@ -980,8 +1146,8 @@ export default function SupervisorDashboard() {
     if (selectedAssessmentType === "all") return true;
     return candidate.assessments.some(a => a.assessments?.assessment_type === selectedAssessmentType);
   }).filter(candidate => 
-    candidate.user_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    candidate.user_email.toLowerCase().includes(searchTerm.toLowerCase())
+    (candidate.user_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+    (candidate.user_email?.toLowerCase() || '').includes(searchTerm.toLowerCase())
   );
 
   if (loading) {
@@ -1014,7 +1180,7 @@ export default function SupervisorDashboard() {
             Loading Dashboard
           </div>
           <div style={{ fontSize: '14px', color: '#64748b' }}>
-            Fetching candidate data...
+            Fetching candidate data from both new and legacy tables...
           </div>
           <style jsx>{`
             @keyframes spin {
@@ -1114,6 +1280,10 @@ export default function SupervisorDashboard() {
                   <span>📊 Overview of candidate assessments and performance metrics</span>
                   <span style={{ width: '4px', height: '4px', background: '#cbd5e1', borderRadius: '50%' }} />
                   <span>🕒 Last updated: {new Date().toLocaleTimeString()}</span>
+                </p>
+                <p style={{ color: "#4CAF50", margin: "5px 0 0", fontSize: "14px", display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <span>✅</span>
+                  <span>Showing data from both new and legacy assessment tables</span>
                 </p>
               </div>
               
