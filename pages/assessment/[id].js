@@ -1,11 +1,10 @@
 // pages/assessment/[id].js
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "../../supabase/client"; // Correct import path
+import { supabase } from "../../supabase/client"; // ✅ CORRECT: Go up two levels
 
 // ===== SECTION CONFIGURATIONS WITH BACKGROUND IMAGES =====
 const SECTION_CONFIG = {
-  // ... (keep your existing SECTION_CONFIG object exactly as is)
   'Cognitive Abilities': { 
     color: '#4A6FA5', 
     lightBg: 'rgba(74, 111, 165, 0.1)', 
@@ -14,49 +13,510 @@ const SECTION_CONFIG = {
     pattern: 'https://www.transparenttextures.com/patterns/cubes.png',
     description: 'Measuring analytical thinking, memory, and logical reasoning'
   },
-  // ... continue with all your existing section configs
+  'Personality Assessment': { 
+    color: '#9C27B0', 
+    lightBg: 'rgba(156, 39, 176, 0.1)', 
+    icon: '😊', 
+    bgImage: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/always-grey.png',
+    description: 'Evaluating traits, behaviors, and interpersonal dynamics'
+  },
+  'Leadership Potential': { 
+    color: '#D32F2F', 
+    lightBg: 'rgba(211, 47, 47, 0.1)', 
+    icon: '👑', 
+    bgImage: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/dark-mosaic.png',
+    description: 'Assessing vision, influence, and team development'
+  },
+  'Bottled Water Manufacturing': { 
+    color: '#388E3C', 
+    lightBg: 'rgba(56, 142, 60, 0.1)', 
+    icon: '⚙️', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/industrial.png',
+    description: 'Testing knowledge of manufacturing equipment and processes'
+  },
+  'Performance Metrics': { 
+    color: '#F57C00', 
+    lightBg: 'rgba(245, 124, 0, 0.1)', 
+    icon: '📊', 
+    bgImage: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/graphy.png',
+    description: 'Evaluating KPI achievement and results orientation'
+  },
+  'Adaptability & Flexibility': { 
+    color: '#FF6B6B', 
+    lightBg: 'rgba(255, 107, 107, 0.1)', 
+    icon: '🔄', 
+    bgImage: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/light-wool.png',
+    description: 'Handling change, ambiguity, and new situations'
+  },
+  'Emotional Intelligence': { 
+    color: '#4ECDC4', 
+    lightBg: 'rgba(78, 205, 196, 0.1)', 
+    icon: '🧘', 
+    bgImage: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/clean-gray-paper.png',
+    description: 'Self-awareness, empathy, and social skills'
+  },
+  'Communication Skills': { 
+    color: '#45B7D1', 
+    lightBg: 'rgba(69, 183, 209, 0.1)', 
+    icon: '💬', 
+    bgImage: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/white-diamond.png',
+    description: 'Verbal, written, and active listening abilities'
+  },
+  'Teamwork & Collaboration': { 
+    color: '#96CEB4', 
+    lightBg: 'rgba(150, 206, 180, 0.1)', 
+    icon: '🤝', 
+    bgImage: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/cardboard.png',
+    description: 'Working with others and resolving conflicts'
+  },
+  'Initiative & Proactivity': { 
+    color: '#FFEAA7', 
+    lightBg: 'rgba(255, 234, 167, 0.1)', 
+    icon: '⚡', 
+    bgImage: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/light-honeycomb.png',
+    description: 'Taking ownership and going above and beyond'
+  },
+  'Time Management': { 
+    color: '#DDA0DD', 
+    lightBg: 'rgba(221, 160, 221, 0.1)', 
+    icon: '⏰', 
+    bgImage: 'https://images.unsplash.com/photo-1484480974693-6ca0a78fb36b?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/diamond-upholstery.png',
+    description: 'Prioritizing tasks and meeting deadlines'
+  },
+  'Resilience': { 
+    color: '#F08A5D', 
+    lightBg: 'rgba(240, 138, 93, 0.1)', 
+    icon: '💪', 
+    bgImage: 'https://images.unsplash.com/photo-1552674605-db6a2c6a7a7e?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/wood-pattern.png',
+    description: 'Bouncing back from setbacks and stress'
+  },
+  'Problem-Solving': { 
+    color: '#6A4C93', 
+    lightBg: 'rgba(106, 76, 147, 0.1)', 
+    icon: '🔍', 
+    bgImage: 'https://images.unsplash.com/photo-1456406644174-8ddd4cd52a06?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/stardust.png',
+    description: 'Identifying and resolving complex issues'
+  },
+  'Critical Thinking': { 
+    color: '#1982C4', 
+    lightBg: 'rgba(25, 130, 196, 0.1)', 
+    icon: '🎯', 
+    bgImage: 'https://images.unsplash.com/photo-1507413245164-6160d8298b31?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/brick-wall.png',
+    description: 'Analyzing information and making sound decisions'
+  },
+  'Learning Agility': { 
+    color: '#8AC926', 
+    lightBg: 'rgba(138, 201, 38, 0.1)', 
+    icon: '📚', 
+    bgImage: 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/45-degree-fabric-light.png',
+    description: 'Quickly learning and adapting to new information'
+  },
+  'Creativity & Innovation': { 
+    color: '#FFCA3A', 
+    lightBg: 'rgba(255, 202, 58, 0.1)', 
+    icon: '💡', 
+    bgImage: 'https://images.unsplash.com/photo-1455849318743-b2233052fcff?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/confetti.png',
+    description: 'Thinking outside the box and generating ideas'
+  },
+  'Core Values Alignment': { 
+    color: '#9C89B8', 
+    lightBg: 'rgba(156, 137, 184, 0.1)', 
+    icon: '🎯', 
+    bgImage: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/clean-gray-paper.png',
+    description: 'Acting in accordance with company ethics'
+  },
+  'Organizational Citizenship': { 
+    color: '#F0A6CA', 
+    lightBg: 'rgba(240, 166, 202, 0.1)', 
+    icon: '🤲', 
+    bgImage: 'https://images.unsplash.com/photo-1559027615-cd4628902d4a?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/cross-scratches.png',
+    description: 'Supporting colleagues beyond formal duties'
+  },
+  'Reliability & Dependability': { 
+    color: '#B8F2E6', 
+    lightBg: 'rgba(184, 242, 230, 0.1)', 
+    icon: '✓', 
+    bgImage: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/checkerboard.png',
+    description: 'Consistent punctuality and work output'
+  },
+  'Customer Focus': { 
+    color: '#A9D6E5', 
+    lightBg: 'rgba(169, 214, 229, 0.1)', 
+    icon: '👥', 
+    bgImage: 'https://images.unsplash.com/photo-1556740714-a8395b3bf30f?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/white-diamond.png',
+    description: 'Empathy and dedication to client needs'
+  },
+  'Safety Awareness': { 
+    color: '#FCA17D', 
+    lightBg: 'rgba(252, 161, 125, 0.1)', 
+    icon: '⚠️', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/warning.png',
+    description: 'Adherence to safety protocols'
+  },
+  'Commercial Awareness': { 
+    color: '#86A788', 
+    lightBg: 'rgba(134, 167, 136, 0.1)', 
+    icon: '💰', 
+    bgImage: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/money.png',
+    description: 'Understanding industry and business model'
+  },
+  'Blowing Machines': { 
+    color: '#3D5A80', 
+    lightBg: 'rgba(61, 90, 128, 0.1)', 
+    icon: '💨', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/industrial.png',
+    description: 'PET preform heating and bottle forming'
+  },
+  'Labeler': { 
+    color: '#EE6C4D', 
+    lightBg: 'rgba(238, 108, 77, 0.1)', 
+    icon: '🏷️', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/label.png',
+    description: 'Pressure-sensitive and shrink sleeve application'
+  },
+  'Filling': { 
+    color: '#98C1D9', 
+    lightBg: 'rgba(152, 193, 217, 0.1)', 
+    icon: '💧', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/water.png',
+    description: 'Volumetric filling and CIP sanitation'
+  },
+  'Conveyors': { 
+    color: '#293241', 
+    lightBg: 'rgba(41, 50, 65, 0.1)', 
+    icon: '📦', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/concrete.png',
+    description: 'Air conveyors and accumulation tables'
+  },
+  'Stretchwrappers': { 
+    color: '#E0FBFC', 
+    lightBg: 'rgba(224, 251, 252, 0.1)', 
+    icon: '🔄', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/stretch.png',
+    description: 'Film pre-stretch and pallet stabilization'
+  },
+  'Shrinkwrappers': { 
+    color: '#C81D25', 
+    lightBg: 'rgba(200, 29, 37, 0.1)', 
+    icon: '🔥', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/heat.png',
+    description: 'Heat tunnels and film contraction'
+  },
+  'Date Coders': { 
+    color: '#725AC1', 
+    lightBg: 'rgba(114, 90, 193, 0.1)', 
+    icon: '📅', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/code.png',
+    description: 'CIJ printers and thermal transfer'
+  },
+  'Raw Materials': { 
+    color: '#5D576B', 
+    lightBg: 'rgba(93, 87, 107, 0.1)', 
+    icon: '🧪', 
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/material.png',
+    description: 'PET properties and rPET sustainability'
+  },
+  'Vision & Strategic Thinking': { 
+    color: '#FFB347', 
+    lightBg: 'rgba(255, 179, 71, 0.1)', 
+    icon: '🎯', 
+    bgImage: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/strategy.png',
+    description: 'Setting direction and long-term planning'
+  },
+  'Team Development': { 
+    color: '#5F9EA0', 
+    lightBg: 'rgba(95, 158, 160, 0.1)', 
+    icon: '🌱', 
+    bgImage: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/growth.png',
+    description: 'Coaching and building team capabilities'
+  },
+  'Decision-Making': { 
+    color: '#C23B22', 
+    lightBg: 'rgba(194, 59, 34, 0.1)', 
+    icon: '⚖️', 
+    bgImage: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/decision.png',
+    description: 'Making sound judgments under uncertainty'
+  },
+  'Influence': { 
+    color: '#6B5B95', 
+    lightBg: 'rgba(107, 91, 149, 0.1)', 
+    icon: '🗣️', 
+    bgImage: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/influence.png',
+    description: 'Persuading and building stakeholder buy-in'
+  },
+  'Leadership EQ': { 
+    color: '#88B04B', 
+    lightBg: 'rgba(136, 176, 75, 0.1)', 
+    icon: '💖', 
+    bgImage: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/eq.png',
+    description: 'Empathy and social awareness in leadership'
+  },
+  'Conflict Resolution': { 
+    color: '#FF6F61', 
+    lightBg: 'rgba(255, 111, 97, 0.1)', 
+    icon: '🤝', 
+    bgImage: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/conflict.png',
+    description: 'Mediating disputes and finding common ground'
+  },
+  'Delegation': { 
+    color: '#92A8D1', 
+    lightBg: 'rgba(146, 168, 209, 0.1)', 
+    icon: '📤', 
+    bgImage: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/delegate.png',
+    description: 'Empowering others and distributing work'
+  },
+  'Leadership Integrity': { 
+    color: '#955251', 
+    lightBg: 'rgba(149, 82, 81, 0.1)', 
+    icon: '🛡️', 
+    bgImage: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/integrity.png',
+    description: 'Ethical courage and role modeling'
+  },
+  'Innovation Leadership': { 
+    color: '#B565A7', 
+    lightBg: 'rgba(181, 101, 167, 0.1)', 
+    icon: '💫', 
+    bgImage: 'https://images.unsplash.com/photo-1455849318743-b2233052fcff?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/innovation.png',
+    description: 'Fostering creativity and change'
+  }
 };
 
 // ===== TIMER FUNCTIONS =====
 async function startOrResumeTimer(userId, assessmentId) {
-  // ... keep your existing timer functions
+  try {
+    if (!userId || !assessmentId) return 0;
+
+    const { data: existingTimer, error: fetchError } = await supabase
+      .from("assessment_timer_progress")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("assessment_id", assessmentId)
+      .maybeSingle();
+
+    if (fetchError && fetchError.code !== 'PGRST116') {
+      console.error("Timer fetch error:", fetchError);
+      return 0;
+    }
+
+    if (existingTimer) {
+      return existingTimer.elapsed_seconds;
+    } else {
+      const { error } = await supabase
+        .from("assessment_timer_progress")
+        .insert({
+          user_id: userId,
+          assessment_id: assessmentId,
+          started_at: new Date().toISOString(),
+          elapsed_seconds: 0,
+          status: 'in_progress',
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+      return 0;
+    }
+  } catch (error) {
+    console.error("Timer error:", error);
+    return 0;
+  }
 }
 
 async function saveTimerProgress(userId, assessmentId, elapsedSeconds) {
-  // ... keep your existing timer functions
+  try {
+    if (!userId || !assessmentId) return;
+    
+    const { error } = await supabase
+      .from("assessment_timer_progress")
+      .upsert({
+        user_id: userId,
+        assessment_id: assessmentId,
+        elapsed_seconds: elapsedSeconds,
+        last_saved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }, { 
+        onConflict: 'user_id,assessment_id',
+        ignoreDuplicates: false 
+      });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error("Failed to save timer:", error);
+  }
 }
 
 async function markTimerAsCompleted(userId, assessmentId) {
-  // ... keep your existing timer functions
+  try {
+    if (!userId || !assessmentId) return;
+    
+    const { error } = await supabase
+      .from("assessment_timer_progress")
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq("user_id", userId)
+      .eq("assessment_id", assessmentId);
+
+    if (error) throw error;
+  } catch (error) {
+    console.error("Failed to mark timer as completed:", error);
+  }
 }
 
 // ===== ANTI-CHEAT FUNCTIONS =====
 function setupAntiCheatProtection() {
-  // ... keep your existing anti-cheat functions
+  if (typeof window === 'undefined') return;
+  
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+  document.addEventListener('selectstart', (e) => e.preventDefault());
+  
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && 
+        (e.key === 'c' || e.key === 'v' || e.key === 'x' || e.key === 'a')) {
+      e.preventDefault();
+    }
+    if (e.key === 'F12' || e.key === 'PrintScreen') {
+      e.preventDefault();
+    }
+  });
+
+  const style = document.createElement('style');
+  style.innerHTML = `* { user-select: none !important; }`;
+  document.head.appendChild(style);
 }
 
 // ===== RANDOMIZE ANSWERS =====
 function trulyRandomizeAnswers(answers) {
-  // ... keep your existing randomization function
+  if (!answers || answers.length === 0) return answers;
+  const shuffled = [...answers];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
 }
 
 // ===== SAVE RESPONSE =====
 async function saveResponse(assessmentId, questionId, answerId, userId) {
-  // ... keep your existing save response function
+  try {
+    const { error } = await supabase.from("responses").upsert({
+      assessment_id: assessmentId,
+      question_id: parseInt(questionId),
+      answer_id: parseInt(answerId),
+      user_id: userId,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'assessment_id,question_id,user_id' });
+
+    if (error) throw error;
+    return { success: true };
+  } catch (error) {
+    console.error("Save error:", error);
+    throw error;
+  }
 }
 
 async function loadUserResponses(userId, assessmentId) {
-  // ... keep your existing load responses function
+  try {
+    const { data } = await supabase
+      .from("responses")
+      .select("question_id, answer_id")
+      .eq("assessment_id", assessmentId)
+      .eq("user_id", userId);
+
+    const responses = {};
+    data?.forEach(r => responses[r.question_id] = r.answer_id);
+    return responses;
+  } catch (error) {
+    console.error("Error loading responses:", error);
+    return {};
+  }
 }
 
 // ===== CHECK SUBMISSION =====
 async function checkIfAlreadySubmitted(userId, assessmentId) {
-  // ... keep your existing check submission function
+  try {
+    const { data, error } = await supabase
+      .from("assessment_results")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("assessment_id", assessmentId)
+      .eq("status", "completed")
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') {
+      console.error("Error checking completion:", error);
+      return false;
+    }
+    
+    return !!data;
+  } catch (error) {
+    console.error("Error in checkIfAlreadySubmitted:", error);
+    return false;
+  }
 }
 
 // ===== MARK AS SUBMITTED =====
 async function markAsSubmitted(userId, assessmentId) {
-  // ... keep your existing mark as submitted function
+  try {
+    const response = await fetch('/api/submit-assessment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assessment_id: assessmentId, user_id: userId })
+    });
+
+    const result = await response.json();
+    
+    if (!response.ok) {
+      if (result.error?.includes("already submitted")) {
+        return true;
+      }
+      throw new Error(result.error || 'Submission failed');
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Failed to submit assessment:", error);
+    throw error;
+  }
 }
 
 export default function AssessmentPage() {
@@ -545,7 +1005,6 @@ export default function AssessmentPage() {
 
   const currentQuestion = questions[currentIndex];
   
-  // Safety check - if currentQuestion is undefined for some reason
   if (!currentQuestion) {
     return (
       <div style={styles.errorContainer}>
@@ -680,7 +1139,6 @@ export default function AssessmentPage() {
         <div style={styles.header}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
-              {/* Back Button */}
               <button
                 onClick={() => router.push('/assessment/pre')}
                 style={styles.backButton}
@@ -789,7 +1247,6 @@ export default function AssessmentPage() {
         <div style={styles.mainContent}>
           {/* Question Panel */}
           <div style={styles.questionPanel}>
-            {/* Section Background */}
             <div style={{
               ...styles.questionBackground,
               backgroundImage: `url(${sectionConfig.bgImage})`,
@@ -800,9 +1257,7 @@ export default function AssessmentPage() {
             }} />
             <div style={styles.questionPattern} />
             
-            {/* Question Content */}
             <div style={styles.questionContent}>
-              {/* Section Badge */}
               <div style={styles.sectionBadge}>
                 <div style={{
                   ...styles.sectionIcon,
@@ -817,7 +1272,6 @@ export default function AssessmentPage() {
                 </div>
               </div>
 
-              {/* Question Text */}
               <div style={styles.questionText}>
                 <span style={{...styles.questionNumber, color: sectionConfig.color}}>
                   Question {currentIndex + 1} of {questions.length}
@@ -827,7 +1281,6 @@ export default function AssessmentPage() {
                 </div>
               </div>
 
-              {/* Save Status */}
               {saveStatus[currentQuestion?.id] && (
                 <div style={{
                   ...styles.saveStatus,
@@ -857,7 +1310,6 @@ export default function AssessmentPage() {
                 </div>
               )}
 
-              {/* Answer Options */}
               <div style={styles.answersContainer}>
                 {currentQuestion?.options?.map((option, index) => {
                   const isSelected = answers[currentQuestion.id] === option.id;
@@ -910,7 +1362,6 @@ export default function AssessmentPage() {
                 })}
               </div>
 
-              {/* Navigation */}
               <div style={styles.navigation}>
                 <button 
                   onClick={handleBack} 
@@ -985,7 +1436,6 @@ export default function AssessmentPage() {
               <h3 style={styles.navigatorTitle}>Question Navigator</h3>
             </div>
             
-            {/* Stats Summary */}
             <div style={styles.statsGrid}>
               <div style={styles.statCard}>
                 <div style={{...styles.statValue, color: '#4caf50'}}>{totalAnswered}</div>
@@ -1001,7 +1451,6 @@ export default function AssessmentPage() {
               </div>
             </div>
 
-            {/* Timer Progress */}
             <div style={styles.timerProgress}>
               <div style={styles.timerProgressHeader}>
                 <span style={styles.timerProgressIcon}>⏰</span>
@@ -1030,7 +1479,6 @@ export default function AssessmentPage() {
               </div>
             </div>
 
-            {/* Question Grid - Shows all 100 questions */}
             <div style={styles.questionGrid}>
               {questions.map((q, index) => {
                 const isAnswered = answers[q.id];
@@ -1070,7 +1518,6 @@ export default function AssessmentPage() {
               })}
             </div>
 
-            {/* Legend */}
             <div style={styles.legend}>
               <div style={styles.legendItem}>
                 <div style={{...styles.legendDot, background: '#4caf50'}} />
@@ -1090,7 +1537,6 @@ export default function AssessmentPage() {
               </div>
             </div>
 
-            {/* Question Count Badge */}
             <div style={{
               marginTop: '10px',
               padding: '10px',
@@ -1107,7 +1553,6 @@ export default function AssessmentPage() {
                 : `⚠️ Loaded ${questions.length} of 100 questions`}
             </div>
 
-            {/* Back to Selection */}
             <button
               onClick={() => router.push('/assessment/pre')}
               style={styles.backToSelection}
@@ -1155,7 +1600,6 @@ export default function AssessmentPage() {
 
 // ===== STYLES =====
 const styles = {
-  // Loading
   loadingContainer: {
     minHeight: '100vh',
     position: 'relative',
@@ -1208,8 +1652,6 @@ const styles = {
     fontSize: '16px',
     opacity: 0.9
   },
-
-  // Error States
   errorContainer: {
     minHeight: '100vh',
     position: 'relative',
@@ -1275,8 +1717,6 @@ const styles = {
     transition: 'all 0.3s ease',
     boxShadow: '0 10px 20px rgba(102,126,234,0.3)'
   },
-
-  // Main Container
   container: {
     minHeight: '100vh',
     background: '#f8fafc',
@@ -1293,8 +1733,6 @@ const styles = {
     opacity: 0.05,
     pointerEvents: 'none'
   },
-
-  // Header
   header: {
     background: 'linear-gradient(135deg, #1a2639 0%, #2d3748 100%)',
     borderBottom: '1px solid rgba(255,255,255,0.1)',
@@ -1373,8 +1811,6 @@ const styles = {
     fontSize: '11px',
     fontStyle: 'italic'
   },
-
-  // Timer
   timer: {
     padding: '10px 20px',
     borderRadius: '40px',
@@ -1410,8 +1846,6 @@ const styles = {
     textTransform: 'uppercase',
     letterSpacing: '1px'
   },
-
-  // Anti-Cheat
   antiCheat: {
     background: 'linear-gradient(135deg, #ff9800, #f57c00)',
     color: 'white',
@@ -1428,8 +1862,6 @@ const styles = {
   antiCheatIcon: {
     fontSize: '16px'
   },
-
-  // Progress Bar
   progressContainer: {
     maxWidth: '1600px',
     margin: '20px auto 10px',
@@ -1463,8 +1895,6 @@ const styles = {
     alignItems: 'center',
     gap: '4px'
   },
-
-  // Main Content
   mainContent: {
     maxWidth: '1600px',
     margin: '0 auto',
@@ -1472,8 +1902,6 @@ const styles = {
     display: 'flex',
     gap: '30px'
   },
-
-  // Question Panel
   questionPanel: {
     flex: 7,
     position: 'relative',
@@ -1670,8 +2098,6 @@ const styles = {
     padding: '6px 14px',
     borderRadius: '30px'
   },
-
-  // Navigator Panel
   navigatorPanel: {
     flex: 3,
     background: 'white',
@@ -1840,8 +2266,6 @@ const styles = {
   backIcon: {
     fontSize: '18px'
   },
-
-  // Modals
   modalOverlay: {
     position: 'fixed',
     top: 0,
@@ -1893,10 +2317,7 @@ const styles = {
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: '15px',
-    fontSize: '16px',
-    '&:last-child': {
-      marginBottom: 0
-    }
+    fontSize: '16px'
   },
   modalStatLabel: {
     color: '#64748b',
@@ -1977,16 +2398,7 @@ const styles = {
     fontSize: '32px',
     color: '#2196f3',
     marginBottom: '10px',
-    animation: 'pulse 1.5s ease infinite',
-    '& span': {
-      animation: 'pulse 1.5s ease infinite',
-      '&:nth-child(2)': {
-        animationDelay: '0.2s'
-      },
-      '&:nth-child(3)': {
-        animationDelay: '0.4s'
-      }
-    }
+    animation: 'pulse 1.5s ease infinite'
   },
   redirectText: {
     fontSize: '14px',
