@@ -32,7 +32,7 @@ const getClassificationColor = (classification) => {
 };
 
 const getScoreFromTotal = (totalScore) => {
-  // Convert total score (max ~450) to percentage
+  // Convert total score (max 450) to percentage
   return Math.round((totalScore / 450) * 100);
 };
 
@@ -325,7 +325,7 @@ export default function SupervisorDashboard() {
       setLoading(true);
       setError(null);
       
-      // Explicitly select only the columns that exist in your table
+      // Select only the columns that exist in your table
       const { data, error } = await supabase
         .from("candidate_assessments")
         .select('user_id, total_score, classification, email, full_name')
@@ -338,7 +338,6 @@ export default function SupervisorDashboard() {
       }
 
       if (data && data.length > 0) {
-        console.log("Candidates found:", data.length);
         setCandidates(data);
         
         // Calculate stats
@@ -354,7 +353,6 @@ export default function SupervisorDashboard() {
           highPotential
         });
       } else {
-        console.log("No candidates found");
         setCandidates([]);
       }
     } catch (error) {
