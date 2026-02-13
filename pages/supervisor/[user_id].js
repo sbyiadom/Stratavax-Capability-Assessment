@@ -1,4 +1,4 @@
-// pages/supervisor/[user_id].js - PROPER SCORING FOR ALL ASSESSMENT TYPES
+// pages/supervisor/[user_id].js - COMPLETE CANDIDATE REPORT WITH ALL 6 ASSESSMENTS
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -15,7 +15,7 @@ export default function CandidateReport() {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
 
-  // Define all 6 independent assessment types with proper configurations
+  // Define all 6 independent assessment types
   const ASSESSMENTS = [
     {
       id: 'general',
@@ -28,8 +28,7 @@ export default function CandidateReport() {
       description: 'Comprehensive evaluation across core competencies',
       totalQuestions: 100,
       maxScore: 500,
-      type: 'general',
-      hasRightWrong: true
+      type: 'general'
     },
     {
       id: 'behavioral',
@@ -42,9 +41,7 @@ export default function CandidateReport() {
       description: 'Communication, teamwork, emotional intelligence',
       totalQuestions: 20,
       maxScore: 100,
-      type: 'personality',
-      hasRightWrong: false,
-      dimensions: ['Communication', 'Teamwork', 'Emotional Intelligence', 'Adaptability', 'Conflict Resolution']
+      type: 'personality'
     },
     {
       id: 'cognitive',
@@ -57,9 +54,7 @@ export default function CandidateReport() {
       description: 'Problem-solving, critical thinking, analysis',
       totalQuestions: 20,
       maxScore: 100,
-      type: 'cognitive',
-      hasRightWrong: true,
-      dimensions: ['Analytical Thinking', 'Problem Solving', 'Critical Thinking', 'Logical Reasoning']
+      type: 'cognitive'
     },
     {
       id: 'cultural',
@@ -72,9 +67,7 @@ export default function CandidateReport() {
       description: 'Values alignment, organizational fit',
       totalQuestions: 20,
       maxScore: 100,
-      type: 'personality',
-      hasRightWrong: false,
-      dimensions: ['Values Alignment', 'Work Ethic', 'Adaptability', 'Team Orientation']
+      type: 'personality'
     },
     {
       id: 'manufacturing',
@@ -87,9 +80,7 @@ export default function CandidateReport() {
       description: 'Technical skills across different machines and equipment',
       totalQuestions: 20,
       maxScore: 100,
-      type: 'technical',
-      hasRightWrong: true,
-      machines: ['CNC Machines', 'Assembly Line', 'Quality Control', 'Safety Protocols', 'Maintenance']
+      type: 'technical'
     },
     {
       id: 'leadership',
@@ -102,9 +93,7 @@ export default function CandidateReport() {
       description: 'Vision, influence, team development',
       totalQuestions: 20,
       maxScore: 100,
-      type: 'personality',
-      hasRightWrong: false,
-      dimensions: ['Vision', 'Influence', 'Team Development', 'Decision Making', 'Strategic Thinking']
+      type: 'personality'
     }
   ];
 
@@ -446,7 +435,7 @@ export default function CandidateReport() {
         let groupKey;
         if (assessmentConfig.type === 'technical') {
           groupKey = extractMachineType(questionText);
-        } else if (assessmentConfig.type === 'personality' || assessmentConfig.type === 'cognitive' || assessmentConfig.type === 'leadership') {
+        } else if (['personality', 'cognitive', 'leadership'].includes(assessmentConfig.type)) {
           groupKey = extractDimension(questionText, subsection, assessmentConfig.type);
         } else {
           groupKey = response.questions.section || 'General';
@@ -470,8 +459,9 @@ export default function CandidateReport() {
           answer: response.answers.answer_text,
           score: score,
           group: groupKey,
+          section: response.questions.section,
           subsection: subsection,
-          isCorrect: score === 5 && assessmentConfig.hasRightWrong ? true : false
+          isCorrect: score === 5 && assessmentConfig.type === 'cognitive' ? true : false
         });
       });
 
@@ -515,15 +505,15 @@ export default function CandidateReport() {
       answerDetails.forEach(answer => {
         if (answer.score >= 4) {
           strengths.push({
-            text: answer.question.length > 60 ? answer.question.substring(0, 60) + '...' : answer.question,
-            detail: `Selected: "${answer.answer.substring(0, 40)}${answer.answer.length > 40 ? '...' : ''}"`,
+            text: answer.question.length > 80 ? answer.question.substring(0, 80) + '...' : answer.question,
+            detail: `Selected: "${answer.answer.substring(0, 50)}${answer.answer.length > 50 ? '...' : ''}"`,
             score: answer.score,
             group: answer.group
           });
         } else if (answer.score <= 2) {
           weaknesses.push({
-            text: answer.question.length > 60 ? answer.question.substring(0, 60) + '...' : answer.question,
-            detail: `Selected: "${answer.answer.substring(0, 40)}${answer.answer.length > 40 ? '...' : ''}"`,
+            text: answer.question.length > 80 ? answer.question.substring(0, 80) + '...' : answer.question,
+            detail: `Selected: "${answer.answer.substring(0, 50)}${answer.answer.length > 50 ? '...' : ''}"`,
             score: answer.score,
             group: answer.group
           });
@@ -762,7 +752,7 @@ export default function CandidateReport() {
       }}>
         <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
           
-          {/* Header */}
+          {/* Header with Back Button */}
           <div style={{
             background: "rgba(255,255,255,0.95)",
             backdropFilter: 'blur(10px)',
@@ -828,6 +818,9 @@ export default function CandidateReport() {
                 </h1>
                 <p style={{ margin: 0, color: "#718096", fontSize: "16px" }}>
                   📧 {candidate.email || "No email"} • 🆔 {user_id?.substring(0, 12)}...
+                </p>
+                <p style={{ margin: "5px 0 0 0", color: "#718096", fontSize: "14px" }}>
+                  📊 {Object.keys(assessmentReports).length} of 6 assessments completed
                 </p>
               </div>
             </div>
@@ -938,7 +931,7 @@ export default function CandidateReport() {
                         {currentReport.classification.name}
                       </div>
                       <div style={{ fontSize: "15px", opacity: 0.9 }}>
-                        {currentReport.percentage}% • Grade {currentReport.gradeInfo.grade}
+                        {currentReport.percentage}% • Grade {currentReport.gradeInfo.grade} • {currentReport.gradeInfo.label}
                       </div>
                     </div>
                     <div style={{
@@ -970,236 +963,489 @@ export default function CandidateReport() {
                 </div>
               </div>
 
-              {/* Dimension/Machine Breakdown */}
+              {/* Navigation Tabs */}
               <div style={{
-                background: "rgba(255,255,255,0.98)",
+                background: "rgba(255,255,255,0.95)",
                 backdropFilter: 'blur(10px)',
-                borderRadius: "30px",
-                padding: "30px",
-                marginBottom: "30px"
+                borderRadius: "60px",
+                padding: "8px",
+                marginBottom: "30px",
+                display: "inline-flex",
+                boxShadow: "0 10px 30px rgba(0,0,0,0.1)"
               }}>
-                <h3 style={{ margin: "0 0 20px 0", fontSize: "20px", color: "#2d3748" }}>
-                  {currentReport.config.type === 'technical' ? 'Machine Performance' : 'Dimension Breakdown'}
-                </h3>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  {Object.entries(currentReport.dimensionScores).map(([key, data]) => (
-                    <div key={key} style={{
-                      padding: '20px',
-                      background: '#f8fafc',
-                      borderRadius: '16px',
-                      border: `1px solid ${currentReport.config.border}`
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                        <h4 style={{ margin: 0, fontSize: '16px', color: currentReport.config.color, fontWeight: '600' }}>
-                          {key}
-                        </h4>
-                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                          {data.classification && (
-                            <span style={{
-                              fontSize: '20px'
-                            }}>
-                              {data.classification.icon}
-                            </span>
-                          )}
-                          <span style={{
-                            padding: '4px 12px',
-                            background: currentReport.config.lightBg,
-                            color: currentReport.config.color,
-                            borderRadius: '20px',
-                            fontSize: '12px',
-                            fontWeight: '600'
-                          }}>
-                            {data.percentage}%
-                          </span>
-                        </div>
-                      </div>
-                      
-                      <div style={{
-                        height: '10px',
-                        background: '#e2e8f0',
-                        borderRadius: '5px',
-                        overflow: 'hidden',
-                        marginBottom: '12px'
-                      }}>
-                        <div style={{
-                          height: '100%',
-                          width: `${data.percentage}%`,
-                          background: currentReport.config.gradient,
-                          borderRadius: '5px'
-                        }} />
-                      </div>
-                      
-                      <div style={{ 
-                        display: 'flex', 
-                        justifyContent: 'space-between',
-                        fontSize: '13px',
-                        color: '#718096'
-                      }}>
-                        <span>Score: {data.totalScore}/{data.maxPossible}</span>
-                        <span>Average: {data.average}/5 per question</span>
-                        <span>{data.count} questions</span>
-                      </div>
-                      
-                      {data.classification && (
-                        <div style={{
-                          marginTop: '10px',
-                          padding: '10px',
-                          background: 'white',
-                          borderRadius: '8px',
-                          fontSize: '13px',
-                          color: '#4a5568'
-                        }}>
-                          {data.classification.description}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Strengths and Weaknesses */}
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "20px",
-                marginBottom: "30px"
-              }}>
-                {/* Strengths */}
-                <div style={{
-                  background: "rgba(255,255,255,0.98)",
-                  backdropFilter: 'blur(10px)',
-                  borderRadius: "30px",
-                  padding: "30px"
-                }}>
-                  <h3 style={{ 
-                    margin: "0 0 20px 0", 
-                    fontSize: "18px", 
-                    color: "#2d3748",
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}>
-                    <span style={{
-                      background: '#4ECDC4',
-                      color: 'white',
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '14px'
-                    }}>✓</span>
-                    Key Strengths
-                  </h3>
-                  
-                  {currentReport.strengths.map((strength, index) => (
-                    <div key={index} style={{
-                      padding: '15px',
-                      background: '#f0fff4',
-                      borderRadius: '12px',
-                      marginBottom: '10px',
-                      border: '1px solid #9AE6B4'
-                    }}>
-                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#22543D', marginBottom: '5px' }}>
-                        {strength.group}
-                      </div>
-                      <div style={{ fontSize: '13px', color: '#22543D' }}>{strength.text}</div>
-                      <div style={{ fontSize: '12px', color: '#2F855A', marginTop: '5px' }}>
-                        {strength.detail}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Weaknesses */}
-                <div style={{
-                  background: "rgba(255,255,255,0.98)",
-                  backdropFilter: 'blur(10px)',
-                  borderRadius: "30px",
-                  padding: "30px"
-                }}>
-                  <h3 style={{ 
-                    margin: "0 0 20px 0", 
-                    fontSize: "18px", 
-                    color: "#2d3748",
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}>
-                    <span style={{
-                      background: '#FF6B6B',
-                      color: 'white',
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '14px'
-                    }}>!</span>
-                    Development Areas
-                  </h3>
-                  
-                  {currentReport.weaknesses.map((weakness, index) => (
-                    <div key={index} style={{
-                      padding: '15px',
-                      background: '#fff5f5',
-                      borderRadius: '12px',
-                      marginBottom: '10px',
-                      border: '1px solid #FEB2B2'
-                    }}>
-                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#9B2C2C', marginBottom: '5px' }}>
-                        {weakness.group}
-                      </div>
-                      <div style={{ fontSize: '13px', color: '#9B2C2C' }}>{weakness.text}</div>
-                      <div style={{ fontSize: '12px', color: '#C53030', marginTop: '5px' }}>
-                        {weakness.detail}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Recommendations */}
-              <div style={{
-                background: "rgba(255,255,255,0.98)",
-                backdropFilter: 'blur(10px)',
-                borderRadius: "30px",
-                padding: "30px"
-              }}>
-                <h3 style={{ margin: "0 0 20px 0", fontSize: "18px", color: "#2d3748" }}>
-                  💡 Recommendations
-                </h3>
-                
-                {currentReport.recommendations.map((rec, index) => (
-                  <div key={index} style={{
-                    padding: '15px',
-                    background: rec.priority === 'High' ? '#FED7D7' : '#FEFCBF',
-                    borderRadius: '12px',
-                    marginBottom: '10px',
-                    border: `1px solid ${rec.priority === 'High' ? '#FEB2B2' : '#FEEBC8'}`
-                  }}>
-                    <div style={{ 
-                      fontSize: '12px', 
+                {['overview', 'answers', 'analysis'].map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    style={{
+                      padding: "12px 30px",
+                      background: activeTab === tab ? currentReport.config.gradient : 'transparent',
+                      color: activeTab === tab ? 'white' : '#4a5568',
+                      border: 'none',
+                      borderRadius: "50px",
+                      cursor: 'pointer',
+                      fontSize: '14px',
                       fontWeight: '600',
-                      color: rec.priority === 'High' ? '#9B2C2C' : '#975A16',
-                      marginBottom: '5px'
-                    }}>
-                      {rec.priority} Priority
-                    </div>
-                    <div style={{ fontSize: '14px', color: '#4a5568' }}>
-                      {rec.type === 'overall' ? rec.text : (
-                        <>
-                          <strong>{rec.group}:</strong> {rec.text}
-                          {rec.action && <div style={{ marginTop: '5px', fontSize: '13px' }}>→ {rec.action}</div>}
-                        </>
-                      )}
-                    </div>
-                  </div>
+                      textTransform: 'capitalize',
+                      transition: 'all 0.3s'
+                    }}
+                  >
+                    {tab === 'overview' && '📊 '}
+                    {tab === 'answers' && '📝 '}
+                    {tab === 'analysis' && '📈 '}
+                    {tab}
+                  </button>
                 ))}
               </div>
+
+              {/* Overview Tab - Dimension/Machine Breakdown */}
+              {activeTab === 'overview' && (
+                <div style={{
+                  background: "rgba(255,255,255,0.98)",
+                  backdropFilter: 'blur(10px)',
+                  borderRadius: "30px",
+                  padding: "30px"
+                }}>
+                  <h3 style={{ margin: "0 0 20px 0", fontSize: "20px", color: "#2d3748" }}>
+                    {currentReport.config.type === 'technical' ? 'Machine Performance' : 'Dimension Breakdown'}
+                  </h3>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {Object.entries(currentReport.dimensionScores).map(([key, data]) => (
+                      <div key={key} style={{
+                        padding: '20px',
+                        background: '#f8fafc',
+                        borderRadius: '16px',
+                        border: `1px solid ${currentReport.config.border}`
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                          <h4 style={{ margin: 0, fontSize: '16px', color: currentReport.config.color, fontWeight: '600' }}>
+                            {key}
+                          </h4>
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                            {data.classification && (
+                              <span style={{ fontSize: '20px' }}>{data.classification.icon}</span>
+                            )}
+                            <span style={{
+                              padding: '4px 12px',
+                              background: currentReport.config.lightBg,
+                              color: currentReport.config.color,
+                              borderRadius: '20px',
+                              fontSize: '12px',
+                              fontWeight: '600'
+                            }}>
+                              {data.percentage}%
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <div style={{
+                          height: '10px',
+                          background: '#e2e8f0',
+                          borderRadius: '5px',
+                          overflow: 'hidden',
+                          marginBottom: '12px'
+                        }}>
+                          <div style={{
+                            height: '100%',
+                            width: `${data.percentage}%`,
+                            background: currentReport.config.gradient,
+                            borderRadius: '5px'
+                          }} />
+                        </div>
+                        
+                        <div style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between',
+                          fontSize: '13px',
+                          color: '#718096'
+                        }}>
+                          <span>Score: {data.totalScore}/{data.maxPossible}</span>
+                          <span>Average: {data.average}/5 per question</span>
+                          <span>{data.count} questions</span>
+                        </div>
+                        
+                        {data.classification && (
+                          <div style={{
+                            marginTop: '10px',
+                            padding: '10px',
+                            background: 'white',
+                            borderRadius: '8px',
+                            fontSize: '13px',
+                            color: '#4a5568'
+                          }}>
+                            {data.classification.description}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Answers Tab - Detailed Answer Analysis */}
+              {activeTab === 'answers' && (
+                <div style={{
+                  background: "rgba(255,255,255,0.98)",
+                  backdropFilter: 'blur(10px)',
+                  borderRadius: "30px",
+                  padding: "30px"
+                }}>
+                  <h3 style={{ margin: "0 0 25px 0", fontSize: "22px", color: "#2d3748", display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '10px',
+                      background: currentReport.config.lightBg,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '18px'
+                    }}>📝</span>
+                    Detailed Answer Analysis - {currentReport.name}
+                  </h3>
+                  
+                  <div style={{ marginBottom: '20px', padding: '15px', background: '#f8fafc', borderRadius: '12px' }}>
+                    <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                      <div><strong>Total Questions:</strong> {currentReport.responseCount}</div>
+                      <div><strong>Total Score:</strong> {currentReport.totalScore}/{currentReport.maxPossible}</div>
+                      <div><strong>Percentage:</strong> {currentReport.percentage}%</div>
+                      <div><strong>Grade:</strong> {currentReport.gradeInfo.grade}</div>
+                    </div>
+                  </div>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {currentReport.answerDetails.map((answer, index) => {
+                      const isHighScore = answer.score >= 4;
+                      const isLowScore = answer.score <= 2;
+                      
+                      return (
+                        <div key={index} style={{
+                          padding: '20px',
+                          background: isHighScore ? '#f0fff4' : isLowScore ? '#fff5f5' : '#f8fafc',
+                          borderRadius: '16px',
+                          border: `2px solid ${
+                            isHighScore ? '#9AE6B4' : isLowScore ? '#FEB2B2' : currentReport.config.border
+                          }`,
+                          transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                        }}
+                        onMouseOver={(e) => {
+                          e.currentTarget.style.transform = 'translateY(-2px)';
+                          e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.1)';
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = 'none';
+                        }}>
+                          
+                          {/* Header with question number and score */}
+                          <div style={{ 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center',
+                            marginBottom: '15px',
+                            flexWrap: 'wrap',
+                            gap: '10px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                              <span style={{
+                                background: currentReport.config.color,
+                                color: 'white',
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '8px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '14px',
+                                fontWeight: '600'
+                              }}>
+                                {index + 1}
+                              </span>
+                              <span style={{
+                                padding: '6px 16px',
+                                background: isHighScore ? '#C6F6D5' : isLowScore ? '#FED7D7' : '#EDF2F7',
+                                color: isHighScore ? '#22543D' : isLowScore ? '#742A2A' : '#4a5568',
+                                borderRadius: '30px',
+                                fontSize: '13px',
+                                fontWeight: '600'
+                              }}>
+                                Score: {answer.score}/5
+                              </span>
+                              <span style={{
+                                padding: '6px 16px',
+                                background: currentReport.config.lightBg,
+                                color: currentReport.config.color,
+                                borderRadius: '30px',
+                                fontSize: '13px',
+                                fontWeight: '500'
+                              }}>
+                                {answer.group}
+                              </span>
+                              {answer.subsection && answer.subsection !== answer.group && (
+                                <span style={{
+                                  padding: '6px 16px',
+                                  background: '#e2e8f0',
+                                  color: '#4a5568',
+                                  borderRadius: '30px',
+                                  fontSize: '13px',
+                                  fontWeight: '500'
+                                }}>
+                                  {answer.subsection}
+                                </span>
+                              )}
+                            </div>
+                            
+                            {/* Score indicator */}
+                            <div style={{
+                              width: '40px',
+                              height: '40px',
+                              borderRadius: '20px',
+                              background: isHighScore ? '#48BB78' : isLowScore ? '#F56565' : '#A0AEC0',
+                              color: 'white',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '16px',
+                              fontWeight: '700'
+                            }}>
+                              {answer.score}
+                            </div>
+                          </div>
+                          
+                          {/* Question */}
+                          <div style={{ marginBottom: '15px' }}>
+                            <div style={{ 
+                              fontSize: '14px', 
+                              fontWeight: '600', 
+                              color: '#2d3748', 
+                              marginBottom: '8px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px'
+                            }}>
+                              <span>📌</span> Question:
+                            </div>
+                            <div style={{ 
+                              fontSize: '15px', 
+                              color: '#4a5568', 
+                              padding: '15px', 
+                              background: 'white', 
+                              borderRadius: '12px',
+                              border: '1px solid #e2e8f0',
+                              lineHeight: 1.6
+                            }}>
+                              {answer.question}
+                            </div>
+                          </div>
+                          
+                          {/* Selected Answer */}
+                          <div>
+                            <div style={{ 
+                              fontSize: '14px', 
+                              fontWeight: '600', 
+                              color: '#2d3748', 
+                              marginBottom: '8px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px'
+                            }}>
+                              <span>💬</span> Selected Answer:
+                            </div>
+                            <div style={{
+                              fontSize: '15px',
+                              color: isHighScore ? '#22543D' : isLowScore ? '#742A2A' : '#4a5568',
+                              padding: '15px',
+                              background: 'white',
+                              borderRadius: '12px',
+                              border: `2px solid ${
+                                isHighScore ? '#48BB78' : isLowScore ? '#F56565' : currentReport.config.border
+                              }`,
+                              borderLeft: `6px solid ${
+                                isHighScore ? '#48BB78' : isLowScore ? '#F56565' : currentReport.config.color
+                              }`,
+                              lineHeight: 1.6
+                            }}>
+                              {answer.answer}
+                            </div>
+                          </div>
+                          
+                          {/* Feedback based on score */}
+                          {(isHighScore || isLowScore) && (
+                            <div style={{
+                              marginTop: '15px',
+                              padding: '12px',
+                              background: isHighScore ? '#F0FFF4' : '#FFF5F5',
+                              borderRadius: '8px',
+                              fontSize: '13px',
+                              color: isHighScore ? '#22543D' : '#9B2C2C',
+                              border: `1px solid ${isHighScore ? '#9AE6B4' : '#FEB2B2'}`
+                            }}>
+                              {isHighScore ? (
+                                <span>✅ <strong>Strength:</strong> This answer demonstrates strong understanding in this area.</span>
+                              ) : (
+                                <span>📌 <strong>Development Area:</strong> Consider reviewing this topic for improvement.</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Analysis Tab - Strengths, Weaknesses, Recommendations */}
+              {activeTab === 'analysis' && (
+                <div style={{
+                  background: "rgba(255,255,255,0.98)",
+                  backdropFilter: 'blur(10px)',
+                  borderRadius: "30px",
+                  padding: "30px"
+                }}>
+                  <h3 style={{ margin: "0 0 20px 0", fontSize: "20px", color: "#2d3748" }}>
+                    📈 Response Pattern Analysis
+                  </h3>
+                  
+                  {/* Strengths */}
+                  <div style={{ marginBottom: '30px' }}>
+                    <h4 style={{ 
+                      fontSize: '18px', 
+                      color: '#2d3748', 
+                      marginBottom: '15px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}>
+                      <span style={{
+                        background: '#4ECDC4',
+                        color: 'white',
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '14px'
+                      }}>✓</span>
+                      Key Strengths ({currentReport.strengths.length})
+                    </h4>
+                    
+                    {currentReport.strengths.map((strength, index) => (
+                      <div key={index} style={{
+                        padding: '15px',
+                        background: '#f0fff4',
+                        borderRadius: '12px',
+                        marginBottom: '10px',
+                        border: '1px solid #9AE6B4'
+                      }}>
+                        <div style={{ fontSize: '13px', fontWeight: '600', color: '#22543D', marginBottom: '5px' }}>
+                          {strength.group}
+                        </div>
+                        <div style={{ fontSize: '13px', color: '#22543D' }}>{strength.text}</div>
+                        <div style={{ fontSize: '12px', color: '#2F855A', marginTop: '5px' }}>
+                          {strength.detail}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Weaknesses */}
+                  <div style={{ marginBottom: '30px' }}>
+                    <h4 style={{ 
+                      fontSize: '18px', 
+                      color: '#2d3748', 
+                      marginBottom: '15px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}>
+                      <span style={{
+                        background: '#FF6B6B',
+                        color: 'white',
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '14px'
+                      }}>!</span>
+                      Development Areas ({currentReport.weaknesses.length})
+                    </h4>
+                    
+                    {currentReport.weaknesses.map((weakness, index) => (
+                      <div key={index} style={{
+                        padding: '15px',
+                        background: '#fff5f5',
+                        borderRadius: '12px',
+                        marginBottom: '10px',
+                        border: '1px solid #FEB2B2'
+                      }}>
+                        <div style={{ fontSize: '13px', fontWeight: '600', color: '#9B2C2C', marginBottom: '5px' }}>
+                          {weakness.group}
+                        </div>
+                        <div style={{ fontSize: '13px', color: '#9B2C2C' }}>{weakness.text}</div>
+                        <div style={{ fontSize: '12px', color: '#C53030', marginTop: '5px' }}>
+                          {weakness.detail}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Recommendations */}
+                  <div>
+                    <h4 style={{ 
+                      fontSize: '18px', 
+                      color: '#2d3748', 
+                      marginBottom: '15px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}>
+                      <span style={{
+                        background: '#667eea',
+                        color: 'white',
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '14px'
+                      }}>💡</span>
+                      Recommendations
+                    </h4>
+                    
+                    {currentReport.recommendations.map((rec, index) => (
+                      <div key={index} style={{
+                        padding: '15px',
+                        background: rec.priority === 'High' ? '#FED7D7' : '#FEFCBF',
+                        borderRadius: '12px',
+                        marginBottom: '10px',
+                        border: `1px solid ${rec.priority === 'High' ? '#FEB2B2' : '#FEEBC8'}`
+                      }}>
+                        <div style={{ 
+                          fontSize: '12px', 
+                          fontWeight: '600',
+                          color: rec.priority === 'High' ? '#9B2C2C' : '#975A16',
+                          marginBottom: '5px'
+                        }}>
+                          {rec.priority} Priority
+                        </div>
+                        <div style={{ fontSize: '14px', color: '#4a5568' }}>
+                          {rec.type === 'overall' ? rec.text : (
+                            <>
+                              <strong>{rec.group}:</strong> {rec.text}
+                              {rec.action && <div style={{ marginTop: '5px', fontSize: '13px' }}>→ {rec.action}</div>}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
 
