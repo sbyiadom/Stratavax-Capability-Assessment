@@ -325,9 +325,10 @@ export default function SupervisorDashboard() {
       setLoading(true);
       setError(null);
       
+      // Explicitly select only the columns that exist in your table
       const { data, error } = await supabase
         .from("candidate_assessments")
-        .select("*")
+        .select('user_id, total_score, classification, email, full_name')
         .order("total_score", { ascending: false });
 
       if (error) {
@@ -337,6 +338,7 @@ export default function SupervisorDashboard() {
       }
 
       if (data && data.length > 0) {
+        console.log("Candidates found:", data.length);
         setCandidates(data);
         
         // Calculate stats
@@ -352,6 +354,7 @@ export default function SupervisorDashboard() {
           highPotential
         });
       } else {
+        console.log("No candidates found");
         setCandidates([]);
       }
     } catch (error) {
