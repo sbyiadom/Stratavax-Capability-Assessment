@@ -22,7 +22,8 @@ const ASSESSMENT_TYPES = [
     gradient: 'linear-gradient(135deg, #4A6FA5, #6B8EC9)',
     lightBg: '#E8EEF5',
     description: 'Comprehensive evaluation across core competencies',
-    maxScore: 500
+    maxScore: 500,
+    dbValue: 'General Assessment' // The actual value in your database
   },
   { 
     id: 'behavioral',
@@ -32,7 +33,8 @@ const ASSESSMENT_TYPES = [
     gradient: 'linear-gradient(135deg, #9C27B0, #BA68C8)',
     lightBg: '#F3E5F5',
     description: 'Communication, teamwork, emotional intelligence',
-    maxScore: 100
+    maxScore: 100,
+    dbValue: 'Behavioral & Soft Skills'
   },
   { 
     id: 'cognitive',
@@ -42,7 +44,8 @@ const ASSESSMENT_TYPES = [
     gradient: 'linear-gradient(135deg, #FF9800, #FFB74D)',
     lightBg: '#FFF3E0',
     description: 'Problem-solving, critical thinking, analysis',
-    maxScore: 100
+    maxScore: 100,
+    dbValue: 'Cognitive & Thinking Skills'
   },
   { 
     id: 'cultural',
@@ -52,7 +55,8 @@ const ASSESSMENT_TYPES = [
     gradient: 'linear-gradient(135deg, #4CAF50, #81C784)',
     lightBg: '#E8F5E9',
     description: 'Values alignment, organizational fit',
-    maxScore: 100
+    maxScore: 100,
+    dbValue: 'Cultural & Attitudinal Fit'
   },
   { 
     id: 'manufacturing',
@@ -62,7 +66,8 @@ const ASSESSMENT_TYPES = [
     gradient: 'linear-gradient(135deg, #F44336, #EF5350)',
     lightBg: '#FFEBEE',
     description: 'Technical skills across different machines and equipment',
-    maxScore: 100
+    maxScore: 100,
+    dbValue: 'Manufacturing Technical Skills'
   },
   { 
     id: 'leadership',
@@ -72,7 +77,8 @@ const ASSESSMENT_TYPES = [
     gradient: 'linear-gradient(135deg, #FFC107, #FFD54F)',
     lightBg: '#FFF8E1',
     description: 'Vision, influence, team development',
-    maxScore: 100
+    maxScore: 100,
+    dbValue: 'Leadership Potential'
   }
 ];
 
@@ -218,17 +224,31 @@ export default function SupervisorDashboard() {
         setLoading(true);
         setDebug('Fetching data...');
         
-        // First, let's check what's in the responses table
+        // First, let's get the structure of the questions table to see the column name
+        const { data: columns, error: columnsError } = await supabase
+          .from('questions')
+          .select('*')
+          .limit(1);
+
+        if (columnsError) {
+          setDebug(`Error accessing questions table: ${columnsError.message}`);
+        } else if (columns && columns.length > 0) {
+          setDebug(`Questions table columns: ${Object.keys(columns[0]).join(', ')}`);
+        }
+
+        // Let's try a simpler approach - first get all responses with questions
         const { data: allResponses, error: responsesError } = await supabase
           .from("responses")
           .select(`
             user_id,
             question_id,
             answer_id,
-            questions!inner (
-              assessment_type
+            questions (
+              id,
+              section,
+              subsection
             ),
-            answers!inner (
+            answers (
               score
             )
           `);
@@ -257,6 +277,10 @@ export default function SupervisorDashboard() {
         const uniqueUserIds = [...new Set(allResponses.map(r => r.user_id))];
         setDebug(prev => `${prev}\nUnique users: ${uniqueUserIds.length}`);
 
+        // For now, since we don't know the assessment type column, 
+        // we'll assume all responses belong to General Assessment
+        // and we'll manually map based on question IDs or sections later
+        
         // Get user details from candidate_assessments
         const { data: candidatesData, error: candidatesError } = await supabase
           .from("candidate_assessments")
@@ -267,34 +291,34 @@ export default function SupervisorDashboard() {
           setDebug(prev => `${prev}\nError fetching candidate details: ${candidatesError.message}`);
         }
 
-        // Group responses by user and assessment type
+        // Group responses by user
         const userData = {};
 
         allResponses.forEach(response => {
           const userId = response.user_id;
-          const assessmentType = response.questions?.assessment_type || 'Unknown';
           const score = response.answers?.score || 0;
           
           if (!userData[userId]) {
             userData[userId] = {
-              assessments: {},
               totalScore: 0,
-              totalQuestions: 0
+              totalQuestions: 0,
+              // For now, assume all responses are for General Assessment
+              assessments: {
+                'General Assessment': {
+                  totalScore: 0,
+                  questionCount: 0
+                }
+              }
             };
           }
           
-          if (!userData[userId].assessments[assessmentType]) {
-            userData[userId].assessments[assessmentType] = {
-              totalScore: 0,
-              questionCount: 0
-            };
-          }
-          
-          userData[userId].assessments[assessmentType].totalScore += score;
-          userData[userId].assessments[assessmentType].questionCount += 1;
           userData[userId].totalScore += score;
           userData[userId].totalQuestions += 1;
+          userData[userId].assessments['General Assessment'].totalScore += score;
+          userData[userId].assessments['General Assessment'].questionCount += 1;
         });
+
+        setDebug(prev => `${prev}\nProcessed ${Object.keys(userData).length} users`);
 
         // Build candidate list
         const candidatesList = uniqueUserIds.map(userId => {
@@ -302,14 +326,14 @@ export default function SupervisorDashboard() {
           const userAssessmentData = userData[userId] || { assessments: {} };
           
           // Get completed assessments list
-          const completedAssessments = Object.keys(userAssessmentData.assessments);
+          const completedAssessments = Object.keys(userAssessmentData.assessments || {});
           
           // Calculate score for selected assessment
           let score = 0;
           let maxPossible = 0;
           let questionCount = 0;
           
-          if (userAssessmentData.assessments[selectedAssessment]) {
+          if (userAssessmentData.assessments && userAssessmentData.assessments[selectedAssessment]) {
             const assessmentData = userAssessmentData.assessments[selectedAssessment];
             score = assessmentData.totalScore;
             questionCount = assessmentData.questionCount;
@@ -330,7 +354,7 @@ export default function SupervisorDashboard() {
             classification,
             questionCount,
             completedAssessments,
-            hasAssessment: completedAssessments.includes(selectedAssessment)
+            hasAssessment: questionCount > 0 // If they have any questions, they've taken it
           };
         });
 
@@ -519,18 +543,20 @@ export default function SupervisorDashboard() {
           </button>
         </div>
 
-        {/* Debug Info - Remove in production */}
+        {/* Debug Info - Shows what's happening */}
         <div style={{
           background: '#f1f5f9',
-          padding: '10px',
+          padding: '15px',
           borderRadius: '8px',
           marginBottom: '20px',
-          fontSize: '12px',
+          fontSize: '13px',
           fontFamily: 'monospace',
           whiteSpace: 'pre-wrap',
-          color: '#334155'
+          color: '#334155',
+          border: '1px solid #cbd5e1'
         }}>
-          {debug}
+          <strong>Debug Information:</strong>
+          <div>{debug}</div>
         </div>
 
         {/* Assessment Type Selector */}
