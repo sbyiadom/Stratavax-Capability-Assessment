@@ -1,7 +1,67 @@
 // pages/assessment/pre.js
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "../../supabase/client"; // ✅ CORRECT: Go up two levels
+import { supabase } from "../../supabase/client";
+
+// ===== CATEGORY CONFIGURATIONS WITH BACKGROUND IMAGES =====
+const CATEGORY_CONFIG = {
+  'Cognitive': {
+    gradient: 'linear-gradient(135deg, #4A6FA5 0%, #2C3E50 100%)',
+    lightBg: 'rgba(74, 111, 165, 0.1)',
+    icon: '🧠',
+    bgImage: 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/cubes.png',
+    description: 'Analytical thinking, problem-solving, and reasoning'
+  },
+  'Behavioral': {
+    gradient: 'linear-gradient(135deg, #FF6B6B 0%, #C62828 100%)',
+    lightBg: 'rgba(255, 107, 107, 0.1)',
+    icon: '😊',
+    bgImage: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/always-grey.png',
+    description: 'Communication, teamwork, and emotional intelligence'
+  },
+  'Leadership': {
+    gradient: 'linear-gradient(135deg, #D32F2F 0%, #B71C1C 100%)',
+    lightBg: 'rgba(211, 47, 47, 0.1)',
+    icon: '👑',
+    bgImage: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/dark-mosaic.png',
+    description: 'Vision, influence, and team development'
+  },
+  'Manufacturing': {
+    gradient: 'linear-gradient(135deg, #388E3C 0%, #1B5E20 100%)',
+    lightBg: 'rgba(56, 142, 60, 0.1)',
+    icon: '⚙️',
+    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/industrial.png',
+    description: 'Technical skills and equipment knowledge'
+  },
+  'Cultural': {
+    gradient: 'linear-gradient(135deg, #9C89B8 0%, #6B4E71 100%)',
+    lightBg: 'rgba(156, 137, 184, 0.1)',
+    icon: '🌍',
+    bgImage: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/clean-gray-paper.png',
+    description: 'Values alignment and organizational fit'
+  },
+  'Technical': {
+    gradient: 'linear-gradient(135deg, #1982C4 0%, #0A4D6E 100%)',
+    lightBg: 'rgba(25, 130, 196, 0.1)',
+    icon: '💻',
+    bgImage: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/brick-wall.png',
+    description: 'Technical knowledge and practical skills'
+  },
+  'General': {
+    gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    lightBg: 'rgba(102, 126, 234, 0.1)',
+    icon: '📋',
+    bgImage: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1920&q=80',
+    pattern: 'https://www.transparenttextures.com/patterns/cubes.png',
+    description: 'General assessments and evaluations'
+  }
+};
 
 export default function PreAssessment() {
   const router = useRouter();
@@ -12,6 +72,8 @@ export default function PreAssessment() {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [userStats, setUserStats] = useState(null);
+  const [hoveredCard, setHoveredCard] = useState(null);
+  const [hoveredCategory, setHoveredCategory] = useState(null);
 
   useEffect(() => {
     checkUser();
@@ -170,17 +232,8 @@ export default function PreAssessment() {
     }
   };
 
-  const getCategoryIcon = (categoryName) => {
-    const icons = {
-      'Cognitive': '🧠',
-      'Behavioral': '😊',
-      'Leadership': '👑',
-      'Manufacturing': '⚙️',
-      'Cultural': '🌍',
-      'Technical': '💻',
-      'General': '📝'
-    };
-    return icons[categoryName] || '📋';
+  const getCategoryConfig = (categoryName) => {
+    return CATEGORY_CONFIG[categoryName] || CATEGORY_CONFIG['General'];
   };
 
   const filteredAssessments = assessments.filter(assessment => {
@@ -221,41 +274,78 @@ export default function PreAssessment() {
       <div style={styles.loadingContainer}>
         <div style={styles.loadingOverlay} />
         <div style={styles.loadingContent}>
-          <div style={styles.loadingLogo}>🏢 Stratavax</div>
-          <div style={styles.loadingSpinner} />
+          <div style={styles.loadingLogo}>
+            <span style={styles.loadingLogoGradient}>Stratavax</span>
+          </div>
+          <div style={styles.loadingSpinnerContainer}>
+            <div style={styles.loadingSpinner} />
+          </div>
           <div style={styles.loadingTitle}>Loading Assessments</div>
           <div style={styles.loadingSubtitle}>Please wait while we prepare your assessments...</div>
+          <div style={styles.loadingProgress}>
+            <div style={styles.loadingProgressBar} />
+          </div>
         </div>
       </div>
     );
   }
 
+  const backgroundConfig = selectedCategory === "all" 
+    ? CATEGORY_CONFIG['General']
+    : getCategoryConfig(categories.find(c => c.id === selectedCategory)?.name);
+
   return (
     <div style={styles.container}>
-      {/* Background Image */}
-      <div style={styles.backgroundImage} />
-      <div style={styles.backgroundOverlay} />
-      <div style={styles.backgroundPattern} />
+      {/* Dynamic Background based on selected category */}
+      <div style={{
+        ...styles.backgroundImage,
+        backgroundImage: `url(${backgroundConfig.bgImage})`,
+      }} />
+      <div style={{
+        ...styles.backgroundOverlay,
+        background: `linear-gradient(135deg, ${backgroundConfig.gradient.split(',')[0].replace('linear-gradient(135deg,', '')}, ${backgroundConfig.gradient.split(',')[1]})`,
+        opacity: 0.85
+      }} />
+      <div style={{
+        ...styles.backgroundPattern,
+        backgroundImage: `url(${backgroundConfig.pattern})`,
+      }} />
       
       {/* Content */}
       <div style={styles.content}>
         {/* Header */}
-        <div style={styles.header}>
+        <div style={{
+          ...styles.header,
+          background: 'rgba(255,255,255,0.1)',
+          backdropFilter: 'blur(20px)',
+          borderBottom: '1px solid rgba(255,255,255,0.2)'
+        }}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
-              <div style={styles.logo}>🏢 Stratavax</div>
+              <div style={styles.logo}>
+                <span style={styles.logoText}>🏢 Stratavax</span>
+              </div>
               <div style={styles.headerTitle}>Assessment Center</div>
             </div>
             
             <div style={styles.headerRight}>
               {session && (
                 <div style={styles.userInfo}>
+                  <div style={styles.userAvatar}>
+                    {session.user.email?.charAt(0).toUpperCase()}
+                  </div>
                   <span style={styles.userEmail}>{session.user.email}</span>
                   <button
                     onClick={() => supabase.auth.signOut().then(() => router.push("/login"))}
                     style={styles.logoutButton}
-                    onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
-                    onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.25)';
+                      e.currentTarget.style.transform = 'scale(1.05)';
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.15)';
+                      e.currentTarget.style.transform = 'scale(1)';
+                    }}
                   >
                     Logout
                   </button>
@@ -270,29 +360,37 @@ export default function PreAssessment() {
           <div style={styles.statsBanner}>
             <div style={styles.statsGrid}>
               <div style={styles.statItem}>
-                <span style={styles.statIcon}>✅</span>
-                <div>
+                <div style={styles.statIconContainer}>
+                  <span style={styles.statIcon}>✅</span>
+                </div>
+                <div style={styles.statContent}>
                   <div style={styles.statValue}>{userStats.totalCompleted}</div>
                   <div style={styles.statLabel}>Completed</div>
                 </div>
               </div>
               <div style={styles.statItem}>
-                <span style={styles.statIcon}>📊</span>
-                <div>
+                <div style={styles.statIconContainer}>
+                  <span style={styles.statIcon}>📊</span>
+                </div>
+                <div style={styles.statContent}>
                   <div style={styles.statValue}>{userStats.averageScore}%</div>
                   <div style={styles.statLabel}>Avg. Score</div>
                 </div>
               </div>
               <div style={styles.statItem}>
-                <span style={styles.statIcon}>⏳</span>
-                <div>
+                <div style={styles.statIconContainer}>
+                  <span style={styles.statIcon}>⏳</span>
+                </div>
+                <div style={styles.statContent}>
                   <div style={styles.statValue}>{userStats.inProgress.length}</div>
                   <div style={styles.statLabel}>In Progress</div>
                 </div>
               </div>
               <div style={styles.statItem}>
-                <span style={styles.statIcon}>📋</span>
-                <div>
+                <div style={styles.statIconContainer}>
+                  <span style={styles.statIcon}>📋</span>
+                </div>
+                <div style={styles.statContent}>
                   <div style={styles.statValue}>{assessments.length}</div>
                   <div style={styles.statLabel}>Available</div>
                 </div>
@@ -330,42 +428,68 @@ export default function PreAssessment() {
               
               <button
                 onClick={() => setSelectedCategory("all")}
+                onMouseEnter={() => setHoveredCategory("all")}
+                onMouseLeave={() => setHoveredCategory(null)}
                 style={{
                   ...styles.categoryButton,
-                  background: selectedCategory === "all" 
-                    ? 'linear-gradient(135deg, #667eea, #764ba2)'
+                  background: selectedCategory === "all" || hoveredCategory === "all"
+                    ? CATEGORY_CONFIG['General'].gradient
                     : 'white',
-                  color: selectedCategory === "all" ? 'white' : '#1e293b',
-                  borderColor: selectedCategory === "all" ? '#667eea' : '#e2e8f0'
+                  color: selectedCategory === "all" || hoveredCategory === "all" ? 'white' : '#1e293b',
+                  borderColor: selectedCategory === "all" || hoveredCategory === "all" ? 'transparent' : '#e2e8f0',
+                  transform: hoveredCategory === "all" ? 'translateX(5px)' : 'translateX(0)'
                 }}
               >
                 <span style={styles.categoryIcon}>📋</span>
                 All Assessments
-                <span style={styles.categoryCount}>{assessments.length}</span>
+                <span style={{
+                  ...styles.categoryCount,
+                  background: selectedCategory === "all" || hoveredCategory === "all"
+                    ? 'rgba(255,255,255,0.25)'
+                    : 'rgba(0,0,0,0.05)',
+                  color: selectedCategory === "all" || hoveredCategory === "all" ? 'white' : '#64748b'
+                }}>
+                  {assessments.length}
+                </span>
               </button>
 
-              {categories.map((category) => (
-                <button
-                  key={category.id}
-                  onClick={() => setSelectedCategory(category.id)}
-                  style={{
-                    ...styles.categoryButton,
-                    background: selectedCategory === category.id 
-                      ? 'linear-gradient(135deg, #667eea, #764ba2)'
-                      : 'white',
-                    color: selectedCategory === category.id ? 'white' : '#1e293b',
-                    borderColor: selectedCategory === category.id ? '#667eea' : '#e2e8f0'
-                  }}
-                >
-                  <span style={styles.categoryIcon}>
-                    {category.icon || getCategoryIcon(category.name)}
-                  </span>
-                  {category.name}
-                  <span style={styles.categoryCount}>
-                    {assessments.filter(a => a.category_id === category.id).length}
-                  </span>
-                </button>
-              ))}
+              {categories.map((category) => {
+                const config = getCategoryConfig(category.name);
+                const isSelected = selectedCategory === category.id;
+                const isHovered = hoveredCategory === category.id;
+                
+                return (
+                  <button
+                    key={category.id}
+                    onClick={() => setSelectedCategory(category.id)}
+                    onMouseEnter={() => setHoveredCategory(category.id)}
+                    onMouseLeave={() => setHoveredCategory(null)}
+                    style={{
+                      ...styles.categoryButton,
+                      background: isSelected || isHovered
+                        ? config.gradient
+                        : 'white',
+                      color: isSelected || isHovered ? 'white' : '#1e293b',
+                      borderColor: isSelected || isHovered ? 'transparent' : '#e2e8f0',
+                      transform: isHovered ? 'translateX(5px)' : 'translateX(0)'
+                    }}
+                  >
+                    <span style={styles.categoryIcon}>
+                      {category.icon || config.icon}
+                    </span>
+                    {category.name}
+                    <span style={{
+                      ...styles.categoryCount,
+                      background: isSelected || isHovered
+                        ? 'rgba(255,255,255,0.25)'
+                        : 'rgba(0,0,0,0.05)',
+                      color: isSelected || isHovered ? 'white' : '#64748b'
+                    }}>
+                      {assessments.filter(a => a.category_id === category.id).length}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Quick Tips */}
@@ -375,12 +499,30 @@ export default function PreAssessment() {
                 <span style={styles.tipsTitle}>Quick Tips</span>
               </div>
               <ul style={styles.tipsList}>
-                <li style={styles.tipItem}>✓ Each assessment has 100 questions</li>
-                <li style={styles.tipItem}>⏱️ 180 minutes time limit</li>
-                <li style={styles.tipItem}>🔄 Answers auto-save</li>
-                <li style={styles.tipItem}>📱 Works on all devices</li>
-                <li style={styles.tipItem}>🛡️ Anti-cheat enabled</li>
-                <li style={styles.tipItem}>✅ One attempt only</li>
+                <li style={styles.tipItem}>
+                  <span style={styles.tipIcon}>✓</span>
+                  Each assessment has 100 questions
+                </li>
+                <li style={styles.tipItem}>
+                  <span style={styles.tipIcon}>⏱️</span>
+                  180 minutes time limit
+                </li>
+                <li style={styles.tipItem}>
+                  <span style={styles.tipIcon}>🔄</span>
+                  Answers auto-save
+                </li>
+                <li style={styles.tipItem}>
+                  <span style={styles.tipIcon}>📱</span>
+                  Works on all devices
+                </li>
+                <li style={styles.tipItem}>
+                  <span style={styles.tipIcon}>🛡️</span>
+                  Anti-cheat enabled
+                </li>
+                <li style={styles.tipItem}>
+                  <span style={styles.tipIcon}>✅</span>
+                  One attempt only
+                </li>
               </ul>
             </div>
           </div>
@@ -393,18 +535,28 @@ export default function PreAssessment() {
                   ? "All Assessments" 
                   : categories.find(c => c.id === selectedCategory)?.name || "Assessments"}
               </h2>
-              <span style={styles.assessmentsCount}>
-                {filteredAssessments.length} available
-              </span>
+              <div style={styles.assessmentsCountContainer}>
+                <span style={styles.assessmentsCount}>
+                  {filteredAssessments.length} available
+                </span>
+              </div>
             </div>
 
             {error && (
               <div style={styles.errorBanner}>
                 <span style={styles.errorIcon}>⚠️</span>
-                <span>{error}</span>
+                <span style={styles.errorMessage}>{error}</span>
                 <button 
                   onClick={fetchAssessments}
                   style={styles.retryButton}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.background = '#f1f5f9';
+                    e.currentTarget.style.transform = 'scale(1.05)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.background = 'white';
+                    e.currentTarget.style.transform = 'scale(1)';
+                  }}
                 >
                   Retry
                 </button>
@@ -427,6 +579,14 @@ export default function PreAssessment() {
                       setSelectedCategory("all");
                     }}
                     style={styles.clearFiltersButton}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 10px 20px rgba(102,126,234,0.4)';
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(102,126,234,0.3)';
+                    }}
                   >
                     Clear Filters
                   </button>
@@ -438,52 +598,57 @@ export default function PreAssessment() {
                   const completed = isAssessmentCompleted(assessment.id);
                   const inProgress = isAssessmentInProgress(assessment.id);
                   const progress = getAssessmentProgress(assessment.id);
+                  const isHovered = hoveredCard === assessment.id;
+                  const config = getCategoryConfig(assessment.assessment_categories?.name);
                   
                   return (
-                    <div key={assessment.id} style={styles.assessmentCard}>
+                    <div
+                      key={assessment.id}
+                      onMouseEnter={() => setHoveredCard(assessment.id)}
+                      onMouseLeave={() => setHoveredCard(null)}
+                      style={{
+                        ...styles.assessmentCard,
+                        transform: isHovered ? 'translateY(-8px)' : 'translateY(0)',
+                        boxShadow: isHovered 
+                          ? '0 30px 60px rgba(0,0,0,0.2)'
+                          : '0 10px 30px rgba(0,0,0,0.1)'
+                      }}
+                    >
                       {/* Card Background with Pattern */}
                       <div style={{
                         ...styles.cardBackground,
-                        backgroundImage: `url(${
-                          assessment.assessment_categories?.name === 'Cognitive' 
-                            ? 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb'
-                            : assessment.assessment_categories?.name === 'Leadership'
-                            ? 'https://images.unsplash.com/photo-1552664730-d307ca884978'
-                            : assessment.assessment_categories?.name === 'Manufacturing'
-                            ? 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa'
-                            : 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40'
-                        }?auto=format&fit=crop&w=1920&q=80)`,
+                        backgroundImage: `url(${config.bgImage})`,
+                        opacity: isHovered ? 0.15 : 0.1
                       }} />
-                      <div style={styles.cardOverlay} />
+                      <div style={{
+                        ...styles.cardOverlay,
+                        background: `linear-gradient(135deg, ${config.gradient.split(',')[0].replace('linear-gradient(135deg,', '')}, ${config.gradient.split(',')[1]})`,
+                        opacity: isHovered ? 0.05 : 0.02
+                      }} />
+                      <div style={{
+                        ...styles.cardPattern,
+                        backgroundImage: `url(${config.pattern})`,
+                        opacity: isHovered ? 0.05 : 0.03
+                      }} />
                       
                       {/* Card Content */}
                       <div style={styles.cardContent}>
                         <div style={styles.cardHeader}>
                           <div style={{
                             ...styles.cardIcon,
-                            background: `linear-gradient(135deg, ${
-                              assessment.assessment_categories?.name === 'Cognitive' ? '#4A6FA5'
-                              : assessment.assessment_categories?.name === 'Leadership' ? '#D32F2F'
-                              : assessment.assessment_categories?.name === 'Manufacturing' ? '#388E3C'
-                              : assessment.assessment_categories?.name === 'Behavioral' ? '#FF6B6B'
-                              : assessment.assessment_categories?.name === 'Cultural' ? '#9C89B8'
-                              : '#667eea'
-                            }, ${
-                              assessment.assessment_categories?.name === 'Cognitive' ? '#2C3E50'
-                              : assessment.assessment_categories?.name === 'Leadership' ? '#B71C1C'
-                              : assessment.assessment_categories?.name === 'Manufacturing' ? '#1B5E20'
-                              : assessment.assessment_categories?.name === 'Behavioral' ? '#C62828'
-                              : assessment.assessment_categories?.name === 'Cultural' ? '#6B4E71'
-                              : '#764ba2'
-                            })`
+                            background: config.gradient,
+                            transform: isHovered ? 'scale(1.1) rotate(5deg)' : 'scale(1) rotate(0)'
                           }}>
-                            {assessment.assessment_categories?.icon || 
-                             getCategoryIcon(assessment.assessment_categories?.name)}
+                            {config.icon}
                           </div>
                           <div style={styles.cardInfo}>
                             <h3 style={styles.cardTitle}>{assessment.name}</h3>
                             <div style={styles.cardMeta}>
-                              <span style={styles.cardCategory}>
+                              <span style={{
+                                ...styles.cardCategory,
+                                background: `${config.color}15`,
+                                color: config.color
+                              }}>
                                 {assessment.assessment_categories?.name || 'General'}
                               </span>
                               <span style={styles.cardDivider}>•</span>
@@ -538,10 +703,12 @@ export default function PreAssessment() {
                                 onMouseOver={(e) => {
                                   e.currentTarget.style.background = 'linear-gradient(135deg, #ff9800, #f57c00)';
                                   e.currentTarget.style.transform = 'translateY(-2px)';
+                                  e.currentTarget.style.boxShadow = '0 10px 20px rgba(255,152,0,0.4)';
                                 }}
                                 onMouseOut={(e) => {
                                   e.currentTarget.style.background = 'linear-gradient(135deg, #fb8c00, #f57c00)';
                                   e.currentTarget.style.transform = 'translateY(0)';
+                                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(251,140,0,0.3)';
                                 }}
                               >
                                 Continue →
@@ -552,14 +719,14 @@ export default function PreAssessment() {
                               onClick={() => handleStartAssessment(assessment.id)}
                               style={styles.startButton}
                               onMouseOver={(e) => {
-                                e.currentTarget.style.background = 'linear-gradient(135deg, #667eea, #764ba2)';
+                                e.currentTarget.style.background = config.gradient;
                                 e.currentTarget.style.transform = 'translateY(-2px)';
-                                e.currentTarget.style.boxShadow = '0 10px 20px rgba(102,126,234,0.4)';
+                                e.currentTarget.style.boxShadow = `0 10px 20px ${config.color}60`;
                               }}
                               onMouseOut={(e) => {
-                                e.currentTarget.style.background = 'linear-gradient(135deg, #667eea, #764ba2)';
+                                e.currentTarget.style.background = config.gradient;
                                 e.currentTarget.style.transform = 'translateY(0)';
-                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(102,126,234,0.3)';
+                                e.currentTarget.style.boxShadow = `0 4px 12px ${config.color}40`;
                               }}
                             >
                               Start Assessment →
@@ -599,17 +766,20 @@ export default function PreAssessment() {
           from { opacity: 0; }
           to { opacity: 1; }
         }
+        @keyframes shimmer {
+          0% { background-position: -1000px 0; }
+          100% { background-position: 1000px 0; }
+        }
       `}</style>
     </div>
   );
 }
 
-// ===== STYLES WITH BACKGROUND IMAGES =====
+// ===== ENHANCED STYLES WITH BACKGROUND IMAGES AND BETTER READABILITY =====
 const styles = {
   container: {
     minHeight: '100vh',
     position: 'relative',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     overflow: 'hidden',
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
   },
@@ -619,11 +789,10 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundImage: 'url(https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1920&q=80)',
     backgroundSize: 'cover',
     backgroundPosition: 'center',
-    opacity: 0.1,
-    filter: 'blur(8px)'
+    transition: 'opacity 0.5s ease',
+    animation: 'fadeIn 1s ease'
   },
   backgroundOverlay: {
     position: 'absolute',
@@ -631,7 +800,7 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    background: 'radial-gradient(circle at center, transparent 0%, rgba(0,0,0,0.3) 100%)',
+    transition: 'background 0.5s ease',
     pointerEvents: 'none'
   },
   backgroundPattern: {
@@ -640,9 +809,10 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundImage: 'url(https://www.transparenttextures.com/patterns/cubes.png)',
+    backgroundRepeat: 'repeat',
     opacity: 0.05,
-    pointerEvents: 'none'
+    pointerEvents: 'none',
+    animation: 'fadeIn 1.5s ease'
   },
   content: {
     position: 'relative',
@@ -659,7 +829,7 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: 'linear-gradient(135deg, #1a2639 0%, #2d3748 100%)',
+    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
     overflow: 'hidden'
   },
   loadingOverlay: {
@@ -672,29 +842,45 @@ const styles = {
     backgroundSize: 'cover',
     backgroundPosition: 'center',
     opacity: 0.1,
-    filter: 'blur(10px)'
+    filter: 'blur(10px)',
+    transform: 'scale(1.1)'
   },
   loadingContent: {
     position: 'relative',
     textAlign: 'center',
     color: 'white',
     zIndex: 1,
+    maxWidth: '500px',
+    padding: '40px',
+    background: 'rgba(255,255,255,0.05)',
+    backdropFilter: 'blur(20px)',
+    borderRadius: '48px',
+    border: '1px solid rgba(255,255,255,0.1)',
+    boxShadow: '0 30px 60px rgba(0,0,0,0.5)',
     animation: 'slideIn 0.5s ease'
   },
   loadingLogo: {
-    fontSize: '36px',
+    fontSize: '42px',
     fontWeight: '800',
-    marginBottom: '30px',
+    marginBottom: '40px',
     letterSpacing: '2px'
   },
+  loadingLogoGradient: {
+    background: 'linear-gradient(135deg, #fff, #e2e8f0)',
+    WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent'
+  },
+  loadingSpinnerContainer: {
+    marginBottom: '40px'
+  },
   loadingSpinner: {
-    width: '70px',
-    height: '70px',
+    width: '80px',
+    height: '80px',
+    margin: '0 auto',
     border: '5px solid rgba(255,255,255,0.2)',
     borderTop: '5px solid white',
     borderRadius: '50%',
-    animation: 'spin 1s linear infinite',
-    margin: '0 auto 30px'
+    animation: 'spin 1s linear infinite'
   },
   loadingTitle: {
     fontSize: '28px',
@@ -703,17 +889,29 @@ const styles = {
   },
   loadingSubtitle: {
     fontSize: '16px',
-    opacity: 0.9
+    opacity: 0.9,
+    marginBottom: '30px'
+  },
+  loadingProgress: {
+    width: '100%',
+    height: '4px',
+    background: 'rgba(255,255,255,0.1)',
+    borderRadius: '2px',
+    overflow: 'hidden'
+  },
+  loadingProgressBar: {
+    height: '100%',
+    width: '60%',
+    background: 'linear-gradient(90deg, #667eea, #764ba2)',
+    animation: 'shimmer 2s infinite linear'
   },
 
   // Header
   header: {
-    background: 'rgba(255,255,255,0.1)',
-    backdropFilter: 'blur(10px)',
-    borderBottom: '1px solid rgba(255,255,255,0.1)',
     position: 'sticky',
     top: 0,
-    zIndex: 100
+    zIndex: 100,
+    animation: 'slideIn 0.5s ease'
   },
   headerContent: {
     maxWidth: '1400px',
@@ -721,7 +919,9 @@ const styles = {
     padding: '16px 24px',
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center'
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '15px'
   },
   headerLeft: {
     display: 'flex',
@@ -733,6 +933,11 @@ const styles = {
     fontWeight: '800',
     color: 'white',
     letterSpacing: '1px'
+  },
+  logoText: {
+    background: 'linear-gradient(135deg, #fff, #f1f5f9)',
+    WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent'
   },
   headerTitle: {
     fontSize: '20px',
@@ -749,31 +954,53 @@ const styles = {
   userInfo: {
     display: 'flex',
     alignItems: 'center',
-    gap: '16px'
+    gap: '16px',
+    background: 'rgba(255,255,255,0.1)',
+    padding: '6px 6px 6px 16px',
+    borderRadius: '40px',
+    border: '1px solid rgba(255,255,255,0.2)'
+  },
+  userAvatar: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #667eea, #764ba2)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: 'white',
+    fontSize: '16px',
+    fontWeight: '600'
   },
   userEmail: {
     color: 'white',
     fontSize: '14px',
-    opacity: 0.9
+    opacity: 0.9,
+    maxWidth: '200px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
   },
   logoutButton: {
     padding: '8px 16px',
-    background: 'rgba(255,255,255,0.1)',
+    background: 'rgba(255,255,255,0.15)',
     color: 'white',
-    border: '1px solid rgba(255,255,255,0.2)',
-    borderRadius: '20px',
+    border: '1px solid rgba(255,255,255,0.3)',
+    borderRadius: '30px',
     fontSize: '13px',
     fontWeight: '600',
     cursor: 'pointer',
-    transition: 'all 0.2s ease'
+    transition: 'all 0.2s ease',
+    backdropFilter: 'blur(5px)'
   },
 
   // Stats Banner
   statsBanner: {
-    background: 'rgba(255,255,255,0.95)',
-    backdropFilter: 'blur(10px)',
+    background: 'rgba(255,255,255,0.98)',
+    backdropFilter: 'blur(20px)',
     borderBottom: '1px solid rgba(0,0,0,0.05)',
-    padding: '20px 24px'
+    padding: '24px 24px',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
+    animation: 'slideIn 0.5s ease'
   },
   statsGrid: {
     maxWidth: '1400px',
@@ -785,17 +1012,36 @@ const styles = {
   statItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    padding: '12px',
+    gap: '16px',
+    padding: '16px',
     background: 'white',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+    borderRadius: '20px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+    border: '1px solid #f1f5f9',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      transform: 'translateY(-2px)',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.06)'
+    }
+  },
+  statIconContainer: {
+    width: '48px',
+    height: '48px',
+    borderRadius: '16px',
+    background: 'linear-gradient(135deg, #667eea, #764ba2)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   statIcon: {
-    fontSize: '28px'
+    fontSize: '24px',
+    color: 'white'
+  },
+  statContent: {
+    flex: 1
   },
   statValue: {
-    fontSize: '24px',
+    fontSize: '28px',
     fontWeight: '700',
     color: '#1e293b',
     lineHeight: 1.2
@@ -814,19 +1060,23 @@ const styles = {
     padding: '0 24px',
     display: 'flex',
     gap: '30px',
-    flex: 1
+    flex: 1,
+    flexWrap: 'wrap'
   },
 
   // Sidebar
   sidebar: {
-    flex: '0 0 280px',
-    background: 'rgba(255,255,255,0.95)',
-    backdropFilter: 'blur(10px)',
-    borderRadius: '24px',
-    padding: '24px',
-    boxShadow: '0 20px 40px rgba(0,0,0,0.1)',
+    flex: '0 0 300px',
+    background: 'rgba(255,255,255,0.98)',
+    backdropFilter: 'blur(20px)',
+    borderRadius: '32px',
+    padding: '28px',
+    boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+    border: '1px solid rgba(255,255,255,0.3)',
     height: 'fit-content',
-    border: '1px solid rgba(255,255,255,0.2)'
+    animation: 'slideIn 0.5s ease',
+    position: 'sticky',
+    top: '100px'
   },
   sidebarHeader: {
     display: 'flex',
@@ -837,10 +1087,10 @@ const styles = {
     marginBottom: '20px'
   },
   sidebarIcon: {
-    fontSize: '20px'
+    fontSize: '24px'
   },
   sidebarTitle: {
-    fontSize: '18px',
+    fontSize: '20px',
     fontWeight: '700',
     color: '#1e293b',
     margin: 0
@@ -850,15 +1100,16 @@ const styles = {
   },
   searchInput: {
     width: '100%',
-    padding: '14px 16px',
+    padding: '16px 20px',
     border: '2px solid #e2e8f0',
-    borderRadius: '12px',
-    fontSize: '14px',
+    borderRadius: '16px',
+    fontSize: '15px',
     transition: 'all 0.2s ease',
     outline: 'none',
+    background: 'white',
     ':focus': {
       borderColor: '#667eea',
-      boxShadow: '0 0 0 3px rgba(102,126,234,0.1)'
+      boxShadow: '0 0 0 4px rgba(102,126,234,0.1)'
     }
   },
   categoriesContainer: {
@@ -874,7 +1125,7 @@ const styles = {
     fontWeight: '600'
   },
   categoriesIcon: {
-    fontSize: '16px'
+    fontSize: '18px'
   },
   categoriesTitle: {
     textTransform: 'uppercase',
@@ -882,11 +1133,10 @@ const styles = {
   },
   categoryButton: {
     width: '100%',
-    padding: '12px 16px',
+    padding: '14px 18px',
     marginBottom: '8px',
     border: '2px solid',
-    borderRadius: '12px',
-    background: 'white',
+    borderRadius: '16px',
     fontSize: '14px',
     fontWeight: '500',
     cursor: 'pointer',
@@ -894,22 +1144,22 @@ const styles = {
     alignItems: 'center',
     gap: '12px',
     transition: 'all 0.2s ease',
-    position: 'relative'
+    position: 'relative',
+    textAlign: 'left'
   },
   categoryIcon: {
-    fontSize: '18px'
+    fontSize: '20px'
   },
   categoryCount: {
     marginLeft: 'auto',
-    background: 'rgba(0,0,0,0.05)',
-    padding: '2px 8px',
-    borderRadius: '12px',
+    padding: '4px 10px',
+    borderRadius: '20px',
     fontSize: '12px',
     fontWeight: '600'
   },
   tipsContainer: {
     background: 'linear-gradient(135deg, #f8fafc, #f1f5f9)',
-    borderRadius: '16px',
+    borderRadius: '20px',
     padding: '20px',
     border: '1px solid #e2e8f0'
   },
@@ -923,7 +1173,7 @@ const styles = {
     fontWeight: '600'
   },
   tipsIcon: {
-    fontSize: '18px'
+    fontSize: '20px'
   },
   tipsTitle: {
     textTransform: 'uppercase',
@@ -935,16 +1185,20 @@ const styles = {
     listStyle: 'none'
   },
   tipItem: {
-    padding: '8px 0',
+    padding: '10px 0',
     color: '#475569',
-    fontSize: '13px',
+    fontSize: '14px',
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
+    gap: '10px',
     borderBottom: '1px solid #e2e8f0',
     ':last-child': {
       borderBottom: 'none'
     }
+  },
+  tipIcon: {
+    fontSize: '16px',
+    minWidth: '24px'
   },
 
   // Assessments Container
@@ -956,45 +1210,55 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '20px'
+    marginBottom: '25px',
+    animation: 'slideIn 0.5s ease'
   },
   assessmentsTitle: {
-    fontSize: '24px',
+    fontSize: '28px',
     fontWeight: '700',
     color: 'white',
     margin: 0,
-    textShadow: '0 2px 4px rgba(0,0,0,0.1)'
+    textShadow: '0 2px 4px rgba(0,0,0,0.2)'
+  },
+  assessmentsCountContainer: {
+    background: 'rgba(255,255,255,0.2)',
+    backdropFilter: 'blur(10px)',
+    padding: '8px 16px',
+    borderRadius: '40px',
+    border: '1px solid rgba(255,255,255,0.3)'
   },
   assessmentsCount: {
-    padding: '6px 14px',
-    background: 'rgba(255,255,255,0.2)',
-    borderRadius: '30px',
     color: 'white',
     fontSize: '14px',
-    fontWeight: '600',
-    backdropFilter: 'blur(5px)'
+    fontWeight: '600'
   },
   errorBanner: {
-    background: 'rgba(239,68,68,0.1)',
+    background: 'rgba(255,255,255,0.98)',
     backdropFilter: 'blur(10px)',
-    border: '1px solid rgba(239,68,68,0.2)',
-    borderRadius: '12px',
-    padding: '16px 20px',
+    borderRadius: '16px',
+    padding: '20px 24px',
     marginBottom: '20px',
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
-    color: '#ef4444'
+    border: '1px solid rgba(239,68,68,0.3)',
+    boxShadow: '0 10px 25px rgba(239,68,68,0.1)',
+    animation: 'slideIn 0.3s ease'
   },
   errorIcon: {
-    fontSize: '20px'
+    fontSize: '24px'
+  },
+  errorMessage: {
+    color: '#ef4444',
+    fontSize: '14px',
+    fontWeight: '500',
+    flex: 1
   },
   retryButton: {
-    marginLeft: 'auto',
-    padding: '8px 16px',
+    padding: '8px 20px',
     background: 'white',
-    border: 'none',
-    borderRadius: '20px',
+    border: '1px solid #ef4444',
+    borderRadius: '30px',
     color: '#ef4444',
     fontSize: '13px',
     fontWeight: '600',
@@ -1002,55 +1266,59 @@ const styles = {
     transition: 'all 0.2s ease'
   },
   emptyState: {
-    background: 'rgba(255,255,255,0.95)',
-    borderRadius: '24px',
-    padding: '60px 40px',
+    background: 'rgba(255,255,255,0.98)',
+    borderRadius: '32px',
+    padding: '80px 40px',
     textAlign: 'center',
-    boxShadow: '0 20px 40px rgba(0,0,0,0.1)'
+    boxShadow: '0 20px 40px rgba(0,0,0,0.1)',
+    border: '1px solid rgba(255,255,255,0.3)',
+    animation: 'slideIn 0.5s ease'
   },
   emptyStateIcon: {
-    fontSize: '64px',
-    marginBottom: '20px',
-    opacity: 0.5
+    fontSize: '80px',
+    marginBottom: '25px',
+    opacity: 0.7
   },
   emptyStateTitle: {
-    fontSize: '20px',
+    fontSize: '24px',
     fontWeight: '700',
     color: '#1e293b',
-    marginBottom: '10px'
+    marginBottom: '12px'
   },
   emptyStateText: {
     color: '#64748b',
-    marginBottom: '25px'
+    marginBottom: '30px',
+    fontSize: '16px'
   },
   clearFiltersButton: {
-    padding: '12px 24px',
+    padding: '14px 32px',
     background: 'linear-gradient(135deg, #667eea, #764ba2)',
     color: 'white',
     border: 'none',
-    borderRadius: '30px',
-    fontSize: '14px',
+    borderRadius: '40px',
+    fontSize: '15px',
     fontWeight: '600',
     cursor: 'pointer',
-    transition: 'all 0.2s ease'
+    transition: 'all 0.2s ease',
+    boxShadow: '0 4px 12px rgba(102,126,234,0.3)'
   },
   assessmentGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
-    gap: '20px'
+    gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))',
+    gap: '25px',
+    animation: 'slideIn 0.5s ease'
   },
   assessmentCard: {
     position: 'relative',
     background: 'white',
-    borderRadius: '20px',
+    borderRadius: '28px',
     overflow: 'hidden',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.1)',
     transition: 'all 0.3s ease',
     animation: 'slideIn 0.5s ease',
-    ':hover': {
-      transform: 'translateY(-5px)',
-      boxShadow: '0 20px 40px rgba(0,0,0,0.15)'
-    }
+    cursor: 'pointer',
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column'
   },
   cardBackground: {
     position: 'absolute',
@@ -1060,7 +1328,6 @@ const styles = {
     bottom: 0,
     backgroundSize: 'cover',
     backgroundPosition: 'center',
-    opacity: 0.1,
     transition: 'opacity 0.3s ease'
   },
   cardOverlay: {
@@ -1069,15 +1336,25 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    background: 'linear-gradient(135deg, rgba(255,255,255,0.95), rgba(255,255,255,0.98))',
-    backdropFilter: 'blur(5px)'
+    transition: 'opacity 0.3s ease'
+  },
+  cardPattern: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundRepeat: 'repeat',
+    opacity: 0.03,
+    pointerEvents: 'none'
   },
   cardContent: {
     position: 'relative',
-    padding: '24px',
+    padding: '28px',
     display: 'flex',
     flexDirection: 'column',
-    height: '100%'
+    height: '100%',
+    zIndex: 2
   },
   cardHeader: {
     display: 'flex',
@@ -1085,26 +1362,26 @@ const styles = {
     marginBottom: '16px'
   },
   cardIcon: {
-    width: '56px',
-    height: '56px',
-    borderRadius: '16px',
+    width: '64px',
+    height: '64px',
+    borderRadius: '20px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '28px',
+    fontSize: '32px',
     color: 'white',
     flexShrink: 0,
-    boxShadow: '0 8px 16px rgba(0,0,0,0.1)'
+    transition: 'all 0.3s ease'
   },
   cardInfo: {
     flex: 1,
     minWidth: 0
   },
   cardTitle: {
-    fontSize: '18px',
+    fontSize: '20px',
     fontWeight: '700',
     color: '#1e293b',
-    marginBottom: '6px',
+    marginBottom: '8px',
     lineHeight: 1.3
   },
   cardMeta: {
@@ -1112,22 +1389,20 @@ const styles = {
     alignItems: 'center',
     gap: '8px',
     fontSize: '13px',
-    color: '#64748b',
     flexWrap: 'wrap'
   },
   cardCategory: {
-    padding: '4px 10px',
-    background: '#f1f5f9',
-    borderRadius: '20px',
+    padding: '4px 12px',
+    borderRadius: '30px',
     fontSize: '11px',
-    fontWeight: '600',
-    color: '#475569'
+    fontWeight: '600'
   },
   cardDivider: {
-    opacity: 0.5
+    color: '#cbd5e1'
   },
   cardQuestions: {
-    fontWeight: '500'
+    fontWeight: '500',
+    color: '#64748b'
   },
   cardDescription: {
     fontSize: '14px',
@@ -1137,7 +1412,8 @@ const styles = {
     display: '-webkit-box',
     WebkitLineClamp: 2,
     WebkitBoxOrient: 'vertical',
-    overflow: 'hidden'
+    overflow: 'hidden',
+    flex: 1
   },
   cardFooter: {
     marginTop: 'auto',
@@ -1150,7 +1426,8 @@ const styles = {
     gap: '12px',
     padding: '12px',
     background: '#f8fafc',
-    borderRadius: '12px'
+    borderRadius: '16px',
+    flexWrap: 'wrap'
   },
   cardStat: {
     display: 'flex',
@@ -1170,15 +1447,16 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     gap: '8px',
-    padding: '12px',
+    padding: '14px',
     background: 'linear-gradient(135deg, #4caf50, #2e7d32)',
     color: 'white',
-    borderRadius: '12px',
-    fontSize: '14px',
-    fontWeight: '600'
+    borderRadius: '16px',
+    fontSize: '15px',
+    fontWeight: '600',
+    transition: 'all 0.2s ease'
   },
   completedIcon: {
-    fontSize: '16px'
+    fontSize: '18px'
   },
   progressContainer: {
     display: 'flex',
@@ -1189,45 +1467,45 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
-    padding: '8px 12px',
+    padding: '10px 14px',
     background: '#fff8e1',
-    borderRadius: '8px',
+    borderRadius: '12px',
     color: '#f57c00',
     fontSize: '13px',
     fontWeight: '500'
   },
   progressIcon: {
-    fontSize: '14px'
+    fontSize: '16px'
   },
   progressText: {
     fontWeight: '600'
   },
   progressTime: {
     marginLeft: 'auto',
-    fontFamily: 'monospace'
+    fontFamily: 'monospace',
+    background: 'rgba(255,255,255,0.5)',
+    padding: '2px 8px',
+    borderRadius: '12px'
   },
   continueButton: {
-    padding: '12px',
+    padding: '14px',
     background: 'linear-gradient(135deg, #fb8c00, #f57c00)',
     color: 'white',
     border: 'none',
-    borderRadius: '12px',
-    fontSize: '14px',
+    borderRadius: '16px',
+    fontSize: '15px',
     fontWeight: '600',
     cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    boxShadow: '0 4px 12px rgba(251,140,0,0.3)'
+    transition: 'all 0.2s ease'
   },
   startButton: {
-    padding: '12px',
-    background: 'linear-gradient(135deg, #667eea, #764ba2)',
-    color: 'white',
+    padding: '14px',
     border: 'none',
-    borderRadius: '12px',
-    fontSize: '14px',
+    borderRadius: '16px',
+    color: 'white',
+    fontSize: '15px',
     fontWeight: '600',
     cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    boxShadow: '0 4px 12px rgba(102,126,234,0.3)'
+    transition: 'all 0.2s ease'
   }
 };
