@@ -1,6 +1,8 @@
+// pages/assessment/[id].js - COMPLETE CORRECTED FILE
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
+import DebugPanel from "../../components/DebugPanel";
 
 // ===== SECTION CONFIGURATIONS WITH BACKGROUND IMAGES =====
 const SECTION_CONFIG = {
@@ -414,6 +416,8 @@ async function markTimerAsCompleted(userId, assessmentId) {
 
 // ===== ANTI-CHEAT FUNCTIONS =====
 function setupAntiCheatProtection() {
+  if (typeof window === 'undefined') return;
+  
   document.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('selectstart', (e) => e.preventDefault());
   
@@ -546,13 +550,18 @@ export default function AssessmentPage() {
   const [error, setError] = useState(null);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
   const [timerLoaded, setTimerLoaded] = useState(false);
-  const [timeLimitSeconds, setTimeLimitSeconds] = useState(10800); // 180 minutes fixed
+  const [timeLimitSeconds, setTimeLimitSeconds] = useState(10800);
   const [hoveredQuestion, setHoveredQuestion] = useState(null);
+  const [showDebug, setShowDebug] = useState(false);
+  const [expectedQuestionCount, setExpectedQuestionCount] = useState(null);
+  const [fetchAttempted, setFetchAttempted] = useState(false);
 
-  // ===== FETCH ASSESSMENT DETAILS - FORCED 180 MINS =====
+  // ===== FETCH ASSESSMENT DETAILS =====
   useEffect(() => {
     const fetchAssessmentDetails = async () => {
-      if (!assessmentId || !isSessionReady || alreadySubmitted) return;
+      if (!assessmentId || !isSessionReady || alreadySubmitted || !assessmentId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        return;
+      }
       
       try {
         const { data, error } = await supabase
@@ -565,8 +574,7 @@ export default function AssessmentPage() {
         
         if (data) {
           setAssessment(data);
-          // FORCE 180 MINUTES FOR ALL ASSESSMENT TYPES
-          setTimeLimitSeconds(10800); // 180 minutes = 10800 seconds
+          setTimeLimitSeconds(10800);
           document.title = `${data.name} - Stratavax Assessment`;
         }
       } catch (error) {
@@ -609,14 +617,31 @@ export default function AssessmentPage() {
     initSessionAndCheck();
   }, [assessmentId, router]);
 
-  // ===== FETCH QUESTIONS =====
+  // ===== FETCH QUESTIONS - FIXED VERSION =====
   useEffect(() => {
-    if (alreadySubmitted || !isSessionReady || !session?.user?.id || !assessmentId) return;
+    if (alreadySubmitted || !isSessionReady || !session?.user?.id || !assessmentId || fetchAttempted) {
+      return;
+    }
 
     const fetchAssessmentData = async () => {
       try {
         setLoading(true);
+        setFetchAttempted(true);
         
+        console.log(`🔍 Fetching questions for assessment: ${assessmentId}`);
+        
+        // First, check total question count
+        const { count, error: countError } = await supabase
+          .from("questions")
+          .select("*", { count: 'exact', head: true })
+          .eq("assessment_id", assessmentId);
+        
+        if (countError) throw countError;
+        
+        setExpectedQuestionCount(count);
+        console.log(`📊 Expected ${count} questions for assessment ${assessmentId}`);
+        
+        // Fetch questions with proper ordering - THIS IS THE CRITICAL PART
         const { data: questionsData, error: questionsError } = await supabase
           .from("questions")
           .select(`
@@ -624,44 +649,93 @@ export default function AssessmentPage() {
             question_text,
             section,
             subsection,
-            answers!inner (id, answer_text, score)
+            question_order,
+            answers!inner (
+              id, 
+              answer_text, 
+              score
+            )
           `)
           .eq("assessment_id", assessmentId)
-          .order("id");
+          .order("question_order", { ascending: true })
+          .order("id", { ascending: true });
 
-        if (questionsError) throw new Error(`Failed to load questions: ${questionsError.message}`);
-        if (!questionsData || questionsData.length === 0) throw new Error("Assessment questions not found.");
+        if (questionsError) {
+          console.error("Questions fetch error:", questionsError);
+          throw new Error(`Failed to load questions: ${questionsError.message}`);
+        }
+        
+        console.log(`✅ Raw questions data:`, questionsData);
+        
+        // Verify we got all questions
+        if (!questionsData || questionsData.length === 0) {
+          throw new Error("No questions found for this assessment.");
+        }
+        
+        console.log(`📋 Received ${questionsData.length} questions`);
+        
+        if (count && questionsData.length !== count) {
+          console.warn(`⚠️ Expected ${count} questions but got ${questionsData.length}. Check question_order column.`);
+        }
 
+        // Load saved answers
         const savedAnswers = await loadUserResponses(session.user.id, assessmentId);
+        console.log(`💾 Loaded ${Object.keys(savedAnswers).length} saved answers`);
 
-        const processedQuestions = questionsData.map(q => {
+        // Process questions with proper randomization
+        const manufacturingSections = [
+          'Bottled Water Manufacturing',
+          'Blowing Machines',
+          'Labeler',
+          'Filling',
+          'Conveyors',
+          'Stretchwrappers',
+          'Shrinkwrappers',
+          'Date Coders',
+          'Raw Materials'
+        ];
+
+        const processedQuestions = questionsData.map((q, index) => {
+          // Ensure answers array exists and has items
+          const options = q.answers && Array.isArray(q.answers) 
+            ? q.answers.map(a => ({ 
+                ...a, 
+                id: parseInt(a.id),
+                answer_text: a.answer_text || 'Option text missing'
+              }))
+            : [];
+          
           const baseQuestion = {
             ...q,
             id: parseInt(q.id),
-            options: q.answers.map(a => ({ ...a, id: parseInt(a.id) }))
+            question_number: index + 1,
+            options: options
           };
           
           // Randomize answers for manufacturing sections
-          if (q.section === 'Bottled Water Manufacturing' || 
-              q.section === 'Blowing Machines' ||
-              q.section === 'Labeler' ||
-              q.section === 'Filling' ||
-              q.section === 'Conveyors' ||
-              q.section === 'Stretchwrappers' ||
-              q.section === 'Shrinkwrappers' ||
-              q.section === 'Date Coders' ||
-              q.section === 'Raw Materials') {
-            return { ...baseQuestion, options: trulyRandomizeAnswers(baseQuestion.options) };
+          if (manufacturingSections.includes(q.section)) {
+            return { 
+              ...baseQuestion, 
+              options: trulyRandomizeAnswers([...baseQuestion.options]) 
+            };
           }
           
           return baseQuestion;
         });
 
+        console.log(`🎯 Processed ${processedQuestions.length} questions successfully`);
         setQuestions(processedQuestions);
         setAnswers(savedAnswers);
         setError(null);
+        
+        // Set current index to first unanswered question if any
+        const firstUnanswered = processedQuestions.findIndex(q => !savedAnswers[q.id]);
+        if (firstUnanswered > 0) {
+          setCurrentIndex(firstUnanswered);
+        }
+        
       } catch (error) {
-        console.error("Assessment loading error:", error);
+        console.error("❌ Assessment loading error:", error);
         setError(error.message);
       } finally {
         setLoading(false);
@@ -669,11 +743,11 @@ export default function AssessmentPage() {
     };
 
     fetchAssessmentData();
-  }, [assessmentId, isSessionReady, session?.user?.id, alreadySubmitted]);
+  }, [assessmentId, isSessionReady, session?.user?.id, alreadySubmitted, fetchAttempted]);
 
   // ===== TIMER =====
   useEffect(() => {
-    if (alreadySubmitted || !session?.user?.id || !isSessionReady || !assessmentId || !assessment) return;
+    if (alreadySubmitted || !session?.user?.id || !isSessionReady || !assessmentId || !assessment || questions.length === 0) return;
 
     let timerInterval;
     let localElapsed = 0;
@@ -726,7 +800,7 @@ export default function AssessmentPage() {
       clearInterval(timerInterval);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [alreadySubmitted, session?.user?.id, isSessionReady, assessmentId, assessment, timeLimitSeconds]);
+  }, [alreadySubmitted, session?.user?.id, isSessionReady, assessmentId, assessment, questions.length, timeLimitSeconds]);
 
   // ===== ANTI-CHEAT =====
   useEffect(() => {
@@ -800,6 +874,14 @@ export default function AssessmentPage() {
     }
   };
 
+  // ===== RETRY FETCH =====
+  const handleRetry = () => {
+    setFetchAttempted(false);
+    setQuestions([]);
+    setError(null);
+    setLoading(true);
+  };
+
   // ===== LOADING STATE =====
   if (loading) {
     return (
@@ -809,7 +891,29 @@ export default function AssessmentPage() {
           <div style={styles.loadingLogo}>🏢 Stratavax</div>
           <div style={styles.loadingSpinner} />
           <div style={styles.loadingTitle}>{assessment?.name || 'Loading Assessment...'}</div>
-          <div style={styles.loadingSubtitle}>Preparing your questions. This will only take a moment.</div>
+          <div style={styles.loadingSubtitle}>
+            {expectedQuestionCount 
+              ? `Loading ${expectedQuestionCount} questions...` 
+              : 'Preparing your questions. This will only take a moment.'}
+          </div>
+          {fetchAttempted && questions.length === 0 && (
+            <button
+              onClick={handleRetry}
+              style={{
+                marginTop: '20px',
+                padding: '12px 24px',
+                background: 'rgba(255,255,255,0.2)',
+                color: 'white',
+                border: '2px solid white',
+                borderRadius: '30px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600'
+              }}
+            >
+              Retry Loading
+            </button>
+          )}
         </div>
       </div>
     );
@@ -847,17 +951,33 @@ export default function AssessmentPage() {
         <div style={styles.errorCard}>
           <div style={styles.errorIcon}>⚠️</div>
           <h2 style={styles.errorTitle}>
-            {error.includes("already submitted") ? "Already Submitted" : "Error"}
+            {error.includes("already submitted") ? "Already Submitted" : "Error Loading Assessment"}
           </h2>
           <p style={styles.errorText}>{error}</p>
-          <button
-            onClick={() => router.push('/assessment/pre')}
-            style={styles.primaryButton}
-            onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-            onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-          >
-            ← Return to Assessment Selection
-          </button>
+          <div style={{ display: 'flex', gap: '15px', justifyContent: 'center' }}>
+            <button
+              onClick={handleRetry}
+              style={{
+                ...styles.primaryButton,
+                background: 'linear-gradient(135deg, #ff9800, #f57c00)'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+            >
+              🔄 Try Again
+            </button>
+            <button
+              onClick={() => router.push('/assessment/pre')}
+              style={{
+                ...styles.primaryButton,
+                background: 'linear-gradient(135deg, #64748b, #475569)'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+            >
+              ← Go Back
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -873,20 +993,55 @@ export default function AssessmentPage() {
           <p style={styles.errorText}>
             This assessment doesn't have any questions yet. Please contact support.
           </p>
-          <button
-            onClick={() => router.push('/assessment/pre')}
-            style={styles.primaryButton}
-            onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-            onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-          >
-            ← Return to Assessment Selection
-          </button>
+          <div style={{ display: 'flex', gap: '15px', justifyContent: 'center' }}>
+            <button
+              onClick={handleRetry}
+              style={{
+                ...styles.primaryButton,
+                background: 'linear-gradient(135deg, #ff9800, #f57c00)'
+              }}
+            >
+              🔄 Retry
+            </button>
+            <button
+              onClick={() => router.push('/assessment/pre')}
+              style={{
+                ...styles.primaryButton,
+                background: 'linear-gradient(135deg, #64748b, #475569)'
+              }}
+            >
+              ← Back
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   const currentQuestion = questions[currentIndex];
+  
+  // Safety check - if currentQuestion is undefined for some reason
+  if (!currentQuestion) {
+    return (
+      <div style={styles.errorContainer}>
+        <div style={styles.errorOverlay} />
+        <div style={styles.errorCard}>
+          <div style={styles.errorIcon}>❓</div>
+          <h2 style={styles.errorTitle}>Question Not Found</h2>
+          <p style={styles.errorText}>
+            Unable to load question {currentIndex + 1}. Please try again.
+          </p>
+          <button
+            onClick={handleRetry}
+            style={styles.primaryButton}
+          >
+            Reload Assessment
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const currentSection = currentQuestion?.section || 'General';
   const sectionConfig = SECTION_CONFIG[currentSection] || {
     color: '#4A6FA5',
@@ -898,7 +1053,7 @@ export default function AssessmentPage() {
   };
 
   const totalAnswered = Object.keys(answers).length;
-  const progressPercentage = Math.round((totalAnswered / questions.length) * 100);
+  const progressPercentage = questions.length > 0 ? Math.round((totalAnswered / questions.length) * 100) : 0;
   const isLastQuestion = currentIndex === questions.length - 1;
 
   // Time calculations
@@ -914,6 +1069,41 @@ export default function AssessmentPage() {
 
   return (
     <>
+      {/* Debug Panel */}
+      {process.env.NODE_ENV === 'development' && (
+        <>
+          <button
+            onClick={() => setShowDebug(!showDebug)}
+            style={{
+              position: 'fixed',
+              bottom: '20px',
+              left: '20px',
+              padding: '12px 20px',
+              background: 'linear-gradient(135deg, #ff9800, #f57c00)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '30px',
+              cursor: 'pointer',
+              zIndex: 9998,
+              fontWeight: '600',
+              boxShadow: '0 4px 12px rgba(255,152,0,0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <span style={{ fontSize: '18px' }}>🔍</span> Debug Panel
+          </button>
+          
+          {showDebug && (
+            <DebugPanel 
+              assessmentId={assessmentId} 
+              onClose={() => setShowDebug(false)} 
+            />
+          )}
+        </>
+      )}
+
       {/* Submit Modal */}
       {showSubmitModal && (
         <div style={styles.modalOverlay}>
@@ -1033,19 +1223,19 @@ export default function AssessmentPage() {
                   <span style={styles.headerSection}>
                     {currentSection}
                   </span>
-                  {(currentSection === 'Blowing Machines' || 
-                    currentSection === 'Labeler' ||
-                    currentSection === 'Filling' ||
-                    currentSection === 'Conveyors' ||
-                    currentSection === 'Stretchwrappers' ||
-                    currentSection === 'Shrinkwrappers' ||
-                    currentSection === 'Date Coders' ||
-                    currentSection === 'Raw Materials' ||
-                    currentSection === 'Bottled Water Manufacturing') && (
+                  {questions.length === 100 && (
                     <>
                       <span style={styles.headerDivider}>•</span>
-                      <span style={styles.headerRandomized}>
-                        Randomized
+                      <span style={{...styles.headerRandomized, background: 'rgba(76,175,80,0.2)', color: '#4caf50'}}>
+                        ✅ 100 Questions
+                      </span>
+                    </>
+                  )}
+                  {expectedQuestionCount && expectedQuestionCount !== questions.length && (
+                    <>
+                      <span style={styles.headerDivider}>•</span>
+                      <span style={{...styles.headerRandomized, background: 'rgba(255,152,0,0.2)', color: '#ff9800'}}>
+                        ⚠️ Expected {expectedQuestionCount}
                       </span>
                     </>
                   )}
@@ -1140,7 +1330,7 @@ export default function AssessmentPage() {
               {/* Question Text */}
               <div style={styles.questionText}>
                 <span style={{...styles.questionNumber, color: sectionConfig.color}}>
-                  Question {currentIndex + 1}
+                  Question {currentIndex + 1} of {questions.length}
                 </span>
                 <div style={styles.questionContent}>
                   {currentQuestion?.question_text}
@@ -1350,7 +1540,7 @@ export default function AssessmentPage() {
               </div>
             </div>
 
-            {/* Question Grid */}
+            {/* Question Grid - Shows all 100 questions */}
             <div style={styles.questionGrid}>
               {questions.map((q, index) => {
                 const isAnswered = answers[q.id];
@@ -1408,6 +1598,23 @@ export default function AssessmentPage() {
                 <span style={styles.legendIcon}>⏱️</span>
                 <span>180 min</span>
               </div>
+            </div>
+
+            {/* Question Count Badge */}
+            <div style={{
+              marginTop: '10px',
+              padding: '10px',
+              background: questions.length === 100 ? '#e8f5e9' : '#fff3e0',
+              borderRadius: '12px',
+              textAlign: 'center',
+              border: `2px solid ${questions.length === 100 ? '#4caf50' : '#ff9800'}`,
+              color: questions.length === 100 ? '#2e7d32' : '#f57c00',
+              fontWeight: '600',
+              fontSize: '14px'
+            }}>
+              {questions.length === 100 
+                ? '✅ All 100 questions loaded successfully' 
+                : `⚠️ Loaded ${questions.length} of 100 questions`}
             </div>
 
             {/* Back to Selection */}
@@ -2080,7 +2287,10 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: 'repeat(8, 1fr)',
     gap: '8px',
-    marginBottom: '25px'
+    marginBottom: '25px',
+    maxHeight: '300px',
+    overflowY: 'auto',
+    padding: '5px'
   },
   gridItem: {
     aspectRatio: '1',
