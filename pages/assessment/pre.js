@@ -1,680 +1,620 @@
-import { useState, useEffect } from "react";
+// pages/pre.js
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
+import { supabase } from "../supabase/client";
 import Link from "next/link";
-import AppLayout from "../../components/AppLayout";
-import { useRequireAuth } from "../../utils/requireAuth";
-import { supabase } from "../../supabase/client";
 
-export default function PreAssessmentPage() {
+export default function PreAssessment() {
   const router = useRouter();
-  const { session, loading: authLoading } = useRequireAuth();
-  const [assessments, setAssessments] = useState({});
+  const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [userName, setUserName] = useState("");
-  const [completedAssessments, setCompletedAssessments] = useState([]);
-  const [inProgressAssessments, setInProgressAssessments] = useState([]);
-  const [hoveredCard, setHoveredCard] = useState(null);
+  const [session, setSession] = useState(null);
+  const [error, setError] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [userStats, setUserStats] = useState(null);
 
-  // ===== BACKGROUND IMAGES FOR EACH ASSESSMENT TYPE =====
-  const assessmentBackgrounds = {
-    general: {
-      gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      image: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1920&q=80',
-      pattern: 'https://www.transparenttextures.com/patterns/cubes.png',
-      overlay: 'rgba(102, 126, 234, 0.85)'
-    },
-    behavioral: {
-      gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-      image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1920&q=80',
-      pattern: 'https://www.transparenttextures.com/patterns/always-grey.png',
-      overlay: 'rgba(240, 147, 251, 0.85)'
-    },
-    cognitive: {
-      gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-      image: 'https://images.unsplash.com/photo-1456406644174-8ddd4cd52a06?auto=format&fit=crop&w=1920&q=80',
-      pattern: 'https://www.transparenttextures.com/patterns/stardust.png',
-      overlay: 'rgba(79, 172, 254, 0.85)'
-    },
-    cultural: {
-      gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-      image: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=1920&q=80',
-      pattern: 'https://www.transparenttextures.com/patterns/clean-gray-paper.png',
-      overlay: 'rgba(67, 233, 123, 0.85)'
-    },
-    manufacturing: {
-      gradient: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
-      image: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
-      pattern: 'https://www.transparenttextures.com/patterns/industrial.png',
-      overlay: 'rgba(250, 112, 154, 0.85)'
-    },
-    leadership: {
-      gradient: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
-      image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1920&q=80',
-      pattern: 'https://www.transparenttextures.com/patterns/dark-mosaic.png',
-      overlay: 'rgba(255, 154, 158, 0.85)'
+  useEffect(() => {
+    checkUser();
+    fetchAssessments();
+    fetchUserStats();
+  }, []);
+
+  const checkUser = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push("/login");
+        return;
+      }
+      setSession(session);
+    } catch (error) {
+      console.error("Error checking session:", error);
+      router.push("/login");
     }
   };
 
-  // ===== ASSESSMENT TYPE CONFIGURATION =====
-  const assessmentTypes = [
-    { 
-      id: 'general', 
-      label: '📋 General Assessment', 
-      shortLabel: 'General',
-      description: 'Comprehensive 5-area evaluation of cognitive abilities, personality, leadership, technical competence, and performance',
-      longDescription: 'This assessment provides a holistic view of your capabilities across five critical dimensions. It measures your cognitive agility, personality traits, leadership potential, technical expertise, and performance orientation.',
-      icon: '📋',
-      iconBg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      color: '#667eea',
-      lightColor: 'rgba(102, 126, 234, 0.1)',
-      duration: 180,
-      questions: 100,
-      passing: 60,
-      features: ['Cognitive Abilities', 'Personality Traits', 'Leadership Potential', 'Technical Competence', 'Performance Metrics']
-    },
-    { 
-      id: 'behavioral', 
-      label: '🧠 Behavioral & Soft Skills', 
-      shortLabel: 'Behavioral',
-      description: 'Communication, teamwork, emotional intelligence, adaptability, initiative, time management, and resilience',
-      longDescription: 'Evaluate your interpersonal skills and workplace behaviors that predict long-term success. This assessment measures how you interact with others, handle challenges, and contribute to team dynamics.',
-      icon: '🧠',
-      iconBg: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-      color: '#f5576c',
-      lightColor: 'rgba(245, 87, 108, 0.1)',
-      duration: 180,
-      questions: 100,
-      passing: 70,
-      features: ['Adaptability', 'Emotional Intelligence', 'Communication', 'Teamwork', 'Initiative', 'Time Management', 'Resilience']
-    },
-    { 
-      id: 'cognitive', 
-      label: '💡 Cognitive & Thinking Skills', 
-      shortLabel: 'Cognitive',
-      description: 'Problem-solving, critical thinking, learning agility, creativity, and analytical reasoning',
-      longDescription: 'Assess your mental agility and reasoning capabilities. This assessment challenges your problem-solving approaches, critical analysis skills, ability to learn quickly, and creative thinking capacity.',
-      icon: '💡',
-      iconBg: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-      color: '#4facfe',
-      lightColor: 'rgba(79, 172, 254, 0.1)',
-      duration: 180,
-      questions: 100,
-      passing: 65,
-      features: ['Problem-Solving', 'Critical Thinking', 'Learning Agility', 'Creativity', 'Analytical Reasoning']
-    },
-    { 
-      id: 'cultural', 
-      label: '🤝 Cultural & Attitudinal Fit', 
-      shortLabel: 'Cultural',
-      description: 'Values alignment, organizational citizenship, reliability, customer focus, safety awareness, and commercial acumen',
-      longDescription: 'Determine your alignment with organizational values and work culture. This evaluation focuses on your ethical framework, reliability, customer orientation, safety consciousness, and business awareness.',
-      icon: '🤝',
-      iconBg: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-      color: '#43e97b',
-      lightColor: 'rgba(67, 233, 123, 0.1)',
-      duration: 180,
-      questions: 100,
-      passing: 75,
-      features: ['Values Alignment', 'Citizenship', 'Reliability', 'Customer Focus', 'Safety', 'Commercial Acumen']
-    },
-    { 
-      id: 'manufacturing', 
-      label: '⚙️ Manufacturing Technical Skills', 
-      shortLabel: 'Manufacturing',
-      description: 'Blowing machines, Labeler, Filling, Conveyors, Stretchwrappers, Shrinkwrappers, Date coders, and Raw materials',
-      longDescription: 'Demonstrate your technical expertise in manufacturing operations. This comprehensive assessment covers all critical equipment and processes including blow molding, labeling, filling, conveying, wrapping, coding, and material science.',
-      icon: '⚙️',
-      iconBg: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
-      color: '#fa709a',
-      lightColor: 'rgba(250, 112, 154, 0.1)',
-      duration: 180,
-      questions: 100,
-      passing: 75,
-      features: ['Blowing Machines', 'Labeler', 'Filling', 'Conveyors', 'Stretchwrappers', 'Shrinkwrappers', 'Date Coders', 'Raw Materials']
-    },
-    { 
-      id: 'leadership', 
-      label: '👑 Leadership Potential', 
-      shortLabel: 'Leadership',
-      description: 'Vision setting, team development, coaching, decision-making, influence, and strategic leadership',
-      longDescription: 'Uncover your leadership capabilities and potential for growth. This assessment measures your ability to set direction, develop others, make sound decisions, influence stakeholders, and think strategically.',
-      icon: '👑',
-      iconBg: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
-      color: '#ff9a9e',
-      lightColor: 'rgba(255, 154, 158, 0.1)',
-      duration: 180,
-      questions: 100,
-      passing: 75,
-      features: ['Vision', 'Team Development', 'Coaching', 'Decision-Making', 'Influence', 'Strategic Thinking']
-    }
-  ];
-
-  useEffect(() => {
-    if (session?.user) {
-      setUserName(session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Candidate');
-      fetchAssessments();
-      fetchUserProgress();
-    }
-  }, [session]);
-
   const fetchAssessments = async () => {
     try {
+      setLoading(true);
+      setError(null);
+
       const { data, error } = await supabase
         .from("assessments")
-        .select("*")
-        .eq("is_active", true);
+        .select(`
+          *,
+          assessment_categories (
+            id,
+            name,
+            description,
+            icon
+          )
+        `)
+        .eq("is_active", true)
+        .order("category_id")
+        .order("name");
 
       if (error) throw error;
-      
-      if (data) {
-        const assessmentMap = {};
-        data.forEach(assessment => {
-          assessmentMap[assessment.assessment_type] = assessment;
-        });
-        setAssessments(assessmentMap);
-      }
+
+      // Get question counts for each assessment
+      const assessmentsWithCounts = await Promise.all(
+        (data || []).map(async (assessment) => {
+          const { count, error: countError } = await supabase
+            .from("questions")
+            .select("*", { count: 'exact', head: true })
+            .eq("assessment_id", assessment.id);
+
+          if (countError) {
+            console.error(`Error counting questions for ${assessment.id}:`, countError);
+            return { ...assessment, question_count: 0 };
+          }
+
+          return { ...assessment, question_count: count || 0 };
+        })
+      );
+
+      setAssessments(assessmentsWithCounts);
     } catch (error) {
       console.error("Error fetching assessments:", error);
+      setError("Failed to load assessments. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchUserProgress = async () => {
+  const fetchUserStats = async () => {
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      // Get completed assessments
       const { data: completed, error: completedError } = await supabase
         .from("assessment_results")
-        .select("assessment_id, overall_score, completed_at, status")
+        .select("assessment_id, score, completed_at")
         .eq("user_id", session.user.id)
-        .eq("status", "completed");
+        .eq("status", "completed")
+        .order("completed_at", { ascending: false });
 
-      if (!completedError && completed) {
-        setCompletedAssessments(completed);
-      }
+      if (completedError) throw completedError;
 
-      const { data: inProgress, error: inProgressError } = await supabase
-        .from("assessment_results")
-        .select("assessment_id, time_spent, updated_at")
+      // Get in-progress assessments
+      const { data: inProgress, error: progressError } = await supabase
+        .from("assessment_timer_progress")
+        .select("assessment_id, elapsed_seconds, started_at")
         .eq("user_id", session.user.id)
         .eq("status", "in_progress");
 
-      if (!inProgressError && inProgress) {
-        setInProgressAssessments(inProgress);
-      }
+      if (progressError) throw progressError;
+
+      setUserStats({
+        completed: completed || [],
+        inProgress: inProgress || [],
+        totalCompleted: completed?.length || 0,
+        averageScore: completed?.length 
+          ? Math.round(completed.reduce((acc, curr) => acc + (curr.score || 0), 0) / completed.length)
+          : 0
+      });
     } catch (error) {
-      console.error("Error fetching user progress:", error);
+      console.error("Error fetching user stats:", error);
     }
   };
 
-  const getAssessmentById = (type) => {
-    return assessments[type];
+  const handleStartAssessment = async (assessmentId) => {
+    if (!session?.user?.id) {
+      router.push("/login");
+      return;
+    }
+
+    try {
+      // Check if already completed
+      const { data: existing, error: checkError } = await supabase
+        .from("assessment_results")
+        .select("id")
+        .eq("assessment_id", assessmentId)
+        .eq("user_id", session.user.id)
+        .eq("status", "completed")
+        .maybeSingle();
+
+      if (checkError) throw checkError;
+
+      if (existing) {
+        alert("You have already completed this assessment. Each assessment can only be taken once.");
+        return;
+      }
+
+      // Check if there's an in-progress assessment
+      const { data: inProgress, error: progressError } = await supabase
+        .from("assessment_timer_progress")
+        .select("*")
+        .eq("assessment_id", assessmentId)
+        .eq("user_id", session.user.id)
+        .eq("status", "in_progress")
+        .maybeSingle();
+
+      if (progressError) throw progressError;
+
+      if (inProgress) {
+        const confirmResume = confirm(
+          "You have an incomplete attempt for this assessment. Would you like to continue?"
+        );
+        if (confirmResume) {
+          router.push(`/assessment/${assessmentId}`);
+        }
+        return;
+      }
+
+      // Start new assessment
+      router.push(`/assessment/${assessmentId}`);
+    } catch (error) {
+      console.error("Error starting assessment:", error);
+      alert("Failed to start assessment. Please try again.");
+    }
   };
 
+  const getCategoryIcon = (categoryName) => {
+    const icons = {
+      'Cognitive': '🧠',
+      'Behavioral': '😊',
+      'Leadership': '👑',
+      'Manufacturing': '⚙️',
+      'Cultural': '🌍',
+      'Technical': '💻',
+      'General': '📝'
+    };
+    return icons[categoryName] || '📋';
+  };
+
+  const filteredAssessments = assessments.filter(assessment => {
+    const matchesCategory = selectedCategory === "all" || assessment.category_id === selectedCategory;
+    const matchesSearch = assessment.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (assessment.description || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (assessment.assessment_categories?.name || "").toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesCategory && matchesSearch;
+  });
+
+  const categories = [...new Map(
+    assessments
+      .filter(a => a.assessment_categories)
+      .map(a => [a.assessment_categories.id, a.assessment_categories])
+  ).values()];
+
   const isAssessmentCompleted = (assessmentId) => {
-    return completedAssessments.some(a => a.assessment_id === assessmentId);
+    return userStats?.completed?.some(c => c.assessment_id === assessmentId) || false;
   };
 
   const isAssessmentInProgress = (assessmentId) => {
-    return inProgressAssessments.some(a => a.assessment_id === assessmentId);
+    return userStats?.inProgress?.some(p => p.assessment_id === assessmentId) || false;
   };
 
-  const getAssessmentScore = (assessmentId) => {
-    const completed = completedAssessments.find(a => a.assessment_id === assessmentId);
-    return completed?.overall_score || null;
+  const getAssessmentProgress = (assessmentId) => {
+    const progress = userStats?.inProgress?.find(p => p.assessment_id === assessmentId);
+    return progress?.elapsed_seconds || 0;
   };
 
-  const getCompletedCount = () => {
-    return completedAssessments.length;
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const formatTime = (minutes) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-  };
-
-  if (authLoading || loading) {
+  if (loading) {
     return (
       <div style={styles.loadingContainer}>
+        <div style={styles.loadingOverlay} />
         <div style={styles.loadingContent}>
           <div style={styles.loadingLogo}>🏢 Stratavax</div>
           <div style={styles.loadingSpinner} />
-          <div style={styles.loadingText}>Preparing your assessments...</div>
+          <div style={styles.loadingTitle}>Loading Assessments</div>
+          <div style={styles.loadingSubtitle}>Please wait while we prepare your assessments...</div>
         </div>
       </div>
     );
   }
 
-  if (!session) return null;
-
-  const completedCount = getCompletedCount();
-  const totalAssessments = 6;
-  const progressPercentage = Math.round((completedCount / totalAssessments) * 100);
-
   return (
-    <AppLayout>
-      {/* Hero Section with Parallax Background */}
-      <div style={styles.heroWrapper}>
-        <div style={styles.heroBackground} />
-        <div style={styles.heroOverlay} />
-        <div style={styles.heroContent}>
-          <div style={styles.heroBadge}>Assessment Portal</div>
-          <h1 style={styles.heroTitle}>
-            Welcome back, <span style={styles.heroName}>{userName}</span>
-          </h1>
-          <p style={styles.heroSubtitle}>
-            Select an assessment to begin. Each assessment contains 100 questions and has a 180-minute time limit.
-            Your progress is automatically saved.
-          </p>
-          
-          {/* Progress Card */}
-          <div style={styles.progressCard}>
-            <div style={styles.progressInfo}>
-              <div style={styles.progressLabel}>Your Journey</div>
-              <div style={styles.progressStats}>
-                <span style={styles.progressCount}>{completedCount}</span>
-                <span style={styles.progressTotal}>/{totalAssessments}</span>
-                <span style={styles.progressText}>assessments completed</span>
-              </div>
+    <div style={styles.container}>
+      {/* Background Image */}
+      <div style={styles.backgroundImage} />
+      <div style={styles.backgroundOverlay} />
+      <div style={styles.backgroundPattern} />
+      
+      {/* Content */}
+      <div style={styles.content}>
+        {/* Header */}
+        <div style={styles.header}>
+          <div style={styles.headerContent}>
+            <div style={styles.headerLeft}>
+              <div style={styles.logo}>🏢 Stratavax</div>
+              <div style={styles.headerTitle}>Assessment Center</div>
             </div>
-            <div style={styles.progressCircleContainer}>
-              <svg width="100" height="100" viewBox="0 0 100 100">
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="45"
-                  fill="none"
-                  stroke="rgba(255,255,255,0.2)"
-                  strokeWidth="8"
-                />
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="45"
-                  fill="none"
-                  stroke="white"
-                  strokeWidth="8"
-                  strokeLinecap="round"
-                  strokeDasharray={`${progressPercentage * 2.83} 283`}
-                  strokeDashoffset="0"
-                  transform="rotate(-90 50 50)"
-                  style={styles.progressCircleFill}
-                />
-              </svg>
-              <div style={styles.progressPercentage}>
-                {progressPercentage}%
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        {/* Wave Divider */}
-        <div style={styles.waveDivider}>
-          <svg viewBox="0 0 1440 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M0 120L60 105C120 90 240 60 360 45C480 30 600 30 720 37.5C840 45 960 60 1080 67.5C1200 75 1320 75 1380 75L1440 75V120H1380C1320 120 1200 120 1080 120C960 120 840 120 720 120C600 120 480 120 360 120C240 120 120 120 60 120H0Z" fill="#f8fafc"/>
-          </svg>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div style={styles.mainContent}>
-        <div style={styles.container}>
-          
-          {/* Section Header */}
-          <div style={styles.sectionHeader}>
-            <div>
-              <h2 style={styles.sectionTitle}>Available Assessments</h2>
-              <p style={styles.sectionDescription}>
-                Choose from 6 comprehensive assessments designed to evaluate different aspects of your professional capabilities
-              </p>
-            </div>
-            <div style={styles.statsBadge}>
-              <span style={styles.statsIcon}>📊</span>
-              <span style={styles.statsText}>{completedCount}/{totalAssessments} Completed</span>
-            </div>
-          </div>
-
-          {/* Assessment Grid */}
-          <div style={styles.assessmentGrid}>
-            {assessmentTypes.map((type) => {
-              const assessment = getAssessmentById(type.id);
-              const hasAssessment = !!assessment;
-              const isCompleted = assessment ? isAssessmentCompleted(assessment.id) : false;
-              const isInProgress = assessment ? isAssessmentInProgress(assessment.id) : false;
-              const score = assessment ? getAssessmentScore(assessment.id) : null;
-              const passed = isCompleted && score >= type.passing;
-              const bgConfig = assessmentBackgrounds[type.id];
-              const isHovered = hoveredCard === type.id;
-
-              if (!hasAssessment) return null;
-
-              return (
-                <div
-                  key={type.id}
-                  style={{
-                    ...styles.assessmentCard,
-                    ...(isHovered && styles.assessmentCardHovered),
-                    background: isCompleted 
-                      ? 'linear-gradient(145deg, #ffffff, #f8fafc)'
-                      : 'white',
-                    borderColor: isCompleted 
-                      ? passed 
-                        ? '#4CAF50' 
-                        : '#FF9800'
-                      : isInProgress
-                        ? type.color
-                        : 'rgba(226, 232, 240, 0.5)',
-                    opacity: isCompleted ? 0.9 : 1
-                  }}
-                  onMouseEnter={() => setHoveredCard(type.id)}
-                  onMouseLeave={() => setHoveredCard(null)}
-                  onClick={() => {
-                    if (!isCompleted && assessment) {
-                      router.push(`/assessment/${assessment.id}`);
-                    }
-                  }}
-                >
-                  {/* Card Background Image with Overlay */}
-                  <div style={{
-                    ...styles.cardBackground,
-                    backgroundImage: `url(${bgConfig.image})`,
-                    opacity: isHovered ? 0.15 : 0.1,
-                  }} />
-                  
-                  {/* Pattern Overlay */}
-                  <div style={{
-                    ...styles.cardPattern,
-                    backgroundImage: `url(${bgConfig.pattern})`,
-                    opacity: isHovered ? 0.1 : 0.05,
-                  }} />
-
-                  {/* Status Badge */}
-                  <div style={{
-                    ...styles.statusBadge,
-                    background: isCompleted 
-                      ? passed 
-                        ? 'linear-gradient(135deg, #4CAF50, #2E7D32)'
-                        : 'linear-gradient(135deg, #FF9800, #F57C00)'
-                      : isInProgress
-                        ? type.iconBg
-                        : 'linear-gradient(135deg, #94a3b8, #64748b)',
-                  }}>
-                    {isCompleted 
-                      ? passed 
-                        ? '✓ Passed' 
-                        : '⚠️ Needs Review'
-                      : isInProgress
-                        ? '🕐 In Progress'
-                        : '📝 Ready to Start'
-                    }
-                  </div>
-
-                  {/* Card Header with Icon */}
-                  <div style={styles.cardHeader}>
-                    <div style={{
-                      ...styles.cardIcon,
-                      background: type.iconBg,
-                      boxShadow: isHovered ? `0 10px 20px ${type.color}40` : 'none',
-                    }}>
-                      {type.icon}
-                    </div>
-                    <div style={styles.cardTitleWrapper}>
-                      <h3 style={styles.cardTitle}>{type.label}</h3>
-                      <div style={styles.cardMeta}>
-                        <span style={styles.metaItem}>
-                          <span style={styles.metaIcon}>⏱️</span> 180 mins
-                        </span>
-                        <span style={styles.metaItem}>
-                          <span style={styles.metaIcon}>📝</span> {type.questions} Q
-                        </span>
-                        <span style={styles.metaItem}>
-                          <span style={styles.metaIcon}>🎯</span> {type.passing}% pass
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Description */}
-                  <p style={styles.cardDescription}>
-                    {isHovered ? type.longDescription : type.description}
-                  </p>
-
-                  {/* Features List - Show on Hover */}
-                  {isHovered && (
-                    <div style={styles.featuresList}>
-                      {type.features.map((feature, idx) => (
-                        <span key={idx} style={styles.featureTag}>
-                          {feature}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Score Display for Completed */}
-                  {isCompleted && (
-                    <div style={{
-                      ...styles.scoreCard,
-                      background: passed 
-                        ? 'linear-gradient(135deg, #E8F5E9, #C8E6C9)'
-                        : 'linear-gradient(135deg, #FFF3E0, #FFE0B2)',
-                      borderColor: passed ? '#4CAF50' : '#FF9800'
-                    }}>
-                      <div style={styles.scoreHeader}>
-                        <span style={styles.scoreLabel}>Your Score</span>
-                        <span style={{
-                          ...styles.scoreValue,
-                          color: passed ? '#2E7D32' : '#E65100'
-                        }}>
-                          {score}%
-                        </span>
-                      </div>
-                      <div style={styles.scoreBar}>
-                        <div style={{
-                          ...styles.scoreBarFill,
-                          width: `${score}%`,
-                          background: passed 
-                            ? 'linear-gradient(90deg, #4CAF50, #2E7D32)'
-                            : 'linear-gradient(90deg, #FF9800, #F57C00)'
-                        }} />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* In Progress Indicator */}
-                  {isInProgress && !isCompleted && (
-                    <div style={{
-                      ...styles.inProgressCard,
-                      background: `${type.color}10`,
-                      borderColor: type.color
-                    }}>
-                      <span style={styles.inProgressIcon}>🕐</span>
-                      <span style={styles.inProgressText}>You have an assessment in progress</span>
-                    </div>
-                  )}
-
-                  {/* Action Button */}
-                  {!isCompleted && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (assessment) {
-                          router.push(`/assessment/${assessment.id}`);
-                        }
-                      }}
-                      style={{
-                        ...styles.actionButton,
-                        background: isInProgress 
-                          ? type.iconBg
-                          : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                        transform: isHovered ? 'translateY(-2px)' : 'translateY(0)',
-                        boxShadow: isHovered 
-                          ? `0 20px 30px ${type.color}40`
-                          : '0 4px 6px rgba(0,0,0,0.05)',
-                      }}
-                    >
-                      <span style={styles.buttonIcon}>
-                        {isInProgress ? '🕐' : '🚀'}
-                      </span>
-                      <span style={styles.buttonText}>
-                        {isInProgress ? 'Continue Assessment' : 'Start Assessment'}
-                      </span>
-                    </button>
-                  )}
-
-                  {isCompleted && (
-                    <div style={styles.completedBadge}>
-                      <span style={styles.completedIcon}>✓</span>
-                      <span style={styles.completedText}>
-                        Completed on {new Date(completedAssessments.find(a => a.assessment_id === assessment?.id)?.completed_at).toLocaleDateString('en-US', { 
-                          month: 'short', 
-                          day: 'numeric', 
-                          year: 'numeric' 
-                        })}
-                      </span>
-                    </div>
-                  )}
+            
+            <div style={styles.headerRight}>
+              {session && (
+                <div style={styles.userInfo}>
+                  <span style={styles.userEmail}>{session.user.email}</span>
+                  <button
+                    onClick={() => supabase.auth.signOut().then(() => router.push("/login"))}
+                    style={styles.logoutButton}
+                    onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+                    onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                  >
+                    Logout
+                  </button>
                 </div>
-              );
-            })}
+              )}
+            </div>
           </div>
+        </div>
 
-          {/* Guidelines Section with Background */}
-          <div style={styles.guidelinesWrapper}>
-            <div style={styles.guidelinesBackground} />
-            <div style={styles.guidelinesContent}>
-              <div style={styles.guidelinesHeader}>
-                <span style={styles.guidelinesIcon}>📌</span>
-                <h3 style={styles.guidelinesTitle}>Assessment Guidelines</h3>
+        {/* Stats Banner */}
+        {userStats && (
+          <div style={styles.statsBanner}>
+            <div style={styles.statsGrid}>
+              <div style={styles.statItem}>
+                <span style={styles.statIcon}>✅</span>
+                <div>
+                  <div style={styles.statValue}>{userStats.totalCompleted}</div>
+                  <div style={styles.statLabel}>Completed</div>
+                </div>
+              </div>
+              <div style={styles.statItem}>
+                <span style={styles.statIcon}>📊</span>
+                <div>
+                  <div style={styles.statValue}>{userStats.averageScore}%</div>
+                  <div style={styles.statLabel}>Avg. Score</div>
+                </div>
+              </div>
+              <div style={styles.statItem}>
+                <span style={styles.statIcon}>⏳</span>
+                <div>
+                  <div style={styles.statValue}>{userStats.inProgress.length}</div>
+                  <div style={styles.statLabel}>In Progress</div>
+                </div>
+              </div>
+              <div style={styles.statItem}>
+                <span style={styles.statIcon}>📋</span>
+                <div>
+                  <div style={styles.statValue}>{assessments.length}</div>
+                  <div style={styles.statLabel}>Available</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Main Content */}
+        <div style={styles.mainContent}>
+          {/* Sidebar */}
+          <div style={styles.sidebar}>
+            <div style={styles.sidebarHeader}>
+              <span style={styles.sidebarIcon}>🔍</span>
+              <h3 style={styles.sidebarTitle}>Filters</h3>
+            </div>
+
+            {/* Search */}
+            <div style={styles.searchContainer}>
+              <input
+                type="text"
+                placeholder="Search assessments..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={styles.searchInput}
+              />
+            </div>
+
+            {/* Categories */}
+            <div style={styles.categoriesContainer}>
+              <div style={styles.categoriesHeader}>
+                <span style={styles.categoriesIcon}>📂</span>
+                <span style={styles.categoriesTitle}>Categories</span>
               </div>
               
-              <div style={styles.guidelinesGrid}>
-                <div style={styles.guidelineCard}>
-                  <div style={styles.guidelineIconWrapper}>
-                    <span style={styles.guidelineIcon}>⏰</span>
-                  </div>
-                  <div style={styles.guidelineTextWrapper}>
-                    <h4 style={styles.guidelineTitle}>180-Minute Timer</h4>
-                    <p style={styles.guidelineText}>
-                      All assessments have a fixed 180-minute time limit. The timer starts when you begin and pauses if you log off.
-                    </p>
-                  </div>
-                </div>
+              <button
+                onClick={() => setSelectedCategory("all")}
+                style={{
+                  ...styles.categoryButton,
+                  background: selectedCategory === "all" 
+                    ? 'linear-gradient(135deg, #667eea, #764ba2)'
+                    : 'white',
+                  color: selectedCategory === "all" ? 'white' : '#1e293b',
+                  borderColor: selectedCategory === "all" ? '#667eea' : '#e2e8f0'
+                }}
+              >
+                <span style={styles.categoryIcon}>📋</span>
+                All Assessments
+                <span style={styles.categoryCount}>{assessments.length}</span>
+              </button>
 
-                <div style={styles.guidelineCard}>
-                  <div style={styles.guidelineIconWrapper}>
-                    <span style={styles.guidelineIcon}>🔄</span>
-                  </div>
-                  <div style={styles.guidelineTextWrapper}>
-                    <h4 style={styles.guidelineTitle}>One Attempt Only</h4>
-                    <p style={styles.guidelineText}>
-                      Each assessment can only be taken once. Make sure you're in a quiet environment before starting.
-                    </p>
-                  </div>
-                </div>
-
-                <div style={styles.guidelineCard}>
-                  <div style={styles.guidelineIconWrapper}>
-                    <span style={styles.guidelineIcon}>💾</span>
-                  </div>
-                  <div style={styles.guidelineTextWrapper}>
-                    <h4 style={styles.guidelineTitle}>Auto-Save Enabled</h4>
-                    <p style={styles.guidelineText}>
-                      Your answers are automatically saved. You can leave and return to resume where you left off.
-                    </p>
-                  </div>
-                </div>
-
-                <div style={styles.guidelineCard}>
-                  <div style={styles.guidelineIconWrapper}>
-                    <span style={styles.guidelineIcon}>🛡️</span>
-                  </div>
-                  <div style={styles.guidelineTextWrapper}>
-                    <h4 style={styles.guidelineTitle}>Anti-Cheat Protection</h4>
-                    <p style={styles.guidelineText}>
-                      Right-click, copy/paste, and text selection are disabled during assessments to maintain integrity.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div style={styles.tipCard}>
-                <span style={styles.tipIcon}>💡</span>
-                <div style={styles.tipContent}>
-                  <strong style={styles.tipTitle}>Pro Tip:</strong>
-                  <span style={styles.tipText}>
-                    You don't need to complete all assessments at once. Take them one at a time when you're ready. 
-                    Your progress is automatically saved, and you can always return to continue.
+              {categories.map((category) => (
+                <button
+                  key={category.id}
+                  onClick={() => setSelectedCategory(category.id)}
+                  style={{
+                    ...styles.categoryButton,
+                    background: selectedCategory === category.id 
+                      ? 'linear-gradient(135deg, #667eea, #764ba2)'
+                      : 'white',
+                    color: selectedCategory === category.id ? 'white' : '#1e293b',
+                    borderColor: selectedCategory === category.id ? '#667eea' : '#e2e8f0'
+                  }}
+                >
+                  <span style={styles.categoryIcon}>
+                    {category.icon || getCategoryIcon(category.name)}
                   </span>
-                </div>
+                  {category.name}
+                  <span style={styles.categoryCount}>
+                    {assessments.filter(a => a.category_id === category.id).length}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Quick Tips */}
+            <div style={styles.tipsContainer}>
+              <div style={styles.tipsHeader}>
+                <span style={styles.tipsIcon}>💡</span>
+                <span style={styles.tipsTitle}>Quick Tips</span>
               </div>
+              <ul style={styles.tipsList}>
+                <li style={styles.tipItem}>✓ Each assessment has 100 questions</li>
+                <li style={styles.tipItem}>⏱️ 180 minutes time limit</li>
+                <li style={styles.tipItem}>🔄 Answers auto-save</li>
+                <li style={styles.tipItem}>📱 Works on all devices</li>
+                <li style={styles.tipItem}>🛡️ Anti-cheat enabled</li>
+                <li style={styles.tipItem}>✅ One attempt only</li>
+              </ul>
             </div>
           </div>
 
-          {/* Footer */}
-          <div style={styles.footer}>
-            <div style={styles.footerLeft}>
-              <span style={styles.footerLogo}>🏢 Stratavax</span>
-              <span style={styles.footerCopyright}>© 2025 Assessment Portal</span>
+          {/* Assessments Grid */}
+          <div style={styles.assessmentsContainer}>
+            <div style={styles.assessmentsHeader}>
+              <h2 style={styles.assessmentsTitle}>
+                {selectedCategory === "all" 
+                  ? "All Assessments" 
+                  : categories.find(c => c.id === selectedCategory)?.name || "Assessments"}
+              </h2>
+              <span style={styles.assessmentsCount}>
+                {filteredAssessments.length} available
+              </span>
             </div>
-            <div style={styles.footerRight}>
-              <span style={styles.footerEmail}>support@stratavax.com</span>
-              <button
-                onClick={async () => {
-                  await supabase.auth.signOut();
-                  router.push("/login");
-                }}
-                style={styles.logoutButton}
-              >
-                Logout
-              </button>
-            </div>
+
+            {error && (
+              <div style={styles.errorBanner}>
+                <span style={styles.errorIcon}>⚠️</span>
+                <span>{error}</span>
+                <button 
+                  onClick={fetchAssessments}
+                  style={styles.retryButton}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {filteredAssessments.length === 0 ? (
+              <div style={styles.emptyState}>
+                <div style={styles.emptyStateIcon}>🔍</div>
+                <h3 style={styles.emptyStateTitle}>No Assessments Found</h3>
+                <p style={styles.emptyStateText}>
+                  {searchTerm 
+                    ? `No assessments matching "${searchTerm}"`
+                    : "No assessments available in this category"}
+                </p>
+                {(searchTerm || selectedCategory !== "all") && (
+                  <button
+                    onClick={() => {
+                      setSearchTerm("");
+                      setSelectedCategory("all");
+                    }}
+                    style={styles.clearFiltersButton}
+                  >
+                    Clear Filters
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div style={styles.assessmentGrid}>
+                {filteredAssessments.map((assessment) => {
+                  const completed = isAssessmentCompleted(assessment.id);
+                  const inProgress = isAssessmentInProgress(assessment.id);
+                  const progress = getAssessmentProgress(assessment.id);
+                  
+                  return (
+                    <div key={assessment.id} style={styles.assessmentCard}>
+                      {/* Card Background with Pattern */}
+                      <div style={{
+                        ...styles.cardBackground,
+                        backgroundImage: `url(${
+                          assessment.assessment_categories?.name === 'Cognitive' 
+                            ? 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb'
+                            : assessment.assessment_categories?.name === 'Leadership'
+                            ? 'https://images.unsplash.com/photo-1552664730-d307ca884978'
+                            : assessment.assessment_categories?.name === 'Manufacturing'
+                            ? 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa'
+                            : 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40'
+                        }?auto=format&fit=crop&w=1920&q=80)`,
+                      }} />
+                      <div style={styles.cardOverlay} />
+                      
+                      {/* Card Content */}
+                      <div style={styles.cardContent}>
+                        <div style={styles.cardHeader}>
+                          <div style={{
+                            ...styles.cardIcon,
+                            background: `linear-gradient(135deg, ${
+                              assessment.assessment_categories?.name === 'Cognitive' ? '#4A6FA5'
+                              : assessment.assessment_categories?.name === 'Leadership' ? '#D32F2F'
+                              : assessment.assessment_categories?.name === 'Manufacturing' ? '#388E3C'
+                              : assessment.assessment_categories?.name === 'Behavioral' ? '#FF6B6B'
+                              : assessment.assessment_categories?.name === 'Cultural' ? '#9C89B8'
+                              : '#667eea'
+                            }, ${
+                              assessment.assessment_categories?.name === 'Cognitive' ? '#2C3E50'
+                              : assessment.assessment_categories?.name === 'Leadership' ? '#B71C1C'
+                              : assessment.assessment_categories?.name === 'Manufacturing' ? '#1B5E20'
+                              : assessment.assessment_categories?.name === 'Behavioral' ? '#C62828'
+                              : assessment.assessment_categories?.name === 'Cultural' ? '#6B4E71'
+                              : '#764ba2'
+                            })`
+                          }}>
+                            {assessment.assessment_categories?.icon || 
+                             getCategoryIcon(assessment.assessment_categories?.name)}
+                          </div>
+                          <div style={styles.cardInfo}>
+                            <h3 style={styles.cardTitle}>{assessment.name}</h3>
+                            <div style={styles.cardMeta}>
+                              <span style={styles.cardCategory}>
+                                {assessment.assessment_categories?.name || 'General'}
+                              </span>
+                              <span style={styles.cardDivider}>•</span>
+                              <span style={styles.cardQuestions}>
+                                {assessment.question_count || 0} questions
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <p style={styles.cardDescription}>
+                          {assessment.description || 'No description available'}
+                        </p>
+
+                        <div style={styles.cardFooter}>
+                          <div style={styles.cardStats}>
+                            <div style={styles.cardStat}>
+                              <span style={styles.cardStatIcon}>⏱️</span>
+                              <span style={styles.cardStatLabel}>180 min</span>
+                            </div>
+                            <div style={styles.cardStat}>
+                              <span style={styles.cardStatIcon}>📊</span>
+                              <span style={styles.cardStatLabel}>100 Q</span>
+                            </div>
+                            {assessment.difficulty && (
+                              <div style={styles.cardStat}>
+                                <span style={styles.cardStatIcon}>📈</span>
+                                <span style={styles.cardStatLabel}>
+                                  {assessment.difficulty}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {completed ? (
+                            <div style={styles.completedBadge}>
+                              <span style={styles.completedIcon}>✅</span>
+                              Completed
+                            </div>
+                          ) : inProgress ? (
+                            <div style={styles.progressContainer}>
+                              <div style={styles.progressInfo}>
+                                <span style={styles.progressIcon}>⏳</span>
+                                <span style={styles.progressText}>In Progress</span>
+                                <span style={styles.progressTime}>
+                                  {formatTime(progress)} used
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => handleStartAssessment(assessment.id)}
+                                style={styles.continueButton}
+                                onMouseOver={(e) => {
+                                  e.currentTarget.style.background = 'linear-gradient(135deg, #ff9800, #f57c00)';
+                                  e.currentTarget.style.transform = 'translateY(-2px)';
+                                }}
+                                onMouseOut={(e) => {
+                                  e.currentTarget.style.background = 'linear-gradient(135deg, #fb8c00, #f57c00)';
+                                  e.currentTarget.style.transform = 'translateY(0)';
+                                }}
+                              >
+                                Continue →
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleStartAssessment(assessment.id)}
+                              style={styles.startButton}
+                              onMouseOver={(e) => {
+                                e.currentTarget.style.background = 'linear-gradient(135deg, #667eea, #764ba2)';
+                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                e.currentTarget.style.boxShadow = '0 10px 20px rgba(102,126,234,0.4)';
+                              }}
+                              onMouseOut={(e) => {
+                                e.currentTarget.style.background = 'linear-gradient(135deg, #667eea, #764ba2)';
+                                e.currentTarget.style.transform = 'translateY(0)';
+                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(102,126,234,0.3)';
+                              }}
+                            >
+                              Start Assessment →
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>
-    </AppLayout>
+
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 0.3; }
+          50% { opacity: 1; }
+        }
+        @keyframes slideIn {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+      `}</style>
+    </div>
   );
 }
 
-// ===== STYLES =====
+// ===== STYLES WITH BACKGROUND IMAGES =====
 const styles = {
-  // Loading
-  loadingContainer: {
+  container: {
     minHeight: '100vh',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  loadingContent: {
-    textAlign: 'center',
-    color: 'white'
-  },
-  loadingLogo: {
-    fontSize: '32px',
-    fontWeight: '700',
-    marginBottom: '30px'
-  },
-  loadingSpinner: {
-    width: '60px',
-    height: '60px',
-    border: '5px solid rgba(255,255,255,0.3)',
-    borderTop: '5px solid white',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite',
-    margin: '0 auto 20px'
-  },
-  loadingText: {
-    fontSize: '18px',
-    opacity: 0.9
-  },
-
-  // Hero Section
-  heroWrapper: {
     position: 'relative',
-    height: '480px',
-    overflow: 'hidden'
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    overflow: 'hidden',
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
   },
-  heroBackground: {
+  backgroundImage: {
     position: 'absolute',
     top: 0,
     left: 0,
@@ -683,192 +623,435 @@ const styles = {
     backgroundImage: 'url(https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1920&q=80)',
     backgroundSize: 'cover',
     backgroundPosition: 'center',
-    filter: 'brightness(0.7)',
-    transform: 'scale(1.1)',
-    animation: 'slowZoom 20s infinite alternate'
+    opacity: 0.1,
+    filter: 'blur(8px)'
   },
-  heroOverlay: {
+  backgroundOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    background: 'linear-gradient(135deg, rgba(102,126,234,0.95) 0%, rgba(118,75,162,0.95) 100%)'
+    background: 'radial-gradient(circle at center, transparent 0%, rgba(0,0,0,0.3) 100%)',
+    pointerEvents: 'none'
   },
-  heroContent: {
-    position: 'relative',
-    maxWidth: '1200px',
-    margin: '0 auto',
-    padding: '60px 20px',
-    color: 'white',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    textAlign: 'center'
-  },
-  heroBadge: {
-    background: 'rgba(255,255,255,0.2)',
-    backdropFilter: 'blur(10px)',
-    padding: '8px 20px',
-    borderRadius: '30px',
-    fontSize: '14px',
-    fontWeight: '600',
-    marginBottom: '20px',
-    border: '1px solid rgba(255,255,255,0.3)'
-  },
-  heroTitle: {
-    fontSize: '48px',
-    fontWeight: '800',
-    marginBottom: '20px',
-    lineHeight: 1.2
-  },
-  heroName: {
-    color: '#FFEAA7',
-    textShadow: '0 2px 10px rgba(0,0,0,0.2)'
-  },
-  heroSubtitle: {
-    fontSize: '18px',
-    maxWidth: '800px',
-    marginBottom: '40px',
-    opacity: 0.95,
-    lineHeight: 1.6
-  },
-  progressCard: {
-    background: 'rgba(255,255,255,0.1)',
-    backdropFilter: 'blur(10px)',
-    borderRadius: '20px',
-    padding: '25px 35px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '40px',
-    border: '1px solid rgba(255,255,255,0.2)'
-  },
-  progressInfo: {
-    textAlign: 'left'
-  },
-  progressLabel: {
-    fontSize: '14px',
-    opacity: 0.9,
-    marginBottom: '10px',
-    textTransform: 'uppercase',
-    letterSpacing: '1px'
-  },
-  progressStats: {
-    display: 'flex',
-    alignItems: 'baseline',
-    gap: '5px'
-  },
-  progressCount: {
-    fontSize: '48px',
-    fontWeight: '800',
-    lineHeight: 1
-  },
-  progressTotal: {
-    fontSize: '24px',
-    opacity: 0.8,
-    marginLeft: '5px'
-  },
-  progressText: {
-    fontSize: '16px',
-    marginLeft: '15px',
-    opacity: 0.9
-  },
-  progressCircleContainer: {
-    position: 'relative',
-    width: '100px',
-    height: '100px'
-  },
-  progressCircleFill: {
-    transition: 'stroke-dasharray 0.5s ease'
-  },
-  progressPercentage: {
+  backgroundPattern: {
     position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: 'translate(-50%, -50%)',
-    fontSize: '24px',
-    fontWeight: '700'
-  },
-  waveDivider: {
-    position: 'absolute',
-    bottom: 0,
+    top: 0,
     left: 0,
     right: 0,
-    lineHeight: 0
+    bottom: 0,
+    backgroundImage: 'url(https://www.transparenttextures.com/patterns/cubes.png)',
+    opacity: 0.05,
+    pointerEvents: 'none'
+  },
+  content: {
+    position: 'relative',
+    zIndex: 1,
+    minHeight: '100vh',
+    display: 'flex',
+    flexDirection: 'column'
+  },
+
+  // Loading States
+  loadingContainer: {
+    minHeight: '100vh',
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'linear-gradient(135deg, #1a2639 0%, #2d3748 100%)',
+    overflow: 'hidden'
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundImage: 'url(https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1920&q=80)',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    opacity: 0.1,
+    filter: 'blur(10px)'
+  },
+  loadingContent: {
+    position: 'relative',
+    textAlign: 'center',
+    color: 'white',
+    zIndex: 1,
+    animation: 'slideIn 0.5s ease'
+  },
+  loadingLogo: {
+    fontSize: '36px',
+    fontWeight: '800',
+    marginBottom: '30px',
+    letterSpacing: '2px'
+  },
+  loadingSpinner: {
+    width: '70px',
+    height: '70px',
+    border: '5px solid rgba(255,255,255,0.2)',
+    borderTop: '5px solid white',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite',
+    margin: '0 auto 30px'
+  },
+  loadingTitle: {
+    fontSize: '28px',
+    fontWeight: '700',
+    marginBottom: '15px'
+  },
+  loadingSubtitle: {
+    fontSize: '16px',
+    opacity: 0.9
+  },
+
+  // Header
+  header: {
+    background: 'rgba(255,255,255,0.1)',
+    backdropFilter: 'blur(10px)',
+    borderBottom: '1px solid rgba(255,255,255,0.1)',
+    position: 'sticky',
+    top: 0,
+    zIndex: 100
+  },
+  headerContent: {
+    maxWidth: '1400px',
+    margin: '0 auto',
+    padding: '16px 24px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  headerLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '20px'
+  },
+  logo: {
+    fontSize: '24px',
+    fontWeight: '800',
+    color: 'white',
+    letterSpacing: '1px'
+  },
+  headerTitle: {
+    fontSize: '20px',
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.9)',
+    borderLeft: '2px solid rgba(255,255,255,0.2)',
+    paddingLeft: '20px'
+  },
+  headerRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px'
+  },
+  userInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px'
+  },
+  userEmail: {
+    color: 'white',
+    fontSize: '14px',
+    opacity: 0.9
+  },
+  logoutButton: {
+    padding: '8px 16px',
+    background: 'rgba(255,255,255,0.1)',
+    color: 'white',
+    border: '1px solid rgba(255,255,255,0.2)',
+    borderRadius: '20px',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+
+  // Stats Banner
+  statsBanner: {
+    background: 'rgba(255,255,255,0.95)',
+    backdropFilter: 'blur(10px)',
+    borderBottom: '1px solid rgba(0,0,0,0.05)',
+    padding: '20px 24px'
+  },
+  statsGrid: {
+    maxWidth: '1400px',
+    margin: '0 auto',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '20px'
+  },
+  statItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '12px',
+    background: 'white',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+  },
+  statIcon: {
+    fontSize: '28px'
+  },
+  statValue: {
+    fontSize: '24px',
+    fontWeight: '700',
+    color: '#1e293b',
+    lineHeight: 1.2
+  },
+  statLabel: {
+    fontSize: '12px',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   },
 
   // Main Content
   mainContent: {
-    background: '#f8fafc',
-    padding: '60px 0'
-  },
-  container: {
     maxWidth: '1400px',
-    margin: '0 auto',
-    padding: '0 20px'
-  },
-  sectionHeader: {
+    margin: '30px auto',
+    padding: '0 24px',
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginBottom: '40px',
-    flexWrap: 'wrap',
-    gap: '20px'
-  },
-  sectionTitle: {
-    fontSize: '32px',
-    fontWeight: '700',
-    color: '#1a2639',
-    marginBottom: '10px'
-  },
-  sectionDescription: {
-    fontSize: '16px',
-    color: '#64748b',
-    maxWidth: '600px',
-    lineHeight: 1.6
-  },
-  statsBadge: {
-    background: 'white',
-    padding: '12px 24px',
-    borderRadius: '40px',
-    boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px'
-  },
-  statsIcon: {
-    fontSize: '20px'
-  },
-  statsText: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#1a2639'
+    gap: '30px',
+    flex: 1
   },
 
-  // Assessment Grid
+  // Sidebar
+  sidebar: {
+    flex: '0 0 280px',
+    background: 'rgba(255,255,255,0.95)',
+    backdropFilter: 'blur(10px)',
+    borderRadius: '24px',
+    padding: '24px',
+    boxShadow: '0 20px 40px rgba(0,0,0,0.1)',
+    height: 'fit-content',
+    border: '1px solid rgba(255,255,255,0.2)'
+  },
+  sidebarHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    paddingBottom: '20px',
+    borderBottom: '2px solid #f1f5f9',
+    marginBottom: '20px'
+  },
+  sidebarIcon: {
+    fontSize: '20px'
+  },
+  sidebarTitle: {
+    fontSize: '18px',
+    fontWeight: '700',
+    color: '#1e293b',
+    margin: 0
+  },
+  searchContainer: {
+    marginBottom: '25px'
+  },
+  searchInput: {
+    width: '100%',
+    padding: '14px 16px',
+    border: '2px solid #e2e8f0',
+    borderRadius: '12px',
+    fontSize: '14px',
+    transition: 'all 0.2s ease',
+    outline: 'none',
+    ':focus': {
+      borderColor: '#667eea',
+      boxShadow: '0 0 0 3px rgba(102,126,234,0.1)'
+    }
+  },
+  categoriesContainer: {
+    marginBottom: '25px'
+  },
+  categoriesHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '15px',
+    color: '#64748b',
+    fontSize: '14px',
+    fontWeight: '600'
+  },
+  categoriesIcon: {
+    fontSize: '16px'
+  },
+  categoriesTitle: {
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
+  },
+  categoryButton: {
+    width: '100%',
+    padding: '12px 16px',
+    marginBottom: '8px',
+    border: '2px solid',
+    borderRadius: '12px',
+    background: 'white',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    transition: 'all 0.2s ease',
+    position: 'relative'
+  },
+  categoryIcon: {
+    fontSize: '18px'
+  },
+  categoryCount: {
+    marginLeft: 'auto',
+    background: 'rgba(0,0,0,0.05)',
+    padding: '2px 8px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '600'
+  },
+  tipsContainer: {
+    background: 'linear-gradient(135deg, #f8fafc, #f1f5f9)',
+    borderRadius: '16px',
+    padding: '20px',
+    border: '1px solid #e2e8f0'
+  },
+  tipsHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '15px',
+    color: '#475569',
+    fontSize: '14px',
+    fontWeight: '600'
+  },
+  tipsIcon: {
+    fontSize: '18px'
+  },
+  tipsTitle: {
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
+  },
+  tipsList: {
+    margin: 0,
+    padding: 0,
+    listStyle: 'none'
+  },
+  tipItem: {
+    padding: '8px 0',
+    color: '#475569',
+    fontSize: '13px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    borderBottom: '1px solid #e2e8f0',
+    ':last-child': {
+      borderBottom: 'none'
+    }
+  },
+
+  // Assessments Container
+  assessmentsContainer: {
+    flex: 1,
+    minWidth: 0
+  },
+  assessmentsHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '20px'
+  },
+  assessmentsTitle: {
+    fontSize: '24px',
+    fontWeight: '700',
+    color: 'white',
+    margin: 0,
+    textShadow: '0 2px 4px rgba(0,0,0,0.1)'
+  },
+  assessmentsCount: {
+    padding: '6px 14px',
+    background: 'rgba(255,255,255,0.2)',
+    borderRadius: '30px',
+    color: 'white',
+    fontSize: '14px',
+    fontWeight: '600',
+    backdropFilter: 'blur(5px)'
+  },
+  errorBanner: {
+    background: 'rgba(239,68,68,0.1)',
+    backdropFilter: 'blur(10px)',
+    border: '1px solid rgba(239,68,68,0.2)',
+    borderRadius: '12px',
+    padding: '16px 20px',
+    marginBottom: '20px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    color: '#ef4444'
+  },
+  errorIcon: {
+    fontSize: '20px'
+  },
+  retryButton: {
+    marginLeft: 'auto',
+    padding: '8px 16px',
+    background: 'white',
+    border: 'none',
+    borderRadius: '20px',
+    color: '#ef4444',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  emptyState: {
+    background: 'rgba(255,255,255,0.95)',
+    borderRadius: '24px',
+    padding: '60px 40px',
+    textAlign: 'center',
+    boxShadow: '0 20px 40px rgba(0,0,0,0.1)'
+  },
+  emptyStateIcon: {
+    fontSize: '64px',
+    marginBottom: '20px',
+    opacity: 0.5
+  },
+  emptyStateTitle: {
+    fontSize: '20px',
+    fontWeight: '700',
+    color: '#1e293b',
+    marginBottom: '10px'
+  },
+  emptyStateText: {
+    color: '#64748b',
+    marginBottom: '25px'
+  },
+  clearFiltersButton: {
+    padding: '12px 24px',
+    background: 'linear-gradient(135deg, #667eea, #764ba2)',
+    color: 'white',
+    border: 'none',
+    borderRadius: '30px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
   assessmentGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))',
-    gap: '30px',
-    marginBottom: '60px'
+    gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
+    gap: '20px'
   },
   assessmentCard: {
     position: 'relative',
     background: 'white',
-    borderRadius: '24px',
-    padding: '30px',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.05)',
-    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    border: '2px solid transparent',
-    cursor: 'pointer',
+    borderRadius: '20px',
     overflow: 'hidden',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px'
-  },
-  assessmentCardHovered: {
-    transform: 'translateY(-8px)',
-    boxShadow: '0 30px 60px rgba(0,0,0,0.12)'
+    boxShadow: '0 10px 30px rgba(0,0,0,0.1)',
+    transition: 'all 0.3s ease',
+    animation: 'slideIn 0.5s ease',
+    ':hover': {
+      transform: 'translateY(-5px)',
+      boxShadow: '0 20px 40px rgba(0,0,0,0.15)'
+    }
   },
   cardBackground: {
     position: 'absolute',
@@ -878,379 +1061,174 @@ const styles = {
     bottom: 0,
     backgroundSize: 'cover',
     backgroundPosition: 'center',
-    transition: 'opacity 0.3s ease',
-    zIndex: 0
+    opacity: 0.1,
+    transition: 'opacity 0.3s ease'
   },
-  cardPattern: {
+  cardOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundRepeat: 'repeat',
-    transition: 'opacity 0.3s ease',
-    zIndex: 0
+    background: 'linear-gradient(135deg, rgba(255,255,255,0.95), rgba(255,255,255,0.98))',
+    backdropFilter: 'blur(5px)'
   },
-  statusBadge: {
-    position: 'absolute',
-    top: '20px',
-    right: '20px',
-    padding: '6px 16px',
-    borderRadius: '30px',
-    fontSize: '12px',
-    fontWeight: '600',
-    color: 'white',
-    zIndex: 2
+  cardContent: {
+    position: 'relative',
+    padding: '24px',
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%'
   },
   cardHeader: {
     display: 'flex',
-    alignItems: 'center',
-    gap: '20px',
-    position: 'relative',
-    zIndex: 2
+    gap: '16px',
+    marginBottom: '16px'
   },
   cardIcon: {
-    width: '70px',
-    height: '70px',
-    borderRadius: '20px',
+    width: '56px',
+    height: '56px',
+    borderRadius: '16px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '36px',
-    transition: 'all 0.3s ease',
-    flexShrink: 0
+    fontSize: '28px',
+    color: 'white',
+    flexShrink: 0,
+    boxShadow: '0 8px 16px rgba(0,0,0,0.1)'
   },
-  cardTitleWrapper: {
-    flex: 1
+  cardInfo: {
+    flex: 1,
+    minWidth: 0
   },
   cardTitle: {
-    margin: '0 0 8px 0',
-    color: '#1a2639',
-    fontSize: '20px',
-    fontWeight: '700'
+    fontSize: '18px',
+    fontWeight: '700',
+    color: '#1e293b',
+    marginBottom: '6px',
+    lineHeight: 1.3
   },
   cardMeta: {
     display: 'flex',
-    gap: '15px',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '13px',
+    color: '#64748b',
     flexWrap: 'wrap'
   },
-  metaItem: {
-    fontSize: '12px',
-    color: '#64748b',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px'
-  },
-  metaIcon: {
-    fontSize: '14px'
-  },
-  cardDescription: {
-    position: 'relative',
-    zIndex: 2,
-    color: '#475569',
-    fontSize: '14px',
-    lineHeight: '1.6',
-    marginBottom: '10px',
-    minHeight: '65px'
-  },
-  featuresList: {
-    position: 'relative',
-    zIndex: 2,
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '8px',
-    marginBottom: '15px'
-  },
-  featureTag: {
-    padding: '4px 12px',
+  cardCategory: {
+    padding: '4px 10px',
     background: '#f1f5f9',
     borderRadius: '20px',
     fontSize: '11px',
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#475569'
   },
-  scoreCard: {
-    position: 'relative',
-    zIndex: 2,
-    borderRadius: '16px',
-    padding: '16px',
-    border: '1px solid',
-    marginBottom: '10px'
+  cardDivider: {
+    opacity: 0.5
   },
-  scoreHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '12px'
+  cardQuestions: {
+    fontWeight: '500'
   },
-  scoreLabel: {
+  cardDescription: {
     fontSize: '14px',
-    fontWeight: '600',
-    color: '#1e293b'
-  },
-  scoreValue: {
-    fontSize: '24px',
-    fontWeight: '700'
-  },
-  scoreBar: {
-    height: '8px',
-    background: '#e2e8f0',
-    borderRadius: '4px',
+    lineHeight: '1.6',
+    color: '#475569',
+    marginBottom: '20px',
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
     overflow: 'hidden'
   },
-  scoreBarFill: {
-    height: '100%',
-    borderRadius: '4px',
-    transition: 'width 0.3s ease'
-  },
-  inProgressCard: {
-    position: 'relative',
-    zIndex: 2,
-    borderRadius: '16px',
-    padding: '16px',
-    border: '1px solid',
+  cardFooter: {
+    marginTop: 'auto',
     display: 'flex',
-    alignItems: 'center',
+    flexDirection: 'column',
+    gap: '16px'
+  },
+  cardStats: {
+    display: 'flex',
     gap: '12px',
-    marginBottom: '10px'
-  },
-  inProgressIcon: {
-    fontSize: '20px'
-  },
-  inProgressText: {
-    fontSize: '14px',
-    fontWeight: '500'
-  },
-  actionButton: {
-    position: 'relative',
-    zIndex: 2,
-    width: '100%',
-    padding: '16px 24px',
-    color: 'white',
-    border: 'none',
-    borderRadius: '16px',
-    fontSize: '16px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'all 0.3s ease',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '12px'
-  },
-  buttonIcon: {
-    fontSize: '20px'
-  },
-  buttonText: {
-    letterSpacing: '0.5px'
-  },
-  completedBadge: {
-    position: 'relative',
-    zIndex: 2,
-    padding: '16px',
+    padding: '12px',
     background: '#f8fafc',
-    borderRadius: '16px',
-    fontSize: '14px',
-    color: '#64748b',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    justifyContent: 'center'
+    borderRadius: '12px'
   },
-  completedIcon: {
-    width: '24px',
-    height: '24px',
-    borderRadius: '50%',
-    background: '#4caf50',
-    color: 'white',
+  cardStat: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: '6px',
+    fontSize: '12px',
+    color: '#475569'
+  },
+  cardStatIcon: {
     fontSize: '14px'
   },
-  completedText: {
+  cardStatLabel: {
     fontWeight: '500'
   },
-
-  // Guidelines Section
-  guidelinesWrapper: {
-    position: 'relative',
-    borderRadius: '32px',
-    overflow: 'hidden',
-    marginBottom: '40px'
-  },
-  guidelinesBackground: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundImage: 'url(https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1920&q=80)',
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-    filter: 'brightness(0.3)'
-  },
-  guidelinesContent: {
-    position: 'relative',
-    padding: '40px',
-    background: 'linear-gradient(135deg, rgba(26,38,57,0.95) 0%, rgba(45,55,72,0.95) 100%)',
-    backdropFilter: 'blur(10px)'
-  },
-  guidelinesHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '15px',
-    marginBottom: '30px'
-  },
-  guidelinesIcon: {
-    fontSize: '32px'
-  },
-  guidelinesTitle: {
-    fontSize: '24px',
-    fontWeight: '700',
-    color: 'white',
-    margin: 0
-  },
-  guidelinesGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '20px',
-    marginBottom: '30px'
-  },
-  guidelineCard: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '15px',
-    padding: '20px',
-    background: 'rgba(255,255,255,0.1)',
-    borderRadius: '16px',
-    backdropFilter: 'blur(5px)',
-    border: '1px solid rgba(255,255,255,0.1)'
-  },
-  guidelineIconWrapper: {
-    width: '48px',
-    height: '48px',
-    background: 'rgba(255,255,255,0.2)',
-    borderRadius: '12px',
+  completedBadge: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '24px',
-    flexShrink: 0
-  },
-  guidelineTextWrapper: {
-    flex: 1
-  },
-  guidelineTitle: {
-    fontSize: '16px',
-    fontWeight: '600',
+    gap: '8px',
+    padding: '12px',
+    background: 'linear-gradient(135deg, #4caf50, #2e7d32)',
     color: 'white',
-    marginBottom: '5px'
+    borderRadius: '12px',
+    fontSize: '14px',
+    fontWeight: '600'
   },
-  guidelineText: {
+  completedIcon: {
+    fontSize: '16px'
+  },
+  progressContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px'
+  },
+  progressInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 12px',
+    background: '#fff8e1',
+    borderRadius: '8px',
+    color: '#f57c00',
     fontSize: '13px',
-    color: 'rgba(255,255,255,0.8)',
-    lineHeight: 1.5,
-    margin: 0
+    fontWeight: '500'
   },
-  tipCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '20px',
-    padding: '20px',
-    background: 'rgba(255,255,255,0.15)',
-    borderRadius: '16px',
-    border: '1px solid rgba(255,255,255,0.2)'
+  progressIcon: {
+    fontSize: '14px'
   },
-  tipIcon: {
-    fontSize: '32px',
-    flexShrink: 0
+  progressText: {
+    fontWeight: '600'
   },
-  tipContent: {
-    fontSize: '14px',
+  progressTime: {
+    marginLeft: 'auto',
+    fontFamily: 'monospace'
+  },
+  continueButton: {
+    padding: '12px',
+    background: 'linear-gradient(135deg, #fb8c00, #f57c00)',
     color: 'white',
-    lineHeight: 1.6
-  },
-  tipTitle: {
-    marginRight: '8px'
-  },
-  tipText: {
-    opacity: 0.9
-  },
-
-  // Footer
-  footer: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '30px 0',
-    borderTop: '1px solid #e2e8f0',
-    flexWrap: 'wrap',
-    gap: '20px'
-  },
-  footerLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '20px'
-  },
-  footerLogo: {
-    fontSize: '18px',
-    fontWeight: '700',
-    color: '#1a2639'
-  },
-  footerCopyright: {
-    fontSize: '14px',
-    color: '#64748b'
-  },
-  footerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '20px'
-  },
-  footerEmail: {
-    fontSize: '14px',
-    color: '#64748b'
-  },
-  logoutButton: {
-    padding: '10px 24px',
-    background: 'transparent',
-    color: '#64748b',
-    border: '2px solid #e2e8f0',
-    borderRadius: '30px',
-    cursor: 'pointer',
+    border: 'none',
+    borderRadius: '12px',
     fontSize: '14px',
     fontWeight: '600',
-    transition: 'all 0.2s'
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    boxShadow: '0 4px 12px rgba(251,140,0,0.3)'
+  },
+  startButton: {
+    padding: '12px',
+    background: 'linear-gradient(135deg, #667eea, #764ba2)',
+    color: 'white',
+    border: 'none',
+    borderRadius: '12px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    boxShadow: '0 4px 12px rgba(102,126,234,0.3)'
   }
 };
-
-// Add global animations
-const globalStyles = `
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-  
-  @keyframes slowZoom {
-    0% { transform: scale(1); }
-    100% { transform: scale(1.1); }
-  }
-  
-  @keyframes fadeInUp {
-    from {
-      opacity: 0;
-      transform: translateY(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-`;
-
-// Inject global styles
-if (typeof document !== 'undefined') {
-  const style = document.createElement('style');
-  style.innerHTML = globalStyles;
-  document.head.appendChild(style);
-}
