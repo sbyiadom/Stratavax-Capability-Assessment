@@ -6,10 +6,10 @@ import { supabase } from "../../supabase/client";
 
 // ===== BACKGROUND CONFIGURATIONS =====
 const BACKGROUND_CONFIG = {
-  gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+  gradient: 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)',
   bgImage: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1920&q=80',
   pattern: 'https://www.transparenttextures.com/patterns/cubes.png',
-  overlay: 'rgba(0,0,0,0.7)'
+  overlay: 'rgba(0,0,0,0.8)'
 };
 
 // Helper function to get classification from score (max 450)
@@ -23,95 +23,66 @@ const getClassificationFromScore = (score) => {
   return "Needs Improvement";
 };
 
-// Helper function to get classification color and gradient
+// Helper function to get classification color
+const getClassificationColor = (score) => {
+  if (score >= 430) return '#2E7D32';
+  if (score >= 400) return '#4CAF50';
+  if (score >= 350) return '#2196F3';
+  if (score >= 300) return '#FF9800';
+  if (score >= 250) return '#9C27B0';
+  if (score >= 200) return '#795548';
+  return '#F44336';
+};
+
+// Helper function to get classification config
 const getClassificationConfig = (score) => {
-  if (score >= 430) return { 
-    color: '#2E7D32', 
-    gradient: 'linear-gradient(135deg, #2E7D32, #4CAF50)',
-    lightBg: 'rgba(46, 125, 50, 0.1)',
-    icon: '👑'
-  };
-  if (score >= 400) return { 
-    color: '#4CAF50', 
-    gradient: 'linear-gradient(135deg, #4CAF50, #81C784)',
-    lightBg: 'rgba(76, 175, 80, 0.1)',
-    icon: '⭐'
-  };
-  if (score >= 350) return { 
-    color: '#2196F3', 
-    gradient: 'linear-gradient(135deg, #2196F3, #64B5F6)',
-    lightBg: 'rgba(33, 150, 243, 0.1)',
-    icon: '📈'
-  };
-  if (score >= 300) return { 
-    color: '#FF9800', 
-    gradient: 'linear-gradient(135deg, #FF9800, #FFB74D)',
-    lightBg: 'rgba(255, 152, 0, 0.1)',
-    icon: '⚡'
-  };
-  if (score >= 250) return { 
-    color: '#9C27B0', 
-    gradient: 'linear-gradient(135deg, #9C27B0, #BA68C8)',
-    lightBg: 'rgba(156, 39, 176, 0.1)',
-    icon: '🌱'
-  };
-  if (score >= 200) return { 
-    color: '#795548', 
-    gradient: 'linear-gradient(135deg, #795548, #A1887F)',
-    lightBg: 'rgba(121, 85, 72, 0.1)',
-    icon: '🔰'
-  };
-  return { 
-    color: '#F44336', 
-    gradient: 'linear-gradient(135deg, #F44336, #EF5350)',
-    lightBg: 'rgba(244, 67, 54, 0.1)',
-    icon: '⚠️'
+  const color = getClassificationColor(score);
+  return {
+    color,
+    gradient: `linear-gradient(135deg, ${color}, ${color}dd)`,
+    lightBg: `${color}15`,
+    border: `1px solid ${color}30`
   };
 };
 
-// Metric card component
-const MetricCard = ({ title, value, subtitle, gradient, icon, trend }) => (
+// Metric Card Component
+const MetricCard = ({ title, value, subtitle, trend, color = '#2563eb' }) => (
   <div style={{
-    background: gradient,
-    padding: '25px',
-    borderRadius: '20px',
-    color: 'white',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
-    position: 'relative',
-    overflow: 'hidden',
-    transition: 'transform 0.3s ease, box-shadow 0.3s ease',
-    cursor: 'pointer'
+    background: 'white',
+    borderRadius: '16px',
+    padding: '24px',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
+    border: '1px solid #eef2f6',
+    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+    cursor: 'default'
   }}
   onMouseOver={(e) => {
-    e.currentTarget.style.transform = 'translateY(-5px)';
-    e.currentTarget.style.boxShadow = '0 20px 40px rgba(0,0,0,0.2)';
+    e.currentTarget.style.transform = 'translateY(-4px)';
+    e.currentTarget.style.boxShadow = '0 12px 30px rgba(0,0,0,0.1)';
   }}
   onMouseOut={(e) => {
     e.currentTarget.style.transform = 'translateY(0)';
-    e.currentTarget.style.boxShadow = '0 10px 30px rgba(0,0,0,0.15)';
-  }}
-  >
-    <div style={{
-      position: 'absolute',
-      top: '10px',
-      right: '10px',
-      fontSize: '48px',
-      opacity: 0.2,
-      color: 'white'
-    }}>
-      {icon}
+    e.currentTarget.style.boxShadow = '0 4px 20px rgba(0,0,0,0.05)';
+  }}>
+    <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px', fontWeight: '500' }}>
+      {title}
     </div>
-    <div style={{ fontSize: '14px', opacity: 0.9, marginBottom: '10px' }}>{title}</div>
-    <div style={{ fontSize: '48px', fontWeight: '700', marginBottom: '5px' }}>{value}</div>
-    <div style={{ fontSize: '12px', opacity: 0.8 }}>{subtitle}</div>
+    <div style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
+      {value}
+    </div>
+    <div style={{ fontSize: '13px', color: '#94a3b8' }}>
+      {subtitle}
+    </div>
     {trend && (
       <div style={{
-        marginTop: '10px',
+        marginTop: '12px',
         fontSize: '12px',
-        background: 'rgba(255,255,255,0.2)',
-        padding: '4px 8px',
+        color: color,
+        background: `${color}10`,
+        padding: '4px 12px',
         borderRadius: '20px',
-        display: 'inline-block'
+        display: 'inline-block',
+        fontWeight: '500'
       }}>
         {trend}
       </div>
@@ -119,67 +90,60 @@ const MetricCard = ({ title, value, subtitle, gradient, icon, trend }) => (
   </div>
 );
 
-// Classification card component
-const ClassificationCard = ({ category, count, total, config }) => {
+// Classification Card Component
+const ClassificationCard = ({ category, count, total, color, scoreRange }) => {
   const percentage = total > 0 ? (count / total) * 100 : 0;
   
   return (
     <div style={{
-      borderLeft: `4px solid ${config.color}`,
-      padding: '18px',
-      background: 'linear-gradient(135deg, #ffffff, #f8fafc)',
-      borderRadius: '16px',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-      transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-      cursor: 'pointer',
-      border: '1px solid #f1f5f9'
+      padding: '20px',
+      background: 'white',
+      borderRadius: '14px',
+      border: '1px solid #eef2f6',
+      transition: 'transform 0.2s ease, box-shadow 0.2s ease'
     }}
     onMouseOver={(e) => {
       e.currentTarget.style.transform = 'translateY(-2px)';
-      e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.1)';
+      e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.06)';
     }}
     onMouseOut={(e) => {
       e.currentTarget.style.transform = 'translateY(0)';
-      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.03)';
-    }}
-    >
+      e.currentTarget.style.boxShadow = 'none';
+    }}>
       <div style={{ 
         display: "flex", 
         justifyContent: "space-between",
         alignItems: "center",
-        marginBottom: "10px"
+        marginBottom: "12px"
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '20px' }}>{config.icon}</span>
-          <div>
-            <div style={{ fontWeight: "600", color: "#1e293b", fontSize: "15px" }}>{category}</div>
-            <div style={{ fontSize: "11px", color: config.color, marginTop: "2px", fontWeight: '500' }}>
-              {category.scoreRange}
-            </div>
+        <div>
+          <div style={{ fontWeight: "600", color: "#1e293b", fontSize: "15px" }}>{category}</div>
+          <div style={{ fontSize: "12px", color: color, marginTop: "2px", fontWeight: "500" }}>
+            {scoreRange}
           </div>
         </div>
         <span style={{ 
           fontWeight: "700", 
-          color: config.color,
-          fontSize: "22px",
-          background: config.lightBg,
+          color: color,
+          fontSize: "20px",
+          background: `${color}10`,
           padding: '4px 12px',
-          borderRadius: '20px'
+          borderRadius: '12px'
         }}>{count}</span>
       </div>
       
       <div style={{ 
-        height: "8px", 
+        height: "6px", 
         background: "#e2e8f0", 
-        borderRadius: "4px",
+        borderRadius: "3px",
         overflow: "hidden",
-        marginTop: "10px"
+        marginTop: "8px"
       }}>
         <div style={{ 
           height: "100%", 
-          width: `${percentage}%, 
-          background: ${config.gradient}`,
-          borderRadius: "4px",
+          width: `${percentage}%`, 
+          background: color,
+          borderRadius: "3px",
           transition: 'width 0.3s ease'
         }} />
       </div>
@@ -191,14 +155,46 @@ const ClassificationCard = ({ category, count, total, config }) => {
         color: "#64748b", 
         marginTop: "8px"
       }}>
-        <span>{category.scoreRange}</span>
-        <span style={{ fontWeight: '600', color: config.color }}>
+        <span>{scoreRange}</span>
+        <span style={{ fontWeight: '600', color: color }}>
           {percentage.toFixed(1)}%
         </span>
       </div>
     </div>
   );
 };
+
+// Status Badge Component
+const StatusBadge = ({ status }) => (
+  <span style={{
+    padding: "6px 14px",
+    background: "#10b98115",
+    color: "#10b981",
+    borderRadius: "30px",
+    fontSize: "12px",
+    fontWeight: "600",
+    border: "1px solid #10b98130",
+    display: 'inline-block'
+  }}>
+    Completed
+  </span>
+);
+
+// Score Badge Component
+const ScoreBadge = ({ score, color }) => (
+  <div style={{ 
+    display: "inline-block",
+    padding: "6px 14px",
+    background: `${color}10`,
+    color: color,
+    borderRadius: "30px",
+    fontWeight: "600",
+    fontSize: "14px",
+    border: `1px solid ${color}30`
+  }}>
+    {score}/450
+  </div>
+);
 
 export default function SupervisorDashboard() {
   const router = useRouter();
@@ -212,8 +208,6 @@ export default function SupervisorDashboard() {
   const [stats, setStats] = useState({
     totalCandidates: 0,
     completed: 0,
-    inProgress: 0,
-    notStarted: 0,
     eliteTalent: 0,
     topTalent: 0,
     highPotential: 0,
@@ -257,7 +251,6 @@ export default function SupervisorDashboard() {
 
     const fetchData = async () => {
       try {
-        // Select only the columns that exist in your table
         const { data: candidatesData, error: candidatesError } = await supabase
           .from("candidate_assessments")
           .select(`
@@ -276,8 +269,6 @@ export default function SupervisorDashboard() {
           setStats({
             totalCandidates: 0,
             completed: 0,
-            inProgress: 0,
-            notStarted: 0,
             eliteTalent: 0,
             topTalent: 0,
             highPotential: 0,
@@ -290,22 +281,13 @@ export default function SupervisorDashboard() {
           return;
         }
 
-        // Enhance candidate data with additional info
-        const candidatesWithDetails = candidatesData.map((candidate) => {
-          const config = getClassificationConfig(candidate.total_score);
-          return {
-            ...candidate,
-            user: {
-              email: candidate.email || "No email provided",
-              full_name: candidate.full_name || `Candidate ${candidate.user_id.substring(0, 8).toUpperCase()}`,
-              id_short: candidate.user_id.substring(0, 8).toUpperCase()
-            },
-            config,
-            displayId: candidate.user_id.substring(0, 12) + '...',
-            displayName: candidate.full_name || `Candidate ${candidate.user_id.substring(0, 8)}`,
-            completedDate: 'N/A' // Since created_at doesn't exist
-          };
-        });
+        // Enhance candidate data
+        const candidatesWithDetails = candidatesData.map((candidate) => ({
+          ...candidate,
+          displayName: candidate.full_name || `Candidate ${candidate.user_id.substring(0, 8)}`,
+          displayId: candidate.user_id.substring(0, 12) + '...',
+          emailDisplay: candidate.email || "No email provided"
+        }));
 
         setCandidates(candidatesWithDetails);
 
@@ -313,8 +295,6 @@ export default function SupervisorDashboard() {
         const statsData = {
           totalCandidates: candidatesData.length,
           completed: candidatesData.length,
-          inProgress: 0,
-          notStarted: 0,
           eliteTalent: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'Elite Talent').length,
           topTalent: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'Top Talent').length,
           highPotential: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'High Potential').length,
@@ -324,7 +304,6 @@ export default function SupervisorDashboard() {
           needsImprovement: candidatesData.filter(c => getClassificationFromScore(c.total_score) === 'Needs Improvement').length
         };
         setStats(statsData);
-
         setLoading(false);
       } catch (err) {
         console.error("Error fetching data:", err);
@@ -340,8 +319,8 @@ export default function SupervisorDashboard() {
   const filteredCandidates = candidates
     .filter(candidate => {
       const matchesSearch = 
-        candidate.user?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        candidate.user?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (candidate.full_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+        (candidate.email?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
         candidate.user_id?.toLowerCase().includes(searchTerm.toLowerCase());
       
       const matchesFilter = filterClassification === 'all' || 
@@ -356,11 +335,9 @@ export default function SupervisorDashboard() {
         case 'score_asc':
           return a.total_score - b.total_score;
         case 'name_asc':
-          return (a.user?.full_name || '').localeCompare(b.user?.full_name || '');
+          return (a.full_name || '').localeCompare(b.full_name || '');
         case 'name_desc':
-          return (b.user?.full_name || '').localeCompare(a.user?.full_name || '');
-        case 'date_desc':
-        case 'date_asc':
+          return (b.full_name || '').localeCompare(a.full_name || '');
         default:
           return 0;
       }
@@ -372,6 +349,11 @@ export default function SupervisorDashboard() {
     router.push("/supervisor-login");
   };
 
+  // Calculate average score
+  const averageScore = candidates.length > 0 
+    ? Math.round(candidates.reduce((sum, c) => sum + c.total_score, 0) / candidates.length)
+    : 0;
+
   if (!isSupervisor) {
     return (
       <div style={{ 
@@ -379,34 +361,29 @@ export default function SupervisorDashboard() {
         display: "flex", 
         alignItems: "center", 
         justifyContent: "center",
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+        background: 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)'
       }}>
         <div style={{
           background: 'white',
           padding: '40px',
-          borderRadius: '20px',
+          borderRadius: '16px',
           boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
           textAlign: 'center'
         }}>
           <div style={{
-            width: '60px',
-            height: '60px',
-            border: '4px solid #f3f3f3',
-            borderTop: '4px solid #667eea',
+            width: '48px',
+            height: '48px',
+            border: '3px solid #e2e8f0',
+            borderTop: '3px solid #2563eb',
             borderRadius: '50%',
             animation: 'spin 1s linear infinite',
             margin: '0 auto 20px'
           }} />
-          <p style={{ color: '#333', fontSize: '16px' }}>Checking authentication...</p>
+          <p style={{ color: '#475569', fontSize: '16px', fontWeight: '500' }}>Authenticating...</p>
         </div>
       </div>
     );
   }
-
-  // Calculate average score
-  const averageScore = candidates.length > 0 
-    ? Math.round(candidates.reduce((sum, c) => sum + c.total_score, 0) / candidates.length)
-    : 0;
 
   return (
     <AppLayout background={BACKGROUND_CONFIG.bgImage}>
@@ -420,7 +397,7 @@ export default function SupervisorDashboard() {
         backgroundImage: `url(${BACKGROUND_CONFIG.bgImage})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
-        opacity: 0.1,
+        opacity: 0.08,
         zIndex: 0,
         pointerEvents: 'none'
       }} />
@@ -431,17 +408,6 @@ export default function SupervisorDashboard() {
         right: 0,
         bottom: 0,
         background: BACKGROUND_CONFIG.overlay,
-        zIndex: 0,
-        pointerEvents: 'none'
-      }} />
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundImage: `url(${BACKGROUND_CONFIG.pattern})`,
-        opacity: 0.05,
         zIndex: 0,
         pointerEvents: 'none'
       }} />
@@ -461,26 +427,23 @@ export default function SupervisorDashboard() {
           justifyContent: "space-between", 
           alignItems: "center", 
           marginBottom: 30,
-          background: 'rgba(255,255,255,0.95)',
-          backdropFilter: 'blur(10px)',
+          background: 'white',
+          borderRadius: '16px',
           padding: '20px 30px',
-          borderRadius: '20px',
-          boxShadow: '0 10px 30px rgba(0,0,0,0.1)',
-          border: '1px solid rgba(255,255,255,0.2)'
+          boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
+          border: '1px solid #eef2f6'
         }}>
           <div>
             <h1 style={{ 
               margin: 0, 
-              background: 'linear-gradient(135deg, #667eea, #764ba2)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              fontSize: "36px",
-              fontWeight: "800"
+              color: '#1e293b',
+              fontSize: "28px",
+              fontWeight: "700"
             }}>
               Supervisor Dashboard
             </h1>
-            <p style={{ margin: "5px 0 0 0", color: "#64748b" }}>
-              Talent Assessment Analytics & Candidate Management
+            <p style={{ margin: "4px 0 0 0", color: "#64748b", fontSize: "14px" }}>
+              Talent Assessment Overview
             </p>
           </div>
           
@@ -488,60 +451,50 @@ export default function SupervisorDashboard() {
             <button
               onClick={() => router.push("/supervisor-setup")}
               style={{
-                background: "linear-gradient(135deg, #4CAF50, #2E7D32)",
-                color: "white",
-                border: "none",
-                padding: "12px 24px",
-                borderRadius: "12px",
+                background: "white",
+                color: "#2563eb",
+                border: "1px solid #2563eb",
+                padding: "10px 20px",
+                borderRadius: "8px",
                 cursor: "pointer",
                 fontSize: "14px",
-                fontWeight: "600",
-                transition: 'all 0.2s ease',
-                boxShadow: '0 4px 12px rgba(76,175,80,0.3)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
+                fontWeight: "500",
+                transition: 'all 0.2s ease'
               }}
               onMouseOver={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 20px rgba(76,175,80,0.4)';
+                e.currentTarget.style.background = "#2563eb";
+                e.currentTarget.style.color = "white";
               }}
               onMouseOut={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(76,175,80,0.3)';
+                e.currentTarget.style.background = "white";
+                e.currentTarget.style.color = "#2563eb";
               }}
             >
-              <span style={{ fontSize: '18px' }}>➕</span>
-              Add Supervisor
+              + Add Supervisor
             </button>
             
             <button
               onClick={handleLogout}
               style={{
-                background: "linear-gradient(135deg, #d32f2f, #b71c1c)",
-                color: "white",
-                border: "none",
-                padding: "12px 24px",
-                borderRadius: "12px",
+                background: "white",
+                color: "#dc2626",
+                border: "1px solid #dc2626",
+                padding: "10px 20px",
+                borderRadius: "8px",
                 cursor: "pointer",
                 fontSize: "14px",
-                fontWeight: "600",
-                transition: 'all 0.2s ease',
-                boxShadow: '0 4px 12px rgba(211,47,47,0.3)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
+                fontWeight: "500",
+                transition: 'all 0.2s ease'
               }}
               onMouseOver={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 20px rgba(211,47,47,0.4)';
+                e.currentTarget.style.background = "#dc2626";
+                e.currentTarget.style.color = "white";
               }}
               onMouseOut={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(211,47,47,0.3)';
+                e.currentTarget.style.background = "white";
+                e.currentTarget.style.color = "#dc2626";
               }}
             >
-              <span style={{ fontSize: '18px' }}>🚪</span>
               Logout
             </button>
           </div>
@@ -550,94 +503,90 @@ export default function SupervisorDashboard() {
         {/* Statistics Cards */}
         <div style={{ 
           display: "grid", 
-          gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", 
-          gap: "25px", 
-          marginBottom: "40px" 
+          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", 
+          gap: "20px", 
+          marginBottom: "30px" 
         }}>
           <MetricCard
             title="Total Candidates"
             value={stats.totalCandidates}
-            subtitle="Across all classifications"
-            gradient="linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
-            icon="👥"
+            subtitle="Registered in system"
+            color="#2563eb"
           />
           
           <MetricCard
             title="Completed Assessments"
             value={stats.completed}
-            subtitle="100% completion rate"
-            gradient="linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)"
-            icon="✅"
-            trend={`${stats.totalCandidates > 0 ? '100%' : '0%'} of total`}
+            subtitle={`${stats.totalCandidates > 0 ? '100%' : '0%'} completion rate`}
+            color="#10b981"
           />
           
           <MetricCard
             title="Top Talent"
-            value={stats.topTalent}
-            subtitle={`${stats.totalCandidates > 0 ? Math.round((stats.topTalent / stats.totalCandidates) * 100) : 0}% of candidates`}
-            gradient="linear-gradient(135deg, #FF9800 0%, #F57C00 100%)"
-            icon="⭐"
+            value={stats.topTalent + stats.eliteTalent}
+            subtitle={`${stats.totalCandidates > 0 ? Math.round(((stats.topTalent + stats.eliteTalent) / stats.totalCandidates) * 100) : 0}% of candidates`}
+            color="#f59e0b"
           />
           
           <MetricCard
             title="Average Score"
             value={averageScore}
             subtitle="Out of 450 points"
-            gradient="linear-gradient(135deg, #2196F3 0%, #0D47A1 100%)"
-            icon="📊"
+            color="#8b5cf6"
           />
         </div>
 
         {/* Classification Distribution */}
         <div style={{ 
-          background: "rgba(255,255,255,0.98)",
-          backdropFilter: 'blur(10px)',
-          padding: "30px", 
-          borderRadius: "24px", 
-          boxShadow: "0 20px 40px rgba(0,0,0,0.1)",
-          marginBottom: "40px",
-          border: "1px solid rgba(255,255,255,0.2)"
+          background: "white",
+          padding: "24px", 
+          borderRadius: "16px", 
+          boxShadow: "0 4px 20px rgba(0,0,0,0.05)",
+          marginBottom: "30px",
+          border: "1px solid #eef2f6"
         }}>
           <div style={{ 
             display: 'flex', 
             justifyContent: 'space-between', 
             alignItems: 'center',
-            marginBottom: '25px'
+            marginBottom: '20px'
           }}>
-            <h2 style={{ margin: 0, color: "#1e293b", fontSize: '24px' }}>
-              Talent Classification Distribution
+            <h2 style={{ margin: 0, color: "#1e293b", fontSize: '18px', fontWeight: '600' }}>
+              Talent Distribution
             </h2>
             <div style={{
-              padding: '8px 16px',
+              padding: '6px 14px',
               background: '#f8fafc',
-              borderRadius: '30px',
-              fontSize: '14px',
-              color: '#64748b'
+              borderRadius: '20px',
+              fontSize: '13px',
+              color: '#475569',
+              fontWeight: '500'
             }}>
-              Total: <strong>{stats.totalCandidates}</strong> candidates
+              Total: {stats.totalCandidates}
             </div>
           </div>
           
           <div style={{ 
             display: "grid", 
-            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", 
-            gap: "20px" 
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+            gap: "16px" 
           }}>
             {[
-              { name: 'Elite Talent', count: stats.eliteTalent, config: getClassificationConfig(440), scoreRange: '430-450' },
-              { name: 'Top Talent', count: stats.topTalent, config: getClassificationConfig(415), scoreRange: '400-429' },
-              { name: 'High Potential', count: stats.highPotential, config: getClassificationConfig(375), scoreRange: '350-399' },
-              { name: 'Solid Performer', count: stats.solidPerformer, config: getClassificationConfig(325), scoreRange: '300-349' },
-              { name: 'Developing Talent', count: stats.developing, config: getClassificationConfig(275), scoreRange: '250-299' },
-              { name: 'Emerging Talent', count: stats.emergingTalent, config: getClassificationConfig(225), scoreRange: '200-249' },
-              { name: 'Needs Improvement', count: stats.needsImprovement, config: getClassificationConfig(150), scoreRange: '0-199' }
+              { name: 'Elite Talent', count: stats.eliteTalent, color: '#2E7D32', range: '430-450' },
+              { name: 'Top Talent', count: stats.topTalent, color: '#4CAF50', range: '400-429' },
+              { name: 'High Potential', count: stats.highPotential, color: '#2196F3', range: '350-399' },
+              { name: 'Solid Performer', count: stats.solidPerformer, color: '#FF9800', range: '300-349' },
+              { name: 'Developing Talent', count: stats.developing, color: '#9C27B0', range: '250-299' },
+              { name: 'Emerging Talent', count: stats.emergingTalent, color: '#795548', range: '200-249' },
+              { name: 'Needs Improvement', count: stats.needsImprovement, color: '#F44336', range: '0-199' }
             ].map((category) => (
               <ClassificationCard
                 key={category.name}
                 category={category.name}
                 count={category.count}
                 total={stats.totalCandidates}
-                config={{ ...category.config, scoreRange: category.scoreRange }}
+                color={category.color}
+                scoreRange={category.range}
               />
             ))}
           </div>
@@ -645,74 +594,62 @@ export default function SupervisorDashboard() {
 
         {/* Candidates Table */}
         <div style={{ 
-          background: "rgba(255,255,255,0.98)",
-          backdropFilter: 'blur(10px)',
-          padding: "30px", 
-          borderRadius: "24px", 
-          boxShadow: "0 20px 40px rgba(0,0,0,0.1)",
-          border: "1px solid rgba(255,255,255,0.2)"
+          background: "white",
+          padding: "24px", 
+          borderRadius: "16px", 
+          boxShadow: "0 4px 20px rgba(0,0,0,0.05)",
+          border: "1px solid #eef2f6"
         }}>
           {/* Table Header with Filters */}
           <div style={{ 
             display: "flex", 
             justifyContent: "space-between", 
             alignItems: "center",
-            marginBottom: "25px",
+            marginBottom: "20px",
             flexWrap: "wrap",
             gap: "15px"
           }}>
-            <h2 style={{ margin: 0, color: "#1e293b", fontSize: '24px' }}>
+            <h2 style={{ margin: 0, color: "#1e293b", fontSize: '18px', fontWeight: '600' }}>
               Candidate Assessments
             </h2>
             
-            <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: "12px", flexWrap: 'wrap' }}>
               {/* Search */}
-              <div style={{ position: 'relative' }}>
-                <span style={{
-                  position: 'absolute',
-                  left: '12px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  fontSize: '16px',
-                  color: '#94a3b8'
-                }}>🔍</span>
-                <input
-                  type="text"
-                  placeholder="Search candidates..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  style={{
-                    padding: '12px 12px 12px 40px',
-                    border: '2px solid #e2e8f0',
-                    borderRadius: '12px',
-                    fontSize: '14px',
-                    width: '250px',
-                    outline: 'none',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onFocus={(e) => {
-                    e.currentTarget.style.borderColor = '#667eea';
-                    e.currentTarget.style.boxShadow = '0 0 0 3px rgba(102,126,234,0.1)';
-                  }}
-                  onBlur={(e) => {
-                    e.currentTarget.style.borderColor = '#e2e8f0';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                />
-              </div>
+              <input
+                type="text"
+                placeholder="Search candidates..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{
+                  padding: '10px 16px',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  width: '240px',
+                  outline: 'none',
+                  transition: 'border-color 0.2s ease'
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = '#2563eb';
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = '#e2e8f0';
+                }}
+              />
 
               {/* Filter by Classification */}
               <select
                 value={filterClassification}
                 onChange={(e) => setFilterClassification(e.target.value)}
                 style={{
-                  padding: '12px 16px',
-                  border: '2px solid #e2e8f0',
-                  borderRadius: '12px',
+                  padding: '10px 16px',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
                   fontSize: '14px',
                   background: 'white',
                   cursor: 'pointer',
-                  outline: 'none'
+                  outline: 'none',
+                  color: '#1e293b'
                 }}
               >
                 <option value="all">All Classifications</option>
@@ -730,13 +667,14 @@ export default function SupervisorDashboard() {
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
                 style={{
-                  padding: '12px 16px',
-                  border: '2px solid #e2e8f0',
-                  borderRadius: '12px',
+                  padding: '10px 16px',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
                   fontSize: '14px',
                   background: 'white',
                   cursor: 'pointer',
-                  outline: 'none'
+                  outline: 'none',
+                  color: '#1e293b'
                 }}
               >
                 <option value="score_desc">Score: High to Low</option>
@@ -749,12 +687,12 @@ export default function SupervisorDashboard() {
 
           {/* Results count */}
           <div style={{
-            marginBottom: '20px',
-            padding: '10px 16px',
+            marginBottom: '16px',
+            padding: '12px 16px',
             background: '#f8fafc',
-            borderRadius: '12px',
+            borderRadius: '8px',
             fontSize: '14px',
-            color: '#64748b',
+            color: '#475569',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center'
@@ -772,37 +710,30 @@ export default function SupervisorDashboard() {
           {loading ? (
             <div style={{ textAlign: "center", padding: "60px" }}>
               <div style={{ 
-                width: "50px", 
-                height: "50px", 
-                border: "4px solid #f3f3f3",
-                borderTop: "4px solid #667eea",
+                width: "40px", 
+                height: "40px", 
+                border: "3px solid #e2e8f0",
+                borderTop: "3px solid #2563eb",
                 borderRadius: "50%",
                 animation: "spin 1s linear infinite",
-                margin: "0 auto 20px"
+                margin: "0 auto 16px"
               }} />
-              <p style={{ color: "#64748b" }}>Loading candidate data...</p>
+              <p style={{ color: "#64748b", fontSize: "14px" }}>Loading candidate data...</p>
             </div>
           ) : filteredCandidates.length === 0 ? (
             <div style={{ 
               textAlign: "center", 
-              padding: "80px 20px",
+              padding: "60px 20px",
               background: "#f8fafc",
-              borderRadius: "16px"
+              borderRadius: "12px"
             }}>
-              <div style={{ 
-                fontSize: "64px", 
-                marginBottom: "20px",
-                opacity: 0.5
-              }}>
-                📊
-              </div>
-              <h3 style={{ color: "#1e293b", marginBottom: "10px", fontSize: '20px' }}>
+              <h3 style={{ color: "#1e293b", marginBottom: "8px", fontSize: '16px', fontWeight: '600' }}>
                 No Candidates Found
               </h3>
-              <p style={{ color: "#64748b", maxWidth: "500px", margin: "0 auto 25px" }}>
+              <p style={{ color: "#64748b", fontSize: "14px", marginBottom: "20px" }}>
                 {searchTerm || filterClassification !== 'all' 
                   ? "Try adjusting your search or filter criteria"
-                  : "When candidates complete their assessments, their results will appear here"}
+                  : "No candidates have completed assessments yet"}
               </p>
               {(searchTerm || filterClassification !== 'all') && (
                 <button
@@ -811,23 +742,21 @@ export default function SupervisorDashboard() {
                     setFilterClassification('all');
                   }}
                   style={{
-                    padding: '12px 24px',
-                    background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                    padding: '10px 20px',
+                    background: '#2563eb',
                     color: 'white',
                     border: 'none',
-                    borderRadius: '12px',
+                    borderRadius: '8px',
                     fontSize: '14px',
-                    fontWeight: '600',
+                    fontWeight: '500',
                     cursor: 'pointer',
-                    transition: 'all 0.2s ease'
+                    transition: 'background 0.2s ease'
                   }}
                   onMouseOver={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 8px 20px rgba(102,126,234,0.4)';
+                    e.currentTarget.style.background = '#1d4ed8';
                   }}
                   onMouseOut={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = 'none';
+                    e.currentTarget.style.background = '#2563eb';
                   }}
                 >
                   Clear Filters
@@ -840,133 +769,94 @@ export default function SupervisorDashboard() {
                 width: "100%",
                 borderCollapse: "collapse",
                 textAlign: "left",
-                minWidth: "1000px"
+                fontSize: "14px",
+                minWidth: "900px"
               }}>
                 <thead>
                   <tr style={{ 
-                    borderBottom: "2px solid #e2e8f0",
+                    borderBottom: "1px solid #e2e8f0",
                     backgroundColor: "#f8fafc"
                   }}>
-                    <th style={{ padding: "16px", fontWeight: "600", color: "#475569" }}>Candidate</th>
-                    <th style={{ padding: "16px", fontWeight: "600", color: "#475569" }}>Contact</th>
-                    <th style={{ padding: "16px", fontWeight: "600", color: "#475569" }}>Completed</th>
-                    <th style={{ padding: "16px", fontWeight: "600", color: "#475569" }}>Total Score</th>
-                    <th style={{ padding: "16px", fontWeight: "600", color: "#475569" }}>Classification</th>
-                    <th style={{ padding: "16px", fontWeight: "600", color: "#475569" }}>Status</th>
-                    <th style={{ padding: "16px", fontWeight: "600", color: "#475569" }}>Action</th>
+                    <th style={{ padding: "14px 16px", fontWeight: "600", color: "#475569" }}>Candidate</th>
+                    <th style={{ padding: "14px 16px", fontWeight: "600", color: "#475569" }}>Contact</th>
+                    <th style={{ padding: "14px 16px", fontWeight: "600", color: "#475569" }}>Total Score</th>
+                    <th style={{ padding: "14px 16px", fontWeight: "600", color: "#475569" }}>Classification</th>
+                    <th style={{ padding: "14px 16px", fontWeight: "600", color: "#475569" }}>Status</th>
+                    <th style={{ padding: "14px 16px", fontWeight: "600", color: "#475569" }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCandidates.map((c) => {
-                    const config = c.config;
-                    const isHovered = hoveredRow === c.user_id;
+                  {filteredCandidates.map((candidate) => {
+                    const classification = getClassificationFromScore(candidate.total_score);
+                    const color = getClassificationColor(candidate.total_score);
+                    const isHovered = hoveredRow === candidate.user_id;
                     
                     return (
                       <tr 
-                        key={c.user_id} 
+                        key={candidate.user_id} 
                         style={{ 
-                          borderBottom: "1px solid #f1f5f9",
-                          transition: "all 0.2s ease",
+                          borderBottom: "1px solid #eef2f6",
+                          transition: "background 0.2s ease",
                           background: isHovered ? '#f8fafc' : 'white',
-                          transform: isHovered ? 'scale(1.01)' : 'scale(1)',
-                          boxShadow: isHovered ? '0 4px 12px rgba(0,0,0,0.05)' : 'none'
+                          cursor: 'pointer'
                         }}
-                        onMouseEnter={() => setHoveredRow(c.user_id)}
+                        onMouseEnter={() => setHoveredRow(candidate.user_id)}
                         onMouseLeave={() => setHoveredRow(null)}
+                        onClick={() => router.push(`/supervisor/${candidate.user_id}`)}
                       >
                         <td style={{ padding: "16px" }}>
-                          <div style={{ fontWeight: "600", color: "#1e293b" }}>
-                            {c.displayName}
+                          <div style={{ fontWeight: "500", color: "#1e293b" }}>
+                            {candidate.full_name || 'Unnamed Candidate'}
                           </div>
                           <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>
-                            ID: {c.displayId}
+                            ID: {candidate.displayId}
                           </div>
                         </td>
                         <td style={{ padding: "16px" }}>
-                          <div style={{ color: "#2563eb", fontSize: "14px" }}>
-                            {c.user?.email}
+                          <div style={{ color: "#2563eb" }}>
+                            {candidate.email || 'No email'}
                           </div>
-                          {c.user?.email === "No email provided" && (
-                            <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "4px" }}>
-                              Short ID: {c.user?.id_short}
-                            </div>
-                          )}
-                        </td>
-                        <td style={{ padding: "16px", color: "#64748b", fontSize: "14px" }}>
-                          {c.completedDate}
                         </td>
                         <td style={{ padding: "16px" }}>
-                          <div style={{ 
-                            display: "inline-block",
-                            padding: "6px 14px",
-                            background: config.lightBg,
-                            color: config.color,
-                            borderRadius: "30px",
-                            fontWeight: "600",
-                            fontSize: "14px",
-                            border: `1px solid ${config.color}30`
+                          <ScoreBadge score={candidate.total_score} color={color} />
+                        </td>
+                        <td style={{ padding: "16px" }}>
+                          <span style={{ 
+                            color: color,
+                            fontWeight: "500"
                           }}>
-                            {c.total_score}/450
-                          </div>
-                        </td>
-                        <td style={{ padding: "16px" }}>
-                          <div style={{ 
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px'
-                          }}>
-                            <span style={{ fontSize: '20px' }}>{config.icon}</span>
-                            <span style={{ 
-                              color: config.color,
-                              fontWeight: "600",
-                              fontSize: "14px"
-                            }}>
-                              {getClassificationFromScore(c.total_score)}
-                            </span>
-                          </div>
-                        </td>
-                        <td style={{ padding: "16px" }}>
-                          <span style={{
-                            padding: "6px 14px",
-                            background: "linear-gradient(135deg, #4CAF50, #2E7D32)",
-                            color: "white",
-                            borderRadius: "30px",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            boxShadow: '0 2px 8px rgba(76,175,80,0.3)'
-                          }}>
-                            ✓ Completed
+                            {classification}
                           </span>
                         </td>
                         <td style={{ padding: "16px" }}>
-                          <Link href={`/supervisor/${c.user_id}`} legacyBehavior>
-                            <a style={{ 
-                              background: "linear-gradient(135deg, #667eea, #764ba2)",
-                              color: "white", 
-                              padding: "10px 20px", 
-                              borderRadius: "10px",
-                              textDecoration: "none",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: "8px",
-                              fontWeight: "500",
-                              fontSize: "14px",
-                              transition: "all 0.2s ease",
-                              boxShadow: "0 4px 12px rgba(102,126,234,0.3)"
-                            }}
-                            onMouseOver={(e) => {
-                              e.currentTarget.style.transform = 'translateY(-2px)';
-                              e.currentTarget.style.boxShadow = '0 8px 20px rgba(102,126,234,0.4)';
-                            }}
-                            onMouseOut={(e) => {
-                              e.currentTarget.style.transform = 'translateY(0)';
-                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(102,126,234,0.3)';
-                            }}
-                            >
-                              <span>📋</span>
-                              View Report
-                            </a>
-                          </Link>
+                          <StatusBadge status="completed" />
+                        </td>
+                        <td style={{ padding: "16px" }}>
+                          <button style={{ 
+                            background: "transparent",
+                            color: "#2563eb", 
+                            padding: "8px 16px", 
+                            borderRadius: "6px",
+                            border: "1px solid #2563eb",
+                            cursor: "pointer",
+                            fontSize: "13px",
+                            fontWeight: "500",
+                            transition: "all 0.2s ease"
+                          }}
+                          onMouseOver={(e) => {
+                            e.currentTarget.style.background = "#2563eb";
+                            e.currentTarget.style.color = "white";
+                          }}
+                          onMouseOut={(e) => {
+                            e.currentTarget.style.background = "transparent";
+                            e.currentTarget.style.color = "#2563eb";
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/supervisor/${candidate.user_id}`);
+                          }}>
+                            View Details
+                          </button>
                         </td>
                       </tr>
                     );
@@ -979,22 +869,17 @@ export default function SupervisorDashboard() {
 
         {/* Footer */}
         <div style={{ 
-          marginTop: "30px",
-          padding: "20px",
-          background: "rgba(255,255,255,0.95)",
-          backdropFilter: 'blur(10px)',
-          borderRadius: "16px",
+          marginTop: "20px",
+          padding: "16px",
+          background: "white",
+          borderRadius: "8px",
           textAlign: "center",
           fontSize: "13px",
           color: "#64748b",
-          border: "1px solid rgba(255,255,255,0.2)",
-          boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+          border: "1px solid #eef2f6"
         }}>
           <p style={{ margin: 0 }}>
-            Talent Assessment System • {stats.totalCandidates} total candidates • Session active
-          </p>
-          <p style={{ margin: "5px 0 0 0", fontSize: "12px" }}>
-            Session expires: {new Date(Date.now() + 8 * 60 * 60 * 1000).toLocaleTimeString()}
+            Talent Assessment System • {stats.totalCandidates} candidates • Last updated: {new Date().toLocaleDateString()}
           </p>
         </div>
       </div>
@@ -1003,20 +888,6 @@ export default function SupervisorDashboard() {
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
-        }
-        @keyframes slideIn {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
         }
       `}</style>
     </AppLayout>
