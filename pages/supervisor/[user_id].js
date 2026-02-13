@@ -1,4 +1,4 @@
-// pages/supervisor/[user_id].js - COLORFUL ENHANCED VERSION
+// pages/supervisor/[user_id].js - COLORFUL ENHANCED VERSION (500 POINTS TOTAL)
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -94,39 +94,39 @@ export default function CandidateReport() {
     border: '#DFE6E9'
   };
 
-  // Helper function to get classification based on score
+  // Helper function to get classification based on score (UPDATED TO 500)
   const getClassification = (score) => {
-    if (score >= 430) return { 
+    if (score >= 480) return { 
       name: "Elite Talent", 
       color: colors.success,
       gradient: 'linear-gradient(135deg, #00B894, #00CEC9)',
       icon: '🏆'
     };
-    if (score >= 400) return { 
+    if (score >= 450) return { 
       name: "Top Talent", 
       color: colors.info,
       gradient: 'linear-gradient(135deg, #0984E3, #74B9FF)',
       icon: '⭐'
     };
-    if (score >= 350) return { 
+    if (score >= 400) return { 
       name: "High Potential", 
       color: colors.warning,
       gradient: 'linear-gradient(135deg, #FDCB6E, #FFEAA7)',
       icon: '📈'
     };
-    if (score >= 300) return { 
+    if (score >= 350) return { 
       name: "Solid Performer", 
       color: colors.secondary,
       gradient: 'linear-gradient(135deg, #00CEC9, #81ECEC)',
       icon: '💪'
     };
-    if (score >= 250) return { 
+    if (score >= 300) return { 
       name: "Developing Talent", 
       color: colors.purple,
       gradient: 'linear-gradient(135deg, #6C5CE7, #A29BFE)',
       icon: '🌱'
     };
-    if (score >= 200) return { 
+    if (score >= 250) return { 
       name: "Emerging Talent", 
       color: colors.pink,
       gradient: 'linear-gradient(135deg, #E84342, #FF7675)',
@@ -156,22 +156,22 @@ export default function CandidateReport() {
     return { grade: "F", color: colors.danger, label: "Unsatisfactory" };
   };
 
-  // Get performance description
+  // Get performance description (UPDATED TO 500)
   const getPerformanceDescription = (score) => {
     const classification = getClassification(score);
     
-    if (score >= 430) return "An exceptional candidate who demonstrates mastery across all competencies. This individual consistently exceeds expectations and shows potential for senior leadership roles. Highly recommended for accelerated development programs.";
-    if (score >= 400) return "An outstanding performer with clear strengths across multiple domains. Shows strong leadership potential and technical competence. Ready for increased responsibility and strategic assignments.";
-    if (score >= 350) return "A strong performer with identified development areas. Shows promise for growth and would benefit from targeted development opportunities. Good potential for advancement with proper guidance.";
-    if (score >= 300) return "A reliable and consistent performer meeting all core requirements. Demonstrates solid competency in key areas. Would benefit from structured development to reach full potential.";
-    if (score >= 250) return "Shows foundational skills with clear development needs. Requires structured guidance and targeted training to build capabilities. Potential exists with proper support and development.";
-    if (score >= 200) return "An early-stage performer requiring significant development. Needs comprehensive training and close supervision to enhance foundational skills. Monitor progress closely.";
+    if (score >= 480) return "An exceptional candidate who demonstrates mastery across all competencies. This individual consistently exceeds expectations and shows potential for senior leadership roles. Highly recommended for accelerated development programs.";
+    if (score >= 450) return "An outstanding performer with clear strengths across multiple domains. Shows strong leadership potential and technical competence. Ready for increased responsibility and strategic assignments.";
+    if (score >= 400) return "A strong performer with identified development areas. Shows promise for growth and would benefit from targeted development opportunities. Good potential for advancement with proper guidance.";
+    if (score >= 350) return "A reliable and consistent performer meeting all core requirements. Demonstrates solid competency in key areas. Would benefit from structured development to reach full potential.";
+    if (score >= 300) return "Shows foundational skills with clear development needs. Requires structured guidance and targeted training to build capabilities. Potential exists with proper support and development.";
+    if (score >= 250) return "An early-stage performer requiring significant development. Needs comprehensive training and close supervision to enhance foundational skills. Monitor progress closely.";
     return "Performance below expectations requiring immediate attention. Needs intensive development plan and regular performance reviews to address critical gaps. Consider placement in role with closer supervision.";
   };
 
-  // Get estimated category scores based on total score with more realistic variations
+  // Get estimated category scores based on total score (UPDATED TO 500)
   const getEstimatedCategoryScores = (totalScore) => {
-    const overallPercentage = (totalScore / 450) * 100;
+    const overallPercentage = (totalScore / 500) * 100; // Changed from 450 to 500
     
     // Create unique variations based on user_id
     const userIdNum = parseInt((user_id || '123456').replace(/[^0-9]/g, '').substring(0, 6) || '123456', 10);
@@ -205,13 +205,17 @@ export default function CandidateReport() {
       const gradeInfo = getGradeInfo(percentage);
       const assessmentType = assessmentTypes.find(t => t.name === category) || assessmentTypes[0];
       
-      // Calculate score out of 75 (6 categories * 75 = 450)
-      const categoryScore = Math.round((percentage / 100) * 75);
+      // Calculate score based on percentage of total 500
+      // Each category max is approximately 83 (500/6 ≈ 83.33)
+      const maxPerCategory = Math.round(500 / categories.length); // ~83
+      const categoryScore = Math.round((percentage / 100) * maxPerCategory);
       
       categoryScores[category] = {
         score: categoryScore,
         percentage: percentage,
-        maxPossible: 75,
+        maxPossible: maxPerCategory,
+        totalMaxPossible: 500,
+        totalScore: totalScore,
         grade: gradeInfo.grade,
         gradeLabel: gradeInfo.label,
         gradeColor: gradeInfo.color,
@@ -220,7 +224,6 @@ export default function CandidateReport() {
         lightBg: assessmentType.lightBg,
         icon: assessmentType.icon,
         description: assessmentType.description,
-        // Add unique insights per category
         insights: getCategoryInsights(category, percentage, userIdNum, index)
       };
     });
@@ -329,8 +332,8 @@ export default function CandidateReport() {
     recommendations.push({
       type: "overall",
       title: "Overall Development Strategy",
-      description: `Based on the ${classification.name} classification, the candidate would benefit from a ${totalScore >= 400 ? 'accelerated' : 'structured'} development approach.`,
-      action: totalScore >= 400 
+      description: `Based on the ${classification.name} classification, the candidate would benefit from a ${totalScore >= 450 ? 'accelerated' : 'structured'} development approach.`,
+      action: totalScore >= 450 
         ? "Fast-track for leadership development program with executive mentorship"
         : "Enroll in foundational development program with regular progress reviews",
       priority: "High",
@@ -544,7 +547,7 @@ export default function CandidateReport() {
   const classification = getClassification(totalScore);
   
   // Calculate derived data
-  const overallPercentage = Math.round((totalScore / 450) * 100);
+  const overallPercentage = Math.round((totalScore / 500) * 100); // Changed from 450 to 500
   const categoryScores = getEstimatedCategoryScores(totalScore);
   const strengths = getStrengths(categoryScores);
   const weaknesses = getWeaknesses(categoryScores);
@@ -709,7 +712,7 @@ export default function CandidateReport() {
               </div>
             </div>
 
-            {/* Score Summary Card */}
+            {/* Score Summary Card - UPDATED TO 500 */}
             <div style={{
               background: classification.gradient,
               borderRadius: "20px",
@@ -726,13 +729,13 @@ export default function CandidateReport() {
                   </div>
                   <div style={{ fontSize: "64px", fontWeight: "800", marginBottom: "10px", lineHeight: 1 }}>
                     {totalScore}
-                    <span style={{ fontSize: "24px", opacity: 0.7, marginLeft: "10px" }}>/450</span>
+                    <span style={{ fontSize: "24px", opacity: 0.7, marginLeft: "10px" }}>/500</span>
                   </div>
                   <div style={{ fontSize: "24px", fontWeight: "600", marginBottom: "10px" }}>
                     {classification.name}
                   </div>
                   <div style={{ fontSize: "16px", opacity: 0.9 }}>
-                    {overallPercentage}% Overall • {Math.round(totalScore / 4.5)}th Percentile
+                    {overallPercentage}% Overall • {Math.round(totalScore / 5)}th Percentile
                   </div>
                 </div>
                 <div style={{
@@ -769,7 +772,7 @@ export default function CandidateReport() {
           {/* Overview Tab */}
           {activeTab === 'overview' && (
             <>
-              {/* Category Scores Grid */}
+              {/* Category Scores Grid - UPDATED TO SHOW 500 TOTAL */}
               <div style={{
                 background: "rgba(255,255,255,0.98)",
                 backdropFilter: 'blur(10px)',
@@ -824,7 +827,9 @@ export default function CandidateReport() {
                       
                       <div style={{ marginBottom: '15px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                          <span style={{ color: '#4a5568', fontWeight: '600' }}>Score: {data.score}/{data.maxPossible}</span>
+                          <span style={{ color: '#4a5568', fontWeight: '600' }}>
+                            Score: {data.score}/{data.maxPossible}
+                          </span>
                           <span style={{ color: data.gradeColor, fontWeight: '700' }}>{data.grade} • {data.percentage}%</span>
                         </div>
                         <div style={{
@@ -841,6 +846,19 @@ export default function CandidateReport() {
                             transition: 'width 0.5s ease'
                           }} />
                         </div>
+                      </div>
+                      
+                      {/* Context about total score - UPDATED TO 500 */}
+                      <div style={{
+                        fontSize: '12px',
+                        color: '#718096',
+                        marginBottom: '15px',
+                        padding: '8px',
+                        background: 'white',
+                        borderRadius: '8px',
+                        textAlign: 'center'
+                      }}>
+                        Part of overall score: <strong>{data.totalScore}/500</strong> (Total across all categories)
                       </div>
                       
                       <div style={{
