@@ -77,7 +77,9 @@ const ASSESSMENT_TYPES = [
 ];
 
 // Helper function to get classification based on score and assessment type
-const getClassification = (score, assessmentType) => {
+const getClassification = (score, assessmentType, maxScore) => {
+  const percentage = (score / maxScore) * 100;
+  
   // For General Assessment (500 points)
   if (assessmentType === 'General Assessment') {
     if (score >= 480) return { name: "Elite Talent", color: "#00B894" };
@@ -91,29 +93,29 @@ const getClassification = (score, assessmentType) => {
   
   // For Technical/Manufacturing Assessment (100 points)
   if (assessmentType === 'Manufacturing Technical Skills') {
-    if (score >= 90) return { name: "Technical Expert", color: "#00B894" };
-    if (score >= 80) return { name: "Advanced", color: "#0984E3" };
-    if (score >= 70) return { name: "Proficient", color: "#FDCB6E" };
-    if (score >= 60) return { name: "Competent", color: "#00CEC9" };
-    if (score >= 50) return { name: "Developing", color: "#6C5CE7" };
+    if (percentage >= 90) return { name: "Technical Expert", color: "#00B894" };
+    if (percentage >= 80) return { name: "Advanced", color: "#0984E3" };
+    if (percentage >= 70) return { name: "Proficient", color: "#FDCB6E" };
+    if (percentage >= 60) return { name: "Competent", color: "#00CEC9" };
+    if (percentage >= 50) return { name: "Developing", color: "#6C5CE7" };
     return { name: "Needs Training", color: "#D63031" };
   }
   
   // For Cognitive Assessment (100 points)
   if (assessmentType === 'Cognitive & Thinking Skills') {
-    if (score >= 90) return { name: "Exceptional", color: "#00B894" };
-    if (score >= 80) return { name: "Strong", color: "#0984E3" };
-    if (score >= 70) return { name: "Good", color: "#FDCB6E" };
-    if (score >= 60) return { name: "Satisfactory", color: "#00CEC9" };
-    if (score >= 50) return { name: "Developing", color: "#6C5CE7" };
+    if (percentage >= 90) return { name: "Exceptional", color: "#00B894" };
+    if (percentage >= 80) return { name: "Strong", color: "#0984E3" };
+    if (percentage >= 70) return { name: "Good", color: "#FDCB6E" };
+    if (percentage >= 60) return { name: "Satisfactory", color: "#00CEC9" };
+    if (percentage >= 50) return { name: "Developing", color: "#6C5CE7" };
     return { name: "Needs Development", color: "#D63031" };
   }
   
   // For Personality-based assessments (Behavioral, Cultural, Leadership)
-  if (score >= 80) return { name: "Strong Indicator", color: "#00B894" };
-  if (score >= 70) return { name: "Moderate Indicator", color: "#0984E3" };
-  if (score >= 60) return { name: "Balanced", color: "#FDCB6E" };
-  if (score >= 50) return { name: "Developing", color: "#00CEC9" };
+  if (percentage >= 80) return { name: "Strong Indicator", color: "#00B894" };
+  if (percentage >= 70) return { name: "Moderate Indicator", color: "#0984E3" };
+  if (percentage >= 60) return { name: "Balanced", color: "#FDCB6E" };
+  if (percentage >= 50) return { name: "Developing", color: "#00CEC9" };
   return { name: "Area for Growth", color: "#6C5CE7" };
 };
 
@@ -206,16 +208,16 @@ export default function SupervisorDashboard() {
     checkSupervisorAuth();
   }, [router]);
 
-  // Fetch candidates who have taken the selected assessment
+  // Fetch all candidates and their assessment data
   useEffect(() => {
     if (!isSupervisor) return;
 
-    const fetchCandidatesByAssessment = async () => {
+    const fetchAllCandidates = async () => {
       try {
         setLoading(true);
         
-        // First, get all users who have responses for the selected assessment type
-        const { data: responses, error: responsesError } = await supabase
+        // First, get all unique users who have responses
+        const { data: allResponses, error: responsesError } = await supabase
           .from("responses")
           .select(`
             user_id,
@@ -225,12 +227,11 @@ export default function SupervisorDashboard() {
             answers!inner (
               score
             )
-          `)
-          .eq("questions.assessment_type", selectedAssessment);
+          `);
 
         if (responsesError) throw responsesError;
 
-        if (!responses || responses.length === 0) {
+        if (!allResponses || allResponses.length === 0) {
           setCandidates([]);
           setStats({
             totalCandidates: 0,
@@ -242,29 +243,33 @@ export default function SupervisorDashboard() {
           return;
         }
 
-        // Group responses by user and calculate scores
-        const userScores = {};
-        const userResponseCounts = {};
+        // Group responses by user and assessment type
+        const userAssessmentScores = {};
+        const userAssessmentCounts = {};
 
-        responses.forEach(response => {
+        allResponses.forEach(response => {
           const userId = response.user_id;
+          const assessmentType = response.questions.assessment_type;
           const score = response.answers.score;
           
-          if (!userScores[userId]) {
-            userScores[userId] = 0;
-            userResponseCounts[userId] = 0;
+          if (!userAssessmentScores[userId]) {
+            userAssessmentScores[userId] = {};
+            userAssessmentCounts[userId] = {};
           }
           
-          userScores[userId] += score;
-          userResponseCounts[userId] += 1;
+          if (!userAssessmentScores[userId][assessmentType]) {
+            userAssessmentScores[userId][assessmentType] = 0;
+            userAssessmentCounts[userId][assessmentType] = 0;
+          }
+          
+          userAssessmentScores[userId][assessmentType] += score;
+          userAssessmentCounts[userId][assessmentType] += 1;
         });
 
-        // Calculate total possible score for this assessment
-        const questionsPerUser = Math.max(...Object.values(userResponseCounts));
-        const maxPossibleScore = questionsPerUser * 5;
+        // Get all unique user IDs
+        const userIds = Object.keys(userAssessmentScores);
 
         // Get user details from candidate_assessments
-        const userIds = Object.keys(userScores);
         const { data: candidatesData, error: candidatesError } = await supabase
           .from("candidate_assessments")
           .select("user_id, full_name, email")
@@ -272,36 +277,60 @@ export default function SupervisorDashboard() {
 
         if (candidatesError) throw candidatesError;
 
-        // Build candidate list with their scores for this assessment
-        const candidatesWithScores = userIds.map(userId => {
+        // Build candidate list with their assessment summaries
+        const candidatesWithAssessments = userIds.map(userId => {
           const candidateInfo = candidatesData?.find(c => c.user_id === userId) || {};
-          const totalScore = userScores[userId];
-          const percentage = Math.round((totalScore / maxPossibleScore) * 100);
-          const classification = getClassification(percentage, selectedAssessment);
+          const userScores = userAssessmentScores[userId];
+          const userCounts = userAssessmentCounts[userId];
+          
+          // Calculate score for selected assessment
+          let score = 0;
+          let maxPossible = 0;
+          let questionCount = 0;
+          
+          if (userScores[selectedAssessment]) {
+            score = userScores[selectedAssessment];
+            questionCount = userCounts[selectedAssessment];
+            maxPossible = questionCount * 5;
+          }
+          
+          const percentage = maxPossible > 0 ? Math.round((score / maxPossible) * 100) : 0;
+          const assessmentConfig = ASSESSMENT_TYPES.find(a => a.name === selectedAssessment);
+          const classification = getClassification(score, selectedAssessment, assessmentConfig?.maxScore || 100);
+          
+          // Get list of completed assessments
+          const completedAssessments = Object.keys(userScores).filter(type => userScores[type] > 0);
           
           return {
             user_id: userId,
             full_name: candidateInfo.full_name || `Candidate ${userId.substring(0, 8)}`,
             email: candidateInfo.email || "Email not available",
-            totalScore,
-            maxPossible: maxPossibleScore,
+            score,
+            maxPossible,
             percentage,
             classification,
-            questionCount: userResponseCounts[userId]
+            questionCount,
+            completedAssessments,
+            hasAssessment: score > 0
           };
         });
 
-        // Sort by score (highest first)
-        candidatesWithScores.sort((a, b) => b.totalScore - a.totalScore);
-        setCandidates(candidatesWithScores);
+        // Filter to only include candidates who have taken the selected assessment
+        const filteredCandidates = candidatesWithAssessments.filter(c => c.hasAssessment);
+        
+        // Sort by score
+        filteredCandidates.sort((a, b) => b.score - a.score);
+        setCandidates(filteredCandidates);
 
         // Calculate stats
-        const avgScore = candidatesWithScores.reduce((sum, c) => sum + c.percentage, 0) / candidatesWithScores.length;
-        const topPerformers = candidatesWithScores.filter(c => c.percentage >= 80).length;
-        const needsDev = candidatesWithScores.filter(c => c.percentage < 60).length;
+        const avgScore = filteredCandidates.length > 0 
+          ? filteredCandidates.reduce((sum, c) => sum + c.percentage, 0) / filteredCandidates.length 
+          : 0;
+        const topPerformers = filteredCandidates.filter(c => c.percentage >= 80).length;
+        const needsDev = filteredCandidates.filter(c => c.percentage < 60).length;
 
         setStats({
-          totalCandidates: candidatesWithScores.length,
+          totalCandidates: filteredCandidates.length,
           averageScore: Math.round(avgScore),
           topPerformers,
           needsDevelopment: needsDev
@@ -315,7 +344,7 @@ export default function SupervisorDashboard() {
       }
     };
 
-    fetchCandidatesByAssessment();
+    fetchAllCandidates();
   }, [isSupervisor, selectedAssessment]);
 
   // Filter and sort candidates
@@ -330,9 +359,9 @@ export default function SupervisorDashboard() {
     .sort((a, b) => {
       switch(sortBy) {
         case 'score_desc':
-          return b.totalScore - a.totalScore;
+          return b.score - a.score;
         case 'score_asc':
-          return a.totalScore - b.totalScore;
+          return a.score - b.score;
         case 'name_asc':
           return (a.full_name || '').localeCompare(b.full_name || '');
         case 'name_desc':
@@ -438,7 +467,7 @@ export default function SupervisorDashboard() {
               Supervisor Dashboard
             </h1>
             <p style={{ margin: "4px 0 0 0", color: "#64748b", fontSize: "14px" }}>
-              View candidates by assessment type
+              View candidates and their assessment reports
             </p>
           </div>
           
@@ -480,31 +509,43 @@ export default function SupervisorDashboard() {
           boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
           border: "1px solid #eef2f6"
         }}>
-          {ASSESSMENT_TYPES.map(assessment => (
-            <button
-              key={assessment.id}
-              onClick={() => setSelectedAssessment(assessment.name)}
-              style={{
-                padding: "12px 24px",
-                background: selectedAssessment === assessment.name ? assessment.gradient : 'transparent',
-                color: selectedAssessment === assessment.name ? 'white' : '#4a5568',
-                border: 'none',
-                borderRadius: "50px",
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                flex: '1 1 auto',
-                justifyContent: 'center',
-                transition: 'all 0.3s'
-              }}
-            >
-              <span>{assessment.icon}</span>
-              <span>{assessment.name}</span>
-            </button>
-          ))}
+          {ASSESSMENT_TYPES.map(assessment => {
+            const candidateCount = candidates.filter(c => c.completedAssessments?.includes(assessment.name)).length;
+            
+            return (
+              <button
+                key={assessment.id}
+                onClick={() => setSelectedAssessment(assessment.name)}
+                style={{
+                  padding: "12px 24px",
+                  background: selectedAssessment === assessment.name ? assessment.gradient : 'transparent',
+                  color: selectedAssessment === assessment.name ? 'white' : '#4a5568',
+                  border: 'none',
+                  borderRadius: "50px",
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  flex: '1 1 auto',
+                  justifyContent: 'center',
+                  transition: 'all 0.3s'
+                }}
+              >
+                <span>{assessment.icon}</span>
+                <span>{assessment.name}</span>
+                <span style={{
+                  background: selectedAssessment === assessment.name ? 'rgba(255,255,255,0.2)' : '#e2e8f0',
+                  padding: '2px 8px',
+                  borderRadius: '20px',
+                  fontSize: '12px'
+                }}>
+                  {candidateCount}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Assessment Info Card */}
@@ -539,40 +580,42 @@ export default function SupervisorDashboard() {
         </div>
 
         {/* Statistics Cards */}
-        <div style={{ 
-          display: "grid", 
-          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
-          gap: "20px", 
-          marginBottom: "30px" 
-        }}>
-          <MetricCard
-            title="Total Candidates"
-            value={stats.totalCandidates}
-            subtitle={`Took ${selectedAssessment}`}
-            color="#2563eb"
-          />
-          
-          <MetricCard
-            title="Average Score"
-            value={`${stats.averageScore}%`}
-            subtitle="Across all candidates"
-            color="#10b981"
-          />
-          
-          <MetricCard
-            title="Top Performers"
-            value={stats.topPerformers}
-            subtitle="Scored 80% or above"
-            color="#f59e0b"
-          />
-          
-          <MetricCard
-            title="Needs Development"
-            value={stats.needsDevelopment}
-            subtitle="Scored below 60%"
-            color="#ef4444"
-          />
-        </div>
+        {stats.totalCandidates > 0 && (
+          <div style={{ 
+            display: "grid", 
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+            gap: "20px", 
+            marginBottom: "30px" 
+          }}>
+            <MetricCard
+              title="Total Candidates"
+              value={stats.totalCandidates}
+              subtitle={`Took ${selectedAssessment}`}
+              color="#2563eb"
+            />
+            
+            <MetricCard
+              title="Average Score"
+              value={`${stats.averageScore}%`}
+              subtitle="Across all candidates"
+              color="#10b981"
+            />
+            
+            <MetricCard
+              title="Top Performers"
+              value={stats.topPerformers}
+              subtitle="Scored 80% or above"
+              color="#f59e0b"
+            />
+            
+            <MetricCard
+              title="Needs Development"
+              value={stats.needsDevelopment}
+              subtitle="Scored below 60%"
+              color="#ef4444"
+            />
+          </div>
+        )}
 
         {/* Candidates Table */}
         <div style={{ 
@@ -654,7 +697,7 @@ export default function SupervisorDashboard() {
             alignItems: 'center'
           }}>
             <span>
-              Showing <strong>{filteredCandidates.length}</strong> of <strong>{candidates.length}</strong> candidates
+              Showing <strong>{filteredCandidates.length}</strong> candidates for {selectedAssessment}
             </span>
           </div>
 
@@ -712,7 +755,7 @@ export default function SupervisorDashboard() {
                 borderCollapse: "collapse",
                 textAlign: "left",
                 fontSize: "14px",
-                minWidth: "800px"
+                minWidth: "900px"
               }}>
                 <thead>
                   <tr style={{ 
@@ -749,6 +792,9 @@ export default function SupervisorDashboard() {
                           <div style={{ fontWeight: "500", color: "#1e293b" }}>
                             {candidate.full_name}
                           </div>
+                          <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>
+                            ID: {candidate.user_id.substring(0, 12)}...
+                          </div>
                         </td>
                         <td style={{ padding: "16px" }}>
                           <div style={{ color: "#2563eb", fontSize: '13px' }}>
@@ -757,7 +803,7 @@ export default function SupervisorDashboard() {
                         </td>
                         <td style={{ padding: "16px" }}>
                           <span style={{ fontWeight: "600", color: "#1e293b" }}>
-                            {candidate.totalScore}/{candidate.maxPossible}
+                            {candidate.score}/{candidate.maxPossible}
                           </span>
                         </td>
                         <td style={{ padding: "16px" }}>
@@ -806,7 +852,7 @@ export default function SupervisorDashboard() {
                             e.stopPropagation();
                             router.push(`/supervisor/${candidate.user_id}?assessment=${encodeURIComponent(selectedAssessment)}`);
                           }}>
-                            View Detailed Report
+                            View Report
                           </button>
                         </td>
                       </tr>
@@ -830,7 +876,7 @@ export default function SupervisorDashboard() {
           border: "1px solid #eef2f6"
         }}>
           <p style={{ margin: 0 }}>
-            Talent Assessment System • Viewing {selectedAssessment} • {stats.totalCandidates} candidates
+            Talent Assessment System • {stats.totalCandidates} candidates completed {selectedAssessment}
           </p>
         </div>
       </div>
