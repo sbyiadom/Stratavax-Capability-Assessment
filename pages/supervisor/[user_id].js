@@ -1,4 +1,4 @@
-// pages/supervisor/[user_id].js - USING YOUR WORKING CODE
+// pages/supervisor/[user_id].js - WITH PSYCHOLOGICAL/PROFILE ANALYSIS
 import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -20,6 +20,8 @@ export default function CandidateReport() {
   const [userName, setUserName] = useState("");
   const [debugInfo, setDebugInfo] = useState("");
   const [personalityDimensions, setPersonalityDimensions] = useState({});
+  const [activeTab, setActiveTab] = useState("analysis");
+  const [profileInsights, setProfileInsights] = useState([]);
 
   // Helper function to get classification based on score
   const getClassification = useCallback((score) => {
@@ -45,13 +47,13 @@ export default function CandidateReport() {
 
   // Helper function to get classification description
   const getClassificationDescription = useCallback((score) => {
-    if (score >= 450) return "Exceptional performer demonstrating mastery across all assessment categories.";
-    if (score >= 400) return "Outstanding performer with clear strengths across multiple domains.";
-    if (score >= 350) return "Strong performer with clear development areas.";
-    if (score >= 300) return "Reliable and consistent performer meeting core requirements.";
-    if (score >= 250) return "Shows foundational skills with clear development needs.";
-    if (score >= 200) return "Early-stage performer requiring significant development.";
-    return "Performance below expectations requiring immediate attention.";
+    if (score >= 450) return "Exceptional performer demonstrating mastery across all assessment categories. Consistently exceeds expectations with outstanding analytical, technical, and leadership capabilities.";
+    if (score >= 400) return "Outstanding performer with clear strengths across multiple domains. Demonstrates strong leadership potential and technical competence suitable for increased responsibility.";
+    if (score >= 350) return "Strong performer with clear development areas. Shows promise for growth and advancement with targeted development and strategic improvement opportunities.";
+    if (score >= 300) return "Reliable and consistent performer meeting core requirements. Demonstrates competency in key areas with predictable performance and potential for growth.";
+    if (score >= 250) return "Shows foundational skills with clear development needs. Requires structured guidance and skill-building opportunities to reach full potential.";
+    if (score >= 200) return "Early-stage performer requiring significant development. Needs comprehensive training and close supervision to enhance foundational skills.";
+    return "Performance below expectations requiring immediate attention. Needs intensive development plan and regular performance reviews to address critical gaps.";
   }, []);
 
   // Helper function to get performance grade
@@ -109,38 +111,90 @@ export default function CandidateReport() {
     return labels[grade] || "Unknown";
   }, []);
 
-  // Get category interpretation
+  // Get category interpretation - PSYCHOLOGICAL/PROFILE BASED
   const getCategoryInterpretation = useCallback((percentage, category) => {
     if (percentage >= 80) {
       switch(category) {
         case 'Cognitive Abilities':
-          return "Demonstrates exceptional cognitive processing, analytical reasoning, and problem-solving capabilities.";
+          return "Demonstrates exceptional cognitive processing, analytical reasoning, and problem-solving capabilities. Shows advanced pattern recognition, logical deduction, and mental agility suitable for complex decision-making roles. This candidate processes information quickly and can handle abstract concepts with ease.";
         case 'Personality Assessment':
-          return "Exhibits outstanding emotional intelligence, adaptability, and interpersonal skills.";
+          return "Exhibits outstanding emotional intelligence, adaptability, and interpersonal skills. Demonstrates strong self-awareness, resilience, and communication abilities ideal for collaborative environments. This candidate reads situations well and adapts their approach to different personalities.";
         case 'Leadership Potential':
-          return "Shows exceptional leadership qualities including strategic vision, influence, and team development.";
+          return "Shows exceptional leadership qualities including strategic vision, influence, and team development capabilities. Demonstrates natural ability to inspire, motivate, and drive organizational success. This candidate naturally gravitates toward leadership roles and others look to them for direction.";
         case 'Technical Competence':
-          return "Possesses expert-level technical knowledge and application skills.";
+          return "Possesses expert-level technical knowledge and application skills. Demonstrates mastery of technical concepts, problem-solving abilities, and capacity for innovation in specialized domains. This candidate stays current with industry trends and applies best practices effectively.";
         case 'Performance Metrics':
-          return "Consistently exceeds performance targets with exceptional results.";
+          return "Consistently exceeds performance targets with exceptional results. Demonstrates outstanding productivity, efficiency, and goal achievement capabilities with measurable impact. This candidate sets high standards and consistently delivers beyond expectations.";
         default:
-          return "Demonstrates exceptional capability across assessed dimensions.";
+          return "Demonstrates exceptional capability across assessed dimensions. Shows strong reasoning, sound judgment, and consistent performance.";
       }
     } else if (percentage >= 70) {
-      return "Shows strong capability with minor areas for refinement.";
+      switch(category) {
+        case 'Cognitive Abilities':
+          return "Displays very strong cognitive abilities with excellent problem-solving skills. Demonstrates strong analytical thinking and logical reasoning with minor areas for refinement. Processes information effectively and can handle most complex situations.";
+        case 'Personality Assessment':
+          return "Exhibits strong interpersonal skills and emotional intelligence. Demonstrates good adaptability and communication abilities suitable for most professional contexts. Works well with others and maintains positive relationships.";
+        case 'Leadership Potential':
+          return "Shows strong leadership qualities with clear potential. Demonstrates ability to guide teams effectively and contribute to organizational goals. Has the foundational qualities to develop into a strong leader with experience.";
+        case 'Technical Competence':
+          return "Possesses strong technical knowledge and practical skills. Demonstrates competence in technical areas with ability to handle complex problems. Can apply technical concepts effectively in most situations.";
+        case 'Performance Metrics':
+          return "Frequently exceeds performance expectations. Demonstrates strong productivity and effective goal achievement. Consistently delivers high-quality work.";
+        default:
+          return "Shows strong overall capability with minimal development areas. Demonstrates effective performance across key dimensions.";
+      }
     } else if (percentage >= 60) {
-      return "Meets requirements but has identified development areas.";
+      switch(category) {
+        case 'Cognitive Abilities':
+          return "Displays adequate cognitive abilities meeting baseline requirements. Demonstrates satisfactory problem-solving and reasoning capabilities for standard tasks. May need additional time to process complex information.";
+        case 'Personality Assessment':
+          return "Exhibits adequate interpersonal skills for most situations. Demonstrates basic emotional intelligence and professional behavior. Works acceptably with others but may have occasional interpersonal challenges.";
+        case 'Leadership Potential':
+          return "Shows foundational leadership capabilities. Demonstrates potential for growth with appropriate development. Can lead in limited contexts but needs support for broader leadership responsibilities.";
+        case 'Technical Competence':
+          return "Possesses basic technical knowledge meeting minimum requirements. Demonstrates ability to handle routine technical tasks with guidance. Needs support for complex technical challenges.";
+        case 'Performance Metrics':
+          return "Consistently meets performance standards. Demonstrates adequate productivity and goal completion. Delivers expected results reliably.";
+        default:
+          return "Meets baseline requirements across assessed dimensions. Demonstrates adequate competency for standard expectations.";
+      }
     } else if (percentage >= 50) {
-      return "Shows foundational understanding but needs significant development.";
+      switch(category) {
+        case 'Cognitive Abilities':
+          return "Shows difficulty with some cognitive tasks. Demonstrates gaps in analytical thinking that require targeted improvement. May struggle with complex problem-solving and need additional support.";
+        case 'Personality Assessment':
+          return "Exhibits limitations in interpersonal effectiveness. Demonstrates need for development in communication or adaptability. May have difficulty navigating complex social situations.";
+        case 'Leadership Potential':
+          return "Displays limited leadership readiness. Shows some capability but requires significant development. Not ready for independent leadership responsibilities.";
+        case 'Technical Competence':
+          return "Possesses insufficient technical knowledge in some areas. Demonstrates need for additional training and practice. Can perform basic tasks but struggles with more complex requirements.";
+        case 'Performance Metrics':
+          return "Approaches performance standards but falls short consistently. Demonstrates need for improvement in productivity or efficiency. Requires coaching to meet expectations.";
+        default:
+          return "Shows some capability but falls short of expectations in multiple areas. Requires focused development.";
+      }
     } else {
-      return "Requires immediate attention and focused development.";
+      switch(category) {
+        case 'Cognitive Abilities':
+          return "Struggles significantly with analytical thinking and problem-solving. Demonstrates substantial gaps in reasoning and processing abilities. Requires intensive support and basic skill development.";
+        case 'Personality Assessment':
+          return "Exhibits significant limitations in professional behavior and interpersonal effectiveness. Demonstrates serious challenges with emotional intelligence and communication. May not be suitable for team-based roles.";
+        case 'Leadership Potential':
+          return "Shows minimal leadership capabilities. Requires extensive development to reach basic competency. Not suited for leadership roles at this time.";
+        case 'Technical Competence':
+          return "Possesses inadequate technical knowledge. Demonstrates major deficiencies in understanding core concepts. Needs foundational training before handling technical tasks.";
+        case 'Performance Metrics':
+          return "Falls below performance expectations consistently. Demonstrates poor productivity and goal achievement. Requires immediate intervention and close supervision.";
+        default:
+          return "Falls below minimum competency standards. Demonstrates significant gaps in required skills and knowledge. May not be suitable for the role.";
+      }
     }
   }, []);
 
   // Get performance label
   const getCategoryPerformanceLabel = useCallback((percentage) => {
     if (percentage >= 80) return "Exceptional";
-    if (percentage >= 70) return "Good";
+    if (percentage >= 70) return "Strong";
     if (percentage >= 60) return "Satisfactory";
     if (percentage >= 50) return "Developing";
     return "Needs Improvement";
@@ -191,7 +245,7 @@ export default function CandidateReport() {
     return mapping[subsection] || 'general';
   }, []);
 
-  // Analyze personality dimensions from responses
+  // Analyze personality dimensions from responses - WITH PSYCHOLOGICAL INSIGHTS
   const analyzePersonalityDimensions = useCallback((responsesData, questionsMap, answersMap) => {
     const personalityDimensions = {
       collaboration: { total: 0, count: 0, subsections: [] },
@@ -203,6 +257,9 @@ export default function CandidateReport() {
       leadership: { total: 0, count: 0, subsections: [] },
       workEthic: { total: 0, count: 0, subsections: [] }
     };
+    
+    // Also collect insights based on specific answer patterns
+    const insights = [];
     
     responsesData.forEach(response => {
       const questionId = response.question_id;
@@ -219,6 +276,23 @@ export default function CandidateReport() {
           
           if (!personalityDimensions[dimension].subsections.includes(question.subsection)) {
             personalityDimensions[dimension].subsections.push(question.subsection);
+          }
+          
+          // Generate insights based on score patterns
+          if (score >= 4) {
+            insights.push({
+              type: 'strength',
+              dimension,
+              subsection: question.subsection,
+              insight: getStrengthInsight(dimension, question.subsection)
+            });
+          } else if (score <= 2) {
+            insights.push({
+              type: 'weakness',
+              dimension,
+              subsection: question.subsection,
+              insight: getWeaknessInsight(dimension, question.subsection)
+            });
           }
         }
       }
@@ -237,63 +311,137 @@ export default function CandidateReport() {
           total: data.total,
           maxPossible: data.count * 5,
           subsections: data.subsections,
-          interpretation: getPersonalityDimensionInterpretation(dimension, percentage)
+          interpretation: getPersonalityDimensionInterpretation(dimension, percentage),
+          detailedProfile: getPersonalityProfile(dimension, percentage)
         };
       }
     });
     
-    return dimensionResults;
+    return { dimensionResults, insights };
   }, [mapSubsectionToDimension]);
 
-  // Personality dimension interpretation
+  // Get strength insight based on dimension and subsection
+  const getStrengthInsight = (dimension, subsection) => {
+    const insights = {
+      communication: {
+        high: "Naturally articulates ideas clearly and persuasively. Adapts communication style to different audiences effectively."
+      },
+      collaboration: {
+        high: "Seeks out diverse perspectives and builds consensus. Creates an environment where others feel valued and heard."
+      },
+      emotionalIntelligence: {
+        high: "Highly attuned to others' emotions and responds with empathy. Navigates difficult conversations with grace."
+      },
+      adaptability: {
+        high: "Embraces change and uncertainty as opportunities for growth. Quickly adjusts approach when circumstances shift."
+      },
+      initiative: {
+        high: "Identifies problems before they escalate and takes proactive steps. Doesn't wait for direction to act."
+      },
+      problemSolving: {
+        high: "Approaches challenges systematically while thinking creatively. Sees multiple solutions and evaluates trade-offs effectively."
+      },
+      leadership: {
+        high: "Inspires others through vision and example. Develops people around them and delegates effectively."
+      },
+      workEthic: {
+        high: "Consistently delivers high-quality work with minimal oversight. Takes ownership and follows through on commitments."
+      }
+    };
+    return insights[dimension]?.high || "Strong demonstration of this trait based on answer patterns.";
+  };
+
+  // Get weakness insight based on dimension and subsection
+  const getWeaknessInsight = (dimension, subsection) => {
+    const insights = {
+      communication: {
+        low: "May struggle to articulate thoughts clearly in certain situations. Could benefit from developing more nuanced communication approaches."
+      },
+      collaboration: {
+        low: "Prefers independent work and may miss opportunities for synergy. Could develop greater openness to others' input."
+      },
+      emotionalIntelligence: {
+        low: "May not always pick up on social cues or others' emotional states. Could benefit from empathy-building exercises."
+      },
+      adaptability: {
+        low: "Prefers stability and may resist necessary changes. Could develop greater flexibility and openness to new approaches."
+      },
+      initiative: {
+        low: "Tends to wait for direction rather than acting independently. Could benefit from developing greater proactivity."
+      },
+      problemSolving: {
+        low: "May rely on familiar solutions rather than exploring alternatives. Could develop more systematic problem-solving approaches."
+      },
+      leadership: {
+        low: "Prefers individual contributor role over leading others. May need development in influencing and developing people."
+      },
+      workEthic: {
+        low: "May need support with consistency and follow-through. Could benefit from stronger accountability structures."
+      }
+    };
+    return insights[dimension]?.low || "Area for development based on answer patterns.";
+  };
+
+  // Get personality dimension interpretation
   const getPersonalityDimensionInterpretation = useCallback((dimension, percentage) => {
     const interpretations = {
       collaboration: {
-        high: "Strong team player who actively contributes to group success",
-        medium: "Works effectively with others while maintaining independent capabilities",
-        low: "More comfortable with independent work than team collaboration"
+        high: "Strong team player who actively contributes to group success and values collective achievement. Likely seeks input from others and builds consensus effectively.",
+        medium: "Works effectively with others while maintaining independent capabilities. Can collaborate when needed but also comfortable working alone.",
+        low: "More comfortable with independent work than team collaboration. May prefer solo projects and need encouragement to engage with teams."
       },
       communication: {
-        high: "Exceptional communicator who adapts style to different audiences",
-        medium: "Clear and effective communicator with room for growth",
-        low: "Direct communicator who may benefit from developing more nuanced approaches"
+        high: "Exceptional communicator who adapts style to different audiences and situations. Articulates ideas clearly and listens actively to others.",
+        medium: "Clear and effective communicator with room for growth in adaptability. Communicates well in familiar contexts but may struggle with difficult conversations.",
+        low: "Direct communicator who may benefit from developing more nuanced communication approaches. May come across as abrupt or miss subtle cues."
       },
       adaptability: {
-        high: "Highly flexible and comfortable with change",
-        medium: "Adaptable within familiar contexts and structures",
-        low: "Prefers stability, predictability, and established routines"
+        high: "Highly flexible and comfortable with change, uncertainty, and new approaches. Thrives in dynamic environments and sees change as opportunity.",
+        medium: "Adaptable within familiar contexts and structures. Can adjust when needed but prefers stability and predictability.",
+        low: "Prefers stability, predictability, and established routines. May struggle with rapid change and need additional support during transitions."
       },
       initiative: {
-        high: "Proactive problem-solver who takes ownership",
-        medium: "Takes initiative when needed or when specifically empowered",
-        low: "Prefers clear direction before taking action"
+        high: "Proactive problem-solver who takes ownership and drives improvements. Identifies opportunities without waiting for direction.",
+        medium: "Takes initiative when needed or when specifically empowered to do so. May need clear authority to act independently.",
+        low: "Prefers clear direction and established processes before taking action. Waits for guidance rather than acting proactively."
       },
       emotionalIntelligence: {
-        high: "Highly self-aware, empathetic, and skilled at navigating interpersonal dynamics",
-        medium: "Aware of emotions with developing interpersonal skills",
-        low: "More task-focused than people-focused"
+        high: "Highly self-aware, empathetic, and skilled at navigating interpersonal dynamics. Reads situations well and responds appropriately.",
+        medium: "Aware of emotions in self and others with developing interpersonal skills. Generally handles relationships well but may miss subtle cues.",
+        low: "More task-focused than people-focused in approach to work. May not always consider emotional impact of actions on others."
       },
       problemSolving: {
-        high: "Analytical and creative approach to solving complex problems",
-        medium: "Capable problem-solver using established methods",
-        low: "Prefers straightforward, proven solutions"
+        high: "Analytical, creative, and systematic approach to solving complex problems. Generates multiple solutions and evaluates trade-offs effectively.",
+        medium: "Capable problem-solver using established methods and approaches. Solves standard problems effectively but may struggle with novel situations.",
+        low: "Prefers straightforward, proven solutions over innovative approaches. May need support with complex or ambiguous problems."
       },
       leadership: {
-        high: "Natural leader who guides, develops, and empowers others",
-        medium: "Demonstrates leadership potential with appropriate support",
-        low: "Prefers individual contributor role"
+        high: "Natural leader who guides, develops, and empowers others effectively. Inspires through vision and builds strong teams.",
+        medium: "Demonstrates leadership potential and capability with appropriate support. Can lead in limited contexts but needs development for broader roles.",
+        low: "Prefers individual contributor role over leadership responsibilities. May not seek opportunities to influence or develop others."
       },
       workEthic: {
-        high: "Highly responsible, reliable, and quality-focused",
-        medium: "Consistently meets expectations",
-        low: "Task-focused with opportunities to develop greater ownership"
+        high: "Highly responsible, reliable, and quality-focused in all work activities. Takes ownership and follows through consistently.",
+        medium: "Consistently meets expectations and delivers reliable performance. Can be counted on for standard deliverables.",
+        low: "Task-focused with opportunities to develop greater ownership and initiative. May need support with consistency and follow-through."
       }
     };
     
-    if (percentage >= 70) return interpretations[dimension]?.high || "Strong demonstration";
-    if (percentage >= 50) return interpretations[dimension]?.medium || "Moderate demonstration";
+    if (percentage >= 70) return interpretations[dimension]?.high || "Strong demonstration of this trait";
+    if (percentage >= 50) return interpretations[dimension]?.medium || "Moderate demonstration of this trait";
     return interpretations[dimension]?.low || "Area for development";
   }, []);
+
+  // Get detailed personality profile
+  const getPersonalityProfile = (dimension, percentage) => {
+    if (percentage >= 70) {
+      return `This candidate demonstrates strong ${dimension} tendencies, which suggests they will likely excel in environments that value this trait.`;
+    } else if (percentage >= 50) {
+      return `This candidate shows moderate ${dimension} tendencies, with flexibility to adapt based on situation.`;
+    } else {
+      return `This candidate shows lower ${dimension} tendencies, which may impact their effectiveness in areas requiring this trait.`;
+    }
+  };
 
   // Get top dimensions
   const getTopDimensions = useCallback((dimensions) => {
@@ -308,7 +456,7 @@ export default function CandidateReport() {
         .sort((a, b) => b[1].percentage - a[1].percentage)
         .slice(0, 3);
       
-      if (moderateSorted.length === 0) return "developing areas";
+      if (moderateSorted.length === 0) return "developing areas across most dimensions";
       return moderateSorted.map(([dim]) => 
         dim.replace(/([A-Z])/g, ' $1').trim().toLowerCase()
       ).join(', ');
@@ -399,22 +547,22 @@ export default function CandidateReport() {
       
       switch(weakness.category) {
         case 'Cognitive Abilities':
-          recommendation = "Consider cognitive training exercises, problem-solving workshops, and analytical thinking development programs.";
+          recommendation = "Consider cognitive training exercises, problem-solving workshops, and analytical thinking development programs. Focus on logical reasoning, pattern recognition, and mental agility exercises.";
           break;
         case 'Personality Assessment':
-          recommendation = "Engage in personality development sessions, emotional intelligence training, and communication workshops.";
+          recommendation = "Engage in personality development sessions, emotional intelligence training, and communication workshops. Consider role-playing exercises and interpersonal skills development programs.";
           break;
         case 'Leadership Potential':
-          recommendation = "Participate in leadership workshops, mentorship programs, and team management exercises.";
+          recommendation = "Participate in leadership workshops, mentorship programs, and team management exercises. Focus on decision-making, influence development, and strategic thinking training.";
           break;
         case 'Technical Competence':
-          recommendation = "Attend technical training sessions, industry-specific workshops, and hands-on practice programs.";
+          recommendation = "Attend technical training sessions, industry-specific workshops, and hands-on practice programs. Focus on core technical skills, practical applications, and problem-solving in technical domains.";
           break;
         case 'Performance Metrics':
-          recommendation = "Focus on goal-setting strategies, performance tracking improvement, time management workshops.";
+          recommendation = "Focus on goal-setting strategies, performance tracking improvement, time management workshops, and productivity enhancement techniques. Implement regular performance reviews and feedback sessions.";
           break;
         default:
-          recommendation = "Consider targeted training and development programs in this specific area.";
+          recommendation = "Consider targeted training and development programs in this specific area. Create a personalized development plan with measurable goals and regular progress reviews.";
       }
       
       return {
@@ -430,8 +578,8 @@ export default function CandidateReport() {
       candidateRecommendations.push({
         category: "Overall Performance",
         issue: "Strong overall performance across all categories",
-        recommendation: "Continue current development path. Consider advanced training in areas of strength.",
-        grade: "A",
+        recommendation: "Continue current development path. Consider advanced training in areas of strength to further enhance expertise and prepare for increased responsibility.",
+        grade: "A/A-",
         score: 85
       });
     }
@@ -439,7 +587,7 @@ export default function CandidateReport() {
     setRecommendations(candidateRecommendations);
   }, [getCategoryGrade, getCategoryInterpretation, getCategoryGradeLabel, getCategoryPerformanceLabel, getCategoryPerformanceIcon]);
 
-  // Calculate category scores from responses - YOUR WORKING CODE
+  // Calculate category scores from responses
   const calculateCategoryScoresFromResponses = useCallback(async (responsesData, candidateTotalScore) => {
     try {
       if (!responsesData || responsesData.length === 0) {
@@ -524,8 +672,10 @@ export default function CandidateReport() {
         };
       });
       
-      const personalityDimResults = analyzePersonalityDimensions(responsesData, questionsMap, answersMap);
-      setPersonalityDimensions(personalityDimResults);
+      // Calculate personality dimensions with insights
+      const { dimensionResults, insights } = analyzePersonalityDimensions(responsesData, questionsMap, answersMap);
+      setPersonalityDimensions(dimensionResults);
+      setProfileInsights(insights);
       
       if (candidateTotalScore && Math.abs(totalScore - candidateTotalScore) > 5) {
         const scaleFactor = candidateTotalScore / totalScore;
@@ -544,7 +694,7 @@ export default function CandidateReport() {
     }
   }, [calculateAnalysis, analyzePersonalityDimensions]);
 
-  // Fetch responses - YOUR WORKING CODE
+  // Fetch responses
   const fetchAndCalculateCategoryScores = useCallback(async (userId, candidateTotalScore) => {
     try {
       const { data: allResponses, error: responsesError } = await supabase
@@ -564,7 +714,7 @@ export default function CandidateReport() {
     }
   }, [calculateCategoryScoresFromResponses]);
 
-  // Fetch candidate data - YOUR WORKING CODE
+  // Fetch candidate data
   useEffect(() => {
     if (!isSupervisor || !user_id) return;
 
@@ -613,12 +763,6 @@ export default function CandidateReport() {
 
   const handleBack = () => {
     router.push("/supervisor");
-  };
-
-  const getScoreColor = (score) => {
-    if (score >= 4) return "#4CAF50";
-    if (score >= 3) return "#FF9800";
-    return "#F44336";
   };
 
   const getCategoryColor = (category) => {
@@ -747,7 +891,7 @@ export default function CandidateReport() {
                 color: "#333",
                 fontSize: "28px"
               }}>
-                Candidate Performance Report
+                Candidate Profile Analysis
               </h1>
               <p style={{ 
                 margin: "0 0 5px 0", 
@@ -904,7 +1048,7 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* Category Scores Breakdown */}
+        {/* Category Scores Breakdown - What their scores reveal */}
         {Object.keys(categoryScores).length > 0 && (
           <div style={{ 
             background: "white", 
@@ -913,40 +1057,38 @@ export default function CandidateReport() {
             boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
             marginBottom: "30px"
           }}>
-            <h2 style={{ margin: "0 0 25px 0", color: "#333" }}>Performance by Category</h2>
+            <h2 style={{ margin: "0 0 25px 0", color: "#333" }}>What Their Scores Reveal</h2>
             
             <div style={{ 
               display: "grid", 
-              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", 
-              gap: "20px",
-              marginBottom: "30px"
+              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", 
+              gap: "20px"
             }}>
               {Object.entries(categoryScores).map(([category, data]) => (
                 <div key={category} style={{
-                  borderLeft: `4px solid ${getCategoryColor(category)}`,
                   padding: "20px",
                   background: "#f8f9fa",
-                  borderRadius: "8px"
+                  borderRadius: "8px",
+                  borderTop: `4px solid ${getCategoryColor(category)}`
                 }}>
                   <div style={{ 
                     display: "flex", 
                     justifyContent: "space-between",
-                    alignItems: "flex-start",
+                    alignItems: "center",
                     marginBottom: "15px"
                   }}>
-                    <div>
-                      <h3 style={{ 
-                        margin: "0 0 5px 0", 
-                        color: getCategoryColor(category),
-                        fontSize: "18px"
-                      }}>
-                        {category}
-                      </h3>
-                      <p style={{ margin: 0, fontSize: "14px", color: "#666" }}>
-                        {data.count} questions • Avg: {data.average.toFixed(1)}/5
-                      </p>
-                    </div>
-                    <div style={{ fontSize: "28px", fontWeight: "700", color: getCategoryColor(category) }}>
+                    <h3 style={{ 
+                      margin: 0, 
+                      color: getCategoryColor(category),
+                      fontSize: "18px"
+                    }}>
+                      {category}
+                    </h3>
+                    <div style={{ 
+                      fontSize: "28px", 
+                      fontWeight: "700",
+                      color: getCategoryColor(category)
+                    }}>
                       {data.percentage}%
                     </div>
                   </div>
@@ -956,7 +1098,7 @@ export default function CandidateReport() {
                     background: "#e0e0e0", 
                     borderRadius: "5px",
                     overflow: "hidden",
-                    marginBottom: "8px"
+                    marginBottom: "15px"
                   }}>
                     <div style={{ 
                       height: "100%", 
@@ -967,151 +1109,23 @@ export default function CandidateReport() {
                   </div>
                   
                   <div style={{ 
-                    display: "flex", 
-                    justifyContent: "space-between",
-                    fontSize: "12px", 
-                    color: "#666",
-                    marginBottom: "5px"
+                    fontSize: "14px", 
+                    color: "#555", 
+                    lineHeight: 1.6,
+                    padding: "15px",
+                    background: "white",
+                    borderRadius: "8px",
+                    border: "1px solid #e0e0e0"
                   }}>
-                    <span>Score: {data.total}/{data.maxPossible}</span>
-                    <span>Grade: {getCategoryGrade(data.percentage)}</span>
-                  </div>
-                  
-                  <div style={{ 
-                    fontSize: "12px",
-                    fontWeight: "600",
-                    color: data.percentage >= 70 ? "#4CAF50" : 
-                           data.percentage >= 60 ? "#FF9800" : "#F44336",
-                    textAlign: "right",
-                    marginTop: "5px"
-                  }}>
-                    {getCategoryPerformanceIcon(data.percentage)} {getCategoryPerformanceLabel(data.percentage)}
+                    {getCategoryInterpretation(data.percentage, category)}
                   </div>
                 </div>
               ))}
             </div>
-            
-            {/* Performance Summary Table */}
-            <div style={{ 
-              padding: "20px",
-              background: "#f8f9fa",
-              borderRadius: "8px",
-              border: "1px solid #dee2e6"
-            }}>
-              <h3 style={{ margin: "0 0 15px 0", color: "#333" }}>Category Performance Summary</h3>
-              
-              <div style={{ overflowX: "auto" }}>
-                <table style={{
-                  width: "100%",
-                  borderCollapse: "collapse",
-                  fontSize: "14px"
-                }}>
-                  <thead>
-                    <tr style={{ background: "#e9ecef", borderBottom: "2px solid #1565c0" }}>
-                      <th style={{ padding: "12px", textAlign: "left" }}>Category</th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>Questions</th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>Score</th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>Average</th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>Percentage</th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>Performance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(categoryScores).map(([category, data], index) => (
-                      <tr key={category} style={{ 
-                        borderBottom: "1px solid #dee2e6",
-                        background: index % 2 === 0 ? "white" : "#f8f9fa"
-                      }}>
-                        <td style={{ padding: "12px", fontWeight: "500", color: getCategoryColor(category) }}>
-                          {category}
-                        </td>
-                        <td style={{ padding: "12px", textAlign: "center" }}>
-                          {data.count}
-                        </td>
-                        <td style={{ padding: "12px", textAlign: "center" }}>
-                          {data.total}/{data.maxPossible}
-                        </td>
-                        <td style={{ padding: "12px", textAlign: "center" }}>
-                          {data.average.toFixed(1)}/5
-                        </td>
-                        <td style={{ padding: "12px", textAlign: "center" }}>
-                          <span style={{ 
-                            padding: "4px 10px",
-                            borderRadius: "20px",
-                            background: data.percentage >= 70 ? "#e8f5e9" : 
-                                       data.percentage >= 60 ? "#fff3e0" : "#ffebee",
-                            color: data.percentage >= 70 ? "#2e7d32" : 
-                                   data.percentage >= 60 ? "#f57c00" : "#c62828",
-                            fontWeight: "600"
-                          }}>
-                            {data.percentage}%
-                          </span>
-                        </td>
-                        <td style={{ padding: "12px", textAlign: "center" }}>
-                          {getCategoryPerformanceLabel(data.percentage)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{ background: "#e3f2fd", borderTop: "2px solid #1565c0" }}>
-                      <td style={{ padding: "12px", fontWeight: "700", color: "#1565c0" }}>
-                        Overall Summary
-                      </td>
-                      <td style={{ padding: "12px", textAlign: "center", fontWeight: "700", color: "#1565c0" }}>
-                        {totalCount}
-                      </td>
-                      <td style={{ padding: "12px", textAlign: "center", fontWeight: "700", color: "#1565c0" }}>
-                        {candidateScore}/500
-                      </td>
-                      <td style={{ padding: "12px", textAlign: "center", fontWeight: "700", color: "#1565c0" }}>
-                        {totalAverage}/5
-                      </td>
-                      <td style={{ padding: "12px", textAlign: "center", fontWeight: "700", color: "#1565c0" }}>
-                        {Math.round((candidateScore / 500) * 100)}%
-                      </td>
-                      <td style={{ padding: "12px", textAlign: "center", fontWeight: "700", color: "#1565c0" }}>
-                        {classification}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-              
-              {/* Performance Indicators */}
-              <div style={{ 
-                display: "flex", 
-                justifyContent: "space-between",
-                marginTop: "20px",
-                padding: "15px",
-                background: "white",
-                borderRadius: "8px",
-                border: "1px solid #e0e0e0"
-              }}>
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: "24px", fontWeight: "700", color: "#4CAF50" }}>
-                    {strengths.length}
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#666" }}>Strong Areas (≥70%)</div>
-                </div>
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: "24px", fontWeight: "700", color: "#FF9800" }}>
-                    {Object.keys(categoryScores).length - strengths.length - weaknesses.length}
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#666" }}>Average Areas (60-69%)</div>
-                </div>
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: "24px", fontWeight: "700", color: "#F44336" }}>
-                    {weaknesses.length}
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#666" }}>Development Areas (≤59%)</div>
-                </div>
-              </div>
-            </div>
           </div>
         )}
 
-        {/* Personality Dimension Analysis */}
+        {/* Personality Dimension Analysis - PSYCHOLOGICAL PROFILE */}
         {Object.keys(personalityDimensions).length > 0 && (
           <div style={{ 
             background: "white", 
@@ -1120,84 +1134,129 @@ export default function CandidateReport() {
             boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
             marginBottom: "30px"
           }}>
-            <h2 style={{ margin: "0 0 25px 0", color: "#333" }}>Personality Dimension Analysis</h2>
+            <h2 style={{ margin: "0 0 25px 0", color: "#333" }}>Psychological Profile</h2>
             
-            {/* Top Dimensions Summary */}
+            {/* Overall Profile Summary */}
             <div style={{ 
               padding: "20px",
-              background: "#f0f7ff",
+              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
               borderRadius: "8px",
               marginBottom: "25px",
-              border: "1px solid #d0e3ff"
+              color: "white"
             }}>
-              <div style={{ fontSize: "16px", fontWeight: "600", color: "#1565c0", marginBottom: "10px" }}>
-                Key Personality Insights
+              <div style={{ fontSize: "18px", fontWeight: "600", marginBottom: "10px" }}>
+                Profile Overview
               </div>
-              <div style={{ fontSize: "14px", color: "#444", lineHeight: 1.6 }}>
-                The candidate demonstrates strength in <strong>{getTopDimensions(personalityDimensions)}</strong>.
+              <div style={{ fontSize: "15px", lineHeight: 1.6, opacity: 0.95 }}>
+                This candidate's responses reveal a profile characterized by <strong>{getTopDimensions(personalityDimensions)}</strong>. 
+                {personalityDimensions.collaboration?.percentage >= 70 ? ' They thrive in collaborative environments and naturally build consensus.' : ''}
+                {personalityDimensions.communication?.percentage >= 70 ? ' They communicate with clarity and adapt well to different audiences.' : ''}
+                {personalityDimensions.adaptability?.percentage >= 70 ? ' They are highly adaptable and comfortable with change.' : ''}
+                {personalityDimensions.initiative?.percentage >= 70 ? ' They take initiative and drive improvements proactively.' : ''}
+                {personalityDimensions.leadership?.percentage >= 70 ? ' They demonstrate natural leadership qualities.' : ''}
+                {personalityDimensions.emotionalIntelligence?.percentage < 50 ? ' They may benefit from developing greater emotional awareness.' : ''}
+                {personalityDimensions.collaboration?.percentage < 50 ? ' They prefer independent work over team collaboration.' : ''}
               </div>
             </div>
             
-            {/* Personality Dimension Grid */}
+            {/* Detailed Dimension Analysis */}
             <div style={{ 
               display: "grid", 
-              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", 
-              gap: "15px",
-              marginBottom: "25px"
+              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", 
+              gap: "20px"
             }}>
               {Object.entries(personalityDimensions).map(([dimension, data]) => (
                 <div key={dimension} style={{
-                  padding: "18px",
+                  padding: "20px",
                   background: data.percentage >= 70 ? "#f1f8e9" : 
                              data.percentage >= 50 ? "#fff8e1" : "#ffebee",
                   borderRadius: "8px",
-                  borderLeft: `4px solid ${data.percentage >= 70 ? "#4CAF50" : 
-                                              data.percentage >= 50 ? "#FF9800" : "#F44336"}`
+                  border: `1px solid ${data.percentage >= 70 ? "#a5d6a7" : 
+                                         data.percentage >= 50 ? "#ffe082" : "#ef9a9a"}`
                 }}>
                   <div style={{ 
                     display: "flex", 
                     justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    marginBottom: "12px"
+                    alignItems: "center",
+                    marginBottom: "10px"
                   }}>
-                    <div>
-                      <div style={{ fontSize: "16px", fontWeight: "600", color: "#333" }}>
-                        {formatDimensionName(dimension)}
-                      </div>
-                      <div style={{ fontSize: "12px", color: "#666" }}>
-                        {data.count} items
-                      </div>
-                    </div>
-                    <div style={{ fontSize: "24px", fontWeight: "700", color: data.percentage >= 70 ? "#4CAF50" : data.percentage >= 50 ? "#FF9800" : "#F44336" }}>
+                    <h3 style={{ 
+                      margin: 0, 
+                      fontSize: "18px", 
+                      color: "#333"
+                    }}>
+                      {formatDimensionName(dimension)}
+                    </h3>
+                    <span style={{
+                      padding: "4px 12px",
+                      background: data.percentage >= 70 ? "#a5d6a7" : 
+                                 data.percentage >= 50 ? "#ffe082" : "#ef9a9a",
+                      borderRadius: "20px",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      color: data.percentage >= 70 ? "#1b5e20" : 
+                             data.percentage >= 50 ? "#ff6f00" : "#b71c1c"
+                    }}>
                       {data.percentage}%
-                    </div>
+                    </span>
                   </div>
                   
                   <div style={{ 
-                    height: "8px", 
-                    background: "#e0e0e0", 
-                    borderRadius: "4px",
-                    overflow: "hidden",
+                    fontSize: "14px", 
+                    color: "#555",
+                    lineHeight: 1.6,
                     marginBottom: "10px"
                   }}>
-                    <div style={{ 
-                      height: "100%", 
-                      width: `${data.percentage}%`, 
-                      background: data.percentage >= 70 ? "#4CAF50" : 
-                                 data.percentage >= 50 ? "#FF9800" : "#F44336"
-                    }} />
-                  </div>
-                  
-                  <div style={{ fontSize: "13px", color: "#555", lineHeight: 1.5 }}>
                     {data.interpretation}
                   </div>
+                  
+                  <div style={{
+                    padding: "12px",
+                    background: "white",
+                    borderRadius: "6px",
+                    fontSize: "13px",
+                    color: "#666",
+                    borderLeft: `4px solid ${data.percentage >= 70 ? "#4CAF50" : 
+                                              data.percentage >= 50 ? "#FF9800" : "#F44336"}`
+                  }}>
+                    <strong>What this means:</strong> {data.detailedProfile}
+                  </div>
+                  
+                  {data.subsections && data.subsections.length > 0 && (
+                    <div style={{ marginTop: "10px", fontSize: "12px", color: "#888" }}>
+                      <strong>Assessed through:</strong> {data.subsections.join(', ')}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
+            
+            {/* Specific Insights from Answer Patterns */}
+            {profileInsights.length > 0 && (
+              <div style={{ marginTop: "25px" }}>
+                <h3 style={{ fontSize: "16px", color: "#333", marginBottom: "15px" }}>
+                  Key Behavioral Insights
+                </h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {profileInsights.slice(0, 5).map((insight, index) => (
+                    <div key={index} style={{
+                      padding: "12px",
+                      background: insight.type === 'strength' ? "#e8f5e9" : "#ffebee",
+                      borderRadius: "6px",
+                      borderLeft: `4px solid ${insight.type === 'strength' ? "#4CAF50" : "#F44336"}`
+                    }}>
+                      <div style={{ fontSize: "13px", color: insight.type === 'strength' ? "#1b5e20" : "#b71c1c" }}>
+                        {insight.insight}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Strengths and Weaknesses */}
+        {/* Strengths and Weaknesses - Summary */}
         <div style={{ 
           display: "grid", 
           gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", 
@@ -1239,6 +1298,9 @@ export default function CandidateReport() {
                     <p style={{ margin: "0 0 8px 0", fontSize: "14px", color: "#555" }}>
                       {strength.detailedInterpretation}
                     </p>
+                    <div style={{ fontSize: "13px", color: "#777", padding: "8px", background: "white", borderRadius: "6px" }}>
+                      <strong>What this indicates:</strong> {strength.gradeLabel}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1280,6 +1342,10 @@ export default function CandidateReport() {
                     <p style={{ margin: "0 0 8px 0", fontSize: "14px", color: "#555" }}>
                       {weakness.detailedInterpretation}
                     </p>
+                    <div style={{ fontSize: "13px", color: "#777", padding: "8px", background: "white", borderRadius: "6px", fontStyle: "italic" }}>
+                      <strong>Priority:</strong> {weakness.grade === "F" || weakness.grade === "D" ? "High" : 
+                                                  weakness.grade === "C-" || weakness.grade === "D+" ? "Medium" : "Low"}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1320,9 +1386,29 @@ export default function CandidateReport() {
                         Score: {rec.score}% • Grade: {rec.grade}
                       </div>
                     </div>
+                    <div style={{ 
+                      padding: "6px 12px",
+                      background: rec.score >= 70 ? "#e8f5e9" : 
+                                 rec.score >= 60 ? "#fff3e0" : "#ffebee",
+                      color: rec.score >= 70 ? "#2e7d32" : 
+                             rec.score >= 60 ? "#f57c00" : "#c62828",
+                      borderRadius: "20px",
+                      fontSize: "12px",
+                      fontWeight: "600"
+                    }}>
+                      {rec.score >= 70 ? "Strength" : rec.score >= 60 ? "Average" : "Development Area"}
+                    </div>
                   </div>
                   
-                  <div style={{ fontSize: "14px", color: "#555", lineHeight: 1.6, marginBottom: "15px", padding: "10px", background: "white", borderRadius: "6px" }}>
+                  <div style={{ 
+                    fontSize: "14px", 
+                    color: "#555",
+                    lineHeight: 1.6,
+                    marginBottom: "15px",
+                    padding: "10px",
+                    background: "white",
+                    borderRadius: "6px"
+                  }}>
                     {rec.issue}
                   </div>
                   
@@ -1354,7 +1440,11 @@ export default function CandidateReport() {
           color: "#888",
           fontSize: "12px"
         }}>
-          <p>Report generated on {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}</p>
+          <p>Profile analysis generated on {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}</p>
+          <p style={{ marginTop: "5px" }}>
+            This analysis is based on the candidate's actual responses and provides insights into their capabilities, 
+            thinking patterns, and development areas.
+          </p>
         </div>
       </div>
 
