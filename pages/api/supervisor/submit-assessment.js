@@ -8,7 +8,10 @@ export default async function handler(req, res) {
   try {
     const { session_id, user_id, assessment_id, time_spent } = req.body;
     
+    console.log("📝 Submission request received:", { session_id, user_id, assessment_id, time_spent });
+
     if (!session_id || !user_id || !assessment_id) {
+      console.error("❌ Missing required fields:", { session_id, user_id, assessment_id });
       return res.status(400).json({ 
         success: false,
         error: "session_id, user_id, and assessment_id are required" 
@@ -24,11 +27,14 @@ export default async function handler(req, res) {
       .single();
 
     if (sessionError) {
+      console.error("❌ Session fetch error:", sessionError);
       return res.status(404).json({
         success: false,
         error: "Assessment session not found"
       });
     }
+
+    console.log("📊 Session found:", existingSession);
 
     if (existingSession.status === 'completed') {
       return res.status(400).json({
@@ -49,12 +55,14 @@ export default async function handler(req, res) {
       .eq("user_id", user_id);
 
     if (updateError) {
-      console.error("Error updating session:", updateError);
+      console.error("❌ Error updating session:", updateError);
       return res.status(500).json({
         success: false,
         error: "Failed to update assessment session"
       });
     }
+
+    console.log("✅ Session updated to completed");
 
     // ===== CALCULATE AND GENERATE RESULTS =====
     // Get all responses for this session
@@ -74,10 +82,19 @@ export default async function handler(req, res) {
       .eq("session_id", session_id);
 
     if (responsesError) {
-      console.error("Error fetching responses:", responsesError);
+      console.error("❌ Error fetching responses:", responsesError);
       return res.status(500).json({
         success: false,
         error: "Failed to fetch responses"
+      });
+    }
+
+    console.log(`📊 Found ${responses.length} responses`);
+
+    if (responses.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "No responses found for this assessment"
       });
     }
 
@@ -98,6 +115,8 @@ export default async function handler(req, res) {
       categoryTotals[category] += score;
       categoryCounts[category] += 1;
     });
+
+    console.log("📊 Category totals:", categoryTotals);
 
     // Calculate percentages and identify strengths/weaknesses
     const categoryScores = {};
@@ -125,6 +144,10 @@ export default async function handler(req, res) {
       }
     });
 
+    console.log("📊 Category scores:", categoryScores);
+    console.log("💪 Strengths:", strengths);
+    console.log("🔧 Weaknesses:", weaknesses);
+
     // Generate recommendations
     const recommendations = [];
     strengths.forEach(s => {
@@ -133,6 +156,10 @@ export default async function handler(req, res) {
     weaknesses.forEach(w => {
       recommendations.push(`Focus on developing ${w} through targeted training and mentoring.`);
     });
+
+    if (recommendations.length === 0) {
+      recommendations.push("Continue developing skills across all areas for balanced growth.");
+    }
 
     // Get assessment type for max score
     const { data: assessment, error: assessmentError } = await supabase
@@ -151,11 +178,15 @@ export default async function handler(req, res) {
       .single();
 
     if (assessmentError) {
-      console.error("Error fetching assessment:", assessmentError);
+      console.error("⚠️ Error fetching assessment:", assessmentError);
+      // Continue with default values
     }
 
     const maxScore = assessment?.assessment_type?.max_score || 100;
     const assessmentTypeCode = assessment?.assessment_type?.code || 'general';
+    const assessmentTypeId = assessment?.assessment_type?.id;
+
+    console.log("📋 Assessment details:", { maxScore, assessmentTypeCode, assessmentTypeId });
 
     // ===== INSERT RESULTS =====
     const { data: result, error: resultError } = await supabase
@@ -164,7 +195,7 @@ export default async function handler(req, res) {
         session_id,
         user_id,
         assessment_id,
-        assessment_type_id: assessment?.assessment_type?.id,
+        assessment_type_id: assessmentTypeId,
         total_score: totalScore,
         max_score: maxScore,
         category_scores: categoryScores,
@@ -173,18 +204,22 @@ export default async function handler(req, res) {
         recommendations,
         risk_level: totalScore >= maxScore * 0.7 ? 'low' : totalScore >= maxScore * 0.5 ? 'medium' : 'high',
         readiness: totalScore >= maxScore * 0.7 ? 'ready' : 'development_needed',
-        completed_at: new Date().toISOString()
+        completed_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       })
       .select()
       .single();
 
     if (resultError) {
-      console.error("Error inserting results:", resultError);
+      console.error("❌ Error inserting results:", resultError);
       return res.status(500).json({
         success: false,
-        error: "Failed to save assessment results"
+        error: "Failed to save assessment results: " + resultError.message
       });
     }
+
+    console.log("✅ Results saved with ID:", result.id);
 
     // ===== UPDATE CANDIDATE ASSESSMENTS =====
     const { error: candidateError } = await supabase
@@ -192,35 +227,43 @@ export default async function handler(req, res) {
       .upsert({
         user_id,
         assessment_id,
-        assessment_type_id: assessment?.assessment_type?.id,
+        assessment_type_id: assessmentTypeId,
         session_id,
         result_id: result.id,
         status: 'completed',
         completed_at: new Date().toISOString(),
-        score: totalScore
+        score: totalScore,
+        updated_at: new Date().toISOString()
       }, {
         onConflict: 'user_id,assessment_id'
       });
 
     if (candidateError) {
-      console.error("Error updating candidate assessments:", candidateError);
+      console.error("⚠️ Error updating candidate assessments:", candidateError);
+      // Don't fail the request, just log it
+    } else {
+      console.log("✅ Candidate assessments updated");
     }
 
     // ===== CREATE SUPERVISOR NOTIFICATIONS =====
     try {
       // Get candidate info
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from("candidate_profiles")
         .select("full_name, email")
         .eq("id", user_id)
         .single();
 
+      if (profileError) {
+        console.log("⚠️ Could not fetch candidate profile:", profileError);
+      }
+
       // Get all supervisors
-      const { data: supervisors } = await supabase
+      const { data: supervisors, error: supervisorsError } = await supabase
         .from("supervisors")
         .select("id");
 
-      if (supervisors && supervisors.length > 0) {
+      if (!supervisorsError && supervisors && supervisors.length > 0) {
         const notifications = supervisors.map(sup => ({
           supervisor_id: sup.id,
           user_id,
@@ -231,12 +274,18 @@ export default async function handler(req, res) {
           created_at: new Date().toISOString()
         }));
 
-        await supabase
+        const { error: notifyError } = await supabase
           .from("supervisor_notifications")
           .insert(notifications);
+
+        if (notifyError) {
+          console.error("⚠️ Error creating notifications:", notifyError);
+        } else {
+          console.log("✅ Notifications created");
+        }
       }
     } catch (notifyError) {
-      console.error("Failed to create notifications:", notifyError);
+      console.error("⚠️ Failed to create notifications:", notifyError);
     }
 
     // ===== RETURN SUCCESS RESPONSE =====
@@ -253,10 +302,11 @@ export default async function handler(req, res) {
     });
 
   } catch (err) {
-    console.error("Submit assessment error:", err);
+    console.error("❌ Submit assessment error:", err);
     return res.status(500).json({
       success: false,
-      error: "Submission failed. Please contact support."
+      error: "Submission failed. Please contact support.",
+      details: err.message
     });
   }
 }
