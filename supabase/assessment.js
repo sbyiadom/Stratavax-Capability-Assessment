@@ -69,71 +69,125 @@ export async function getAssessmentQuestions(assessmentId) {
 
 // Assessment Sessions
 export async function createAssessmentSession(userId, assessmentId, assessmentTypeId) {
-  // Check if session already exists
-  const { data: existing } = await supabase
-    .from('assessment_sessions')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('assessment_id', assessmentId)
-    .eq('status', 'in_progress')
-    .maybeSingle();
+  try {
+    console.log("Creating assessment session:", { userId, assessmentId, assessmentTypeId });
+    
+    // Check if session already exists
+    const { data: existing, error: existingError } = await supabase
+      .from('assessment_sessions')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('assessment_id', assessmentId)
+      .eq('status', 'in_progress')
+      .maybeSingle();
 
-  if (existing) return existing;
+    if (existingError) {
+      console.error("Error checking existing session:", existingError);
+    }
 
-  // Get assessment type for time limit
-  const { data: assessment } = await supabase
-    .from('assessments')
-    .select('assessment_type_id')
-    .eq('id', assessmentId)
-    .single();
+    if (existing) {
+      console.log("Found existing session:", existing);
+      return existing;
+    }
 
-  const { data: assessmentType } = await supabase
-    .from('assessment_types')
-    .select('time_limit_minutes')
-    .eq('id', assessment.assessment_type_id)
-    .single();
+    // Get assessment type for time limit
+    const { data: assessment, error: assessmentError } = await supabase
+      .from('assessments')
+      .select('assessment_type_id')
+      .eq('id', assessmentId)
+      .single();
 
-  // Calculate expiry time
-  const expiresAt = new Date();
-  expiresAt.setMinutes(expiresAt.getMinutes() + assessmentType.time_limit_minutes);
+    if (assessmentError) {
+      console.error("Error fetching assessment:", assessmentError);
+      throw assessmentError;
+    }
 
-  const { data, error } = await supabase
-    .from('assessment_sessions')
-    .insert({
-      user_id: userId,
-      assessment_id: assessmentId,
-      assessment_type_id: assessmentTypeId,
-      status: 'in_progress',
-      expires_at: expiresAt.toISOString()
-    })
-    .select()
-    .single();
+    const { data: assessmentType, error: typeError } = await supabase
+      .from('assessment_types')
+      .select('time_limit_minutes')
+      .eq('id', assessment.assessment_type_id)
+      .single();
 
-  if (error) throw error;
-  return data;
+    if (typeError) {
+      console.error("Error fetching assessment type:", typeError);
+      throw typeError;
+    }
+
+    // Calculate expiry time
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + assessmentType.time_limit_minutes);
+
+    console.log("Creating new session with expiry:", expiresAt);
+
+    const { data, error } = await supabase
+      .from('assessment_sessions')
+      .insert({
+        user_id: userId,
+        assessment_id: assessmentId,
+        assessment_type_id: assessmentTypeId,
+        status: 'in_progress',
+        expires_at: expiresAt.toISOString()
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error creating session:", error);
+      throw error;
+    }
+    
+    console.log("Session created successfully:", data);
+    return data;
+    
+  } catch (error) {
+    console.error("Create assessment session error:", error);
+    throw error;
+  }
 }
 
 export async function getAssessmentSession(sessionId) {
-  const { data, error } = await supabase
-    .from('assessment_sessions')
-    .select('*')
-    .eq('id', sessionId)
-    .single();
-  
-  if (error) throw error;
-  return data;
+  try {
+    console.log("Fetching session:", sessionId);
+    
+    const { data, error } = await supabase
+      .from('assessment_sessions')
+      .select('*')
+      .eq('id', sessionId)
+      .single();
+    
+    if (error) {
+      console.error("Error fetching session:", error);
+      throw error;
+    }
+    
+    console.log("Session fetched:", data);
+    return data;
+    
+  } catch (error) {
+    console.error("Get assessment session error:", error);
+    throw error;
+  }
 }
 
 export async function updateSessionTimer(sessionId, elapsedSeconds) {
-  const { error } = await supabase
-    .from('assessment_sessions')
-    .update({ time_spent_seconds: elapsedSeconds })
-    .eq('id', sessionId);
+  try {
+    const { error } = await supabase
+      .from('assessment_sessions')
+      .update({ time_spent_seconds: elapsedSeconds })
+      .eq('id', sessionId);
 
-  if (error) throw error;
+    if (error) {
+      console.error("Error updating session timer:", error);
+      throw error;
+    }
+    
+  } catch (error) {
+    console.error("Update session timer error:", error);
+    throw error;
+  }
 }
 
-// ===== UPDATED RESPONSES FUNCTIONS WITH BETTER ERROR HANDLING =====
+// ===== ENHANCED RESPONSES FUNCTIONS =====
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   try {
     console.log("📝 Attempting to save response:", {
@@ -259,23 +313,91 @@ export async function getSessionResponses(sessionId) {
   }
 }
 
-// Submit and Generate Results
+// ===== ENHANCED SUBMIT FUNCTION =====
 export async function submitAssessment(sessionId) {
   try {
     console.log("📤 Submitting assessment for session:", sessionId);
+    console.log("Session ID type:", typeof sessionId);
+    console.log("Session ID length:", sessionId?.length);
     
+    // Validate sessionId
+    if (!sessionId) {
+      console.error("❌ No session ID provided");
+      throw new Error("No session ID provided");
+    }
+
+    // First, check if all questions are answered
+    const { data: session, error: sessionError } = await supabase
+      .from('assessment_sessions')
+      .select('assessment_id')
+      .eq('id', sessionId)
+      .single();
+
+    if (sessionError) {
+      console.error("❌ Error fetching session:", sessionError);
+      throw sessionError;
+    }
+
+    // Get total questions count
+    const { count: totalQuestions, error: countError } = await supabase
+      .from('questions')
+      .select('*', { count: 'exact', head: true })
+      .eq('assessment_id', session.assessment_id);
+
+    if (countError) {
+      console.error("❌ Error counting questions:", countError);
+    }
+
+    // Get answered questions count
+    const { count: answeredQuestions, error: answeredError } = await supabase
+      .from('responses')
+      .select('*', { count: 'exact', head: true })
+      .eq('session_id', sessionId);
+
+    if (answeredError) {
+      console.error("❌ Error counting responses:", answeredError);
+    }
+
+    console.log(`📊 Progress: ${answeredQuestions}/${totalQuestions} questions answered`);
+
+    if (answeredQuestions < totalQuestions) {
+      console.warn("⚠️ Not all questions answered yet");
+      // Continue anyway - allow submission even if not all answered
+    }
+
     // Call the database function to generate results
-    const { data, error } = await supabase
+    console.log("🔧 Calling generate_assessment_results RPC with sessionId:", sessionId);
+    
+    const { data, error, status, statusText } = await supabase
       .rpc('generate_assessment_results', {
         p_session_id: sessionId
       });
 
+    console.log("📦 RPC Response:", { 
+      data, 
+      error, 
+      status, 
+      statusText,
+      hasData: !!data,
+      hasError: !!error 
+    });
+
     if (error) {
-      console.error("❌ Submit assessment error:", error);
+      console.error("❌ RPC Error details:", {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      });
       throw error;
     }
     
-    console.log("✅ Assessment submitted successfully:", data);
+    if (!data) {
+      console.error("❌ No data returned from RPC");
+      throw new Error("No result ID returned");
+    }
+    
+    console.log("✅ Assessment submitted successfully. Result ID:", data);
     return data;
     
   } catch (error) {
@@ -286,61 +408,107 @@ export async function submitAssessment(sessionId) {
 
 // Get Assessment Results
 export async function getAssessmentResult(resultId) {
-  const { data, error } = await supabase
-    .from('assessment_results')
-    .select(`
-      *,
-      assessment:assessments(
+  try {
+    console.log("📤 Fetching assessment result:", resultId);
+    
+    const { data, error } = await supabase
+      .from('assessment_results')
+      .select(`
         *,
-        assessment_type:assessment_types(*)
-      )
-    `)
-    .eq('id', resultId)
-    .single();
+        assessment:assessments(
+          *,
+          assessment_type:assessment_types(*)
+        )
+      `)
+      .eq('id', resultId)
+      .single();
 
-  if (error) throw error;
-  return data;
+    if (error) {
+      console.error("❌ Error fetching result:", error);
+      throw error;
+    }
+    
+    console.log("✅ Result fetched:", data);
+    return data;
+    
+  } catch (error) {
+    console.error("❌ Get assessment result error:", error);
+    throw error;
+  }
 }
 
 export async function getUserAssessmentResults(userId) {
-  const { data, error } = await supabase
-    .from('assessment_results')
-    .select(`
-      *,
-      assessment:assessments(
+  try {
+    console.log("📤 Fetching user assessment results:", userId);
+    
+    const { data, error } = await supabase
+      .from('assessment_results')
+      .select(`
         *,
-        assessment_type:assessment_types(*)
-      )
-    `)
-    .eq('user_id', userId)
-    .order('completed_at', { ascending: false });
+        assessment:assessments(
+          *,
+          assessment_type:assessment_types(*)
+        )
+      `)
+      .eq('user_id', userId)
+      .order('completed_at', { ascending: false });
 
-  if (error) throw error;
-  return data;
+    if (error) {
+      console.error("❌ Error fetching user results:", error);
+      throw error;
+    }
+    
+    console.log("✅ User results fetched:", data?.length || 0);
+    return data;
+    
+  } catch (error) {
+    console.error("❌ Get user assessment results error:", error);
+    throw error;
+  }
 }
 
 // Candidate Profile
 export async function getOrCreateCandidateProfile(userId, email, fullName) {
-  const { data: existing } = await supabase
-    .from('candidate_profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle();
+  try {
+    console.log("📤 Getting/creating candidate profile:", { userId, email, fullName });
+    
+    const { data: existing, error: existingError } = await supabase
+      .from('candidate_profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
 
-  if (existing) return existing;
+    if (existingError) {
+      console.error("Error checking existing profile:", existingError);
+    }
 
-  const { data, error } = await supabase
-    .from('candidate_profiles')
-    .insert({
-      id: userId,
-      email,
-      full_name: fullName
-    })
-    .select()
-    .single();
+    if (existing) {
+      console.log("✅ Found existing profile:", existing);
+      return existing;
+    }
 
-  if (error) throw error;
-  return data;
+    const { data, error } = await supabase
+      .from('candidate_profiles')
+      .insert({
+        id: userId,
+        email,
+        full_name: fullName
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("❌ Error creating profile:", error);
+      throw error;
+    }
+    
+    console.log("✅ Profile created:", data);
+    return data;
+    
+  } catch (error) {
+    console.error("❌ Get or create candidate profile error:", error);
+    throw error;
+  }
 }
 
 // Progress Tracking
@@ -567,7 +735,10 @@ export async function getUserInProgressAssessment(userId, assessmentId) {
       .eq('status', 'in_progress')
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Error fetching in-progress assessment:", error);
+      throw error;
+    }
     return data;
     
   } catch (error) {
