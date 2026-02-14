@@ -9,12 +9,13 @@ export default function CandidateDashboard() {
   const router = useRouter();
   const { session, loading: authLoading } = useRequireAuth();
   const [assessments, setAssessments] = useState([]);
-  const [activeTab, setActiveTab] = useState("general");
+  const [activeTab, setActiveTab] = useState(null);
   const [loading, setLoading] = useState(true);
   const [completedAssessments, setCompletedAssessments] = useState([]);
   const [inProgressAssessments, setInProgressAssessments] = useState([]);
   const [userName, setUserName] = useState("");
   const [hoveredCard, setHoveredCard] = useState(null);
+  const [assessmentTypes, setAssessmentTypes] = useState([]);
 
   // ===== BACKGROUND IMAGES FOR EACH ASSESSMENT TYPE =====
   const assessmentBackgrounds = {
@@ -53,116 +54,82 @@ export default function CandidateDashboard() {
       image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1920&q=80',
       pattern: 'https://www.transparenttextures.com/patterns/dark-mosaic.png',
       color: '#ff9a9e'
+    },
+    personality: {
+      gradient: 'linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)',
+      image: 'https://images.unsplash.com/photo-1491438590914-bc09fcaaf77a?auto=format&fit=crop&w=1920&q=80',
+      pattern: 'https://www.transparenttextures.com/patterns/clean-gray-paper.png',
+      color: '#4CAF50'
+    },
+    performance: {
+      gradient: 'linear-gradient(135deg, #FF9800 0%, #F57C00 100%)',
+      image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1920&q=80',
+      pattern: 'https://www.transparenttextures.com/patterns/clean-gray-paper.png',
+      color: '#FF9800'
+    },
+    technical: {
+      gradient: 'linear-gradient(135deg, #F44336 0%, #C62828 100%)',
+      image: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
+      pattern: 'https://www.transparenttextures.com/patterns/industrial.png',
+      color: '#F44336'
     }
   };
-
-  // ===== FIXED: Standardized 80% passing score for ALL assessment types =====
-  const assessmentTypes = [
-    { 
-      id: 'general', 
-      label: '📋 General Assessment', 
-      shortLabel: 'General',
-      description: 'Comprehensive 5-area evaluation of cognitive abilities, personality, leadership, technical competence, and performance',
-      longDescription: 'This assessment provides a holistic view of your capabilities across five critical dimensions. It measures your cognitive agility, personality traits, leadership potential, technical expertise, and performance orientation.',
-      icon: '📋',
-      iconBg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      color: '#667eea',
-      lightColor: 'rgba(102, 126, 234, 0.1)',
-      duration: 180,
-      questions: 100,
-      passing: 80, // CHANGED from 60 to 80
-      features: ['Cognitive Abilities', 'Personality Traits', 'Leadership Potential', 'Technical Competence', 'Performance Metrics']
-    },
-    { 
-      id: 'behavioral', 
-      label: '🧠 Behavioral & Soft Skills', 
-      shortLabel: 'Behavioral',
-      description: 'Communication, teamwork, emotional intelligence, adaptability, initiative, time management, and resilience',
-      longDescription: 'Evaluate your interpersonal skills and workplace behaviors that predict long-term success. This assessment measures how you interact with others, handle challenges, and contribute to team dynamics.',
-      icon: '🧠',
-      iconBg: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-      color: '#f5576c',
-      lightColor: 'rgba(245, 87, 108, 0.1)',
-      duration: 180,
-      questions: 100,
-      passing: 80, // CHANGED from 70 to 80
-      features: ['Adaptability', 'Emotional Intelligence', 'Communication', 'Teamwork', 'Initiative', 'Time Management', 'Resilience']
-    },
-    { 
-      id: 'cognitive', 
-      label: '💡 Cognitive & Thinking Skills', 
-      shortLabel: 'Cognitive',
-      description: 'Problem-solving, critical thinking, learning agility, creativity, and analytical reasoning',
-      longDescription: 'Assess your mental agility and reasoning capabilities. This assessment challenges your problem-solving approaches, critical analysis skills, ability to learn quickly, and creative thinking capacity.',
-      icon: '💡',
-      iconBg: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-      color: '#4facfe',
-      lightColor: 'rgba(79, 172, 254, 0.1)',
-      duration: 180,
-      questions: 100,
-      passing: 80, // CHANGED from 65 to 80
-      features: ['Problem-Solving', 'Critical Thinking', 'Learning Agility', 'Creativity', 'Analytical Reasoning']
-    },
-    { 
-      id: 'cultural', 
-      label: '🤝 Cultural & Attitudinal Fit', 
-      shortLabel: 'Cultural',
-      description: 'Values alignment, organizational citizenship, reliability, customer focus, safety awareness, and commercial acumen',
-      longDescription: 'Determine your alignment with organizational values and work culture. This evaluation focuses on your ethical framework, reliability, customer orientation, safety consciousness, and business awareness.',
-      icon: '🤝',
-      iconBg: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-      color: '#43e97b',
-      lightColor: 'rgba(67, 233, 123, 0.1)',
-      duration: 180,
-      questions: 100,
-      passing: 80, // CHANGED from 75 to 80
-      features: ['Values Alignment', 'Citizenship', 'Reliability', 'Customer Focus', 'Safety', 'Commercial Acumen']
-    },
-    { 
-      id: 'manufacturing', 
-      label: '⚙️ Manufacturing Technical Skills', 
-      shortLabel: 'Manufacturing',
-      description: 'Blowing machines, Labeler, Filling, Conveyors, Stretchwrappers, Shrinkwrappers, Date coders, and Raw materials',
-      longDescription: 'Demonstrate your technical expertise in manufacturing operations. This comprehensive assessment covers all critical equipment and processes including blow molding, labeling, filling, conveying, wrapping, coding, and material science.',
-      icon: '⚙️',
-      iconBg: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
-      color: '#fa709a',
-      lightColor: 'rgba(250, 112, 154, 0.1)',
-      duration: 180,
-      questions: 100,
-      passing: 80, // CHANGED from 75 to 80
-      features: ['Blowing Machines', 'Labeler', 'Filling', 'Conveyors', 'Stretchwrappers', 'Shrinkwrappers', 'Date Coders', 'Raw Materials']
-    },
-    { 
-      id: 'leadership', 
-      label: '👑 Leadership Potential', 
-      shortLabel: 'Leadership',
-      description: 'Vision setting, team development, coaching, decision-making, influence, and strategic leadership',
-      longDescription: 'Uncover your leadership capabilities and potential for growth. This assessment measures your ability to set direction, develop others, make sound decisions, influence stakeholders, and think strategically.',
-      icon: '👑',
-      iconBg: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
-      color: '#ff9a9e',
-      lightColor: 'rgba(255, 154, 158, 0.1)',
-      duration: 180,
-      questions: 100,
-      passing: 80, // CHANGED from 75 to 80
-      features: ['Vision', 'Team Development', 'Coaching', 'Decision-Making', 'Influence', 'Strategic Thinking']
-    }
-  ];
 
   useEffect(() => {
     if (session?.user) {
       setUserName(session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Candidate');
       fetchAssessments();
       fetchUserProgress();
+      fetchAssessmentTypes();
     }
   }, [session]);
+
+  const fetchAssessmentTypes = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('assessment_types')
+        .select('*')
+        .eq('is_active', true)
+        .order('display_order');
+
+      if (error) throw error;
+      
+      if (data) {
+        // Transform to match the expected format in the UI
+        const transformedTypes = data.map(type => ({
+          id: type.code,
+          label: type.name,
+          shortLabel: type.code.charAt(0).toUpperCase() + type.code.slice(1),
+          description: type.description || `${type.name} assessment`,
+          longDescription: type.description || `Comprehensive assessment of your ${type.name.toLowerCase()} capabilities.`,
+          icon: type.icon || '📋',
+          iconBg: `linear-gradient(135deg, ${type.gradient_start || '#667eea'}, ${type.gradient_end || '#764ba2'})`,
+          color: type.color || '#667eea',
+          lightColor: `${type.color}20` || 'rgba(102, 126, 234, 0.1)',
+          duration: type.time_limit_minutes || 60,
+          questions: type.question_count || 100,
+          passing: 80,
+          features: type.category_config || ['General Assessment']
+        }));
+        
+        setAssessmentTypes(transformedTypes);
+        if (transformedTypes.length > 0) {
+          setActiveTab(transformedTypes[0].id);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching assessment types:", error);
+    }
+  };
 
   const fetchAssessments = async () => {
     try {
       const { data, error } = await supabase
         .from("assessments")
-        .select("*")
+        .select(`
+          *,
+          assessment_type:assessment_types(*)
+        `)
         .eq("is_active", true);
 
       if (error) throw error;
@@ -182,9 +149,9 @@ export default function CandidateDashboard() {
   const removeDuplicateAssessments = (assessments) => {
     const assessmentMap = new Map();
     assessments.forEach(assessment => {
-      const existing = assessmentMap.get(assessment.assessment_type);
-      if (!existing || new Date(assessment.created_at) > new Date(existing.created_at)) {
-        assessmentMap.set(assessment.assessment_type, assessment);
+      const typeCode = assessment.assessment_type?.code;
+      if (!assessmentMap.has(typeCode)) {
+        assessmentMap.set(typeCode, assessment);
       }
     });
     return Array.from(assessmentMap.values());
@@ -192,10 +159,10 @@ export default function CandidateDashboard() {
 
   const fetchUserProgress = async () => {
     try {
-      // Get completed assessments
+      // Get completed assessments from candidate_assessments
       const { data: completed, error: completedError } = await supabase
-        .from("assessment_results")
-        .select("assessment_id, overall_score, completed_at, status")
+        .from("candidate_assessments")
+        .select("assessment_id, score, completed_at, status")
         .eq("user_id", session.user.id)
         .eq("status", "completed");
 
@@ -205,8 +172,8 @@ export default function CandidateDashboard() {
 
       // Get in-progress assessments
       const { data: inProgress, error: inProgressError } = await supabase
-        .from("assessment_results")
-        .select("assessment_id, time_spent, updated_at")
+        .from("assessment_sessions")
+        .select("assessment_id, time_spent_seconds, updated_at")
         .eq("user_id", session.user.id)
         .eq("status", "in_progress");
 
@@ -218,8 +185,8 @@ export default function CandidateDashboard() {
     }
   };
 
-  const getAssessmentByType = (type) => {
-    return assessments.find(a => a.assessment_type === type);
+  const getAssessmentByType = (typeCode) => {
+    return assessments.find(a => a.assessment_type?.code === typeCode);
   };
 
   const isAssessmentCompleted = (assessmentId) => {
@@ -232,7 +199,10 @@ export default function CandidateDashboard() {
 
   const getAssessmentScore = (assessmentId) => {
     const completed = completedAssessments.find(a => a.assessment_id === assessmentId);
-    return completed?.overall_score || null;
+    // Convert to percentage based on max score
+    const assessment = assessments.find(a => a.id === assessmentId);
+    const maxScore = assessment?.assessment_type?.max_score || 100;
+    return completed?.score ? Math.round((completed.score / maxScore) * 100) : null;
   };
 
   const getCompletedCount = () => {
@@ -257,7 +227,6 @@ export default function CandidateDashboard() {
     return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
   };
 
-  // ===== FIXED: Use 80% as the passing threshold for all assessments =====
   const isPassed = (score) => {
     return score >= 80;
   };
@@ -278,7 +247,7 @@ export default function CandidateDashboard() {
   if (!session) return null;
 
   const activeTypeConfig = assessmentTypes.find(t => t.id === activeTab) || assessmentTypes[0];
-  const activeAssessment = getAssessmentByType(activeTab);
+  const activeAssessment = activeTab ? getAssessmentByType(activeTab) : null;
   const completedCount = getCompletedCount();
   const totalAssessments = getTotalAssessments();
   const progressPercentage = totalAssessments > 0 ? Math.round((completedCount / totalAssessments) * 100) : 0;
@@ -295,7 +264,7 @@ export default function CandidateDashboard() {
             Welcome back, <span style={styles.heroName}>{userName}</span>
           </h1>
           <p style={styles.heroSubtitle}>
-            Track your progress and continue your assessments. Each assessment contains 100 questions and has a 180-minute time limit.
+            Track your progress and continue your assessments. Each assessment contains 100 questions and has its own time limit.
           </p>
           
           {/* Progress Card */}
@@ -366,55 +335,62 @@ export default function CandidateDashboard() {
           </div>
 
           {/* Assessment Tabs */}
-          <div style={styles.tabsContainer}>
-            {assessmentTypes.map(tab => {
-              const isActive = activeTab === tab.id;
-              const hasAssessment = !!getAssessmentByType(tab.id);
-              const bgConfig = assessmentBackgrounds[tab.id];
-              
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => hasAssessment && setActiveTab(tab.id)}
-                  disabled={!hasAssessment}
-                  style={{
-                    ...styles.tabButton,
-                    background: isActive ? bgConfig.gradient : 'white',
-                    color: isActive ? 'white' : '#64748b',
-                    borderColor: isActive ? 'transparent' : '#e2e8f0',
-                    opacity: hasAssessment ? 1 : 0.5,
-                    boxShadow: isActive ? `0 10px 20px ${bgConfig.color}40` : 'none'
-                  }}
-                >
-                  <span style={styles.tabIcon}>{tab.icon}</span>
-                  <div style={styles.tabInfo}>
-                    <div style={styles.tabLabel}>{tab.shortLabel}</div>
-                    <div style={styles.tabMeta}>
-                      {hasAssessment ? '1 assessment' : 'Coming soon'}
+          {assessmentTypes.length > 0 && (
+            <div style={styles.tabsContainer}>
+              {assessmentTypes.map(tab => {
+                const isActive = activeTab === tab.id;
+                const hasAssessment = !!getAssessmentByType(tab.id);
+                const bgConfig = assessmentBackgrounds[tab.id] || {
+                  gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: '#667eea'
+                };
+                
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => hasAssessment && setActiveTab(tab.id)}
+                    disabled={!hasAssessment}
+                    style={{
+                      ...styles.tabButton,
+                      background: isActive ? bgConfig.gradient : 'white',
+                      color: isActive ? 'white' : '#64748b',
+                      borderColor: isActive ? 'transparent' : '#e2e8f0',
+                      opacity: hasAssessment ? 1 : 0.5,
+                      boxShadow: isActive ? `0 10px 20px ${bgConfig.color}40` : 'none'
+                    }}
+                  >
+                    <span style={styles.tabIcon}>{tab.icon}</span>
+                    <div style={styles.tabInfo}>
+                      <div style={styles.tabLabel}>{tab.shortLabel}</div>
+                      <div style={styles.tabMeta}>
+                        {hasAssessment ? '1 assessment' : 'Coming soon'}
+                      </div>
                     </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Active Tab Header */}
-          <div style={styles.activeTabHeader}>
-            <div>
-              <h3 style={styles.activeTabTitle}>
-                <span style={styles.activeTabIcon}>{activeTypeConfig.icon}</span>
-                {activeTypeConfig.label}
-              </h3>
-              <p style={styles.activeTabDescription}>{activeTypeConfig.description}</p>
+          {activeTypeConfig && (
+            <div style={styles.activeTabHeader}>
+              <div>
+                <h3 style={styles.activeTabTitle}>
+                  <span style={styles.activeTabIcon}>{activeTypeConfig.icon}</span>
+                  {activeTypeConfig.label}
+                </h3>
+                <p style={styles.activeTabDescription}>{activeTypeConfig.description}</p>
+              </div>
+              <div style={{
+                ...styles.activeTabBadge,
+                background: activeTypeConfig.lightColor,
+                color: activeTypeConfig.color
+              }}>
+                {activeAssessment ? (isAssessmentCompleted(activeAssessment.id) ? '✓ Completed' : '📝 Not Started') : 'No assessment'}
+              </div>
             </div>
-            <div style={{
-              ...styles.activeTabBadge,
-              background: activeTypeConfig.lightColor,
-              color: activeTypeConfig.color
-            }}>
-              {activeAssessment ? (isAssessmentCompleted(activeAssessment.id) ? '✓ Completed' : '📝 Not Started') : 'No assessment'}
-            </div>
-          </div>
+          )}
 
           {/* Assessment Cards */}
           {activeAssessment ? (
@@ -424,9 +400,12 @@ export default function CandidateDashboard() {
                 const completed = isAssessmentCompleted(assessment.id);
                 const inProgress = isAssessmentInProgress(assessment.id);
                 const score = getAssessmentScore(assessment.id);
-                // ===== FIXED: Use 80% passing score =====
                 const passed = completed && score >= 80;
-                const bgConfig = assessmentBackgrounds[activeTab];
+                const bgConfig = assessmentBackgrounds[activeTab] || {
+                  image: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1920&q=80',
+                  pattern: 'https://www.transparenttextures.com/patterns/cubes.png',
+                  color: activeTypeConfig?.color || '#667eea'
+                };
                 const isHovered = hoveredCard === assessment.id;
 
                 return (
@@ -440,7 +419,7 @@ export default function CandidateDashboard() {
                           ? '#4CAF50' 
                           : '#FF9800'
                         : inProgress
-                          ? activeTypeConfig.color
+                          ? activeTypeConfig?.color || '#667eea'
                           : 'transparent',
                       cursor: completed ? 'default' : 'pointer'
                     }}
@@ -474,7 +453,7 @@ export default function CandidateDashboard() {
                           ? 'linear-gradient(135deg, #4CAF50, #2E7D32)'
                           : 'linear-gradient(135deg, #FF9800, #F57C00)'
                         : inProgress
-                          ? activeTypeConfig.iconBg
+                          ? activeTypeConfig?.iconBg || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
                           : 'linear-gradient(135deg, #94a3b8, #64748b)',
                     }}>
                       {completed 
@@ -491,19 +470,19 @@ export default function CandidateDashboard() {
                     <div style={styles.cardHeader}>
                       <div style={{
                         ...styles.cardIcon,
-                        background: activeTypeConfig.iconBg,
-                        boxShadow: isHovered && !completed ? `0 10px 20px ${activeTypeConfig.color}40` : 'none',
+                        background: activeTypeConfig?.iconBg || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        boxShadow: isHovered && !completed ? `0 10px 20px ${bgConfig.color}40` : 'none',
                       }}>
-                        {activeTypeConfig.icon}
+                        {activeTypeConfig?.icon || '📋'}
                       </div>
                       <div style={styles.cardTitleWrapper}>
-                        <h4 style={styles.cardTitle}>{assessment.name}</h4>
+                        <h4 style={styles.cardTitle}>{assessment.title}</h4>
                         <div style={styles.cardMeta}>
                           <span style={styles.metaItem}>
-                            <span style={styles.metaIcon}>⏱️</span> 180 mins
+                            <span style={styles.metaIcon}>⏱️</span> {activeTypeConfig?.duration || 60} mins
                           </span>
                           <span style={styles.metaItem}>
-                            <span style={styles.metaIcon}>📝</span> 100 Q
+                            <span style={styles.metaIcon}>📝</span> {activeTypeConfig?.questions || 100} Q
                           </span>
                           <span style={styles.metaItem}>
                             <span style={styles.metaIcon}>🎯</span> 80% pass
@@ -514,11 +493,11 @@ export default function CandidateDashboard() {
 
                     {/* Description */}
                     <p style={styles.cardDescription}>
-                      {isHovered && !completed ? activeTypeConfig.longDescription : activeTypeConfig.description}
+                      {isHovered && !completed ? activeTypeConfig?.longDescription : activeTypeConfig?.description}
                     </p>
 
                     {/* Features List - Show on Hover */}
-                    {isHovered && !completed && (
+                    {isHovered && !completed && activeTypeConfig?.features && (
                       <div style={styles.featuresList}>
                         {activeTypeConfig.features.map((feature, idx) => (
                           <span key={idx} style={styles.featureTag}>
@@ -565,8 +544,8 @@ export default function CandidateDashboard() {
                     {inProgress && !completed && (
                       <div style={{
                         ...styles.inProgressCard,
-                        background: `${activeTypeConfig.color}10`,
-                        borderColor: activeTypeConfig.color
+                        background: `${bgConfig.color}10`,
+                        borderColor: bgConfig.color
                       }}>
                         <span style={styles.inProgressIcon}>🕐</span>
                         <span style={styles.inProgressText}>You have an assessment in progress</span>
@@ -585,11 +564,11 @@ export default function CandidateDashboard() {
                         style={{
                           ...styles.actionButton,
                           background: inProgress 
-                            ? activeTypeConfig.iconBg
+                            ? activeTypeConfig?.iconBg || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
                             : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                           transform: isHovered ? 'translateY(-2px)' : 'translateY(0)',
                           boxShadow: isHovered 
-                            ? `0 20px 30px ${activeTypeConfig.color}40`
+                            ? `0 20px 30px ${bgConfig.color}40`
                             : '0 4px 6px rgba(0,0,0,0.05)',
                         }}
                       >
@@ -617,7 +596,7 @@ export default function CandidateDashboard() {
               <div style={styles.emptyStateIcon}>🔧</div>
               <h3 style={styles.emptyStateTitle}>Assessment Coming Soon</h3>
               <p style={styles.emptyStateText}>
-                The {activeTypeConfig.label.toLowerCase()} is being prepared. Please check back later.
+                {activeTypeConfig?.label ? `The ${activeTypeConfig.label.toLowerCase()} is being prepared.` : 'No assessments available at this time.'} Please check back later.
               </p>
             </div>
           )}
@@ -636,7 +615,9 @@ export default function CandidateDashboard() {
                 const isCompleted = typeAssessment ? isAssessmentCompleted(typeAssessment.id) : false;
                 const completedCount = isCompleted ? 1 : 0;
                 const progress = isCompleted ? 100 : 0;
-                const bgConfig = assessmentBackgrounds[type.id];
+                const bgConfig = assessmentBackgrounds[type.id] || {
+                  color: '#667eea'
+                };
                 
                 return (
                   <div key={type.id} style={{
@@ -690,9 +671,9 @@ export default function CandidateDashboard() {
                     <span style={styles.guidelineIcon}>⏰</span>
                   </div>
                   <div style={styles.guidelineTextWrapper}>
-                    <h4 style={styles.guidelineTitle}>180-Minute Timer</h4>
+                    <h4 style={styles.guidelineTitle}>Timed Assessments</h4>
                     <p style={styles.guidelineText}>
-                      All assessments have a fixed 180-minute time limit. The timer starts when you begin and pauses if you log off.
+                      Each assessment has its own time limit. The timer starts when you begin and pauses if you log off.
                     </p>
                   </div>
                 </div>
@@ -795,9 +776,8 @@ export default function CandidateDashboard() {
   );
 }
 
-// ===== STYLES =====
+// ===== STYLES ===== (keeping all your existing styles)
 const styles = {
-  // Loading
   loadingContainer: {
     minHeight: '100vh',
     position: 'relative',
@@ -845,8 +825,6 @@ const styles = {
     fontSize: '18px',
     opacity: 0.9
   },
-
-  // Hero Section
   heroWrapper: {
     position: 'relative',
     height: '400px',
@@ -974,8 +952,6 @@ const styles = {
     right: 0,
     lineHeight: 0
   },
-
-  // Main Content
   mainContent: {
     background: '#f8fafc',
     padding: '40px 0'
@@ -1022,8 +998,6 @@ const styles = {
     fontWeight: '600',
     color: '#1a2639'
   },
-
-  // Tabs
   tabsContainer: {
     display: 'flex',
     gap: '12px',
@@ -1059,8 +1033,6 @@ const styles = {
     fontSize: '11px',
     opacity: 0.8
   },
-
-  // Active Tab Header
   activeTabHeader: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -1094,8 +1066,6 @@ const styles = {
     fontSize: '14px',
     fontWeight: '600'
   },
-
-  // Cards Grid
   cardsGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr',
@@ -1350,8 +1320,6 @@ const styles = {
     margin: '0 auto',
     fontSize: '16px'
   },
-
-  // Journey Section
   journeySection: {
     marginBottom: '50px'
   },
@@ -1427,8 +1395,6 @@ const styles = {
     textAlign: 'center',
     fontStyle: 'italic'
   },
-
-  // Guidelines Section
   guidelinesWrapper: {
     position: 'relative',
     borderRadius: '32px',
@@ -1533,8 +1499,6 @@ const styles = {
   tipText: {
     opacity: 0.9
   },
-
-  // Footer
   footer: {
     display: 'flex',
     justifyContent: 'space-between',
