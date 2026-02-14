@@ -6,7 +6,7 @@ import {
   getAssessmentQuestions,
   createAssessmentSession,
   getSessionResponses,
-  saveResponseFast, // Import the fast version
+  saveResponse,
   submitAssessment,
   getProgress,
   saveProgress,
@@ -175,31 +175,44 @@ export default function AssessmentPage() {
   }, [loading, alreadySubmitted, session, timeLimit, assessmentId, user?.id, currentIndex, questions]);
 
   // ===== OPTIMIZED HANDLE ANSWER SELECTION =====
-  const handleAnswerSelect = (questionId, answerId) => {
+  const handleAnswerSelect = async (questionId, answerId) => {
     if (alreadySubmitted || !session) return;
 
-    // Update UI immediately (this is instant)
+    // Update UI immediately
     setAnswers(prev => ({ ...prev, [questionId]: answerId }));
     
-    // Show saving indicator briefly for UX feedback
+    // Show saving indicator
     setSaveStatus(prev => ({ ...prev, [questionId]: 'saving' }));
 
-    // Hide saving indicator after a short delay (300ms)
-    setTimeout(() => {
-      setSaveStatus(prev => {
-        const newStatus = { ...prev };
-        delete newStatus[questionId];
-        return newStatus;
-      });
-    }, 300);
-
-    // Save in background using fast method (doesn't block UI)
+    // Save to Supabase
     try {
-      saveResponseFast(session.id, user.id, assessmentId, questionId, answerId);
+      const startTime = performance.now();
+      await saveResponse(session.id, user.id, assessmentId, questionId, answerId);
+      const endTime = performance.now();
+      
+      console.log(`✅ Answer saved in ${(endTime - startTime).toFixed(2)}ms`);
+      
+      // Show saved briefly
+      setSaveStatus(prev => ({ ...prev, [questionId]: 'saved' }));
+      setTimeout(() => {
+        setSaveStatus(prev => {
+          const newStatus = { ...prev };
+          delete newStatus[questionId];
+          return newStatus;
+        });
+      }, 300);
     } catch (error) {
-      console.error("Background save error:", error);
-      // Don't show error to user since UI already updated
-      // The answer will be retried on next save or on submission
+      console.error("Save error:", error);
+      setSaveStatus(prev => ({ ...prev, [questionId]: 'error' }));
+      
+      // Show error briefly
+      setTimeout(() => {
+        setSaveStatus(prev => {
+          const newStatus = { ...prev };
+          delete newStatus[questionId];
+          return newStatus;
+        });
+      }, 2000);
     }
   };
 
@@ -463,11 +476,15 @@ export default function AssessmentPage() {
               {saveStatus[currentQuestion?.id] && (
                 <div style={{
                   ...styles.saveStatus,
-                  background: saveStatus[currentQuestion.id] === 'saving' ? '#ff980010' : 'transparent',
-                  borderColor: saveStatus[currentQuestion.id] === 'saving' ? '#ff9800' : 'transparent',
-                  color: saveStatus[currentQuestion.id] === 'saving' ? '#f57c00' : 'transparent'
+                  background: saveStatus[currentQuestion.id] === 'saving' ? '#ff980010' : 
+                             saveStatus[currentQuestion.id] === 'saved' ? '#4caf5010' : '#f4433610',
+                  borderColor: saveStatus[currentQuestion.id] === 'saving' ? '#ff9800' : 
+                              saveStatus[currentQuestion.id] === 'saved' ? '#4caf50' : '#f44336',
+                  color: saveStatus[currentQuestion.id] === 'saving' ? '#f57c00' : 
+                         saveStatus[currentQuestion.id] === 'saved' ? '#2e7d32' : '#c62828'
                 }}>
-                  {saveStatus[currentQuestion.id] === 'saving' ? '⏳ Saving...' : ''}
+                  {saveStatus[currentQuestion.id] === 'saving' ? '⏳ Saving...' : 
+                   saveStatus[currentQuestion.id] === 'saved' ? '✓ Saved' : '❌ Save failed'}
                 </div>
               )}
 
@@ -645,7 +662,7 @@ export default function AssessmentPage() {
   );
 }
 
-// Styles (keep all your existing styles here)
+// Styles
 const styles = {
   loadingContainer: {
     minHeight: '100vh',
