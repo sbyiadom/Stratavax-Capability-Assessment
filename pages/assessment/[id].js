@@ -26,15 +26,11 @@ const formatTime = (seconds) => {
 const setupAntiCheat = () => {
   if (typeof window === 'undefined') return;
   
-  // Disable right click
   document.addEventListener('contextmenu', (e) => e.preventDefault());
-  
-  // Disable copy/paste
   document.addEventListener('copy', (e) => e.preventDefault());
   document.addEventListener('paste', (e) => e.preventDefault());
   document.addEventListener('cut', (e) => e.preventDefault());
   
-  // Disable keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
@@ -100,38 +96,38 @@ export default function AssessmentPage() {
         // Load assessment details
         const assessmentData = await getAssessmentById(assessmentId);
         setAssessment(assessmentData);
-        setAssessmentType(assessmentData.assessment_type);
-        setTimeLimit(assessmentData.assessment_type.time_limit_minutes * 60);
+        setAssessmentType(assessmentData?.assessment_type || null);
+        setTimeLimit(assessmentData?.assessment_type?.time_limit_minutes * 60 || 3600);
 
         // Load questions
         const questionsData = await getAssessmentQuestions(assessmentId);
-        setQuestions(questionsData);
+        setQuestions(Array.isArray(questionsData) ? questionsData : []);
 
         // Create or get session
         const sessionData = await createAssessmentSession(
           session.user.id,
           assessmentId,
-          assessmentData.assessment_type.id
+          assessmentData?.assessment_type?.id || null
         );
         setSession(sessionData);
 
         // Load saved progress
         const progress = await getProgress(session.user.id, assessmentId);
         if (progress) {
-          setElapsedSeconds(progress.elapsed_seconds);
+          setElapsedSeconds(progress.elapsed_seconds || 0);
           if (progress.last_question_id) {
-            const lastIndex = questionsData.findIndex(q => q.id === progress.last_question_id);
+            const questionsArray = Array.isArray(questionsData) ? questionsData : [];
+            const lastIndex = questionsArray.findIndex(q => q?.id === progress.last_question_id);
             if (lastIndex > 0) setCurrentIndex(lastIndex);
           }
         }
 
         // Load saved responses
-        const responses = await getSessionResponses(sessionData.id);
-        const answersMap = {};
-        responses.forEach(r => {
-          answersMap[r.question_id] = r.answer_id;
-        });
-        setAnswers(answersMap);
+        if (sessionData?.id) {
+          const responses = await getSessionResponses(sessionData.id);
+          const answersMap = responses?.answerMap || {};
+          setAnswers(answersMap);
+        }
 
         // Setup anti-cheat
         setupAntiCheat();
@@ -139,7 +135,7 @@ export default function AssessmentPage() {
         setLoading(false);
       } catch (error) {
         console.error("Initialization error:", error);
-        setError(error.message);
+        setError(error.message || "Failed to load assessment");
         setLoading(false);
       }
     };
@@ -156,12 +152,10 @@ export default function AssessmentPage() {
         const newElapsed = prev + 1;
         setTimeRemaining(timeLimit - newElapsed);
         
-        // Auto-submit when time runs out
         if (newElapsed >= timeLimit) {
           handleSubmit();
         }
         
-        // Save progress every 30 seconds
         if (newElapsed % 30 === 0) {
           saveProgress(session.id, user.id, assessmentId, newElapsed, questions[currentIndex]?.id);
           updateSessionTimer(session.id, newElapsed);
@@ -176,7 +170,7 @@ export default function AssessmentPage() {
 
   // ===== OPTIMIZED HANDLE ANSWER SELECTION =====
   const handleAnswerSelect = async (questionId, answerId) => {
-    if (alreadySubmitted || !session) return;
+    if (alreadySubmitted || !session || !questionId || !answerId) return;
 
     // Update UI immediately
     setAnswers(prev => ({ ...prev, [questionId]: answerId }));
@@ -192,7 +186,6 @@ export default function AssessmentPage() {
       
       console.log(`✅ Answer saved in ${(endTime - startTime).toFixed(2)}ms`);
       
-      // Show saved briefly
       setSaveStatus(prev => ({ ...prev, [questionId]: 'saved' }));
       setTimeout(() => {
         setSaveStatus(prev => {
@@ -205,7 +198,6 @@ export default function AssessmentPage() {
       console.error("Save error:", error);
       setSaveStatus(prev => ({ ...prev, [questionId]: 'error' }));
       
-      // Show error briefly
       setTimeout(() => {
         setSaveStatus(prev => {
           const newStatus = { ...prev };
@@ -244,17 +236,14 @@ export default function AssessmentPage() {
     setShowSubmitModal(false);
 
     try {
-      // Final save of progress
       await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id);
       await updateSessionTimer(session.id, elapsedSeconds);
       
-      // Submit and generate results
       const resultId = await submitAssessment(session.id);
       
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
       
-      // Redirect after 3 seconds
       setTimeout(() => {
         router.push('/assessment/pre');
       }, 3000);
@@ -267,7 +256,7 @@ export default function AssessmentPage() {
   };
 
   // Calculate progress
-  const totalAnswered = Object.keys(answers).length;
+  const totalAnswered = Object.keys(answers || {}).length;
   const progressPercentage = questions.length > 0 
     ? Math.round((totalAnswered / questions.length) * 100) 
     : 0;
@@ -279,7 +268,7 @@ export default function AssessmentPage() {
   const isTimeWarning = timePercentage > 80;
   const isTimeCritical = timePercentage > 90;
 
-  const currentQuestion = questions[currentIndex];
+  const currentQuestion = questions[currentIndex] || {};
 
   if (loading) {
     return (
@@ -358,7 +347,7 @@ export default function AssessmentPage() {
                 </div>
                 <div style={styles.modalStat}>
                   <span>Assessment</span>
-                  <span style={{ color: '#9C27B0', fontWeight: 700 }}>{assessment?.title}</span>
+                  <span style={{ color: '#9C27B0', fontWeight: 700 }}>{assessment?.title || 'Assessment'}</span>
                 </div>
               </div>
               <div style={styles.modalWarning}>
@@ -384,7 +373,7 @@ export default function AssessmentPage() {
           <div style={{ ...styles.modalContent, textAlign: 'center' }}>
             <div style={styles.successIconLarge}>✓</div>
             <h2 style={{ color: '#2e7d32' }}>Assessment Complete!</h2>
-            <p>Your {assessment?.title} has been successfully submitted.</p>
+            <p>Your {assessment?.title || 'assessment'} has been successfully submitted.</p>
             <p>Redirecting to assessment selection...</p>
           </div>
         </div>
@@ -404,11 +393,11 @@ export default function AssessmentPage() {
               </button>
               <div style={styles.headerIcon}>{assessmentType?.icon || '📋'}</div>
               <div>
-                <div style={styles.headerTitle}>{assessment?.title}</div>
+                <div style={styles.headerTitle}>{assessment?.title || 'Assessment'}</div>
                 <div style={styles.headerMeta}>
                   <span>Q{currentIndex + 1}/{questions.length}</span>
                   <span>•</span>
-                  <span>{currentQuestion?.section}</span>
+                  <span>{currentQuestion?.section || 'General'}</span>
                 </div>
               </div>
             </div>
@@ -459,7 +448,7 @@ export default function AssessmentPage() {
                   {assessmentType?.icon || '📋'}
                 </div>
                 <div>
-                  <div style={styles.sectionName}>{currentQuestion?.section}</div>
+                  <div style={styles.sectionName}>{currentQuestion?.section || 'General'}</div>
                   {currentQuestion?.subsection && (
                     <div style={styles.subsection}>{currentQuestion.subsection}</div>
                   )}
@@ -469,7 +458,7 @@ export default function AssessmentPage() {
               {/* Question */}
               <div style={styles.questionText}>
                 <div style={styles.questionNumber}>Question {currentIndex + 1} of {questions.length}</div>
-                <div style={styles.questionContent}>{currentQuestion?.question_text}</div>
+                <div style={styles.questionContent}>{currentQuestion?.question_text || 'Loading question...'}</div>
               </div>
 
               {/* Save Status */}
@@ -488,43 +477,51 @@ export default function AssessmentPage() {
                 </div>
               )}
 
-              {/* Answers */}
+              {/* Answers - WITH DEFENSIVE CHECKS */}
               <div style={styles.answersContainer}>
-                {currentQuestion?.answers?.map((answer, index) => {
-                  const isSelected = answers[currentQuestion.id] === answer.id;
-                  const isHovered = hoveredAnswer === answer.id;
-                  const optionLetter = String.fromCharCode(65 + index);
+                {currentQuestion?.answers && Array.isArray(currentQuestion.answers) && currentQuestion.answers.length > 0 ? (
+                  currentQuestion.answers.map((answer, index) => {
+                    if (!answer || !answer.id) return null;
+                    
+                    const isSelected = answers[currentQuestion.id] === answer.id;
+                    const isHovered = hoveredAnswer === answer.id;
+                    const optionLetter = String.fromCharCode(65 + index);
 
-                  return (
-                    <button
-                      key={answer.id}
-                      onClick={() => handleAnswerSelect(currentQuestion.id, answer.id)}
-                      disabled={alreadySubmitted}
-                      style={{
-                        ...styles.answerButton,
-                        background: isSelected ? assessmentType?.gradient_start || '#667eea' : isHovered ? '#f8fafc' : 'white',
-                        borderColor: isSelected ? assessmentType?.gradient_start || '#667eea' : '#e2e8f0',
-                        transform: isSelected || isHovered ? 'translateY(-2px)' : 'translateY(0)'
-                      }}
-                      onMouseEnter={() => setHoveredAnswer(answer.id)}
-                      onMouseLeave={() => setHoveredAnswer(null)}
-                    >
-                      <div style={{
-                        ...styles.answerLetter,
-                        background: isSelected ? 'rgba(255,255,255,0.2)' : '#f1f5f9',
-                        color: isSelected ? 'white' : '#475569'
-                      }}>
-                        {optionLetter}
-                      </div>
-                      <span style={{
-                        ...styles.answerText,
-                        color: isSelected ? 'white' : '#1e293b'
-                      }}>
-                        {answer.answer_text}
-                      </span>
-                    </button>
-                  );
-                })}
+                    return (
+                      <button
+                        key={answer.id}
+                        onClick={() => handleAnswerSelect(currentQuestion.id, answer.id)}
+                        disabled={alreadySubmitted}
+                        style={{
+                          ...styles.answerButton,
+                          background: isSelected ? assessmentType?.gradient_start || '#667eea' : isHovered ? '#f8fafc' : 'white',
+                          borderColor: isSelected ? assessmentType?.gradient_start || '#667eea' : '#e2e8f0',
+                          transform: isSelected || isHovered ? 'translateY(-2px)' : 'translateY(0)'
+                        }}
+                        onMouseEnter={() => setHoveredAnswer(answer.id)}
+                        onMouseLeave={() => setHoveredAnswer(null)}
+                      >
+                        <div style={{
+                          ...styles.answerLetter,
+                          background: isSelected ? 'rgba(255,255,255,0.2)' : '#f1f5f9',
+                          color: isSelected ? 'white' : '#475569'
+                        }}>
+                          {optionLetter}
+                        </div>
+                        <span style={{
+                          ...styles.answerText,
+                          color: isSelected ? 'white' : '#1e293b'
+                        }}>
+                          {answer.answer_text || 'Option not available'}
+                        </span>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#f57c00' }}>
+                    No answers available for this question.
+                  </div>
+                )}
               </div>
 
               {/* Navigation */}
@@ -599,6 +596,8 @@ export default function AssessmentPage() {
             {/* Question Grid */}
             <div style={styles.questionGrid}>
               {questions.map((q, index) => {
+                if (!q || !q.id) return null;
+                
                 const isAnswered = answers[q.id];
                 const isCurrent = index === currentIndex;
                 const isHovered = hoveredQuestion === index;
@@ -644,15 +643,15 @@ export default function AssessmentPage() {
             <div style={styles.assessmentInfo}>
               <div style={styles.infoRow}>
                 <span>Assessment:</span>
-                <span style={{ fontWeight: 600 }}>{assessment?.title}</span>
+                <span style={{ fontWeight: 600 }}>{assessment?.title || 'Assessment'}</span>
               </div>
               <div style={styles.infoRow}>
                 <span>Max Score:</span>
-                <span style={{ fontWeight: 600 }}>{assessmentType?.max_score}</span>
+                <span style={{ fontWeight: 600 }}>{assessmentType?.max_score || 100}</span>
               </div>
               <div style={styles.infoRow}>
                 <span>Time Limit:</span>
-                <span style={{ fontWeight: 600 }}>{assessmentType?.time_limit_minutes} minutes</span>
+                <span style={{ fontWeight: 600 }}>{assessmentType?.time_limit_minutes || 60} minutes</span>
               </div>
             </div>
           </div>
@@ -662,7 +661,7 @@ export default function AssessmentPage() {
   );
 }
 
-// Styles
+// Styles (keep all your existing styles here)
 const styles = {
   loadingContainer: {
     minHeight: '100vh',
