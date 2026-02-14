@@ -26,15 +26,11 @@ const formatTime = (seconds) => {
 const setupAntiCheat = () => {
   if (typeof window === 'undefined') return;
   
-  // Disable right click
   document.addEventListener('contextmenu', (e) => e.preventDefault());
-  
-  // Disable copy/paste
   document.addEventListener('copy', (e) => e.preventDefault());
   document.addEventListener('paste', (e) => e.preventDefault());
   document.addEventListener('cut', (e) => e.preventDefault());
   
-  // Disable keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
@@ -60,6 +56,7 @@ export default function AssessmentPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState({});
   const [saveStatus, setSaveStatus] = useState({});
+  const [pendingSaves, setPendingSaves] = useState(new Set()); // Track pending saves
   
   // Timer
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -75,11 +72,69 @@ export default function AssessmentPage() {
   const [hoveredQuestion, setHoveredQuestion] = useState(null);
   const [hoveredAnswer, setHoveredAnswer] = useState(null);
 
+  // Save to localStorage as backup
+  const saveToLocalStorage = (questionId, answerId) => {
+    try {
+      const key = `assessment_${assessmentId}_answers`;
+      const saved = JSON.parse(localStorage.getItem(key) || '{}');
+      saved[questionId] = {
+        answerId,
+        timestamp: Date.now()
+      };
+      localStorage.setItem(key, JSON.stringify(saved));
+      localStorage.setItem(`assessment_${assessmentId}_last_saved`, Date.now().toString());
+    } catch (e) {
+      console.error("Failed to save to localStorage:", e);
+    }
+  };
+
+  // Load from localStorage
+  const loadFromLocalStorage = () => {
+    try {
+      const key = `assessment_${assessmentId}_answers`;
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error("Failed to load from localStorage:", e);
+    }
+    return {};
+  };
+
+  // Sync localStorage answers to database
+  const syncLocalStorageToDatabase = async () => {
+    if (!session || !user) return;
+    
+    const localAnswers = loadFromLocalStorage();
+    const localCount = Object.keys(localAnswers).length;
+    
+    if (localCount === 0) return;
+    
+    console.log(`📦 Found ${localCount} answers in localStorage, syncing...`);
+    
+    let synced = 0;
+    for (const [qId, data] of Object.entries(localAnswers)) {
+      try {
+        await saveResponse(session.id, user.id, assessmentId, parseInt(qId), data.answerId);
+        synced++;
+      } catch (e) {
+        console.error(`Failed to sync question ${qId}:`, e);
+      }
+    }
+    
+    console.log(`✅ Synced ${synced}/${localCount} answers`);
+    
+    // Clear localStorage after successful sync
+    if (synced === localCount) {
+      localStorage.removeItem(`assessment_${assessmentId}_answers`);
+    }
+  };
+
   // Initialize assessment
   useEffect(() => {
     const init = async () => {
       try {
-        // Check user session
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           router.push("/login");
@@ -89,7 +144,6 @@ export default function AssessmentPage() {
 
         if (!assessmentId) return;
 
-        // Check if already completed
         const completed = await isAssessmentCompleted(session.user.id, assessmentId);
         if (completed) {
           setAlreadySubmitted(true);
@@ -97,17 +151,14 @@ export default function AssessmentPage() {
           return;
         }
 
-        // Load assessment details
         const assessmentData = await getAssessmentById(assessmentId);
         setAssessment(assessmentData);
         setAssessmentType(assessmentData.assessment_type);
         setTimeLimit(assessmentData.assessment_type.time_limit_minutes * 60);
 
-        // Load questions
         const questionsData = await getAssessmentQuestions(assessmentId);
         setQuestions(questionsData);
 
-        // Create or get session
         const sessionData = await createAssessmentSession(
           session.user.id,
           assessmentId,
@@ -115,7 +166,6 @@ export default function AssessmentPage() {
         );
         setSession(sessionData);
 
-        // Load saved progress
         const progress = await getProgress(session.user.id, assessmentId);
         if (progress) {
           setElapsedSeconds(progress.elapsed_seconds);
@@ -125,17 +175,32 @@ export default function AssessmentPage() {
           }
         }
 
-        // Load saved responses
+        // Load responses from database
         const responses = await getSessionResponses(sessionData.id);
         const answersMap = {};
         responses.forEach(r => {
           answersMap[r.question_id] = r.answer_id;
         });
+
+        // Load from localStorage and merge (localStorage takes precedence)
+        const localAnswers = loadFromLocalStorage();
+        let merged = false;
+        
+        Object.entries(localAnswers).forEach(([qId, data]) => {
+          if (!answersMap[qId]) {
+            answersMap[parseInt(qId)] = data.answerId;
+            merged = true;
+          }
+        });
+
         setAnswers(answersMap);
 
-        // Setup anti-cheat
-        setupAntiCheat();
+        // If we merged localStorage answers, sync them to database
+        if (merged && sessionData) {
+          await syncLocalStorageToDatabase();
+        }
 
+        setupAntiCheat();
         setLoading(false);
       } catch (error) {
         console.error("Initialization error:", error);
@@ -156,12 +221,10 @@ export default function AssessmentPage() {
         const newElapsed = prev + 1;
         setTimeRemaining(timeLimit - newElapsed);
         
-        // Auto-submit when time runs out
         if (newElapsed >= timeLimit) {
           handleSubmit();
         }
         
-        // Save progress every 30 seconds
         if (newElapsed % 30 === 0) {
           saveProgress(session.id, user.id, assessmentId, newElapsed, questions[currentIndex]?.id);
           updateSessionTimer(session.id, newElapsed);
@@ -174,38 +237,75 @@ export default function AssessmentPage() {
     return () => clearInterval(timer);
   }, [loading, alreadySubmitted, session, timeLimit, assessmentId, user?.id, currentIndex, questions]);
 
-  // ===== OPTIMIZED HANDLE ANSWER SELECTION =====
+  // Save before unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (Object.keys(pendingSaves).length > 0) {
+        // There are pending saves, warn user
+        return "You have unsaved changes. Are you sure you want to leave?";
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [pendingSaves]);
+
+  // Handle answer selection with reliable saving
   const handleAnswerSelect = async (questionId, answerId) => {
     if (alreadySubmitted || !session) return;
 
     // Update UI immediately
     setAnswers(prev => ({ ...prev, [questionId]: answerId }));
-    
-    // Show saving indicator
     setSaveStatus(prev => ({ ...prev, [questionId]: 'saving' }));
+    
+    // Add to pending saves
+    setPendingSaves(prev => new Set(prev).add(questionId));
 
-    // Save to Supabase
-    try {
-      const startTime = performance.now();
-      await saveResponse(session.id, user.id, assessmentId, questionId, answerId);
-      const endTime = performance.now();
-      
-      console.log(`✅ Answer saved in ${(endTime - startTime).toFixed(2)}ms`);
-      
-      // Show saved briefly
-      setSaveStatus(prev => ({ ...prev, [questionId]: 'saved' }));
-      setTimeout(() => {
-        setSaveStatus(prev => {
-          const newStatus = { ...prev };
-          delete newStatus[questionId];
-          return newStatus;
+    // Save to localStorage immediately (instant)
+    saveToLocalStorage(questionId, answerId);
+
+    // Save to database with retry
+    let retries = 3;
+    let saved = false;
+    
+    while (retries > 0 && !saved) {
+      try {
+        await saveResponse(session.id, user.id, assessmentId, questionId, answerId);
+        saved = true;
+        
+        // Remove from pending saves
+        setPendingSaves(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(questionId);
+          return newSet;
         });
-      }, 300);
-    } catch (error) {
-      console.error("Save error:", error);
+        
+        // Show saved briefly
+        setSaveStatus(prev => ({ ...prev, [questionId]: 'saved' }));
+        setTimeout(() => {
+          setSaveStatus(prev => {
+            const newStatus = { ...prev };
+            delete newStatus[questionId];
+            return newStatus;
+          });
+        }, 500);
+        
+        console.log(`✅ Answer ${questionId} saved after ${4 - retries} attempts`);
+      } catch (error) {
+        console.error(`Save failed (${retries} retries left):`, error);
+        retries--;
+        if (retries > 0) {
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+    }
+
+    if (!saved) {
+      console.error(`❌ Failed to save answer ${questionId} after multiple attempts`);
       setSaveStatus(prev => ({ ...prev, [questionId]: 'error' }));
       
-      // Show error briefly
+      // Show error but keep in pending
       setTimeout(() => {
         setSaveStatus(prev => {
           const newStatus = { ...prev };
@@ -240,21 +340,31 @@ export default function AssessmentPage() {
   const handleSubmit = async () => {
     if (!session || alreadySubmitted) return;
 
+    // Check for pending saves
+    if (pendingSaves.size > 0) {
+      const confirm = window.confirm(`You have ${pendingSaves.size} unsaved answers. Wait a moment and try again.`);
+      if (!confirm) return;
+    }
+
     setIsSubmitting(true);
     setShowSubmitModal(false);
 
     try {
-      // Final save of progress
+      // Final sync from localStorage
+      await syncLocalStorageToDatabase();
+      
       await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id);
       await updateSessionTimer(session.id, elapsedSeconds);
       
-      // Submit and generate results
       const resultId = await submitAssessment(session.id);
+      
+      // Clear localStorage on successful submission
+      localStorage.removeItem(`assessment_${assessmentId}_answers`);
+      localStorage.removeItem(`assessment_${assessmentId}_last_saved`);
       
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
       
-      // Redirect after 3 seconds
       setTimeout(() => {
         router.push('/assessment/pre');
       }, 3000);
@@ -578,6 +688,9 @@ export default function AssessmentPage() {
             <div style={styles.navigatorHeader}>
               <span style={styles.navigatorIcon}>📋</span>
               <h3>Question Navigator</h3>
+              {pendingSaves.size > 0 && (
+                <span style={styles.pendingBadge}>⏳ {pendingSaves.size}</span>
+              )}
             </div>
 
             {/* Stats */}
@@ -602,6 +715,7 @@ export default function AssessmentPage() {
                 const isAnswered = answers[q.id];
                 const isCurrent = index === currentIndex;
                 const isHovered = hoveredQuestion === index;
+                const isPending = pendingSaves.has(q.id);
 
                 return (
                   <button
@@ -610,10 +724,15 @@ export default function AssessmentPage() {
                     disabled={alreadySubmitted}
                     style={{
                       ...styles.gridItem,
-                      background: isCurrent ? assessmentType?.gradient_start || '#667eea' : isAnswered ? '#4caf50' : 'white',
-                      color: isCurrent || isAnswered ? 'white' : '#1e293b',
-                      borderColor: isCurrent ? assessmentType?.gradient_start || '#667eea' : isAnswered ? '#4caf50' : '#e2e8f0',
-                      transform: isHovered ? 'scale(1.1)' : 'scale(1)'
+                      background: isCurrent ? assessmentType?.gradient_start || '#667eea' : 
+                                 isPending ? '#ff9800' :
+                                 isAnswered ? '#4caf50' : 'white',
+                      color: isCurrent || isAnswered || isPending ? 'white' : '#1e293b',
+                      borderColor: isCurrent ? assessmentType?.gradient_start || '#667eea' : 
+                                  isPending ? '#ff9800' :
+                                  isAnswered ? '#4caf50' : '#e2e8f0',
+                      transform: isHovered ? 'scale(1.1)' : 'scale(1)',
+                      opacity: isPending ? 0.8 : 1
                     }}
                     onMouseEnter={() => setHoveredQuestion(index)}
                     onMouseLeave={() => setHoveredQuestion(null)}
@@ -628,7 +747,11 @@ export default function AssessmentPage() {
             <div style={styles.legend}>
               <div style={styles.legendItem}>
                 <div style={{ ...styles.legendDot, background: '#4caf50' }} />
-                <span>Answered</span>
+                <span>Saved</span>
+              </div>
+              <div style={styles.legendItem}>
+                <div style={{ ...styles.legendDot, background: '#ff9800' }} />
+                <span>Saving...</span>
               </div>
               <div style={styles.legendItem}>
                 <div style={{ ...styles.legendDot, background: assessmentType?.gradient_start || '#667eea' }} />
@@ -662,333 +785,24 @@ export default function AssessmentPage() {
   );
 }
 
-// Styles
+// Styles (keep all your existing styles, plus add these new ones)
 const styles = {
-  loadingContainer: {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-  },
-  loadingContent: {
-    textAlign: 'center',
-    color: 'white'
-  },
-  loadingSpinner: {
-    width: '50px',
-    height: '50px',
-    border: '4px solid rgba(255,255,255,0.3)',
-    borderTop: '4px solid white',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite',
-    margin: '0 auto 20px'
-  },
-  messageContainer: {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    padding: '20px'
-  },
-  messageCard: {
-    background: 'white',
-    padding: '40px',
-    borderRadius: '12px',
-    maxWidth: '500px',
-    textAlign: 'center',
-    boxShadow: '0 10px 40px rgba(0,0,0,0.2)'
-  },
-  successIcon: {
-    fontSize: '48px',
-    marginBottom: '20px'
-  },
-  errorIcon: {
-    fontSize: '48px',
-    marginBottom: '20px'
-  },
-  primaryButton: {
-    padding: '12px 24px',
-    background: 'linear-gradient(135deg, #667eea, #764ba2)',
+  // ... (keep all your existing styles here)
+  
+  // Add these new styles
+  pendingBadge: {
+    marginLeft: 'auto',
+    background: '#ff9800',
     color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    fontSize: '16px',
-    cursor: 'pointer',
-    marginTop: '20px'
-  },
-  container: {
-    minHeight: '100vh',
-    background: '#f8fafc'
-  },
-  header: {
-    position: 'sticky',
-    top: 0,
-    zIndex: 100,
-    color: 'white'
-  },
-  headerContent: {
-    maxWidth: '1400px',
-    margin: '0 auto',
-    padding: '16px 24px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  headerLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px'
-  },
-  backButton: {
-    width: '40px',
-    height: '40px',
-    background: 'rgba(255,255,255,0.2)',
-    border: 'none',
-    borderRadius: '8px',
-    color: 'white',
-    fontSize: '20px',
-    cursor: 'pointer'
-  },
-  headerIcon: {
-    width: '40px',
-    height: '40px',
-    background: 'rgba(255,255,255,0.2)',
-    borderRadius: '8px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '24px'
-  },
-  headerTitle: {
-    fontSize: '18px',
-    fontWeight: 600,
-    marginBottom: '4px'
-  },
-  headerMeta: {
-    display: 'flex',
-    gap: '8px',
-    fontSize: '13px',
-    opacity: 0.9
-  },
-  timer: {
-    padding: '8px 16px',
-    borderRadius: '8px',
-    border: '1px solid',
-    textAlign: 'center',
-    minWidth: '140px'
-  },
-  timerLabel: {
+    padding: '2px 6px',
+    borderRadius: '10px',
     fontSize: '11px',
-    fontWeight: 600,
-    marginBottom: '4px'
-  },
-  timerValue: {
-    fontSize: '20px',
-    fontWeight: 700,
-    fontFamily: 'monospace'
-  },
-  progressContainer: {
-    maxWidth: '1400px',
-    margin: '20px auto 10px',
-    padding: '0 24px'
-  },
-  progressTrack: {
-    height: '8px',
-    background: '#e2e8f0',
-    borderRadius: '4px',
-    overflow: 'hidden',
-    marginBottom: '8px'
-  },
-  progressFill: {
-    height: '100%',
-    transition: 'width 0.3s ease'
-  },
-  progressStats: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: '13px',
-    color: '#64748b'
-  },
-  mainContent: {
-    maxWidth: '1400px',
-    margin: '0 auto',
-    padding: '0 24px 40px',
-    display: 'grid',
-    gridTemplateColumns: '1fr 300px',
-    gap: '24px'
-  },
-  questionPanel: {
-    background: 'white',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
-  },
-  questionContent: {
-    padding: '32px'
-  },
-  sectionBadge: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    marginBottom: '24px'
-  },
-  sectionIcon: {
-    width: '48px',
-    height: '48px',
-    borderRadius: '12px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '24px',
-    color: 'white'
-  },
-  sectionName: {
-    fontSize: '18px',
-    fontWeight: 600,
-    color: '#1e293b'
-  },
-  subsection: {
-    fontSize: '14px',
-    color: '#64748b',
-    marginTop: '4px'
-  },
-  questionText: {
-    background: '#f8fafc',
-    padding: '24px',
-    borderRadius: '8px',
-    marginBottom: '20px'
-  },
-  questionNumber: {
-    fontSize: '14px',
-    color: '#64748b',
-    marginBottom: '8px'
-  },
-  questionContent: {
-    fontSize: '18px',
-    lineHeight: '1.6',
-    color: '#1e293b'
-  },
-  saveStatus: {
-    padding: '12px',
-    border: '1px solid',
-    borderRadius: '6px',
-    marginBottom: '20px',
-    fontSize: '14px',
-    textAlign: 'center'
-  },
-  answersContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-    marginBottom: '24px'
-  },
-  answerButton: {
-    padding: '16px',
-    border: '2px solid',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    textAlign: 'left',
-    fontSize: '16px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    transition: 'all 0.2s ease',
-    width: '100%'
-  },
-  answerLetter: {
-    width: '32px',
-    height: '32px',
-    borderRadius: '6px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '16px',
-    fontWeight: 600,
-    flexShrink: 0
-  },
-  answerText: {
-    flex: 1,
-    lineHeight: '1.5'
-  },
-  navigation: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    marginTop: '24px'
-  },
-  navButton: {
-    padding: '10px 20px',
-    borderRadius: '6px',
-    fontSize: '14px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease'
-  },
-  navigatorPanel: {
-    background: 'white',
-    borderRadius: '12px',
-    padding: '20px',
-    position: 'sticky',
-    top: '100px',
-    height: 'fit-content'
-  },
-  navigatorHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    paddingBottom: '15px',
-    borderBottom: '2px solid #f1f5f9',
-    marginBottom: '15px'
-  },
-  navigatorIcon: {
-    fontSize: '20px'
-  },
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr 1fr',
-    gap: '8px',
-    marginBottom: '20px'
-  },
-  statCard: {
-    background: '#f8fafc',
-    padding: '12px',
-    borderRadius: '6px',
-    textAlign: 'center'
-  },
-  statValue: {
-    fontSize: '20px',
-    fontWeight: 700,
-    lineHeight: 1,
-    marginBottom: '4px'
-  },
-  statLabel: {
-    fontSize: '11px',
-    color: '#64748b'
-  },
-  questionGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(5, 1fr)',
-    gap: '6px',
-    marginBottom: '15px',
-    maxHeight: '200px',
-    overflowY: 'auto',
-    padding: '4px'
-  },
-  gridItem: {
-    aspectRatio: '1',
-    border: '2px solid',
-    borderRadius: '6px',
-    fontSize: '12px',
-    fontWeight: 600,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease'
+    fontWeight: 600
   },
   legend: {
     display: 'flex',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: '10px',
     padding: '15px 0',
     borderTop: '2px solid #f1f5f9',
     borderBottom: '2px solid #f1f5f9',
@@ -998,114 +812,12 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
-    fontSize: '12px',
+    fontSize: '11px',
     color: '#475569'
   },
   legendDot: {
-    width: '12px',
-    height: '12px',
+    width: '10px',
+    height: '10px',
     borderRadius: '3px'
-  },
-  assessmentInfo: {
-    background: '#f8fafc',
-    padding: '15px',
-    borderRadius: '6px'
-  },
-  infoRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: '13px',
-    marginBottom: '8px',
-    color: '#475569'
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-    padding: '20px'
-  },
-  modalContent: {
-    background: 'white',
-    padding: '32px',
-    borderRadius: '12px',
-    maxWidth: '500px',
-    width: '100%'
-  },
-  modalIcon: {
-    fontSize: '48px',
-    textAlign: 'center',
-    marginBottom: '20px'
-  },
-  modalTitle: {
-    fontSize: '24px',
-    fontWeight: 700,
-    textAlign: 'center',
-    marginBottom: '20px'
-  },
-  modalBody: {
-    marginBottom: '24px'
-  },
-  modalStats: {
-    background: '#f8fafc',
-    padding: '16px',
-    borderRadius: '8px',
-    marginBottom: '16px'
-  },
-  modalStat: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    marginBottom: '8px',
-    fontSize: '15px'
-  },
-  modalWarning: {
-    display: 'flex',
-    gap: '12px',
-    padding: '16px',
-    background: '#fff8e1',
-    borderRadius: '8px',
-    color: '#856404',
-    fontSize: '14px'
-  },
-  modalActions: {
-    display: 'flex',
-    gap: '12px'
-  },
-  modalSecondaryButton: {
-    flex: 1,
-    padding: '12px',
-    background: '#f1f5f9',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontWeight: 600
-  },
-  modalPrimaryButton: {
-    flex: 1,
-    padding: '12px',
-    background: '#4caf50',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontWeight: 600
-  },
-  successIconLarge: {
-    width: '60px',
-    height: '60px',
-    background: '#4caf50',
-    borderRadius: '50%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    margin: '0 auto 20px',
-    fontSize: '30px',
-    color: 'white'
   }
 };
