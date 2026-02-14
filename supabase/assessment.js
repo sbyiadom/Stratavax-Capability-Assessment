@@ -187,7 +187,38 @@ export async function updateSessionTimer(sessionId, elapsedSeconds) {
   }
 }
 
-// Responses
+// ===== OPTIMIZED FAST SAVE FUNCTION =====
+// Ultra-fast version - doesn't wait for confirmation
+export function saveResponseFast(sessionId, userId, assessmentId, questionId, answerId) {
+  // Convert to numbers if needed
+  const questionIdNum = typeof questionId === 'string' ? parseInt(questionId, 10) : questionId;
+  const answerIdNum = typeof answerId === 'string' ? parseInt(answerId, 10) : answerId;
+
+  // Fire and forget - don't await
+  supabase
+    .from("responses")
+    .upsert(
+      {
+        session_id: sessionId,
+        user_id: userId,
+        assessment_id: assessmentId,
+        question_id: questionIdNum,
+        answer_id: answerIdNum,
+        updated_at: new Date().toISOString(),
+      },
+      {
+        onConflict: 'session_id,question_id',
+        ignoreDuplicates: false
+      }
+    )
+    .then(() => console.log("✅ Response saved (async)"))
+    .catch(err => console.error("Background save error:", err));
+
+  // Return immediately
+  return { success: true };
+}
+
+// Regular save function with error handling (for critical saves)
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   try {
     console.log("📝 Saving response:", { sessionId, userId, assessmentId, questionId, answerId });
@@ -196,24 +227,8 @@ export async function saveResponse(sessionId, userId, assessmentId, questionId, 
     const questionIdNum = typeof questionId === 'string' ? parseInt(questionId, 10) : questionId;
     const answerIdNum = typeof answerId === 'string' ? parseInt(answerId, 10) : answerId;
 
-    // First, check if the session exists and is still in progress
-    const { data: session, error: sessionError } = await supabase
-      .from("assessment_sessions")
-      .select("id, status")
-      .eq("id", sessionId)
-      .eq("user_id", userId)
-      .single();
+    const startTime = Date.now();
 
-    if (sessionError) {
-      console.error("Session check error:", sessionError);
-      throw new Error("Invalid or expired session");
-    }
-
-    if (session.status !== 'in_progress') {
-      throw new Error("This assessment session is no longer active");
-    }
-
-    // Simple upsert - let database handle constraints
     const { data, error } = await supabase
       .from("responses")
       .upsert(
@@ -227,6 +242,7 @@ export async function saveResponse(sessionId, userId, assessmentId, questionId, 
         },
         {
           onConflict: 'session_id,question_id',
+          ignoreDuplicates: false
         }
       )
       .select();
@@ -251,7 +267,8 @@ export async function saveResponse(sessionId, userId, assessmentId, questionId, 
       }
     }
 
-    console.log("✅ Response saved");
+    const endTime = Date.now();
+    console.log(`✅ Response saved in ${endTime - startTime}ms`);
     return { success: true, data };
 
   } catch (error) {
@@ -313,7 +330,7 @@ export async function getSessionResponses(sessionId) {
   }
 }
 
-// Submit and Generate Results - UPDATED to use API endpoint
+// Submit and Generate Results
 export async function submitAssessment(sessionId) {
   try {
     console.log("📤 Submitting assessment for session:", sessionId);
@@ -346,7 +363,7 @@ export async function submitAssessment(sessionId) {
         session_id: sessionId,
         user_id: session.user.id,
         assessment_id: assessmentSession.assessment_id,
-        time_spent: 0 // This will be updated by the API with the actual time from the session
+        time_spent: 0
       }),
     });
 
