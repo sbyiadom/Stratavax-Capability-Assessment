@@ -23,7 +23,7 @@ const SECTION_CONFIG = {
     bgImage: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1920&q=80',
     gradient: 'linear-gradient(135deg, #D32F2F 0%, #B71C1C 100%)'
   },
-  'Bottled Water Manufacturing': { 
+  'Technical Competence': { 
     color: '#388E3C', 
     icon: '⚙️', 
     bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
@@ -34,96 +34,46 @@ const SECTION_CONFIG = {
     icon: '📊', 
     bgImage: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1920&q=80',
     gradient: 'linear-gradient(135deg, #F57C00 0%, #E65100 100%)'
+  }
+};
+
+// ===== ASSESSMENT TYPE CONFIGURATIONS =====
+const ASSESSMENT_TYPE_CONFIG = {
+  'general': {
+    name: 'General Assessment',
+    timeLimit: 10800, // 3 hours in seconds
+    maxScore: 500,
+    sections: ['Cognitive Abilities', 'Personality Assessment', 'Leadership Potential', 'Technical Competence', 'Performance Metrics']
   },
-  'Adaptability & Flexibility': { 
-    color: '#FF6B6B', 
-    icon: '🔄', 
-    bgImage: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #FF6B6B 0%, #C62828 100%)'
+  'leadership': {
+    name: 'Leadership Assessment',
+    timeLimit: 3600, // 1 hour in seconds
+    maxScore: 100,
+    sections: ['Leadership Potential']
   },
-  'Emotional Intelligence': { 
-    color: '#4ECDC4', 
-    icon: '🧘', 
-    bgImage: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #4ECDC4 0%, #2C7A7B 100%)'
+  'cognitive': {
+    name: 'Cognitive Ability Assessment',
+    timeLimit: 3600, // 1 hour in seconds
+    maxScore: 100,
+    sections: ['Cognitive Abilities']
   },
-  'Communication Skills': { 
-    color: '#45B7D1', 
-    icon: '💬', 
-    bgImage: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #45B7D1 0%, #2C3E50 100%)'
+  'technical': {
+    name: 'Technical Assessment',
+    timeLimit: 3600, // 1 hour in seconds
+    maxScore: 100,
+    sections: ['Technical Competence']
   },
-  'Teamwork & Collaboration': { 
-    color: '#96CEB4', 
-    icon: '🤝', 
-    bgImage: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #96CEB4 0%, #588157 100%)'
+  'personality': {
+    name: 'Personality Assessment',
+    timeLimit: 2700, // 45 minutes in seconds
+    maxScore: 100,
+    sections: ['Personality Assessment']
   },
-  'Initiative & Proactivity': { 
-    color: '#FFEAA7', 
-    icon: '⚡', 
-    bgImage: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #FFEAA7 0%, #FDB137 100%)'
-  },
-  'Problem-Solving': { 
-    color: '#6A4C93', 
-    icon: '🔍', 
-    bgImage: 'https://images.unsplash.com/photo-1456406644174-8ddd4cd52a06?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #6A4C93 0%, #392759 100%)'
-  },
-  'Critical Thinking': { 
-    color: '#1982C4', 
-    icon: '🎯', 
-    bgImage: 'https://images.unsplash.com/photo-1507413245164-6160d8298b31?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #1982C4 0%, #0A4D6E 100%)'
-  },
-  'Learning Agility': { 
-    color: '#8AC926', 
-    icon: '📚', 
-    bgImage: 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #8AC926 0%, #4B7F52 100%)'
-  },
-  'Creativity & Innovation': { 
-    color: '#FFCA3A', 
-    icon: '💡', 
-    bgImage: 'https://images.unsplash.com/photo-1455849318743-b2233052fcff?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #FFCA3A 0%, #C19A2E 100%)'
-  },
-  'Core Values Alignment': { 
-    color: '#9C89B8', 
-    icon: '🎯', 
-    bgImage: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #9C89B8 0%, #5E548E 100%)'
-  },
-  'Organizational Citizenship': { 
-    color: '#F0A6CA', 
-    icon: '🤲', 
-    bgImage: 'https://images.unsplash.com/photo-1559027615-cd4628902d4a?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #F0A6CA 0%, #B5838D 100%)'
-  },
-  'Reliability & Dependability': { 
-    color: '#B8F2E6', 
-    icon: '✓', 
-    bgImage: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #B8F2E6 0%, #5F9EA0 100%)'
-  },
-  'Customer Focus': { 
-    color: '#A9D6E5', 
-    icon: '👥', 
-    bgImage: 'https://images.unsplash.com/photo-1556740714-a8395b3bf30f?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #A9D6E5 0%, #52796F 100%)'
-  },
-  'Safety Awareness': { 
-    color: '#FCA17D', 
-    icon: '⚠️', 
-    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #FCA17D 0%, #C44536 100%)'
-  },
-  'Commercial Awareness': { 
-    color: '#86A788', 
-    icon: '💰', 
-    bgImage: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #86A788 0%, #4A6D7C 100%)'
+  'performance': {
+    name: 'Performance Assessment',
+    timeLimit: 2700, // 45 minutes in seconds
+    maxScore: 100,
+    sections: ['Performance Metrics']
   }
 };
 
@@ -282,8 +232,9 @@ async function loadUserResponses(userId, assessmentId) {
 // ===== CHECK SUBMISSION =====
 async function checkIfAlreadySubmitted(userId, assessmentId) {
   try {
+    // Check in candidate_assessments_taken first
     const { data, error } = await supabase
-      .from("assessment_results")
+      .from("candidate_assessments_taken")
       .select("id")
       .eq("user_id", userId)
       .eq("assessment_id", assessmentId)
@@ -302,13 +253,42 @@ async function checkIfAlreadySubmitted(userId, assessmentId) {
   }
 }
 
-// ===== MARK AS SUBMITTED =====
-async function markAsSubmitted(userId, assessmentId) {
+// ===== CREATE ASSESSMENT RESULT =====
+async function createAssessmentResult(userId, assessmentId, assessmentType) {
   try {
-    const response = await fetch('/api/submit-assessment', {
+    const { data, error } = await supabase
+      .from("assessment_results")
+      .insert({
+        user_id: userId,
+        assessment_id: assessmentId,
+        assessment_type: assessmentType,
+        status: 'in_progress',
+        started_at: new Date().toISOString(),
+        responses: {}
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error("Error creating assessment result:", error);
+    return null;
+  }
+}
+
+// ===== SUBMIT ASSESSMENT =====
+async function submitAssessment(userId, assessmentId, resultId, timeSpent, assessmentType) {
+  try {
+    const response = await fetch('/api/supervisor/submit-assessment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assessment_id: assessmentId, user_id: userId })
+      body: JSON.stringify({ 
+        assessment_id: assessmentId, 
+        user_id: userId,
+        result_id: resultId,
+        time_spent: timeSpent
+      })
     });
 
     const result = await response.json();
@@ -346,6 +326,8 @@ export default function AssessmentPage() {
   const [error, setError] = useState(null);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
   const [timeLimitSeconds, setTimeLimitSeconds] = useState(10800);
+  const [assessmentType, setAssessmentType] = useState('general');
+  const [assessmentResult, setAssessmentResult] = useState(null);
   const [hoveredQuestion, setHoveredQuestion] = useState(null);
   const [hoveredAnswer, setHoveredAnswer] = useState(null);
 
@@ -365,7 +347,14 @@ export default function AssessmentPage() {
         
         if (data) {
           setAssessment(data);
-          setTimeLimitSeconds(10800);
+          
+          // Set assessment type and time limit
+          const type = data.assessment_type || 'general';
+          setAssessmentType(type);
+          
+          const config = ASSESSMENT_TYPE_CONFIG[type] || ASSESSMENT_TYPE_CONFIG.general;
+          setTimeLimitSeconds(config.timeLimit);
+          
           document.title = `${data.name} - Stratavax Assessment`;
         }
       } catch (error) {
@@ -376,7 +365,7 @@ export default function AssessmentPage() {
     fetchAssessmentDetails();
   }, [assessmentId, isSessionReady, alreadySubmitted]);
 
-  // ===== INITIALIZE SESSION =====
+  // ===== INITIALIZE SESSION AND CREATE RESULT =====
   useEffect(() => {
     const initSessionAndCheck = async () => {
       if (!assessmentId) return;
@@ -395,6 +384,17 @@ export default function AssessmentPage() {
             return;
           }
           
+          // Create assessment result record
+          const result = await createAssessmentResult(
+            data.session.user.id, 
+            assessmentId, 
+            assessmentType
+          );
+          
+          if (result) {
+            setAssessmentResult(result);
+          }
+          
           setIsSessionReady(true);
         } else {
           router.push("/login");
@@ -406,7 +406,7 @@ export default function AssessmentPage() {
       }
     };
     initSessionAndCheck();
-  }, [assessmentId, router]);
+  }, [assessmentId, router, assessmentType]);
 
   // ===== FETCH QUESTIONS =====
   useEffect(() => {
@@ -446,18 +446,6 @@ export default function AssessmentPage() {
 
         const savedAnswers = await loadUserResponses(session.user.id, assessmentId);
 
-        const manufacturingSections = [
-          'Bottled Water Manufacturing',
-          'Blowing Machines',
-          'Labeler',
-          'Filling',
-          'Conveyors',
-          'Stretchwrappers',
-          'Shrinkwrappers',
-          'Date Coders',
-          'Raw Materials'
-        ];
-
         const processedQuestions = questionsData.map((q, index) => {
           const options = q.answers && Array.isArray(q.answers) && q.answers.length > 0
             ? q.answers.map(a => ({ 
@@ -467,21 +455,12 @@ export default function AssessmentPage() {
               }))
             : [];
           
-          const baseQuestion = {
+          return {
             ...q,
             id: parseInt(q.id),
             question_number: index + 1,
-            options: options
+            options: trulyRandomizeAnswers([...options])
           };
-          
-          if (manufacturingSections.includes(q.section)) {
-            return { 
-              ...baseQuestion, 
-              options: trulyRandomizeAnswers([...baseQuestion.options]) 
-            };
-          }
-          
-          return baseQuestion;
         });
 
         setQuestions(processedQuestions);
@@ -534,7 +513,7 @@ export default function AssessmentPage() {
           if (localElapsed >= timeLimitSeconds) {
             clearInterval(timerInterval);
             if (!alreadySubmitted && isMounted) {
-              await submitAssessment();
+              await handleSubmitAssessment();
             }
           }
         }, 1000);
@@ -615,15 +594,21 @@ export default function AssessmentPage() {
     }
   };
 
-  // ===== SUBMIT ASSESSMENT =====
-  const submitAssessment = async () => {
-    if (alreadySubmitted || !session?.user?.id || !assessmentId) return;
+  // ===== HANDLE SUBMIT ASSESSMENT =====
+  const handleSubmitAssessment = async () => {
+    if (alreadySubmitted || !session?.user?.id || !assessmentId || !assessmentResult) return;
 
     setIsSubmitting(true);
     setShowSubmitModal(false);
     
     try {
-      await markAsSubmitted(session.user.id, assessmentId);
+      await submitAssessment(
+        session.user.id, 
+        assessmentId, 
+        assessmentResult.id, 
+        elapsed,
+        assessmentType
+      );
       await markTimerAsCompleted(session.user.id, assessmentId);
       
       setAlreadySubmitted(true);
@@ -743,6 +728,8 @@ export default function AssessmentPage() {
   const isTimeWarning = timeUsedPercentage > 80;
   const isTimeCritical = timeUsedPercentage > 90;
 
+  const assessmentConfig = ASSESSMENT_TYPE_CONFIG[assessmentType] || ASSESSMENT_TYPE_CONFIG.general;
+
   return (
     <>
       {/* Submit Modal */}
@@ -761,6 +748,10 @@ export default function AssessmentPage() {
                   <span>Completion Rate</span>
                   <span style={{fontWeight: '700', color: '#2196f3'}}>{progressPercentage}%</span>
                 </div>
+                <div style={styles.modalStat}>
+                  <span>Assessment Type</span>
+                  <span style={{fontWeight: '700', color: '#9C27B0'}}>{assessmentConfig.name}</span>
+                </div>
               </div>
               <div style={styles.modalWarning}>
                 <span>⚠️</span>
@@ -771,7 +762,7 @@ export default function AssessmentPage() {
               <button onClick={() => setShowSubmitModal(false)} style={styles.modalSecondaryButton}>
                 Continue Reviewing
               </button>
-              <button onClick={submitAssessment} disabled={isSubmitting} style={styles.modalPrimaryButton}>
+              <button onClick={handleSubmitAssessment} disabled={isSubmitting} style={styles.modalPrimaryButton}>
                 {isSubmitting ? 'Submitting...' : 'Submit Assessment'}
               </button>
             </div>
@@ -785,7 +776,7 @@ export default function AssessmentPage() {
           <div style={{...styles.modalContent, textAlign: 'center'}}>
             <div style={styles.successIconLarge}>✓</div>
             <h2 style={{...styles.modalTitle, color: '#2e7d32'}}>Assessment Complete!</h2>
-            <p style={styles.successText}>Your assessment has been successfully submitted.</p>
+            <p style={styles.successText}>Your {assessmentConfig.name} has been successfully submitted.</p>
             <p style={styles.redirectText}>Redirecting to assessment selection...</p>
           </div>
         </div>
@@ -813,12 +804,16 @@ export default function AssessmentPage() {
               
               <div style={styles.headerInfo}>
                 <div style={styles.headerTitle}>
-                  {assessment?.name || 'Assessment'}
+                  {assessment?.name || assessmentConfig.name}
                 </div>
                 <div style={styles.headerMeta}>
                   <span>Q{currentIndex + 1}/{questions.length}</span>
                   <span>•</span>
                   <span>{currentSection}</span>
+                  <span>•</span>
+                  <span style={{fontSize: '11px', background: 'rgba(255,255,255,0.2)', padding: '2px 6px', borderRadius: '4px'}}>
+                    Max Score: {assessmentConfig.maxScore}
+                  </span>
                 </div>
               </div>
             </div>
@@ -1040,6 +1035,18 @@ export default function AssessmentPage() {
                 <span>Pending</span>
               </div>
             </div>
+
+            {/* Assessment Info */}
+            <div style={styles.assessmentInfo}>
+              <div style={styles.infoRow}>
+                <span>Assessment Type:</span>
+                <span style={{fontWeight: '600', color: '#9C27B0'}}>{assessmentConfig.name}</span>
+              </div>
+              <div style={styles.infoRow}>
+                <span>Max Score:</span>
+                <span style={{fontWeight: '600'}}>{assessmentConfig.maxScore}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1189,7 +1196,8 @@ const styles = {
     alignItems: 'center',
     gap: '8px',
     fontSize: '13px',
-    opacity: 0.9
+    opacity: 0.9,
+    flexWrap: 'wrap'
   },
   timer: {
     padding: '10px 20px',
@@ -1422,7 +1430,8 @@ const styles = {
     gridTemplateColumns: '1fr 1fr 1fr',
     gap: '10px',
     paddingTop: '15px',
-    borderTop: '2px solid #f1f5f9'
+    borderTop: '2px solid #f1f5f9',
+    marginBottom: '15px'
   },
   legendItem: {
     display: 'flex',
@@ -1435,6 +1444,19 @@ const styles = {
     width: '12px',
     height: '12px',
     borderRadius: '4px'
+  },
+  assessmentInfo: {
+    background: '#f8fafc',
+    padding: '15px',
+    borderRadius: '8px',
+    marginTop: '10px'
+  },
+  infoRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: '13px',
+    color: '#475569',
+    marginBottom: '8px'
   },
   modalOverlay: {
     position: 'fixed',
