@@ -7,6 +7,7 @@ export default function PreAssessment() {
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     checkUser();
@@ -29,8 +30,10 @@ export default function PreAssessment() {
 
   const fetchAssessments = async (userId) => {
     try {
-      // Get all active assessments with their types
-      const { data, error } = await supabase
+      setError(null);
+      
+      // First, get all active assessments with their types
+      const { data: assessmentsData, error: assessmentsError } = await supabase
         .from('assessments')
         .select(`
           *,
@@ -39,32 +42,52 @@ export default function PreAssessment() {
         .eq('is_active', true)
         .order('assessment_type_id');
 
-      if (error) throw error;
+      if (assessmentsError) throw assessmentsError;
       
-      console.log("Fetched assessments:", data);
+      console.log("Fetched assessments:", assessmentsData);
       
+      if (!assessmentsData || assessmentsData.length === 0) {
+        setAssessments([]);
+        setLoading(false);
+        return;
+      }
+
       // For each assessment, check if the user has completed it
       const assessmentsWithStatus = await Promise.all(
-        (data || []).map(async (assessment) => {
-          const { data: completed } = await supabase
-            .from('candidate_assessments')
-            .select('id, status, score')
-            .eq('user_id', userId)
-            .eq('assessment_id', assessment.id)
-            .eq('status', 'completed')
-            .maybeSingle();
-          
-          return {
-            ...assessment,
-            completed: !!completed,
-            score: completed?.score || null
-          };
+        assessmentsData.map(async (assessment) => {
+          try {
+            // Check in candidate_assessments first
+            const { data: completed, error: completedError } = await supabase
+              .from('candidate_assessments')
+              .select('id, status, score')
+              .eq('user_id', userId)
+              .eq('assessment_id', assessment.id)
+              .maybeSingle();
+
+            if (completedError && completedError.code !== 'PGRST116') {
+              console.log("Error checking completion:", completedError);
+            }
+            
+            return {
+              ...assessment,
+              completed: !!completed,
+              score: completed?.score || null
+            };
+          } catch (err) {
+            console.log("Error processing assessment:", assessment.id, err);
+            return {
+              ...assessment,
+              completed: false,
+              score: null
+            };
+          }
         })
       );
 
       setAssessments(assessmentsWithStatus);
     } catch (error) {
       console.error("Error fetching assessments:", error);
+      setError(error.message);
     } finally {
       setLoading(false);
     }
@@ -88,54 +111,81 @@ export default function PreAssessment() {
     );
   }
 
+  if (error) {
+    return (
+      <div style={styles.errorContainer}>
+        <div style={styles.errorCard}>
+          <h2>Error Loading Assessments</h2>
+          <p>{error}</p>
+          <button 
+            onClick={() => {
+              setLoading(true);
+              setError(null);
+              fetchAssessments(user.id);
+            }}
+            style={styles.retryButton}
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={styles.container}>
       <h1 style={styles.title}>Available Assessments</h1>
       <p style={styles.subtitle}>Welcome, {user?.email}. Select an assessment to begin.</p>
       
-      <div style={styles.grid}>
-        {assessments.map((assessment) => {
-          const type = assessment.assessment_type;
-          const isCompleted = assessment.completed;
-          
-          return (
-            <div key={assessment.id} style={{
-              ...styles.card,
-              opacity: isCompleted ? 0.7 : 1,
-              border: isCompleted ? '2px solid #4caf50' : 'none'
-            }}>
-              <div style={{
-                ...styles.cardHeader,
-                background: getGradient(type)
+      {assessments.length === 0 ? (
+        <div style={styles.emptyState}>
+          <p>No assessments available at this time.</p>
+        </div>
+      ) : (
+        <div style={styles.grid}>
+          {assessments.map((assessment) => {
+            const type = assessment.assessment_type;
+            const isCompleted = assessment.completed;
+            
+            return (
+              <div key={assessment.id} style={{
+                ...styles.card,
+                opacity: isCompleted ? 0.7 : 1,
+                border: isCompleted ? '2px solid #4caf50' : 'none'
               }}>
-                <span style={styles.cardIcon}>{getIcon(type)}</span>
-                <h3 style={styles.cardTitle}>{assessment.title}</h3>
-                {isCompleted && <span style={styles.completedBadge}>✓ Completed</span>}
-              </div>
-              
-              <div style={styles.cardBody}>
-                <div style={styles.stats}>
-                  <div>📝 {type?.question_count || 100} Questions</div>
-                  <div>⏱️ {type?.time_limit_minutes || 60} Minutes</div>
-                  <div>🎯 Max Score: {type?.max_score || 100}</div>
+                <div style={{
+                  ...styles.cardHeader,
+                  background: getGradient(type)
+                }}>
+                  <span style={styles.cardIcon}>{getIcon(type)}</span>
+                  <h3 style={styles.cardTitle}>{assessment.title}</h3>
+                  {isCompleted && <span style={styles.completedBadge}>✓ Completed</span>}
                 </div>
                 
-                <button
-                  onClick={() => router.push(`/assessment/${assessment.id}`)}
-                  disabled={isCompleted}
-                  style={{
-                    ...styles.button,
-                    background: isCompleted ? '#9e9e9e' : getGradient(type),
-                    cursor: isCompleted ? 'not-allowed' : 'pointer'
-                  }}
-                >
-                  {isCompleted ? 'Already Completed' : 'Start Assessment'}
-                </button>
+                <div style={styles.cardBody}>
+                  <div style={styles.stats}>
+                    <div>📝 {type?.question_count || 100} Questions</div>
+                    <div>⏱️ {type?.time_limit_minutes || 60} Minutes</div>
+                    <div>🎯 Max Score: {type?.max_score || 100}</div>
+                  </div>
+                  
+                  <button
+                    onClick={() => router.push(`/assessment/${assessment.id}`)}
+                    disabled={isCompleted}
+                    style={{
+                      ...styles.button,
+                      background: isCompleted ? '#9e9e9e' : getGradient(type),
+                      cursor: isCompleted ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {isCompleted ? 'Already Completed' : 'Start Assessment'}
+                  </button>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       <style jsx>{`
         @keyframes spin {
@@ -161,6 +211,21 @@ const styles = {
     justifyContent: 'center',
     minHeight: '100vh',
     gap: '20px'
+  },
+  errorContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: '100vh',
+    padding: '20px'
+  },
+  errorCard: {
+    background: 'white',
+    padding: '40px',
+    borderRadius: '10px',
+    boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+    textAlign: 'center',
+    maxWidth: '400px'
   },
   spinner: {
     width: '40px',
@@ -238,6 +303,24 @@ const styles = {
     color: 'white',
     fontSize: '16px',
     fontWeight: '600',
-    transition: 'opacity 0.2s'
+    transition: 'opacity 0.2s',
+    cursor: 'pointer'
+  },
+  retryButton: {
+    padding: '10px 20px',
+    background: '#1565c0',
+    color: 'white',
+    border: 'none',
+    borderRadius: '5px',
+    fontSize: '14px',
+    cursor: 'pointer',
+    marginTop: '20px'
+  },
+  emptyState: {
+    textAlign: 'center',
+    padding: '60px',
+    background: 'white',
+    borderRadius: '10px',
+    boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
   }
 };
