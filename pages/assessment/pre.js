@@ -1,66 +1,14 @@
-// pages/assessment/pre.js
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
-
-// ===== ASSESSMENT CONFIGURATIONS =====
-const ASSESSMENT_CONFIG = {
-  'General Assessment': {
-    icon: '📊',
-    color: '#607D8B',
-    gradient: 'linear-gradient(135deg, #607D8B, #455A64)',
-    type: 'general',
-    maxScore: 500,
-    timeLimit: 180
-  },
-  'Leadership Assessment': {
-    icon: '👑',
-    color: '#9C27B0',
-    gradient: 'linear-gradient(135deg, #9C27B0, #6A1B9A)',
-    type: 'leadership',
-    maxScore: 100,
-    timeLimit: 60
-  },
-  'Cognitive Ability Assessment': {
-    icon: '🧠',
-    color: '#4A6FA5',
-    gradient: 'linear-gradient(135deg, #4A6FA5, #2C3E50)',
-    type: 'cognitive',
-    maxScore: 100,
-    timeLimit: 60
-  },
-  'Technical Assessment': {
-    icon: '⚙️',
-    color: '#F44336',
-    gradient: 'linear-gradient(135deg, #F44336, #C62828)',
-    type: 'technical',
-    maxScore: 100,
-    timeLimit: 60
-  },
-  'Personality Assessment': {
-    icon: '🌟',
-    color: '#4CAF50',
-    gradient: 'linear-gradient(135deg, #4CAF50, #2E7D32)',
-    type: 'personality',
-    maxScore: 100,
-    timeLimit: 45
-  },
-  'Performance Assessment': {
-    icon: '📈',
-    color: '#FF9800',
-    gradient: 'linear-gradient(135deg, #FF9800, #F57C00)',
-    type: 'performance',
-    maxScore: 100,
-    timeLimit: 45
-  }
-};
+import { getAssessments, getOrCreateCandidateProfile, isAssessmentCompleted } from "../../supabase/assessment";
 
 export default function PreAssessment() {
   const router = useRouter();
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
-  const [displayName, setDisplayName] = useState("");
+  const [profile, setProfile] = useState(null);
   const [completedAssessments, setCompletedAssessments] = useState({});
 
   useEffect(() => {
@@ -69,8 +17,7 @@ export default function PreAssessment() {
 
   useEffect(() => {
     if (user) {
-      fetchAssessments();
-      fetchCompletedAssessments();
+      loadData();
     }
   }, [user]);
 
@@ -84,142 +31,75 @@ export default function PreAssessment() {
       
       setUser(session.user);
       
-      // Get user profile for name, fallback to email
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("full_name")
-        .eq("id", session.user.id)
-        .single();
-      
-      if (profile?.full_name) {
-        setDisplayName(profile.full_name);
-      } else {
-        setDisplayName(session.user.email);
-      }
+      // Get or create profile
+      const profile = await getOrCreateCandidateProfile(
+        session.user.id,
+        session.user.email,
+        session.user.user_metadata?.full_name || session.user.email
+      );
+      setProfile(profile);
     } catch (error) {
       console.error("Error checking session:", error);
       router.push("/login");
     }
   };
 
-  const fetchCompletedAssessments = async () => {
-    if (!user) return;
-
-    try {
-      const { data, error } = await supabase
-        .from("candidate_assessments_taken")
-        .select("assessment_id, assessment_type, completed_at")
-        .eq("user_id", user.id)
-        .eq("status", "completed");
-
-      if (error) throw error;
-
-      const completed = {};
-      data?.forEach(item => {
-        completed[item.assessment_id] = {
-          completed: true,
-          completedAt: item.completed_at,
-          type: item.assessment_type
-        };
-      });
-
-      setCompletedAssessments(completed);
-    } catch (error) {
-      console.error("Error fetching completed assessments:", error);
-    }
-  };
-
-  const fetchAssessments = async () => {
+  const loadData = async () => {
     try {
       setLoading(true);
-
-      const { data, error } = await supabase
-        .from("assessments")
-        .select(`
-          *,
-          assessment_categories (
-            id,
-            name,
-            description,
-            icon
-          )
-        `)
-        .eq("is_active", true)
-        .order("name");
-
-      if (error) throw error;
-
-      // Get question counts for each assessment
-      const assessmentsWithCounts = await Promise.all(
-        (data || []).map(async (assessment) => {
-          const { count, error: countError } = await supabase
-            .from("questions")
-            .select("*", { count: 'exact', head: true })
-            .eq("assessment_id", assessment.id);
-
-          if (countError) {
-            console.error(`Error counting questions for ${assessment.id}:`, countError);
-            return { ...assessment, question_count: 0 };
-          }
-
-          // Map assessment name to config
-          let config = ASSESSMENT_CONFIG[assessment.name];
-          
-          // If not found by exact name, try to match by type
-          if (!config && assessment.assessment_type) {
-            const typeMap = {
-              'general': ASSESSMENT_CONFIG['General Assessment'],
-              'leadership': ASSESSMENT_CONFIG['Leadership Assessment'],
-              'cognitive': ASSESSMENT_CONFIG['Cognitive Ability Assessment'],
-              'technical': ASSESSMENT_CONFIG['Technical Assessment'],
-              'personality': ASSESSMENT_CONFIG['Personality Assessment'],
-              'performance': ASSESSMENT_CONFIG['Performance Assessment']
-            };
-            config = typeMap[assessment.assessment_type];
-          }
-
-          // Fallback config
-          if (!config) {
-            config = {
-              icon: '📋',
-              color: '#667eea',
-              gradient: 'linear-gradient(135deg, #667eea, #764ba2)',
-              type: assessment.assessment_type || 'general',
-              maxScore: assessment.assessment_type === 'general' ? 500 : 100,
-              timeLimit: assessment.assessment_type === 'general' ? 180 : 60
-            };
-          }
-
-          const isCompleted = completedAssessments[assessment.id];
-
-          return { 
-            ...assessment, 
-            question_count: count || 0,
-            config,
-            isCompleted: !!isCompleted,
-            completedAt: isCompleted?.completedAt
-          };
-        })
-      );
-
-      setAssessments(assessmentsWithCounts);
+      
+      // Get all assessments
+      const assessmentsData = await getAssessments();
+      
+      // Check which ones are completed
+      const completed = {};
+      for (const assessment of assessmentsData) {
+        const isCompleted = await isAssessmentCompleted(user.id, assessment.id);
+        completed[assessment.id] = isCompleted;
+      }
+      
+      setAssessments(assessmentsData);
+      setCompletedAssessments(completed);
     } catch (error) {
-      console.error("Error fetching assessments:", error);
+      console.error("Error loading assessments:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleStartAssessment = async (assessmentId, isCompleted) => {
-    if (isCompleted) {
+  const handleStartAssessment = async (assessment) => {
+    if (completedAssessments[assessment.id]) {
       alert("You have already completed this assessment. Each assessment can only be taken once.");
       return;
     }
-    router.push(`/assessment/${assessmentId}`);
+    
+    // Store assessment info in session storage
+    sessionStorage.setItem('currentAssessment', JSON.stringify({
+      id: assessment.id,
+      type: assessment.assessment_type,
+      name: assessment.title
+    }));
+    
+    router.push(`/assessment/${assessment.id}`);
   };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString();
+  const getAssessmentIcon = (type) => {
+    const icons = {
+      'general': '📊',
+      'leadership': '👑',
+      'cognitive': '🧠',
+      'technical': '⚙️',
+      'personality': '🌟',
+      'performance': '📈',
+      'behavioral': '🤝',
+      'manufacturing': '🏭',
+      'cultural': '🎯'
+    };
+    return icons[type.code] || type.icon || '📋';
+  };
+
+  const getGradient = (type) => {
+    return `linear-gradient(135deg, ${type.gradient_start || '#667eea'}, ${type.gradient_end || '#764ba2'})`;
   };
 
   if (loading) {
@@ -232,26 +112,26 @@ export default function PreAssessment() {
 
   return (
     <div style={styles.container}>
-      {/* Header with User Info */}
+      {/* Header */}
       <div style={styles.header}>
         <div>
           <h1 style={styles.welcome}>Welcome to Stratavax Capability Assessment</h1>
           <p style={styles.userInfo}>
-            {displayName} • {user?.email}
+            {profile?.full_name || user?.email} • {user?.email}
           </p>
         </div>
         <div style={styles.stats}>
           <span style={styles.statBadge}>
-            ✅ Completed: {Object.keys(completedAssessments).length}/{assessments.length}
+            ✅ Completed: {Object.values(completedAssessments).filter(Boolean).length}/{assessments.length}
           </span>
         </div>
       </div>
 
-      {/* 3x2 Assessment Grid */}
+      {/* Assessment Grid */}
       <div style={styles.gridContainer}>
         {assessments.map((assessment) => {
-          const config = assessment.config;
-          const isCompleted = assessment.isCompleted;
+          const isCompleted = completedAssessments[assessment.id];
+          const assessmentType = assessment.assessment_type;
           
           return (
             <div key={assessment.id} style={{
@@ -261,10 +141,10 @@ export default function PreAssessment() {
             }}>
               <div style={{
                 ...styles.cardHeader,
-                background: config.gradient
+                background: getGradient(assessmentType)
               }}>
-                <span style={styles.cardIcon}>{config.icon}</span>
-                <h3 style={styles.cardTitle}>{assessment.name}</h3>
+                <span style={styles.cardIcon}>{getAssessmentIcon(assessmentType)}</span>
+                <h3 style={styles.cardTitle}>{assessment.title}</h3>
                 {isCompleted && (
                   <span style={styles.completedBadge}>✓ Completed</span>
                 )}
@@ -273,42 +153,25 @@ export default function PreAssessment() {
               <div style={styles.cardBody}>
                 <div style={styles.cardStats}>
                   <div style={styles.stat}>
-                    <span>📝 {assessment.question_count} Questions</span>
+                    <span>📝 {assessmentType.question_count} Questions</span>
                   </div>
                   <div style={styles.stat}>
-                    <span>⏱️ {config.timeLimit} Minutes</span>
+                    <span>⏱️ {assessmentType.time_limit_minutes} Minutes</span>
                   </div>
                   <div style={styles.stat}>
-                    <span>🎯 Max Score: {config.maxScore}</span>
+                    <span>🎯 Max Score: {assessmentType.max_score}</span>
                   </div>
-                  {isCompleted && (
-                    <div style={styles.stat}>
-                      <span style={{color: '#4caf50'}}>
-                        ✅ Completed: {formatDate(assessment.completedAt)}
-                      </span>
-                    </div>
-                  )}
                 </div>
                 
+                <p style={styles.description}>{assessment.description}</p>
+                
                 <button
-                  onClick={() => handleStartAssessment(assessment.id, isCompleted)}
+                  onClick={() => handleStartAssessment(assessment)}
                   disabled={isCompleted}
                   style={{
                     ...styles.startButton,
-                    background: isCompleted ? '#9e9e9e' : config.gradient,
+                    background: isCompleted ? '#9e9e9e' : getGradient(assessmentType),
                     cursor: isCompleted ? 'not-allowed' : 'pointer'
-                  }}
-                  onMouseOver={(e) => {
-                    if (!isCompleted) {
-                      e.currentTarget.style.opacity = '0.9';
-                      e.currentTarget.style.transform = 'translateY(-1px)';
-                    }
-                  }}
-                  onMouseOut={(e) => {
-                    if (!isCompleted) {
-                      e.currentTarget.style.opacity = '1';
-                      e.currentTarget.style.transform = 'translateY(0)';
-                    }
                   }}
                 >
                   {isCompleted ? 'Already Completed' : 'Start Assessment →'}
@@ -319,7 +182,7 @@ export default function PreAssessment() {
         })}
       </div>
 
-      {/* Instructions Section */}
+      {/* Instructions */}
       <div style={styles.instructions}>
         <h2 style={styles.instructionsTitle}>Assessment Guidelines</h2>
         
@@ -328,7 +191,7 @@ export default function PreAssessment() {
             <span style={styles.instructionIcon}>⏰</span>
             <div>
               <h4 style={styles.instructionHeading}>Timed Assessments</h4>
-              <p style={styles.instructionText}>Each assessment has its own time limit. Timer starts immediately when you begin.</p>
+              <p style={styles.instructionText}>Each assessment has its own time limit. Timer starts when you begin.</p>
             </div>
           </div>
 
@@ -336,7 +199,7 @@ export default function PreAssessment() {
             <span style={styles.instructionIcon}>🔄</span>
             <div>
               <h4 style={styles.instructionHeading}>One Attempt Only</h4>
-              <p style={styles.instructionText}>Each assessment can only be taken once. Completed assessments are marked with ✓.</p>
+              <p style={styles.instructionText}>Each assessment can only be taken once. Completed are marked with ✓.</p>
             </div>
           </div>
 
@@ -344,23 +207,18 @@ export default function PreAssessment() {
             <span style={styles.instructionIcon}>💾</span>
             <div>
               <h4 style={styles.instructionHeading}>Auto-Save Enabled</h4>
-              <p style={styles.instructionText}>Your answers are saved automatically as you progress through each assessment.</p>
+              <p style={styles.instructionText}>Your answers are saved automatically as you progress.</p>
             </div>
           </div>
 
           <div style={styles.instructionCard}>
             <span style={styles.instructionIcon}>📊</span>
             <div>
-              <h4 style={styles.instructionHeading}>Separate Reports</h4>
-              <p style={styles.instructionText}>Each assessment generates its own independent report for supervisors.</p>
+              <h4 style={styles.instructionHeading}>Detailed Reports</h4>
+              <p style={styles.instructionText}>Each assessment generates its own detailed report with analysis.</p>
             </div>
           </div>
         </div>
-
-        <p style={styles.note}>
-          Choose a quiet space where you won't be interrupted. Answer honestly - there are no right or wrong answers. 
-          Each assessment measures different aspects of your capabilities.
-        </p>
       </div>
 
       <style jsx>{`
@@ -373,7 +231,6 @@ export default function PreAssessment() {
   );
 }
 
-// ===== STYLES =====
 const styles = {
   container: {
     minHeight: '100vh',
@@ -397,7 +254,7 @@ const styles = {
     animation: 'spin 1s linear infinite'
   },
   header: {
-    maxWidth: '1000px',
+    maxWidth: '1200px',
     margin: '0 auto 30px',
     paddingBottom: '20px',
     borderBottom: '2px solid #e2e8f0',
@@ -427,10 +284,10 @@ const styles = {
     color: '#2e7d32'
   },
   gridContainer: {
-    maxWidth: '1000px',
+    maxWidth: '1200px',
     margin: '0 auto 40px',
     display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
     gap: '20px'
   },
   card: {
@@ -446,12 +303,12 @@ const styles = {
     position: 'relative'
   },
   cardIcon: {
-    fontSize: '28px',
+    fontSize: '32px',
     marginBottom: '8px',
     display: 'block'
   },
   cardTitle: {
-    fontSize: '14px',
+    fontSize: '16px',
     fontWeight: '600',
     margin: 0,
     lineHeight: '1.4',
@@ -472,12 +329,18 @@ const styles = {
     padding: '20px'
   },
   cardStats: {
-    marginBottom: '20px'
+    marginBottom: '15px'
   },
   stat: {
     fontSize: '13px',
     color: '#475569',
     marginBottom: '6px'
+  },
+  description: {
+    fontSize: '13px',
+    color: '#64748b',
+    marginBottom: '20px',
+    lineHeight: '1.5'
   },
   startButton: {
     width: '100%',
@@ -485,13 +348,13 @@ const styles = {
     border: 'none',
     borderRadius: '6px',
     color: 'white',
-    fontSize: '13px',
+    fontSize: '14px',
     fontWeight: '600',
     transition: 'all 0.2s ease',
     textAlign: 'center'
   },
   instructions: {
-    maxWidth: '1000px',
+    maxWidth: '1200px',
     margin: '0 auto',
     paddingTop: '30px',
     borderTop: '2px solid #e2e8f0'
@@ -504,14 +367,16 @@ const styles = {
   },
   instructionsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '20px',
-    marginBottom: '20px'
+    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+    gap: '20px'
   },
   instructionCard: {
     display: 'flex',
     gap: '15px',
-    alignItems: 'flex-start'
+    alignItems: 'flex-start',
+    padding: '15px',
+    background: '#f1f5f9',
+    borderRadius: '8px'
   },
   instructionIcon: {
     fontSize: '24px',
@@ -528,14 +393,5 @@ const styles = {
     color: '#64748b',
     margin: 0,
     lineHeight: '1.5'
-  },
-  note: {
-    fontSize: '13px',
-    color: '#475569',
-    fontStyle: 'italic',
-    margin: '20px 0 0 0',
-    padding: '15px',
-    background: '#f1f5f9',
-    borderRadius: '8px'
   }
 };
