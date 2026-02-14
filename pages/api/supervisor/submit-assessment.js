@@ -21,7 +21,7 @@ export default async function handler(req, res) {
     // ===== CHECK IF ALREADY SUBMITTED =====
     const { data: existingSession, error: sessionError } = await supabase
       .from("assessment_sessions")
-      .select("id, status, completed_at")
+      .select("id, status, completed_at, time_spent_seconds")
       .eq("id", session_id)
       .eq("user_id", user_id)
       .single();
@@ -43,13 +43,16 @@ export default async function handler(req, res) {
       });
     }
 
+    // Use the actual time spent from the session if not provided
+    const actualTimeSpent = time_spent || existingSession.time_spent_seconds || 0;
+
     // ===== UPDATE SESSION =====
     const { error: updateError } = await supabase
       .from("assessment_sessions")
       .update({
         status: 'completed',
         completed_at: new Date().toISOString(),
-        time_spent_seconds: time_spent || 0
+        time_spent_seconds: actualTimeSpent
       })
       .eq("id", session_id)
       .eq("user_id", user_id);
@@ -179,7 +182,6 @@ export default async function handler(req, res) {
 
     if (assessmentError) {
       console.error("⚠️ Error fetching assessment:", assessmentError);
-      // Continue with default values
     }
 
     const maxScore = assessment?.assessment_type?.max_score || 100;
@@ -240,30 +242,23 @@ export default async function handler(req, res) {
 
     if (candidateError) {
       console.error("⚠️ Error updating candidate assessments:", candidateError);
-      // Don't fail the request, just log it
     } else {
       console.log("✅ Candidate assessments updated");
     }
 
     // ===== CREATE SUPERVISOR NOTIFICATIONS =====
     try {
-      // Get candidate info
-      const { data: profile, error: profileError } = await supabase
+      const { data: profile } = await supabase
         .from("candidate_profiles")
         .select("full_name, email")
         .eq("id", user_id)
         .single();
 
-      if (profileError) {
-        console.log("⚠️ Could not fetch candidate profile:", profileError);
-      }
-
-      // Get all supervisors
-      const { data: supervisors, error: supervisorsError } = await supabase
+      const { data: supervisors } = await supabase
         .from("supervisors")
         .select("id");
 
-      if (!supervisorsError && supervisors && supervisors.length > 0) {
+      if (supervisors && supervisors.length > 0) {
         const notifications = supervisors.map(sup => ({
           supervisor_id: sup.id,
           user_id,
@@ -274,15 +269,9 @@ export default async function handler(req, res) {
           created_at: new Date().toISOString()
         }));
 
-        const { error: notifyError } = await supabase
+        await supabase
           .from("supervisor_notifications")
           .insert(notifications);
-
-        if (notifyError) {
-          console.error("⚠️ Error creating notifications:", notifyError);
-        } else {
-          console.log("✅ Notifications created");
-        }
       }
     } catch (notifyError) {
       console.error("⚠️ Failed to create notifications:", notifyError);
