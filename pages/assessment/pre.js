@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
-import { getAssessments, getOrCreateCandidateProfile, isAssessmentCompleted } from "../../supabase/assessment";
+import { 
+  getAssessments, 
+  getOrCreateCandidateProfile, 
+  getUserCompletedAssessments 
+} from "../../supabase/assessment";
 
 export default function PreAssessment() {
   const router = useRouter();
@@ -39,7 +43,6 @@ export default function PreAssessment() {
         session.user.user_metadata?.full_name || session.user.email
       );
       setProfile(profile);
-      console.log("📋 User profile:", profile);
     } catch (error) {
       console.error("Error checking session:", error);
       router.push("/login");
@@ -51,79 +54,59 @@ export default function PreAssessment() {
       setLoading(true);
       console.log("🔄 Loading assessments...");
       
-      // Get all assessments
-      const assessmentsData = await getAssessments();
-      
-      // DEBUG: Log what we got
-      console.log("🔍 Raw assessments data:", assessmentsData);
-      console.log("📊 Number of assessments:", assessmentsData?.length);
-      
-      if (!assessmentsData || assessmentsData.length === 0) {
-        console.log("❌ No assessments returned from getAssessments()");
-        
-        // Fallback: Try direct query to see what's in the database
-        console.log("🔄 Trying direct query as fallback...");
-        const { data: directData, error: directError } = await supabase
-          .from('assessments')
-          .select(`
-            *,
-            assessment_type:assessment_types(*)
-          `)
-          .eq('is_active', true);
-        
-        console.log("📦 Direct query result:", directData);
-        console.log("⚠️ Direct query error:", directError);
-        
-        if (directData && directData.length > 0) {
-          console.log("✅ Found assessments via direct query!");
-          setAssessments(directData);
-          
-          // Check which ones are completed
-          const completed = {};
-          for (const assessment of directData) {
-            const isCompleted = await isAssessmentCompleted(user.id, assessment.id);
-            completed[assessment.id] = isCompleted;
-            console.log(`📌 ${assessment.title} completed:`, isCompleted);
-          }
-          
-          setCompletedAssessments(completed);
-        } else {
-          console.log("❌ No assessments found in database");
-        }
-        
+      // Get all assessments directly from the database
+      const { data: assessmentsData, error } = await supabase
+        .from('assessments')
+        .select(`
+          *,
+          assessment_type:assessment_types(*)
+        `)
+        .eq('is_active', true);
+
+      if (error) {
+        console.error("❌ Error fetching assessments:", error);
+        setAssessments([]);
         setLoading(false);
         return;
       }
-      
-      console.log("📝 First assessment:", assessmentsData[0]);
-      console.log("🎯 Assessment type:", assessmentsData[0].assessment_type);
-      console.log("✅ Is active:", assessmentsData[0].is_active);
-      
-      // Check which ones are completed
+
+      console.log("📊 Assessments from DB:", assessmentsData);
+
+      if (!assessmentsData || assessmentsData.length === 0) {
+        console.log("❌ No assessments found in database");
+        setAssessments([]);
+        setLoading(false);
+        return;
+      }
+
+      // Get user's completed assessments
       const completed = {};
+      
+      // Check each assessment for completion
       for (const assessment of assessmentsData) {
-        const isCompleted = await isAssessmentCompleted(user.id, assessment.id);
-        completed[assessment.id] = isCompleted;
-        console.log(`📌 ${assessment.title}:`, {
-          id: assessment.id,
-          completed: isCompleted,
-          type: assessment.assessment_type?.code,
-          questions: assessment.assessment_type?.question_count
-        });
+        // Check in candidate_assessments
+        const { data: candidateData } = await supabase
+          .from('candidate_assessments')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('assessment_id', assessment.id)
+          .eq('status', 'completed')
+          .maybeSingle();
+
+        if (candidateData) {
+          completed[assessment.id] = true;
+          console.log(`✅ ${assessment.title} is completed`);
+        } else {
+          completed[assessment.id] = false;
+          console.log(`⏳ ${assessment.title} is not completed`);
+        }
       }
       
       setAssessments(assessmentsData);
       setCompletedAssessments(completed);
       
-      // DEBUG: Log final state
-      console.log("✅ Assessments set:", assessmentsData.length);
+      console.log("✅ Final assessments:", assessmentsData.map(a => a.title));
       console.log("✅ Completed map:", completed);
-      console.log("✅ Final assessments state:", assessmentsData.map(a => ({
-        title: a.title,
-        is_active: a.is_active,
-        type_code: a.assessment_type?.code,
-        question_count: a.assessment_type?.question_count
-      })));
       
     } catch (error) {
       console.error("❌ Error loading assessments:", error);
@@ -143,7 +126,7 @@ export default function PreAssessment() {
     // Store assessment info in session storage
     sessionStorage.setItem('currentAssessment', JSON.stringify({
       id: assessment.id,
-      type: assessment.assessment_type,
+      type: assessment.assessment_type?.code || 'general',
       name: assessment.title
     }));
     
@@ -188,9 +171,12 @@ export default function PreAssessment() {
       {/* Header */}
       <div style={styles.header}>
         <div>
-          <h1 style={styles.welcome}>Welcome to Stratavax Capability Assessment</h1>
+          <h1 style={styles.welcome}>Your Assessments</h1>
           <p style={styles.userInfo}>
             {profile?.full_name || user?.email} • {user?.email}
+          </p>
+          <p style={styles.subtitle}>
+            Select an assessment to begin or continue. Your progress is automatically saved.
           </p>
         </div>
         <div style={styles.stats}>
@@ -243,7 +229,9 @@ export default function PreAssessment() {
                     </div>
                   </div>
                   
-                  <p style={styles.description}>{assessment.description || assessment.title}</p>
+                  <p style={styles.description}>
+                    {assessment.description || `${assessment.title} - Comprehensive assessment of your capabilities`}
+                  </p>
                   
                   <button
                     onClick={() => handleStartAssessment(assessment)}
@@ -274,45 +262,6 @@ export default function PreAssessment() {
           })}
         </div>
       )}
-
-      {/* Instructions */}
-      <div style={styles.instructions}>
-        <h2 style={styles.instructionsTitle}>Assessment Guidelines</h2>
-        
-        <div style={styles.instructionsGrid}>
-          <div style={styles.instructionCard}>
-            <span style={styles.instructionIcon}>⏰</span>
-            <div>
-              <h4 style={styles.instructionHeading}>Timed Assessments</h4>
-              <p style={styles.instructionText}>Each assessment has its own time limit. Timer starts when you begin.</p>
-            </div>
-          </div>
-
-          <div style={styles.instructionCard}>
-            <span style={styles.instructionIcon}>🔄</span>
-            <div>
-              <h4 style={styles.instructionHeading}>One Attempt Only</h4>
-              <p style={styles.instructionText}>Each assessment can only be taken once. Completed are marked with ✓.</p>
-            </div>
-          </div>
-
-          <div style={styles.instructionCard}>
-            <span style={styles.instructionIcon}>💾</span>
-            <div>
-              <h4 style={styles.instructionHeading}>Auto-Save Enabled</h4>
-              <p style={styles.instructionText}>Your answers are saved automatically as you progress.</p>
-            </div>
-          </div>
-
-          <div style={styles.instructionCard}>
-            <span style={styles.instructionIcon}>📊</span>
-            <div>
-              <h4 style={styles.instructionHeading}>Detailed Reports</h4>
-              <p style={styles.instructionText}>Each assessment generates its own detailed report with analysis.</p>
-            </div>
-          </div>
-        </div>
-      </div>
 
       <style jsx>{`
         @keyframes spin {
@@ -358,18 +307,18 @@ const styles = {
     maxWidth: '1200px',
     margin: '0 auto 30px',
     paddingBottom: '20px',
-    borderBottom: '2px solid #e2e8f0',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: '20px'
+    borderBottom: '2px solid #e2e8f0'
   },
   welcome: {
-    fontSize: '24px',
-    fontWeight: '600',
+    fontSize: '28px',
+    fontWeight: '700',
     color: '#1e293b',
-    margin: '0 0 5px 0'
+    margin: '0 0 10px 0'
+  },
+  subtitle: {
+    fontSize: '16px',
+    color: '#64748b',
+    margin: '10px 0 0 0'
   },
   userInfo: {
     fontSize: '14px',
@@ -377,9 +326,11 @@ const styles = {
     margin: 0
   },
   stats: {
+    marginTop: '15px',
     background: '#f1f5f9',
     padding: '8px 16px',
-    borderRadius: '20px'
+    borderRadius: '20px',
+    display: 'inline-block'
   },
   statBadge: {
     fontSize: '14px',
@@ -436,7 +387,7 @@ const styles = {
     display: 'block'
   },
   cardTitle: {
-    fontSize: '16px',
+    fontSize: '18px',
     fontWeight: '600',
     margin: 0,
     lineHeight: '1.4',
@@ -460,66 +411,25 @@ const styles = {
     marginBottom: '15px'
   },
   stat: {
-    fontSize: '13px',
+    fontSize: '14px',
     color: '#475569',
     marginBottom: '6px'
   },
   description: {
-    fontSize: '13px',
+    fontSize: '14px',
     color: '#64748b',
     marginBottom: '20px',
-    lineHeight: '1.5'
+    lineHeight: '1.6'
   },
   startButton: {
     width: '100%',
-    padding: '12px',
+    padding: '14px',
     border: 'none',
-    borderRadius: '6px',
+    borderRadius: '8px',
     color: 'white',
-    fontSize: '14px',
+    fontSize: '16px',
     fontWeight: '600',
     transition: 'all 0.2s ease',
     textAlign: 'center'
-  },
-  instructions: {
-    maxWidth: '1200px',
-    margin: '0 auto',
-    paddingTop: '30px',
-    borderTop: '2px solid #e2e8f0'
-  },
-  instructionsTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#1e293b',
-    margin: '0 0 20px 0'
-  },
-  instructionsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '20px'
-  },
-  instructionCard: {
-    display: 'flex',
-    gap: '15px',
-    alignItems: 'flex-start',
-    padding: '15px',
-    background: '#f1f5f9',
-    borderRadius: '8px'
-  },
-  instructionIcon: {
-    fontSize: '24px',
-    lineHeight: 1
-  },
-  instructionHeading: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#1e293b',
-    margin: '0 0 4px 0'
-  },
-  instructionText: {
-    fontSize: '13px',
-    color: '#64748b',
-    margin: 0,
-    lineHeight: '1.5'
   }
 };
