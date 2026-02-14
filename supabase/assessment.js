@@ -187,8 +187,15 @@ export async function updateSessionTimer(sessionId, elapsedSeconds) {
   }
 }
 
-// ===== ENHANCED RESPONSES FUNCTIONS =====
-export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
+// ===== ROBUST RESPONSES FUNCTIONS WITH RETRY AND BACKUP =====
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // 1 second
+
+async function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId, retryCount = 0) {
   try {
     console.log("📝 Attempting to save response:", {
       sessionId,
@@ -196,12 +203,15 @@ export async function saveResponse(sessionId, userId, assessmentId, questionId, 
       assessmentId,
       questionId,
       answerId,
+      retryCount,
       timestamp: new Date().toISOString()
     });
 
     // Validate inputs
     if (!sessionId || !userId || !assessmentId || !questionId || !answerId) {
       console.error("❌ Missing required fields:", { sessionId, userId, assessmentId, questionId, answerId });
+      // Still save to localStorage even if validation fails
+      saveToLocalStorage(assessmentId, questionId, answerId);
       throw new Error("Missing required fields for saving response");
     }
 
@@ -211,72 +221,280 @@ export async function saveResponse(sessionId, userId, assessmentId, questionId, 
 
     if (isNaN(qId) || isNaN(aId)) {
       console.error("❌ Invalid ID format:", { qId, aId });
+      saveToLocalStorage(assessmentId, questionId, answerId);
       throw new Error("Invalid question or answer ID format");
     }
 
-    // First, verify the session exists and is in progress
-    const { data: session, error: sessionError } = await supabase
-      .from('assessment_sessions')
-      .select('id, status')
-      .eq('id', sessionId)
-      .single();
+    // Always save to localStorage first (immediate backup)
+    saveToLocalStorage(assessmentId, qId, aId);
 
-    if (sessionError) {
-      console.error("❌ Session verification failed:", sessionError);
-      throw new Error(`Session not found: ${sessionError.message}`);
+    // Then try to save to database with retry logic
+    let lastError = null;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        if (attempt > 0) {
+          console.log(`🔄 Retry attempt ${attempt}/${MAX_RETRIES}`);
+          await sleep(RETRY_DELAY * attempt);
+        }
+
+        const { data, error } = await supabase
+          .from('responses')
+          .upsert({
+            session_id: sessionId,
+            user_id: userId,
+            assessment_id: assessmentId,
+            question_id: qId,
+            answer_id: aId,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'session_id,question_id',
+            ignoreDuplicates: false
+          })
+          .select();
+
+        if (error) {
+          console.error(`❌ Attempt ${attempt} failed:`, error);
+          lastError = error;
+          continue;
+        }
+
+        console.log(`✅ Response saved to database on attempt ${attempt + 1}`);
+        
+        // Update localStorage to mark as synced
+        markAsSynced(assessmentId, qId);
+        
+        return { success: true, data };
+        
+      } catch (attemptError) {
+        console.error(`❌ Attempt ${attempt} error:`, attemptError);
+        lastError = attemptError;
+      }
     }
 
-    if (session.status !== 'in_progress') {
-      console.error("❌ Session is not in progress:", session.status);
-      throw new Error(`Session is ${session.status}, not in progress`);
-    }
-
-    console.log("✅ Session verified, attempting to save response");
-
-    // Attempt to save the response
-    const { data, error, status, statusText } = await supabase
-      .from('responses')
-      .upsert({
-        session_id: sessionId,
-        user_id: userId,
-        assessment_id: assessmentId,
-        question_id: qId,
-        answer_id: aId,
-        updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'session_id,question_id',
-        ignoreDuplicates: false
-      })
-      .select();
-
-    console.log("📦 Supabase response:", { 
-      data, 
-      error, 
-      status, 
-      statusText,
-      hasData: !!data,
-      hasError: !!error 
-    });
-
-    if (error) {
-      console.error("❌ Database error:", {
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        hint: error.hint
-      });
-      throw error;
-    }
-    
-    console.log("✅ Response saved successfully:", data);
-    return { success: true, data };
+    // If all retries failed, throw the last error
+    throw lastError || new Error("Failed to save after multiple retries");
     
   } catch (error) {
     console.error("❌ Save response error:", error);
+    // Still saved to localStorage, so we can try to sync later
+    return { success: false, error: error.message, savedToLocal: true };
+  }
+}
+
+// Helper function to save to localStorage
+function saveToLocalStorage(assessmentId, questionId, answerId) {
+  try {
+    const key = `assessment_${assessmentId}_answers`;
+    const saved = JSON.parse(localStorage.getItem(key) || '{}');
+    saved[questionId] = {
+      answerId,
+      timestamp: new Date().toISOString(),
+      synced: false
+    };
+    localStorage.setItem(key, JSON.stringify(saved));
+    localStorage.setItem(`assessment_${assessmentId}_last_saved`, new Date().toISOString());
+    console.log(`💾 Saved to localStorage: Q${questionId} -> A${answerId}`);
+  } catch (e) {
+    console.error("Failed to save to localStorage:", e);
+  }
+}
+
+// Helper function to mark answer as synced
+function markAsSynced(assessmentId, questionId) {
+  try {
+    const key = `assessment_${assessmentId}_answers`;
+    const saved = JSON.parse(localStorage.getItem(key) || '{}');
+    if (saved[questionId]) {
+      saved[questionId].synced = true;
+      localStorage.setItem(key, JSON.stringify(saved));
+    }
+  } catch (e) {
+    console.error("Failed to mark as synced:", e);
+  }
+}
+
+// Function to sync unsaved answers from localStorage
+export async function syncUnsavedAnswers(sessionId, userId, assessmentId) {
+  try {
+    console.log("🔄 Syncing unsaved answers from localStorage");
+    
+    const key = `assessment_${assessmentId}_answers`;
+    const saved = JSON.parse(localStorage.getItem(key) || '{}');
+    
+    const unsaved = Object.entries(saved)
+      .filter(([_, data]) => !data.synced)
+      .map(([qId, data]) => ({ questionId: parseInt(qId), answerId: data.answerId }));
+    
+    console.log(`📦 Found ${unsaved.length} unsaved answers`);
+    
+    if (unsaved.length === 0) {
+      return { synced: 0 };
+    }
+    
+    let synced = 0;
+    let failed = 0;
+    
+    for (const { questionId, answerId } of unsaved) {
+      try {
+        const { error } = await supabase
+          .from('responses')
+          .upsert({
+            session_id: sessionId,
+            user_id: userId,
+            assessment_id: assessmentId,
+            question_id: questionId,
+            answer_id: answerId,
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'session_id,question_id'
+          });
+        
+        if (error) {
+          console.error(`Failed to sync Q${questionId}:`, error);
+          failed++;
+        } else {
+          markAsSynced(assessmentId, questionId);
+          synced++;
+          console.log(`✅ Synced Q${questionId}`);
+        }
+      } catch (e) {
+        console.error(`Error syncing Q${questionId}:`, e);
+        failed++;
+      }
+    }
+    
+    console.log(`✅ Sync complete: ${synced} synced, ${failed} failed`);
+    return { synced, failed };
+    
+  } catch (error) {
+    console.error("❌ Sync error:", error);
     throw error;
   }
 }
 
+// Function to load answers from all sources
+export async function loadUserAnswers(userId, assessmentId, sessionId) {
+  try {
+    console.log("📤 Loading answers from all sources");
+    
+    const answersMap = {};
+    
+    // Load from database
+    if (sessionId) {
+      const { data: dbAnswers, error } = await supabase
+        .from('responses')
+        .select('question_id, answer_id')
+        .eq('session_id', sessionId);
+
+      if (!error && dbAnswers) {
+        dbAnswers.forEach(r => {
+          answersMap[r.question_id] = r.answer_id;
+        });
+        console.log(`📊 Loaded ${dbAnswers.length} answers from database`);
+      }
+    }
+    
+    // Load from localStorage and merge
+    const key = `assessment_${assessmentId}_answers`;
+    const localAnswers = JSON.parse(localStorage.getItem(key) || '{}');
+    const localCount = Object.keys(localAnswers).length;
+    
+    if (localCount > 0) {
+      console.log(`📦 Found ${localCount} answers in localStorage`);
+      
+      let newAnswers = 0;
+      Object.entries(localAnswers).forEach(([qId, data]) => {
+        const questionId = parseInt(qId);
+        if (!answersMap[questionId]) {
+          answersMap[questionId] = data.answerId;
+          newAnswers++;
+        }
+      });
+      
+      console.log(`➕ Added ${newAnswers} new answers from localStorage`);
+    }
+    
+    return answersMap;
+    
+  } catch (error) {
+    console.error("❌ Error loading answers:", error);
+    return {};
+  }
+}
+
+// Recovery function
+export async function checkAndRestoreProgress(userId, assessmentId) {
+  try {
+    console.log("🔍 Checking progress for:", { userId, assessmentId });
+    
+    // Get the active session
+    const { data: sessions, error: sessionError } = await supabase
+      .from('assessment_sessions')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('assessment_id', assessmentId)
+      .eq('status', 'in_progress')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (sessionError) {
+      console.error("Error fetching sessions:", sessionError);
+      return null;
+    }
+
+    if (!sessions || sessions.length === 0) {
+      console.log("No active session found");
+      return null;
+    }
+
+    const session = sessions[0];
+    console.log("Found active session:", session);
+
+    // Get saved responses
+    const { data: responses, error: responsesError } = await supabase
+      .from('responses')
+      .select('question_id, answer_id')
+      .eq('session_id', session.id);
+
+    if (responsesError) {
+      console.error("Error fetching responses:", responsesError);
+      return null;
+    }
+
+    // Get progress
+    const { data: progress, error: progressError } = await supabase
+      .from('assessment_progress')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('assessment_id', assessmentId)
+      .maybeSingle();
+
+    console.log(`Found ${responses?.length || 0} saved responses in database`);
+    
+    // Check localStorage for unsaved answers
+    const key = `assessment_${assessmentId}_answers`;
+    const localAnswers = JSON.parse(localStorage.getItem(key) || '{}');
+    const unsavedCount = Object.values(localAnswers).filter(d => !d.synced).length;
+    
+    if (unsavedCount > 0) {
+      console.log(`📦 Found ${unsavedCount} unsaved answers in localStorage`);
+    }
+    
+    return {
+      session,
+      responses: responses || [],
+      progress: progress || null,
+      unsavedCount
+    };
+    
+  } catch (error) {
+    console.error("Error in checkAndRestoreProgress:", error);
+    return null;
+  }
+}
+
+// Get Session Responses
 export async function getSessionResponses(sessionId) {
   try {
     console.log("📤 Fetching responses for session:", sessionId);
@@ -301,7 +519,7 @@ export async function getSessionResponses(sessionId) {
 
     if (error) {
       console.error("❌ Error fetching responses:", error);
-      throw error;
+      return [];
     }
     
     console.log("✅ Fetched responses:", data?.length || 0);
@@ -313,82 +531,37 @@ export async function getSessionResponses(sessionId) {
   }
 }
 
-// ===== ENHANCED SUBMIT FUNCTION =====
+// Submit Assessment
 export async function submitAssessment(sessionId) {
   try {
     console.log("📤 Submitting assessment for session:", sessionId);
-    console.log("Session ID type:", typeof sessionId);
-    console.log("Session ID length:", sessionId?.length);
     
-    // Validate sessionId
     if (!sessionId) {
       console.error("❌ No session ID provided");
       throw new Error("No session ID provided");
     }
 
-    // First, check if all questions are answered
+    // First, sync any unsaved answers from localStorage
     const { data: session, error: sessionError } = await supabase
       .from('assessment_sessions')
-      .select('assessment_id')
+      .select('user_id, assessment_id')
       .eq('id', sessionId)
       .single();
 
-    if (sessionError) {
-      console.error("❌ Error fetching session:", sessionError);
-      throw sessionError;
-    }
-
-    // Get total questions count
-    const { count: totalQuestions, error: countError } = await supabase
-      .from('questions')
-      .select('*', { count: 'exact', head: true })
-      .eq('assessment_id', session.assessment_id);
-
-    if (countError) {
-      console.error("❌ Error counting questions:", countError);
-    }
-
-    // Get answered questions count
-    const { count: answeredQuestions, error: answeredError } = await supabase
-      .from('responses')
-      .select('*', { count: 'exact', head: true })
-      .eq('session_id', sessionId);
-
-    if (answeredError) {
-      console.error("❌ Error counting responses:", answeredError);
-    }
-
-    console.log(`📊 Progress: ${answeredQuestions}/${totalQuestions} questions answered`);
-
-    if (answeredQuestions < totalQuestions) {
-      console.warn("⚠️ Not all questions answered yet");
-      // Continue anyway - allow submission even if not all answered
+    if (!sessionError && session) {
+      await syncUnsavedAnswers(sessionId, session.user_id, session.assessment_id);
     }
 
     // Call the database function to generate results
-    console.log("🔧 Calling generate_assessment_results RPC with sessionId:", sessionId);
+    console.log("🔧 Calling generate_assessment_results RPC");
     
-    const { data, error, status, statusText } = await supabase
+    const { data, error } = await supabase
       .rpc('generate_assessment_results', {
         p_session_id: sessionId
       });
 
-    console.log("📦 RPC Response:", { 
-      data, 
-      error, 
-      status, 
-      statusText,
-      hasData: !!data,
-      hasError: !!error 
-    });
-
     if (error) {
-      console.error("❌ RPC Error details:", {
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        hint: error.hint
-      });
+      console.error("❌ RPC Error:", error);
       throw error;
     }
     
@@ -398,6 +571,12 @@ export async function submitAssessment(sessionId) {
     }
     
     console.log("✅ Assessment submitted successfully. Result ID:", data);
+    
+    // Clear localStorage after successful submission
+    const { assessment_id } = session;
+    localStorage.removeItem(`assessment_${assessment_id}_answers`);
+    localStorage.removeItem(`assessment_${assessment_id}_last_saved`);
+    
     return data;
     
   } catch (error) {
@@ -567,16 +746,11 @@ export async function getProgress(userId, assessmentId) {
   }
 }
 
-// ===== COMPLETION CHECKING FUNCTIONS =====
-
-/**
- * Check if assessment already completed using the new structure
- */
+// Completion Checking
 export async function isAssessmentCompleted(userId, assessmentId) {
   try {
     console.log(`🔍 Checking completion for user ${userId}, assessment ${assessmentId}`);
     
-    // First check in candidate_assessments (new structure)
     const { data: candidateData, error: candidateError } = await supabase
       .from('candidate_assessments')
       .select('id, status, completed_at')
@@ -586,11 +760,10 @@ export async function isAssessmentCompleted(userId, assessmentId) {
       .maybeSingle();
 
     if (!candidateError && candidateData) {
-      console.log(`✅ Found completed in candidate_assessments:`, candidateData);
+      console.log(`✅ Found completed in candidate_assessments`);
       return true;
     }
 
-    // If not found, check in assessment_sessions
     const { data: sessionData, error: sessionError } = await supabase
       .from('assessment_sessions')
       .select('id, status, completed_at')
@@ -600,36 +773,7 @@ export async function isAssessmentCompleted(userId, assessmentId) {
       .maybeSingle();
 
     if (!sessionError && sessionData) {
-      console.log(`✅ Found completed in assessment_sessions:`, sessionData);
-      
-      // Also update candidate_assessments for future queries
-      try {
-        await supabase
-          .from('candidate_assessments')
-          .upsert({
-            user_id: userId,
-            assessment_id: assessmentId,
-            status: 'completed',
-            completed_at: sessionData.completed_at
-          }, { onConflict: 'user_id,assessment_id' });
-      } catch (upsertError) {
-        console.log("Could not update candidate_assessments:", upsertError);
-      }
-      
-      return true;
-    }
-
-    // Check assessment_results as last resort
-    const { data: resultData, error: resultError } = await supabase
-      .from('assessment_results')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('assessment_id', assessmentId)
-      .eq('status', 'completed')
-      .maybeSingle();
-
-    if (!resultError && resultData) {
-      console.log(`✅ Found completed in assessment_results`);
+      console.log(`✅ Found completed in assessment_sessions`);
       return true;
     }
 
@@ -642,14 +786,10 @@ export async function isAssessmentCompleted(userId, assessmentId) {
   }
 }
 
-/**
- * Get all completed assessments for a user
- */
 export async function getUserCompletedAssessments(userId) {
   try {
     console.log(`🔍 Fetching completed assessments for user ${userId}`);
     
-    // Get from candidate_assessments (primary source)
     const { data: candidateData, error: candidateError } = await supabase
       .from('candidate_assessments')
       .select(`
@@ -670,43 +810,6 @@ export async function getUserCompletedAssessments(userId) {
       return candidateData;
     }
 
-    // If none found, try assessment_sessions
-    const { data: sessionData, error: sessionError } = await supabase
-      .from('assessment_sessions')
-      .select(`
-        assessment_id,
-        status,
-        completed_at,
-        assessment:assessments(
-          title,
-          assessment_type:assessment_types(*)
-        )
-      `)
-      .eq('user_id', userId)
-      .eq('status', 'completed');
-
-    if (!sessionError && sessionData && sessionData.length > 0) {
-      console.log(`✅ Found ${sessionData.length} completed in assessment_sessions`);
-      
-      // Migrate to candidate_assessments
-      for (const session of sessionData) {
-        try {
-          await supabase
-            .from('candidate_assessments')
-            .upsert({
-              user_id: userId,
-              assessment_id: session.assessment_id,
-              status: 'completed',
-              completed_at: session.completed_at
-            }, { onConflict: 'user_id,assessment_id' });
-        } catch (e) {
-          console.log("Migration error:", e);
-        }
-      }
-      
-      return sessionData;
-    }
-
     console.log(`❌ No completed assessments found`);
     return [];
     
@@ -716,9 +819,6 @@ export async function getUserCompletedAssessments(userId) {
   }
 }
 
-/**
- * Get in-progress assessment for a user
- */
 export async function getUserInProgressAssessment(userId, assessmentId) {
   try {
     const { data, error } = await supabase
@@ -735,10 +835,7 @@ export async function getUserInProgressAssessment(userId, assessmentId) {
       .eq('status', 'in_progress')
       .maybeSingle();
 
-    if (error) {
-      console.error("Error fetching in-progress assessment:", error);
-      throw error;
-    }
+    if (error) throw error;
     return data;
     
   } catch (error) {
@@ -747,9 +844,6 @@ export async function getUserInProgressAssessment(userId, assessmentId) {
   }
 }
 
-/**
- * Get assessment statistics for a user
- */
 export async function getUserAssessmentStats(userId) {
   try {
     const completed = await getUserCompletedAssessments(userId);
@@ -792,26 +886,20 @@ export async function getUserAssessmentStats(userId) {
   }
 }
 
-/**
- * Reset assessment completion status (for admin use)
- */
 export async function resetAssessmentCompletion(userId, assessmentId) {
   try {
-    // Delete from candidate_assessments
     await supabase
       .from('candidate_assessments')
       .delete()
       .eq('user_id', userId)
       .eq('assessment_id', assessmentId);
 
-    // Update session status
     await supabase
       .from('assessment_sessions')
       .update({ status: 'reset' })
       .eq('user_id', userId)
       .eq('assessment_id', assessmentId);
 
-    // Delete responses
     await supabase
       .from('responses')
       .delete()
