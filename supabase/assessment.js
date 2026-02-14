@@ -2,69 +2,114 @@ import { supabase } from './client';
 
 // Assessment Types
 export async function getAssessmentTypes() {
-  const { data, error } = await supabase
-    .from('assessment_types')
-    .select('*')
-    .eq('is_active', true)
-    .order('display_order');
-  
-  if (error) throw error;
-  return data;
+  try {
+    const { data, error } = await supabase
+      .from('assessment_types')
+      .select('*')
+      .eq('is_active', true)
+      .order('display_order');
+    
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error("Error in getAssessmentTypes:", error);
+    return [];
+  }
 }
 
 export async function getAssessmentTypeByCode(code) {
-  const { data, error } = await supabase
-    .from('assessment_types')
-    .select('*')
-    .eq('code', code)
-    .single();
-  
-  if (error) throw error;
-  return data;
+  try {
+    const { data, error } = await supabase
+      .from('assessment_types')
+      .select('*')
+      .eq('code', code)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error("Error in getAssessmentTypeByCode:", error);
+    throw error;
+  }
 }
 
 // Assessments
 export async function getAssessments() {
-  const { data, error } = await supabase
-    .from('assessments')
-    .select(`
-      *,
-      assessment_type:assessment_types(*)
-    `)
-    .eq('is_active', true);
-  
-  if (error) throw error;
-  return data;
+  try {
+    const { data, error } = await supabase
+      .from('assessments')
+      .select(`
+        *,
+        assessment_type:assessment_types(*)
+      `)
+      .eq('is_active', true);
+    
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error("Error in getAssessments:", error);
+    return [];
+  }
 }
 
 export async function getAssessmentById(id) {
-  const { data, error } = await supabase
-    .from('assessments')
-    .select(`
-      *,
-      assessment_type:assessment_types(*)
-    `)
-    .eq('id', id)
-    .single();
-  
-  if (error) throw error;
-  return data;
+  try {
+    const { data, error } = await supabase
+      .from('assessments')
+      .select(`
+        *,
+        assessment_type:assessment_types(*)
+      `)
+      .eq('id', id)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error("Error in getAssessmentById:", error);
+    throw error;
+  }
 }
 
-// Questions and Answers
+// Questions and Answers - FIXED with defensive checks
 export async function getAssessmentQuestions(assessmentId) {
-  const { data, error } = await supabase
-    .from('questions')
-    .select(`
-      *,
-      answers (*)
-    `)
-    .eq('assessment_id', assessmentId)
-    .eq('is_active', true)
-    .order('question_order');
-  
-  if (error) throw error;
-  return data;
+  try {
+    console.log("Fetching questions for assessment:", assessmentId);
+    
+    const { data, error } = await supabase
+      .from('questions')
+      .select(`
+        *,
+        answers (*)
+      `)
+      .eq('assessment_id', assessmentId)
+      .eq('is_active', true)
+      .order('question_order');
+
+    if (error) {
+      console.error("Error fetching questions:", error);
+      throw error;
+    }
+
+    // Ensure data is an array
+    if (!data || !Array.isArray(data)) {
+      console.log("No questions found or invalid data format");
+      return [];
+    }
+
+    // Ensure each question has an answers array
+    const processedData = data.map(q => ({
+      ...q,
+      answers: q.answers && Array.isArray(q.answers) ? q.answers : []
+    }));
+
+    console.log(`Found ${processedData.length} questions`);
+    return processedData;
+    
+  } catch (error) {
+    console.error("Error in getAssessmentQuestions:", error);
+    return []; // Return empty array instead of throwing
+  }
 }
 
 // Assessment Sessions
@@ -243,8 +288,20 @@ export async function saveResponse(sessionId, userId, assessmentId, questionId, 
   }
 }
 
+// ===== FIXED getSessionResponses with proper array checks =====
 export async function getSessionResponses(sessionId) {
   try {
+    console.log("Fetching responses for session:", sessionId);
+    
+    if (!sessionId) {
+      console.log("No sessionId provided");
+      return {
+        answerMap: {},
+        detailedResponses: [],
+        count: 0
+      };
+    }
+
     const { data, error } = await supabase
       .from("responses")
       .select(`
@@ -263,23 +320,44 @@ export async function getSessionResponses(sessionId) {
       .eq("session_id", sessionId)
       .order('created_at', { ascending: true });
 
-    if (error) throw error;
-    
+    if (error) {
+      console.error("Error fetching responses:", error);
+      return {
+        answerMap: {},
+        detailedResponses: [],
+        count: 0
+      };
+    }
+
+    // Ensure data is an array
+    if (!data || !Array.isArray(data)) {
+      console.log("No responses found or invalid data format");
+      return {
+        answerMap: {},
+        detailedResponses: [],
+        count: 0
+      };
+    }
+
     const answerMap = {};
     const detailedResponses = [];
     
-    data.forEach(r => {
-      answerMap[r.question_id] = r.answer_id;
-      detailedResponses.push({
-        question_id: r.question_id,
-        answer_id: r.answer_id,
-        question_text: r.question?.question_text,
-        section: r.question?.section,
-        subsection: r.question?.subsection,
-        answer_text: r.answer?.answer_text,
-        score: r.answer?.score
-      });
-    });
+    // Safe iteration with checks
+    for (let i = 0; i < data.length; i++) {
+      const r = data[i];
+      if (r && r.question_id) {
+        answerMap[r.question_id] = r.answer_id;
+        detailedResponses.push({
+          question_id: r.question_id,
+          answer_id: r.answer_id,
+          question_text: r.question?.question_text || '',
+          section: r.question?.section || '',
+          subsection: r.question?.subsection || '',
+          answer_text: r.answer?.answer_text || '',
+          score: r.answer?.score || 0
+        });
+      }
+    }
     
     return {
       answerMap,
@@ -287,7 +365,7 @@ export async function getSessionResponses(sessionId) {
       count: data.length
     };
   } catch (error) {
-    console.error("Error loading responses:", error);
+    console.error("Error in getSessionResponses:", error);
     return {
       answerMap: {},
       detailedResponses: [],
@@ -348,61 +426,76 @@ export async function submitAssessment(sessionId) {
 
 // Get Assessment Results
 export async function getAssessmentResult(resultId) {
-  const { data, error } = await supabase
-    .from('assessment_results')
-    .select(`
-      *,
-      assessment:assessments(
+  try {
+    const { data, error } = await supabase
+      .from('assessment_results')
+      .select(`
         *,
-        assessment_type:assessment_types(*)
-      )
-    `)
-    .eq('id', resultId)
-    .single();
+        assessment:assessments(
+          *,
+          assessment_type:assessment_types(*)
+        )
+      `)
+      .eq('id', resultId)
+      .single();
 
-  if (error) throw error;
-  return data;
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error("Error in getAssessmentResult:", error);
+    throw error;
+  }
 }
 
 export async function getUserAssessmentResults(userId) {
-  const { data, error } = await supabase
-    .from('assessment_results')
-    .select(`
-      *,
-      assessment:assessments(
+  try {
+    const { data, error } = await supabase
+      .from('assessment_results')
+      .select(`
         *,
-        assessment_type:assessment_types(*)
-      )
-    `)
-    .eq('user_id', userId)
-    .order('completed_at', { ascending: false });
+        assessment:assessments(
+          *,
+          assessment_type:assessment_types(*)
+        )
+      `)
+      .eq('user_id', userId)
+      .order('completed_at', { ascending: false });
 
-  if (error) throw error;
-  return data;
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error("Error in getUserAssessmentResults:", error);
+    return [];
+  }
 }
 
 // Candidate Profile
 export async function getOrCreateCandidateProfile(userId, email, fullName) {
-  const { data: existing } = await supabase
-    .from('candidate_profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle();
+  try {
+    const { data: existing } = await supabase
+      .from('candidate_profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
 
-  if (existing) return existing;
+    if (existing) return existing;
 
-  const { data, error } = await supabase
-    .from('candidate_profiles')
-    .insert({
-      id: userId,
-      email,
-      full_name: fullName
-    })
-    .select()
-    .single();
+    const { data, error } = await supabase
+      .from('candidate_profiles')
+      .insert({
+        id: userId,
+        email,
+        full_name: fullName
+      })
+      .select()
+      .single();
 
-  if (error) throw error;
-  return data;
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error("Error in getOrCreateCandidateProfile:", error);
+    throw error;
+  }
 }
 
 // Progress Tracking
