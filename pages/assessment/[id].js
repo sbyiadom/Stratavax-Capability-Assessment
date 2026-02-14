@@ -168,9 +168,12 @@ export default function AssessmentPage() {
     return () => clearInterval(timer);
   }, [loading, alreadySubmitted, session, timeLimit, assessmentId, user?.id, currentIndex, questions]);
 
-  // ===== OPTIMIZED HANDLE ANSWER SELECTION =====
+  // ===== FIXED HANDLE ANSWER SELECTION =====
   const handleAnswerSelect = async (questionId, answerId) => {
-    if (alreadySubmitted || !session || !questionId || !answerId) return;
+    if (alreadySubmitted || !session || !questionId || !answerId) {
+      console.log("Cannot save:", { alreadySubmitted, hasSession: !!session, questionId, answerId });
+      return;
+    }
 
     // Update UI immediately
     setAnswers(prev => ({ ...prev, [questionId]: answerId }));
@@ -181,21 +184,45 @@ export default function AssessmentPage() {
     // Save to Supabase
     try {
       const startTime = performance.now();
-      await saveResponse(session.id, user.id, assessmentId, questionId, answerId);
+      
+      const result = await saveResponse(
+        session.id, 
+        user.id, 
+        assessmentId, 
+        questionId, 
+        answerId
+      );
+      
       const endTime = performance.now();
       
-      console.log(`✅ Answer saved in ${(endTime - startTime).toFixed(2)}ms`);
+      if (result.success) {
+        console.log(`✅ Saved in ${(endTime - startTime).toFixed(2)}ms`);
+        setSaveStatus(prev => ({ ...prev, [questionId]: 'saved' }));
+        
+        // Clear status after short delay
+        setTimeout(() => {
+          setSaveStatus(prev => {
+            const newStatus = { ...prev };
+            delete newStatus[questionId];
+            return newStatus;
+          });
+        }, 300);
+      } else {
+        console.error("❌ Save failed:", result);
+        setSaveStatus(prev => ({ ...prev, [questionId]: 'error' }));
+        
+        // Show error longer
+        setTimeout(() => {
+          setSaveStatus(prev => {
+            const newStatus = { ...prev };
+            delete newStatus[questionId];
+            return newStatus;
+          });
+        }, 2000);
+      }
       
-      setSaveStatus(prev => ({ ...prev, [questionId]: 'saved' }));
-      setTimeout(() => {
-        setSaveStatus(prev => {
-          const newStatus = { ...prev };
-          delete newStatus[questionId];
-          return newStatus;
-        });
-      }, 300);
     } catch (error) {
-      console.error("Save error:", error);
+      console.error("❌ Save error:", error);
       setSaveStatus(prev => ({ ...prev, [questionId]: 'error' }));
       
       setTimeout(() => {
@@ -477,7 +504,7 @@ export default function AssessmentPage() {
                 </div>
               )}
 
-              {/* Answers - WITH DEFENSIVE CHECKS */}
+              {/* Answers */}
               <div style={styles.answersContainer}>
                 {currentQuestion?.answers && Array.isArray(currentQuestion.answers) && currentQuestion.answers.length > 0 ? (
                   currentQuestion.answers.map((answer, index) => {
@@ -661,7 +688,7 @@ export default function AssessmentPage() {
   );
 }
 
-// Styles (keep all your existing styles here)
+// Styles
 const styles = {
   loadingContainer: {
     minHeight: '100vh',
