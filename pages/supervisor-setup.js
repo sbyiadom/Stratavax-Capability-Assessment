@@ -1,503 +1,226 @@
-// pages/supervisor-setup.js - UPDATED WORKING VERSION
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../supabase/client";
 
 export default function SupervisorSetup() {
   const router = useRouter();
-  const [adminKey, setAdminKey] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState("");
   const [formData, setFormData] = useState({
-    name: "",
+    full_name: "",
     email: "",
     password: "",
-    confirmPassword: "",
-    role: "supervisor",
-    permissions: ["view_reports", "manage_candidates"]
+    confirm_password: ""
   });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  // Check if user is already logged in as supervisor
+  // Check if any supervisors exist
   useEffect(() => {
-    const checkAuth = () => {
-      if (typeof window !== 'undefined') {
-        const supervisorSession = localStorage.getItem("supervisorSession");
-        if (supervisorSession) {
-          try {
-            const session = JSON.parse(supervisorSession);
-            if (session.loggedIn && session.expires > Date.now()) {
-              setIsAuthenticated(true);
-            } else {
-              // Session expired
-              localStorage.removeItem("supervisorSession");
-              router.push("/supervisor-login");
-            }
-          } catch {
-            localStorage.removeItem("supervisorSession");
-            router.push("/supervisor-login");
-          }
-        } else {
-          router.push("/supervisor-login");
-        }
+    const checkSupervisors = async () => {
+      const { count, error } = await supabase
+        .from("supervisors")
+        .select("*", { count: 'exact', head: true });
+
+      if (!error && count > 0) {
+        // Supervisors exist, redirect to login
+        router.push("/supervisor-login");
       }
     };
 
-    checkAuth();
+    checkSupervisors();
   }, [router]);
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value
+    });
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError("");
-    setSuccess("");
 
     // Validation
-    if (!adminKey) {
-      setError("Please enter the admin key");
-      setLoading(false);
-      return;
-    }
-
-    // You can set your own admin key here
-    const expectedAdminKey = "Elizabeth@#!sam880155Gladys@2000GH";
-    if (adminKey !== expectedAdminKey) {
-      setError("Invalid admin key");
-      setLoading(false);
-      return;
-    }
-
-    if (formData.password !== formData.confirmPassword) {
+    if (formData.password !== formData.confirm_password) {
       setError("Passwords do not match");
       setLoading(false);
       return;
     }
 
-    if (formData.password.length < 6) {
-      setError("Password must be at least 6 characters long");
+    if (formData.password.length < 8) {
+      setError("Password must be at least 8 characters");
       setLoading(false);
       return;
     }
 
     try {
-      // Check if supervisor already exists
-      const { data: existingSupervisor, error: checkError } = await supabase
+      // Check if email already exists
+      const { data: existing } = await supabase
         .from("supervisors")
         .select("id")
         .eq("email", formData.email.toLowerCase().trim())
-        .single();
+        .maybeSingle();
 
-      if (!checkError && existingSupervisor) {
-        setError("A supervisor with this email already exists");
-        setLoading(false);
-        return;
+      if (existing) {
+        throw new Error("Email already registered");
       }
 
-      // Create password hash using btoa (same as login)
-      const passwordHash = btoa(formData.password);
-
-      // Insert new supervisor
-      const { data, error: insertError } = await supabase
+      // Create supervisor
+      const { data, error } = await supabase
         .from("supervisors")
         .insert({
+          full_name: formData.full_name,
           email: formData.email.toLowerCase().trim(),
-          password_hash: passwordHash,
-          name: formData.name,
-          role: formData.role,
-          permissions: formData.permissions,
+          role: 'admin',
           is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          created_at: new Date().toISOString()
         })
         .select()
         .single();
 
-      if (insertError) {
-        console.error("Insert error:", insertError);
-        setError("Failed to create supervisor account: " + insertError.message);
-        setLoading(false);
-        return;
-      }
+      if (error) throw error;
 
-      setSuccess(`✅ Supervisor account created successfully!`);
+      setSuccess(true);
       
-      // Show credentials clearly
+      // Redirect to login after 3 seconds
       setTimeout(() => {
-        alert(`Supervisor Account Created!\n\nEmail: ${formData.email}\nPassword: ${formData.password}\n\nIMPORTANT: Save these credentials.`);
-      }, 100);
-
-      // Clear form
-      setFormData({
-        name: "",
-        email: "",
-        password: "",
-        confirmPassword: "",
-        role: "supervisor",
-        permissions: ["view_reports", "manage_candidates"]
-      });
-      setAdminKey("");
+        router.push("/supervisor-login");
+      }, 3000);
 
     } catch (err) {
-      console.error("Setup error:", err);
-      setError("An error occurred: " + err.message);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  if (!isAuthenticated) {
-    return (
-      <div style={{ 
-        minHeight: "100vh", 
-        display: "flex", 
-        alignItems: "center", 
-        justifyContent: "center" 
-      }}>
-        <p style={{ textAlign: "center" }}>Checking authentication...</p>
-      </div>
-    );
-  }
-
   return (
-    <div style={{ 
-      minHeight: "100vh", 
-      display: "flex", 
-      alignItems: "center", 
-      justifyContent: "center",
-      background: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
-      padding: "20px" 
-    }}>
-      <div style={{
-        width: "100%",
-        maxWidth: "500px",
-        background: "white",
-        borderRadius: "12px",
-        boxShadow: "0 20px 60px rgba(0,0,0,0.15)",
-        padding: "40px",
-        border: "1px solid #e0e0e0"
-      }}>
-        <div style={{ textAlign: "center", marginBottom: "30px" }}>
-          <h1 style={{ 
-            margin: "0 0 10px 0", 
-            color: "#1565c0",
-            fontSize: "28px",
-            fontWeight: "700"
-          }}>
-            Add New Supervisor
-          </h1>
-          <p style={{ 
-            color: "#666", 
-            margin: 0,
-            fontSize: "14px"
-          }}>
-            Create a new supervisor account for the Talent Assessment System
-          </p>
+    <div style={styles.container}>
+      <div style={styles.card}>
+        {/* Header */}
+        <div style={styles.header}>
+          <h1 style={styles.title}>Supervisor Setup</h1>
+          <p style={styles.subtitle}>Create the first supervisor account</p>
         </div>
-        
-        {error && (
-          <div style={{
-            padding: "15px",
-            background: "#ffebee",
-            color: "#c62828",
-            borderRadius: "8px",
-            marginBottom: "20px",
-            borderLeft: "4px solid #f44336",
-            fontSize: "14px"
-          }}>
-            {error}
-          </div>
-        )}
 
+        {/* Success Message */}
         {success && (
-          <div style={{
-            padding: "15px",
-            background: "#e8f5e9",
-            color: "#2e7d32",
-            borderRadius: "8px",
-            marginBottom: "20px",
-            borderLeft: "4px solid #4caf50",
-            fontSize: "14px"
-          }}>
-            {success}
-            <p style={{ margin: "10px 0 0 0", fontSize: "13px", fontWeight: "600" }}>
-              Account created successfully! The new supervisor can now login.
-            </p>
+          <div style={styles.success}>
+            <span style={styles.successIcon}>✅</span>
+            <div>
+              <strong>Setup Complete!</strong>
+              <p style={styles.successText}>
+                Supervisor account created successfully. Redirecting to login...
+              </p>
+            </div>
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
-          {/* Admin Key Section */}
-          <div style={{ marginBottom: "25px" }}>
-            <label style={{ 
-              display: "block", 
-              marginBottom: "10px", 
-              fontWeight: "600", 
-              color: "#333",
-              fontSize: "14px"
-            }}>
-              Admin Security Key
-            </label>
-            <input
-              type="password"
-              value={adminKey}
-              onChange={(e) => setAdminKey(e.target.value)}
-              placeholder="Enter admin security key"
-              style={{
-                width: "100%",
-                padding: "14px",
-                border: "1px solid #ddd",
-                borderRadius: "8px",
-                fontSize: "16px",
-                boxSizing: "border-box",
-                background: "#f8f9fa"
-              }}
-              required
-            />
-            <div style={{ 
-              marginTop: "8px", 
-              fontSize: "12px", 
-              color: "#666",
-              padding: "8px",
-              background: "#f0f7ff",
-              borderRadius: "4px",
-              border: "1px dashed #1565c0"
-            }}>
-              🔒 For security: Use the admin key to verify you're authorized to create supervisor accounts.
+        {/* Error Message */}
+        {error && !success && (
+          <div style={styles.error}>
+            <span style={styles.errorIcon}>⚠️</span>
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* Setup Form */}
+        {!success && (
+          <form onSubmit={handleSubmit} style={styles.form}>
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Full Name</label>
+              <input
+                type="text"
+                name="full_name"
+                value={formData.full_name}
+                onChange={handleChange}
+                placeholder="John Doe"
+                required
+                style={styles.input}
+              />
             </div>
-          </div>
 
-          {/* Divider */}
-          <div style={{ 
-            height: "1px", 
-            background: "#e0e0e0", 
-            margin: "25px 0",
-            position: "relative"
-          }}>
-            <div style={{
-              position: "absolute",
-              left: "50%",
-              top: "50%",
-              transform: "translate(-50%, -50%)",
-              background: "white",
-              padding: "0 15px",
-              color: "#999",
-              fontSize: "12px"
-            }}>
-              Supervisor Details
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Email Address</label>
+              <input
+                type="email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+                placeholder="supervisor@company.com"
+                required
+                style={styles.input}
+              />
             </div>
-          </div>
 
-          {/* Supervisor Details */}
-          <div style={{ marginBottom: "20px" }}>
-            <label style={{ 
-              display: "block", 
-              marginBottom: "10px", 
-              fontWeight: "600", 
-              color: "#333",
-              fontSize: "14px"
-            }}>
-              Full Name
-            </label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({...formData, name: e.target.value})}
-              placeholder="John Doe"
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Password</label>
+              <input
+                type="password"
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                placeholder="Minimum 8 characters"
+                required
+                style={styles.input}
+              />
+              <p style={styles.hint}>Must be at least 8 characters long</p>
+            </div>
+
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Confirm Password</label>
+              <input
+                type="password"
+                name="confirm_password"
+                value={formData.confirm_password}
+                onChange={handleChange}
+                placeholder="Re-enter password"
+                required
+                style={styles.input}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
               style={{
-                width: "100%",
-                padding: "14px",
-                border: "1px solid #ddd",
-                borderRadius: "8px",
-                fontSize: "16px",
-                boxSizing: "border-box"
+                ...styles.setupButton,
+                opacity: loading ? 0.7 : 1,
+                cursor: loading ? 'not-allowed' : 'pointer'
               }}
-              required
-            />
-          </div>
+            >
+              {loading ? (
+                <span style={styles.loadingContainer}>
+                  <span style={styles.loadingSpinner} />
+                  Creating Account...
+                </span>
+              ) : (
+                "Create Supervisor Account"
+              )}
+            </button>
+          </form>
+        )}
 
-          <div style={{ marginBottom: "20px" }}>
-            <label style={{ 
-              display: "block", 
-              marginBottom: "10px", 
-              fontWeight: "600", 
-              color: "#333",
-              fontSize: "14px"
-            }}>
-              Email Address
-            </label>
-            <input
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({...formData, email: e.target.value})}
-              placeholder="supervisor@company.com"
-              style={{
-                width: "100%",
-                padding: "14px",
-                border: "1px solid #ddd",
-                borderRadius: "8px",
-                fontSize: "16px",
-                boxSizing: "border-box"
-              }}
-              required
-            />
-          </div>
-
-          <div style={{ marginBottom: "20px" }}>
-            <label style={{ 
-              display: "block", 
-              marginBottom: "10px", 
-              fontWeight: "600", 
-              color: "#333",
-              fontSize: "14px"
-            }}>
-              Password
-            </label>
-            <input
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({...formData, password: e.target.value})}
-              placeholder="Minimum 6 characters"
-              style={{
-                width: "100%",
-                padding: "14px",
-                border: "1px solid #ddd",
-                borderRadius: "8px",
-                fontSize: "16px",
-                boxSizing: "border-box"
-              }}
-              required
-            />
-          </div>
-
-          <div style={{ marginBottom: "30px" }}>
-            <label style={{ 
-              display: "block", 
-              marginBottom: "10px", 
-              fontWeight: "600", 
-              color: "#333",
-              fontSize: "14px"
-            }}>
-              Confirm Password
-            </label>
-            <input
-              type="password"
-              value={formData.confirmPassword}
-              onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
-              placeholder="Re-enter password"
-              style={{
-                width: "100%",
-                padding: "14px",
-                border: "1px solid #ddd",
-                borderRadius: "8px",
-                fontSize: "16px",
-                boxSizing: "border-box"
-              }}
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: "100%",
-              padding: "16px",
-              background: loading ? "#999" : "#1565c0",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              fontSize: "16px",
-              fontWeight: "600",
-              cursor: loading ? "not-allowed" : "pointer",
-              transition: "background 0.2s",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "10px"
-            }}
-            onMouseOver={(e) => !loading && (e.target.style.background = "#0d47a1")}
-            onMouseOut={(e) => !loading && (e.target.style.background = "#1565c0")}
-          >
-            {loading ? (
-              <>
-                <div style={{
-                  width: "20px",
-                  height: "20px",
-                  border: "2px solid white",
-                  borderTop: "2px solid transparent",
-                  borderRadius: "50%",
-                  animation: "spin 1s linear infinite"
-                }} />
-                Creating Account...
-              </>
-            ) : "Create Supervisor Account"}
-          </button>
-        </form>
-
-        {/* Important Notes */}
-        <div style={{ 
-          marginTop: "30px", 
-          padding: "20px", 
-          background: "#f8f9fa", 
-          borderRadius: "8px",
-          border: "1px solid #e0e0e0"
-        }}>
-          <h4 style={{ margin: "0 0 10px 0", color: "#333", fontSize: "14px" }}>
-            ⚠️ Important Information
-          </h4>
-          <ul style={{ 
-            margin: 0, 
-            paddingLeft: "20px", 
-            fontSize: "13px", 
-            color: "#666",
-            lineHeight: 1.6
-          }}>
-            <li>Supervisors can access all candidate reports and analytics</li>
-            <li>Passwords are hashed using btoa (base64 encoding)</li>
-            <li>New supervisors can login immediately after creation</li>
-            <li>Keep the admin key secure and do not share it</li>
-            <li>Default permissions: view_reports, manage_candidates</li>
+        {/* Info Box */}
+        <div style={styles.info}>
+          <p style={styles.infoTitle}>📋 Important Information</p>
+          <ul style={styles.infoList}>
+            <li>This will create the first supervisor account</li>
+            <li>Only one supervisor account can be created through this page</li>
+            <li>Additional supervisors can be added later from the admin panel</li>
+            <li>Keep your credentials secure</li>
           </ul>
         </div>
 
-        {/* Navigation */}
-        <div style={{ 
-          marginTop: "25px", 
-          paddingTop: "20px", 
-          borderTop: "1px solid #eee", 
-          textAlign: "center" 
-        }}>
-          <button
-            onClick={() => router.push("/supervisor")}
-            style={{
-              padding: "10px 20px",
-              background: "none",
-              color: "#1565c0",
-              border: "1px solid #1565c0",
-              borderRadius: "6px",
-              cursor: "pointer",
-              fontSize: "14px",
-              fontWeight: "600",
-              marginRight: "10px"
-            }}
-          >
-            ← Back to Dashboard
-          </button>
+        {/* Footer */}
+        <div style={styles.footer}>
           <button
             onClick={() => router.push("/supervisor-login")}
-            style={{
-              padding: "10px 20px",
-              background: "#4CAF50",
-              color: "white",
-              border: "none",
-              borderRadius: "6px",
-              cursor: "pointer",
-              fontSize: "14px",
-              fontWeight: "600"
-            }}
+            style={styles.backButton}
           >
-            Go to Login Page
+            ← Back to Login
           </button>
         </div>
       </div>
@@ -511,3 +234,156 @@ export default function SupervisorSetup() {
     </div>
   );
 }
+
+const styles = {
+  container: {
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    padding: '20px'
+  },
+  card: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '40px',
+    width: '100%',
+    maxWidth: '450px',
+    boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+  },
+  header: {
+    textAlign: 'center',
+    marginBottom: '30px'
+  },
+  title: {
+    margin: '0 0 10px 0',
+    color: '#333',
+    fontSize: '28px',
+    fontWeight: 700
+  },
+  subtitle: {
+    margin: 0,
+    color: '#666',
+    fontSize: '14px'
+  },
+  success: {
+    display: 'flex',
+    gap: '12px',
+    background: '#e8f5e9',
+    padding: '15px',
+    borderRadius: '6px',
+    marginBottom: '20px'
+  },
+  successIcon: {
+    fontSize: '20px'
+  },
+  successText: {
+    margin: '5px 0 0 0',
+    fontSize: '13px',
+    color: '#2e7d32'
+  },
+  error: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    background: '#ffebee',
+    color: '#c62828',
+    padding: '12px',
+    borderRadius: '6px',
+    marginBottom: '20px',
+    fontSize: '14px'
+  },
+  errorIcon: {
+    fontSize: '16px'
+  },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '20px'
+  },
+  inputGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '5px'
+  },
+  label: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#333'
+  },
+  input: {
+    padding: '12px',
+    borderRadius: '6px',
+    border: '1px solid #e0e0e0',
+    fontSize: '14px',
+    transition: 'all 0.2s ease',
+    outline: 'none',
+    ':focus': {
+      borderColor: '#667eea',
+      boxShadow: '0 0 0 3px rgba(102,126,234,0.1)'
+    }
+  },
+  hint: {
+    margin: '4px 0 0 0',
+    fontSize: '11px',
+    color: '#666'
+  },
+  setupButton: {
+    background: 'linear-gradient(135deg, #667eea, #764ba2)',
+    color: 'white',
+    border: 'none',
+    padding: '14px',
+    borderRadius: '6px',
+    fontSize: '15px',
+    fontWeight: 600,
+    transition: 'all 0.2s ease',
+    marginTop: '10px'
+  },
+  loadingContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '10px'
+  },
+  loadingSpinner: {
+    width: '18px',
+    height: '18px',
+    border: '2px solid rgba(255,255,255,0.3)',
+    borderTop: '2px solid white',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite'
+  },
+  info: {
+    marginTop: '30px',
+    padding: '15px',
+    background: '#f8f9fa',
+    borderRadius: '6px'
+  },
+  infoTitle: {
+    margin: '0 0 10px 0',
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#333'
+  },
+  infoList: {
+    margin: 0,
+    paddingLeft: '20px',
+    fontSize: '12px',
+    color: '#666',
+    lineHeight: '1.6'
+  },
+  footer: {
+    marginTop: '20px',
+    textAlign: 'center'
+  },
+  backButton: {
+    background: 'none',
+    border: 'none',
+    color: '#667eea',
+    cursor: 'pointer',
+    fontSize: '13px',
+    textDecoration: 'underline',
+    padding: 0
+  }
+};
