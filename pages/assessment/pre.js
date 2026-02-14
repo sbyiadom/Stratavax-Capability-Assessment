@@ -30,6 +30,7 @@ export default function PreAssessment() {
       }
       
       setUser(session.user);
+      console.log("👤 Current user:", session.user.email);
       
       // Get or create profile
       const profile = await getOrCreateCandidateProfile(
@@ -38,6 +39,7 @@ export default function PreAssessment() {
         session.user.user_metadata?.full_name || session.user.email
       );
       setProfile(profile);
+      console.log("📋 User profile:", profile);
     } catch (error) {
       console.error("Error checking session:", error);
       router.push("/login");
@@ -47,21 +49,84 @@ export default function PreAssessment() {
   const loadData = async () => {
     try {
       setLoading(true);
+      console.log("🔄 Loading assessments...");
       
       // Get all assessments
       const assessmentsData = await getAssessments();
+      
+      // DEBUG: Log what we got
+      console.log("🔍 Raw assessments data:", assessmentsData);
+      console.log("📊 Number of assessments:", assessmentsData?.length);
+      
+      if (!assessmentsData || assessmentsData.length === 0) {
+        console.log("❌ No assessments returned from getAssessments()");
+        
+        // Fallback: Try direct query to see what's in the database
+        console.log("🔄 Trying direct query as fallback...");
+        const { data: directData, error: directError } = await supabase
+          .from('assessments')
+          .select(`
+            *,
+            assessment_type:assessment_types(*)
+          `)
+          .eq('is_active', true);
+        
+        console.log("📦 Direct query result:", directData);
+        console.log("⚠️ Direct query error:", directError);
+        
+        if (directData && directData.length > 0) {
+          console.log("✅ Found assessments via direct query!");
+          setAssessments(directData);
+          
+          // Check which ones are completed
+          const completed = {};
+          for (const assessment of directData) {
+            const isCompleted = await isAssessmentCompleted(user.id, assessment.id);
+            completed[assessment.id] = isCompleted;
+            console.log(`📌 ${assessment.title} completed:`, isCompleted);
+          }
+          
+          setCompletedAssessments(completed);
+        } else {
+          console.log("❌ No assessments found in database");
+        }
+        
+        setLoading(false);
+        return;
+      }
+      
+      console.log("📝 First assessment:", assessmentsData[0]);
+      console.log("🎯 Assessment type:", assessmentsData[0].assessment_type);
+      console.log("✅ Is active:", assessmentsData[0].is_active);
       
       // Check which ones are completed
       const completed = {};
       for (const assessment of assessmentsData) {
         const isCompleted = await isAssessmentCompleted(user.id, assessment.id);
         completed[assessment.id] = isCompleted;
+        console.log(`📌 ${assessment.title}:`, {
+          id: assessment.id,
+          completed: isCompleted,
+          type: assessment.assessment_type?.code,
+          questions: assessment.assessment_type?.question_count
+        });
       }
       
       setAssessments(assessmentsData);
       setCompletedAssessments(completed);
+      
+      // DEBUG: Log final state
+      console.log("✅ Assessments set:", assessmentsData.length);
+      console.log("✅ Completed map:", completed);
+      console.log("✅ Final assessments state:", assessmentsData.map(a => ({
+        title: a.title,
+        is_active: a.is_active,
+        type_code: a.assessment_type?.code,
+        question_count: a.assessment_type?.question_count
+      })));
+      
     } catch (error) {
-      console.error("Error loading assessments:", error);
+      console.error("❌ Error loading assessments:", error);
     } finally {
       setLoading(false);
     }
@@ -72,6 +137,8 @@ export default function PreAssessment() {
       alert("You have already completed this assessment. Each assessment can only be taken once.");
       return;
     }
+    
+    console.log("🚀 Starting assessment:", assessment.title, assessment.id);
     
     // Store assessment info in session storage
     sessionStorage.setItem('currentAssessment', JSON.stringify({
@@ -84,6 +151,8 @@ export default function PreAssessment() {
   };
 
   const getAssessmentIcon = (type) => {
+    if (!type) return '📋';
+    
     const icons = {
       'general': '📊',
       'leadership': '👑',
@@ -99,13 +168,17 @@ export default function PreAssessment() {
   };
 
   const getGradient = (type) => {
+    if (!type) return 'linear-gradient(135deg, #667eea, #764ba2)';
     return `linear-gradient(135deg, ${type.gradient_start || '#667eea'}, ${type.gradient_end || '#764ba2'})`;
   };
 
   if (loading) {
     return (
       <div style={styles.loadingContainer}>
-        <div style={styles.loadingSpinner} />
+        <div style={styles.loadingContent}>
+          <div style={styles.loadingSpinner} />
+          <p style={styles.loadingText}>Loading assessments...</p>
+        </div>
       </div>
     );
   }
@@ -128,59 +201,79 @@ export default function PreAssessment() {
       </div>
 
       {/* Assessment Grid */}
-      <div style={styles.gridContainer}>
-        {assessments.map((assessment) => {
-          const isCompleted = completedAssessments[assessment.id];
-          const assessmentType = assessment.assessment_type;
-          
-          return (
-            <div key={assessment.id} style={{
-              ...styles.card,
-              opacity: isCompleted ? 0.7 : 1,
-              border: isCompleted ? '2px solid #4caf50' : '1px solid #e2e8f0'
-            }}>
-              <div style={{
-                ...styles.cardHeader,
-                background: getGradient(assessmentType)
+      {assessments.length === 0 ? (
+        <div style={styles.emptyState}>
+          <div style={styles.emptyIcon}>📭</div>
+          <h3 style={styles.emptyTitle}>No Assessments Available</h3>
+          <p style={styles.emptyText}>There are no active assessments at this time. Please check back later.</p>
+        </div>
+      ) : (
+        <div style={styles.gridContainer}>
+          {assessments.map((assessment) => {
+            const isCompleted = completedAssessments[assessment.id];
+            const assessmentType = assessment.assessment_type || {};
+            
+            return (
+              <div key={assessment.id} style={{
+                ...styles.card,
+                opacity: isCompleted ? 0.7 : 1,
+                border: isCompleted ? '2px solid #4caf50' : '1px solid #e2e8f0'
               }}>
-                <span style={styles.cardIcon}>{getAssessmentIcon(assessmentType)}</span>
-                <h3 style={styles.cardTitle}>{assessment.title}</h3>
-                {isCompleted && (
-                  <span style={styles.completedBadge}>✓ Completed</span>
-                )}
-              </div>
-              
-              <div style={styles.cardBody}>
-                <div style={styles.cardStats}>
-                  <div style={styles.stat}>
-                    <span>📝 {assessmentType.question_count} Questions</span>
-                  </div>
-                  <div style={styles.stat}>
-                    <span>⏱️ {assessmentType.time_limit_minutes} Minutes</span>
-                  </div>
-                  <div style={styles.stat}>
-                    <span>🎯 Max Score: {assessmentType.max_score}</span>
-                  </div>
+                <div style={{
+                  ...styles.cardHeader,
+                  background: getGradient(assessmentType)
+                }}>
+                  <span style={styles.cardIcon}>{getAssessmentIcon(assessmentType)}</span>
+                  <h3 style={styles.cardTitle}>{assessment.title}</h3>
+                  {isCompleted && (
+                    <span style={styles.completedBadge}>✓ Completed</span>
+                  )}
                 </div>
                 
-                <p style={styles.description}>{assessment.description}</p>
-                
-                <button
-                  onClick={() => handleStartAssessment(assessment)}
-                  disabled={isCompleted}
-                  style={{
-                    ...styles.startButton,
-                    background: isCompleted ? '#9e9e9e' : getGradient(assessmentType),
-                    cursor: isCompleted ? 'not-allowed' : 'pointer'
-                  }}
-                >
-                  {isCompleted ? 'Already Completed' : 'Start Assessment →'}
-                </button>
+                <div style={styles.cardBody}>
+                  <div style={styles.cardStats}>
+                    <div style={styles.stat}>
+                      <span>📝 {assessmentType.question_count || 100} Questions</span>
+                    </div>
+                    <div style={styles.stat}>
+                      <span>⏱️ {assessmentType.time_limit_minutes || 60} Minutes</span>
+                    </div>
+                    <div style={styles.stat}>
+                      <span>🎯 Max Score: {assessmentType.max_score || 100}</span>
+                    </div>
+                  </div>
+                  
+                  <p style={styles.description}>{assessment.description || assessment.title}</p>
+                  
+                  <button
+                    onClick={() => handleStartAssessment(assessment)}
+                    disabled={isCompleted}
+                    style={{
+                      ...styles.startButton,
+                      background: isCompleted ? '#9e9e9e' : getGradient(assessmentType),
+                      cursor: isCompleted ? 'not-allowed' : 'pointer'
+                    }}
+                    onMouseOver={(e) => {
+                      if (!isCompleted) {
+                        e.currentTarget.style.opacity = '0.9';
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      if (!isCompleted) {
+                        e.currentTarget.style.opacity = '1';
+                        e.currentTarget.style.transform = 'translateY(0)';
+                      }
+                    }}
+                  >
+                    {isCompleted ? 'Already Completed' : 'Start Assessment →'}
+                  </button>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Instructions */}
       <div style={styles.instructions}>
@@ -245,13 +338,21 @@ const styles = {
     justifyContent: 'center',
     background: '#f8fafc'
   },
+  loadingContent: {
+    textAlign: 'center'
+  },
   loadingSpinner: {
     width: '40px',
     height: '40px',
     border: '3px solid #e2e8f0',
     borderTop: '3px solid #667eea',
     borderRadius: '50%',
-    animation: 'spin 1s linear infinite'
+    animation: 'spin 1s linear infinite',
+    margin: '0 auto 20px'
+  },
+  loadingText: {
+    color: '#64748b',
+    fontSize: '16px'
   },
   header: {
     maxWidth: '1200px',
@@ -260,7 +361,9 @@ const styles = {
     borderBottom: '2px solid #e2e8f0',
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center'
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '20px'
   },
   welcome: {
     fontSize: '24px',
@@ -282,6 +385,31 @@ const styles = {
     fontSize: '14px',
     fontWeight: '600',
     color: '#2e7d32'
+  },
+  emptyState: {
+    maxWidth: '1200px',
+    margin: '0 auto 40px',
+    padding: '60px 20px',
+    textAlign: 'center',
+    background: 'white',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+  },
+  emptyIcon: {
+    fontSize: '48px',
+    marginBottom: '20px',
+    opacity: 0.5
+  },
+  emptyTitle: {
+    fontSize: '20px',
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: '10px'
+  },
+  emptyText: {
+    fontSize: '14px',
+    color: '#666',
+    margin: 0
   },
   gridContainer: {
     maxWidth: '1200px',
