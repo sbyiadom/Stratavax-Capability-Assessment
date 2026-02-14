@@ -71,7 +71,7 @@ export async function getAssessmentById(id) {
   }
 }
 
-// Questions and Answers - FIXED with defensive checks
+// Questions and Answers
 export async function getAssessmentQuestions(assessmentId) {
   try {
     console.log("Fetching questions for assessment:", assessmentId);
@@ -91,13 +91,11 @@ export async function getAssessmentQuestions(assessmentId) {
       throw error;
     }
 
-    // Ensure data is an array
     if (!data || !Array.isArray(data)) {
       console.log("No questions found or invalid data format");
       return [];
     }
 
-    // Ensure each question has an answers array
     const processedData = data.map(q => ({
       ...q,
       answers: q.answers && Array.isArray(q.answers) ? q.answers : []
@@ -108,7 +106,7 @@ export async function getAssessmentQuestions(assessmentId) {
     
   } catch (error) {
     console.error("Error in getAssessmentQuestions:", error);
-    return []; // Return empty array instead of throwing
+    return [];
   }
 }
 
@@ -117,7 +115,6 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
   try {
     console.log("Creating assessment session:", { userId, assessmentId, assessmentTypeId });
     
-    // Check if session already exists
     const { data: existing, error: existingError } = await supabase
       .from('assessment_sessions')
       .select('*')
@@ -135,7 +132,6 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
       return existing;
     }
 
-    // Get assessment type for time limit
     const { data: assessment, error: assessmentError } = await supabase
       .from('assessments')
       .select('assessment_type_id')
@@ -158,11 +154,8 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
       throw typeError;
     }
 
-    // Calculate expiry time
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + assessmentType.time_limit_minutes);
-
-    console.log("Creating new session with expiry:", expiresAt);
 
     const { data, error } = await supabase
       .from('assessment_sessions')
@@ -232,15 +225,27 @@ export async function updateSessionTimer(sessionId, elapsedSeconds) {
   }
 }
 
-// ===== OPTIMIZED SAVE RESPONSE =====
+// ===== FIXED SAVE RESPONSE - THIS IS THE KEY FUNCTION =====
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   try {
-    // Convert to numbers if needed
+    // Validate inputs
+    if (!sessionId || !userId || !assessmentId || !questionId || !answerId) {
+      console.error("Missing required fields:", { sessionId, userId, assessmentId, questionId, answerId });
+      return { success: false, error: "Missing required fields" };
+    }
+
+    // Convert to numbers
     const questionIdNum = typeof questionId === 'string' ? parseInt(questionId, 10) : questionId;
     const answerIdNum = typeof answerId === 'string' ? parseInt(answerId, 10) : answerId;
 
-    const startTime = performance.now();
+    if (isNaN(questionIdNum) || isNaN(answerIdNum)) {
+      console.error("Invalid ID format:", { questionId, answerId });
+      return { success: false, error: "Invalid ID format" };
+    }
 
+    console.log(`Saving response: Q${questionIdNum} -> A${answerIdNum}`);
+
+    // Simple upsert without .select() for speed
     const { error } = await supabase
       .from("responses")
       .upsert(
@@ -258,37 +263,41 @@ export async function saveResponse(sessionId, userId, assessmentId, questionId, 
         }
       );
 
-    const endTime = performance.now();
-    console.log(`⏱️ Save took ${(endTime - startTime).toFixed(2)}ms`);
-
     if (error) {
       console.error("Database error:", error);
       
-      // Only check session if we get a foreign key error
-      if (error.code === '23503' && error.message.includes('session_id')) {
-        // Session might be invalid, verify once
-        const { data: session } = await supabase
-          .from("assessment_sessions")
-          .select("status")
-          .eq("id", sessionId)
-          .eq("user_id", userId)
-          .single();
-          
-        if (!session || session.status !== 'in_progress') {
-          throw new Error("Your session has expired. Please refresh.");
+      // Handle specific error codes
+      if (error.code === '23503') {
+        if (error.message.includes('session_id')) {
+          return { success: false, error: "session_invalid", message: "Session not found" };
+        } else if (error.message.includes('question_id')) {
+          return { success: false, error: "question_invalid", message: "Question not found" };
+        } else if (error.message.includes('answer_id')) {
+          return { success: false, error: "answer_invalid", message: "Answer not found" };
         }
+      } else if (error.code === '23505') {
+        // This is actually fine - answer was already saved
+        console.log("Answer already saved");
+        return { success: true, alreadySaved: true };
+      } else if (error.code === '42P01') {
+        return { success: false, error: "table_not_found", message: "Database error" };
+      } else if (error.code === '42501') {
+        return { success: false, error: "permission_denied", message: "Permission denied" };
       }
-      throw error;
+      
+      return { success: false, error: error.code, message: error.message };
     }
 
+    console.log("✅ Response saved successfully");
     return { success: true };
+    
   } catch (error) {
-    console.error("Save failed:", error);
-    throw error;
+    console.error("Save function error:", error);
+    return { success: false, error: "exception", message: error.message };
   }
 }
 
-// ===== FIXED getSessionResponses with proper array checks =====
+// ===== FIXED GET SESSION RESPONSES =====
 export async function getSessionResponses(sessionId) {
   try {
     console.log("Fetching responses for session:", sessionId);
@@ -306,19 +315,9 @@ export async function getSessionResponses(sessionId) {
       .from("responses")
       .select(`
         question_id, 
-        answer_id,
-        answer:answers!inner(
-          score,
-          answer_text
-        ),
-        question:questions!inner(
-          section,
-          subsection,
-          question_text
-        )
+        answer_id
       `)
-      .eq("session_id", sessionId)
-      .order('created_at', { ascending: true });
+      .eq("session_id", sessionId);
 
     if (error) {
       console.error("Error fetching responses:", error);
@@ -329,9 +328,7 @@ export async function getSessionResponses(sessionId) {
       };
     }
 
-    // Ensure data is an array
     if (!data || !Array.isArray(data)) {
-      console.log("No responses found or invalid data format");
       return {
         answerMap: {},
         detailedResponses: [],
@@ -340,28 +337,17 @@ export async function getSessionResponses(sessionId) {
     }
 
     const answerMap = {};
-    const detailedResponses = [];
     
-    // Safe iteration with checks
     for (let i = 0; i < data.length; i++) {
       const r = data[i];
       if (r && r.question_id) {
         answerMap[r.question_id] = r.answer_id;
-        detailedResponses.push({
-          question_id: r.question_id,
-          answer_id: r.answer_id,
-          question_text: r.question?.question_text || '',
-          section: r.question?.section || '',
-          subsection: r.question?.subsection || '',
-          answer_text: r.answer?.answer_text || '',
-          score: r.answer?.score || 0
-        });
       }
     }
     
     return {
       answerMap,
-      detailedResponses,
+      detailedResponses: [],
       count: data.length
     };
   } catch (error) {
