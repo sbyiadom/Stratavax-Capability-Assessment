@@ -75,63 +75,96 @@ export default function AssessmentPage() {
   useEffect(() => {
     const init = async () => {
       try {
+        setLoading(true);
+        
         // Check user session
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
+        const { data: { session: authSession } } = await supabase.auth.getSession();
+        if (!authSession) {
+          console.log("No session, redirecting to login");
           router.push("/login");
           return;
         }
-        setUser(session.user);
+        setUser(authSession.user);
+        console.log("User authenticated:", authSession.user.id);
 
-        if (!assessmentId) return;
+        if (!assessmentId) {
+          console.log("No assessment ID, waiting...");
+          return;
+        }
+
+        console.log("Initializing assessment:", assessmentId);
 
         // Check if already completed
-        const completed = await isAssessmentCompleted(session.user.id, assessmentId);
+        const completed = await isAssessmentCompleted(authSession.user.id, assessmentId);
+        console.log("Assessment completed check:", completed);
+        
         if (completed) {
+          console.log("Assessment already completed");
           setAlreadySubmitted(true);
           setLoading(false);
           return;
         }
 
         // Load assessment details
+        console.log("Loading assessment details...");
         const assessmentData = await getAssessmentById(assessmentId);
+        console.log("Assessment data:", assessmentData);
+        
         setAssessment(assessmentData);
         setAssessmentType(assessmentData?.assessment_type || null);
         setTimeLimit(assessmentData?.assessment_type?.time_limit_minutes * 60 || 3600);
 
         // Load questions
+        console.log("Loading questions...");
         const questionsData = await getAssessmentQuestions(assessmentId);
+        console.log(`Loaded ${questionsData?.length || 0} questions`);
         setQuestions(Array.isArray(questionsData) ? questionsData : []);
 
         // Create or get session
+        console.log("Creating/getting session...");
         const sessionData = await createAssessmentSession(
-          session.user.id,
+          authSession.user.id,
           assessmentId,
           assessmentData?.assessment_type?.id || null
         );
+        console.log("Session data:", sessionData);
         setSession(sessionData);
 
         // Load saved progress
-        const progress = await getProgress(session.user.id, assessmentId);
+        console.log("Loading saved progress...");
+        const progress = await getProgress(authSession.user.id, assessmentId);
+        console.log("Progress data:", progress);
+        
         if (progress) {
           setElapsedSeconds(progress.elapsed_seconds || 0);
-          if (progress.last_question_id) {
-            const questionsArray = Array.isArray(questionsData) ? questionsData : [];
-            const lastIndex = questionsArray.findIndex(q => q?.id === progress.last_question_id);
-            if (lastIndex > 0) setCurrentIndex(lastIndex);
+          if (progress.last_question_id && Array.isArray(questionsData)) {
+            const lastIndex = questionsData.findIndex(q => q?.id === progress.last_question_id);
+            if (lastIndex > 0) {
+              console.log("Setting current index to:", lastIndex);
+              setCurrentIndex(lastIndex);
+            }
           }
         }
 
         // Load saved responses
         if (sessionData?.id) {
+          console.log("Loading saved responses for session:", sessionData.id);
           const responses = await getSessionResponses(sessionData.id);
-          const answersMap = responses?.answerMap || {};
-          setAnswers(answersMap);
+          console.log("Loaded responses:", responses);
+          
+          // Make sure we're setting the answers correctly
+          if (responses && responses.answerMap) {
+            console.log("Setting answers map:", responses.answerMap);
+            setAnswers(responses.answerMap);
+          } else {
+            console.log("No saved responses found");
+          }
         }
 
         // Setup anti-cheat
         setupAntiCheat();
 
+        console.log("Initialization complete");
         setLoading(false);
       } catch (error) {
         console.error("Initialization error:", error);
@@ -145,19 +178,26 @@ export default function AssessmentPage() {
 
   // Timer effect
   useEffect(() => {
-    if (loading || alreadySubmitted || !session) return;
+    if (loading || alreadySubmitted || !session || !session.id) return;
 
+    console.log("Starting timer for session:", session.id);
+    
     const timer = setInterval(async () => {
       setElapsedSeconds(prev => {
         const newElapsed = prev + 1;
         setTimeRemaining(timeLimit - newElapsed);
         
+        // Auto-submit if time limit reached
         if (newElapsed >= timeLimit) {
+          console.log("Time limit reached, auto-submitting...");
           handleSubmit();
         }
         
+        // Save progress every 30 seconds
         if (newElapsed % 30 === 0) {
-          saveProgress(session.id, user.id, assessmentId, newElapsed, questions[currentIndex]?.id);
+          console.log("Auto-saving progress at", newElapsed, "seconds");
+          const currentQ = questions[currentIndex];
+          saveProgress(session.id, user.id, assessmentId, newElapsed, currentQ?.id);
           updateSessionTimer(session.id, newElapsed);
         }
         
@@ -165,26 +205,68 @@ export default function AssessmentPage() {
       });
     }, 1000);
 
-    return () => clearInterval(timer);
+    return () => {
+      console.log("Cleaning up timer");
+      clearInterval(timer);
+    };
   }, [loading, alreadySubmitted, session, timeLimit, assessmentId, user?.id, currentIndex, questions]);
 
   // ===== FIXED HANDLE ANSWER SELECTION =====
   const handleAnswerSelect = async (questionId, answerId) => {
-    if (alreadySubmitted || !session || !questionId || !answerId) {
-      console.log("Cannot save:", { alreadySubmitted, hasSession: !!session, questionId, answerId });
+    // Validate all required parameters
+    if (!questionId || !answerId) {
+      console.error("Missing questionId or answerId:", { questionId, answerId });
       return;
     }
 
-    // Update UI immediately
-    setAnswers(prev => ({ ...prev, [questionId]: answerId }));
+    if (alreadySubmitted) {
+      console.log("Cannot save - assessment already submitted");
+      return;
+    }
+
+    if (!session || !session.id) {
+      console.error("No active session");
+      return;
+    }
+
+    if (!user || !user.id) {
+      console.error("No authenticated user");
+      return;
+    }
+
+    if (!assessmentId) {
+      console.error("No assessment ID");
+      return;
+    }
+
+    console.log("🎯 Answer selected:", { 
+      questionId, 
+      answerId,
+      sessionId: session.id,
+      userId: user.id,
+      assessmentId 
+    });
+
+    // Update UI immediately for better UX
+    setAnswers(prev => {
+      const newAnswers = { ...prev, [questionId]: answerId };
+      console.log("Updated answers state:", newAnswers);
+      return newAnswers;
+    });
     
     // Show saving indicator
     setSaveStatus(prev => ({ ...prev, [questionId]: 'saving' }));
 
     // Save to Supabase
     try {
-      const startTime = performance.now();
-      
+      console.log("💾 Calling saveResponse with:", {
+        sessionId: session.id,
+        userId: user.id,
+        assessmentId: assessmentId,
+        questionId,
+        answerId
+      });
+
       const result = await saveResponse(
         session.id, 
         user.id, 
@@ -193,32 +275,35 @@ export default function AssessmentPage() {
         answerId
       );
       
-      const endTime = performance.now();
+      console.log("📥 Save result:", result);
       
-      if (result.success) {
-        console.log(`✅ Saved in ${(endTime - startTime).toFixed(2)}ms`);
+      if (result && result.success === true) {
+        console.log("✅ Saved successfully");
         setSaveStatus(prev => ({ ...prev, [questionId]: 'saved' }));
         
-        // Clear status after short delay
+        // Clear success status after short delay
         setTimeout(() => {
           setSaveStatus(prev => {
             const newStatus = { ...prev };
             delete newStatus[questionId];
             return newStatus;
           });
-        }, 300);
+        }, 1000);
       } else {
-        console.error("❌ Save failed:", result);
+        console.error("❌ Save failed:", result?.error || "Unknown error");
         setSaveStatus(prev => ({ ...prev, [questionId]: 'error' }));
         
-        // Show error longer
+        // Keep error visible longer
         setTimeout(() => {
           setSaveStatus(prev => {
             const newStatus = { ...prev };
             delete newStatus[questionId];
             return newStatus;
           });
-        }, 2000);
+        }, 3000);
+        
+        // Optionally revert the UI change on error
+        // You could reload the answers from the server here
       }
       
     } catch (error) {
@@ -231,13 +316,14 @@ export default function AssessmentPage() {
           delete newStatus[questionId];
           return newStatus;
         });
-      }, 2000);
+      }, 3000);
     }
   };
 
   // Navigation
   const handleNext = () => {
     if (currentIndex < questions.length - 1) {
+      console.log("Moving to next question:", currentIndex + 1);
       setCurrentIndex(i => i + 1);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -245,39 +331,55 @@ export default function AssessmentPage() {
 
   const handlePrevious = () => {
     if (currentIndex > 0) {
+      console.log("Moving to previous question:", currentIndex - 1);
       setCurrentIndex(i => i - 1);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
   const jumpToQuestion = (index) => {
+    console.log("Jumping to question:", index);
     setCurrentIndex(index);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Submit assessment
   const handleSubmit = async () => {
-    if (!session || alreadySubmitted) return;
+    if (!session || !session.id || alreadySubmitted) {
+      console.log("Cannot submit - invalid state:", { hasSession: !!session, alreadySubmitted });
+      return;
+    }
+
+    console.log("📤 Submitting assessment:", {
+      sessionId: session.id,
+      userId: user?.id,
+      assessmentId
+    });
 
     setIsSubmitting(true);
     setShowSubmitModal(false);
 
     try {
-      await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id);
+      // Save final progress
+      const currentQ = questions[currentIndex];
+      await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, currentQ?.id);
       await updateSessionTimer(session.id, elapsedSeconds);
       
-      const resultId = await submitAssessment(session.id);
+      // Submit the assessment
+      const resultId = await submitAssessment(session.id, user.id, assessmentId, elapsedSeconds);
+      
+      console.log("✅ Submission successful, result ID:", resultId);
       
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
       
+      // Redirect after showing success message
       setTimeout(() => {
         router.push('/assessment/pre');
       }, 3000);
     } catch (error) {
-      console.error("Submission error:", error);
-      alert("Failed to submit assessment. Please contact support.");
-    } finally {
+      console.error("❌ Submission error:", error);
+      alert("Failed to submit assessment. Please try again or contact support.");
       setIsSubmitting(false);
     }
   };
@@ -296,6 +398,16 @@ export default function AssessmentPage() {
   const isTimeCritical = timePercentage > 90;
 
   const currentQuestion = questions[currentIndex] || {};
+
+  // Debug logging
+  console.log("Render state:", {
+    currentIndex,
+    totalQuestions: questions.length,
+    totalAnswered,
+    currentQuestionId: currentQuestion?.id,
+    hasAnswers: Object.keys(answers).length,
+    sessionId: session?.id
+  });
 
   if (loading) {
     return (
@@ -500,7 +612,7 @@ export default function AssessmentPage() {
                          saveStatus[currentQuestion.id] === 'saved' ? '#2e7d32' : '#c62828'
                 }}>
                   {saveStatus[currentQuestion.id] === 'saving' ? '⏳ Saving...' : 
-                   saveStatus[currentQuestion.id] === 'saved' ? '✓ Saved' : '❌ Save failed'}
+                   saveStatus[currentQuestion.id] === 'saved' ? '✓ Saved' : '❌ Save failed - will retry'}
                 </div>
               )}
 
@@ -523,7 +635,8 @@ export default function AssessmentPage() {
                           ...styles.answerButton,
                           background: isSelected ? assessmentType?.gradient_start || '#667eea' : isHovered ? '#f8fafc' : 'white',
                           borderColor: isSelected ? assessmentType?.gradient_start || '#667eea' : '#e2e8f0',
-                          transform: isSelected || isHovered ? 'translateY(-2px)' : 'translateY(0)'
+                          transform: isSelected || isHovered ? 'translateY(-2px)' : 'translateY(0)',
+                          cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
                         }}
                         onMouseEnter={() => setHoveredAnswer(answer.id)}
                         onMouseLeave={() => setHoveredAnswer(null)}
@@ -560,7 +673,8 @@ export default function AssessmentPage() {
                     ...styles.navButton,
                     background: currentIndex === 0 || alreadySubmitted ? '#f1f5f9' : 'white',
                     color: currentIndex === 0 || alreadySubmitted ? '#94a3b8' : assessmentType?.gradient_start || '#667eea',
-                    border: currentIndex === 0 || alreadySubmitted ? '1px solid #e2e8f0' : `2px solid ${assessmentType?.gradient_start || '#667eea'}`
+                    border: currentIndex === 0 || alreadySubmitted ? '1px solid #e2e8f0' : `2px solid ${assessmentType?.gradient_start || '#667eea'}`,
+                    cursor: currentIndex === 0 || alreadySubmitted ? 'not-allowed' : 'pointer'
                   }}
                 >
                   ← Previous
@@ -574,7 +688,8 @@ export default function AssessmentPage() {
                       ...styles.navButton,
                       background: alreadySubmitted ? '#f1f5f9' : '#4caf50',
                       color: alreadySubmitted ? '#94a3b8' : 'white',
-                      border: 'none'
+                      border: 'none',
+                      cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
                     }}
                   >
                     Submit Assessment
@@ -587,7 +702,8 @@ export default function AssessmentPage() {
                       ...styles.navButton,
                       background: alreadySubmitted ? '#f1f5f9' : `linear-gradient(135deg, ${assessmentType?.gradient_start || '#667eea'}, ${assessmentType?.gradient_end || '#764ba2'})`,
                       color: alreadySubmitted ? '#94a3b8' : 'white',
-                      border: 'none'
+                      border: 'none',
+                      cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
                     }}
                   >
                     Next →
@@ -639,7 +755,8 @@ export default function AssessmentPage() {
                       background: isCurrent ? assessmentType?.gradient_start || '#667eea' : isAnswered ? '#4caf50' : 'white',
                       color: isCurrent || isAnswered ? 'white' : '#1e293b',
                       borderColor: isCurrent ? assessmentType?.gradient_start || '#667eea' : isAnswered ? '#4caf50' : '#e2e8f0',
-                      transform: isHovered ? 'scale(1.1)' : 'scale(1)'
+                      transform: isHovered ? 'scale(1.1)' : 'scale(1)',
+                      cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
                     }}
                     onMouseEnter={() => setHoveredQuestion(index)}
                     onMouseLeave={() => setHoveredQuestion(null)}
@@ -684,6 +801,14 @@ export default function AssessmentPage() {
           </div>
         </div>
       </div>
+
+      {/* Add keyframe animation for spinner */}
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </>
   );
 }
@@ -775,7 +900,10 @@ const styles = {
     borderRadius: '8px',
     color: 'white',
     fontSize: '20px',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   headerIcon: {
     width: '40px',
@@ -947,7 +1075,6 @@ const styles = {
     borderRadius: '6px',
     fontSize: '14px',
     fontWeight: 600,
-    cursor: 'pointer',
     transition: 'all 0.2s ease'
   },
   navigatorPanel: {
@@ -1009,7 +1136,6 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    cursor: 'pointer',
     transition: 'all 0.2s ease'
   },
   legend: {
