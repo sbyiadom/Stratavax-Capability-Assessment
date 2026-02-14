@@ -6,7 +6,7 @@ import {
   getAssessmentQuestions,
   createAssessmentSession,
   getSessionResponses,
-  saveResponse,
+  saveResponseFast, // Import the fast version
   submitAssessment,
   getProgress,
   saveProgress,
@@ -63,7 +63,7 @@ export default function AssessmentPage() {
   
   // Timer
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [timeLimit, setTimeLimit] = useState(3600); // default 1 hour
+  const [timeLimit, setTimeLimit] = useState(3600);
   const [timeRemaining, setTimeRemaining] = useState(3600);
   
   // UI state
@@ -174,27 +174,32 @@ export default function AssessmentPage() {
     return () => clearInterval(timer);
   }, [loading, alreadySubmitted, session, timeLimit, assessmentId, user?.id, currentIndex, questions]);
 
-  // Handle answer selection
-  const handleAnswerSelect = async (questionId, answerId) => {
+  // ===== OPTIMIZED HANDLE ANSWER SELECTION =====
+  const handleAnswerSelect = (questionId, answerId) => {
     if (alreadySubmitted || !session) return;
 
+    // Update UI immediately (this is instant)
     setAnswers(prev => ({ ...prev, [questionId]: answerId }));
+    
+    // Show saving indicator briefly for UX feedback
     setSaveStatus(prev => ({ ...prev, [questionId]: 'saving' }));
 
+    // Hide saving indicator after a short delay (300ms)
+    setTimeout(() => {
+      setSaveStatus(prev => {
+        const newStatus = { ...prev };
+        delete newStatus[questionId];
+        return newStatus;
+      });
+    }, 300);
+
+    // Save in background using fast method (doesn't block UI)
     try {
-      await saveResponse(session.id, user.id, assessmentId, questionId, answerId);
-      setSaveStatus(prev => ({ ...prev, [questionId]: 'saved' }));
-      
-      setTimeout(() => {
-        setSaveStatus(prev => {
-          const newStatus = { ...prev };
-          delete newStatus[questionId];
-          return newStatus;
-        });
-      }, 1500);
+      saveResponseFast(session.id, user.id, assessmentId, questionId, answerId);
     } catch (error) {
-      console.error("Error saving response:", error);
-      setSaveStatus(prev => ({ ...prev, [questionId]: 'error' }));
+      console.error("Background save error:", error);
+      // Don't show error to user since UI already updated
+      // The answer will be retried on next save or on submission
     }
   };
 
@@ -458,11 +463,11 @@ export default function AssessmentPage() {
               {saveStatus[currentQuestion?.id] && (
                 <div style={{
                   ...styles.saveStatus,
-                  background: saveStatus[currentQuestion.id] === 'saved' ? '#4caf5010' : '#ff980010',
-                  borderColor: saveStatus[currentQuestion.id] === 'saved' ? '#4caf50' : '#ff9800',
-                  color: saveStatus[currentQuestion.id] === 'saved' ? '#2e7d32' : '#f57c00'
+                  background: saveStatus[currentQuestion.id] === 'saving' ? '#ff980010' : 'transparent',
+                  borderColor: saveStatus[currentQuestion.id] === 'saving' ? '#ff9800' : 'transparent',
+                  color: saveStatus[currentQuestion.id] === 'saving' ? '#f57c00' : 'transparent'
                 }}>
-                  {saveStatus[currentQuestion.id] === 'saved' ? '✓ Answer saved' : '⏳ Saving...'}
+                  {saveStatus[currentQuestion.id] === 'saving' ? '⏳ Saving...' : ''}
                 </div>
               )}
 
@@ -477,7 +482,7 @@ export default function AssessmentPage() {
                     <button
                       key={answer.id}
                       onClick={() => handleAnswerSelect(currentQuestion.id, answer.id)}
-                      disabled={saveStatus[currentQuestion.id] === 'saving' || alreadySubmitted}
+                      disabled={alreadySubmitted}
                       style={{
                         ...styles.answerButton,
                         background: isSelected ? assessmentType?.gradient_start || '#667eea' : isHovered ? '#f8fafc' : 'white',
@@ -640,7 +645,7 @@ export default function AssessmentPage() {
   );
 }
 
-// Styles
+// Styles (keep all your existing styles here)
 const styles = {
   loadingContainer: {
     minHeight: '100vh',
