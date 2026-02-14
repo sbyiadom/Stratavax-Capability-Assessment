@@ -266,16 +266,258 @@ export async function getProgress(userId, assessmentId) {
   return data;
 }
 
-// Check if assessment already completed
-export async function isAssessmentCompleted(userId, assessmentId) {
-  const { data, error } = await supabase
-    .from('assessment_sessions')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('assessment_id', assessmentId)
-    .eq('status', 'completed')
-    .maybeSingle();
+// ===== UPDATED FUNCTIONS FOR COMPLETION CHECKING =====
 
-  if (error) throw error;
-  return !!data;
+/**
+ * Check if assessment already completed using the new structure
+ */
+export async function isAssessmentCompleted(userId, assessmentId) {
+  try {
+    console.log(`🔍 Checking completion for user ${userId}, assessment ${assessmentId}`);
+    
+    // First check in candidate_assessments (new structure)
+    const { data: candidateData, error: candidateError } = await supabase
+      .from('candidate_assessments')
+      .select('id, status, completed_at')
+      .eq('user_id', userId)
+      .eq('assessment_id', assessmentId)
+      .eq('status', 'completed')
+      .maybeSingle();
+
+    if (!candidateError && candidateData) {
+      console.log(`✅ Found completed in candidate_assessments:`, candidateData);
+      return true;
+    }
+
+    // If not found, check in assessment_sessions
+    const { data: sessionData, error: sessionError } = await supabase
+      .from('assessment_sessions')
+      .select('id, status, completed_at')
+      .eq('user_id', userId)
+      .eq('assessment_id', assessmentId)
+      .eq('status', 'completed')
+      .maybeSingle();
+
+    if (!sessionError && sessionData) {
+      console.log(`✅ Found completed in assessment_sessions:`, sessionData);
+      
+      // Also update candidate_assessments for future queries
+      try {
+        await supabase
+          .from('candidate_assessments')
+          .upsert({
+            user_id: userId,
+            assessment_id: assessmentId,
+            status: 'completed',
+            completed_at: sessionData.completed_at
+          }, { onConflict: 'user_id,assessment_id' });
+      } catch (upsertError) {
+        console.log("Could not update candidate_assessments:", upsertError);
+      }
+      
+      return true;
+    }
+
+    // Check assessment_results as last resort
+    const { data: resultData, error: resultError } = await supabase
+      .from('assessment_results')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('assessment_id', assessmentId)
+      .eq('status', 'completed')
+      .maybeSingle();
+
+    if (!resultError && resultData) {
+      console.log(`✅ Found completed in assessment_results`);
+      return true;
+    }
+
+    console.log(`❌ No completed assessment found`);
+    return false;
+    
+  } catch (error) {
+    console.error("Error checking assessment completion:", error);
+    return false;
+  }
+}
+
+/**
+ * Get all completed assessments for a user
+ */
+export async function getUserCompletedAssessments(userId) {
+  try {
+    console.log(`🔍 Fetching completed assessments for user ${userId}`);
+    
+    // Get from candidate_assessments (primary source)
+    const { data: candidateData, error: candidateError } = await supabase
+      .from('candidate_assessments')
+      .select(`
+        assessment_id,
+        status,
+        score,
+        completed_at,
+        assessment:assessments(
+          title,
+          assessment_type:assessment_types(*)
+        )
+      `)
+      .eq('user_id', userId)
+      .eq('status', 'completed');
+
+    if (!candidateError && candidateData && candidateData.length > 0) {
+      console.log(`✅ Found ${candidateData.length} completed in candidate_assessments`);
+      return candidateData;
+    }
+
+    // If none found, try assessment_sessions
+    const { data: sessionData, error: sessionError } = await supabase
+      .from('assessment_sessions')
+      .select(`
+        assessment_id,
+        status,
+        completed_at,
+        assessment:assessments(
+          title,
+          assessment_type:assessment_types(*)
+        )
+      `)
+      .eq('user_id', userId)
+      .eq('status', 'completed');
+
+    if (!sessionError && sessionData && sessionData.length > 0) {
+      console.log(`✅ Found ${sessionData.length} completed in assessment_sessions`);
+      
+      // Migrate to candidate_assessments
+      for (const session of sessionData) {
+        try {
+          await supabase
+            .from('candidate_assessments')
+            .upsert({
+              user_id: userId,
+              assessment_id: session.assessment_id,
+              status: 'completed',
+              completed_at: session.completed_at
+            }, { onConflict: 'user_id,assessment_id' });
+        } catch (e) {
+          console.log("Migration error:", e);
+        }
+      }
+      
+      return sessionData;
+    }
+
+    console.log(`❌ No completed assessments found`);
+    return [];
+    
+  } catch (error) {
+    console.error("Error fetching completed assessments:", error);
+    return [];
+  }
+}
+
+/**
+ * Get in-progress assessment for a user
+ */
+export async function getUserInProgressAssessment(userId, assessmentId) {
+  try {
+    const { data, error } = await supabase
+      .from('assessment_sessions')
+      .select(`
+        *,
+        assessment:assessments(
+          *,
+          assessment_type:assessment_types(*)
+        )
+      `)
+      .eq('user_id', userId)
+      .eq('assessment_id', assessmentId)
+      .eq('status', 'in_progress')
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+    
+  } catch (error) {
+    console.error("Error fetching in-progress assessment:", error);
+    return null;
+  }
+}
+
+/**
+ * Get assessment statistics for a user
+ */
+export async function getUserAssessmentStats(userId) {
+  try {
+    const completed = await getUserCompletedAssessments(userId);
+    
+    const stats = {
+      totalCompleted: completed.length,
+      totalScore: 0,
+      averageScore: 0,
+      byType: {}
+    };
+
+    completed.forEach(item => {
+      stats.totalScore += item.score || 0;
+      
+      const type = item.assessment?.assessment_type?.code || 'unknown';
+      if (!stats.byType[type]) {
+        stats.byType[type] = {
+          count: 0,
+          totalScore: 0
+        };
+      }
+      stats.byType[type].count += 1;
+      stats.byType[type].totalScore += item.score || 0;
+    });
+
+    if (stats.totalCompleted > 0) {
+      stats.averageScore = Math.round(stats.totalScore / stats.totalCompleted);
+    }
+
+    return stats;
+    
+  } catch (error) {
+    console.error("Error fetching assessment stats:", error);
+    return {
+      totalCompleted: 0,
+      totalScore: 0,
+      averageScore: 0,
+      byType: {}
+    };
+  }
+}
+
+/**
+ * Reset assessment completion status (for admin use)
+ */
+export async function resetAssessmentCompletion(userId, assessmentId) {
+  try {
+    // Delete from candidate_assessments
+    await supabase
+      .from('candidate_assessments')
+      .delete()
+      .eq('user_id', userId)
+      .eq('assessment_id', assessmentId);
+
+    // Update session status
+    await supabase
+      .from('assessment_sessions')
+      .update({ status: 'reset' })
+      .eq('user_id', userId)
+      .eq('assessment_id', assessmentId);
+
+    // Delete responses
+    await supabase
+      .from('responses')
+      .delete()
+      .eq('user_id', userId)
+      .eq('assessment_id', assessmentId);
+
+    return { success: true };
+    
+  } catch (error) {
+    console.error("Error resetting assessment:", error);
+    throw error;
+  }
 }
