@@ -1,8 +1,8 @@
 import { supabase } from "./client";
 
-// Save a single response
-export async function saveResponse(session_id, assessment_id, question_id, answer_id, user_id) {
-  console.log("💾 Saving response:", { session_id, question_id, answer_id, user_id });
+// Save a single response - FIXED parameter order
+export async function saveResponse(session_id, user_id, assessment_id, question_id, answer_id) {
+  console.log("💾 Saving response:", { session_id, user_id, question_id, answer_id });
 
   // Convert to numbers if needed
   const questionId = typeof question_id === 'string' ? parseInt(question_id, 10) : question_id;
@@ -32,10 +32,10 @@ export async function saveResponse(session_id, assessment_id, question_id, answe
       .upsert(
         {
           session_id: session_id,
+          user_id: user_id,
           assessment_id: assessment_id,
           question_id: questionId,
           answer_id: answerId,
-          user_id: user_id,
           updated_at: new Date().toISOString(),
         },
         {
@@ -175,7 +175,7 @@ export async function loadUserAssessmentResponses(user_id, assessment_id) {
 // Get response count for an assessment
 export async function getResponseCount(user_id, assessment_id) {
   try {
-    const { count, error } = await supase
+    const { count, error } = await supabase
       .from("responses")
       .select("*", { count: 'exact', head: true })
       .eq("user_id", user_id)
