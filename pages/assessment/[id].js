@@ -1,561 +1,189 @@
-// pages/assessment/[id].js
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
-
-// ===== SECTION CONFIGURATIONS =====
-const SECTION_CONFIG = {
-  'Cognitive Abilities': { 
-    color: '#4A6FA5', 
-    icon: '🧠', 
-    bgImage: 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #4A6FA5 0%, #2C3E50 100%)'
-  },
-  'Personality Assessment': { 
-    color: '#9C27B0', 
-    icon: '😊', 
-    bgImage: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #9C27B0 0%, #6A1B9A 100%)'
-  },
-  'Leadership Potential': { 
-    color: '#D32F2F', 
-    icon: '👑', 
-    bgImage: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #D32F2F 0%, #B71C1C 100%)'
-  },
-  'Technical Competence': { 
-    color: '#388E3C', 
-    icon: '⚙️', 
-    bgImage: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #388E3C 0%, #1B5E20 100%)'
-  },
-  'Performance Metrics': { 
-    color: '#F57C00', 
-    icon: '📊', 
-    bgImage: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #F57C00 0%, #E65100 100%)'
-  }
-};
-
-// ===== ASSESSMENT TYPE CONFIGURATIONS =====
-const ASSESSMENT_TYPE_CONFIG = {
-  'general': {
-    name: 'General Assessment',
-    timeLimit: 10800, // 3 hours in seconds
-    maxScore: 500,
-    sections: ['Cognitive Abilities', 'Personality Assessment', 'Leadership Potential', 'Technical Competence', 'Performance Metrics']
-  },
-  'leadership': {
-    name: 'Leadership Assessment',
-    timeLimit: 3600, // 1 hour in seconds
-    maxScore: 100,
-    sections: ['Leadership Potential']
-  },
-  'cognitive': {
-    name: 'Cognitive Ability Assessment',
-    timeLimit: 3600, // 1 hour in seconds
-    maxScore: 100,
-    sections: ['Cognitive Abilities']
-  },
-  'technical': {
-    name: 'Technical Assessment',
-    timeLimit: 3600, // 1 hour in seconds
-    maxScore: 100,
-    sections: ['Technical Competence']
-  },
-  'personality': {
-    name: 'Personality Assessment',
-    timeLimit: 2700, // 45 minutes in seconds
-    maxScore: 100,
-    sections: ['Personality Assessment']
-  },
-  'performance': {
-    name: 'Performance Assessment',
-    timeLimit: 2700, // 45 minutes in seconds
-    maxScore: 100,
-    sections: ['Performance Metrics']
-  }
-};
+import {
+  getAssessmentById,
+  getAssessmentQuestions,
+  createAssessmentSession,
+  getSessionResponses,
+  saveResponse,
+  submitAssessment,
+  getProgress,
+  saveProgress,
+  updateSessionTimer,
+  isAssessmentCompleted
+} from "../../supabase/assessment";
 
 // ===== TIMER FUNCTIONS =====
-async function startOrResumeTimer(userId, assessmentId) {
-  try {
-    if (!userId || !assessmentId) return 0;
+const formatTime = (seconds) => {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
 
-    const { data: existingTimer, error: fetchError } = await supabase
-      .from("assessment_timer_progress")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("assessment_id", assessmentId)
-      .maybeSingle();
-
-    if (fetchError && fetchError.code !== 'PGRST116') {
-      console.error("Timer fetch error:", fetchError);
-      return 0;
-    }
-
-    if (existingTimer) {
-      return existingTimer.elapsed_seconds;
-    } else {
-      const { error } = await supabase
-        .from("assessment_timer_progress")
-        .insert({
-          user_id: userId,
-          assessment_id: assessmentId,
-          started_at: new Date().toISOString(),
-          elapsed_seconds: 0,
-          status: 'in_progress',
-          updated_at: new Date().toISOString()
-        });
-
-      if (error) throw error;
-      return 0;
-    }
-  } catch (error) {
-    console.error("Timer error:", error);
-    return 0;
-  }
-}
-
-async function saveTimerProgress(userId, assessmentId, elapsedSeconds) {
-  try {
-    if (!userId || !assessmentId) return;
-    
-    const { error } = await supabase
-      .from("assessment_timer_progress")
-      .upsert({
-        user_id: userId,
-        assessment_id: assessmentId,
-        elapsed_seconds: elapsedSeconds,
-        last_saved_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }, { 
-        onConflict: 'user_id,assessment_id',
-        ignoreDuplicates: false 
-      });
-
-    if (error) throw error;
-  } catch (error) {
-    console.error("Failed to save timer:", error);
-  }
-}
-
-async function markTimerAsCompleted(userId, assessmentId) {
-  try {
-    if (!userId || !assessmentId) return;
-    
-    const { error } = await supabase
-      .from("assessment_timer_progress")
-      .update({
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .eq("user_id", userId)
-      .eq("assessment_id", assessmentId);
-
-    if (error) throw error;
-  } catch (error) {
-    console.error("Failed to mark timer as completed:", error);
-  }
-}
-
-// ===== ANTI-CHEAT FUNCTIONS =====
-function setupAntiCheatProtection() {
+// ===== ANTI-CHEAT =====
+const setupAntiCheat = () => {
   if (typeof window === 'undefined') return;
   
+  // Disable right click
   document.addEventListener('contextmenu', (e) => e.preventDefault());
-  document.addEventListener('selectstart', (e) => e.preventDefault());
   
+  // Disable copy/paste
+  document.addEventListener('copy', (e) => e.preventDefault());
+  document.addEventListener('paste', (e) => e.preventDefault());
+  document.addEventListener('cut', (e) => e.preventDefault());
+  
+  // Disable keyboard shortcuts
   document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && 
-        (e.key === 'c' || e.key === 'v' || e.key === 'x' || e.key === 'a')) {
+    if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
     }
     if (e.key === 'F12' || e.key === 'PrintScreen') {
       e.preventDefault();
     }
   });
-
-  const style = document.createElement('style');
-  style.innerHTML = `* { user-select: none !important; }`;
-  document.head.appendChild(style);
-}
-
-// ===== RANDOMIZE ANSWERS =====
-function trulyRandomizeAnswers(answers) {
-  if (!answers || answers.length === 0) return answers;
-  const shuffled = [...answers];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
-}
-
-// ===== SAVE RESPONSE =====
-async function saveResponse(assessmentId, questionId, answerId, userId) {
-  try {
-    const { error } = await supabase.from("responses").upsert({
-      assessment_id: assessmentId,
-      question_id: parseInt(questionId),
-      answer_id: parseInt(answerId),
-      user_id: userId,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'assessment_id,question_id,user_id' });
-
-    if (error) throw error;
-    return { success: true };
-  } catch (error) {
-    console.error("Save error:", error);
-    throw error;
-  }
-}
-
-async function loadUserResponses(userId, assessmentId) {
-  try {
-    const { data } = await supabase
-      .from("responses")
-      .select("question_id, answer_id")
-      .eq("assessment_id", assessmentId)
-      .eq("user_id", userId);
-
-    const responses = {};
-    data?.forEach(r => responses[r.question_id] = r.answer_id);
-    return responses;
-  } catch (error) {
-    console.error("Error loading responses:", error);
-    return {};
-  }
-}
-
-// ===== CHECK SUBMISSION =====
-async function checkIfAlreadySubmitted(userId, assessmentId) {
-  try {
-    // Check in candidate_assessments_taken first
-    const { data, error } = await supabase
-      .from("candidate_assessments_taken")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("assessment_id", assessmentId)
-      .eq("status", "completed")
-      .maybeSingle();
-
-    if (error && error.code !== 'PGRST116') {
-      console.error("Error checking completion:", error);
-      return false;
-    }
-    
-    return !!data;
-  } catch (error) {
-    console.error("Error in checkIfAlreadySubmitted:", error);
-    return false;
-  }
-}
-
-// ===== CREATE ASSESSMENT RESULT =====
-async function createAssessmentResult(userId, assessmentId, assessmentType) {
-  try {
-    const { data, error } = await supabase
-      .from("assessment_results")
-      .insert({
-        user_id: userId,
-        assessment_id: assessmentId,
-        assessment_type: assessmentType,
-        status: 'in_progress',
-        started_at: new Date().toISOString(),
-        responses: {}
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
-  } catch (error) {
-    console.error("Error creating assessment result:", error);
-    return null;
-  }
-}
-
-// ===== SUBMIT ASSESSMENT =====
-async function submitAssessment(userId, assessmentId, resultId, timeSpent, assessmentType) {
-  try {
-    const response = await fetch('/api/supervisor/submit-assessment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        assessment_id: assessmentId, 
-        user_id: userId,
-        result_id: resultId,
-        time_spent: timeSpent
-      })
-    });
-
-    const result = await response.json();
-    
-    if (!response.ok) {
-      if (result.error?.includes("already submitted")) {
-        return true;
-      }
-      throw new Error(result.error || 'Submission failed');
-    }
-
-    return true;
-  } catch (error) {
-    console.error("Failed to submit assessment:", error);
-    throw error;
-  }
-}
+};
 
 export default function AssessmentPage() {
   const router = useRouter();
   const { id: assessmentId } = router.query;
 
-  const [assessment, setAssessment] = useState(null);
-  const [questions, setQuestions] = useState([]);
-  const [answers, setAnswers] = useState({});
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [elapsed, setElapsed] = useState(0);
+  const [assessment, setAssessment] = useState(null);
+  const [assessmentType, setAssessmentType] = useState(null);
+  const [questions, setQuestions] = useState([]);
+  const [session, setSession] = useState(null);
+  const [user, setUser] = useState(null);
+  
+  // Assessment state
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [answers, setAnswers] = useState({});
   const [saveStatus, setSaveStatus] = useState({});
-  const [isSessionReady, setIsSessionReady] = useState(false);
+  
+  // Timer
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [timeLimit, setTimeLimit] = useState(3600); // default 1 hour
+  const [timeRemaining, setTimeRemaining] = useState(3600);
+  
+  // UI state
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [error, setError] = useState(null);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
-  const [timeLimitSeconds, setTimeLimitSeconds] = useState(10800);
-  const [assessmentType, setAssessmentType] = useState('general');
-  const [assessmentResult, setAssessmentResult] = useState(null);
   const [hoveredQuestion, setHoveredQuestion] = useState(null);
   const [hoveredAnswer, setHoveredAnswer] = useState(null);
 
-  // ===== FETCH ASSESSMENT DETAILS =====
+  // Initialize assessment
   useEffect(() => {
-    const fetchAssessmentDetails = async () => {
-      if (!assessmentId || !isSessionReady || alreadySubmitted) return;
-      
+    const init = async () => {
       try {
-        const { data, error } = await supabase
-          .from("assessments")
-          .select("*")
-          .eq("id", assessmentId)
-          .single();
-        
-        if (error) throw error;
-        
-        if (data) {
-          setAssessment(data);
-          
-          // Set assessment type and time limit
-          const type = data.assessment_type || 'general';
-          setAssessmentType(type);
-          
-          const config = ASSESSMENT_TYPE_CONFIG[type] || ASSESSMENT_TYPE_CONFIG.general;
-          setTimeLimitSeconds(config.timeLimit);
-          
-          document.title = `${data.name} - Stratavax Assessment`;
-        }
-      } catch (error) {
-        console.error("Error fetching assessment details:", error);
-      }
-    };
-    
-    fetchAssessmentDetails();
-  }, [assessmentId, isSessionReady, alreadySubmitted]);
-
-  // ===== INITIALIZE SESSION AND CREATE RESULT =====
-  useEffect(() => {
-    const initSessionAndCheck = async () => {
-      if (!assessmentId) return;
-      
-      try {
-        const { data } = await supabase.auth.getSession();
-        if (data.session) {
-          setSession(data.session);
-          
-          const hasSubmitted = await checkIfAlreadySubmitted(data.session.user.id, assessmentId);
-          if (hasSubmitted) {
-            setAlreadySubmitted(true);
-            localStorage.setItem(`assessment_submitted_${assessmentId}`, 'true');
-            setError("You have already submitted this assessment. One attempt only allowed.");
-            setLoading(false);
-            return;
-          }
-          
-          // Create assessment result record
-          const result = await createAssessmentResult(
-            data.session.user.id, 
-            assessmentId, 
-            assessmentType
-          );
-          
-          if (result) {
-            setAssessmentResult(result);
-          }
-          
-          setIsSessionReady(true);
-        } else {
+        // Check user session
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
           router.push("/login");
+          return;
         }
-      } catch (error) {
-        console.error("Session init error:", error);
-        setError("Failed to initialize session");
-        setLoading(false);
-      }
-    };
-    initSessionAndCheck();
-  }, [assessmentId, router, assessmentType]);
+        setUser(session.user);
 
-  // ===== FETCH QUESTIONS =====
-  useEffect(() => {
-    if (alreadySubmitted || !isSessionReady || !session?.user?.id || !assessmentId) {
-      return;
-    }
+        if (!assessmentId) return;
 
-    const fetchAssessmentData = async () => {
-      try {
-        setLoading(true);
-        
-        const { data: questionsData, error: questionsError } = await supabase
-          .from("questions")
-          .select(`
-            id,
-            question_text,
-            section,
-            subsection,
-            question_order,
-            answers (
-              id, 
-              answer_text
-            )
-          `)
-          .eq("assessment_id", assessmentId)
-          .order("question_order", { ascending: true })
-          .order("id", { ascending: true });
-
-        if (questionsError) {
-          console.error("Questions fetch error:", questionsError);
-          throw new Error(`Failed to load questions: ${questionsError.message}`);
-        }
-        
-        if (!questionsData || questionsData.length === 0) {
-          throw new Error("No questions found for this assessment.");
+        // Check if already completed
+        const completed = await isAssessmentCompleted(session.user.id, assessmentId);
+        if (completed) {
+          setAlreadySubmitted(true);
+          setLoading(false);
+          return;
         }
 
-        const savedAnswers = await loadUserResponses(session.user.id, assessmentId);
+        // Load assessment details
+        const assessmentData = await getAssessmentById(assessmentId);
+        setAssessment(assessmentData);
+        setAssessmentType(assessmentData.assessment_type);
+        setTimeLimit(assessmentData.assessment_type.time_limit_minutes * 60);
 
-        const processedQuestions = questionsData.map((q, index) => {
-          const options = q.answers && Array.isArray(q.answers) && q.answers.length > 0
-            ? q.answers.map(a => ({ 
-                ...a, 
-                id: parseInt(a.id),
-                answer_text: a.answer_text || 'Option text missing'
-              }))
-            : [];
-          
-          return {
-            ...q,
-            id: parseInt(q.id),
-            question_number: index + 1,
-            options: trulyRandomizeAnswers([...options])
-          };
+        // Load questions
+        const questionsData = await getAssessmentQuestions(assessmentId);
+        setQuestions(questionsData);
+
+        // Create or get session
+        const sessionData = await createAssessmentSession(
+          session.user.id,
+          assessmentId,
+          assessmentData.assessment_type.id
+        );
+        setSession(sessionData);
+
+        // Load saved progress
+        const progress = await getProgress(session.user.id, assessmentId);
+        if (progress) {
+          setElapsedSeconds(progress.elapsed_seconds);
+          if (progress.last_question_id) {
+            const lastIndex = questionsData.findIndex(q => q.id === progress.last_question_id);
+            if (lastIndex > 0) setCurrentIndex(lastIndex);
+          }
+        }
+
+        // Load saved responses
+        const responses = await getSessionResponses(sessionData.id);
+        const answersMap = {};
+        responses.forEach(r => {
+          answersMap[r.question_id] = r.answer_id;
         });
+        setAnswers(answersMap);
 
-        setQuestions(processedQuestions);
-        setAnswers(savedAnswers);
-        setError(null);
-        
-        const firstUnanswered = processedQuestions.findIndex(q => !savedAnswers[q.id]);
-        if (firstUnanswered > 0) {
-          setCurrentIndex(firstUnanswered);
-        }
-        
+        // Setup anti-cheat
+        setupAntiCheat();
+
+        setLoading(false);
       } catch (error) {
-        console.error("❌ Assessment loading error:", error);
+        console.error("Initialization error:", error);
         setError(error.message);
-      } finally {
         setLoading(false);
       }
     };
 
-    fetchAssessmentData();
-  }, [assessmentId, isSessionReady, session?.user?.id, alreadySubmitted]);
+    init();
+  }, [assessmentId, router]);
 
-  // ===== TIMER =====
+  // Timer effect
   useEffect(() => {
-    if (alreadySubmitted || !session?.user?.id || !isSessionReady || !assessmentId || !assessment || questions.length === 0) return;
+    if (loading || alreadySubmitted || !session) return;
 
-    let timerInterval;
-    let localElapsed = 0;
-    let isMounted = true;
-    
-    const initializeTimer = async () => {
-      try {
-        const savedElapsed = await startOrResumeTimer(session.user.id, assessmentId);
+    const timer = setInterval(async () => {
+      setElapsedSeconds(prev => {
+        const newElapsed = prev + 1;
+        setTimeRemaining(timeLimit - newElapsed);
         
-        if (!isMounted) return;
+        // Auto-submit when time runs out
+        if (newElapsed >= timeLimit) {
+          handleSubmit();
+        }
         
-        localElapsed = savedElapsed;
-        setElapsed(savedElapsed);
+        // Save progress every 30 seconds
+        if (newElapsed % 30 === 0) {
+          saveProgress(session.id, user.id, assessmentId, newElapsed, questions[currentIndex]?.id);
+          updateSessionTimer(session.id, newElapsed);
+        }
         
-        timerInterval = setInterval(async () => {
-          if (!isMounted) return;
-          
-          localElapsed += 1;
-          setElapsed(localElapsed);
-          
-          if (localElapsed % 30 === 0) {
-            await saveTimerProgress(session.user.id, assessmentId, localElapsed);
-          }
-          
-          if (localElapsed >= timeLimitSeconds) {
-            clearInterval(timerInterval);
-            if (!alreadySubmitted && isMounted) {
-              await handleSubmitAssessment();
-            }
-          }
-        }, 1000);
-      } catch (error) {
-        console.error("Failed to initialize timer:", error);
-      }
-    };
+        return newElapsed;
+      });
+    }, 1000);
 
-    initializeTimer();
+    return () => clearInterval(timer);
+  }, [loading, alreadySubmitted, session, timeLimit, assessmentId, user?.id, currentIndex, questions]);
 
-    const handleBeforeUnload = () => {
-      if (session?.user?.id && localElapsed > 0) {
-        saveTimerProgress(session.user.id, assessmentId, localElapsed);
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      isMounted = false;
-      clearInterval(timerInterval);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [alreadySubmitted, session?.user?.id, isSessionReady, assessmentId, assessment, questions.length, timeLimitSeconds]);
-
-  // ===== ANTI-CHEAT =====
-  useEffect(() => {
-    if (!alreadySubmitted && !loading && isSessionReady && questions.length > 0) {
-      setupAntiCheatProtection();
-    }
-  }, [alreadySubmitted, loading, isSessionReady, questions.length]);
-
-  // ===== HANDLE ANSWER SELECTION =====
-  const handleSelect = async (questionId, answerId) => {
-    if (alreadySubmitted || !isSessionReady || !session?.user?.id || !assessmentId) return;
+  // Handle answer selection
+  const handleAnswerSelect = async (questionId, answerId) => {
+    if (alreadySubmitted || !session) return;
 
     setAnswers(prev => ({ ...prev, [questionId]: answerId }));
-    setSaveStatus(prev => ({ ...prev, [questionId]: "saving" }));
+    setSaveStatus(prev => ({ ...prev, [questionId]: 'saving' }));
 
     try {
-      await saveResponse(assessmentId, questionId, answerId, session.user.id);
-      setSaveStatus(prev => ({ ...prev, [questionId]: "saved" }));
+      await saveResponse(session.id, user.id, assessmentId, questionId, answerId);
+      setSaveStatus(prev => ({ ...prev, [questionId]: 'saved' }));
       
       setTimeout(() => {
         setSaveStatus(prev => {
@@ -565,22 +193,20 @@ export default function AssessmentPage() {
         });
       }, 1500);
     } catch (error) {
-      console.error("Save failed:", error);
-      setSaveStatus(prev => ({ ...prev, [questionId]: "error" }));
+      console.error("Error saving response:", error);
+      setSaveStatus(prev => ({ ...prev, [questionId]: 'error' }));
     }
   };
 
-  // ===== NAVIGATION =====
+  // Navigation
   const handleNext = () => {
-    if (alreadySubmitted) return;
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(i => i + 1);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
-  const handleBack = () => {
-    if (alreadySubmitted) return;
+  const handlePrevious = () => {
     if (currentIndex > 0) {
       setCurrentIndex(i => i - 1);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -588,76 +214,75 @@ export default function AssessmentPage() {
   };
 
   const jumpToQuestion = (index) => {
-    if (!alreadySubmitted) {
-      setCurrentIndex(index);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
+    setCurrentIndex(index);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // ===== HANDLE SUBMIT ASSESSMENT =====
-  const handleSubmitAssessment = async () => {
-    if (alreadySubmitted || !session?.user?.id || !assessmentId || !assessmentResult) return;
+  // Submit assessment
+  const handleSubmit = async () => {
+    if (!session || alreadySubmitted) return;
 
     setIsSubmitting(true);
     setShowSubmitModal(false);
-    
+
     try {
-      await submitAssessment(
-        session.user.id, 
-        assessmentId, 
-        assessmentResult.id, 
-        elapsed,
-        assessmentType
-      );
-      await markTimerAsCompleted(session.user.id, assessmentId);
+      // Final save of progress
+      await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id);
+      await updateSessionTimer(session.id, elapsedSeconds);
+      
+      // Submit and generate results
+      const resultId = await submitAssessment(session.id);
       
       setAlreadySubmitted(true);
-      localStorage.setItem(`assessment_submitted_${assessmentId}`, 'true');
-      
       setShowSuccessModal(true);
       
+      // Redirect after 3 seconds
       setTimeout(() => {
         router.push('/assessment/pre');
       }, 3000);
     } catch (error) {
       console.error("Submission error:", error);
-      alert("Submission failed. Please contact support.");
+      alert("Failed to submit assessment. Please contact support.");
+    } finally {
       setIsSubmitting(false);
     }
   };
 
-  // ===== RETRY FETCH =====
-  const handleRetry = () => {
-    window.location.reload();
-  };
+  // Calculate progress
+  const totalAnswered = Object.keys(answers).length;
+  const progressPercentage = questions.length > 0 
+    ? Math.round((totalAnswered / questions.length) * 100) 
+    : 0;
+  
+  const isLastQuestion = currentIndex === questions.length - 1;
+  const timeRemainingSeconds = Math.max(0, timeLimit - elapsedSeconds);
+  const timeRemainingFormatted = formatTime(timeRemainingSeconds);
+  const timePercentage = (elapsedSeconds / timeLimit) * 100;
+  const isTimeWarning = timePercentage > 80;
+  const isTimeCritical = timePercentage > 90;
 
-  // ===== LOADING STATE =====
+  const currentQuestion = questions[currentIndex];
+
   if (loading) {
     return (
       <div style={styles.loadingContainer}>
         <div style={styles.loadingContent}>
           <div style={styles.loadingSpinner} />
-          <div style={styles.loadingTitle}>Loading Assessment...</div>
-          <div style={styles.loadingSubtitle}>Preparing your questions</div>
+          <h2>Loading Assessment...</h2>
+          <p>Preparing your questions</p>
         </div>
       </div>
     );
   }
 
-  // ===== ALREADY SUBMITTED =====
   if (alreadySubmitted) {
     return (
       <div style={styles.messageContainer}>
         <div style={styles.messageCard}>
           <div style={styles.successIcon}>✅</div>
-          <h2 style={styles.messageTitle}>Assessment Already Completed</h2>
-          <p style={styles.messageText}>
-            You have already submitted this assessment. Each assessment can only be taken once.
-          </p>
-          <button
-            onClick={() => router.push('/assessment/pre')}
-            style={styles.primaryButton}
-          >
+          <h2>Assessment Already Completed</h2>
+          <p>You have already submitted this assessment. Each assessment can only be taken once.</p>
+          <button onClick={() => router.push('/assessment/pre')} style={styles.primaryButton}>
             ← Return to Assessments
           </button>
         </div>
@@ -665,18 +290,14 @@ export default function AssessmentPage() {
     );
   }
 
-  // ===== ERROR STATE =====
   if (error) {
     return (
       <div style={styles.messageContainer}>
         <div style={styles.messageCard}>
           <div style={styles.errorIcon}>⚠️</div>
-          <h2 style={styles.messageTitle}>Error Loading Assessment</h2>
-          <p style={styles.messageText}>{error}</p>
-          <button
-            onClick={handleRetry}
-            style={styles.primaryButton}
-          >
+          <h2>Error Loading Assessment</h2>
+          <p>{error}</p>
+          <button onClick={() => window.location.reload()} style={styles.primaryButton}>
             Try Again
           </button>
         </div>
@@ -684,51 +305,20 @@ export default function AssessmentPage() {
     );
   }
 
-  if (questions.length === 0) {
+  if (!questions.length) {
     return (
       <div style={styles.messageContainer}>
         <div style={styles.messageCard}>
           <div style={styles.errorIcon}>📭</div>
-          <h2 style={styles.messageTitle}>No Questions Available</h2>
-          <p style={styles.messageText}>
-            This assessment doesn't have any questions yet.
-          </p>
-          <button
-            onClick={() => router.push('/assessment/pre')}
-            style={styles.primaryButton}
-          >
+          <h2>No Questions Available</h2>
+          <p>This assessment doesn't have any questions yet.</p>
+          <button onClick={() => router.push('/assessment/pre')} style={styles.primaryButton}>
             ← Back
           </button>
         </div>
       </div>
     );
   }
-
-  const currentQuestion = questions[currentIndex];
-  const currentSection = currentQuestion?.section || 'General';
-  const sectionConfig = SECTION_CONFIG[currentSection] || {
-    color: '#4A6FA5',
-    icon: '📝',
-    bgImage: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1920&q=80',
-    gradient: 'linear-gradient(135deg, #4A6FA5, #2C3E50)'
-  };
-
-  const totalAnswered = Object.keys(answers).length;
-  const progressPercentage = questions.length > 0 ? Math.round((totalAnswered / questions.length) * 100) : 0;
-  const isLastQuestion = currentIndex === questions.length - 1;
-
-  // Time calculations
-  const timeRemaining = Math.max(0, timeLimitSeconds - elapsed);
-  const hours = Math.floor(timeRemaining / 3600);
-  const minutes = Math.floor((timeRemaining % 3600) / 60);
-  const seconds = timeRemaining % 60;
-  const formatTime = (t) => t.toString().padStart(2, '0');
-
-  const timeUsedPercentage = (elapsed / timeLimitSeconds) * 100;
-  const isTimeWarning = timeUsedPercentage > 80;
-  const isTimeCritical = timeUsedPercentage > 90;
-
-  const assessmentConfig = ASSESSMENT_TYPE_CONFIG[assessmentType] || ASSESSMENT_TYPE_CONFIG.general;
 
   return (
     <>
@@ -742,15 +332,15 @@ export default function AssessmentPage() {
               <div style={styles.modalStats}>
                 <div style={styles.modalStat}>
                   <span>Questions Answered</span>
-                  <span style={{fontWeight: '700', color: '#4caf50'}}>{totalAnswered}/{questions.length}</span>
+                  <span style={{ color: '#4caf50', fontWeight: 700 }}>{totalAnswered}/{questions.length}</span>
                 </div>
                 <div style={styles.modalStat}>
                   <span>Completion Rate</span>
-                  <span style={{fontWeight: '700', color: '#2196f3'}}>{progressPercentage}%</span>
+                  <span style={{ color: '#2196f3', fontWeight: 700 }}>{progressPercentage}%</span>
                 </div>
                 <div style={styles.modalStat}>
-                  <span>Assessment Type</span>
-                  <span style={{fontWeight: '700', color: '#9C27B0'}}>{assessmentConfig.name}</span>
+                  <span>Assessment</span>
+                  <span style={{ color: '#9C27B0', fontWeight: 700 }}>{assessment?.title}</span>
                 </div>
               </div>
               <div style={styles.modalWarning}>
@@ -762,7 +352,7 @@ export default function AssessmentPage() {
               <button onClick={() => setShowSubmitModal(false)} style={styles.modalSecondaryButton}>
                 Continue Reviewing
               </button>
-              <button onClick={handleSubmitAssessment} disabled={isSubmitting} style={styles.modalPrimaryButton}>
+              <button onClick={handleSubmit} disabled={isSubmitting} style={styles.modalPrimaryButton}>
                 {isSubmitting ? 'Submitting...' : 'Submit Assessment'}
               </button>
             </div>
@@ -773,11 +363,11 @@ export default function AssessmentPage() {
       {/* Success Modal */}
       {showSuccessModal && (
         <div style={styles.modalOverlay}>
-          <div style={{...styles.modalContent, textAlign: 'center'}}>
+          <div style={{ ...styles.modalContent, textAlign: 'center' }}>
             <div style={styles.successIconLarge}>✓</div>
-            <h2 style={{...styles.modalTitle, color: '#2e7d32'}}>Assessment Complete!</h2>
-            <p style={styles.successText}>Your {assessmentConfig.name} has been successfully submitted.</p>
-            <p style={styles.redirectText}>Redirecting to assessment selection...</p>
+            <h2 style={{ color: '#2e7d32' }}>Assessment Complete!</h2>
+            <p>Your {assessment?.title} has been successfully submitted.</p>
+            <p>Redirecting to assessment selection...</p>
           </div>
         </div>
       )}
@@ -787,33 +377,20 @@ export default function AssessmentPage() {
         {/* Header */}
         <div style={{
           ...styles.header,
-          background: sectionConfig.gradient
+          background: `linear-gradient(135deg, ${assessmentType?.gradient_start || '#667eea'}, ${assessmentType?.gradient_end || '#764ba2'})`
         }}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
-              <button
-                onClick={() => router.push('/assessment/pre')}
-                style={styles.backButton}
-              >
+              <button onClick={() => router.push('/assessment/pre')} style={styles.backButton}>
                 ←
               </button>
-              
-              <div style={styles.headerIcon}>
-                {sectionConfig.icon}
-              </div>
-              
-              <div style={styles.headerInfo}>
-                <div style={styles.headerTitle}>
-                  {assessment?.name || assessmentConfig.name}
-                </div>
+              <div style={styles.headerIcon}>{assessmentType?.icon || '📋'}</div>
+              <div>
+                <div style={styles.headerTitle}>{assessment?.title}</div>
                 <div style={styles.headerMeta}>
                   <span>Q{currentIndex + 1}/{questions.length}</span>
                   <span>•</span>
-                  <span>{currentSection}</span>
-                  <span>•</span>
-                  <span style={{fontSize: '11px', background: 'rgba(255,255,255,0.2)', padding: '2px 6px', borderRadius: '4px'}}>
-                    Max Score: {assessmentConfig.maxScore}
-                  </span>
+                  <span>{currentQuestion?.section}</span>
                 </div>
               </div>
             </div>
@@ -829,7 +406,7 @@ export default function AssessmentPage() {
                 ...styles.timerValue,
                 color: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : 'white'
               }}>
-                {formatTime(hours)}:{formatTime(minutes)}:{formatTime(seconds)}
+                {timeRemainingFormatted}
               </div>
             </div>
           </div>
@@ -841,7 +418,7 @@ export default function AssessmentPage() {
             <div style={{
               ...styles.progressFill,
               width: `${progressPercentage}%`,
-              background: sectionConfig.gradient
+              background: `linear-gradient(135deg, ${assessmentType?.gradient_start || '#667eea'}, ${assessmentType?.gradient_end || '#764ba2'})`
             }} />
           </div>
           <div style={styles.progressStats}>
@@ -855,27 +432,29 @@ export default function AssessmentPage() {
           {/* Question Panel */}
           <div style={styles.questionPanel}>
             <div style={styles.questionContent}>
+              {/* Section Badge */}
               <div style={styles.sectionBadge}>
                 <div style={{
                   ...styles.sectionIcon,
-                  background: sectionConfig.gradient
+                  background: `linear-gradient(135deg, ${assessmentType?.gradient_start || '#667eea'}, ${assessmentType?.gradient_end || '#764ba2'})`
                 }}>
-                  {sectionConfig.icon}
+                  {assessmentType?.icon || '📋'}
                 </div>
                 <div>
-                  <div style={styles.sectionName}>{currentSection}</div>
+                  <div style={styles.sectionName}>{currentQuestion?.section}</div>
+                  {currentQuestion?.subsection && (
+                    <div style={styles.subsection}>{currentQuestion.subsection}</div>
+                  )}
                 </div>
               </div>
 
+              {/* Question */}
               <div style={styles.questionText}>
-                <div style={styles.questionNumber}>
-                  Question {currentIndex + 1} of {questions.length}
-                </div>
-                <div style={styles.questionContent}>
-                  {currentQuestion?.question_text}
-                </div>
+                <div style={styles.questionNumber}>Question {currentIndex + 1} of {questions.length}</div>
+                <div style={styles.questionContent}>{currentQuestion?.question_text}</div>
               </div>
 
+              {/* Save Status */}
               {saveStatus[currentQuestion?.id] && (
                 <div style={{
                   ...styles.saveStatus,
@@ -883,30 +462,29 @@ export default function AssessmentPage() {
                   borderColor: saveStatus[currentQuestion.id] === 'saved' ? '#4caf50' : '#ff9800',
                   color: saveStatus[currentQuestion.id] === 'saved' ? '#2e7d32' : '#f57c00'
                 }}>
-                  <span>
-                    {saveStatus[currentQuestion.id] === 'saved' ? '✓ Answer saved' : '⏳ Saving...'}
-                  </span>
+                  {saveStatus[currentQuestion.id] === 'saved' ? '✓ Answer saved' : '⏳ Saving...'}
                 </div>
               )}
 
+              {/* Answers */}
               <div style={styles.answersContainer}>
-                {currentQuestion?.options?.map((option, index) => {
-                  const isSelected = answers[currentQuestion.id] === option.id;
-                  const isHovered = hoveredAnswer === option.id;
+                {currentQuestion?.answers?.map((answer, index) => {
+                  const isSelected = answers[currentQuestion.id] === answer.id;
+                  const isHovered = hoveredAnswer === answer.id;
                   const optionLetter = String.fromCharCode(65 + index);
-                  
+
                   return (
                     <button
-                      key={option.id}
-                      onClick={() => handleSelect(currentQuestion.id, option.id)}
+                      key={answer.id}
+                      onClick={() => handleAnswerSelect(currentQuestion.id, answer.id)}
                       disabled={saveStatus[currentQuestion.id] === 'saving' || alreadySubmitted}
                       style={{
                         ...styles.answerButton,
-                        background: isSelected ? sectionConfig.color : isHovered ? '#f8fafc' : 'white',
-                        borderColor: isSelected ? sectionConfig.color : '#e2e8f0',
+                        background: isSelected ? assessmentType?.gradient_start || '#667eea' : isHovered ? '#f8fafc' : 'white',
+                        borderColor: isSelected ? assessmentType?.gradient_start || '#667eea' : '#e2e8f0',
                         transform: isSelected || isHovered ? 'translateY(-2px)' : 'translateY(0)'
                       }}
-                      onMouseEnter={() => setHoveredAnswer(option.id)}
+                      onMouseEnter={() => setHoveredAnswer(answer.id)}
                       onMouseLeave={() => setHoveredAnswer(null)}
                     >
                       <div style={{
@@ -920,29 +498,30 @@ export default function AssessmentPage() {
                         ...styles.answerText,
                         color: isSelected ? 'white' : '#1e293b'
                       }}>
-                        {option.answer_text}
+                        {answer.answer_text}
                       </span>
                     </button>
                   );
                 })}
               </div>
 
+              {/* Navigation */}
               <div style={styles.navigation}>
-                <button 
-                  onClick={handleBack} 
+                <button
+                  onClick={handlePrevious}
                   disabled={currentIndex === 0 || alreadySubmitted}
                   style={{
                     ...styles.navButton,
                     background: currentIndex === 0 || alreadySubmitted ? '#f1f5f9' : 'white',
-                    color: currentIndex === 0 || alreadySubmitted ? '#94a3b8' : sectionConfig.color,
-                    border: currentIndex === 0 || alreadySubmitted ? '1px solid #e2e8f0' : `2px solid ${sectionConfig.color}`
+                    color: currentIndex === 0 || alreadySubmitted ? '#94a3b8' : assessmentType?.gradient_start || '#667eea',
+                    border: currentIndex === 0 || alreadySubmitted ? '1px solid #e2e8f0' : `2px solid ${assessmentType?.gradient_start || '#667eea'}`
                   }}
                 >
                   ← Previous
                 </button>
-                
+
                 {isLastQuestion ? (
-                  <button 
+                  <button
                     onClick={() => setShowSubmitModal(true)}
                     disabled={alreadySubmitted}
                     style={{
@@ -955,12 +534,12 @@ export default function AssessmentPage() {
                     Submit Assessment
                   </button>
                 ) : (
-                  <button 
-                    onClick={handleNext} 
+                  <button
+                    onClick={handleNext}
                     disabled={alreadySubmitted}
                     style={{
                       ...styles.navButton,
-                      background: alreadySubmitted ? '#f1f5f9' : sectionConfig.color,
+                      background: alreadySubmitted ? '#f1f5f9' : `linear-gradient(135deg, ${assessmentType?.gradient_start || '#667eea'}, ${assessmentType?.gradient_end || '#764ba2'})`,
                       color: alreadySubmitted ? '#94a3b8' : 'white',
                       border: 'none'
                     }}
@@ -976,30 +555,32 @@ export default function AssessmentPage() {
           <div style={styles.navigatorPanel}>
             <div style={styles.navigatorHeader}>
               <span style={styles.navigatorIcon}>📋</span>
-              <h3 style={styles.navigatorTitle}>Question Navigator</h3>
+              <h3>Question Navigator</h3>
             </div>
-            
+
+            {/* Stats */}
             <div style={styles.statsGrid}>
               <div style={styles.statCard}>
-                <div style={{...styles.statValue, color: '#4caf50'}}>{totalAnswered}</div>
+                <div style={{ ...styles.statValue, color: '#4caf50' }}>{totalAnswered}</div>
                 <div style={styles.statLabel}>Answered</div>
               </div>
               <div style={styles.statCard}>
-                <div style={{...styles.statValue, color: '#64748b'}}>{questions.length - totalAnswered}</div>
+                <div style={{ ...styles.statValue, color: '#64748b' }}>{questions.length - totalAnswered}</div>
                 <div style={styles.statLabel}>Remaining</div>
               </div>
               <div style={styles.statCard}>
-                <div style={{...styles.statValue, color: sectionConfig.color}}>{progressPercentage}%</div>
+                <div style={{ ...styles.statValue, color: assessmentType?.gradient_start || '#667eea' }}>{progressPercentage}%</div>
                 <div style={styles.statLabel}>Complete</div>
               </div>
             </div>
 
+            {/* Question Grid */}
             <div style={styles.questionGrid}>
               {questions.map((q, index) => {
                 const isAnswered = answers[q.id];
                 const isCurrent = index === currentIndex;
                 const isHovered = hoveredQuestion === index;
-                
+
                 return (
                   <button
                     key={q.id}
@@ -1007,9 +588,9 @@ export default function AssessmentPage() {
                     disabled={alreadySubmitted}
                     style={{
                       ...styles.gridItem,
-                      background: isCurrent ? sectionConfig.color : isAnswered ? '#4caf50' : 'white',
+                      background: isCurrent ? assessmentType?.gradient_start || '#667eea' : isAnswered ? '#4caf50' : 'white',
                       color: isCurrent || isAnswered ? 'white' : '#1e293b',
-                      borderColor: isCurrent ? sectionConfig.color : isAnswered ? '#4caf50' : '#e2e8f0',
+                      borderColor: isCurrent ? assessmentType?.gradient_start || '#667eea' : isAnswered ? '#4caf50' : '#e2e8f0',
                       transform: isHovered ? 'scale(1.1)' : 'scale(1)'
                     }}
                     onMouseEnter={() => setHoveredQuestion(index)}
@@ -1021,17 +602,18 @@ export default function AssessmentPage() {
               })}
             </div>
 
+            {/* Legend */}
             <div style={styles.legend}>
               <div style={styles.legendItem}>
-                <div style={{...styles.legendDot, background: '#4caf50'}} />
+                <div style={{ ...styles.legendDot, background: '#4caf50' }} />
                 <span>Answered</span>
               </div>
               <div style={styles.legendItem}>
-                <div style={{...styles.legendDot, background: sectionConfig.color}} />
+                <div style={{ ...styles.legendDot, background: assessmentType?.gradient_start || '#667eea' }} />
                 <span>Current</span>
               </div>
               <div style={styles.legendItem}>
-                <div style={{...styles.legendDot, background: 'white', border: '2px solid #e2e8f0'}} />
+                <div style={{ ...styles.legendDot, background: 'white', border: '2px solid #e2e8f0' }} />
                 <span>Pending</span>
               </div>
             </div>
@@ -1039,29 +621,26 @@ export default function AssessmentPage() {
             {/* Assessment Info */}
             <div style={styles.assessmentInfo}>
               <div style={styles.infoRow}>
-                <span>Assessment Type:</span>
-                <span style={{fontWeight: '600', color: '#9C27B0'}}>{assessmentConfig.name}</span>
+                <span>Assessment:</span>
+                <span style={{ fontWeight: 600 }}>{assessment?.title}</span>
               </div>
               <div style={styles.infoRow}>
                 <span>Max Score:</span>
-                <span style={{fontWeight: '600'}}>{assessmentConfig.maxScore}</span>
+                <span style={{ fontWeight: 600 }}>{assessmentType?.max_score}</span>
+              </div>
+              <div style={styles.infoRow}>
+                <span>Time Limit:</span>
+                <span style={{ fontWeight: 600 }}>{assessmentType?.time_limit_minutes} minutes</span>
               </div>
             </div>
           </div>
         </div>
       </div>
-
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
     </>
   );
 }
 
-// ===== STYLES =====
+// Styles
 const styles = {
   loadingContainer: {
     minHeight: '100vh',
@@ -1083,15 +662,6 @@ const styles = {
     animation: 'spin 1s linear infinite',
     margin: '0 auto 20px'
   },
-  loadingTitle: {
-    fontSize: '24px',
-    fontWeight: '700',
-    marginBottom: '10px'
-  },
-  loadingSubtitle: {
-    fontSize: '16px',
-    opacity: 0.9
-  },
   messageContainer: {
     minHeight: '100vh',
     display: 'flex',
@@ -1102,46 +672,33 @@ const styles = {
   },
   messageCard: {
     background: 'white',
-    padding: '50px',
-    borderRadius: '20px',
+    padding: '40px',
+    borderRadius: '12px',
     maxWidth: '500px',
     textAlign: 'center',
-    boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+    boxShadow: '0 10px 40px rgba(0,0,0,0.2)'
   },
   successIcon: {
-    fontSize: '64px',
+    fontSize: '48px',
     marginBottom: '20px'
   },
   errorIcon: {
-    fontSize: '64px',
+    fontSize: '48px',
     marginBottom: '20px'
   },
-  messageTitle: {
-    color: '#1a2639',
-    marginBottom: '15px',
-    fontSize: '28px',
-    fontWeight: '700'
-  },
-  messageText: {
-    color: '#64748b',
-    marginBottom: '30px',
-    fontSize: '16px',
-    lineHeight: '1.6'
-  },
   primaryButton: {
-    padding: '14px 28px',
+    padding: '12px 24px',
     background: 'linear-gradient(135deg, #667eea, #764ba2)',
     color: 'white',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '6px',
     fontSize: '16px',
-    fontWeight: '600',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    marginTop: '20px'
   },
   container: {
     minHeight: '100vh',
-    background: '#f8fafc',
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    background: '#f8fafc'
   },
   header: {
     position: 'sticky',
@@ -1160,61 +717,54 @@ const styles = {
   headerLeft: {
     display: 'flex',
     alignItems: 'center',
-    gap: '20px'
+    gap: '16px'
   },
   backButton: {
-    background: 'rgba(255,255,255,0.2)',
-    border: 'none',
-    color: 'white',
     width: '40px',
     height: '40px',
-    borderRadius: '10px',
-    cursor: 'pointer',
-    fontSize: '20px'
+    background: 'rgba(255,255,255,0.2)',
+    border: 'none',
+    borderRadius: '8px',
+    color: 'white',
+    fontSize: '20px',
+    cursor: 'pointer'
   },
   headerIcon: {
     width: '40px',
     height: '40px',
     background: 'rgba(255,255,255,0.2)',
-    borderRadius: '10px',
+    borderRadius: '8px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     fontSize: '24px'
   },
-  headerInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px'
-  },
   headerTitle: {
     fontSize: '18px',
-    fontWeight: '700'
+    fontWeight: 600,
+    marginBottom: '4px'
   },
   headerMeta: {
     display: 'flex',
-    alignItems: 'center',
     gap: '8px',
     fontSize: '13px',
-    opacity: 0.9,
-    flexWrap: 'wrap'
+    opacity: 0.9
   },
   timer: {
-    padding: '10px 20px',
-    borderRadius: '10px',
-    textAlign: 'center',
+    padding: '8px 16px',
+    borderRadius: '8px',
     border: '1px solid',
-    minWidth: '160px'
+    textAlign: 'center',
+    minWidth: '140px'
   },
   timerLabel: {
     fontSize: '11px',
-    fontWeight: '600',
-    marginBottom: '4px',
-    letterSpacing: '0.5px'
+    fontWeight: 600,
+    marginBottom: '4px'
   },
   timerValue: {
-    fontSize: '22px',
-    fontWeight: '700',
+    fontSize: '20px',
+    fontWeight: 700,
     fontFamily: 'monospace'
   },
   progressContainer: {
@@ -1231,7 +781,6 @@ const styles = {
   },
   progressFill: {
     height: '100%',
-    borderRadius: '4px',
     transition: 'width 0.3s ease'
   },
   progressStats: {
@@ -1244,24 +793,23 @@ const styles = {
     maxWidth: '1400px',
     margin: '0 auto',
     padding: '0 24px 40px',
-    display: 'flex',
-    gap: '30px',
-    flexWrap: 'wrap'
+    display: 'grid',
+    gridTemplateColumns: '1fr 300px',
+    gap: '24px'
   },
   questionPanel: {
-    flex: '1 1 700px',
     background: 'white',
-    borderRadius: '16px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
   },
   questionContent: {
-    padding: '40px'
+    padding: '32px'
   },
   sectionBadge: {
     display: 'flex',
     alignItems: 'center',
     gap: '16px',
-    marginBottom: '20px'
+    marginBottom: '24px'
   },
   sectionIcon: {
     width: '48px',
@@ -1275,30 +823,34 @@ const styles = {
   },
   sectionName: {
     fontSize: '18px',
-    fontWeight: '700',
+    fontWeight: 600,
     color: '#1e293b'
+  },
+  subsection: {
+    fontSize: '14px',
+    color: '#64748b',
+    marginTop: '4px'
   },
   questionText: {
     background: '#f8fafc',
-    padding: '30px',
-    borderRadius: '12px',
+    padding: '24px',
+    borderRadius: '8px',
     marginBottom: '20px'
   },
   questionNumber: {
     fontSize: '14px',
     color: '#64748b',
-    marginBottom: '10px'
+    marginBottom: '8px'
   },
   questionContent: {
-    fontSize: '20px',
+    fontSize: '18px',
     lineHeight: '1.6',
-    color: '#1e293b',
-    fontWeight: '500'
+    color: '#1e293b'
   },
   saveStatus: {
     padding: '12px',
     border: '1px solid',
-    borderRadius: '8px',
+    borderRadius: '6px',
     marginBottom: '20px',
     fontSize: '14px',
     textAlign: 'center'
@@ -1307,12 +859,12 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '12px',
-    marginBottom: '30px'
+    marginBottom: '24px'
   },
   answerButton: {
-    padding: '18px 20px',
+    padding: '16px',
     border: '2px solid',
-    borderRadius: '12px',
+    borderRadius: '8px',
     cursor: 'pointer',
     textAlign: 'left',
     fontSize: '16px',
@@ -1325,41 +877,35 @@ const styles = {
   answerLetter: {
     width: '32px',
     height: '32px',
-    borderRadius: '8px',
+    borderRadius: '6px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     fontSize: '16px',
-    fontWeight: '700',
+    fontWeight: 600,
     flexShrink: 0
   },
   answerText: {
     flex: 1,
-    fontSize: '16px',
     lineHeight: '1.5'
   },
   navigation: {
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: '20px'
+    marginTop: '24px'
   },
   navButton: {
-    padding: '12px 24px',
-    borderRadius: '8px',
-    fontSize: '15px',
-    fontWeight: '600',
+    padding: '10px 20px',
+    borderRadius: '6px',
+    fontSize: '14px',
+    fontWeight: 600,
     cursor: 'pointer',
     transition: 'all 0.2s ease'
   },
   navigatorPanel: {
-    flex: '1 1 300px',
     background: 'white',
-    borderRadius: '16px',
-    padding: '25px',
-    display: 'flex',
-    flexDirection: 'column',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    borderRadius: '12px',
+    padding: '20px',
     position: 'sticky',
     top: '100px',
     height: 'fit-content'
@@ -1370,55 +916,48 @@ const styles = {
     gap: '10px',
     paddingBottom: '15px',
     borderBottom: '2px solid #f1f5f9',
-    marginBottom: '20px'
+    marginBottom: '15px'
   },
   navigatorIcon: {
     fontSize: '20px'
   },
-  navigatorTitle: {
-    fontSize: '16px',
-    fontWeight: '700',
-    color: '#1e293b',
-    margin: 0
-  },
   statsGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr 1fr',
-    gap: '10px',
+    gap: '8px',
     marginBottom: '20px'
   },
   statCard: {
     background: '#f8fafc',
-    borderRadius: '10px',
-    padding: '12px 8px',
+    padding: '12px',
+    borderRadius: '6px',
     textAlign: 'center'
   },
   statValue: {
-    fontSize: '24px',
-    fontWeight: '700',
+    fontSize: '20px',
+    fontWeight: 700,
     lineHeight: 1,
     marginBottom: '4px'
   },
   statLabel: {
     fontSize: '11px',
-    color: '#64748b',
-    textTransform: 'uppercase'
+    color: '#64748b'
   },
   questionGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(6, 1fr)',
-    gap: '8px',
-    marginBottom: '20px',
-    maxHeight: '250px',
+    gridTemplateColumns: 'repeat(5, 1fr)',
+    gap: '6px',
+    marginBottom: '15px',
+    maxHeight: '200px',
     overflowY: 'auto',
-    padding: '5px'
+    padding: '4px'
   },
   gridItem: {
     aspectRatio: '1',
     border: '2px solid',
-    borderRadius: '8px',
-    fontSize: '13px',
-    fontWeight: '600',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: 600,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1426,11 +965,11 @@ const styles = {
     transition: 'all 0.2s ease'
   },
   legend: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr 1fr',
-    gap: '10px',
-    paddingTop: '15px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '15px 0',
     borderTop: '2px solid #f1f5f9',
+    borderBottom: '2px solid #f1f5f9',
     marginBottom: '15px'
   },
   legendItem: {
@@ -1443,20 +982,19 @@ const styles = {
   legendDot: {
     width: '12px',
     height: '12px',
-    borderRadius: '4px'
+    borderRadius: '3px'
   },
   assessmentInfo: {
     background: '#f8fafc',
     padding: '15px',
-    borderRadius: '8px',
-    marginTop: '10px'
+    borderRadius: '6px'
   },
   infoRow: {
     display: 'flex',
     justifyContent: 'space-between',
     fontSize: '13px',
-    color: '#475569',
-    marginBottom: '8px'
+    marginBottom: '8px',
+    color: '#475569'
   },
   modalOverlay: {
     position: 'fixed',
@@ -1473,11 +1011,10 @@ const styles = {
   },
   modalContent: {
     background: 'white',
-    padding: '40px',
-    borderRadius: '20px',
+    padding: '32px',
+    borderRadius: '12px',
     maxWidth: '500px',
-    width: '100%',
-    boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+    width: '100%'
   },
   modalIcon: {
     fontSize: '48px',
@@ -1486,79 +1023,67 @@ const styles = {
   },
   modalTitle: {
     fontSize: '24px',
-    fontWeight: '700',
-    color: '#1a2639',
+    fontWeight: 700,
     textAlign: 'center',
     marginBottom: '20px'
   },
   modalBody: {
-    marginBottom: '30px'
+    marginBottom: '24px'
   },
   modalStats: {
     background: '#f8fafc',
-    padding: '20px',
-    borderRadius: '10px',
-    marginBottom: '15px'
+    padding: '16px',
+    borderRadius: '8px',
+    marginBottom: '16px'
   },
   modalStat: {
     display: 'flex',
     justifyContent: 'space-between',
-    marginBottom: '10px',
-    fontSize: '16px'
+    marginBottom: '8px',
+    fontSize: '15px'
   },
   modalWarning: {
     display: 'flex',
-    gap: '10px',
-    padding: '15px',
+    gap: '12px',
+    padding: '16px',
     background: '#fff8e1',
-    borderRadius: '10px',
+    borderRadius: '8px',
     color: '#856404',
     fontSize: '14px'
   },
   modalActions: {
     display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '15px'
+    gap: '12px'
   },
   modalSecondaryButton: {
-    padding: '12px 24px',
+    flex: 1,
+    padding: '12px',
     background: '#f1f5f9',
-    color: '#475569',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '6px',
     cursor: 'pointer',
-    fontWeight: '600'
+    fontWeight: 600
   },
   modalPrimaryButton: {
-    padding: '12px 28px',
+    flex: 1,
+    padding: '12px',
     background: '#4caf50',
     color: 'white',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '6px',
     cursor: 'pointer',
-    fontWeight: '600'
+    fontWeight: 600
   },
   successIconLarge: {
-    width: '80px',
-    height: '80px',
+    width: '60px',
+    height: '60px',
     background: '#4caf50',
     borderRadius: '50%',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     margin: '0 auto 20px',
-    fontSize: '40px',
+    fontSize: '30px',
     color: 'white'
-  },
-  successText: {
-    fontSize: '16px',
-    color: '#1e293b',
-    marginBottom: '20px',
-    textAlign: 'center'
-  },
-  redirectText: {
-    fontSize: '14px',
-    color: '#64748b',
-    textAlign: 'center'
   }
 };
