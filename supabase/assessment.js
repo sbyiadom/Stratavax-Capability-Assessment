@@ -187,49 +187,16 @@ export async function updateSessionTimer(sessionId, elapsedSeconds) {
   }
 }
 
-// ===== OPTIMIZED FAST SAVE FUNCTION =====
-// Ultra-fast version - doesn't wait for confirmation
-export function saveResponseFast(sessionId, userId, assessmentId, questionId, answerId) {
-  // Convert to numbers if needed
-  const questionIdNum = typeof questionId === 'string' ? parseInt(questionId, 10) : questionId;
-  const answerIdNum = typeof answerId === 'string' ? parseInt(answerId, 10) : answerId;
-
-  // Fire and forget - don't await
-  supabase
-    .from("responses")
-    .upsert(
-      {
-        session_id: sessionId,
-        user_id: userId,
-        assessment_id: assessmentId,
-        question_id: questionIdNum,
-        answer_id: answerIdNum,
-        updated_at: new Date().toISOString(),
-      },
-      {
-        onConflict: 'session_id,question_id',
-        ignoreDuplicates: false
-      }
-    )
-    .then(() => console.log("✅ Response saved (async)"))
-    .catch(err => console.error("Background save error:", err));
-
-  // Return immediately
-  return { success: true };
-}
-
-// Regular save function with error handling (for critical saves)
+// ===== OPTIMIZED SAVE RESPONSE =====
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   try {
-    console.log("📝 Saving response:", { sessionId, userId, assessmentId, questionId, answerId });
-
     // Convert to numbers if needed
     const questionIdNum = typeof questionId === 'string' ? parseInt(questionId, 10) : questionId;
     const answerIdNum = typeof answerId === 'string' ? parseInt(answerId, 10) : answerId;
 
-    const startTime = Date.now();
+    const startTime = performance.now();
 
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from("responses")
       .upsert(
         {
@@ -244,33 +211,32 @@ export async function saveResponse(sessionId, userId, assessmentId, questionId, 
           onConflict: 'session_id,question_id',
           ignoreDuplicates: false
         }
-      )
-      .select();
+      );
+
+    const endTime = performance.now();
+    console.log(`⏱️ Save took ${(endTime - startTime).toFixed(2)}ms`);
 
     if (error) {
       console.error("Database error:", error);
       
-      if (error.code === '23503') {
-        if (error.message.includes('session_id')) {
-          throw new Error("Invalid session. Please restart the assessment.");
-        } else if (error.message.includes('question_id')) {
-          throw new Error("Invalid question. Please refresh the page.");
-        } else if (error.message.includes('answer_id')) {
-          throw new Error("Please select a valid answer.");
-        } else {
-          throw new Error("Database constraint error. Please try again.");
+      // Only check session if we get a foreign key error
+      if (error.code === '23503' && error.message.includes('session_id')) {
+        // Session might be invalid, verify once
+        const { data: session } = await supabase
+          .from("assessment_sessions")
+          .select("status")
+          .eq("id", sessionId)
+          .eq("user_id", userId)
+          .single();
+          
+        if (!session || session.status !== 'in_progress') {
+          throw new Error("Your session has expired. Please refresh.");
         }
-      } else if (error.code === '23505') {
-        throw new Error("Answer already saved.");
-      } else {
-        throw new Error("Failed to save. Please try again.");
       }
+      throw error;
     }
 
-    const endTime = Date.now();
-    console.log(`✅ Response saved in ${endTime - startTime}ms`);
-    return { success: true, data };
-
+    return { success: true };
   } catch (error) {
     console.error("Save failed:", error);
     throw error;
@@ -335,13 +301,11 @@ export async function submitAssessment(sessionId) {
   try {
     console.log("📤 Submitting assessment for session:", sessionId);
     
-    // Get the current user session to get the user_id
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
       throw new Error("No active session");
     }
 
-    // Get the assessment session to get the assessment_id
     const { data: assessmentSession, error: sessionError } = await supabase
       .from('assessment_sessions')
       .select('assessment_id')
@@ -353,7 +317,6 @@ export async function submitAssessment(sessionId) {
       throw sessionError;
     }
 
-    // Call the API endpoint
     const response = await fetch('/api/supervisor/submit-assessment', {
       method: 'POST',
       headers: {
