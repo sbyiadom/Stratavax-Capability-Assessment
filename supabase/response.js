@@ -1,12 +1,25 @@
+// supabase/response.js
 import { supabase } from "./client";
 
-// Save a single response - FIXED parameter order
+// Save a single response - FIXED version
 export async function saveResponse(session_id, user_id, assessment_id, question_id, answer_id) {
   console.log("💾 Saving response:", { session_id, user_id, question_id, answer_id });
+
+  // Validate required fields
+  if (!session_id || !user_id || !assessment_id || !question_id || !answer_id) {
+    console.error("Missing required fields:", { session_id, user_id, assessment_id, question_id, answer_id });
+    throw new Error("Missing required fields for saving response");
+  }
 
   // Convert to numbers if needed
   const questionId = typeof question_id === 'string' ? parseInt(question_id, 10) : question_id;
   const answerId = typeof answer_id === 'string' ? parseInt(answer_id, 10) : answer_id;
+  
+  // Validate numbers
+  if (isNaN(questionId) || isNaN(answerId)) {
+    console.error("Invalid question_id or answer_id:", { question_id, answer_id });
+    throw new Error("Invalid question or answer ID");
+  }
 
   try {
     // First, check if the session exists and is still in progress
@@ -15,112 +28,142 @@ export async function saveResponse(session_id, user_id, assessment_id, question_
       .select("id, status")
       .eq("id", session_id)
       .eq("user_id", user_id)
-      .single();
+      .maybeSingle(); // Use maybeSingle instead of single to avoid errors
 
     if (sessionError) {
       console.error("Session check error:", sessionError);
       throw new Error("Invalid or expired session");
     }
 
+    if (!session) {
+      console.error("Session not found:", session_id);
+      throw new Error("Assessment session not found");
+    }
+
     if (session.status !== 'in_progress') {
       throw new Error("This assessment session is no longer active");
     }
 
-    // Simple upsert - let database handle constraints
-    const { data, error } = await supabase
+    // Check if response already exists
+    const { data: existingResponse, error: checkError } = await supabase
       .from("responses")
-      .upsert(
-        {
+      .select("id")
+      .eq("session_id", session_id)
+      .eq("question_id", questionId)
+      .maybeSingle();
+
+    if (checkError) {
+      console.error("Error checking existing response:", checkError);
+    }
+
+    let result;
+    
+    if (existingResponse) {
+      // Update existing response
+      console.log("Updating existing response for question:", questionId);
+      const { data, error } = await supabase
+        .from("responses")
+        .update({
+          answer_id: answerId,
+          updated_at: new Date().toISOString()
+        })
+        .eq("session_id", session_id)
+        .eq("question_id", questionId)
+        .select();
+
+      if (error) throw error;
+      result = data;
+    } else {
+      // Insert new response
+      console.log("Creating new response for question:", questionId);
+      const { data, error } = await supabase
+        .from("responses")
+        .insert({
           session_id: session_id,
           user_id: user_id,
           assessment_id: assessment_id,
           question_id: questionId,
           answer_id: answerId,
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: 'session_id,question_id',
-        }
-      )
-      .select();
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select();
 
-    if (error) {
-      console.error("Database error:", error);
-      
-      // User-friendly error messages
-      if (error.code === '23503') {
-        if (error.message.includes('session_id')) {
-          throw new Error("Invalid session. Please restart the assessment.");
-        } else if (error.message.includes('question_id')) {
-          throw new Error("Invalid question. Please refresh the page.");
-        } else if (error.message.includes('answer_id')) {
-          throw new Error("Please select a valid answer.");
-        } else {
-          throw new Error("Database constraint error. Please try again.");
-        }
-      } else if (error.code === '23505') {
-        throw new Error("Answer already saved.");
-      } else {
-        throw new Error("Failed to save. Please try again.");
-      }
+      if (error) throw error;
+      result = data;
     }
 
-    console.log("✅ Response saved");
-    return { success: true, data };
+    console.log("✅ Response saved successfully");
+    
+    // Also update the session's last_activity
+    await supabase
+      .from("assessment_sessions")
+      .update({
+        last_activity: new Date().toISOString()
+      })
+      .eq("id", session_id);
+
+    return { success: true, data: result };
 
   } catch (error) {
-    console.error("Save failed:", error);
-    throw error;
+    console.error("❌ Save failed:", error);
+    return { 
+      success: false, 
+      error: error.message || "Failed to save response"
+    };
   }
 }
 
-// Load all responses for a session
+// Load all responses for a session - FIXED version
 export async function loadSessionResponses(session_id) {
   try {
+    if (!session_id) {
+      console.error("No session_id provided to loadSessionResponses");
+      return {
+        answerMap: {},
+        detailedResponses: [],
+        count: 0
+      };
+    }
+
     const { data, error } = await supabase
       .from("responses")
       .select(`
         question_id, 
-        answer_id,
-        answer:answers!inner(
-          score,
-          answer_text
-        ),
-        question:questions!inner(
-          section,
-          subsection,
-          question_text
-        )
+        answer_id
       `)
-      .eq("session_id", session_id)
-      .order('created_at', { ascending: true });
+      .eq("session_id", session_id);
 
-    if (error) throw error;
+    if (error) {
+      console.error("Error loading responses:", error);
+      throw error;
+    }
     
     // Create a map of question_id -> answer_id for quick lookup
     const answerMap = {};
     const detailedResponses = [];
     
-    data.forEach(r => {
-      answerMap[r.question_id] = r.answer_id;
-      detailedResponses.push({
-        question_id: r.question_id,
-        answer_id: r.answer_id,
-        question_text: r.question?.question_text,
-        section: r.question?.section,
-        subsection: r.question?.subsection,
-        answer_text: r.answer?.answer_text,
-        score: r.answer?.score
+    if (data && Array.isArray(data)) {
+      data.forEach(r => {
+        if (r.question_id && r.answer_id) {
+          answerMap[r.question_id] = r.answer_id;
+          detailedResponses.push({
+            question_id: r.question_id,
+            answer_id: r.answer_id
+          });
+        }
       });
-    });
+    }
+    
+    console.log(`📊 Loaded ${data?.length || 0} responses from database`);
     
     return {
       answerMap,
       detailedResponses,
-      count: data.length
+      count: data?.length || 0
     };
   } catch (error) {
-    console.error("Error loading responses:", error);
+    console.error("Error in loadSessionResponses:", error);
     return {
       answerMap: {},
       detailedResponses: [],
@@ -129,136 +172,80 @@ export async function loadSessionResponses(session_id) {
   }
 }
 
-// Load responses for a user across all sessions of an assessment
-export async function loadUserAssessmentResponses(user_id, assessment_id) {
+// Get progress for a user
+export async function getProgress(user_id, assessment_id) {
   try {
     const { data, error } = await supabase
-      .from("responses")
+      .from("assessment_sessions")
       .select(`
-        session_id,
-        question_id, 
-        answer_id,
-        session:assessment_sessions!inner(
-          id,
-          status,
-          completed_at
-        )
+        id,
+        elapsed_seconds,
+        last_question_id,
+        status
       `)
       .eq("user_id", user_id)
       .eq("assessment_id", assessment_id)
-      .order('created_at', { ascending: false });
+      .eq("status", "in_progress")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (error) throw error;
-    
-    // Group by session
-    const sessions = {};
-    data.forEach(r => {
-      const sessionId = r.session_id;
-      if (!sessions[sessionId]) {
-        sessions[sessionId] = {
-          session_id: sessionId,
-          status: r.session?.status,
-          completed_at: r.session?.completed_at,
-          responses: {}
-        };
-      }
-      sessions[sessionId].responses[r.question_id] = r.answer_id;
-    });
-    
-    return Object.values(sessions);
+    if (error) {
+      console.error("Error getting progress:", error);
+      return null;
+    }
+
+    return data;
   } catch (error) {
-    console.error("Error loading user responses:", error);
-    return [];
+    console.error("Error in getProgress:", error);
+    return null;
   }
 }
 
-// Get response count for an assessment
-export async function getResponseCount(user_id, assessment_id) {
-  try {
-    const { count, error } = await supabase
-      .from("responses")
-      .select("*", { count: 'exact', head: true })
-      .eq("user_id", user_id)
-      .eq("assessment_id", assessment_id);
-
-    if (error) throw error;
-    return count || 0;
-  } catch (error) {
-    console.error("Error getting response count:", error);
-    return 0;
-  }
-}
-
-// Delete responses for a session (used when resetting)
-export async function deleteSessionResponses(session_id) {
+// Save progress
+export async function saveProgress(session_id, user_id, assessment_id, elapsed_seconds, last_question_id) {
   try {
     const { error } = await supabase
-      .from("responses")
-      .delete()
-      .eq("session_id", session_id);
+      .from("assessment_sessions")
+      .update({
+        elapsed_seconds,
+        last_question_id,
+        last_activity: new Date().toISOString()
+      })
+      .eq("id", session_id)
+      .eq("user_id", user_id);
 
-    if (error) throw error;
-    return { success: true };
+    if (error) {
+      console.error("Error saving progress:", error);
+      return false;
+    }
+
+    return true;
   } catch (error) {
-    console.error("Error deleting responses:", error);
-    throw error;
-  }
-}
-
-// Bulk save responses (for restoring or importing)
-export async function bulkSaveResponses(responses) {
-  try {
-    const { data, error } = await supabase
-      .from("responses")
-      .upsert(
-        responses.map(r => ({
-          ...r,
-          updated_at: new Date().toISOString()
-        })),
-        {
-          onConflict: 'session_id,question_id',
-          ignoreDuplicates: false
-        }
-      );
-
-    if (error) throw error;
-    return { success: true, count: responses.length };
-  } catch (error) {
-    console.error("Error bulk saving responses:", error);
-    throw error;
-  }
-}
-
-// Check if all questions are answered for a session
-export async function isAssessmentComplete(session_id, totalQuestions) {
-  try {
-    const { count, error } = await supabase
-      .from("responses")
-      .select("*", { count: 'exact', head: true })
-      .eq("session_id", session_id);
-
-    if (error) throw error;
-    return count === totalQuestions;
-  } catch (error) {
-    console.error("Error checking completion:", error);
+    console.error("Error in saveProgress:", error);
     return false;
   }
 }
 
-// Get unanswered questions for a session
-export async function getUnansweredQuestions(session_id, questionIds) {
+// Check if assessment is completed
+export async function isAssessmentCompleted(user_id, assessment_id) {
   try {
     const { data, error } = await supabase
-      .from("responses")
-      .select("question_id")
-      .eq("session_id", session_id);
+      .from("assessment_sessions")
+      .select("id")
+      .eq("user_id", user_id)
+      .eq("assessment_id", assessment_id)
+      .eq("status", "completed")
+      .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Error checking completion:", error);
+      return false;
+    }
 
-    const answeredIds = new Set(data.map(r => r.question_id));
-    return questionIds.filter(id => !answeredIds.has(id));
+    return !!data;
   } catch (error) {
-    console.error("Error getting unanswered questions:", error);
-    return questionIds; // Return all as unanswered if error
+    console.error("Error in isAssessmentCompleted:", error);
+    return false;
   }
 }
