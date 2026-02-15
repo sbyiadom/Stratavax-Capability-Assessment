@@ -348,41 +348,28 @@ export async function getOrCreateCandidateProfile(userId, email, fullName) {
 // Progress Tracking
 export async function saveProgress(sessionId, userId, assessmentId, elapsedSeconds, lastQuestionId) {
   try {
+    // Your table doesn't have session_id column, so we'll just update without it
     const { error } = await supabase
       .from('assessment_progress')
       .upsert({
         user_id: userId,
         assessment_id: assessmentId,
-        session_id: sessionId,
         elapsed_seconds: elapsedSeconds,
         last_question_id: lastQuestionId,
-        last_saved_at: new Date().toISOString()
+        last_saved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       }, {
         onConflict: 'user_id,assessment_id'
       });
 
-    if (error) throw error;
+    if (error) {
+      console.error("Error saving progress:", error);
+      return false;
+    }
     return true;
   } catch (error) {
     console.error("Error saving progress:", error);
     return false;
-  }
-}
-
-export async function getProgress(userId, assessmentId) {
-  try {
-    const { data, error } = await supabase
-      .from('assessment_progress')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('assessment_id', assessmentId)
-      .maybeSingle();
-
-    if (error) throw error;
-    return data;
-  } catch (error) {
-    console.error("Error getting progress:", error);
-    return null;
   }
 }
 
@@ -611,5 +598,6 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveUniqueResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
+
 
 
