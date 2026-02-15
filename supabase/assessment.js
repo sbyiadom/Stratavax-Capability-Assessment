@@ -417,7 +417,7 @@ function shuffleArray(array) {
   return shuffled;
 }
 
-// ========== UNIQUE QUESTIONS FUNCTIONS ==========
+// ========== FIXED UNIQUE QUESTIONS FUNCTIONS ==========
 
 /**
  * Get unique questions for any assessment type
@@ -473,6 +473,15 @@ export async function getUniqueQuestions(assessmentId) {
 
     if (!questions || questions.length === 0) {
       console.log("⚠️ No unique questions found for assessment type ID:", assessment.assessment_type_id);
+      
+      // Try to get the assessment type name for better debugging
+      const { data: typeData } = await supabase
+        .from('assessment_types')
+        .select('name')
+        .eq('id', assessment.assessment_type_id)
+        .single();
+      
+      console.log("Assessment type name:", typeData?.name);
       return [];
     }
 
@@ -481,6 +490,11 @@ export async function getUniqueQuestions(assessmentId) {
     // Calculate total answers
     const totalAnswers = questions.reduce((acc, q) => acc + (q.unique_answers?.length || 0), 0);
     console.log(`📊 Total answers: ${totalAnswers}, Avg: ${(totalAnswers / questions.length).toFixed(1)} per question`);
+
+    // Check if we have all 100 questions
+    if (questions.length !== 100) {
+      console.log(`⚠️ Warning: Expected 100 questions, found ${questions.length}`);
+    }
 
     // Randomize the order of questions for each candidate
     const shuffledQuestions = shuffleArray([...questions]);
@@ -507,7 +521,7 @@ export async function getUniqueQuestions(assessmentId) {
       };
     });
 
-    console.log(`✅ Returning ${formattedQuestions.length} formatted questions`);
+    console.log(`✅ Returning ${formattedQuestions.length} formatted questions for ${assessment.title}`);
     return formattedQuestions;
 
   } catch (error) {
@@ -563,25 +577,16 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
 
 // ========== LEGACY FUNCTIONS (for backward compatibility) ==========
 
-/**
- * Legacy function - redirects to getUniqueQuestions
- */
 export async function getRandomizedQuestions(candidateId, assessmentId) {
   console.log("⚠️ getRandomizedQuestions is deprecated, using getUniqueQuestions");
   return getUniqueQuestions(assessmentId);
 }
 
-/**
- * Legacy function - redirects to saveUniqueResponse
- */
 export async function saveRandomizedResponse(session_id, user_id, assessment_id, question_id, answer_id) {
   console.log("⚠️ saveRandomizedResponse is deprecated, using saveUniqueResponse");
   return saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id);
 }
 
-/**
- * Legacy function - redirects to saveUniqueResponse
- */
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveUniqueResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
