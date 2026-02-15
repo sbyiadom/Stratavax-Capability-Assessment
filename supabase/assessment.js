@@ -417,8 +417,6 @@ function shuffleArray(array) {
   return shuffled;
 }
 
-// ========== FIXED UNIQUE QUESTIONS FUNCTIONS ==========
-
 /**
  * Get unique questions for any assessment type
  * Each question has its own unique answers that are never reused
@@ -447,6 +445,9 @@ export async function getUniqueQuestions(assessmentId) {
     console.log("📊 Assessment:", assessment.title);
     console.log("📊 Assessment type ID:", assessment.assessment_type_id);
 
+    // Log the exact query we're about to run
+    console.log("🔎 Running query: unique_questions WHERE assessment_type_id =", assessment.assessment_type_id);
+
     // Get all unique questions for this assessment type with their answers
     const { data: questions, error: qError } = await supabase
       .from('unique_questions')
@@ -468,8 +469,15 @@ export async function getUniqueQuestions(assessmentId) {
 
     if (qError) {
       console.error("❌ Error fetching unique questions:", qError);
+      console.error("Error details:", JSON.stringify(qError, null, 2));
       return [];
     }
+
+    // Log the raw response
+    console.log("📦 Raw questions response:", JSON.stringify(questions, null, 2));
+    console.log("📦 Questions type:", typeof questions);
+    console.log("📦 Is array:", Array.isArray(questions));
+    console.log("📦 Questions length:", questions?.length);
 
     if (!questions || questions.length === 0) {
       console.log("⚠️ No unique questions found for assessment type ID:", assessment.assessment_type_id);
@@ -482,6 +490,16 @@ export async function getUniqueQuestions(assessmentId) {
         .single();
       
       console.log("Assessment type name:", typeData?.name);
+      
+      // Check if the unique_questions table exists and has any data at all
+      const { count, error: countError } = await supabase
+        .from('unique_questions')
+        .select('*', { count: 'exact', head: true });
+      
+      if (!countError) {
+        console.log("Total questions in unique_questions table:", count);
+      }
+      
       return [];
     }
 
@@ -522,10 +540,13 @@ export async function getUniqueQuestions(assessmentId) {
     });
 
     console.log(`✅ Returning ${formattedQuestions.length} formatted questions for ${assessment.title}`);
+    console.log("First question sample:", JSON.stringify(formattedQuestions[0], null, 2));
+    
     return formattedQuestions;
 
   } catch (error) {
     console.error("❌ Error in getUniqueQuestions:", error);
+    console.error("Error stack:", error.stack);
     return [];
   }
 }
@@ -590,3 +611,4 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveUniqueResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
+
