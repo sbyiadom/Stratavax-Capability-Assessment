@@ -6,7 +6,7 @@ import {
   getAssessmentQuestions,
   createAssessmentSession,
   getSessionResponses,
-  saveResponse,
+  saveResponse, // Use the regular save function, not the fast version
   submitAssessment,
   getProgress,
   saveProgress,
@@ -75,100 +75,58 @@ export default function AssessmentPage() {
   useEffect(() => {
     const init = async () => {
       try {
-        setLoading(true);
-        
-        // Check user session
-        const { data: { session: authSession } } = await supabase.auth.getSession();
-        if (!authSession) {
-          console.log("No session, redirecting to login");
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
           router.push("/login");
           return;
         }
-        setUser(authSession.user);
-        console.log("User authenticated:", authSession.user.id);
+        setUser(session.user);
 
-        if (!assessmentId) {
-          console.log("No assessment ID, waiting...");
-          return;
-        }
+        if (!assessmentId) return;
 
-        console.log("Initializing assessment:", assessmentId);
-
-        // Check if already completed
-        const completed = await isAssessmentCompleted(authSession.user.id, assessmentId);
-        console.log("Assessment completed check:", completed);
-        
+        const completed = await isAssessmentCompleted(session.user.id, assessmentId);
         if (completed) {
-          console.log("Assessment already completed");
           setAlreadySubmitted(true);
           setLoading(false);
           return;
         }
 
-        // Load assessment details
-        console.log("Loading assessment details...");
         const assessmentData = await getAssessmentById(assessmentId);
-        console.log("Assessment data:", assessmentData);
-        
         setAssessment(assessmentData);
-        setAssessmentType(assessmentData?.assessment_type || null);
-        setTimeLimit(assessmentData?.assessment_type?.time_limit_minutes * 60 || 3600);
+        setAssessmentType(assessmentData.assessment_type);
+        setTimeLimit(assessmentData.assessment_type.time_limit_minutes * 60);
 
-        // Load questions
-        console.log("Loading questions...");
         const questionsData = await getAssessmentQuestions(assessmentId);
-        console.log(`Loaded ${questionsData?.length || 0} questions`);
-        setQuestions(Array.isArray(questionsData) ? questionsData : []);
+        setQuestions(questionsData);
 
-        // Create or get session
-        console.log("Creating/getting session...");
         const sessionData = await createAssessmentSession(
-          authSession.user.id,
+          session.user.id,
           assessmentId,
-          assessmentData?.assessment_type?.id || null
+          assessmentData.assessment_type.id
         );
-        console.log("Session data:", sessionData);
         setSession(sessionData);
 
-        // Load saved progress
-        console.log("Loading saved progress...");
-        const progress = await getProgress(authSession.user.id, assessmentId);
-        console.log("Progress data:", progress);
-        
+        const progress = await getProgress(session.user.id, assessmentId);
         if (progress) {
-          setElapsedSeconds(progress.elapsed_seconds || 0);
-          if (progress.last_question_id && Array.isArray(questionsData)) {
-            const lastIndex = questionsData.findIndex(q => q?.id === progress.last_question_id);
-            if (lastIndex > 0) {
-              console.log("Setting current index to:", lastIndex);
-              setCurrentIndex(lastIndex);
-            }
+          setElapsedSeconds(progress.elapsed_seconds);
+          if (progress.last_question_id) {
+            const lastIndex = questionsData.findIndex(q => q.id === progress.last_question_id);
+            if (lastIndex > 0) setCurrentIndex(lastIndex);
           }
         }
 
-        // Load saved responses
-        if (sessionData?.id) {
-          console.log("Loading saved responses for session:", sessionData.id);
-          const responses = await getSessionResponses(sessionData.id);
-          console.log("Loaded responses:", responses);
-          
-          // Make sure we're setting the answers correctly
-          if (responses && responses.answerMap) {
-            console.log("Setting answers map:", responses.answerMap);
-            setAnswers(responses.answerMap);
-          } else {
-            console.log("No saved responses found");
-          }
-        }
+        const responses = await getSessionResponses(sessionData.id);
+        const answersMap = {};
+        responses.forEach(r => {
+          answersMap[r.question_id] = r.answer_id;
+        });
+        setAnswers(answersMap);
 
-        // Setup anti-cheat
         setupAntiCheat();
-
-        console.log("Initialization complete");
         setLoading(false);
       } catch (error) {
         console.error("Initialization error:", error);
-        setError(error.message || "Failed to load assessment");
+        setError(error.message);
         setLoading(false);
       }
     };
@@ -178,26 +136,19 @@ export default function AssessmentPage() {
 
   // Timer effect
   useEffect(() => {
-    if (loading || alreadySubmitted || !session || !session.id) return;
+    if (loading || alreadySubmitted || !session) return;
 
-    console.log("Starting timer for session:", session.id);
-    
     const timer = setInterval(async () => {
       setElapsedSeconds(prev => {
         const newElapsed = prev + 1;
         setTimeRemaining(timeLimit - newElapsed);
         
-        // Auto-submit if time limit reached
         if (newElapsed >= timeLimit) {
-          console.log("Time limit reached, auto-submitting...");
           handleSubmit();
         }
         
-        // Save progress every 30 seconds
         if (newElapsed % 30 === 0) {
-          console.log("Auto-saving progress at", newElapsed, "seconds");
-          const currentQ = questions[currentIndex];
-          saveProgress(session.id, user.id, assessmentId, newElapsed, currentQ?.id);
+          saveProgress(session.id, user.id, assessmentId, newElapsed, questions[currentIndex]?.id);
           updateSessionTimer(session.id, newElapsed);
         }
         
@@ -205,68 +156,23 @@ export default function AssessmentPage() {
       });
     }, 1000);
 
-    return () => {
-      console.log("Cleaning up timer");
-      clearInterval(timer);
-    };
+    return () => clearInterval(timer);
   }, [loading, alreadySubmitted, session, timeLimit, assessmentId, user?.id, currentIndex, questions]);
 
-  // ===== FIXED HANDLE ANSWER SELECTION =====
+  // ===== FIXED HANDLE ANSWER SELECTION WITH RELIABLE SAVING =====
   const handleAnswerSelect = async (questionId, answerId) => {
-    // Validate all required parameters
-    if (!questionId || !answerId) {
-      console.error("Missing questionId or answerId:", { questionId, answerId });
-      return;
-    }
+    if (alreadySubmitted || !session) return;
 
-    if (alreadySubmitted) {
-      console.log("Cannot save - assessment already submitted");
-      return;
-    }
-
-    if (!session || !session.id) {
-      console.error("No active session");
-      return;
-    }
-
-    if (!user || !user.id) {
-      console.error("No authenticated user");
-      return;
-    }
-
-    if (!assessmentId) {
-      console.error("No assessment ID");
-      return;
-    }
-
-    console.log("🎯 Answer selected:", { 
-      questionId, 
-      answerId,
-      sessionId: session.id,
-      userId: user.id,
-      assessmentId 
-    });
-
-    // Update UI immediately for better UX
-    setAnswers(prev => {
-      const newAnswers = { ...prev, [questionId]: answerId };
-      console.log("Updated answers state:", newAnswers);
-      return newAnswers;
-    });
+    // Update UI immediately
+    setAnswers(prev => ({ ...prev, [questionId]: answerId }));
     
     // Show saving indicator
     setSaveStatus(prev => ({ ...prev, [questionId]: 'saving' }));
 
-    // Save to Supabase
     try {
-      console.log("💾 Calling saveResponse with:", {
-        sessionId: session.id,
-        userId: user.id,
-        assessmentId: assessmentId,
-        questionId,
-        answerId
-      });
-
+      const startTime = performance.now();
+      
+      // Use the regular saveResponse function that returns a promise
       const result = await saveResponse(
         session.id, 
         user.id, 
@@ -275,39 +181,33 @@ export default function AssessmentPage() {
         answerId
       );
       
-      console.log("📥 Save result:", result);
+      const endTime = performance.now();
+      console.log(`✅ Save completed in ${(endTime - startTime).toFixed(2)}ms`);
       
-      if (result && result.success === true) {
-        console.log("✅ Saved successfully");
+      if (result && result.success) {
         setSaveStatus(prev => ({ ...prev, [questionId]: 'saved' }));
         
-        // Clear success status after short delay
         setTimeout(() => {
           setSaveStatus(prev => {
             const newStatus = { ...prev };
             delete newStatus[questionId];
             return newStatus;
           });
-        }, 1000);
+        }, 500);
       } else {
-        console.error("❌ Save failed:", result?.error || "Unknown error");
+        console.error("Save failed:", result);
         setSaveStatus(prev => ({ ...prev, [questionId]: 'error' }));
         
-        // Keep error visible longer
         setTimeout(() => {
           setSaveStatus(prev => {
             const newStatus = { ...prev };
             delete newStatus[questionId];
             return newStatus;
           });
-        }, 3000);
-        
-        // Optionally revert the UI change on error
-        // You could reload the answers from the server here
+        }, 2000);
       }
-      
     } catch (error) {
-      console.error("❌ Save error:", error);
+      console.error("Save error:", error);
       setSaveStatus(prev => ({ ...prev, [questionId]: 'error' }));
       
       setTimeout(() => {
@@ -316,14 +216,13 @@ export default function AssessmentPage() {
           delete newStatus[questionId];
           return newStatus;
         });
-      }, 3000);
+      }, 2000);
     }
   };
 
   // Navigation
   const handleNext = () => {
     if (currentIndex < questions.length - 1) {
-      console.log("Moving to next question:", currentIndex + 1);
       setCurrentIndex(i => i + 1);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -331,61 +230,45 @@ export default function AssessmentPage() {
 
   const handlePrevious = () => {
     if (currentIndex > 0) {
-      console.log("Moving to previous question:", currentIndex - 1);
       setCurrentIndex(i => i - 1);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
   const jumpToQuestion = (index) => {
-    console.log("Jumping to question:", index);
     setCurrentIndex(index);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Submit assessment
   const handleSubmit = async () => {
-    if (!session || !session.id || alreadySubmitted) {
-      console.log("Cannot submit - invalid state:", { hasSession: !!session, alreadySubmitted });
-      return;
-    }
-
-    console.log("📤 Submitting assessment:", {
-      sessionId: session.id,
-      userId: user?.id,
-      assessmentId
-    });
+    if (!session || alreadySubmitted) return;
 
     setIsSubmitting(true);
     setShowSubmitModal(false);
 
     try {
-      // Save final progress
-      const currentQ = questions[currentIndex];
-      await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, currentQ?.id);
+      await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id);
       await updateSessionTimer(session.id, elapsedSeconds);
       
-      // Submit the assessment
-      const resultId = await submitAssessment(session.id, user.id, assessmentId, elapsedSeconds);
-      
-      console.log("✅ Submission successful, result ID:", resultId);
+      const resultId = await submitAssessment(session.id);
       
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
       
-      // Redirect after showing success message
       setTimeout(() => {
         router.push('/assessment/pre');
       }, 3000);
     } catch (error) {
-      console.error("❌ Submission error:", error);
-      alert("Failed to submit assessment. Please try again or contact support.");
+      console.error("Submission error:", error);
+      alert("Failed to submit assessment. Please contact support.");
+    } finally {
       setIsSubmitting(false);
     }
   };
 
   // Calculate progress
-  const totalAnswered = Object.keys(answers || {}).length;
+  const totalAnswered = Object.keys(answers).length;
   const progressPercentage = questions.length > 0 
     ? Math.round((totalAnswered / questions.length) * 100) 
     : 0;
@@ -397,17 +280,7 @@ export default function AssessmentPage() {
   const isTimeWarning = timePercentage > 80;
   const isTimeCritical = timePercentage > 90;
 
-  const currentQuestion = questions[currentIndex] || {};
-
-  // Debug logging
-  console.log("Render state:", {
-    currentIndex,
-    totalQuestions: questions.length,
-    totalAnswered,
-    currentQuestionId: currentQuestion?.id,
-    hasAnswers: Object.keys(answers).length,
-    sessionId: session?.id
-  });
+  const currentQuestion = questions[currentIndex];
 
   if (loading) {
     return (
@@ -486,7 +359,7 @@ export default function AssessmentPage() {
                 </div>
                 <div style={styles.modalStat}>
                   <span>Assessment</span>
-                  <span style={{ color: '#9C27B0', fontWeight: 700 }}>{assessment?.title || 'Assessment'}</span>
+                  <span style={{ color: '#9C27B0', fontWeight: 700 }}>{assessment?.title}</span>
                 </div>
               </div>
               <div style={styles.modalWarning}>
@@ -512,7 +385,7 @@ export default function AssessmentPage() {
           <div style={{ ...styles.modalContent, textAlign: 'center' }}>
             <div style={styles.successIconLarge}>✓</div>
             <h2 style={{ color: '#2e7d32' }}>Assessment Complete!</h2>
-            <p>Your {assessment?.title || 'assessment'} has been successfully submitted.</p>
+            <p>Your {assessment?.title} has been successfully submitted.</p>
             <p>Redirecting to assessment selection...</p>
           </div>
         </div>
@@ -532,11 +405,11 @@ export default function AssessmentPage() {
               </button>
               <div style={styles.headerIcon}>{assessmentType?.icon || '📋'}</div>
               <div>
-                <div style={styles.headerTitle}>{assessment?.title || 'Assessment'}</div>
+                <div style={styles.headerTitle}>{assessment?.title}</div>
                 <div style={styles.headerMeta}>
                   <span>Q{currentIndex + 1}/{questions.length}</span>
                   <span>•</span>
-                  <span>{currentQuestion?.section || 'General'}</span>
+                  <span>{currentQuestion?.section}</span>
                 </div>
               </div>
             </div>
@@ -587,7 +460,7 @@ export default function AssessmentPage() {
                   {assessmentType?.icon || '📋'}
                 </div>
                 <div>
-                  <div style={styles.sectionName}>{currentQuestion?.section || 'General'}</div>
+                  <div style={styles.sectionName}>{currentQuestion?.section}</div>
                   {currentQuestion?.subsection && (
                     <div style={styles.subsection}>{currentQuestion.subsection}</div>
                   )}
@@ -597,7 +470,7 @@ export default function AssessmentPage() {
               {/* Question */}
               <div style={styles.questionText}>
                 <div style={styles.questionNumber}>Question {currentIndex + 1} of {questions.length}</div>
-                <div style={styles.questionContent}>{currentQuestion?.question_text || 'Loading question...'}</div>
+                <div style={styles.questionContent}>{currentQuestion?.question_text}</div>
               </div>
 
               {/* Save Status */}
@@ -612,56 +485,47 @@ export default function AssessmentPage() {
                          saveStatus[currentQuestion.id] === 'saved' ? '#2e7d32' : '#c62828'
                 }}>
                   {saveStatus[currentQuestion.id] === 'saving' ? '⏳ Saving...' : 
-                   saveStatus[currentQuestion.id] === 'saved' ? '✓ Saved' : '❌ Save failed - will retry'}
+                   saveStatus[currentQuestion.id] === 'saved' ? '✓ Saved' : '❌ Save failed'}
                 </div>
               )}
 
               {/* Answers */}
               <div style={styles.answersContainer}>
-                {currentQuestion?.answers && Array.isArray(currentQuestion.answers) && currentQuestion.answers.length > 0 ? (
-                  currentQuestion.answers.map((answer, index) => {
-                    if (!answer || !answer.id) return null;
-                    
-                    const isSelected = answers[currentQuestion.id] === answer.id;
-                    const isHovered = hoveredAnswer === answer.id;
-                    const optionLetter = String.fromCharCode(65 + index);
+                {currentQuestion?.answers?.map((answer, index) => {
+                  const isSelected = answers[currentQuestion.id] === answer.id;
+                  const isHovered = hoveredAnswer === answer.id;
+                  const optionLetter = String.fromCharCode(65 + index);
 
-                    return (
-                      <button
-                        key={answer.id}
-                        onClick={() => handleAnswerSelect(currentQuestion.id, answer.id)}
-                        disabled={alreadySubmitted}
-                        style={{
-                          ...styles.answerButton,
-                          background: isSelected ? assessmentType?.gradient_start || '#667eea' : isHovered ? '#f8fafc' : 'white',
-                          borderColor: isSelected ? assessmentType?.gradient_start || '#667eea' : '#e2e8f0',
-                          transform: isSelected || isHovered ? 'translateY(-2px)' : 'translateY(0)',
-                          cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
-                        }}
-                        onMouseEnter={() => setHoveredAnswer(answer.id)}
-                        onMouseLeave={() => setHoveredAnswer(null)}
-                      >
-                        <div style={{
-                          ...styles.answerLetter,
-                          background: isSelected ? 'rgba(255,255,255,0.2)' : '#f1f5f9',
-                          color: isSelected ? 'white' : '#475569'
-                        }}>
-                          {optionLetter}
-                        </div>
-                        <span style={{
-                          ...styles.answerText,
-                          color: isSelected ? 'white' : '#1e293b'
-                        }}>
-                          {answer.answer_text || 'Option not available'}
-                        </span>
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div style={{ padding: '20px', textAlign: 'center', color: '#f57c00' }}>
-                    No answers available for this question.
-                  </div>
-                )}
+                  return (
+                    <button
+                      key={answer.id}
+                      onClick={() => handleAnswerSelect(currentQuestion.id, answer.id)}
+                      disabled={alreadySubmitted}
+                      style={{
+                        ...styles.answerButton,
+                        background: isSelected ? assessmentType?.gradient_start || '#667eea' : isHovered ? '#f8fafc' : 'white',
+                        borderColor: isSelected ? assessmentType?.gradient_start || '#667eea' : '#e2e8f0',
+                        transform: isSelected || isHovered ? 'translateY(-2px)' : 'translateY(0)'
+                      }}
+                      onMouseEnter={() => setHoveredAnswer(answer.id)}
+                      onMouseLeave={() => setHoveredAnswer(null)}
+                    >
+                      <div style={{
+                        ...styles.answerLetter,
+                        background: isSelected ? 'rgba(255,255,255,0.2)' : '#f1f5f9',
+                        color: isSelected ? 'white' : '#475569'
+                      }}>
+                        {optionLetter}
+                      </div>
+                      <span style={{
+                        ...styles.answerText,
+                        color: isSelected ? 'white' : '#1e293b'
+                      }}>
+                        {answer.answer_text}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Navigation */}
@@ -673,8 +537,7 @@ export default function AssessmentPage() {
                     ...styles.navButton,
                     background: currentIndex === 0 || alreadySubmitted ? '#f1f5f9' : 'white',
                     color: currentIndex === 0 || alreadySubmitted ? '#94a3b8' : assessmentType?.gradient_start || '#667eea',
-                    border: currentIndex === 0 || alreadySubmitted ? '1px solid #e2e8f0' : `2px solid ${assessmentType?.gradient_start || '#667eea'}`,
-                    cursor: currentIndex === 0 || alreadySubmitted ? 'not-allowed' : 'pointer'
+                    border: currentIndex === 0 || alreadySubmitted ? '1px solid #e2e8f0' : `2px solid ${assessmentType?.gradient_start || '#667eea'}`
                   }}
                 >
                   ← Previous
@@ -688,8 +551,7 @@ export default function AssessmentPage() {
                       ...styles.navButton,
                       background: alreadySubmitted ? '#f1f5f9' : '#4caf50',
                       color: alreadySubmitted ? '#94a3b8' : 'white',
-                      border: 'none',
-                      cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
+                      border: 'none'
                     }}
                   >
                     Submit Assessment
@@ -702,8 +564,7 @@ export default function AssessmentPage() {
                       ...styles.navButton,
                       background: alreadySubmitted ? '#f1f5f9' : `linear-gradient(135deg, ${assessmentType?.gradient_start || '#667eea'}, ${assessmentType?.gradient_end || '#764ba2'})`,
                       color: alreadySubmitted ? '#94a3b8' : 'white',
-                      border: 'none',
-                      cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
+                      border: 'none'
                     }}
                   >
                     Next →
@@ -739,8 +600,6 @@ export default function AssessmentPage() {
             {/* Question Grid */}
             <div style={styles.questionGrid}>
               {questions.map((q, index) => {
-                if (!q || !q.id) return null;
-                
                 const isAnswered = answers[q.id];
                 const isCurrent = index === currentIndex;
                 const isHovered = hoveredQuestion === index;
@@ -755,8 +614,7 @@ export default function AssessmentPage() {
                       background: isCurrent ? assessmentType?.gradient_start || '#667eea' : isAnswered ? '#4caf50' : 'white',
                       color: isCurrent || isAnswered ? 'white' : '#1e293b',
                       borderColor: isCurrent ? assessmentType?.gradient_start || '#667eea' : isAnswered ? '#4caf50' : '#e2e8f0',
-                      transform: isHovered ? 'scale(1.1)' : 'scale(1)',
-                      cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
+                      transform: isHovered ? 'scale(1.1)' : 'scale(1)'
                     }}
                     onMouseEnter={() => setHoveredQuestion(index)}
                     onMouseLeave={() => setHoveredQuestion(null)}
@@ -787,33 +645,25 @@ export default function AssessmentPage() {
             <div style={styles.assessmentInfo}>
               <div style={styles.infoRow}>
                 <span>Assessment:</span>
-                <span style={{ fontWeight: 600 }}>{assessment?.title || 'Assessment'}</span>
+                <span style={{ fontWeight: 600 }}>{assessment?.title}</span>
               </div>
               <div style={styles.infoRow}>
                 <span>Max Score:</span>
-                <span style={{ fontWeight: 600 }}>{assessmentType?.max_score || 100}</span>
+                <span style={{ fontWeight: 600 }}>{assessmentType?.max_score}</span>
               </div>
               <div style={styles.infoRow}>
                 <span>Time Limit:</span>
-                <span style={{ fontWeight: 600 }}>{assessmentType?.time_limit_minutes || 60} minutes</span>
+                <span style={{ fontWeight: 600 }}>{assessmentType?.time_limit_minutes} minutes</span>
               </div>
             </div>
           </div>
         </div>
       </div>
-
-      {/* Add keyframe animation for spinner */}
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
     </>
   );
 }
 
-// Styles
+// Styles (keep all your existing styles)
 const styles = {
   loadingContainer: {
     minHeight: '100vh',
@@ -900,10 +750,7 @@ const styles = {
     borderRadius: '8px',
     color: 'white',
     fontSize: '20px',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center'
+    cursor: 'pointer'
   },
   headerIcon: {
     width: '40px',
@@ -1075,6 +922,7 @@ const styles = {
     borderRadius: '6px',
     fontSize: '14px',
     fontWeight: 600,
+    cursor: 'pointer',
     transition: 'all 0.2s ease'
   },
   navigatorPanel: {
@@ -1136,6 +984,7 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    cursor: 'pointer',
     transition: 'all 0.2s ease'
   },
   legend: {
