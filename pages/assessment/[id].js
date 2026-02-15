@@ -115,7 +115,7 @@ export default function AssessmentPage() {
           setElapsedSeconds(progress.elapsed_seconds || 0);
         }
 
-        // Load RANDOMIZED questions (this will create or fetch randomized questions)
+        // Load RANDOMIZED questions
         console.log("Loading randomized questions...");
         const randomizedQuestions = await getRandomizedQuestions(
           authSession.user.id,
@@ -133,7 +133,7 @@ export default function AssessmentPage() {
             // If we have a saved response, find the current question index
             if (progress?.last_question_id) {
               const lastIndex = randomizedQuestions.findIndex(q => q.id === progress.last_question_id);
-              if (lastIndex > 0) setCurrentIndex(lastIndex);
+              if (lastIndex >= 0) setCurrentIndex(lastIndex);
             }
           }
         }
@@ -177,7 +177,7 @@ export default function AssessmentPage() {
     return () => clearInterval(timer);
   }, [loading, alreadySubmitted, session, timeLimit, assessmentId, user?.id, currentIndex, questions]);
 
-  // Handle answer selection with randomized IDs
+  // Handle answer selection
   const handleAnswerSelect = async (questionInstanceId, answerBankId) => {
     if (alreadySubmitted || !session || !questionInstanceId || !answerBankId) return;
 
@@ -294,8 +294,8 @@ export default function AssessmentPage() {
       <div style={styles.loadingContainer}>
         <div style={styles.loadingContent}>
           <div style={styles.loadingSpinner} />
-          <h2>Loading Assessment...</h2>
-          <p>Preparing your personalized questions</p>
+          <h2 style={{ color: 'white', marginBottom: '10px' }}>Loading Assessment...</h2>
+          <p style={{ color: 'rgba(255,255,255,0.8)' }}>Preparing your personalized questions</p>
         </div>
       </div>
     );
@@ -306,8 +306,8 @@ export default function AssessmentPage() {
       <div style={styles.messageContainer}>
         <div style={styles.messageCard}>
           <div style={styles.successIcon}>✅</div>
-          <h2>Assessment Already Completed</h2>
-          <p>You have already submitted this assessment.</p>
+          <h2 style={{ marginBottom: '15px' }}>Assessment Already Completed</h2>
+          <p style={{ marginBottom: '25px', color: '#64748b' }}>You have already submitted this assessment.</p>
           <button onClick={() => router.push('/assessment/pre')} style={styles.primaryButton}>
             ← Return to Assessments
           </button>
@@ -321,8 +321,8 @@ export default function AssessmentPage() {
       <div style={styles.messageContainer}>
         <div style={styles.messageCard}>
           <div style={styles.errorIcon}>⚠️</div>
-          <h2>Error Loading Assessment</h2>
-          <p>{error}</p>
+          <h2 style={{ marginBottom: '15px' }}>Error Loading Assessment</h2>
+          <p style={{ marginBottom: '25px', color: '#64748b' }}>{error}</p>
           <button onClick={() => window.location.reload()} style={styles.primaryButton}>
             Try Again
           </button>
@@ -336,8 +336,8 @@ export default function AssessmentPage() {
       <div style={styles.messageContainer}>
         <div style={styles.messageCard}>
           <div style={styles.errorIcon}>📭</div>
-          <h2>No Questions Available</h2>
-          <p>This assessment doesn't have any questions yet.</p>
+          <h2 style={{ marginBottom: '15px' }}>No Questions Available</h2>
+          <p style={{ marginBottom: '25px', color: '#64748b' }}>This assessment doesn't have any questions yet.</p>
           <button onClick={() => router.push('/assessment/pre')} style={styles.primaryButton}>
             ← Back
           </button>
@@ -391,9 +391,9 @@ export default function AssessmentPage() {
         <div style={styles.modalOverlay}>
           <div style={{ ...styles.modalContent, textAlign: 'center' }}>
             <div style={styles.successIconLarge}>✓</div>
-            <h2 style={{ color: '#2e7d32' }}>Assessment Complete!</h2>
-            <p>Your {assessment?.title} has been successfully submitted.</p>
-            <p>Redirecting to assessment selection...</p>
+            <h2 style={{ color: '#2e7d32', marginBottom: '10px' }}>Assessment Complete!</h2>
+            <p style={{ marginBottom: '5px' }}>Your {assessment?.title} has been successfully submitted.</p>
+            <p style={{ color: '#64748b' }}>Redirecting to assessment selection...</p>
           </div>
         </div>
       )}
@@ -410,13 +410,18 @@ export default function AssessmentPage() {
               <button onClick={() => router.push('/assessment/pre')} style={styles.backButton}>
                 ←
               </button>
-              <div style={styles.headerIcon}>{assessmentType?.icon || '📋'}</div>
               <div>
                 <div style={styles.headerTitle}>{assessment?.title}</div>
                 <div style={styles.headerMeta}>
-                  <span>Q{currentIndex + 1}/{questions.length}</span>
+                  <span>Question {currentIndex + 1} of {questions.length}</span>
                   <span>•</span>
                   <span>{currentQuestion?.section || 'General'}</span>
+                  {currentQuestion?.subsection && (
+                    <>
+                      <span>•</span>
+                      <span>{currentQuestion.subsection}</span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -424,13 +429,16 @@ export default function AssessmentPage() {
             {/* Timer */}
             <div style={{
               ...styles.timer,
-              background: isTimeCritical ? '#d32f2f20' : isTimeWarning ? '#ff980020' : 'rgba(255,255,255,0.15)',
-              borderColor: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : 'rgba(255,255,255,0.3)'
+              background: isTimeCritical ? 'rgba(211, 47, 47, 0.1)' : 
+                         isTimeWarning ? 'rgba(255, 152, 0, 0.1)' : 'rgba(255,255,255,0.15)',
+              borderColor: isTimeCritical ? '#d32f2f' : 
+                          isTimeWarning ? '#ff9800' : 'rgba(255,255,255,0.3)'
             }}>
               <div style={styles.timerLabel}>TIME REMAINING</div>
               <div style={{
                 ...styles.timerValue,
-                color: isTimeCritical ? '#d32f2f' : isTimeWarning ? '#ff9800' : 'white'
+                color: isTimeCritical ? '#d32f2f' : 
+                       isTimeWarning ? '#ff9800' : 'white'
               }}>
                 {timeRemainingFormatted}
               </div>
@@ -438,26 +446,27 @@ export default function AssessmentPage() {
           </div>
         </div>
 
-        {/* Progress Bar */}
-        <div style={styles.progressContainer}>
-          <div style={styles.progressTrack}>
-            <div style={{
-              ...styles.progressFill,
-              width: `${progressPercentage}%`,
-              background: `linear-gradient(135deg, ${assessmentType?.gradient_start || '#667eea'}, ${assessmentType?.gradient_end || '#764ba2'})`
-            }} />
-          </div>
-          <div style={styles.progressStats}>
-            <span>{totalAnswered} answered</span>
-            <span>{questions.length - totalAnswered} remaining</span>
-          </div>
-        </div>
-
-        {/* Main Content */}
+        {/* Main Content - Two Column Layout */}
         <div style={styles.mainContent}>
-          {/* Question Panel */}
-          <div style={styles.questionPanel}>
-            <div style={styles.questionContent}>
+          {/* Left Column - Questions */}
+          <div style={styles.questionColumn}>
+            {/* Progress Bar */}
+            <div style={styles.progressContainer}>
+              <div style={styles.progressTrack}>
+                <div style={{
+                  ...styles.progressFill,
+                  width: `${progressPercentage}%`,
+                  background: `linear-gradient(135deg, ${assessmentType?.gradient_start || '#667eea'}, ${assessmentType?.gradient_end || '#764ba2'})`
+                }} />
+              </div>
+              <div style={styles.progressStats}>
+                <span>{totalAnswered} answered</span>
+                <span>{questions.length - totalAnswered} remaining</span>
+              </div>
+            </div>
+
+            {/* Question Card */}
+            <div style={styles.questionCard}>
               {/* Section Badge */}
               <div style={styles.sectionBadge}>
                 <div style={{
@@ -474,30 +483,29 @@ export default function AssessmentPage() {
                 </div>
               </div>
 
-              {/* Question */}
+              {/* Question Text */}
               <div style={styles.questionText}>
-                <div style={styles.questionNumber}>Question {currentIndex + 1} of {questions.length}</div>
-                <div style={styles.questionContent}>{currentQuestion?.question_text}</div>
+                {currentQuestion?.question_text}
               </div>
 
               {/* Save Status */}
               {saveStatus[currentQuestion?.id] && (
                 <div style={{
                   ...styles.saveStatus,
-                  background: saveStatus[currentQuestion.id] === 'saving' ? '#ff980010' : 
-                             saveStatus[currentQuestion.id] === 'saved' ? '#4caf5010' : '#f4433610',
+                  background: saveStatus[currentQuestion.id] === 'saving' ? '#fff3e0' : 
+                             saveStatus[currentQuestion.id] === 'saved' ? '#e8f5e9' : '#ffebee',
                   borderColor: saveStatus[currentQuestion.id] === 'saving' ? '#ff9800' : 
                               saveStatus[currentQuestion.id] === 'saved' ? '#4caf50' : '#f44336',
                   color: saveStatus[currentQuestion.id] === 'saving' ? '#f57c00' : 
                          saveStatus[currentQuestion.id] === 'saved' ? '#2e7d32' : '#c62828'
                 }}>
-                  {saveStatus[currentQuestion.id] === 'saving' ? '⏳ Saving...' : 
-                   saveStatus[currentQuestion.id] === 'saved' ? '✓ Saved' : '❌ Save failed'}
+                  {saveStatus[currentQuestion.id] === 'saving' ? '⏳ Saving your answer...' : 
+                   saveStatus[currentQuestion.id] === 'saved' ? '✓ Answer saved' : '❌ Save failed - please try again'}
                 </div>
               )}
 
-              {/* Answers - Now using the randomized order from the database */}
-              <div style={styles.answersContainer}>
+              {/* Answer Options */}
+              <div style={styles.answersGrid}>
                 {currentQuestion?.answers?.map((answer, index) => {
                   const isSelected = answers[currentQuestion.id] === answer.id;
                   const isHovered = hoveredAnswer === answer.id;
@@ -509,24 +517,29 @@ export default function AssessmentPage() {
                       onClick={() => handleAnswerSelect(currentQuestion.id, answer.id)}
                       disabled={alreadySubmitted}
                       style={{
-                        ...styles.answerButton,
-                        background: isSelected ? assessmentType?.gradient_start || '#667eea' : isHovered ? '#f8fafc' : 'white',
+                        ...styles.answerCard,
+                        background: isSelected ? `linear-gradient(135deg, ${assessmentType?.gradient_start || '#667eea'}, ${assessmentType?.gradient_end || '#764ba2'})` : 
+                                   isHovered ? '#f8fafc' : 'white',
                         borderColor: isSelected ? assessmentType?.gradient_start || '#667eea' : '#e2e8f0',
-                        transform: isSelected || isHovered ? 'translateY(-2px)' : 'translateY(0)'
+                        transform: isSelected || isHovered ? 'translateY(-2px)' : 'translateY(0)',
+                        boxShadow: isSelected ? '0 4px 12px rgba(102, 126, 234, 0.3)' : 
+                                  isHovered ? '0 4px 12px rgba(0,0,0,0.1)' : '0 2px 4px rgba(0,0,0,0.05)'
                       }}
                       onMouseEnter={() => setHoveredAnswer(answer.id)}
                       onMouseLeave={() => setHoveredAnswer(null)}
                     >
                       <div style={{
                         ...styles.answerLetter,
-                        background: isSelected ? 'rgba(255,255,255,0.2)' : '#f1f5f9',
+                        background: isSelected ? 'rgba(255,255,255,0.2)' : 
+                                   isHovered ? assessmentType?.gradient_start || '#667eea' + '20' : '#f1f5f9',
                         color: isSelected ? 'white' : '#475569'
                       }}>
                         {optionLetter}
                       </div>
                       <span style={{
                         ...styles.answerText,
-                        color: isSelected ? 'white' : '#1e293b'
+                        color: isSelected ? 'white' : '#1e293b',
+                        fontWeight: isSelected ? 500 : 400
                       }}>
                         {answer.answer_text}
                       </span>
@@ -535,7 +548,7 @@ export default function AssessmentPage() {
                 })}
               </div>
 
-              {/* Navigation */}
+              {/* Navigation Buttons */}
               <div style={styles.navigation}>
                 <button
                   onClick={handlePrevious}
@@ -544,10 +557,11 @@ export default function AssessmentPage() {
                     ...styles.navButton,
                     background: currentIndex === 0 || alreadySubmitted ? '#f1f5f9' : 'white',
                     color: currentIndex === 0 || alreadySubmitted ? '#94a3b8' : assessmentType?.gradient_start || '#667eea',
-                    border: currentIndex === 0 || alreadySubmitted ? '1px solid #e2e8f0' : `2px solid ${assessmentType?.gradient_start || '#667eea'}`
+                    border: currentIndex === 0 || alreadySubmitted ? '1px solid #e2e8f0' : `2px solid ${assessmentType?.gradient_start || '#667eea'}`,
+                    cursor: currentIndex === 0 || alreadySubmitted ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  ← Previous
+                  ← Previous Question
                 </button>
 
                 {isLastQuestion ? (
@@ -558,7 +572,8 @@ export default function AssessmentPage() {
                       ...styles.navButton,
                       background: alreadySubmitted ? '#f1f5f9' : '#4caf50',
                       color: alreadySubmitted ? '#94a3b8' : 'white',
-                      border: 'none'
+                      border: 'none',
+                      cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
                     }}
                   >
                     Submit Assessment
@@ -571,106 +586,607 @@ export default function AssessmentPage() {
                       ...styles.navButton,
                       background: alreadySubmitted ? '#f1f5f9' : `linear-gradient(135deg, ${assessmentType?.gradient_start || '#667eea'}, ${assessmentType?.gradient_end || '#764ba2'})`,
                       color: alreadySubmitted ? '#94a3b8' : 'white',
-                      border: 'none'
+                      border: 'none',
+                      cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
                     }}
                   >
-                    Next →
+                    Next Question →
                   </button>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Navigator Panel */}
-          <div style={styles.navigatorPanel}>
-            <div style={styles.navigatorHeader}>
-              <span style={styles.navigatorIcon}>📋</span>
-              <h3>Question Navigator</h3>
-            </div>
+          {/* Right Column - Navigator */}
+          <div style={styles.navigatorColumn}>
+            <div style={styles.navigatorCard}>
+              <div style={styles.navigatorHeader}>
+                <span style={styles.navigatorIcon}>📋</span>
+                <h3>Question Navigator</h3>
+              </div>
 
-            {/* Stats */}
-            <div style={styles.statsGrid}>
-              <div style={styles.statCard}>
-                <div style={{ ...styles.statValue, color: '#4caf50' }}>{totalAnswered}</div>
-                <div style={styles.statLabel}>Answered</div>
+              {/* Stats Cards */}
+              <div style={styles.statsGrid}>
+                <div style={styles.statCard}>
+                  <div style={{ ...styles.statValue, color: '#4caf50' }}>{totalAnswered}</div>
+                  <div style={styles.statLabel}>Answered</div>
+                </div>
+                <div style={styles.statCard}>
+                  <div style={{ ...styles.statValue, color: '#64748b' }}>{questions.length - totalAnswered}</div>
+                  <div style={styles.statLabel}>Remaining</div>
+                </div>
+                <div style={styles.statCard}>
+                  <div style={{ ...styles.statValue, color: assessmentType?.gradient_start || '#667eea' }}>{progressPercentage}%</div>
+                  <div style={styles.statLabel}>Complete</div>
+                </div>
               </div>
-              <div style={styles.statCard}>
-                <div style={{ ...styles.statValue, color: '#64748b' }}>{questions.length - totalAnswered}</div>
-                <div style={styles.statLabel}>Remaining</div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={{ ...styles.statValue, color: assessmentType?.gradient_start || '#667eea' }}>{progressPercentage}%</div>
-                <div style={styles.statLabel}>Complete</div>
-              </div>
-            </div>
 
-            {/* Question Grid */}
-            <div style={styles.questionGrid}>
-              {questions.map((q, index) => {
-                const isAnswered = answers[q.id];
-                const isCurrent = index === currentIndex;
-                const isHovered = hoveredQuestion === index;
+              {/* Question Grid */}
+              <div style={styles.questionGrid}>
+                {questions.map((q, index) => {
+                  const isAnswered = answers[q.id];
+                  const isCurrent = index === currentIndex;
+                  const isHovered = hoveredQuestion === index;
 
-                return (
-                  <button
-                    key={q.id}
-                    onClick={() => jumpToQuestion(index)}
-                    disabled={alreadySubmitted}
-                    style={{
-                      ...styles.gridItem,
-                      background: isCurrent ? assessmentType?.gradient_start || '#667eea' : isAnswered ? '#4caf50' : 'white',
-                      color: isCurrent || isAnswered ? 'white' : '#1e293b',
-                      borderColor: isCurrent ? assessmentType?.gradient_start || '#667eea' : isAnswered ? '#4caf50' : '#e2e8f0',
-                      transform: isHovered ? 'scale(1.1)' : 'scale(1)'
-                    }}
-                    onMouseEnter={() => setHoveredQuestion(index)}
-                    onMouseLeave={() => setHoveredQuestion(null)}
-                  >
-                    {index + 1}
-                  </button>
-                );
-              })}
-            </div>
+                  return (
+                    <button
+                      key={q.id}
+                      onClick={() => jumpToQuestion(index)}
+                      disabled={alreadySubmitted}
+                      style={{
+                        ...styles.gridItem,
+                        background: isCurrent ? assessmentType?.gradient_start || '#667eea' : 
+                                   isAnswered ? '#4caf50' : 'white',
+                        color: isCurrent || isAnswered ? 'white' : '#1e293b',
+                        borderColor: isCurrent ? assessmentType?.gradient_start || '#667eea' : 
+                                    isAnswered ? '#4caf50' : '#e2e8f0',
+                        transform: isHovered ? 'scale(1.1)' : 'scale(1)',
+                        boxShadow: isHovered ? '0 4px 8px rgba(0,0,0,0.15)' : 'none',
+                        cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
+                      }}
+                      onMouseEnter={() => setHoveredQuestion(index)}
+                      onMouseLeave={() => setHoveredQuestion(null)}
+                      title={`Question ${index + 1}`}
+                    >
+                      {index + 1}
+                    </button>
+                  );
+                })}
+              </div>
 
-            {/* Legend */}
-            <div style={styles.legend}>
-              <div style={styles.legendItem}>
-                <div style={{ ...styles.legendDot, background: '#4caf50' }} />
-                <span>Answered</span>
+              {/* Legend */}
+              <div style={styles.legend}>
+                <div style={styles.legendItem}>
+                  <div style={{ ...styles.legendDot, background: '#4caf50' }} />
+                  <span>Answered</span>
+                </div>
+                <div style={styles.legendItem}>
+                  <div style={{ ...styles.legendDot, background: assessmentType?.gradient_start || '#667eea' }} />
+                  <span>Current</span>
+                </div>
+                <div style={styles.legendItem}>
+                  <div style={{ ...styles.legendDot, background: 'white', border: '2px solid #e2e8f0' }} />
+                  <span>Pending</span>
+                </div>
               </div>
-              <div style={styles.legendItem}>
-                <div style={{ ...styles.legendDot, background: assessmentType?.gradient_start || '#667eea' }} />
-                <span>Current</span>
-              </div>
-              <div style={styles.legendItem}>
-                <div style={{ ...styles.legendDot, background: 'white', border: '2px solid #e2e8f0' }} />
-                <span>Pending</span>
-              </div>
-            </div>
 
-            {/* Assessment Info */}
-            <div style={styles.assessmentInfo}>
-              <div style={styles.infoRow}>
-                <span>Assessment:</span>
-                <span style={{ fontWeight: 600 }}>{assessment?.title}</span>
-              </div>
-              <div style={styles.infoRow}>
-                <span>Max Score:</span>
-                <span style={{ fontWeight: 600 }}>{assessmentType?.max_score}</span>
-              </div>
-              <div style={styles.infoRow}>
-                <span>Time Limit:</span>
-                <span style={{ fontWeight: 600 }}>{assessmentType?.time_limit_minutes} minutes</span>
+              {/* Assessment Info */}
+              <div style={styles.assessmentInfo}>
+                <div style={styles.infoRow}>
+                  <span>Assessment:</span>
+                  <span style={{ fontWeight: 600 }}>{assessment?.title}</span>
+                </div>
+                <div style={styles.infoRow}>
+                  <span>Max Score:</span>
+                  <span style={{ fontWeight: 600 }}>{assessmentType?.max_score || 100}</span>
+                </div>
+                <div style={styles.infoRow}>
+                  <span>Time Limit:</span>
+                  <span style={{ fontWeight: 600 }}>{assessmentType?.time_limit_minutes || 60} minutes</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Global Styles */}
+      <style jsx global>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        
+        * {
+          box-sizing: border-box;
+          margin: 0;
+          padding: 0;
+        }
+        
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+          background: #f8fafc;
+        }
+      `}</style>
     </>
   );
 }
 
-// Keep all your existing styles here...
+// Styles
 const styles = {
-  // ... (copy all your existing styles from your current file)
+  loadingContainer: {
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+  },
+  loadingContent: {
+    textAlign: 'center'
+  },
+  loadingSpinner: {
+    width: '60px',
+    height: '60px',
+    border: '4px solid rgba(255,255,255,0.3)',
+    borderTop: '4px solid white',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite',
+    margin: '0 auto 20px'
+  },
+  messageContainer: {
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    padding: '20px'
+  },
+  messageCard: {
+    background: 'white',
+    padding: '40px',
+    borderRadius: '16px',
+    maxWidth: '500px',
+    textAlign: 'center',
+    boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+  },
+  successIcon: {
+    fontSize: '64px',
+    marginBottom: '20px'
+  },
+  errorIcon: {
+    fontSize: '64px',
+    marginBottom: '20px'
+  },
+  primaryButton: {
+    padding: '12px 30px',
+    background: 'linear-gradient(135deg, #667eea, #764ba2)',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '16px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'transform 0.2s, box-shadow 0.2s',
+    boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)'
+  },
+  container: {
+    minHeight: '100vh',
+    background: '#f8fafc'
+  },
+  header: {
+    position: 'sticky',
+    top: 0,
+    zIndex: 100,
+    color: 'white',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+  },
+  headerContent: {
+    maxWidth: '1400px',
+    margin: '0 auto',
+    padding: '16px 24px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  headerLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '20px'
+  },
+  backButton: {
+    width: '40px',
+    height: '40px',
+    background: 'rgba(255,255,255,0.2)',
+    border: 'none',
+    borderRadius: '10px',
+    color: 'white',
+    fontSize: '24px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'background 0.2s',
+    backdropFilter: 'blur(10px)'
+  },
+  headerTitle: {
+    fontSize: '20px',
+    fontWeight: 700,
+    marginBottom: '4px'
+  },
+  headerMeta: {
+    display: 'flex',
+    gap: '8px',
+    fontSize: '14px',
+    opacity: 0.9
+  },
+  timer: {
+    padding: '10px 20px',
+    borderRadius: '12px',
+    border: '1px solid',
+    textAlign: 'center',
+    minWidth: '160px',
+    backdropFilter: 'blur(10px)'
+  },
+  timerLabel: {
+    fontSize: '12px',
+    fontWeight: 600,
+    marginBottom: '4px',
+    letterSpacing: '0.5px'
+  },
+  timerValue: {
+    fontSize: '24px',
+    fontWeight: 700,
+    fontFamily: 'monospace'
+  },
+  mainContent: {
+    maxWidth: '1400px',
+    margin: '0 auto',
+    padding: '24px',
+    display: 'grid',
+    gridTemplateColumns: '1fr 320px',
+    gap: '24px'
+  },
+  questionColumn: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '20px'
+  },
+  progressContainer: {
+    background: 'white',
+    padding: '20px',
+    borderRadius: '16px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+  },
+  progressTrack: {
+    height: '10px',
+    background: '#e2e8f0',
+    borderRadius: '5px',
+    overflow: 'hidden',
+    marginBottom: '12px'
+  },
+  progressFill: {
+    height: '100%',
+    transition: 'width 0.3s ease',
+    borderRadius: '5px'
+  },
+  progressStats: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: '14px',
+    color: '#64748b',
+    fontWeight: 500
+  },
+  questionCard: {
+    background: 'white',
+    borderRadius: '16px',
+    padding: '32px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+  },
+  sectionBadge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    marginBottom: '24px'
+  },
+  sectionIcon: {
+    width: '50px',
+    height: '50px',
+    borderRadius: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '28px',
+    color: 'white',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+  },
+  sectionName: {
+    fontSize: '20px',
+    fontWeight: 700,
+    color: '#1e293b'
+  },
+  subsection: {
+    fontSize: '14px',
+    color: '#64748b',
+    marginTop: '4px'
+  },
+  questionText: {
+    fontSize: '20px',
+    lineHeight: '1.6',
+    color: '#1e293b',
+    marginBottom: '24px',
+    fontWeight: 500,
+    padding: '20px',
+    background: '#f8fafc',
+    borderRadius: '12px',
+    border: '1px solid #e2e8f0'
+  },
+  saveStatus: {
+    padding: '12px 20px',
+    border: '1px solid',
+    borderRadius: '10px',
+    marginBottom: '24px',
+    fontSize: '14px',
+    fontWeight: 500,
+    textAlign: 'center'
+  },
+  answersGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '16px',
+    marginBottom: '32px'
+  },
+  answerCard: {
+    padding: '20px',
+    border: '2px solid',
+    borderRadius: '16px',
+    cursor: 'pointer',
+    textAlign: 'left',
+    fontSize: '16px',
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '16px',
+    transition: 'all 0.2s ease',
+    width: '100%',
+    minHeight: '100px',
+    background: 'white',
+    lineHeight: '1.5'
+  },
+  answerLetter: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '10px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '18px',
+    fontWeight: 700,
+    flexShrink: 0
+  },
+  answerText: {
+    flex: 1,
+    fontSize: '15px'
+  },
+  navigation: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '16px',
+    marginTop: '8px'
+  },
+  navButton: {
+    padding: '14px 28px',
+    borderRadius: '12px',
+    fontSize: '16px',
+    fontWeight: 600,
+    transition: 'all 0.2s ease',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+  },
+  navigatorColumn: {
+    position: 'sticky',
+    top: '100px',
+    height: 'fit-content'
+  },
+  navigatorCard: {
+    background: 'white',
+    borderRadius: '16px',
+    padding: '24px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+  },
+  navigatorHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    paddingBottom: '16px',
+    borderBottom: '2px solid #f1f5f9',
+    marginBottom: '20px'
+  },
+  navigatorIcon: {
+    fontSize: '24px'
+  },
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr 1fr',
+    gap: '10px',
+    marginBottom: '24px'
+  },
+  statCard: {
+    background: '#f8fafc',
+    padding: '16px 8px',
+    borderRadius: '12px',
+    textAlign: 'center',
+    border: '1px solid #e2e8f0'
+  },
+  statValue: {
+    fontSize: '24px',
+    fontWeight: 800,
+    lineHeight: 1.2,
+    marginBottom: '4px'
+  },
+  statLabel: {
+    fontSize: '11px',
+    color: '#64748b',
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
+  },
+  questionGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(5, 1fr)',
+    gap: '8px',
+    marginBottom: '20px',
+    maxHeight: '280px',
+    overflowY: 'auto',
+    padding: '4px',
+    background: '#f8fafc',
+    borderRadius: '12px',
+    border: '1px solid #e2e8f0'
+  },
+  gridItem: {
+    aspectRatio: '1',
+    border: '2px solid',
+    borderRadius: '10px',
+    fontSize: '14px',
+    fontWeight: 600,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.2s ease',
+    background: 'white'
+  },
+  legend: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '16px 0',
+    borderTop: '2px solid #f1f5f9',
+    borderBottom: '2px solid #f1f5f9',
+    marginBottom: '16px'
+  },
+  legendItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '13px',
+    color: '#475569',
+    fontWeight: 500
+  },
+  legendDot: {
+    width: '14px',
+    height: '14px',
+    borderRadius: '4px'
+  },
+  assessmentInfo: {
+    background: '#f8fafc',
+    padding: '16px',
+    borderRadius: '12px',
+    border: '1px solid #e2e8f0'
+  },
+  infoRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: '14px',
+    marginBottom: '10px',
+    color: '#475569'
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0,0,0,0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    padding: '20px',
+    backdropFilter: 'blur(5px)'
+  },
+  modalContent: {
+    background: 'white',
+    padding: '40px',
+    borderRadius: '24px',
+    maxWidth: '500px',
+    width: '100%',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+  },
+  modalIcon: {
+    fontSize: '60px',
+    textAlign: 'center',
+    marginBottom: '20px'
+  },
+  modalTitle: {
+    fontSize: '28px',
+    fontWeight: 800,
+    textAlign: 'center',
+    marginBottom: '24px',
+    color: '#1e293b'
+  },
+  modalBody: {
+    marginBottom: '28px'
+  },
+  modalStats: {
+    background: '#f8fafc',
+    padding: '20px',
+    borderRadius: '16px',
+    marginBottom: '20px',
+    border: '1px solid #e2e8f0'
+  },
+  modalStat: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    marginBottom: '12px',
+    fontSize: '16px',
+    fontWeight: 500
+  },
+  modalWarning: {
+    display: 'flex',
+    gap: '12px',
+    padding: '16px 20px',
+    background: '#fff8e1',
+    borderRadius: '12px',
+    color: '#856404',
+    fontSize: '14px',
+    border: '1px solid #ffe082'
+  },
+  modalActions: {
+    display: 'flex',
+    gap: '12px'
+  },
+  modalSecondaryButton: {
+    flex: 1,
+    padding: '14px',
+    background: '#f1f5f9',
+    border: 'none',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontSize: '16px',
+    color: '#475569',
+    transition: 'background 0.2s'
+  },
+  modalPrimaryButton: {
+    flex: 1,
+    padding: '14px',
+    background: '#4caf50',
+    color: 'white',
+    border: 'none',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontSize: '16px',
+    transition: 'background 0.2s, transform 0.2s',
+    boxShadow: '0 4px 12px rgba(76, 175, 80, 0.3)'
+  },
+  successIconLarge: {
+    width: '80px',
+    height: '80px',
+    background: '#4caf50',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: '0 auto 20px',
+    fontSize: '40px',
+    color: 'white',
+    boxShadow: '0 4px 20px rgba(76, 175, 80, 0.4)'
+  }
 };
