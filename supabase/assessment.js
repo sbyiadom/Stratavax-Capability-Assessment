@@ -405,9 +405,8 @@ export async function isAssessmentCompleted(userId, assessmentId) {
   }
 }
 
-// ========== FIXED VERSION WITH DEBUGGING ==========
+// ========== HELPER FUNCTIONS ==========
 
-// Helper function to shuffle array
 function shuffleArray(array) {
   if (!array || !Array.isArray(array)) return [];
   const shuffled = [...array];
@@ -418,170 +417,11 @@ function shuffleArray(array) {
   return shuffled;
 }
 
-// Get questions for an assessment - FIXED VERSION
-export async function getRandomizedQuestions(candidateId, assessmentId) {
-  console.log("🎲 getRandomizedQuestions called with:", { candidateId, assessmentId });
-  
-  try {
-    if (!assessmentId) {
-      console.error("No assessmentId provided");
-      return [];
-    }
-
-    // First, try to get questions directly from the questions table (fallback)
-    console.log("Attempting to fetch from questions table first...");
-    const { data: directQuestions, error: directError } = await supabase
-      .from('questions')
-      .select(`
-        *,
-        answers (*)
-      `)
-      .eq('assessment_id', assessmentId)
-      .eq('is_active', true)
-      .order('question_order');
-
-    if (!directError && directQuestions && directQuestions.length > 0) {
-      console.log(`Found ${directQuestions.length} questions in questions table`);
-      
-      // Randomize the questions
-      const shuffledQuestions = shuffleArray(directQuestions);
-      
-      // Format and return
-      return shuffledQuestions.map((q, index) => ({
-        id: q.id,
-        question_text: q.question_text,
-        section: q.section,
-        subsection: q.subsection,
-        display_order: index,
-        answers: (q.answers || []).map(a => ({
-          id: a.id,
-          answer_text: a.answer_text,
-          score: a.score
-        }))
-      }));
-    }
-
-    // If no questions in questions table, try question_instances
-    console.log("No questions in questions table, trying question_instances...");
-    
-    const { data: instances, error: instancesError } = await supabase
-      .from("question_instances")
-      .select(`
-        id,
-        display_order,
-        question_bank_id
-      `)
-      .eq("assessment_id", assessmentId);
-
-    if (instancesError) {
-      console.error("Error fetching question instances:", instancesError);
-      return [];
-    }
-
-    console.log(`Found ${instances?.length || 0} question instances`);
-
-    if (!instances || instances.length === 0) {
-      console.log("No question instances found");
-      return [];
-    }
-
-    // For each instance, get the question bank details
-    const questions = await Promise.all(
-      instances.map(async (instance) => {
-        const { data: questionBank, error: bankError } = await supabase
-          .from("question_banks")
-          .select(`
-            id,
-            question_text,
-            section,
-            subsection,
-            answer_banks (
-              id,
-              answer_text,
-              score
-            )
-          `)
-          .eq("id", instance.question_bank_id)
-          .single();
-
-        if (bankError) {
-          console.error(`Error fetching question bank ${instance.question_bank_id}:`, bankError);
-          return null;
-        }
-
-        return {
-          id: instance.id,
-          question_text: questionBank.question_text,
-          section: questionBank.section,
-          subsection: questionBank.subsection,
-          display_order: instance.display_order,
-          answers: questionBank.answer_banks || []
-        };
-      })
-    );
-
-    // Filter out any null values
-    const validQuestions = questions.filter(q => q !== null);
-    
-    console.log(`Returning ${validQuestions.length} valid questions`);
-
-    // Randomize the order
-    return shuffleArray(validQuestions);
-
-  } catch (error) {
-    console.error("Error in getRandomizedQuestions:", error);
-    return [];
-  }
-}
-
-// Save response - FIXED VERSION
-export async function saveRandomizedResponse(session_id, user_id, assessment_id, question_id, answer_id) {
-  console.log("💾 Saving response:", { session_id, user_id, question_id, answer_id });
-  
-  try {
-    if (!session_id || !user_id || !assessment_id || !question_id || !answer_id) {
-      console.error("Missing required fields");
-      return { success: false, error: "Missing required fields" };
-    }
-
-    // Convert to numbers if needed
-    const questionIdNum = typeof question_id === 'string' ? parseInt(question_id, 10) : question_id;
-    const answerIdNum = typeof answer_id === 'string' ? parseInt(answer_id, 10) : answer_id;
-
-    // Save to responses table
-    const { error } = await supabase
-      .from("responses")
-      .upsert({
-        session_id: session_id,
-        user_id: user_id,
-        assessment_id: assessment_id,
-        question_id: questionIdNum,
-        answer_id: answerIdNum,
-        updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'session_id,question_id'
-      });
-
-    if (error) {
-      console.error("Error saving response:", error);
-      return { success: false, error: error.message };
-    }
-
-    console.log("✅ Response saved successfully");
-    return { success: true };
-
-  } catch (error) {
-    console.error("Error in saveRandomizedResponse:", error);
-    return { success: false, error: error.message };
-  }
-}
-
-// ========== NEW FUNCTIONS FOR UNIQUE QUESTIONS ==========
+// ========== UNIQUE QUESTIONS FUNCTIONS ==========
 
 /**
- * Get unique questions for any assessment type
- * Uses the new unique_questions and unique_answers tables
- * Each question has its own unique set of answers (3-5 per question)
+ * Get unique questions for Leadership Assessment
+ * Each question has its own unique answers that are never reused
  */
 export async function getUniqueQuestions(assessmentId) {
   try {
@@ -631,9 +471,8 @@ export async function getUniqueQuestions(assessmentId) {
     }
 
     if (!questions || questions.length === 0) {
-      console.log("⚠️ No unique questions found for assessment type:", assessment.assessment_type_id);
-      console.log("Falling back to randomized questions...");
-      return await getRandomizedQuestions(null, assessmentId);
+      console.log("⚠️ No unique questions found");
+      return [];
     }
 
     console.log(`✅ Found ${questions.length} unique questions with ${questions.reduce((acc, q) => acc + (q.unique_answers?.length || 0), 0)} total answers`);
@@ -641,7 +480,7 @@ export async function getUniqueQuestions(assessmentId) {
     // Randomize the order of questions for each candidate
     const shuffledQuestions = shuffleArray([...questions]);
 
-    // Format the questions for the frontend with randomized answers
+    // Format the questions for the frontend
     const formattedQuestions = shuffledQuestions.map((q, index) => {
       // Randomize the answers for this question
       const shuffledAnswers = shuffleArray(q.unique_answers || []);
@@ -659,7 +498,7 @@ export async function getUniqueQuestions(assessmentId) {
             score: a.score,
             display_order: a.display_order
           }))
-          .sort((a, b) => a.display_order - b.display_order) // Keep answers in their original order within the question
+          .sort((a, b) => a.display_order - b.display_order) // Keep answers in their original order
       };
     });
 
@@ -667,14 +506,12 @@ export async function getUniqueQuestions(assessmentId) {
 
   } catch (error) {
     console.error("❌ Error in getUniqueQuestions:", error);
-    // Fallback to randomized questions
-    return await getRandomizedQuestions(null, assessmentId);
+    return [];
   }
 }
 
 /**
  * Save response for unique questions
- * Works with the unique_questions table structure
  */
 export async function saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id) {
   console.log("💾 Saving unique response:", { session_id, user_id, question_id, answer_id });
@@ -687,30 +524,16 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
 
     // Ensure IDs are numbers
     const sessionIdNum = typeof session_id === 'string' ? parseInt(session_id, 10) : session_id;
-    const userIdStr = user_id; // UUID remains as string
-    const assessmentIdStr = assessment_id; // UUID remains as string
     const questionIdNum = typeof question_id === 'string' ? parseInt(question_id, 10) : question_id;
     const answerIdNum = typeof answer_id === 'string' ? parseInt(answer_id, 10) : answer_id;
-
-    // Verify the question exists in unique_questions (optional but good for debugging)
-    const { data: questionCheck, error: checkError } = await supabase
-      .from('unique_questions')
-      .select('id')
-      .eq('id', questionIdNum)
-      .single();
-
-    if (checkError) {
-      console.warn("⚠️ Question not found in unique_questions, but continuing:", checkError);
-      // Continue anyway - might be from fallback
-    }
 
     // Save to responses table
     const { error } = await supabase
       .from("responses")
       .upsert({
         session_id: sessionIdNum,
-        user_id: userIdStr,
-        assessment_id: assessmentIdStr,
+        user_id: user_id,
+        assessment_id: assessment_id,
         question_id: questionIdNum,
         answer_id: answerIdNum,
         updated_at: new Date().toISOString()
@@ -732,45 +555,7 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
   }
 }
 
-/**
- * Get all unique questions for admin purposes (no randomization)
- */
-export async function getAllUniqueQuestions(assessmentTypeId) {
-  try {
-    console.log("📋 Fetching all unique questions for type:", assessmentTypeId);
-    
-    const { data: questions, error: qError } = await supabase
-      .from('unique_questions')
-      .select(`
-        id,
-        section,
-        subsection,
-        question_text,
-        display_order,
-        unique_answers (
-          id,
-          answer_text,
-          score,
-          display_order
-        )
-      `)
-      .eq('assessment_type_id', assessmentTypeId)
-      .order('display_order');
-
-    if (qError) {
-      console.error("❌ Error fetching all unique questions:", qError);
-      return [];
-    }
-
-    return questions || [];
-
-  } catch (error) {
-    console.error("❌ Error in getAllUniqueQuestions:", error);
-    return [];
-  }
-}
-
-// Legacy function (kept for backward compatibility)
+// Legacy function for backward compatibility
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveUniqueResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
