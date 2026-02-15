@@ -1,251 +1,180 @@
 // supabase/response.js
 import { supabase } from "./client";
 
-// Save a single response - FIXED version
+// Save a single response - FIXED version with better error handling
 export async function saveResponse(session_id, user_id, assessment_id, question_id, answer_id) {
-  console.log("💾 Saving response:", { session_id, user_id, question_id, answer_id });
+  console.log("💾 [saveResponse] Starting with:", { session_id, user_id, question_id, answer_id });
 
   // Validate required fields
   if (!session_id || !user_id || !assessment_id || !question_id || !answer_id) {
-    console.error("Missing required fields:", { session_id, user_id, assessment_id, question_id, answer_id });
-    throw new Error("Missing required fields for saving response");
+    const missing = [];
+    if (!session_id) missing.push('session_id');
+    if (!user_id) missing.push('user_id');
+    if (!assessment_id) missing.push('assessment_id');
+    if (!question_id) missing.push('question_id');
+    if (!answer_id) missing.push('answer_id');
+    
+    console.error("❌ [saveResponse] Missing required fields:", missing);
+    return { 
+      success: false, 
+      error: `Missing required fields: ${missing.join(', ')}` 
+    };
   }
 
-  // Convert to numbers if needed
+  // Ensure IDs are numbers
   const questionId = typeof question_id === 'string' ? parseInt(question_id, 10) : question_id;
   const answerId = typeof answer_id === 'string' ? parseInt(answer_id, 10) : answer_id;
+  const sessionId = typeof session_id === 'string' ? parseInt(session_id, 10) : session_id;
   
-  // Validate numbers
-  if (isNaN(questionId) || isNaN(answerId)) {
-    console.error("Invalid question_id or answer_id:", { question_id, answer_id });
-    throw new Error("Invalid question or answer ID");
+  if (isNaN(questionId) || isNaN(answerId) || isNaN(sessionId)) {
+    console.error("❌ [saveResponse] Invalid ID format:", { questionId, answerId, sessionId });
+    return { 
+      success: false, 
+      error: "Invalid ID format - expected numbers" 
+    };
   }
 
   try {
-    // First, check if the session exists and is still in progress
+    // First verify the session exists and is in progress
     const { data: session, error: sessionError } = await supabase
       .from("assessment_sessions")
       .select("id, status")
-      .eq("id", session_id)
+      .eq("id", sessionId)
       .eq("user_id", user_id)
-      .maybeSingle(); // Use maybeSingle instead of single to avoid errors
+      .single();
 
     if (sessionError) {
-      console.error("Session check error:", sessionError);
-      throw new Error("Invalid or expired session");
+      console.error("❌ [saveResponse] Session verification failed:", sessionError);
+      return { 
+        success: false, 
+        error: `Session verification failed: ${sessionError.message}` 
+      };
     }
 
     if (!session) {
-      console.error("Session not found:", session_id);
-      throw new Error("Assessment session not found");
+      return { 
+        success: false, 
+        error: "Session not found" 
+      };
     }
 
     if (session.status !== 'in_progress') {
-      throw new Error("This assessment session is no longer active");
+      return { 
+        success: false, 
+        error: `Session is ${session.status}, not in progress` 
+      };
     }
 
-    // Check if response already exists
-    const { data: existingResponse, error: checkError } = await supabase
-      .from("responses")
-      .select("id")
-      .eq("session_id", session_id)
+    // Check if the answer exists and belongs to the question
+    const { data: answer, error: answerError } = await supabase
+      .from("answers")
+      .select("id, question_id")
+      .eq("id", answerId)
       .eq("question_id", questionId)
-      .maybeSingle();
+      .single();
 
-    if (checkError) {
-      console.error("Error checking existing response:", checkError);
+    if (answerError) {
+      console.error("❌ [saveResponse] Answer verification failed:", answerError);
+      return { 
+        success: false, 
+        error: `Answer verification failed: ${answerError.message}` 
+      };
     }
 
-    let result;
-    
-    if (existingResponse) {
-      // Update existing response
-      console.log("Updating existing response for question:", questionId);
-      const { data, error } = await supabase
-        .from("responses")
-        .update({
-          answer_id: answerId,
-          updated_at: new Date().toISOString()
-        })
-        .eq("session_id", session_id)
-        .eq("question_id", questionId)
-        .select();
-
-      if (error) throw error;
-      result = data;
-    } else {
-      // Insert new response
-      console.log("Creating new response for question:", questionId);
-      const { data, error } = await supabase
-        .from("responses")
-        .insert({
-          session_id: session_id,
+    // Now try to upsert the response
+    const { data, error } = await supabase
+      .from("responses")
+      .upsert(
+        {
+          session_id: sessionId,
           user_id: user_id,
           assessment_id: assessment_id,
           question_id: questionId,
           answer_id: answerId,
-          created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
-        })
-        .select();
+        },
+        {
+          onConflict: 'session_id,question_id',
+          ignoreDuplicates: false
+        }
+      )
+      .select();
 
-      if (error) throw error;
-      result = data;
+    if (error) {
+      console.error("❌ [saveResponse] Database error:", error);
+      
+      // Provide user-friendly error messages
+      if (error.code === '23503') {
+        if (error.message.includes('session_id')) {
+          return { success: false, error: "Invalid session. Please restart the assessment." };
+        } else if (error.message.includes('question_id')) {
+          return { success: false, error: "Invalid question. Please refresh." };
+        } else if (error.message.includes('answer_id')) {
+          return { success: false, error: "Invalid answer selection." };
+        } else if (error.message.includes('user_id')) {
+          return { success: false, error: "User authentication error." };
+        }
+      } else if (error.code === '42P01') {
+        return { success: false, error: "Responses table does not exist." };
+      } else if (error.code === '42501') {
+        return { success: false, error: "Permission denied. Check RLS policies." };
+      }
+      
+      return { success: false, error: error.message };
     }
 
-    console.log("✅ Response saved successfully");
-    
-    // Also update the session's last_activity
-    await supabase
-      .from("assessment_sessions")
-      .update({
-        last_activity: new Date().toISOString()
-      })
-      .eq("id", session_id);
-
-    return { success: true, data: result };
+    console.log("✅ [saveResponse] Success:", data);
+    return { success: true, data };
 
   } catch (error) {
-    console.error("❌ Save failed:", error);
+    console.error("❌ [saveResponse] Unexpected error:", error);
     return { 
       success: false, 
-      error: error.message || "Failed to save response"
+      error: error.message || "An unexpected error occurred" 
     };
   }
 }
 
-// Load all responses for a session - FIXED version
-export async function loadSessionResponses(session_id) {
+// Load all responses for a session
+export async function getSessionResponses(session_id) {
   try {
     if (!session_id) {
-      console.error("No session_id provided to loadSessionResponses");
-      return {
-        answerMap: {},
-        detailedResponses: [],
-        count: 0
-      };
+      console.error("No session_id provided");
+      return { answerMap: {}, detailedResponses: [], count: 0 };
     }
+
+    const sessionId = typeof session_id === 'string' ? parseInt(session_id, 10) : session_id;
 
     const { data, error } = await supabase
       .from("responses")
-      .select(`
-        question_id, 
-        answer_id
-      `)
-      .eq("session_id", session_id);
+      .select("question_id, answer_id")
+      .eq("session_id", sessionId);
 
     if (error) {
       console.error("Error loading responses:", error);
-      throw error;
+      return { answerMap: {}, detailedResponses: [], count: 0 };
     }
-    
-    // Create a map of question_id -> answer_id for quick lookup
+
     const answerMap = {};
     const detailedResponses = [];
     
-    if (data && Array.isArray(data)) {
-      data.forEach(r => {
-        if (r.question_id && r.answer_id) {
-          answerMap[r.question_id] = r.answer_id;
-          detailedResponses.push({
-            question_id: r.question_id,
-            answer_id: r.answer_id
-          });
-        }
-      });
-    }
-    
-    console.log(`📊 Loaded ${data?.length || 0} responses from database`);
-    
+    data?.forEach(r => {
+      if (r.question_id && r.answer_id) {
+        answerMap[r.question_id] = r.answer_id;
+        detailedResponses.push({
+          question_id: r.question_id,
+          answer_id: r.answer_id
+        });
+      }
+    });
+
     return {
       answerMap,
       detailedResponses,
       count: data?.length || 0
     };
   } catch (error) {
-    console.error("Error in loadSessionResponses:", error);
-    return {
-      answerMap: {},
-      detailedResponses: [],
-      count: 0
-    };
-  }
-}
-
-// Get progress for a user
-export async function getProgress(user_id, assessment_id) {
-  try {
-    const { data, error } = await supabase
-      .from("assessment_sessions")
-      .select(`
-        id,
-        elapsed_seconds,
-        last_question_id,
-        status
-      `)
-      .eq("user_id", user_id)
-      .eq("assessment_id", assessment_id)
-      .eq("status", "in_progress")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
-      console.error("Error getting progress:", error);
-      return null;
-    }
-
-    return data;
-  } catch (error) {
-    console.error("Error in getProgress:", error);
-    return null;
-  }
-}
-
-// Save progress
-export async function saveProgress(session_id, user_id, assessment_id, elapsed_seconds, last_question_id) {
-  try {
-    const { error } = await supabase
-      .from("assessment_sessions")
-      .update({
-        elapsed_seconds,
-        last_question_id,
-        last_activity: new Date().toISOString()
-      })
-      .eq("id", session_id)
-      .eq("user_id", user_id);
-
-    if (error) {
-      console.error("Error saving progress:", error);
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.error("Error in saveProgress:", error);
-    return false;
-  }
-}
-
-// Check if assessment is completed
-export async function isAssessmentCompleted(user_id, assessment_id) {
-  try {
-    const { data, error } = await supabase
-      .from("assessment_sessions")
-      .select("id")
-      .eq("user_id", user_id)
-      .eq("assessment_id", assessment_id)
-      .eq("status", "completed")
-      .maybeSingle();
-
-    if (error) {
-      console.error("Error checking completion:", error);
-      return false;
-    }
-
-    return !!data;
-  } catch (error) {
-    console.error("Error in isAssessmentCompleted:", error);
-    return false;
+    console.error("Error in getSessionResponses:", error);
+    return { answerMap: {}, detailedResponses: [], count: 0 };
   }
 }
