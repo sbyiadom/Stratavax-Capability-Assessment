@@ -563,8 +563,9 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
       return { success: false, error: "Missing required fields" };
     }
 
-    // Ensure IDs are numbers where needed
-    const sessionIdNum = typeof session_id === 'string' ? parseInt(session_id, 10) : session_id;
+    // DON'T convert to numbers - keep as UUID strings
+    // Just ensure they're strings
+    const sessionIdStr = String(session_id);
     const questionIdNum = typeof question_id === 'string' ? parseInt(question_id, 10) : question_id;
     const answerIdNum = typeof answer_id === 'string' ? parseInt(answer_id, 10) : answer_id;
 
@@ -572,7 +573,7 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
     const { error } = await supabase
       .from("responses")
       .upsert({
-        session_id: sessionIdNum,
+        session_id: sessionIdStr, // Keep as UUID string, not number
         user_id: user_id,
         assessment_id: assessment_id,
         question_id: questionIdNum,
@@ -595,7 +596,6 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
     return { success: false, error: error.message };
   }
 }
-
 // ========== LEGACY FUNCTIONS (for backward compatibility) ==========
 
 export async function getRandomizedQuestions(candidateId, assessmentId) {
@@ -611,4 +611,5 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveUniqueResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
+
 
