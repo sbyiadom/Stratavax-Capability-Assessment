@@ -10,8 +10,8 @@ import {
   saveProgress,
   updateSessionTimer,
   isAssessmentCompleted,
-  getUniqueQuestions,  // Changed from getRandomizedQuestions
-  saveUniqueResponse    // Changed from saveRandomizedResponse
+  getUniqueQuestions,
+  saveUniqueResponse
 } from "../../supabase/assessment";
 
 // ===== TIMER FUNCTIONS =====
@@ -115,7 +115,7 @@ export default function AssessmentPage() {
           setElapsedSeconds(progress.elapsed_seconds || 0);
         }
 
-        // Load UNIQUE questions (100 questions with unique answers)
+        // Load UNIQUE questions
         console.log("Loading unique questions...");
         const uniqueQuestions = await getUniqueQuestions(assessmentId);
         console.log(`Loaded ${uniqueQuestions?.length || 0} unique questions`);
@@ -178,7 +178,6 @@ export default function AssessmentPage() {
   const handleAnswerSelect = async (questionId, answerId) => {
     if (alreadySubmitted || !session || !questionId || !answerId) return;
 
-    // Update UI immediately
     setAnswers(prev => ({ ...prev, [questionId]: answerId }));
     setSaveStatus(prev => ({ ...prev, [questionId]: 'saving' }));
 
