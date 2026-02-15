@@ -373,6 +373,27 @@ export async function saveProgress(sessionId, userId, assessmentId, elapsedSecon
   }
 }
 
+// FIXED: Get Progress function to match your table structure
+export async function getProgress(userId, assessmentId) {
+  try {
+    const { data, error } = await supabase
+      .from('assessment_progress')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('assessment_id', assessmentId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Error getting progress:", error);
+      return null;
+    }
+    return data;
+  } catch (error) {
+    console.error("Error getting progress:", error);
+    return null;
+  }
+}
+
 // Completion Checking
 export async function isAssessmentCompleted(userId, assessmentId) {
   try {
@@ -550,8 +571,7 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
       return { success: false, error: "Missing required fields" };
     }
 
-    // DON'T convert to numbers - keep as UUID strings
-    // Just ensure they're strings
+    // DON'T convert session_id to number - keep as UUID string
     const sessionIdStr = String(session_id);
     const questionIdNum = typeof question_id === 'string' ? parseInt(question_id, 10) : question_id;
     const answerIdNum = typeof answer_id === 'string' ? parseInt(answer_id, 10) : answer_id;
@@ -583,6 +603,7 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
     return { success: false, error: error.message };
   }
 }
+
 // ========== LEGACY FUNCTIONS (for backward compatibility) ==========
 
 export async function getRandomizedQuestions(candidateId, assessmentId) {
@@ -598,6 +619,3 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveUniqueResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
-
-
-
