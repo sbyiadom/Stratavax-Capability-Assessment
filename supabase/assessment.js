@@ -71,7 +71,7 @@ export async function getAssessmentById(id) {
   }
 }
 
-// Questions and Answers
+// Questions and Answers (legacy)
 export async function getAssessmentQuestions(assessmentId) {
   try {
     console.log("Fetching questions for assessment:", assessmentId);
@@ -155,7 +155,7 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
     }
 
     const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + assessmentType.time_limit_minutes);
+    expiresAt.setMinutes(expiresAt.getMinutes() + (assessmentType.time_limit_minutes || 60));
 
     const { data, error } = await supabase
       .from('assessment_sessions')
@@ -225,27 +225,13 @@ export async function updateSessionTimer(sessionId, elapsedSeconds) {
   }
 }
 
-// ===== FIXED SAVE RESPONSE - THIS IS THE KEY FUNCTION =====
+// Save response (legacy)
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   try {
-    // Validate inputs
     if (!sessionId || !userId || !assessmentId || !questionId || !answerId) {
-      console.error("Missing required fields:", { sessionId, userId, assessmentId, questionId, answerId });
       return { success: false, error: "Missing required fields" };
     }
 
-    // Convert to numbers
-    const questionIdNum = typeof questionId === 'string' ? parseInt(questionId, 10) : questionId;
-    const answerIdNum = typeof answerId === 'string' ? parseInt(answerId, 10) : answerId;
-
-    if (isNaN(questionIdNum) || isNaN(answerIdNum)) {
-      console.error("Invalid ID format:", { questionId, answerId });
-      return { success: false, error: "Invalid ID format" };
-    }
-
-    console.log(`Saving response: Q${questionIdNum} -> A${answerIdNum}`);
-
-    // Simple upsert without .select() for speed
     const { error } = await supabase
       .from("responses")
       .upsert(
@@ -253,8 +239,8 @@ export async function saveResponse(sessionId, userId, assessmentId, questionId, 
           session_id: sessionId,
           user_id: userId,
           assessment_id: assessmentId,
-          question_id: questionIdNum,
-          answer_id: answerIdNum,
+          question_id: questionId,
+          answer_id: answerId,
           updated_at: new Date().toISOString(),
         },
         {
@@ -265,102 +251,52 @@ export async function saveResponse(sessionId, userId, assessmentId, questionId, 
 
     if (error) {
       console.error("Database error:", error);
-      
-      // Handle specific error codes
-      if (error.code === '23503') {
-        if (error.message.includes('session_id')) {
-          return { success: false, error: "session_invalid", message: "Session not found" };
-        } else if (error.message.includes('question_id')) {
-          return { success: false, error: "question_invalid", message: "Question not found" };
-        } else if (error.message.includes('answer_id')) {
-          return { success: false, error: "answer_invalid", message: "Answer not found" };
-        }
-      } else if (error.code === '23505') {
-        // This is actually fine - answer was already saved
-        console.log("Answer already saved");
-        return { success: true, alreadySaved: true };
-      } else if (error.code === '42P01') {
-        return { success: false, error: "table_not_found", message: "Database error" };
-      } else if (error.code === '42501') {
-        return { success: false, error: "permission_denied", message: "Permission denied" };
-      }
-      
-      return { success: false, error: error.code, message: error.message };
+      return { success: false, error: error.message };
     }
 
-    console.log("✅ Response saved successfully");
     return { success: true };
     
   } catch (error) {
     console.error("Save function error:", error);
-    return { success: false, error: "exception", message: error.message };
+    return { success: false, error: error.message };
   }
 }
 
-// ===== FIXED GET SESSION RESPONSES =====
+// Get session responses
 export async function getSessionResponses(sessionId) {
   try {
     console.log("Fetching responses for session:", sessionId);
     
     if (!sessionId) {
-      console.log("No sessionId provided");
-      return {
-        answerMap: {},
-        detailedResponses: [],
-        count: 0
-      };
+      return { answerMap: {}, count: 0 };
     }
 
     const { data, error } = await supabase
       .from("responses")
-      .select(`
-        question_id, 
-        answer_id
-      `)
+      .select("question_id, answer_id")
       .eq("session_id", sessionId);
 
     if (error) {
       console.error("Error fetching responses:", error);
-      return {
-        answerMap: {},
-        detailedResponses: [],
-        count: 0
-      };
-    }
-
-    if (!data || !Array.isArray(data)) {
-      return {
-        answerMap: {},
-        detailedResponses: [],
-        count: 0
-      };
+      return { answerMap: {}, count: 0 };
     }
 
     const answerMap = {};
-    
-    for (let i = 0; i < data.length; i++) {
-      const r = data[i];
-      if (r && r.question_id) {
+    data?.forEach(r => {
+      if (r?.question_id) {
         answerMap[r.question_id] = r.answer_id;
       }
-    }
+    });
     
-    return {
-      answerMap,
-      detailedResponses: [],
-      count: data.length
-    };
+    return { answerMap, count: data?.length || 0 };
+    
   } catch (error) {
     console.error("Error in getSessionResponses:", error);
-    return {
-      answerMap: {},
-      detailedResponses: [],
-      count: 0
-    };
+    return { answerMap: {}, count: 0 };
   }
 }
 
-// Submit and Generate Results
+// Submit Assessment
 export async function submitAssessment(sessionId) {
   try {
     console.log("📤 Submitting assessment for session:", sessionId);
@@ -501,9 +437,10 @@ export async function saveProgress(sessionId, userId, assessmentId, elapsedSecon
       });
 
     if (error) throw error;
+    return true;
   } catch (error) {
     console.error("Error saving progress:", error);
-    throw error;
+    return false;
   }
 }
 
@@ -543,9 +480,9 @@ export async function isAssessmentCompleted(userId, assessmentId) {
   }
 }
 
-// ========== NEW RANDOMIZED FUNCTIONS FOR QUESTION BANK ==========
+// ========== RANDOMIZED FUNCTIONS ==========
 
-// Helper function to shuffle array (internal use only)
+// Helper function to shuffle array
 function shuffleArray(array) {
   const shuffled = [...array];
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -555,102 +492,13 @@ function shuffleArray(array) {
   return shuffled;
 }
 
-// Get randomized questions for a candidate
-export async function getRandomizedQuestions(candidateId, assessmentId, sessionId) {
-  console.log("🎲 Getting randomized questions for:", { candidateId, assessmentId, sessionId });
+// Get randomized questions for a candidate - SIMPLIFIED VERSION
+export async function getRandomizedQuestions(candidateId, assessmentId) {
+  console.log("🎲 Getting randomized questions for:", { candidateId, assessmentId });
   
   try {
-    // First, check if we already have answer instances for this candidate
-    const { data: existingInstances, error: instanceError } = await supabase
-      .from("answer_instances")
-      .select(`
-        id,
-        display_order,
-        answer_bank:answer_banks!inner(
-          id,
-          answer_text,
-          score,
-          question_bank:question_banks!inner(
-            id,
-            question_text,
-            section,
-            subsection,
-            question_instances!inner(
-              id,
-              display_order,
-              assessment_id
-            )
-          )
-        )
-      `)
-      .eq("candidate_id", candidateId)
-      .eq("answer_bank.question_bank.question_instances.assessment_id", assessmentId);
-
-    if (instanceError) {
-      console.error("Error checking existing instances:", instanceError);
-      // Fall back to regular questions
-      return await getAssessmentQuestions(assessmentId);
-    }
-
-    if (existingInstances && existingInstances.length > 0) {
-      console.log(`Found ${existingInstances.length} existing answer instances`);
-      
-      // Group by question
-      const questionsMap = new Map();
-      
-      existingInstances.forEach(instance => {
-        const qb = instance.answer_bank.question_bank;
-        const questionInstance = qb.question_instances[0];
-        
-        if (!questionsMap.has(questionInstance.id)) {
-          questionsMap.set(questionInstance.id, {
-            id: questionInstance.id,
-            question_bank_id: qb.id,
-            question_text: qb.question_text,
-            section: qb.section,
-            subsection: qb.subsection,
-            display_order: questionInstance.display_order,
-            answers: []
-          });
-        }
-        
-        questionsMap.get(questionInstance.id).answers.push({
-          id: instance.answer_bank.id,
-          answer_text: instance.answer_bank.answer_text,
-          score: instance.answer_bank.score,
-          display_order: instance.display_order
-        });
-      });
-
-      // Convert to array and sort
-      let questions = Array.from(questionsMap.values());
-      questions.sort((a, b) => a.display_order - b.display_order);
-      
-      // Sort answers within each question
-      questions = questions.map(q => ({
-        ...q,
-        answers: q.answers.sort((a, b) => a.display_order - b.display_order)
-      }));
-
-      return questions;
-    }
-
-    // If no instances exist, create new randomized ones
-    console.log("No existing instances, creating new randomized assessment");
-    return await createRandomizedAssessment(candidateId, assessmentId, sessionId);
-
-  } catch (error) {
-    console.error("Error in getRandomizedQuestions:", error);
-    // Fall back to regular questions
-    return await getAssessmentQuestions(assessmentId);
-  }
-}
-
-// Create a new randomized assessment for a candidate
-export async function createRandomizedAssessment(candidateId, assessmentId, sessionId) {
-  try {
     // Get all question instances for this assessment
-    const { data: questionInstances, error: qiError } = await supabase
+    const { data: questions, error: qError } = await supabase
       .from("question_instances")
       .select(`
         id,
@@ -667,106 +515,131 @@ export async function createRandomizedAssessment(candidateId, assessmentId, sess
           )
         )
       `)
-      .eq("assessment_id", assessmentId);
+      .eq("assessment_id", assessmentId)
+      .order('display_order');
 
-    if (qiError) throw qiError;
+    if (qError) {
+      console.error("Error fetching questions:", qError);
+      return [];
+    }
 
-    if (!questionInstances || questionInstances.length === 0) {
-      console.log("No question instances found, creating from question banks");
+    if (!questions || questions.length === 0) {
+      console.log("No questions found, creating from question banks");
       return await createQuestionInstances(candidateId, assessmentId);
     }
 
-    console.log(`Found ${questionInstances.length} question instances`);
+    // For each question, get or create answer instances
+    const result = await Promise.all(
+      questions.map(async (q) => {
+        // Get answer instances for this candidate
+        const { data: answerInstances, error: aError } = await supabase
+          .from("answer_instances")
+          .select(`
+            id,
+            display_order,
+            answer_bank:answer_banks!inner(
+              id,
+              answer_text,
+              score
+            )
+          `)
+          .eq("question_instance_id", q.id)
+          .eq("candidate_id", candidateId)
+          .order('display_order');
 
-    // Shuffle questions
-    const shuffledQuestions = shuffleArray([...questionInstances]);
-    
-    // Update display orders
-    await Promise.all(
-      shuffledQuestions.map(async (q, index) => {
-        await supabase
-          .from("question_instances")
-          .update({ display_order: index })
-          .eq("id", q.id);
-      })
-    );
+        if (aError) {
+          console.error("Error fetching answer instances:", aError);
+          return {
+            id: q.id,
+            question_bank_id: q.question_bank.id,
+            question_text: q.question_bank.question_text,
+            section: q.question_bank.section,
+            subsection: q.question_bank.subsection,
+            display_order: q.display_order,
+            answers: q.question_bank.answer_banks || []
+          };
+        }
 
-    // For each question, create randomized answer instances
-    const randomizedQuestions = await Promise.all(
-      shuffledQuestions.map(async (qi) => {
-        const answerBanks = qi.question_bank.answer_banks || [];
-        const shuffledAnswers = shuffleArray([...answerBanks]);
-        
-        // Create answer instances
-        const answerInstances = await Promise.all(
-          shuffledAnswers.map(async (answer, index) => {
-            // Check if answer instance already exists
-            const { data: existing } = await supabase
-              .from("answer_instances")
-              .select("id")
-              .eq("question_instance_id", qi.id)
-              .eq("candidate_id", candidateId)
-              .eq("answer_bank_id", answer.id)
-              .maybeSingle();
+        // If no answer instances exist, create them
+        if (!answerInstances || answerInstances.length === 0) {
+          const shuffledAnswers = shuffleArray([...q.question_bank.answer_banks]);
+          
+          // Create answer instances
+          const newAnswers = await Promise.all(
+            shuffledAnswers.map(async (answer, index) => {
+              const { data, error } = await supabase
+                .from("answer_instances")
+                .insert({
+                  answer_bank_id: answer.id,
+                  question_instance_id: q.id,
+                  display_order: index,
+                  candidate_id: candidateId,
+                  created_at: new Date().toISOString()
+                })
+                .select(`
+                  id,
+                  display_order,
+                  answer_bank:answer_banks!inner(
+                    id,
+                    answer_text,
+                    score
+                  )
+                `)
+                .single();
 
-            if (existing) {
-              return { 
-                id: answer.id,
-                answer_text: answer.answer_text,
-                score: answer.score,
-                display_order: index 
+              if (error) {
+                console.error("Error creating answer instance:", error);
+                return {
+                  id: answer.id,
+                  answer_text: answer.answer_text,
+                  score: answer.score,
+                  display_order: index
+                };
+              }
+
+              return {
+                id: data.answer_bank.id,
+                answer_text: data.answer_bank.answer_text,
+                score: data.answer_bank.score,
+                display_order: data.display_order
               };
-            }
+            })
+          );
 
-            // Create new answer instance
-            const { data, error } = await supabase
-              .from("answer_instances")
-              .insert({
-                answer_bank_id: answer.id,
-                question_instance_id: qi.id,
-                display_order: index,
-                candidate_id: candidateId,
-                created_at: new Date().toISOString()
-              })
-              .select()
-              .single();
+          return {
+            id: q.id,
+            question_bank_id: q.question_bank.id,
+            question_text: q.question_bank.question_text,
+            section: q.question_bank.section,
+            subsection: q.question_bank.subsection,
+            display_order: q.display_order,
+            answers: newAnswers
+          };
+        }
 
-            if (error) {
-              console.error("Error creating answer instance:", error);
-              return { 
-                id: answer.id,
-                answer_text: answer.answer_text,
-                score: answer.score,
-                display_order: index 
-              };
-            }
-
-            return { 
-              id: answer.id,
-              answer_text: answer.answer_text,
-              score: answer.score,
-              display_order: index 
-            };
-          })
-        );
-
+        // Use existing answer instances
         return {
-          id: qi.id,
-          question_bank_id: qi.question_bank.id,
-          question_text: qi.question_bank.question_text,
-          section: qi.question_bank.section,
-          subsection: qi.question_bank.subsection,
-          display_order: qi.display_order,
-          answers: answerInstances.sort((a, b) => a.display_order - b.display_order)
+          id: q.id,
+          question_bank_id: q.question_bank.id,
+          question_text: q.question_bank.question_text,
+          section: q.question_bank.section,
+          subsection: q.question_bank.subsection,
+          display_order: q.display_order,
+          answers: answerInstances.map(ai => ({
+            id: ai.answer_bank.id,
+            answer_text: ai.answer_bank.answer_text,
+            score: ai.answer_bank.score,
+            display_order: ai.display_order
+          }))
         };
       })
     );
 
-    return randomizedQuestions.sort((a, b) => a.display_order - b.display_order);
-
+    return result;
+    
   } catch (error) {
-    console.error("Error creating randomized assessment:", error);
-    throw error;
+    console.error("Error in getRandomizedQuestions:", error);
+    return [];
   }
 }
 
@@ -782,7 +655,7 @@ export async function createQuestionInstances(candidateId, assessmentId) {
 
     if (aError) throw aError;
 
-    // Get all questions from question bank for this assessment type
+    // Get all questions from question bank
     const { data: questionBanks, error: qbError } = await supabase
       .from("question_banks")
       .select(`
@@ -801,7 +674,6 @@ export async function createQuestionInstances(candidateId, assessmentId) {
     if (qbError) throw qbError;
 
     if (!questionBanks || questionBanks.length === 0) {
-      console.log("No question banks found for this assessment type");
       return [];
     }
 
@@ -827,80 +699,58 @@ export async function createQuestionInstances(candidateId, assessmentId) {
       })
     );
 
-    // Create answer instances for each question
-    const randomizedQuestions = await Promise.all(
-      questionInstances.map(async (qi) => {
-        const shuffledAnswers = shuffleArray([...qi.question_bank.answer_banks]);
-        
-        const answerInstances = await Promise.all(
-          shuffledAnswers.map(async (answer, index) => {
-            const { data, error } = await supabase
-              .from("answer_instances")
-              .insert({
-                answer_bank_id: answer.id,
-                question_instance_id: qi.id,
-                display_order: index,
-                candidate_id: candidateId,
-                created_at: new Date().toISOString()
-              })
-              .select()
-              .single();
+    // Create answer instances for the first question only (others will be created on demand)
+    const firstQuestion = questionInstances[0];
+    if (firstQuestion) {
+      const shuffledAnswers = shuffleArray([...firstQuestion.question_bank.answer_banks]);
+      
+      await Promise.all(
+        shuffledAnswers.map(async (answer, index) => {
+          await supabase
+            .from("answer_instances")
+            .insert({
+              answer_bank_id: answer.id,
+              question_instance_id: firstQuestion.id,
+              display_order: index,
+              candidate_id: candidateId,
+              created_at: new Date().toISOString()
+            })
+            .select()
+            .single();
+        })
+      );
+    }
 
-            if (error) throw error;
-            
-            return {
-              id: answer.id,
-              answer_text: answer.answer_text,
-              score: answer.score,
-              display_order: index
-            };
-          })
-        );
-
-        return {
-          id: qi.id,
-          question_bank_id: qi.question_bank.id,
-          question_text: qi.question_bank.question_text,
-          section: qi.question_bank.section,
-          subsection: qi.question_bank.subsection,
-          display_order: qi.display_order,
-          answers: answerInstances.sort((a, b) => a.display_order - b.display_order)
-        };
-      })
-    );
-
-    return randomizedQuestions.sort((a, b) => a.display_order - b.display_order);
+    // Return formatted questions
+    return questionInstances.map(qi => ({
+      id: qi.id,
+      question_bank_id: qi.question_bank.id,
+      question_text: qi.question_bank.question_text,
+      section: qi.question_bank.section,
+      subsection: qi.question_bank.subsection,
+      display_order: qi.display_order,
+      answers: qi.id === firstQuestion?.id 
+        ? shuffledAnswers.map((a, i) => ({
+            id: a.id,
+            answer_text: a.answer_text,
+            score: a.score,
+            display_order: i
+          }))
+        : []
+    }));
 
   } catch (error) {
     console.error("Error creating question instances:", error);
-    throw error;
+    return [];
   }
 }
 
-// ===== FIXED SAVE RANDOMIZED RESPONSE FUNCTION =====
+// Save randomized response - SIMPLIFIED VERSION
 export async function saveRandomizedResponse(session_id, user_id, assessment_id, question_instance_id, answer_bank_id) {
-  console.log("💾 [saveRandomizedResponse] ENTERED with:", { 
-    session_id, 
-    user_id, 
-    assessment_id, 
-    question_instance_id, 
-    answer_bank_id 
-  });
+  console.log("💾 Saving response:", { session_id, user_id, question_instance_id, answer_bank_id });
   
   try {
-    // Validate inputs
-    if (!session_id || !user_id || !assessment_id || !question_instance_id || !answer_bank_id) {
-      console.error("❌ Missing required fields:", { session_id, user_id, assessment_id, question_instance_id, answer_bank_id });
-      return { success: false, error: "Missing required fields" };
-    }
-
-    // First, try to find the answer instance for this candidate and question
-    console.log("🔍 Looking for answer instance with:", {
-      question_instance_id,
-      candidate_id: user_id,
-      answer_bank_id
-    });
-
+    // First, find the answer instance
     let { data: answerInstance, error: findError } = await supabase
       .from("answer_instances")
       .select("id")
@@ -910,83 +760,35 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
       .maybeSingle();
 
     if (findError) {
-      console.error("❌ Error finding answer instance:", findError);
+      console.error("Error finding answer instance:", findError);
       return { success: false, error: findError.message };
     }
 
     // If answer instance doesn't exist, create it
     if (!answerInstance) {
-      console.log("⚠️ Answer instance not found, creating new one...");
+      console.log("Creating new answer instance");
       
-      // Get the question instance to verify it exists
-      const { data: questionInstance, error: qiError } = await supabase
-        .from("question_instances")
-        .select("id, display_order")
-        .eq("id", question_instance_id)
-        .single();
-
-      if (qiError) {
-        console.error("❌ Question instance not found:", qiError);
-        return { success: false, error: "Question instance not found" };
-      }
-
-      // Get the answer bank to verify it exists
-      const { data: answerBank, error: abError } = await supabase
-        .from("answer_banks")
-        .select("id")
-        .eq("id", answer_bank_id)
-        .single();
-
-      if (abError) {
-        console.error("❌ Answer bank not found:", abError);
-        return { success: false, error: "Answer bank not found" };
-      }
-
-      // Get the highest display order for this question and candidate
-      const { data: maxOrder } = await supabase
-        .from("answer_instances")
-        .select("display_order")
-        .eq("question_instance_id", question_instance_id)
-        .eq("candidate_id", user_id)
-        .order('display_order', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      const nextOrder = maxOrder ? maxOrder.display_order + 1 : 0;
-
-      // Create new answer instance
       const { data: newInstance, error: createError } = await supabase
         .from("answer_instances")
         .insert({
           answer_bank_id: answer_bank_id,
           question_instance_id: question_instance_id,
-          display_order: nextOrder,
+          display_order: 0,
           candidate_id: user_id,
           created_at: new Date().toISOString()
         })
-        .select()
+        .select("id")
         .single();
 
       if (createError) {
-        console.error("❌ Failed to create answer instance:", createError);
-        return { success: false, error: "Failed to create answer instance" };
+        console.error("Error creating answer instance:", createError);
+        return { success: false, error: createError.message };
       }
 
-      console.log("✅ Created new answer instance:", newInstance);
       answerInstance = newInstance;
-    } else {
-      console.log("✅ Found existing answer instance:", answerInstance);
     }
 
     // Save the response
-    console.log("💾 Saving response with:", {
-      session_id,
-      user_id,
-      assessment_id,
-      question_id: question_instance_id,
-      answer_id: answerInstance.id
-    });
-
     const { error: saveError } = await supabase
       .from("responses")
       .upsert({
@@ -1001,24 +803,15 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
       });
 
     if (saveError) {
-      console.error("❌ Error saving response:", saveError);
+      console.error("Error saving response:", saveError);
       return { success: false, error: saveError.message };
     }
 
-    console.log("✅ Response saved successfully!");
+    console.log("✅ Response saved successfully");
     return { success: true };
 
   } catch (error) {
-    console.error("❌ Error in saveRandomizedResponse:", error);
+    console.error("Error in saveRandomizedResponse:", error);
     return { success: false, error: error.message };
   }
 }
-
-// Export all functions (they're already exported above, but this is explicit)
-export {
-  shuffleArray,
-  getRandomizedQuestions,
-  createRandomizedAssessment,
-  createQuestionInstances,
-  saveRandomizedResponse
-};
