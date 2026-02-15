@@ -71,45 +71,6 @@ export async function getAssessmentById(id) {
   }
 }
 
-// Questions and Answers (legacy)
-export async function getAssessmentQuestions(assessmentId) {
-  try {
-    console.log("Fetching questions for assessment:", assessmentId);
-    
-    const { data, error } = await supabase
-      .from('questions')
-      .select(`
-        *,
-        answers (*)
-      `)
-      .eq('assessment_id', assessmentId)
-      .eq('is_active', true)
-      .order('question_order');
-
-    if (error) {
-      console.error("Error fetching questions:", error);
-      throw error;
-    }
-
-    if (!data || !Array.isArray(data)) {
-      console.log("No questions found or invalid data format");
-      return [];
-    }
-
-    const processedData = data.map(q => ({
-      ...q,
-      answers: q.answers && Array.isArray(q.answers) ? q.answers : []
-    }));
-
-    console.log(`Found ${processedData.length} questions`);
-    return processedData;
-    
-  } catch (error) {
-    console.error("Error in getAssessmentQuestions:", error);
-    return [];
-  }
-}
-
 // Assessment Sessions
 export async function createAssessmentSession(userId, assessmentId, assessmentTypeId) {
   try {
@@ -164,7 +125,8 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
         assessment_id: assessmentId,
         assessment_type_id: assessmentTypeId,
         status: 'in_progress',
-        expires_at: expiresAt.toISOString()
+        expires_at: expiresAt.toISOString(),
+        started_at: new Date().toISOString()
       })
       .select()
       .single();
@@ -222,43 +184,6 @@ export async function updateSessionTimer(sessionId, elapsedSeconds) {
   } catch (error) {
     console.error("Update session timer error:", error);
     throw error;
-  }
-}
-
-// Save response (legacy)
-export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
-  try {
-    if (!sessionId || !userId || !assessmentId || !questionId || !answerId) {
-      return { success: false, error: "Missing required fields" };
-    }
-
-    const { error } = await supabase
-      .from("responses")
-      .upsert(
-        {
-          session_id: sessionId,
-          user_id: userId,
-          assessment_id: assessmentId,
-          question_id: questionId,
-          answer_id: answerId,
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: 'session_id,question_id',
-          ignoreDuplicates: false
-        }
-      );
-
-    if (error) {
-      console.error("Database error:", error);
-      return { success: false, error: error.message };
-    }
-
-    return { success: true };
-    
-  } catch (error) {
-    console.error("Save function error:", error);
-    return { success: false, error: error.message };
   }
 }
 
@@ -480,9 +405,9 @@ export async function isAssessmentCompleted(userId, assessmentId) {
   }
 }
 
-// ========== RANDOMIZED FUNCTIONS ==========
+// ========== FINAL WORKING VERSION ==========
 
-// Helper function to shuffle array
+// Helper function to shuffle array (for randomization)
 function shuffleArray(array) {
   const shuffled = [...array];
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -492,13 +417,13 @@ function shuffleArray(array) {
   return shuffled;
 }
 
-// Get randomized questions for a candidate - SIMPLIFIED VERSION
+// Get questions for an assessment - WITH RANDOMIZATION
 export async function getRandomizedQuestions(candidateId, assessmentId) {
-  console.log("🎲 Getting randomized questions for:", { candidateId, assessmentId });
+  console.log("🎲 Getting randomized questions for assessment:", assessmentId);
   
   try {
-    // Get all question instances for this assessment
-    const { data: questions, error: qError } = await supabase
+    // Get all question instances for this assessment with their answers
+    const { data: instances, error } = await supabase
       .from("question_instances")
       .select(`
         id,
@@ -515,296 +440,89 @@ export async function getRandomizedQuestions(candidateId, assessmentId) {
           )
         )
       `)
-      .eq("assessment_id", assessmentId)
-      .order('display_order');
+      .eq("assessment_id", assessmentId);
 
-    if (qError) {
-      console.error("Error fetching questions:", qError);
+    if (error) {
+      console.error("Error fetching questions:", error);
       return [];
     }
 
-    if (!questions || questions.length === 0) {
-      console.log("No questions found, creating from question banks");
-      return await createQuestionInstances(candidateId, assessmentId);
+    if (!instances || instances.length === 0) {
+      console.log("No question instances found");
+      return [];
     }
 
-    // For each question, get or create answer instances
-    const result = await Promise.all(
-      questions.map(async (q) => {
-        // Get answer instances for this candidate
-        const { data: answerInstances, error: aError } = await supabase
-          .from("answer_instances")
-          .select(`
-            id,
-            display_order,
-            answer_bank:answer_banks!inner(
-              id,
-              answer_text,
-              score
-            )
-          `)
-          .eq("question_instance_id", q.id)
-          .eq("candidate_id", candidateId)
-          .order('display_order');
+    console.log(`Found ${instances.length} questions`);
 
-        if (aError) {
-          console.error("Error fetching answer instances:", aError);
-          return {
-            id: q.id,
-            question_bank_id: q.question_bank.id,
-            question_text: q.question_bank.question_text,
-            section: q.question_bank.section,
-            subsection: q.question_bank.subsection,
-            display_order: q.display_order,
-            answers: q.question_bank.answer_banks || []
-          };
-        }
+    // Randomize the order of questions
+    const shuffledInstances = shuffleArray(instances);
 
-        // If no answer instances exist, create them
-        if (!answerInstances || answerInstances.length === 0) {
-          const shuffledAnswers = shuffleArray([...q.question_bank.answer_banks]);
-          
-          // Create answer instances
-          const newAnswers = await Promise.all(
-            shuffledAnswers.map(async (answer, index) => {
-              const { data, error } = await supabase
-                .from("answer_instances")
-                .insert({
-                  answer_bank_id: answer.id,
-                  question_instance_id: q.id,
-                  display_order: index,
-                  candidate_id: candidateId,
-                  created_at: new Date().toISOString()
-                })
-                .select(`
-                  id,
-                  display_order,
-                  answer_bank:answer_banks!inner(
-                    id,
-                    answer_text,
-                    score
-                  )
-                `)
-                .single();
+    // Format the data and randomize answers for each question
+    const questions = shuffledInstances.map((instance, index) => {
+      // Randomize the answers for this question
+      const shuffledAnswers = shuffleArray(instance.question_bank.answer_banks || []);
+      
+      return {
+        id: instance.id, // This is the question_instance_id
+        question_text: instance.question_bank.question_text,
+        section: instance.question_bank.section,
+        subsection: instance.question_bank.subsection,
+        display_order: index, // New random order
+        answers: shuffledAnswers.map(answer => ({
+          id: answer.id, // This is the answer_bank_id
+          answer_text: answer.answer_text,
+          score: answer.score
+        }))
+      };
+    });
 
-              if (error) {
-                console.error("Error creating answer instance:", error);
-                return {
-                  id: answer.id,
-                  answer_text: answer.answer_text,
-                  score: answer.score,
-                  display_order: index
-                };
-              }
-
-              return {
-                id: data.answer_bank.id,
-                answer_text: data.answer_bank.answer_text,
-                score: data.answer_bank.score,
-                display_order: data.display_order
-              };
-            })
-          );
-
-          return {
-            id: q.id,
-            question_bank_id: q.question_bank.id,
-            question_text: q.question_bank.question_text,
-            section: q.question_bank.section,
-            subsection: q.question_bank.subsection,
-            display_order: q.display_order,
-            answers: newAnswers
-          };
-        }
-
-        // Use existing answer instances
-        return {
-          id: q.id,
-          question_bank_id: q.question_bank.id,
-          question_text: q.question_bank.question_text,
-          section: q.question_bank.section,
-          subsection: q.question_bank.subsection,
-          display_order: q.display_order,
-          answers: answerInstances.map(ai => ({
-            id: ai.answer_bank.id,
-            answer_text: ai.answer_bank.answer_text,
-            score: ai.answer_bank.score,
-            display_order: ai.display_order
-          }))
-        };
-      })
+    // Optional: Update the display_order in the database to persist the randomization
+    // This ensures if the user refreshes, they see the same order
+    await Promise.all(
+      questions.map((q, idx) => 
+        supabase
+          .from("question_instances")
+          .update({ display_order: idx })
+          .eq("id", q.id)
+      )
     );
 
-    return result;
-    
+    return questions;
+
   } catch (error) {
     console.error("Error in getRandomizedQuestions:", error);
     return [];
   }
 }
 
-// Create question instances if they don't exist
-export async function createQuestionInstances(candidateId, assessmentId) {
-  try {
-    // Get assessment details
-    const { data: assessment, error: aError } = await supabase
-      .from("assessments")
-      .select("assessment_type_id")
-      .eq("id", assessmentId)
-      .single();
-
-    if (aError) throw aError;
-
-    // Get all questions from question bank
-    const { data: questionBanks, error: qbError } = await supabase
-      .from("question_banks")
-      .select(`
-        id,
-        question_text,
-        section,
-        subsection,
-        answer_banks(
-          id,
-          answer_text,
-          score
-        )
-      `)
-      .eq("assessment_type_id", assessment.assessment_type_id);
-
-    if (qbError) throw qbError;
-
-    if (!questionBanks || questionBanks.length === 0) {
-      return [];
-    }
-
-    // Shuffle questions
-    const shuffledBanks = shuffleArray(questionBanks);
-
-    // Create question instances
-    const questionInstances = await Promise.all(
-      shuffledBanks.map(async (qb, index) => {
-        const { data, error } = await supabase
-          .from("question_instances")
-          .insert({
-            question_bank_id: qb.id,
-            assessment_id: assessmentId,
-            display_order: index,
-            created_at: new Date().toISOString()
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-        return { ...data, question_bank: qb };
-      })
-    );
-
-    // Create answer instances for the first question only (others will be created on demand)
-    const firstQuestion = questionInstances[0];
-    if (firstQuestion) {
-      const shuffledAnswers = shuffleArray([...firstQuestion.question_bank.answer_banks]);
-      
-      await Promise.all(
-        shuffledAnswers.map(async (answer, index) => {
-          await supabase
-            .from("answer_instances")
-            .insert({
-              answer_bank_id: answer.id,
-              question_instance_id: firstQuestion.id,
-              display_order: index,
-              candidate_id: candidateId,
-              created_at: new Date().toISOString()
-            })
-            .select()
-            .single();
-        })
-      );
-    }
-
-    // Return formatted questions
-    return questionInstances.map(qi => ({
-      id: qi.id,
-      question_bank_id: qi.question_bank.id,
-      question_text: qi.question_bank.question_text,
-      section: qi.question_bank.section,
-      subsection: qi.question_bank.subsection,
-      display_order: qi.display_order,
-      answers: qi.id === firstQuestion?.id 
-        ? shuffledAnswers.map((a, i) => ({
-            id: a.id,
-            answer_text: a.answer_text,
-            score: a.score,
-            display_order: i
-          }))
-        : []
-    }));
-
-  } catch (error) {
-    console.error("Error creating question instances:", error);
-    return [];
-  }
-}
-
-// Save randomized response - SIMPLIFIED VERSION
+// Save response - WORKS WITH YOUR DATA
 export async function saveRandomizedResponse(session_id, user_id, assessment_id, question_instance_id, answer_bank_id) {
   console.log("💾 Saving response:", { session_id, user_id, question_instance_id, answer_bank_id });
   
   try {
-    // First, find the answer instance
-    let { data: answerInstance, error: findError } = await supabase
-      .from("answer_instances")
-      .select("id")
-      .eq("question_instance_id", question_instance_id)
-      .eq("candidate_id", user_id)
-      .eq("answer_bank_id", answer_bank_id)
-      .maybeSingle();
-
-    if (findError) {
-      console.error("Error finding answer instance:", findError);
-      return { success: false, error: findError.message };
+    // Validate inputs
+    if (!session_id || !user_id || !assessment_id || !question_instance_id || !answer_bank_id) {
+      console.error("Missing required fields");
+      return { success: false, error: "Missing required fields" };
     }
 
-    // If answer instance doesn't exist, create it
-    if (!answerInstance) {
-      console.log("Creating new answer instance");
-      
-      const { data: newInstance, error: createError } = await supabase
-        .from("answer_instances")
-        .insert({
-          answer_bank_id: answer_bank_id,
-          question_instance_id: question_instance_id,
-          display_order: 0,
-          candidate_id: user_id,
-          created_at: new Date().toISOString()
-        })
-        .select("id")
-        .single();
-
-      if (createError) {
-        console.error("Error creating answer instance:", createError);
-        return { success: false, error: createError.message };
-      }
-
-      answerInstance = newInstance;
-    }
-
-    // Save the response
-    const { error: saveError } = await supabase
+    // Simply save to responses table
+    const { error } = await supabase
       .from("responses")
       .upsert({
         session_id: session_id,
         user_id: user_id,
         assessment_id: assessment_id,
         question_id: question_instance_id,
-        answer_id: answerInstance.id,
+        answer_id: answer_bank_id,
         updated_at: new Date().toISOString()
       }, {
         onConflict: 'session_id,question_id'
       });
 
-    if (saveError) {
-      console.error("Error saving response:", saveError);
-      return { success: false, error: saveError.message };
+    if (error) {
+      console.error("Error saving response:", error);
+      return { success: false, error: error.message };
     }
 
     console.log("✅ Response saved successfully");
@@ -814,4 +532,9 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
     console.error("Error in saveRandomizedResponse:", error);
     return { success: false, error: error.message };
   }
+}
+
+// Legacy function for backward compatibility
+export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
+  return saveRandomizedResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
