@@ -420,7 +420,7 @@ function shuffleArray(array) {
 // ========== UNIQUE QUESTIONS FUNCTIONS ==========
 
 /**
- * Get unique questions for Leadership Assessment
+ * Get unique questions for any assessment type
  * Each question has its own unique answers that are never reused
  */
 export async function getUniqueQuestions(assessmentId) {
@@ -435,7 +435,7 @@ export async function getUniqueQuestions(assessmentId) {
     // First get the assessment to know its type
     const { data: assessment, error: aError } = await supabase
       .from('assessments')
-      .select('assessment_type_id')
+      .select('assessment_type_id, title')
       .eq('id', assessmentId)
       .single();
 
@@ -444,6 +444,7 @@ export async function getUniqueQuestions(assessmentId) {
       return [];
     }
 
+    console.log("📊 Assessment:", assessment.title);
     console.log("📊 Assessment type ID:", assessment.assessment_type_id);
 
     // Get all unique questions for this assessment type with their answers
@@ -471,11 +472,15 @@ export async function getUniqueQuestions(assessmentId) {
     }
 
     if (!questions || questions.length === 0) {
-      console.log("⚠️ No unique questions found");
+      console.log("⚠️ No unique questions found for assessment type ID:", assessment.assessment_type_id);
       return [];
     }
 
-    console.log(`✅ Found ${questions.length} unique questions with ${questions.reduce((acc, q) => acc + (q.unique_answers?.length || 0), 0)} total answers`);
+    console.log(`✅ Found ${questions.length} unique questions`);
+    
+    // Calculate total answers
+    const totalAnswers = questions.reduce((acc, q) => acc + (q.unique_answers?.length || 0), 0);
+    console.log(`📊 Total answers: ${totalAnswers}, Avg: ${(totalAnswers / questions.length).toFixed(1)} per question`);
 
     // Randomize the order of questions for each candidate
     const shuffledQuestions = shuffleArray([...questions]);
@@ -498,10 +503,11 @@ export async function getUniqueQuestions(assessmentId) {
             score: a.score,
             display_order: a.display_order
           }))
-          .sort((a, b) => a.display_order - b.display_order) // Keep answers in their original order
+          .sort((a, b) => a.display_order - b.display_order) // Keep answers in original order within question
       };
     });
 
+    console.log(`✅ Returning ${formattedQuestions.length} formatted questions`);
     return formattedQuestions;
 
   } catch (error) {
@@ -522,7 +528,7 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
       return { success: false, error: "Missing required fields" };
     }
 
-    // Ensure IDs are numbers
+    // Ensure IDs are numbers where needed
     const sessionIdNum = typeof session_id === 'string' ? parseInt(session_id, 10) : session_id;
     const questionIdNum = typeof question_id === 'string' ? parseInt(question_id, 10) : question_id;
     const answerIdNum = typeof answer_id === 'string' ? parseInt(answer_id, 10) : answer_id;
@@ -555,7 +561,27 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
   }
 }
 
-// Legacy function for backward compatibility
+// ========== LEGACY FUNCTIONS (for backward compatibility) ==========
+
+/**
+ * Legacy function - redirects to getUniqueQuestions
+ */
+export async function getRandomizedQuestions(candidateId, assessmentId) {
+  console.log("⚠️ getRandomizedQuestions is deprecated, using getUniqueQuestions");
+  return getUniqueQuestions(assessmentId);
+}
+
+/**
+ * Legacy function - redirects to saveUniqueResponse
+ */
+export async function saveRandomizedResponse(session_id, user_id, assessment_id, question_id, answer_id) {
+  console.log("⚠️ saveRandomizedResponse is deprecated, using saveUniqueResponse");
+  return saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id);
+}
+
+/**
+ * Legacy function - redirects to saveUniqueResponse
+ */
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveUniqueResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
