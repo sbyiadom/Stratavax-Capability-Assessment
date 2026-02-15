@@ -26,19 +26,22 @@ const formatTime = (seconds) => {
 const setupAntiCheat = () => {
   if (typeof window === 'undefined') return;
   
-  document.addEventListener('contextmenu', (e) => e.preventDefault());
-  document.addEventListener('copy', (e) => e.preventDefault());
-  document.addEventListener('paste', (e) => e.preventDefault());
-  document.addEventListener('cut', (e) => e.preventDefault());
+  // Temporarily disabled for debugging
+  // document.addEventListener('contextmenu', (e) => e.preventDefault());
+  // document.addEventListener('copy', (e) => e.preventDefault());
+  // document.addEventListener('paste', (e) => e.preventDefault());
+  // document.addEventListener('cut', (e) => e.preventDefault());
   
-  document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-    }
-    if (e.key === 'F12' || e.key === 'PrintScreen') {
-      e.preventDefault();
-    }
-  });
+  // document.addEventListener('keydown', (e) => {
+  //   if (e.ctrlKey || e.metaKey) {
+  //     e.preventDefault();
+  //   }
+  //   if (e.key === 'F12' || e.key === 'PrintScreen') {
+  //     e.preventDefault();
+  //   }
+  // });
+  
+  console.log("🔓 Anti-cheat temporarily disabled for debugging");
 };
 
 export default function AssessmentPage() {
@@ -116,9 +119,16 @@ export default function AssessmentPage() {
         }
 
         // Load UNIQUE questions
-        console.log("Loading unique questions...");
+        console.log("🔍 Loading unique questions...");
         const uniqueQuestions = await getUniqueQuestions(assessmentId);
-        console.log(`Loaded ${uniqueQuestions?.length || 0} unique questions`);
+        console.log(`📊 Loaded ${uniqueQuestions?.length || 0} unique questions`);
+        
+        if (uniqueQuestions && uniqueQuestions.length > 0) {
+          console.log("✅ First question sample:", uniqueQuestions[0]);
+        } else {
+          console.log("❌ No questions returned from getUniqueQuestions");
+        }
+        
         setQuestions(uniqueQuestions || []);
 
         // Load saved responses
@@ -135,12 +145,12 @@ export default function AssessmentPage() {
           }
         }
 
-        // Setup anti-cheat
+        // Setup anti-cheat (temporarily disabled)
         setupAntiCheat();
 
         setLoading(false);
       } catch (error) {
-        console.error("Initialization error:", error);
+        console.error("❌ Initialization error:", error);
         setError(error.message);
         setLoading(false);
       }
