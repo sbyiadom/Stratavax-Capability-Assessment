@@ -483,7 +483,7 @@ export default function AssessmentPage() {
                 </div>
               </div>
 
-              {/* Question Text */}
+              {/* Question Text - Made more compact */}
               <div style={styles.questionText}>
                 {currentQuestion?.question_text}
               </div>
@@ -499,12 +499,12 @@ export default function AssessmentPage() {
                   color: saveStatus[currentQuestion.id] === 'saving' ? '#f57c00' : 
                          saveStatus[currentQuestion.id] === 'saved' ? '#2e7d32' : '#c62828'
                 }}>
-                  {saveStatus[currentQuestion.id] === 'saving' ? '⏳ Saving your answer...' : 
-                   saveStatus[currentQuestion.id] === 'saved' ? '✓ Answer saved' : '❌ Save failed - please try again'}
+                  {saveStatus[currentQuestion.id] === 'saving' ? '⏳ Saving...' : 
+                   saveStatus[currentQuestion.id] === 'saved' ? '✓ Saved' : '❌ Failed'}
                 </div>
               )}
 
-              {/* Answer Options - NOW IN SINGLE COLUMN (1x4) */}
+              {/* Answer Options - COMPACT VERSION */}
               <div style={styles.answersContainer}>
                 {currentQuestion?.answers?.map((answer, index) => {
                   const isSelected = answers[currentQuestion.id] === answer.id;
@@ -521,9 +521,9 @@ export default function AssessmentPage() {
                         background: isSelected ? `linear-gradient(135deg, ${assessmentType?.gradient_start || '#667eea'}, ${assessmentType?.gradient_end || '#764ba2'})` : 
                                    isHovered ? '#f8fafc' : 'white',
                         borderColor: isSelected ? assessmentType?.gradient_start || '#667eea' : '#e2e8f0',
-                        transform: isSelected || isHovered ? 'translateY(-2px)' : 'translateY(0)',
-                        boxShadow: isSelected ? '0 4px 12px rgba(102, 126, 234, 0.3)' : 
-                                  isHovered ? '0 4px 12px rgba(0,0,0,0.1)' : '0 2px 4px rgba(0,0,0,0.05)'
+                        transform: isSelected || isHovered ? 'translateY(-1px)' : 'translateY(0)',
+                        boxShadow: isSelected ? '0 2px 8px rgba(102, 126, 234, 0.2)' : 
+                                  isHovered ? '0 2px 8px rgba(0,0,0,0.05)' : '0 1px 3px rgba(0,0,0,0.05)'
                       }}
                       onMouseEnter={() => setHoveredAnswer(answer.id)}
                       onMouseLeave={() => setHoveredAnswer(null)}
@@ -548,7 +548,7 @@ export default function AssessmentPage() {
                 })}
               </div>
 
-              {/* Navigation Buttons */}
+              {/* Navigation Buttons - Made more compact */}
               <div style={styles.navigation}>
                 <button
                   onClick={handlePrevious}
@@ -557,11 +557,11 @@ export default function AssessmentPage() {
                     ...styles.navButton,
                     background: currentIndex === 0 || alreadySubmitted ? '#f1f5f9' : 'white',
                     color: currentIndex === 0 || alreadySubmitted ? '#94a3b8' : assessmentType?.gradient_start || '#667eea',
-                    border: currentIndex === 0 || alreadySubmitted ? '1px solid #e2e8f0' : `2px solid ${assessmentType?.gradient_start || '#667eea'}`,
+                    border: currentIndex === 0 || alreadySubmitted ? '1px solid #e2e8f0' : `1px solid ${assessmentType?.gradient_start || '#667eea'}`,
                     cursor: currentIndex === 0 || alreadySubmitted ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  ← Previous Question
+                  ← Previous
                 </button>
 
                 {isLastQuestion ? (
@@ -576,7 +576,7 @@ export default function AssessmentPage() {
                       cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
                     }}
                   >
-                    Submit Assessment
+                    Submit
                   </button>
                 ) : (
                   <button
@@ -590,7 +590,7 @@ export default function AssessmentPage() {
                       cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
                     }}
                   >
-                    Next Question →
+                    Next →
                   </button>
                 )}
               </div>
@@ -640,8 +640,8 @@ export default function AssessmentPage() {
                         color: isCurrent || isAnswered ? 'white' : '#1e293b',
                         borderColor: isCurrent ? assessmentType?.gradient_start || '#667eea' : 
                                     isAnswered ? '#4caf50' : '#e2e8f0',
-                        transform: isHovered ? 'scale(1.1)' : 'scale(1)',
-                        boxShadow: isHovered ? '0 4px 8px rgba(0,0,0,0.15)' : 'none',
+                        transform: isHovered ? 'scale(1.05)' : 'scale(1)',
+                        boxShadow: isHovered ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
                         cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
                       }}
                       onMouseEnter={() => setHoveredQuestion(index)}
@@ -712,7 +712,7 @@ export default function AssessmentPage() {
   );
 }
 
-// Styles
+// Styles - COMPACT VERSION
 const styles = {
   loadingContainer: {
     minHeight: '100vh',
@@ -778,12 +778,12 @@ const styles = {
     top: 0,
     zIndex: 100,
     color: 'white',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
   },
   headerContent: {
     maxWidth: '1400px',
     margin: '0 auto',
-    padding: '16px 24px',
+    padding: '12px 24px',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center'
@@ -791,16 +791,16 @@ const styles = {
   headerLeft: {
     display: 'flex',
     alignItems: 'center',
-    gap: '20px'
+    gap: '16px'
   },
   backButton: {
-    width: '40px',
-    height: '40px',
+    width: '36px',
+    height: '36px',
     background: 'rgba(255,255,255,0.2)',
     border: 'none',
-    borderRadius: '10px',
+    borderRadius: '8px',
     color: 'white',
-    fontSize: '24px',
+    fontSize: '20px',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
@@ -809,221 +809,221 @@ const styles = {
     backdropFilter: 'blur(10px)'
   },
   headerTitle: {
-    fontSize: '20px',
+    fontSize: '18px',
     fontWeight: 700,
-    marginBottom: '4px'
+    marginBottom: '2px'
   },
   headerMeta: {
     display: 'flex',
-    gap: '8px',
-    fontSize: '14px',
+    gap: '6px',
+    fontSize: '12px',
     opacity: 0.9
   },
   timer: {
-    padding: '10px 20px',
-    borderRadius: '12px',
+    padding: '8px 16px',
+    borderRadius: '10px',
     border: '1px solid',
     textAlign: 'center',
-    minWidth: '160px',
+    minWidth: '140px',
     backdropFilter: 'blur(10px)'
   },
   timerLabel: {
-    fontSize: '12px',
+    fontSize: '10px',
     fontWeight: 600,
-    marginBottom: '4px',
+    marginBottom: '2px',
     letterSpacing: '0.5px'
   },
   timerValue: {
-    fontSize: '24px',
+    fontSize: '20px',
     fontWeight: 700,
     fontFamily: 'monospace'
   },
   mainContent: {
     maxWidth: '1400px',
     margin: '0 auto',
-    padding: '24px',
+    padding: '20px',
     display: 'grid',
-    gridTemplateColumns: '1fr 320px',
-    gap: '24px'
+    gridTemplateColumns: '1fr 280px',
+    gap: '20px'
   },
   questionColumn: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '20px'
+    gap: '16px'
   },
   progressContainer: {
     background: 'white',
-    padding: '20px',
-    borderRadius: '16px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+    padding: '16px',
+    borderRadius: '12px',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.05)'
   },
   progressTrack: {
-    height: '10px',
+    height: '8px',
     background: '#e2e8f0',
-    borderRadius: '5px',
+    borderRadius: '4px',
     overflow: 'hidden',
-    marginBottom: '12px'
+    marginBottom: '8px'
   },
   progressFill: {
     height: '100%',
     transition: 'width 0.3s ease',
-    borderRadius: '5px'
+    borderRadius: '4px'
   },
   progressStats: {
     display: 'flex',
     justifyContent: 'space-between',
-    fontSize: '14px',
+    fontSize: '13px',
     color: '#64748b',
     fontWeight: 500
   },
   questionCard: {
     background: 'white',
-    borderRadius: '16px',
-    padding: '32px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+    borderRadius: '12px',
+    padding: '24px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
   },
   sectionBadge: {
     display: 'flex',
     alignItems: 'center',
-    gap: '16px',
-    marginBottom: '24px'
+    gap: '12px',
+    marginBottom: '16px'
   },
   sectionIcon: {
-    width: '50px',
-    height: '50px',
-    borderRadius: '12px',
+    width: '40px',
+    height: '40px',
+    borderRadius: '10px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '28px',
+    fontSize: '22px',
     color: 'white',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+    boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
   },
   sectionName: {
-    fontSize: '20px',
+    fontSize: '18px',
     fontWeight: 700,
     color: '#1e293b'
   },
   subsection: {
-    fontSize: '14px',
+    fontSize: '13px',
     color: '#64748b',
-    marginTop: '4px'
+    marginTop: '2px'
   },
   questionText: {
-    fontSize: '20px',
-    lineHeight: '1.6',
+    fontSize: '18px',
+    lineHeight: '1.5',
     color: '#1e293b',
-    marginBottom: '24px',
+    marginBottom: '20px',
     fontWeight: 500,
-    padding: '20px',
+    padding: '16px',
     background: '#f8fafc',
-    borderRadius: '12px',
+    borderRadius: '10px',
     border: '1px solid #e2e8f0'
   },
   saveStatus: {
-    padding: '12px 20px',
+    padding: '8px 16px',
     border: '1px solid',
-    borderRadius: '10px',
-    marginBottom: '24px',
-    fontSize: '14px',
+    borderRadius: '8px',
+    marginBottom: '20px',
+    fontSize: '13px',
     fontWeight: 500,
     textAlign: 'center'
   },
-  // FIXED: Changed from grid to flex column for 1x4 layout
+  // COMPACT answer container
   answersContainer: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '16px',
-    marginBottom: '32px'
+    gap: '10px',
+    marginBottom: '24px'
   },
   answerCard: {
-    padding: '20px',
-    border: '2px solid',
-    borderRadius: '16px',
+    padding: '14px 16px',
+    border: '1.5px solid',
+    borderRadius: '10px',
     cursor: 'pointer',
     textAlign: 'left',
-    fontSize: '16px',
+    fontSize: '15px',
     display: 'flex',
-    alignItems: 'flex-start',
-    gap: '16px',
+    alignItems: 'center',
+    gap: '12px',
     transition: 'all 0.2s ease',
     width: '100%',
-    minHeight: '100px',
+    minHeight: 'auto',
     background: 'white',
-    lineHeight: '1.5'
+    lineHeight: '1.4'
   },
   answerLetter: {
-    width: '36px',
-    height: '36px',
-    borderRadius: '10px',
+    width: '30px',
+    height: '30px',
+    borderRadius: '8px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '18px',
+    fontSize: '16px',
     fontWeight: 700,
     flexShrink: 0
   },
   answerText: {
     flex: 1,
-    fontSize: '15px'
+    fontSize: '14px'
   },
   navigation: {
     display: 'flex',
     justifyContent: 'space-between',
-    gap: '16px',
+    gap: '12px',
     marginTop: '8px'
   },
   navButton: {
-    padding: '14px 28px',
-    borderRadius: '12px',
-    fontSize: '16px',
+    padding: '10px 20px',
+    borderRadius: '8px',
+    fontSize: '14px',
     fontWeight: 600,
     transition: 'all 0.2s ease',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+    boxShadow: '0 1px 4px rgba(0,0,0,0.05)'
   },
   navigatorColumn: {
     position: 'sticky',
-    top: '100px',
+    top: '90px',
     height: 'fit-content'
   },
   navigatorCard: {
     background: 'white',
-    borderRadius: '16px',
-    padding: '24px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+    borderRadius: '12px',
+    padding: '20px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
   },
   navigatorHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px',
-    paddingBottom: '16px',
-    borderBottom: '2px solid #f1f5f9',
-    marginBottom: '20px'
+    gap: '8px',
+    paddingBottom: '12px',
+    borderBottom: '1px solid #f1f5f9',
+    marginBottom: '16px'
   },
   navigatorIcon: {
-    fontSize: '24px'
+    fontSize: '20px'
   },
   statsGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr 1fr',
-    gap: '10px',
-    marginBottom: '24px'
+    gap: '8px',
+    marginBottom: '20px'
   },
   statCard: {
     background: '#f8fafc',
-    padding: '16px 8px',
-    borderRadius: '12px',
+    padding: '12px 4px',
+    borderRadius: '8px',
     textAlign: 'center',
     border: '1px solid #e2e8f0'
   },
   statValue: {
-    fontSize: '24px',
+    fontSize: '20px',
     fontWeight: 800,
     lineHeight: 1.2,
-    marginBottom: '4px'
+    marginBottom: '2px'
   },
   statLabel: {
-    fontSize: '11px',
+    fontSize: '10px',
     color: '#64748b',
     fontWeight: 600,
     textTransform: 'uppercase',
@@ -1032,20 +1032,20 @@ const styles = {
   questionGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(5, 1fr)',
-    gap: '8px',
-    marginBottom: '20px',
-    maxHeight: '280px',
+    gap: '6px',
+    marginBottom: '16px',
+    maxHeight: '240px',
     overflowY: 'auto',
     padding: '4px',
     background: '#f8fafc',
-    borderRadius: '12px',
+    borderRadius: '8px',
     border: '1px solid #e2e8f0'
   },
   gridItem: {
     aspectRatio: '1',
-    border: '2px solid',
-    borderRadius: '10px',
-    fontSize: '14px',
+    border: '1.5px solid',
+    borderRadius: '6px',
+    fontSize: '13px',
     fontWeight: 600,
     display: 'flex',
     alignItems: 'center',
@@ -1056,35 +1056,35 @@ const styles = {
   legend: {
     display: 'flex',
     justifyContent: 'space-between',
-    padding: '16px 0',
-    borderTop: '2px solid #f1f5f9',
-    borderBottom: '2px solid #f1f5f9',
-    marginBottom: '16px'
+    padding: '12px 0',
+    borderTop: '1px solid #f1f5f9',
+    borderBottom: '1px solid #f1f5f9',
+    marginBottom: '12px'
   },
   legendItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    fontSize: '13px',
+    gap: '6px',
+    fontSize: '12px',
     color: '#475569',
     fontWeight: 500
   },
   legendDot: {
-    width: '14px',
-    height: '14px',
-    borderRadius: '4px'
+    width: '12px',
+    height: '12px',
+    borderRadius: '3px'
   },
   assessmentInfo: {
     background: '#f8fafc',
-    padding: '16px',
-    borderRadius: '12px',
+    padding: '12px',
+    borderRadius: '8px',
     border: '1px solid #e2e8f0'
   },
   infoRow: {
     display: 'flex',
     justifyContent: 'space-between',
-    fontSize: '14px',
-    marginBottom: '10px',
+    fontSize: '13px',
+    marginBottom: '8px',
     color: '#475569'
   },
   modalOverlay: {
@@ -1103,91 +1103,91 @@ const styles = {
   },
   modalContent: {
     background: 'white',
-    padding: '40px',
-    borderRadius: '24px',
-    maxWidth: '500px',
+    padding: '32px',
+    borderRadius: '20px',
+    maxWidth: '450px',
     width: '100%',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+    boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
   },
   modalIcon: {
-    fontSize: '60px',
+    fontSize: '48px',
     textAlign: 'center',
-    marginBottom: '20px'
+    marginBottom: '16px'
   },
   modalTitle: {
-    fontSize: '28px',
+    fontSize: '24px',
     fontWeight: 800,
     textAlign: 'center',
-    marginBottom: '24px',
+    marginBottom: '20px',
     color: '#1e293b'
   },
   modalBody: {
-    marginBottom: '28px'
+    marginBottom: '24px'
   },
   modalStats: {
     background: '#f8fafc',
-    padding: '20px',
-    borderRadius: '16px',
-    marginBottom: '20px',
+    padding: '16px',
+    borderRadius: '12px',
+    marginBottom: '16px',
     border: '1px solid #e2e8f0'
   },
   modalStat: {
     display: 'flex',
     justifyContent: 'space-between',
-    marginBottom: '12px',
-    fontSize: '16px',
+    marginBottom: '10px',
+    fontSize: '15px',
     fontWeight: 500
   },
   modalWarning: {
     display: 'flex',
-    gap: '12px',
-    padding: '16px 20px',
+    gap: '10px',
+    padding: '14px 16px',
     background: '#fff8e1',
-    borderRadius: '12px',
+    borderRadius: '10px',
     color: '#856404',
-    fontSize: '14px',
+    fontSize: '13px',
     border: '1px solid #ffe082'
   },
   modalActions: {
     display: 'flex',
-    gap: '12px'
+    gap: '10px'
   },
   modalSecondaryButton: {
     flex: 1,
-    padding: '14px',
+    padding: '12px',
     background: '#f1f5f9',
     border: 'none',
-    borderRadius: '12px',
+    borderRadius: '8px',
     cursor: 'pointer',
     fontWeight: 600,
-    fontSize: '16px',
+    fontSize: '15px',
     color: '#475569',
     transition: 'background 0.2s'
   },
   modalPrimaryButton: {
     flex: 1,
-    padding: '14px',
+    padding: '12px',
     background: '#4caf50',
     color: 'white',
     border: 'none',
-    borderRadius: '12px',
+    borderRadius: '8px',
     cursor: 'pointer',
     fontWeight: 600,
-    fontSize: '16px',
+    fontSize: '15px',
     transition: 'background 0.2s, transform 0.2s',
-    boxShadow: '0 4px 12px rgba(76, 175, 80, 0.3)'
+    boxShadow: '0 2px 8px rgba(76, 175, 80, 0.2)'
   },
   successIconLarge: {
-    width: '80px',
-    height: '80px',
+    width: '60px',
+    height: '60px',
     background: '#4caf50',
     borderRadius: '50%',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    margin: '0 auto 20px',
-    fontSize: '40px',
+    margin: '0 auto 16px',
+    fontSize: '30px',
     color: 'white',
-    boxShadow: '0 4px 20px rgba(76, 175, 80, 0.4)'
+    boxShadow: '0 2px 12px rgba(76, 175, 80, 0.3)'
   }
 };
