@@ -405,10 +405,11 @@ export async function isAssessmentCompleted(userId, assessmentId) {
   }
 }
 
-// ========== FINAL WORKING VERSION ==========
+// ========== FIXED VERSION WITH DEBUGGING ==========
 
-// Helper function to shuffle array (for randomization)
+// Helper function to shuffle array
 function shuffleArray(array) {
+  if (!array || !Array.isArray(array)) return [];
   const shuffled = [...array];
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -417,77 +418,115 @@ function shuffleArray(array) {
   return shuffled;
 }
 
-// Get questions for an assessment - WITH RANDOMIZATION
+// Get questions for an assessment - FIXED VERSION
 export async function getRandomizedQuestions(candidateId, assessmentId) {
-  console.log("🎲 Getting randomized questions for assessment:", assessmentId);
+  console.log("🎲 getRandomizedQuestions called with:", { candidateId, assessmentId });
   
   try {
-    // Get all question instances for this assessment with their answers
-    const { data: instances, error } = await supabase
+    if (!assessmentId) {
+      console.error("No assessmentId provided");
+      return [];
+    }
+
+    // First, try to get questions directly from the questions table (fallback)
+    console.log("Attempting to fetch from questions table first...");
+    const { data: directQuestions, error: directError } = await supabase
+      .from('questions')
+      .select(`
+        *,
+        answers (*)
+      `)
+      .eq('assessment_id', assessmentId)
+      .eq('is_active', true)
+      .order('question_order');
+
+    if (!directError && directQuestions && directQuestions.length > 0) {
+      console.log(`Found ${directQuestions.length} questions in questions table`);
+      
+      // Randomize the questions
+      const shuffledQuestions = shuffleArray(directQuestions);
+      
+      // Format and return
+      return shuffledQuestions.map((q, index) => ({
+        id: q.id,
+        question_text: q.question_text,
+        section: q.section,
+        subsection: q.subsection,
+        display_order: index,
+        answers: (q.answers || []).map(a => ({
+          id: a.id,
+          answer_text: a.answer_text,
+          score: a.score
+        }))
+      }));
+    }
+
+    // If no questions in questions table, try question_instances
+    console.log("No questions in questions table, trying question_instances...");
+    
+    const { data: instances, error: instancesError } = await supabase
       .from("question_instances")
       .select(`
         id,
         display_order,
-        question_bank:question_banks!inner(
-          id,
-          question_text,
-          section,
-          subsection,
-          answer_banks(
-            id,
-            answer_text,
-            score
-          )
-        )
+        question_bank_id
       `)
       .eq("assessment_id", assessmentId);
 
-    if (error) {
-      console.error("Error fetching questions:", error);
+    if (instancesError) {
+      console.error("Error fetching question instances:", instancesError);
       return [];
     }
+
+    console.log(`Found ${instances?.length || 0} question instances`);
 
     if (!instances || instances.length === 0) {
       console.log("No question instances found");
       return [];
     }
 
-    console.log(`Found ${instances.length} questions`);
+    // For each instance, get the question bank details
+    const questions = await Promise.all(
+      instances.map(async (instance) => {
+        const { data: questionBank, error: bankError } = await supabase
+          .from("question_banks")
+          .select(`
+            id,
+            question_text,
+            section,
+            subsection,
+            answer_banks (
+              id,
+              answer_text,
+              score
+            )
+          `)
+          .eq("id", instance.question_bank_id)
+          .single();
 
-    // Randomize the order of questions
-    const shuffledInstances = shuffleArray(instances);
+        if (bankError) {
+          console.error(`Error fetching question bank ${instance.question_bank_id}:`, bankError);
+          return null;
+        }
 
-    // Format the data and randomize answers for each question
-    const questions = shuffledInstances.map((instance, index) => {
-      // Randomize the answers for this question
-      const shuffledAnswers = shuffleArray(instance.question_bank.answer_banks || []);
-      
-      return {
-        id: instance.id, // This is the question_instance_id
-        question_text: instance.question_bank.question_text,
-        section: instance.question_bank.section,
-        subsection: instance.question_bank.subsection,
-        display_order: index, // New random order
-        answers: shuffledAnswers.map(answer => ({
-          id: answer.id, // This is the answer_bank_id
-          answer_text: answer.answer_text,
-          score: answer.score
-        }))
-      };
-    });
-
-    // Optional: Update the display_order in the database to persist the randomization
-    // This ensures if the user refreshes, they see the same order
-    await Promise.all(
-      questions.map((q, idx) => 
-        supabase
-          .from("question_instances")
-          .update({ display_order: idx })
-          .eq("id", q.id)
-      )
+        return {
+          id: instance.id,
+          question_text: questionBank.question_text,
+          section: questionBank.section,
+          subsection: questionBank.subsection,
+          display_order: instance.display_order,
+          answers: questionBank.answer_banks || []
+        };
+      })
     );
 
-    return questions;
+    // Filter out any null values
+    const validQuestions = questions.filter(q => q !== null);
+    
+    console.log(`Returning ${validQuestions.length} valid questions`);
+
+    // Randomize the order
+    return shuffleArray(validQuestions);
 
   } catch (error) {
     console.error("Error in getRandomizedQuestions:", error);
@@ -495,26 +534,29 @@ export async function getRandomizedQuestions(candidateId, assessmentId) {
   }
 }
 
-// Save response - WORKS WITH YOUR DATA
-export async function saveRandomizedResponse(session_id, user_id, assessment_id, question_instance_id, answer_bank_id) {
-  console.log("💾 Saving response:", { session_id, user_id, question_instance_id, answer_bank_id });
+// Save response - FIXED VERSION
+export async function saveRandomizedResponse(session_id, user_id, assessment_id, question_id, answer_id) {
+  console.log("💾 Saving response:", { session_id, user_id, question_id, answer_id });
   
   try {
-    // Validate inputs
-    if (!session_id || !user_id || !assessment_id || !question_instance_id || !answer_bank_id) {
+    if (!session_id || !user_id || !assessment_id || !question_id || !answer_id) {
       console.error("Missing required fields");
       return { success: false, error: "Missing required fields" };
     }
 
-    // Simply save to responses table
+    // Convert to numbers if needed
+    const questionIdNum = typeof question_id === 'string' ? parseInt(question_id, 10) : question_id;
+    const answerIdNum = typeof answer_id === 'string' ? parseInt(answer_id, 10) : answer_id;
+
+    // Save to responses table
     const { error } = await supabase
       .from("responses")
       .upsert({
         session_id: session_id,
         user_id: user_id,
         assessment_id: assessment_id,
-        question_id: question_instance_id,
-        answer_id: answer_bank_id,
+        question_id: questionIdNum,
+        answer_id: answerIdNum,
         updated_at: new Date().toISOString()
       }, {
         onConflict: 'session_id,question_id'
@@ -534,7 +576,7 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
   }
 }
 
-// Legacy function for backward compatibility
+// Legacy function
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveRandomizedResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
