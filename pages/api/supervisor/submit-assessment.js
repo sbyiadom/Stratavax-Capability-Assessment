@@ -1,4 +1,10 @@
-import { supabase } from '../../../supabase/client';
+import { createClient } from '@supabase/supabase-js';
+
+// Create an admin client with service role key (bypasses RLS)
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 export default async function handler(req, res) {
   // Enable CORS if needed
@@ -24,8 +30,8 @@ export default async function handler(req, res) {
   console.log("📥 Received submission request:", { session_id, user_id, assessment_id, time_spent });
 
   try {
-    // Verify the session exists and belongs to the user
-    const { data: session, error: sessionError } = await supabase
+    // Verify the session exists and belongs to the user - use admin client
+    const { data: session, error: sessionError } = await supabaseAdmin
       .from('assessment_sessions')
       .select('*')
       .eq('id', session_id)
@@ -38,8 +44,8 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'Assessment session not found' });
     }
 
-    // Get all responses for this session
-    const { data: responses, error: responsesError } = await supabase
+    // Get all responses for this session - use admin client
+    const { data: responses, error: responsesError } = await supabaseAdmin
       .from('responses')
       .select(`
         id,
@@ -71,8 +77,8 @@ export default async function handler(req, res) {
     // Calculate max possible score (assuming 5 points per question)
     const maxScore = (responses?.length || 0) * 5;
 
-    // Update session to completed
-    const { error: updateError } = await supabase
+    // Update session to completed - use admin client
+    const { error: updateError } = await supabaseAdmin
       .from('assessment_sessions')
       .update({ 
         status: 'completed',
@@ -86,8 +92,8 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Failed to update session' });
     }
 
-    // Create assessment result
-    const { data: result, error: resultError } = await supabase
+    // Create assessment result - use admin client
+    const { data: result, error: resultError } = await supabaseAdmin
       .from('assessment_results')
       .insert({
         user_id: user_id,
@@ -106,8 +112,8 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Failed to create result' });
     }
 
-    // Also update or create candidate_assessments record
-    const { error: candidateError } = await supabase
+    // Also update or create candidate_assessments record - use admin client
+    const { error: candidateError } = await supabaseAdmin
       .from('candidate_assessments')
       .upsert({
         user_id: user_id,
