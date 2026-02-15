@@ -30,54 +30,80 @@ export default async function handler(req, res) {
   console.log("📥 Received submission request:", { session_id, user_id, assessment_id, time_spent });
 
   try {
+    // Test Supabase connection first
+    console.log("🔧 Testing Supabase connection...");
+    const { data: testData, error: testError } = await supabaseAdmin
+      .from('assessment_sessions')
+      .select('count')
+      .limit(1);
+      
+    if (testError) {
+      console.error("❌ Supabase connection test failed:", testError);
+      return res.status(500).json({ error: 'Database connection failed', details: testError });
+    }
+    console.log("✅ Supabase connection successful");
+
     // Verify the session exists and belongs to the user - use admin client
+    console.log("🔍 Looking for session:", session_id);
     const { data: session, error: sessionError } = await supabaseAdmin
       .from('assessment_sessions')
       .select('*')
       .eq('id', session_id)
       .eq('user_id', user_id)
       .eq('status', 'in_progress')
-      .single();
+      .maybeSingle(); // Changed from .single() to avoid error if not found
 
-    if (sessionError || !session) {
-      console.error("❌ Session not found:", sessionError);
+    if (sessionError) {
+      console.error("❌ Session query error:", sessionError);
+      return res.status(500).json({ error: 'Session query failed', details: sessionError });
+    }
+
+    if (!session) {
+      console.error("❌ Session not found for:", { session_id, user_id });
       return res.status(404).json({ error: 'Assessment session not found' });
     }
 
+    console.log("✅ Session found:", session.id);
+
     // Get all responses for this session - use admin client
+    console.log("🔍 Fetching responses for session:", session_id);
     const { data: responses, error: responsesError } = await supabaseAdmin
       .from('responses')
       .select(`
         id,
         question_id,
-        answer_id,
-        unique_questions!inner(
-          id,
-          assessment_type_id
-        ),
-        unique_answers!inner(
-          id,
-          score
-        )
+        answer_id
       `)
       .eq('session_id', session_id);
 
     if (responsesError) {
       console.error("❌ Error fetching responses:", responsesError);
-      return res.status(500).json({ error: 'Failed to fetch responses' });
+      return res.status(500).json({ error: 'Failed to fetch responses', details: responsesError });
     }
 
     console.log(`📊 Found ${responses?.length || 0} responses`);
 
-    // Calculate total score
-    const totalScore = responses?.reduce((sum, response) => {
-      return sum + (response.unique_answers?.score || 0);
-    }, 0) || 0;
+    // Calculate total score by fetching each answer's score
+    let totalScore = 0;
+    if (responses && responses.length > 0) {
+      for (const response of responses) {
+        const { data: answerData, error: answerError } = await supabaseAdmin
+          .from('unique_answers')
+          .select('score')
+          .eq('id', response.answer_id)
+          .single();
+        
+        if (!answerError && answerData) {
+          totalScore += answerData.score || 0;
+        }
+      }
+    }
 
     // Calculate max possible score (assuming 5 points per question)
     const maxScore = (responses?.length || 0) * 5;
 
     // Update session to completed - use admin client
+    console.log("🔄 Updating session status to completed");
     const { error: updateError } = await supabaseAdmin
       .from('assessment_sessions')
       .update({ 
@@ -89,10 +115,11 @@ export default async function handler(req, res) {
 
     if (updateError) {
       console.error("❌ Error updating session:", updateError);
-      return res.status(500).json({ error: 'Failed to update session' });
+      return res.status(500).json({ error: 'Failed to update session', details: updateError });
     }
 
     // Create assessment result - use admin client
+    console.log("📝 Creating assessment result");
     const { data: result, error: resultError } = await supabaseAdmin
       .from('assessment_results')
       .insert({
@@ -109,10 +136,11 @@ export default async function handler(req, res) {
 
     if (resultError) {
       console.error("❌ Error creating result:", resultError);
-      return res.status(500).json({ error: 'Failed to create result' });
+      return res.status(500).json({ error: 'Failed to create result', details: resultError });
     }
 
     // Also update or create candidate_assessments record - use admin client
+    console.log("🔄 Updating candidate_assessments");
     const { error: candidateError } = await supabaseAdmin
       .from('candidate_assessments')
       .upsert({
@@ -143,6 +171,10 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error("❌ Unexpected error:", error);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ 
+      error: 'Internal server error', 
+      message: error.message,
+      stack: error.stack 
+    });
   }
 }
