@@ -1,50 +1,73 @@
 import { supabase } from "../../supabase/client";
 
 export default async function handler(req, res) {
-  const { assessmentId } = req.query;
-  
-  if (!assessmentId) {
-    return res.status(400).json({ error: "Assessment ID required" });
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-    // 1. Get total count
-    const { count, error: countError } = await supabase
-      .from("questions")
-      .select("*", { count: 'exact', head: true })
-      .eq("assessment_id", assessmentId);
+    const { assessmentId } = req.query;
 
-    if (countError) throw countError;
+    if (!assessmentId) {
+      return res.status(400).json({ error: "assessmentId is required" });
+    }
 
-    // 2. Get all questions with their order
-    const { data: questions, error: questionsError } = await supabase
-      .from("questions")
+    const results = {};
+
+    // 1. Check question_instances
+    const { data: instances, error: instancesError } = await supabase
+      .from("question_instances")
       .select(`
         id,
-        question_text,
-        section,
-        question_order,
-        assessment_id
+        assessment_id,
+        display_order,
+        question_bank_id
       `)
-      .eq("assessment_id", assessmentId)
-      .order("question_order", { ascending: true });
+      .eq("assessment_id", assessmentId);
 
-    if (questionsError) throw questionsError;
+    results.instances = {
+      count: instances?.length || 0,
+      data: instances,
+      error: instancesError?.message
+    };
 
-    // 3. Check for any missing order values
-    const missingOrder = questions?.filter(q => !q.question_order) || [];
+    // 2. If instances exist, check one question_bank
+    if (instances && instances.length > 0) {
+      const sampleBankId = instances[0].question_bank_id;
+      
+      const { data: questionBank, error: bankError } = await supabase
+        .from("question_banks")
+        .select(`
+          id,
+          question_text,
+          section,
+          subsection,
+          answer_banks (*)
+        `)
+        .eq("id", sampleBankId)
+        .single();
 
-    return res.status(200).json({
-      assessment_id: assessmentId,
-      total_count: count,
-      returned_count: questions?.length || 0,
-      missing_question_order: missingOrder.length,
-      first_5_questions: questions?.slice(0, 5),
-      last_5_questions: questions?.slice(-5),
-      all_question_orders: questions?.map(q => q.question_order)
-    });
+      results.sampleQuestionBank = {
+        data: questionBank,
+        error: bankError?.message
+      };
+    }
+
+    // 3. Check if the assessment exists
+    const { data: assessment, error: assessmentError } = await supabase
+      .from("assessments")
+      .select("id, title, assessment_type_id")
+      .eq("id", assessmentId)
+      .single();
+
+    results.assessment = {
+      data: assessment,
+      error: assessmentError?.message
+    };
+
+    return res.status(200).json(results);
+
   } catch (error) {
-    console.error("Debug error:", error);
     return res.status(500).json({ error: error.message });
   }
 }
