@@ -877,17 +877,31 @@ export async function createQuestionInstances(candidateId, assessmentId) {
   }
 }
 
-// Save response with randomized structure
+// ===== FIXED SAVE RANDOMIZED RESPONSE FUNCTION =====
 export async function saveRandomizedResponse(session_id, user_id, assessment_id, question_instance_id, answer_bank_id) {
+  console.log("💾 [saveRandomizedResponse] ENTERED with:", { 
+    session_id, 
+    user_id, 
+    assessment_id, 
+    question_instance_id, 
+    answer_bank_id 
+  });
+  
   try {
     // Validate inputs
     if (!session_id || !user_id || !assessment_id || !question_instance_id || !answer_bank_id) {
-      console.error("Missing required fields:", { session_id, user_id, assessment_id, question_instance_id, answer_bank_id });
+      console.error("❌ Missing required fields:", { session_id, user_id, assessment_id, question_instance_id, answer_bank_id });
       return { success: false, error: "Missing required fields" };
     }
 
-    // Find the answer instance for this candidate and question
-    const { data: answerInstance, error: findError } = await supabase
+    // First, try to find the answer instance for this candidate and question
+    console.log("🔍 Looking for answer instance with:", {
+      question_instance_id,
+      candidate_id: user_id,
+      answer_bank_id
+    });
+
+    let { data: answerInstance, error: findError } = await supabase
       .from("answer_instances")
       .select("id")
       .eq("question_instance_id", question_instance_id)
@@ -896,22 +910,89 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
       .maybeSingle();
 
     if (findError) {
-      console.error("Error finding answer instance:", findError);
+      console.error("❌ Error finding answer instance:", findError);
       return { success: false, error: findError.message };
     }
 
+    // If answer instance doesn't exist, create it
     if (!answerInstance) {
-      console.error("No answer instance found for:", { question_instance_id, user_id, answer_bank_id });
-      return { success: false, error: "Answer instance not found" };
+      console.log("⚠️ Answer instance not found, creating new one...");
+      
+      // Get the question instance to verify it exists
+      const { data: questionInstance, error: qiError } = await supabase
+        .from("question_instances")
+        .select("id, display_order")
+        .eq("id", question_instance_id)
+        .single();
+
+      if (qiError) {
+        console.error("❌ Question instance not found:", qiError);
+        return { success: false, error: "Question instance not found" };
+      }
+
+      // Get the answer bank to verify it exists
+      const { data: answerBank, error: abError } = await supabase
+        .from("answer_banks")
+        .select("id")
+        .eq("id", answer_bank_id)
+        .single();
+
+      if (abError) {
+        console.error("❌ Answer bank not found:", abError);
+        return { success: false, error: "Answer bank not found" };
+      }
+
+      // Get the highest display order for this question and candidate
+      const { data: maxOrder } = await supabase
+        .from("answer_instances")
+        .select("display_order")
+        .eq("question_instance_id", question_instance_id)
+        .eq("candidate_id", user_id)
+        .order('display_order', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const nextOrder = maxOrder ? maxOrder.display_order + 1 : 0;
+
+      // Create new answer instance
+      const { data: newInstance, error: createError } = await supabase
+        .from("answer_instances")
+        .insert({
+          answer_bank_id: answer_bank_id,
+          question_instance_id: question_instance_id,
+          display_order: nextOrder,
+          candidate_id: user_id,
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        console.error("❌ Failed to create answer instance:", createError);
+        return { success: false, error: "Failed to create answer instance" };
+      }
+
+      console.log("✅ Created new answer instance:", newInstance);
+      answerInstance = newInstance;
+    } else {
+      console.log("✅ Found existing answer instance:", answerInstance);
     }
 
     // Save the response
-    const { error } = await supabase
+    console.log("💾 Saving response with:", {
+      session_id,
+      user_id,
+      assessment_id,
+      question_id: question_instance_id,
+      answer_id: answerInstance.id
+    });
+
+    const { error: saveError } = await supabase
       .from("responses")
       .upsert({
-        session_id,
-        user_id,
-        assessment_id,
+        session_id: session_id,
+        user_id: user_id,
+        assessment_id: assessment_id,
         question_id: question_instance_id,
         answer_id: answerInstance.id,
         updated_at: new Date().toISOString()
@@ -919,19 +1000,25 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
         onConflict: 'session_id,question_id'
       });
 
-    if (error) {
-      console.error("Error saving response:", error);
-      return { success: false, error: error.message };
+    if (saveError) {
+      console.error("❌ Error saving response:", saveError);
+      return { success: false, error: saveError.message };
     }
 
+    console.log("✅ Response saved successfully!");
     return { success: true };
 
   } catch (error) {
-    console.error("Error saving randomized response:", error);
+    console.error("❌ Error in saveRandomizedResponse:", error);
     return { success: false, error: error.message };
   }
 }
 
-// ===== NOTE: All functions are already exported above =====
-// The randomization functions (getRandomizedQuestions, createRandomizedAssessment, 
-// createQuestionInstances, saveRandomizedResponse) are all exported with their function definitions
+// Export all functions (they're already exported above, but this is explicit)
+export {
+  shuffleArray,
+  getRandomizedQuestions,
+  createRandomizedAssessment,
+  createQuestionInstances,
+  saveRandomizedResponse
+};
