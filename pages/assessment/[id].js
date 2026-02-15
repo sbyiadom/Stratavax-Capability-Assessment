@@ -10,8 +10,8 @@ import {
   saveProgress,
   updateSessionTimer,
   isAssessmentCompleted,
-  getRandomizedQuestions,
-  saveRandomizedResponse
+  getUniqueQuestions,  // Changed from getRandomizedQuestions
+  saveUniqueResponse    // Changed from saveRandomizedResponse
 } from "../../supabase/assessment";
 
 // ===== TIMER FUNCTIONS =====
@@ -115,14 +115,11 @@ export default function AssessmentPage() {
           setElapsedSeconds(progress.elapsed_seconds || 0);
         }
 
-        // Load RANDOMIZED questions
-        console.log("Loading randomized questions...");
-        const randomizedQuestions = await getRandomizedQuestions(
-          authSession.user.id,
-          assessmentId,
-          sessionData?.id
-        );
-        setQuestions(randomizedQuestions || []);
+        // Load UNIQUE questions (100 questions with unique answers)
+        console.log("Loading unique questions...");
+        const uniqueQuestions = await getUniqueQuestions(assessmentId);
+        console.log(`Loaded ${uniqueQuestions?.length || 0} unique questions`);
+        setQuestions(uniqueQuestions || []);
 
         // Load saved responses
         if (sessionData?.id) {
@@ -131,8 +128,8 @@ export default function AssessmentPage() {
             setAnswers(responses.answerMap);
             
             // If we have a saved response, find the current question index
-            if (progress?.last_question_id) {
-              const lastIndex = randomizedQuestions.findIndex(q => q.id === progress.last_question_id);
+            if (progress?.last_question_id && uniqueQuestions?.length > 0) {
+              const lastIndex = uniqueQuestions.findIndex(q => q.id === progress.last_question_id);
               if (lastIndex >= 0) setCurrentIndex(lastIndex);
             }
           }
@@ -178,49 +175,49 @@ export default function AssessmentPage() {
   }, [loading, alreadySubmitted, session, timeLimit, assessmentId, user?.id, currentIndex, questions]);
 
   // Handle answer selection
-  const handleAnswerSelect = async (questionInstanceId, answerBankId) => {
-    if (alreadySubmitted || !session || !questionInstanceId || !answerBankId) return;
+  const handleAnswerSelect = async (questionId, answerId) => {
+    if (alreadySubmitted || !session || !questionId || !answerId) return;
 
     // Update UI immediately
-    setAnswers(prev => ({ ...prev, [questionInstanceId]: answerBankId }));
-    setSaveStatus(prev => ({ ...prev, [questionInstanceId]: 'saving' }));
+    setAnswers(prev => ({ ...prev, [questionId]: answerId }));
+    setSaveStatus(prev => ({ ...prev, [questionId]: 'saving' }));
 
     try {
-      const result = await saveRandomizedResponse(
+      const result = await saveUniqueResponse(
         session.id,
         user.id,
         assessmentId,
-        questionInstanceId,
-        answerBankId
+        questionId,
+        answerId
       );
 
       if (result?.success) {
-        setSaveStatus(prev => ({ ...prev, [questionInstanceId]: 'saved' }));
+        setSaveStatus(prev => ({ ...prev, [questionId]: 'saved' }));
         setTimeout(() => {
           setSaveStatus(prev => {
             const newStatus = { ...prev };
-            delete newStatus[questionInstanceId];
+            delete newStatus[questionId];
             return newStatus;
           });
         }, 500);
       } else {
         console.error("Save failed:", result?.error);
-        setSaveStatus(prev => ({ ...prev, [questionInstanceId]: 'error' }));
+        setSaveStatus(prev => ({ ...prev, [questionId]: 'error' }));
         setTimeout(() => {
           setSaveStatus(prev => {
             const newStatus = { ...prev };
-            delete newStatus[questionInstanceId];
+            delete newStatus[questionId];
             return newStatus;
           });
         }, 2000);
       }
     } catch (error) {
       console.error("Save error:", error);
-      setSaveStatus(prev => ({ ...prev, [questionInstanceId]: 'error' }));
+      setSaveStatus(prev => ({ ...prev, [questionId]: 'error' }));
       setTimeout(() => {
         setSaveStatus(prev => {
           const newStatus = { ...prev };
-          delete newStatus[questionInstanceId];
+          delete newStatus[questionId];
           return newStatus;
         });
       }, 2000);
@@ -483,7 +480,7 @@ export default function AssessmentPage() {
                 </div>
               </div>
 
-              {/* Question Text - Made more compact */}
+              {/* Question Text */}
               <div style={styles.questionText}>
                 {currentQuestion?.question_text}
               </div>
@@ -499,12 +496,12 @@ export default function AssessmentPage() {
                   color: saveStatus[currentQuestion.id] === 'saving' ? '#f57c00' : 
                          saveStatus[currentQuestion.id] === 'saved' ? '#2e7d32' : '#c62828'
                 }}>
-                  {saveStatus[currentQuestion.id] === 'saving' ? '⏳ Saving...' : 
-                   saveStatus[currentQuestion.id] === 'saved' ? '✓ Saved' : '❌ Failed'}
+                  {saveStatus[currentQuestion.id] === 'saving' ? '⏳ Saving your answer...' : 
+                   saveStatus[currentQuestion.id] === 'saved' ? '✓ Answer saved' : '❌ Save failed - please try again'}
                 </div>
               )}
 
-              {/* Answer Options - COMPACT VERSION */}
+              {/* Answer Options */}
               <div style={styles.answersContainer}>
                 {currentQuestion?.answers?.map((answer, index) => {
                   const isSelected = answers[currentQuestion.id] === answer.id;
@@ -521,9 +518,9 @@ export default function AssessmentPage() {
                         background: isSelected ? `linear-gradient(135deg, ${assessmentType?.gradient_start || '#667eea'}, ${assessmentType?.gradient_end || '#764ba2'})` : 
                                    isHovered ? '#f8fafc' : 'white',
                         borderColor: isSelected ? assessmentType?.gradient_start || '#667eea' : '#e2e8f0',
-                        transform: isSelected || isHovered ? 'translateY(-1px)' : 'translateY(0)',
-                        boxShadow: isSelected ? '0 2px 8px rgba(102, 126, 234, 0.2)' : 
-                                  isHovered ? '0 2px 8px rgba(0,0,0,0.05)' : '0 1px 3px rgba(0,0,0,0.05)'
+                        transform: isSelected || isHovered ? 'translateY(-2px)' : 'translateY(0)',
+                        boxShadow: isSelected ? '0 4px 12px rgba(102, 126, 234, 0.3)' : 
+                                  isHovered ? '0 4px 12px rgba(0,0,0,0.1)' : '0 2px 4px rgba(0,0,0,0.05)'
                       }}
                       onMouseEnter={() => setHoveredAnswer(answer.id)}
                       onMouseLeave={() => setHoveredAnswer(null)}
@@ -548,7 +545,7 @@ export default function AssessmentPage() {
                 })}
               </div>
 
-              {/* Navigation Buttons - Made more compact */}
+              {/* Navigation Buttons */}
               <div style={styles.navigation}>
                 <button
                   onClick={handlePrevious}
@@ -557,11 +554,11 @@ export default function AssessmentPage() {
                     ...styles.navButton,
                     background: currentIndex === 0 || alreadySubmitted ? '#f1f5f9' : 'white',
                     color: currentIndex === 0 || alreadySubmitted ? '#94a3b8' : assessmentType?.gradient_start || '#667eea',
-                    border: currentIndex === 0 || alreadySubmitted ? '1px solid #e2e8f0' : `1px solid ${assessmentType?.gradient_start || '#667eea'}`,
+                    border: currentIndex === 0 || alreadySubmitted ? '1px solid #e2e8f0' : `2px solid ${assessmentType?.gradient_start || '#667eea'}`,
                     cursor: currentIndex === 0 || alreadySubmitted ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  ← Previous
+                  ← Previous Question
                 </button>
 
                 {isLastQuestion ? (
@@ -576,7 +573,7 @@ export default function AssessmentPage() {
                       cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
                     }}
                   >
-                    Submit
+                    Submit Assessment
                   </button>
                 ) : (
                   <button
@@ -590,7 +587,7 @@ export default function AssessmentPage() {
                       cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
                     }}
                   >
-                    Next →
+                    Next Question →
                   </button>
                 )}
               </div>
@@ -640,8 +637,8 @@ export default function AssessmentPage() {
                         color: isCurrent || isAnswered ? 'white' : '#1e293b',
                         borderColor: isCurrent ? assessmentType?.gradient_start || '#667eea' : 
                                     isAnswered ? '#4caf50' : '#e2e8f0',
-                        transform: isHovered ? 'scale(1.05)' : 'scale(1)',
-                        boxShadow: isHovered ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
+                        transform: isHovered ? 'scale(1.1)' : 'scale(1)',
+                        boxShadow: isHovered ? '0 4px 8px rgba(0,0,0,0.15)' : 'none',
                         cursor: alreadySubmitted ? 'not-allowed' : 'pointer'
                       }}
                       onMouseEnter={() => setHoveredQuestion(index)}
@@ -712,7 +709,7 @@ export default function AssessmentPage() {
   );
 }
 
-// Styles - COMPACT VERSION
+// Styles
 const styles = {
   loadingContainer: {
     minHeight: '100vh',
@@ -778,12 +775,12 @@ const styles = {
     top: 0,
     zIndex: 100,
     color: 'white',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
   },
   headerContent: {
     maxWidth: '1400px',
     margin: '0 auto',
-    padding: '12px 24px',
+    padding: '16px 24px',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center'
@@ -791,16 +788,16 @@ const styles = {
   headerLeft: {
     display: 'flex',
     alignItems: 'center',
-    gap: '16px'
+    gap: '20px'
   },
   backButton: {
-    width: '36px',
-    height: '36px',
+    width: '40px',
+    height: '40px',
     background: 'rgba(255,255,255,0.2)',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '10px',
     color: 'white',
-    fontSize: '20px',
+    fontSize: '24px',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
@@ -809,221 +806,220 @@ const styles = {
     backdropFilter: 'blur(10px)'
   },
   headerTitle: {
-    fontSize: '18px',
+    fontSize: '20px',
     fontWeight: 700,
-    marginBottom: '2px'
+    marginBottom: '4px'
   },
   headerMeta: {
     display: 'flex',
-    gap: '6px',
-    fontSize: '12px',
+    gap: '8px',
+    fontSize: '14px',
     opacity: 0.9
   },
   timer: {
-    padding: '8px 16px',
-    borderRadius: '10px',
+    padding: '10px 20px',
+    borderRadius: '12px',
     border: '1px solid',
     textAlign: 'center',
-    minWidth: '140px',
+    minWidth: '160px',
     backdropFilter: 'blur(10px)'
   },
   timerLabel: {
-    fontSize: '10px',
+    fontSize: '12px',
     fontWeight: 600,
-    marginBottom: '2px',
+    marginBottom: '4px',
     letterSpacing: '0.5px'
   },
   timerValue: {
-    fontSize: '20px',
+    fontSize: '24px',
     fontWeight: 700,
     fontFamily: 'monospace'
   },
   mainContent: {
     maxWidth: '1400px',
     margin: '0 auto',
-    padding: '20px',
+    padding: '24px',
     display: 'grid',
-    gridTemplateColumns: '1fr 280px',
-    gap: '20px'
+    gridTemplateColumns: '1fr 320px',
+    gap: '24px'
   },
   questionColumn: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '16px'
+    gap: '20px'
   },
   progressContainer: {
     background: 'white',
-    padding: '16px',
-    borderRadius: '12px',
-    boxShadow: '0 1px 4px rgba(0,0,0,0.05)'
+    padding: '20px',
+    borderRadius: '16px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
   },
   progressTrack: {
-    height: '8px',
+    height: '10px',
     background: '#e2e8f0',
-    borderRadius: '4px',
+    borderRadius: '5px',
     overflow: 'hidden',
-    marginBottom: '8px'
+    marginBottom: '12px'
   },
   progressFill: {
     height: '100%',
     transition: 'width 0.3s ease',
-    borderRadius: '4px'
+    borderRadius: '5px'
   },
   progressStats: {
     display: 'flex',
     justifyContent: 'space-between',
-    fontSize: '13px',
+    fontSize: '14px',
     color: '#64748b',
     fontWeight: 500
   },
   questionCard: {
     background: 'white',
-    borderRadius: '12px',
-    padding: '24px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+    borderRadius: '16px',
+    padding: '32px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
   },
   sectionBadge: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    marginBottom: '16px'
+    gap: '16px',
+    marginBottom: '24px'
   },
   sectionIcon: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '10px',
+    width: '50px',
+    height: '50px',
+    borderRadius: '12px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '22px',
+    fontSize: '28px',
     color: 'white',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+    boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
   },
   sectionName: {
-    fontSize: '18px',
+    fontSize: '20px',
     fontWeight: 700,
     color: '#1e293b'
   },
   subsection: {
-    fontSize: '13px',
+    fontSize: '14px',
     color: '#64748b',
-    marginTop: '2px'
+    marginTop: '4px'
   },
   questionText: {
-    fontSize: '18px',
-    lineHeight: '1.5',
+    fontSize: '20px',
+    lineHeight: '1.6',
     color: '#1e293b',
-    marginBottom: '20px',
+    marginBottom: '24px',
     fontWeight: 500,
-    padding: '16px',
+    padding: '20px',
     background: '#f8fafc',
-    borderRadius: '10px',
+    borderRadius: '12px',
     border: '1px solid #e2e8f0'
   },
   saveStatus: {
-    padding: '8px 16px',
+    padding: '12px 20px',
     border: '1px solid',
-    borderRadius: '8px',
-    marginBottom: '20px',
-    fontSize: '13px',
+    borderRadius: '10px',
+    marginBottom: '24px',
+    fontSize: '14px',
     fontWeight: 500,
     textAlign: 'center'
   },
-  // COMPACT answer container
   answersContainer: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '10px',
-    marginBottom: '24px'
+    gap: '16px',
+    marginBottom: '32px'
   },
   answerCard: {
-    padding: '14px 16px',
-    border: '1.5px solid',
-    borderRadius: '10px',
+    padding: '20px',
+    border: '2px solid',
+    borderRadius: '16px',
     cursor: 'pointer',
     textAlign: 'left',
-    fontSize: '15px',
+    fontSize: '16px',
     display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
+    alignItems: 'flex-start',
+    gap: '16px',
     transition: 'all 0.2s ease',
     width: '100%',
-    minHeight: 'auto',
+    minHeight: '100px',
     background: 'white',
-    lineHeight: '1.4'
+    lineHeight: '1.5'
   },
   answerLetter: {
-    width: '30px',
-    height: '30px',
-    borderRadius: '8px',
+    width: '36px',
+    height: '36px',
+    borderRadius: '10px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '16px',
+    fontSize: '18px',
     fontWeight: 700,
     flexShrink: 0
   },
   answerText: {
     flex: 1,
-    fontSize: '14px'
+    fontSize: '15px'
   },
   navigation: {
     display: 'flex',
     justifyContent: 'space-between',
-    gap: '12px',
+    gap: '16px',
     marginTop: '8px'
   },
   navButton: {
-    padding: '10px 20px',
-    borderRadius: '8px',
-    fontSize: '14px',
+    padding: '14px 28px',
+    borderRadius: '12px',
+    fontSize: '16px',
     fontWeight: 600,
     transition: 'all 0.2s ease',
-    boxShadow: '0 1px 4px rgba(0,0,0,0.05)'
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
   },
   navigatorColumn: {
     position: 'sticky',
-    top: '90px',
+    top: '100px',
     height: 'fit-content'
   },
   navigatorCard: {
     background: 'white',
-    borderRadius: '12px',
-    padding: '20px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+    borderRadius: '16px',
+    padding: '24px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
   },
   navigatorHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    paddingBottom: '12px',
-    borderBottom: '1px solid #f1f5f9',
-    marginBottom: '16px'
+    gap: '10px',
+    paddingBottom: '16px',
+    borderBottom: '2px solid #f1f5f9',
+    marginBottom: '20px'
   },
   navigatorIcon: {
-    fontSize: '20px'
+    fontSize: '24px'
   },
   statsGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr 1fr',
-    gap: '8px',
-    marginBottom: '20px'
+    gap: '10px',
+    marginBottom: '24px'
   },
   statCard: {
     background: '#f8fafc',
-    padding: '12px 4px',
-    borderRadius: '8px',
+    padding: '16px 8px',
+    borderRadius: '12px',
     textAlign: 'center',
     border: '1px solid #e2e8f0'
   },
   statValue: {
-    fontSize: '20px',
+    fontSize: '24px',
     fontWeight: 800,
     lineHeight: 1.2,
-    marginBottom: '2px'
+    marginBottom: '4px'
   },
   statLabel: {
-    fontSize: '10px',
+    fontSize: '11px',
     color: '#64748b',
     fontWeight: 600,
     textTransform: 'uppercase',
@@ -1032,20 +1028,20 @@ const styles = {
   questionGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(5, 1fr)',
-    gap: '6px',
-    marginBottom: '16px',
-    maxHeight: '240px',
+    gap: '8px',
+    marginBottom: '20px',
+    maxHeight: '280px',
     overflowY: 'auto',
     padding: '4px',
     background: '#f8fafc',
-    borderRadius: '8px',
+    borderRadius: '12px',
     border: '1px solid #e2e8f0'
   },
   gridItem: {
     aspectRatio: '1',
-    border: '1.5px solid',
-    borderRadius: '6px',
-    fontSize: '13px',
+    border: '2px solid',
+    borderRadius: '10px',
+    fontSize: '14px',
     fontWeight: 600,
     display: 'flex',
     alignItems: 'center',
@@ -1056,35 +1052,35 @@ const styles = {
   legend: {
     display: 'flex',
     justifyContent: 'space-between',
-    padding: '12px 0',
-    borderTop: '1px solid #f1f5f9',
-    borderBottom: '1px solid #f1f5f9',
-    marginBottom: '12px'
+    padding: '16px 0',
+    borderTop: '2px solid #f1f5f9',
+    borderBottom: '2px solid #f1f5f9',
+    marginBottom: '16px'
   },
   legendItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: '6px',
-    fontSize: '12px',
+    gap: '8px',
+    fontSize: '13px',
     color: '#475569',
     fontWeight: 500
   },
   legendDot: {
-    width: '12px',
-    height: '12px',
-    borderRadius: '3px'
+    width: '14px',
+    height: '14px',
+    borderRadius: '4px'
   },
   assessmentInfo: {
     background: '#f8fafc',
-    padding: '12px',
-    borderRadius: '8px',
+    padding: '16px',
+    borderRadius: '12px',
     border: '1px solid #e2e8f0'
   },
   infoRow: {
     display: 'flex',
     justifyContent: 'space-between',
-    fontSize: '13px',
-    marginBottom: '8px',
+    fontSize: '14px',
+    marginBottom: '10px',
     color: '#475569'
   },
   modalOverlay: {
@@ -1103,91 +1099,91 @@ const styles = {
   },
   modalContent: {
     background: 'white',
-    padding: '32px',
-    borderRadius: '20px',
-    maxWidth: '450px',
+    padding: '40px',
+    borderRadius: '24px',
+    maxWidth: '500px',
     width: '100%',
-    boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+    boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
   },
   modalIcon: {
-    fontSize: '48px',
+    fontSize: '60px',
     textAlign: 'center',
-    marginBottom: '16px'
+    marginBottom: '20px'
   },
   modalTitle: {
-    fontSize: '24px',
+    fontSize: '28px',
     fontWeight: 800,
     textAlign: 'center',
-    marginBottom: '20px',
+    marginBottom: '24px',
     color: '#1e293b'
   },
   modalBody: {
-    marginBottom: '24px'
+    marginBottom: '28px'
   },
   modalStats: {
     background: '#f8fafc',
-    padding: '16px',
-    borderRadius: '12px',
-    marginBottom: '16px',
+    padding: '20px',
+    borderRadius: '16px',
+    marginBottom: '20px',
     border: '1px solid #e2e8f0'
   },
   modalStat: {
     display: 'flex',
     justifyContent: 'space-between',
-    marginBottom: '10px',
-    fontSize: '15px',
+    marginBottom: '12px',
+    fontSize: '16px',
     fontWeight: 500
   },
   modalWarning: {
     display: 'flex',
-    gap: '10px',
-    padding: '14px 16px',
+    gap: '12px',
+    padding: '16px 20px',
     background: '#fff8e1',
-    borderRadius: '10px',
+    borderRadius: '12px',
     color: '#856404',
-    fontSize: '13px',
+    fontSize: '14px',
     border: '1px solid #ffe082'
   },
   modalActions: {
     display: 'flex',
-    gap: '10px'
+    gap: '12px'
   },
   modalSecondaryButton: {
     flex: 1,
-    padding: '12px',
+    padding: '14px',
     background: '#f1f5f9',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '12px',
     cursor: 'pointer',
     fontWeight: 600,
-    fontSize: '15px',
+    fontSize: '16px',
     color: '#475569',
     transition: 'background 0.2s'
   },
   modalPrimaryButton: {
     flex: 1,
-    padding: '12px',
+    padding: '14px',
     background: '#4caf50',
     color: 'white',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '12px',
     cursor: 'pointer',
     fontWeight: 600,
-    fontSize: '15px',
+    fontSize: '16px',
     transition: 'background 0.2s, transform 0.2s',
-    boxShadow: '0 2px 8px rgba(76, 175, 80, 0.2)'
+    boxShadow: '0 4px 12px rgba(76, 175, 80, 0.3)'
   },
   successIconLarge: {
-    width: '60px',
-    height: '60px',
+    width: '80px',
+    height: '80px',
     background: '#4caf50',
     borderRadius: '50%',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    margin: '0 auto 16px',
-    fontSize: '30px',
+    margin: '0 auto 20px',
+    fontSize: '40px',
     color: 'white',
-    boxShadow: '0 2px 12px rgba(76, 175, 80, 0.3)'
+    boxShadow: '0 4px 20px rgba(76, 175, 80, 0.4)'
   }
 };
