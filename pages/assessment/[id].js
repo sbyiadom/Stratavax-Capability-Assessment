@@ -504,8 +504,8 @@ export default function AssessmentPage() {
                 </div>
               )}
 
-              {/* Answer Options */}
-              <div style={styles.answersGrid}>
+              {/* Answer Options - NOW IN SINGLE COLUMN (1x4) */}
+              <div style={styles.answersContainer}>
                 {currentQuestion?.answers?.map((answer, index) => {
                   const isSelected = answers[currentQuestion.id] === answer.id;
                   const isHovered = hoveredAnswer === answer.id;
@@ -929,9 +929,10 @@ const styles = {
     fontWeight: 500,
     textAlign: 'center'
   },
-  answersGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
+  // FIXED: Changed from grid to flex column for 1x4 layout
+  answersContainer: {
+    display: 'flex',
+    flexDirection: 'column',
     gap: '16px',
     marginBottom: '32px'
   },
