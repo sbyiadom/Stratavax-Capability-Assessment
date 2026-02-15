@@ -1,301 +1,142 @@
-import { supabase } from "../../../supabase/client";
+import { supabase } from '../../../supabase/client';
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+  // Enable CORS if needed
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  );
+
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
   }
 
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const { session_id, user_id, assessment_id, time_spent } = req.body;
+
+  console.log("📥 Received submission request:", { session_id, user_id, assessment_id, time_spent });
+
   try {
-    const { session_id, user_id, assessment_id, time_spent } = req.body;
-    
-    console.log("📝 Submission request received:", { session_id, user_id, assessment_id, time_spent });
-
-    if (!session_id || !user_id || !assessment_id) {
-      console.error("❌ Missing required fields:", { session_id, user_id, assessment_id });
-      return res.status(400).json({ 
-        success: false,
-        error: "session_id, user_id, and assessment_id are required" 
-      });
-    }
-
-    // ===== CHECK IF ALREADY SUBMITTED =====
-    const { data: existingSession, error: sessionError } = await supabase
-      .from("assessment_sessions")
-      .select("id, status, completed_at, time_spent_seconds")
-      .eq("id", session_id)
-      .eq("user_id", user_id)
+    // Verify the session exists and belongs to the user
+    const { data: session, error: sessionError } = await supabase
+      .from('assessment_sessions')
+      .select('*')
+      .eq('id', session_id)
+      .eq('user_id', user_id)
+      .eq('status', 'in_progress')
       .single();
 
-    if (sessionError) {
-      console.error("❌ Session fetch error:", sessionError);
-      return res.status(404).json({
-        success: false,
-        error: "Assessment session not found"
-      });
+    if (sessionError || !session) {
+      console.error("❌ Session not found:", sessionError);
+      return res.status(404).json({ error: 'Assessment session not found' });
     }
 
-    console.log("📊 Session found:", existingSession);
-
-    if (existingSession.status === 'completed') {
-      return res.status(400).json({
-        success: false,
-        error: "This assessment has already been submitted"
-      });
-    }
-
-    // Use the actual time spent from the session if not provided
-    const actualTimeSpent = time_spent || existingSession.time_spent_seconds || 0;
-
-    // ===== UPDATE SESSION =====
-    const { error: updateError } = await supabase
-      .from("assessment_sessions")
-      .update({
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-        time_spent_seconds: actualTimeSpent
-      })
-      .eq("id", session_id)
-      .eq("user_id", user_id);
-
-    if (updateError) {
-      console.error("❌ Error updating session:", updateError);
-      return res.status(500).json({
-        success: false,
-        error: "Failed to update assessment session"
-      });
-    }
-
-    console.log("✅ Session updated to completed");
-
-    // ===== CALCULATE AND GENERATE RESULTS =====
     // Get all responses for this session
     const { data: responses, error: responsesError } = await supabase
-      .from("responses")
+      .from('responses')
       .select(`
+        id,
         question_id,
         answer_id,
-        question:questions!inner(
-          section,
-          subsection
+        unique_questions!inner(
+          id,
+          assessment_type_id
         ),
-        answer:answers!inner(
+        unique_answers!inner(
+          id,
           score
         )
       `)
-      .eq("session_id", session_id);
+      .eq('session_id', session_id);
 
     if (responsesError) {
       console.error("❌ Error fetching responses:", responsesError);
-      return res.status(500).json({
-        success: false,
-        error: "Failed to fetch responses"
-      });
+      return res.status(500).json({ error: 'Failed to fetch responses' });
     }
 
-    console.log(`📊 Found ${responses.length} responses`);
+    console.log(`📊 Found ${responses?.length || 0} responses`);
 
-    if (responses.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: "No responses found for this assessment"
-      });
+    // Calculate total score
+    const totalScore = responses?.reduce((sum, response) => {
+      return sum + (response.unique_answers?.score || 0);
+    }, 0) || 0;
+
+    // Calculate max possible score (assuming 5 points per question)
+    const maxScore = (responses?.length || 0) * 5;
+
+    // Update session to completed
+    const { error: updateError } = await supabase
+      .from('assessment_sessions')
+      .update({ 
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        time_spent_seconds: time_spent || session.time_spent_seconds || 0
+      })
+      .eq('id', session_id);
+
+    if (updateError) {
+      console.error("❌ Error updating session:", updateError);
+      return res.status(500).json({ error: 'Failed to update session' });
     }
 
-    // Calculate category scores
-    const categoryTotals = {};
-    const categoryCounts = {};
-    let totalScore = 0;
-
-    responses.forEach(r => {
-      const category = r.question.section;
-      const score = r.answer.score || 0;
-      totalScore += score;
-
-      if (!categoryTotals[category]) {
-        categoryTotals[category] = 0;
-        categoryCounts[category] = 0;
-      }
-      categoryTotals[category] += score;
-      categoryCounts[category] += 1;
-    });
-
-    console.log("📊 Category totals:", categoryTotals);
-
-    // Calculate percentages and identify strengths/weaknesses
-    const categoryScores = {};
-    const strengths = [];
-    const weaknesses = [];
-
-    Object.entries(categoryTotals).forEach(([category, total]) => {
-      const count = categoryCounts[category];
-      const maxPossible = count * 5;
-      const percentage = Math.round((total / maxPossible) * 100);
-      const average = (total / count).toFixed(1);
-
-      categoryScores[category] = {
-        score: total,
-        max_possible: maxPossible,
-        percentage,
-        average: parseFloat(average),
-        count
-      };
-
-      if (percentage >= 70) {
-        strengths.push(category);
-      } else if (percentage < 50) {
-        weaknesses.push(category);
-      }
-    });
-
-    console.log("📊 Category scores:", categoryScores);
-    console.log("💪 Strengths:", strengths);
-    console.log("🔧 Weaknesses:", weaknesses);
-
-    // Generate recommendations
-    const recommendations = [];
-    strengths.forEach(s => {
-      recommendations.push(`Leverage strength in ${s} by assigning challenging projects and responsibilities.`);
-    });
-    weaknesses.forEach(w => {
-      recommendations.push(`Focus on developing ${w} through targeted training and mentoring.`);
-    });
-
-    if (recommendations.length === 0) {
-      recommendations.push("Continue developing skills across all areas for balanced growth.");
-    }
-
-    // Get assessment type for max score
-    const { data: assessment, error: assessmentError } = await supabase
-      .from("assessments")
-      .select(`
-        id,
-        title,
-        assessment_type:assessment_types!inner(
-          id,
-          code,
-          name,
-          max_score
-        )
-      `)
-      .eq("id", assessment_id)
-      .single();
-
-    if (assessmentError) {
-      console.error("⚠️ Error fetching assessment:", assessmentError);
-    }
-
-    const maxScore = assessment?.assessment_type?.max_score || 100;
-    const assessmentTypeCode = assessment?.assessment_type?.code || 'general';
-    const assessmentTypeId = assessment?.assessment_type?.id;
-
-    console.log("📋 Assessment details:", { maxScore, assessmentTypeCode, assessmentTypeId });
-
-    // ===== INSERT RESULTS =====
+    // Create assessment result
     const { data: result, error: resultError } = await supabase
-      .from("assessment_results")
+      .from('assessment_results')
       .insert({
-        session_id,
-        user_id,
-        assessment_id,
-        assessment_type_id: assessmentTypeId,
+        user_id: user_id,
+        assessment_id: assessment_id,
+        session_id: session_id,
         total_score: totalScore,
         max_score: maxScore,
-        category_scores: categoryScores,
-        strengths,
-        weaknesses,
-        recommendations,
-        risk_level: totalScore >= maxScore * 0.7 ? 'low' : totalScore >= maxScore * 0.5 ? 'medium' : 'high',
-        readiness: totalScore >= maxScore * 0.7 ? 'ready' : 'development_needed',
         completed_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        responses_count: responses?.length || 0
       })
       .select()
       .single();
 
     if (resultError) {
-      console.error("❌ Error inserting results:", resultError);
-      return res.status(500).json({
-        success: false,
-        error: "Failed to save assessment results: " + resultError.message
-      });
+      console.error("❌ Error creating result:", resultError);
+      return res.status(500).json({ error: 'Failed to create result' });
     }
 
-    console.log("✅ Results saved with ID:", result.id);
-
-    // ===== UPDATE CANDIDATE ASSESSMENTS =====
+    // Also update or create candidate_assessments record
     const { error: candidateError } = await supabase
-      .from("candidate_assessments")
+      .from('candidate_assessments')
       .upsert({
-        user_id,
-        assessment_id,
-        assessment_type_id: assessmentTypeId,
-        session_id,
-        result_id: result.id,
+        user_id: user_id,
+        assessment_id: assessment_id,
         status: 'completed',
         completed_at: new Date().toISOString(),
         score: totalScore,
-        updated_at: new Date().toISOString()
+        session_id: session_id
       }, {
         onConflict: 'user_id,assessment_id'
       });
 
     if (candidateError) {
-      console.error("⚠️ Error updating candidate assessments:", candidateError);
-    } else {
-      console.log("✅ Candidate assessments updated");
+      console.error("⚠️ Error updating candidate_assessments:", candidateError);
+      // Don't fail the whole request for this
     }
 
-    // ===== CREATE SUPERVISOR NOTIFICATIONS =====
-    try {
-      const { data: profile } = await supabase
-        .from("candidate_profiles")
-        .select("full_name, email")
-        .eq("id", user_id)
-        .single();
+    console.log("✅ Assessment submitted successfully. Result ID:", result.id);
 
-      const { data: supervisors } = await supabase
-        .from("supervisors")
-        .select("id");
-
-      if (supervisors && supervisors.length > 0) {
-        const notifications = supervisors.map(sup => ({
-          supervisor_id: sup.id,
-          user_id,
-          assessment_id,
-          result_id: result.id,
-          message: `${profile?.full_name || 'A candidate'} completed ${assessment?.title || 'an assessment'}`,
-          status: 'unread',
-          created_at: new Date().toISOString()
-        }));
-
-        await supabase
-          .from("supervisor_notifications")
-          .insert(notifications);
-      }
-    } catch (notifyError) {
-      console.error("⚠️ Failed to create notifications:", notifyError);
-    }
-
-    // ===== RETURN SUCCESS RESPONSE =====
-    return res.status(200).json({
-      success: true,
-      message: `✅ ${assessment?.title || 'Assessment'} submitted successfully!`,
+    return res.status(200).json({ 
+      success: true, 
       result_id: result.id,
-      total_score: totalScore,
+      score: totalScore,
       max_score: maxScore,
-      assessment_type: assessmentTypeCode,
-      strengths,
-      weaknesses,
-      category_scores: categoryScores
+      responses_count: responses?.length || 0
     });
 
-  } catch (err) {
-    console.error("❌ Submit assessment error:", err);
-    return res.status(500).json({
-      success: false,
-      error: "Submission failed. Please contact support.",
-      details: err.message
-    });
+  } catch (error) {
+    console.error("❌ Unexpected error:", error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 }
