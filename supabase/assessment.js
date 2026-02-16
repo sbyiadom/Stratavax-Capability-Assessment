@@ -221,7 +221,7 @@ export async function getSessionResponses(sessionId) {
   }
 }
 
-// Submit Assessment
+// Submit Assessment - FIXED VERSION
 export async function submitAssessment(sessionId) {
   try {
     console.log("📤 Submitting assessment for session:", sessionId);
@@ -231,9 +231,10 @@ export async function submitAssessment(sessionId) {
       throw new Error("No active session");
     }
 
+    // Get the assessment session details
     const { data: assessmentSession, error: sessionError } = await supabase
       .from('assessment_sessions')
-      .select('assessment_id')
+      .select('assessment_id, time_spent_seconds')
       .eq('id', sessionId)
       .single();
 
@@ -242,17 +243,23 @@ export async function submitAssessment(sessionId) {
       throw sessionError;
     }
 
+    // Prepare submission data
+    const submissionData = {
+      session_id: sessionId,
+      user_id: session.user.id,
+      assessment_id: assessmentSession.assessment_id,
+      time_spent: assessmentSession.time_spent_seconds || 0
+    };
+
+    console.log("📦 Submission data:", submissionData);
+
+    // Submit via API
     const response = await fetch('/api/supervisor/submit-assessment', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        session_id: sessionId,
-        user_id: session.user.id,
-        assessment_id: assessmentSession.assessment_id,
-        time_spent: 0
-      }),
+      body: JSON.stringify(submissionData)
     });
 
     const result = await response.json();
@@ -619,3 +626,4 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveUniqueResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
+
