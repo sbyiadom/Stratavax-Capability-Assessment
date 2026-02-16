@@ -567,7 +567,7 @@ export async function getUniqueQuestions(assessmentId) {
 }
 
 /**
- * Save response for unique questions
+ * Save response for unique questions - FIXED VERSION
  */
 export async function saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id) {
   console.log("💾 Saving unique response:", { session_id, user_id, question_id, answer_id });
@@ -578,24 +578,20 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
       return { success: false, error: "Missing required fields" };
     }
 
-    // DON'T convert session_id to number - keep as UUID string
-    const sessionIdStr = String(session_id);
-    const questionIdNum = typeof question_id === 'string' ? parseInt(question_id, 10) : question_id;
-    const answerIdNum = typeof answer_id === 'string' ? parseInt(answer_id, 10) : answer_id;
-
     // Save to responses table
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("responses")
       .upsert({
-        session_id: sessionIdStr, // Keep as UUID string, not number
+        session_id: session_id, // Keep as UUID
         user_id: user_id,
         assessment_id: assessment_id,
-        question_id: questionIdNum,
-        answer_id: answerIdNum,
+        question_id: parseInt(question_id, 10),
+        answer_id: parseInt(answer_id, 10),
         updated_at: new Date().toISOString()
       }, {
         onConflict: 'session_id,question_id'
-      });
+      })
+      .select();
 
     if (error) {
       console.error("❌ Error saving response:", error);
@@ -603,7 +599,7 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
     }
 
     console.log("✅ Unique response saved successfully");
-    return { success: true };
+    return { success: true, data };
 
   } catch (error) {
     console.error("❌ Error in saveUniqueResponse:", error);
@@ -626,4 +622,5 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveUniqueResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
+
 
