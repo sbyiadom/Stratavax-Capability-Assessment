@@ -250,45 +250,17 @@ export async function getSessionResponses(sessionId) {
   }
 }
 
-// Submit Assessment - FIXED VERSION
+// Submit Assessment - NEW SIMPLIFIED VERSION using new API
 export async function submitAssessment(sessionId) {
   try {
     console.log("📤 Submitting assessment for session:", sessionId);
     
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      throw new Error("No active session");
-    }
-
-    // Get the assessment session details
-    const { data: assessmentSession, error: sessionError } = await supabase
-      .from('assessment_sessions')
-      .select('assessment_id, time_spent_seconds')
-      .eq('id', sessionId)
-      .single();
-
-    if (sessionError) {
-      console.error("❌ Error fetching assessment session:", sessionError);
-      throw sessionError;
-    }
-
-    // Prepare submission data
-    const submissionData = {
-      session_id: sessionId,
-      user_id: session.user.id,
-      assessment_id: assessmentSession.assessment_id,
-      time_spent: assessmentSession.time_spent_seconds || 0
-    };
-
-    console.log("📦 Submission data:", submissionData);
-
-    // Submit via API
-    const response = await fetch('/api/supervisor/submit-assessment', {
+    const response = await fetch('/api/submit-assessment', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(submissionData)
+      body: JSON.stringify({ sessionId })
     });
 
     const result = await response.json();
@@ -299,7 +271,7 @@ export async function submitAssessment(sessionId) {
     }
     
     console.log("✅ Assessment submitted successfully:", result);
-    return result.result_id;
+    return result.resultId;
     
   } catch (error) {
     console.error("❌ Submit assessment error:", error);
@@ -666,4 +638,3 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveUniqueResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
-
