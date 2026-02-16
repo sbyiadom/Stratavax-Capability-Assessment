@@ -957,4 +957,334 @@ const styles = {
   },
   progressTrack: {
     height: '10px',
-    background: '#e
+    background: '#e2e8f0',
+    borderRadius: '5px',
+    overflow: 'hidden',
+    marginBottom: '12px'
+  },
+  progressFill: {
+    height: '100%',
+    transition: 'width 0.3s ease',
+    borderRadius: '5px'
+  },
+  progressStats: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: '14px',
+    color: '#64748b',
+    fontWeight: 500
+  },
+  questionCard: {
+    background: 'white',
+    borderRadius: '16px',
+    padding: '32px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+  },
+  sectionBadge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    marginBottom: '24px'
+  },
+  sectionIcon: {
+    width: '50px',
+    height: '50px',
+    borderRadius: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '28px',
+    color: 'white',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+  },
+  sectionName: {
+    fontSize: '20px',
+    fontWeight: 700,
+    color: '#1e293b'
+  },
+  subsection: {
+    fontSize: '14px',
+    color: '#64748b',
+    marginTop: '4px'
+  },
+  questionText: {
+    fontSize: '20px',
+    lineHeight: '1.6',
+    color: '#1e293b',
+    marginBottom: '24px',
+    fontWeight: 500,
+    padding: '20px',
+    background: '#f8fafc',
+    borderRadius: '12px',
+    border: '1px solid #e2e8f0'
+  },
+  saveStatus: {
+    padding: '12px 20px',
+    border: '1px solid',
+    borderRadius: '10px',
+    marginBottom: '24px',
+    fontSize: '14px',
+    fontWeight: 500,
+    textAlign: 'center'
+  },
+  answersContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+    marginBottom: '32px'
+  },
+  answerCard: {
+    padding: '20px',
+    border: '2px solid',
+    borderRadius: '16px',
+    cursor: 'pointer',
+    textAlign: 'left',
+    fontSize: '16px',
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '16px',
+    transition: 'all 0.2s ease',
+    width: '100%',
+    minHeight: '100px',
+    background: 'white',
+    lineHeight: '1.5'
+  },
+  answerLetter: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '10px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '18px',
+    fontWeight: 700,
+    flexShrink: 0
+  },
+  answerText: {
+    flex: 1,
+    fontSize: '15px'
+  },
+  navigation: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '16px',
+    marginTop: '8px'
+  },
+  navButton: {
+    padding: '14px 28px',
+    borderRadius: '12px',
+    fontSize: '16px',
+    fontWeight: 600,
+    transition: 'all 0.2s ease',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+  },
+  navigatorColumn: {
+    position: 'sticky',
+    top: '100px',
+    height: 'fit-content'
+  },
+  navigatorCard: {
+    background: 'white',
+    borderRadius: '16px',
+    padding: '24px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+  },
+  navigatorHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    paddingBottom: '16px',
+    borderBottom: '2px solid #f1f5f9',
+    marginBottom: '20px'
+  },
+  navigatorIcon: {
+    fontSize: '24px'
+  },
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr 1fr',
+    gap: '10px',
+    marginBottom: '24px'
+  },
+  statCard: {
+    background: '#f8fafc',
+    padding: '16px 8px',
+    borderRadius: '12px',
+    textAlign: 'center',
+    border: '1px solid #e2e8f0'
+  },
+  statValue: {
+    fontSize: '24px',
+    fontWeight: 800,
+    lineHeight: 1.2,
+    marginBottom: '4px'
+  },
+  statLabel: {
+    fontSize: '11px',
+    color: '#64748b',
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
+  },
+  questionGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(5, 1fr)',
+    gap: '8px',
+    marginBottom: '20px',
+    maxHeight: '280px',
+    overflowY: 'auto',
+    padding: '4px',
+    background: '#f8fafc',
+    borderRadius: '12px',
+    border: '1px solid #e2e8f0'
+  },
+  gridItem: {
+    aspectRatio: '1',
+    border: '2px solid',
+    borderRadius: '10px',
+    fontSize: '14px',
+    fontWeight: 600,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.2s ease',
+    background: 'white'
+  },
+  legend: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '16px 0',
+    borderTop: '2px solid #f1f5f9',
+    borderBottom: '2px solid #f1f5f9',
+    marginBottom: '16px'
+  },
+  legendItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '13px',
+    color: '#475569',
+    fontWeight: 500
+  },
+  legendDot: {
+    width: '14px',
+    height: '14px',
+    borderRadius: '4px'
+  },
+  assessmentInfo: {
+    background: '#f8fafc',
+    padding: '16px',
+    borderRadius: '12px',
+    border: '1px solid #e2e8f0'
+  },
+  infoRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: '14px',
+    marginBottom: '10px',
+    color: '#475569'
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0,0,0,0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    padding: '20px',
+    backdropFilter: 'blur(5px)'
+  },
+  modalContent: {
+    background: 'white',
+    padding: '40px',
+    borderRadius: '24px',
+    maxWidth: '500px',
+    width: '100%',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+  },
+  modalIcon: {
+    fontSize: '60px',
+    textAlign: 'center',
+    marginBottom: '20px'
+  },
+  modalTitle: {
+    fontSize: '28px',
+    fontWeight: 800,
+    textAlign: 'center',
+    marginBottom: '24px',
+    color: '#1e293b'
+  },
+  modalBody: {
+    marginBottom: '28px'
+  },
+  modalStats: {
+    background: '#f8fafc',
+    padding: '20px',
+    borderRadius: '16px',
+    marginBottom: '20px',
+    border: '1px solid #e2e8f0'
+  },
+  modalStat: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    marginBottom: '12px',
+    fontSize: '16px',
+    fontWeight: 500
+  },
+  modalWarning: {
+    display: 'flex',
+    gap: '12px',
+    padding: '16px 20px',
+    background: '#fff8e1',
+    borderRadius: '12px',
+    color: '#856404',
+    fontSize: '14px',
+    border: '1px solid #ffe082'
+  },
+  modalActions: {
+    display: 'flex',
+    gap: '12px'
+  },
+  modalSecondaryButton: {
+    flex: 1,
+    padding: '14px',
+    background: '#f1f5f9',
+    border: 'none',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontSize: '16px',
+    color: '#475569',
+    transition: 'background 0.2s'
+  },
+  modalPrimaryButton: {
+    flex: 1,
+    padding: '14px',
+    background: '#4caf50',
+    color: 'white',
+    border: 'none',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontSize: '16px',
+    transition: 'background 0.2s, transform 0.2s',
+    boxShadow: '0 4px 12px rgba(76, 175, 80, 0.3)'
+  },
+  successIconLarge: {
+    width: '80px',
+    height: '80px',
+    background: '#4caf50',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: '0 auto 20px',
+    fontSize: '40px',
+    color: 'white',
+    boxShadow: '0 4px 20px rgba(76, 175, 80, 0.4)'
+  }
+};
