@@ -268,57 +268,65 @@ export default function AssessmentPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Submit assessment - FIXED VERSION
-const handleSubmit = async () => {
-  if (!session || alreadySubmitted) return;
+  // Submit assessment - UPDATED to work with new API
+  const handleSubmit = async () => {
+    if (!session || alreadySubmitted) return;
 
-  console.log("🔍 Submit button clicked");
-  console.log("Current session:", session);
-  console.log("Current user:", user);
-  console.log("Answers object:", answers);
-  console.log("Number of answers:", Object.keys(answers).length);
-  console.log("Total questions:", questions.length);
+    console.log("🔍 Submit button clicked");
+    console.log("Current session:", session);
+    console.log("Current user:", user);
+    console.log("Number of answers:", Object.keys(answers).length);
+    console.log("Total questions:", questions.length);
 
-  // Check if all questions are answered
-  const unansweredCount = questions.length - Object.keys(answers).length;
-  if (unansweredCount > 0) {
-    console.log(`⚠️ ${unansweredCount} questions unanswered`);
-    const confirm = window.confirm(`You have ${unansweredCount} unanswered questions. Are you sure you want to submit?`);
-    if (!confirm) {
-      return;
-    }
-  }
-
-  setIsSubmitting(true);
-  setShowSubmitModal(false);
-
-  try {
-    // Save any pending responses first
-    for (const [questionId, answerId] of Object.entries(answers)) {
-      await saveUniqueResponse(session.id, user.id, assessmentId, questionId, answerId);
+    // Check if all questions are answered
+    const unansweredCount = questions.length - Object.keys(answers).length;
+    if (unansweredCount > 0) {
+      console.log(`⚠️ ${unansweredCount} questions unanswered`);
+      const confirm = window.confirm(`You have ${unansweredCount} unanswered questions. Are you sure you want to submit?`);
+      if (!confirm) {
+        return;
+      }
     }
 
-    // Save progress and timer
-    await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id);
-    await updateSessionTimer(session.id, elapsedSeconds);
-    
-    console.log("📤 Calling submitAssessment with session:", session.id);
-    const resultId = await submitAssessment(session.id);
-    console.log("✅ Submit successful, resultId:", resultId);
-    
-    setAlreadySubmitted(true);
-    setShowSuccessModal(true);
-    
-    setTimeout(() => {
-      router.push('/candidate/dashboard');
-    }, 3000);
-  } catch (error) {
-    console.error("❌ Submission error:", error);
-    alert("Failed to submit assessment. Please try again or contact support.");
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+    setIsSubmitting(true);
+    setShowSubmitModal(false);
+
+    try {
+      // Save any pending responses first
+      for (const [questionId, answerId] of Object.entries(answers)) {
+        await saveUniqueResponse(session.id, user.id, assessmentId, questionId, answerId);
+      }
+
+      // Save progress and timer
+      await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id);
+      await updateSessionTimer(session.id, elapsedSeconds);
+      
+      console.log("📤 Calling submitAssessment with session:", session.id);
+      const result = await submitAssessment(session.id);
+      console.log("✅ Submit successful:", result);
+      
+      setAlreadySubmitted(true);
+      setShowSuccessModal(true);
+      
+      setTimeout(() => {
+        router.push('/candidate/dashboard');
+      }, 3000);
+      
+    } catch (error) {
+      console.error("❌ Submission error:", error);
+      
+      // Check if it's an "already submitted" error
+      if (error.message === "already_submitted" || error.message?.includes("already submitted")) {
+        setAlreadySubmitted(true);
+        alert("This assessment has already been submitted.");
+        setTimeout(() => router.push('/candidate/dashboard'), 2000);
+      } else {
+        alert(`Failed to submit assessment: ${error.message}`);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   // Debug back button
   const handleBackClick = async () => {
@@ -1254,4 +1262,3 @@ const styles = {
     boxShadow: '0 4px 20px rgba(76, 175, 80, 0.4)'
   }
 };
-
