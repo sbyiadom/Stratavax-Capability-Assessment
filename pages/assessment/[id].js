@@ -268,91 +268,57 @@ export default function AssessmentPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Submit assessment
-  const handleSubmit = async () => {
-    if (!session || alreadySubmitted) return;
+  // Submit assessment - FIXED VERSION
+const handleSubmit = async () => {
+  if (!session || alreadySubmitted) return;
 
-    console.log("🔍 Submit button clicked");
-    console.log("Current session:", session);
-    console.log("Current user:", user);
-    console.log("Answers object:", answers);
-    console.log("Number of answers:", Object.keys(answers).length);
-    console.log("Total questions:", questions.length);
+  console.log("🔍 Submit button clicked");
+  console.log("Current session:", session);
+  console.log("Current user:", user);
+  console.log("Answers object:", answers);
+  console.log("Number of answers:", Object.keys(answers).length);
+  console.log("Total questions:", questions.length);
 
-    // Check if all questions are answered
-    const unansweredCount = questions.length - Object.keys(answers).length;
-    if (unansweredCount > 0) {
-      console.log(`⚠️ ${unansweredCount} questions unanswered`);
-      const confirm = window.confirm(`You have ${unansweredCount} unanswered questions. Are you sure you want to submit?`);
-      if (!confirm) {
-        setIsSubmitting(false);
-        setShowSubmitModal(false);
-        return;
-      }
+  // Check if all questions are answered
+  const unansweredCount = questions.length - Object.keys(answers).length;
+  if (unansweredCount > 0) {
+    console.log(`⚠️ ${unansweredCount} questions unanswered`);
+    const confirm = window.confirm(`You have ${unansweredCount} unanswered questions. Are you sure you want to submit?`);
+    if (!confirm) {
+      return;
+    }
+  }
+
+  setIsSubmitting(true);
+  setShowSubmitModal(false);
+
+  try {
+    // Save any pending responses first
+    for (const [questionId, answerId] of Object.entries(answers)) {
+      await saveUniqueResponse(session.id, user.id, assessmentId, questionId, answerId);
     }
 
-    setIsSubmitting(true);
-    setShowSubmitModal(false);
-
-    try {
-      // First, let's verify the responses are in Supabase
-      console.log("🔍 Verifying responses in Supabase...");
-      const { data: savedResponses, error: verifyError } = await supabase
-        .from('responses')
-        .select('question_id, answer_id')
-        .eq('session_id', session.id);
-
-      if (verifyError) {
-        console.error("❌ Error verifying responses:", verifyError);
-      } else {
-        console.log("📊 Responses in database:", savedResponses);
-        console.log("📊 Database response count:", savedResponses?.length || 0);
-        console.log("📊 Local answer count:", Object.keys(answers).length);
-        
-        // Check if counts match
-        if (savedResponses?.length !== Object.keys(answers).length) {
-          console.log("⚠️ Response count mismatch!");
-          
-          // Try to save any missing responses
-          console.log("🔄 Attempting to resync missing responses...");
-          for (const [questionId, answerId] of Object.entries(answers)) {
-            const exists = savedResponses?.some(r => r.question_id === parseInt(questionId));
-            if (!exists) {
-              console.log(`🔄 Resaving question ${questionId} with answer ${answerId}`);
-              await saveUniqueResponse(session.id, user.id, assessmentId, questionId, answerId);
-            }
-          }
-        }
-      }
-
-      // Save progress and timer
-      await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id);
-      await updateSessionTimer(session.id, elapsedSeconds);
-      
-      console.log("📤 Calling submitAssessment with session:", session.id);
-      const resultId = await submitAssessment(session.id);
-      console.log("✅ Submit successful, resultId:", resultId);
-      
-      setAlreadySubmitted(true);
-      setShowSuccessModal(true);
-      
-      setTimeout(() => {
-        router.push('/assessment/pre');
-      }, 3000);
-    } catch (error) {
-      console.error("❌ Submission error:", error);
-      console.error("Error details:", {
-        message: error.message,
-        stack: error.stack,
-        session: session,
-        user: user,
-        answersCount: Object.keys(answers).length
-      });
-      alert("Failed to submit assessment. Please contact support with the error details.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+    // Save progress and timer
+    await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id);
+    await updateSessionTimer(session.id, elapsedSeconds);
+    
+    console.log("📤 Calling submitAssessment with session:", session.id);
+    const resultId = await submitAssessment(session.id);
+    console.log("✅ Submit successful, resultId:", resultId);
+    
+    setAlreadySubmitted(true);
+    setShowSuccessModal(true);
+    
+    setTimeout(() => {
+      router.push('/candidate/dashboard');
+    }, 3000);
+  } catch (error) {
+    console.error("❌ Submission error:", error);
+    alert("Failed to submit assessment. Please try again or contact support.");
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   // Debug back button
   const handleBackClick = async () => {
@@ -1288,3 +1254,4 @@ const styles = {
     boxShadow: '0 4px 20px rgba(76, 175, 80, 0.4)'
   }
 };
+
