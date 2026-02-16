@@ -195,11 +195,12 @@ export async function getAssessmentSession(sessionId) {
 
 export async function updateSessionTimer(sessionId, elapsedSeconds) {
   try {
+    // First check if updated_at column exists by trying a simple update
     const { error } = await supabase
       .from('assessment_sessions')
       .update({ 
-        time_spent_seconds: elapsedSeconds,
-        updated_at: new Date().toISOString()
+        time_spent_seconds: elapsedSeconds
+        // Remove updated_at for now until we add the column
       })
       .eq('id', sessionId);
 
@@ -665,3 +666,4 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveUniqueResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
+
