@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
-  // Enable CORS if needed
+  // Enable CORS
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -19,23 +19,27 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { session_id, user_id, assessment_id, time_spent } = req.body;
-
-  console.log("📥 Received submission request:", { session_id, user_id, assessment_id, time_spent });
+  console.log('📥 Submit assessment request received:', JSON.stringify(req.body, null, 2));
 
   try {
-    // Create admin client with service role key and explicit schema
+    const { session_id, user_id, assessment_id, time_spent } = req.body;
+
+    // Validate required fields
+    if (!session_id || !user_id || !assessment_id) {
+      return res.status(400).json({ 
+        error: 'Missing required fields',
+        details: { session_id: !session_id, user_id: !user_id, assessment_id: !assessment_id }
+      });
+    }
+
+    // Initialize Supabase client with service role key
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY,
       {
         auth: {
-          persistSession: false,
           autoRefreshToken: false,
-          detectSessionInUrl: false
-        },
-        db: {
-          schema: 'public'
+          persistSession: false
         }
       }
     );
@@ -46,12 +50,15 @@ export default async function handler(req, res) {
       .select('*')
       .eq('id', session_id)
       .eq('user_id', user_id)
-      .eq('status', 'in_progress')
       .single();
 
-    if (sessionError || !session) {
-      console.error("❌ Session not found:", sessionError);
+    if (sessionError) {
+      console.error('❌ Session verification failed:', sessionError);
       return res.status(404).json({ error: 'Assessment session not found' });
+    }
+
+    if (session.status === 'completed') {
+      return res.status(400).json({ error: 'Assessment already submitted' });
     }
 
     // Get all responses for this session
@@ -61,31 +68,38 @@ export default async function handler(req, res) {
         id,
         question_id,
         answer_id,
-        unique_questions:question_id (
-          id,
-          assessment_type_id
-        ),
-        unique_answers:answer_id (
-          id,
-          score
-        )
+        created_at
       `)
       .eq('session_id', session_id);
 
     if (responsesError) {
-      console.error("❌ Error fetching responses:", responsesError);
+      console.error('❌ Error fetching responses:', responsesError);
       return res.status(500).json({ error: 'Failed to fetch responses' });
     }
 
-    console.log(`📊 Found ${responses?.length || 0} responses`);
+    console.log(`📊 Found ${responses?.length || 0} responses for session`);
 
-    // Calculate total score
-    const totalScore = responses?.reduce((sum, response) => {
-      return sum + (response.unique_answers?.score || 0);
-    }, 0) || 0;
+    // Calculate total score (you can enhance this based on your scoring logic)
+    let totalScore = 0;
+    let maxScore = 0;
 
-    // Calculate max possible score (assuming 5 points per question)
-    const maxScore = (responses?.length || 0) * 5;
+    // If you have answer scores, calculate them
+    if (responses && responses.length > 0) {
+      // Get answer scores for each response
+      for (const response of responses) {
+        const { data: answer } = await supabase
+          .from('unique_answers')
+          .select('score')
+          .eq('id', response.answer_id)
+          .single();
+        
+        if (answer) {
+          totalScore += answer.score || 0;
+        }
+      }
+      // Assume max 5 points per question
+      maxScore = responses.length * 5;
+    }
 
     // Update session to completed
     const { error: updateError } = await supabase
@@ -93,12 +107,13 @@ export default async function handler(req, res) {
       .update({ 
         status: 'completed',
         completed_at: new Date().toISOString(),
-        time_spent_seconds: time_spent || session.time_spent_seconds || 0
+        time_spent_seconds: time_spent || session.time_spent_seconds || 0,
+        updated_at: new Date().toISOString()
       })
       .eq('id', session_id);
 
     if (updateError) {
-      console.error("❌ Error updating session:", updateError);
+      console.error('❌ Error updating session:', updateError);
       return res.status(500).json({ error: 'Failed to update session' });
     }
 
@@ -106,45 +121,48 @@ export default async function handler(req, res) {
     const { data: result, error: resultError } = await supabase
       .from('assessment_results')
       .insert({
+        session_id: session_id,
         user_id: user_id,
         assessment_id: assessment_id,
-        session_id: session_id,
         total_score: totalScore,
         max_score: maxScore,
-        completed_at: new Date().toISOString(),
-        responses_count: responses?.length || 0
+        responses_count: responses?.length || 0,
+        completed_at: new Date().toISOString()
       })
       .select()
       .single();
 
     if (resultError) {
-      console.error("❌ Error creating result:", resultError);
+      console.error('❌ Error creating result:', resultError);
       return res.status(500).json({ error: 'Failed to create result' });
     }
 
-    // Also update or create candidate_assessments record
+    // Update candidate_assessments
     const { error: candidateError } = await supabase
       .from('candidate_assessments')
       .upsert({
         user_id: user_id,
         assessment_id: assessment_id,
+        session_id: session_id,
+        result_id: result.id,
         status: 'completed',
-        completed_at: new Date().toISOString(),
         score: totalScore,
-        session_id: session_id
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       }, {
         onConflict: 'user_id,assessment_id'
       });
 
     if (candidateError) {
-      console.error("⚠️ Error updating candidate_assessments:", candidateError);
-      // Don't fail the whole request for this
+      console.error('⚠️ Error updating candidate_assessments:', candidateError);
+      // Don't fail the request for this
     }
 
-    console.log("✅ Assessment submitted successfully. Result ID:", result.id);
+    console.log('✅ Assessment submitted successfully. Result ID:', result.id);
 
     return res.status(200).json({ 
       success: true, 
+      message: 'Assessment submitted successfully',
       result_id: result.id,
       score: totalScore,
       max_score: maxScore,
@@ -152,7 +170,10 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error("❌ Unexpected error:", error);
-    return res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Unexpected error in submit-assessment:', error);
+    return res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
   }
 }
