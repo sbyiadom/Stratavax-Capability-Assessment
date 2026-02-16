@@ -248,28 +248,61 @@ export async function getSessionResponses(sessionId) {
   }
 }
 
-// Submit Assessment - NEW SIMPLIFIED VERSION using new API
+// Submit Assessment - UPDATED to work with simplified API
 export async function submitAssessment(sessionId) {
   try {
     console.log("📤 Submitting assessment for session:", sessionId);
     
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error("No active session");
+    }
+
+    // Get the assessment session details to get user_id and assessment_id
+    const { data: assessmentSession, error: sessionError } = await supabase
+      .from('assessment_sessions')
+      .select('user_id, assessment_id')
+      .eq('id', sessionId)
+      .single();
+
+    if (sessionError) {
+      console.error("❌ Error fetching assessment session:", sessionError);
+      throw new Error("Could not verify session");
+    }
+
+    // Prepare submission data - send both sessionId and user/assessment IDs
+    const submissionData = {
+      sessionId: sessionId,
+      user_id: assessmentSession.user_id,
+      assessment_id: assessmentSession.assessment_id
+    };
+
+    console.log("📦 Submitting with data:", submissionData);
+
+    // Submit via the simplified API
     const response = await fetch('/api/submit-assessment', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ sessionId })
+      body: JSON.stringify(submissionData)
     });
 
     const result = await response.json();
     
     if (!response.ok) {
       console.error("❌ API error:", result);
-      throw new Error(result.error || 'Submission failed');
+      
+      // Check if it's an "already submitted" error
+      if (result.error === 'already_submitted' || result.message?.includes('already submitted')) {
+        throw new Error("already_submitted");
+      }
+      
+      throw new Error(result.message || result.error || 'Submission failed');
     }
     
     console.log("✅ Assessment submitted successfully:", result);
-    return result.resultId;
+    return { success: true, result };
     
   } catch (error) {
     console.error("❌ Submit assessment error:", error);
