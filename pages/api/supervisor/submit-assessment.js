@@ -1,3 +1,4 @@
+// pages/api/supervisor/submit-assessment.js
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
@@ -44,18 +45,40 @@ export default async function handler(req, res) {
       }
     );
 
-    // Verify the session exists and belongs to the user
+    // Log the session we're looking for
+    console.log(`🔍 Looking for session: ${session_id} for user: ${user_id}`);
+
+    // First, check if the session exists without any filters first
+    const { data: allSessions, error: allSessionsError } = await supabase
+      .from('assessment_sessions')
+      .select('id, user_id, status')
+      .eq('id', session_id);
+
+    console.log('📊 All sessions with that ID:', allSessions);
+
+    if (allSessionsError) {
+      console.error('❌ Error checking sessions:', allSessionsError);
+    }
+
+    // Now try to get the specific session for this user
     const { data: session, error: sessionError } = await supabase
       .from('assessment_sessions')
       .select('*')
       .eq('id', session_id)
       .eq('user_id', user_id)
-      .single();
+      .maybeSingle();
 
     if (sessionError) {
       console.error('❌ Session verification failed:', sessionError);
-      return res.status(404).json({ error: 'Assessment session not found' });
+      return res.status(500).json({ error: 'Database error', details: sessionError.message });
     }
+
+    if (!session) {
+      console.error('❌ Session not found for user');
+      return res.status(404).json({ error: 'Assessment session not found for this user' });
+    }
+
+    console.log('✅ Session found:', session);
 
     if (session.status === 'completed') {
       return res.status(400).json({ error: 'Assessment already submitted' });
@@ -79,11 +102,10 @@ export default async function handler(req, res) {
 
     console.log(`📊 Found ${responses?.length || 0} responses for session`);
 
-    // Calculate total score (you can enhance this based on your scoring logic)
+    // Calculate total score
     let totalScore = 0;
     let maxScore = 0;
 
-    // If you have answer scores, calculate them
     if (responses && responses.length > 0) {
       // Get answer scores for each response
       for (const response of responses) {
@@ -97,8 +119,7 @@ export default async function handler(req, res) {
           totalScore += answer.score || 0;
         }
       }
-      // Assume max 5 points per question
-      maxScore = responses.length * 5;
+      maxScore = responses.length * 5; // Assuming 5 points per question
     }
 
     // Update session to completed
@@ -114,7 +135,7 @@ export default async function handler(req, res) {
 
     if (updateError) {
       console.error('❌ Error updating session:', updateError);
-      return res.status(500).json({ error: 'Failed to update session' });
+      return res.status(500).json({ error: 'Failed to update session', details: updateError.message });
     }
 
     // Create assessment result
@@ -134,7 +155,7 @@ export default async function handler(req, res) {
 
     if (resultError) {
       console.error('❌ Error creating result:', resultError);
-      return res.status(500).json({ error: 'Failed to create result' });
+      return res.status(500).json({ error: 'Failed to create result', details: resultError.message });
     }
 
     // Update candidate_assessments
@@ -173,7 +194,8 @@ export default async function handler(req, res) {
     console.error('❌ Unexpected error in submit-assessment:', error);
     return res.status(500).json({ 
       error: 'Internal server error',
-      message: error.message 
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }
