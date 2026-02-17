@@ -16,14 +16,23 @@ export default function SupervisorLogin() {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        // Check if user is a supervisor
+        // Check if user is a supervisor by looking up their email
         const { data: supervisor } = await supabase
           .from("supervisors")
-          .select("id")
-          .eq("id", session.user.id)
-          .single();
+          .select("id, role")
+          .eq("email", session.user.email)
+          .eq("is_active", true)
+          .maybeSingle();
 
         if (supervisor) {
+          // Create local session for supervisor dashboard
+          const supervisorSession = {
+            id: supervisor.id,
+            email: session.user.email,
+            loggedIn: true,
+            loginTime: new Date().toISOString()
+          };
+          localStorage.setItem("supervisorSession", JSON.stringify(supervisorSession));
           router.push("/supervisor");
         }
       }
@@ -37,31 +46,39 @@ export default function SupervisorLogin() {
     setError("");
 
     try {
-      // First, check if this email exists in supervisors table
+      // First, attempt to sign in with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.toLowerCase().trim(),
+        password: password
+      });
+
+      if (authError) {
+        console.error("Auth error:", authError);
+        throw new Error("Invalid email or password");
+      }
+
+      if (!authData.user) {
+        throw new Error("Invalid email or password");
+      }
+
+      // Now that we're authenticated, query the supervisors table using email
       const { data: supervisor, error: supervisorError } = await supabase
         .from("supervisors")
         .select("*")
         .eq("email", email.toLowerCase().trim())
         .eq("is_active", true)
-        .single();
+        .maybeSingle();
 
-      if (supervisorError || !supervisor) {
-        throw new Error("Invalid email or password");
+      if (supervisorError) {
+        console.error("Supervisor query error:", supervisorError);
+        await supabase.auth.signOut();
+        throw new Error("Error accessing supervisor data");
       }
 
-      // Attempt to sign in with Supabase Auth
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.toLowerCase().trim(),
-        password: password
-      });
-
-      if (error) {
-        console.error("Auth error:", error);
-        throw new Error("Invalid email or password");
-      }
-
-      if (!data.user) {
-        throw new Error("Invalid email or password");
+      if (!supervisor) {
+        // If no supervisor record found, sign out the auth user
+        await supabase.auth.signOut();
+        throw new Error("You don't have supervisor access");
       }
 
       // Update last login timestamp
@@ -73,12 +90,28 @@ export default function SupervisorLogin() {
         })
         .eq("id", supervisor.id);
 
+      // Create local session for supervisor dashboard
+      const supervisorSession = {
+        id: supervisor.id,
+        user_id: authData.user.id,
+        email: supervisor.email,
+        full_name: supervisor.full_name,
+        role: supervisor.role,
+        loggedIn: true,
+        loginTime: new Date().toISOString()
+      };
+
+      localStorage.setItem("supervisorSession", JSON.stringify(supervisorSession));
+
       // Redirect to supervisor dashboard
       router.push("/supervisor");
       
     } catch (err) {
       console.error("Login error:", err);
       setError(err.message);
+      
+      // Sign out if there was an error
+      await supabase.auth.signOut();
     } finally {
       setLoading(false);
     }
