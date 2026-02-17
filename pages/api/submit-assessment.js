@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { classifyTalent } from '../../utils/classification';
 
 export default async function handler(req, res) {
   // Only allow POST requests
@@ -79,16 +80,20 @@ export default async function handler(req, res) {
 
     console.log(`📊 Calculated score: ${totalScore}/${maxScore} from ${responseCount} responses`);
 
-    // Determine classification based on score percentage
-    let classification = "Needs Improvement";
-    const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
+    // Get assessment type for classification
+    const { data: assessment } = await supabase
+      .from('assessments')
+      .select('assessment_type:assessment_types(code)')
+      .eq('id', assessmentId)
+      .single();
+
+    const assessmentType = assessment?.assessment_type?.code || 'general';
     
-    if (percentage >= 90) classification = "Elite Talent";
-    else if (percentage >= 80) classification = "Top Talent";
-    else if (percentage >= 70) classification = "High Potential";
-    else if (percentage >= 60) classification = "Solid Performer";
-    else if (percentage >= 50) classification = "Developing Talent";
-    else if (percentage >= 40) classification = "Emerging Talent";
+    // Use your classification utility
+    const classificationResult = classifyTalent(totalScore, assessmentType, maxScore);
+    const classification = classificationResult.label;
+
+    console.log(`📊 Classification: ${classification}`);
 
     // Update assessment session to completed
     if (sessionId) {
@@ -106,7 +111,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // Insert into candidate_assessments WITH SCORE
+    // Insert into candidate_assessments WITHOUT classification column
     const { error: candidateError } = await supabase
       .from('candidate_assessments')
       .upsert({
@@ -115,8 +120,6 @@ export default async function handler(req, res) {
         session_id: sessionId,
         status: 'completed',
         score: totalScore,
-        max_score: maxScore,
-        classification: classification,
         completed_at: new Date().toISOString()
       }, { 
         onConflict: 'user_id, assessment_id' 
@@ -130,7 +133,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // Also update assessment_results for detailed analytics
+    // Store classification in a separate table or in assessment_results
     const { error: resultError } = await supabase
       .from('assessment_results')
       .upsert({
