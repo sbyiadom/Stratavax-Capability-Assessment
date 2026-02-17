@@ -46,9 +46,8 @@ export default function SupervisorLogin() {
         throw new Error("Invalid email or password");
       }
 
-      // In production, you should hash passwords
-      // For now, using a simple check
-      if (password !== "password123") { // This should be replaced with proper auth
+      // Check password against the password column
+      if (data.password !== password) {
         throw new Error("Invalid email or password");
       }
 
@@ -160,6 +159,8 @@ export default function SupervisorLogin() {
         <div style={styles.demo}>
           <p style={styles.demoTitle}>Demo Credentials:</p>
           <p style={styles.demoText}>Email: supervisor@stratavax.com</p>
+          <p style={styles.demoText}>Password: password123</p>
+          <p style={styles.demoText}>Email: sbyiadom88@gmail.com</p>
           <p style={styles.demoText}>Password: password123</p>
         </div>
 
