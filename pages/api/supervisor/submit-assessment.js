@@ -75,7 +75,7 @@ export default async function handler(req, res) {
         .select("id, section, subsection")
         .in("id", questionIds);
       
-      questions.forEach(q => {
+      questions?.forEach(q => {
         questionsMap[q.id] = q;
       });
     }
@@ -90,7 +90,7 @@ export default async function handler(req, res) {
         .select("id, score, answer_text")
         .in("id", answerIds);
       
-      answers.forEach(a => {
+      answers?.forEach(a => {
         answersMap[a.id] = a;
       });
     }
