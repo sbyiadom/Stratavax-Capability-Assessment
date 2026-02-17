@@ -1,201 +1,220 @@
-// pages/api/supervisor/submit-assessment.js
 import { createClient } from '@supabase/supabase-js';
+import { classifyTalent } from '../../utils/classification';
 
 export default async function handler(req, res) {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
-
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+  // Only allow POST requests
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  console.log('📥 Submit assessment request received:', JSON.stringify(req.body, null, 2));
+  console.log("📥 Submit API called with body:", req.body);
 
   try {
-    const { session_id, user_id, assessment_id, time_spent } = req.body;
+    const { sessionId, user_id, assessment_id } = req.body;
+    
+    if (!sessionId && (!user_id || !assessment_id)) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
 
-    // Validate required fields
-    if (!session_id || !user_id || !assessment_id) {
-      return res.status(400).json({ 
-        error: 'Missing required fields',
-        details: { session_id: !session_id, user_id: !user_id, assessment_id: !assessment_id }
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+
+    let userId = user_id;
+    let assessmentId = assessment_id;
+
+    if (sessionId && !userId) {
+      const { data: session, error: sessionError } = await supabase
+        .from('assessment_sessions')
+        .select('user_id, assessment_id')
+        .eq('id', sessionId)
+        .single();
+
+      if (sessionError || !session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      userId = session.user_id;
+      assessmentId = session.assessment_id;
+    }
+
+    // Get assessment type
+    const { data: assessment } = await supabase
+      .from('assessments')
+      .select('assessment_type_id, assessment_type:assessment_types(code)')
+      .eq('id', assessmentId)
+      .single();
+
+    const assessmentType = assessment?.assessment_type?.code || 'general';
+
+    // STEP 1: Get all responses (just answer_ids)
+    const { data: responses, error: responsesError } = await supabase
+      .from("responses")
+      .select("id, question_id, answer_id")
+      .eq("user_id", userId)
+      .eq("assessment_id", assessmentId);
+
+    if (responsesError) {
+      console.error("❌ Error fetching responses:", responsesError);
+      return res.status(500).json({ 
+        error: "Failed to fetch responses",
+        details: responsesError.message 
       });
     }
 
-    // Initialize Supabase client with service role key
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    );
+    console.log(`📊 Found ${responses?.length || 0} responses`);
 
-    // Log the session we're looking for
-    console.log(`🔍 Looking for session: ${session_id} for user: ${user_id}`);
-
-    // First, check if the session exists without any filters first
-    const { data: allSessions, error: allSessionsError } = await supabase
-      .from('assessment_sessions')
-      .select('id, user_id, status')
-      .eq('id', session_id);
-
-    console.log('📊 All sessions with that ID:', allSessions);
-
-    if (allSessionsError) {
-      console.error('❌ Error checking sessions:', allSessionsError);
+    // STEP 2: Get all unique questions for section info
+    const questionIds = responses?.map(r => r.question_id) || [];
+    let questionsMap = {};
+    
+    if (questionIds.length > 0) {
+      const { data: questions } = await supabase
+        .from("unique_questions")
+        .select("id, section, subsection")
+        .in("id", questionIds);
+      
+      questions.forEach(q => {
+        questionsMap[q.id] = q;
+      });
     }
 
-    // Now try to get the specific session for this user
-    const { data: session, error: sessionError } = await supabase
-      .from('assessment_sessions')
-      .select('*')
-      .eq('id', session_id)
-      .eq('user_id', user_id)
-      .maybeSingle();
-
-    if (sessionError) {
-      console.error('❌ Session verification failed:', sessionError);
-      return res.status(500).json({ error: 'Database error', details: sessionError.message });
+    // STEP 3: Get all answers with scores
+    const answerIds = responses?.map(r => r.answer_id) || [];
+    let answersMap = {};
+    
+    if (answerIds.length > 0) {
+      const { data: answers } = await supabase
+        .from("unique_answers")
+        .select("id, score, answer_text")
+        .in("id", answerIds);
+      
+      answers.forEach(a => {
+        answersMap[a.id] = a;
+      });
     }
 
-    if (!session) {
-      console.error('❌ Session not found for user');
-      return res.status(404).json({ error: 'Assessment session not found for this user' });
-    }
-
-    console.log('✅ Session found:', session);
-
-    if (session.status === 'completed') {
-      return res.status(400).json({ error: 'Assessment already submitted' });
-    }
-
-    // Get all responses for this session
-    const { data: responses, error: responsesError } = await supabase
-      .from('responses')
-      .select(`
-        id,
-        question_id,
-        answer_id,
-        created_at
-      `)
-      .eq('session_id', session_id);
-
-    if (responsesError) {
-      console.error('❌ Error fetching responses:', responsesError);
-      return res.status(500).json({ error: 'Failed to fetch responses' });
-    }
-
-    console.log(`📊 Found ${responses?.length || 0} responses for session`);
-
-    // Calculate total score
+    // STEP 4: Calculate scores and build section data
     let totalScore = 0;
-    let maxScore = 0;
+    const sectionScores = {};
+    const strengths = [];
+    const weaknesses = [];
 
-    if (responses && responses.length > 0) {
-      // Get answer scores for each response
-      for (const response of responses) {
-        const { data: answer } = await supabase
-          .from('unique_answers')
-          .select('score')
-          .eq('id', response.answer_id)
-          .single();
-        
-        if (answer) {
-          totalScore += answer.score || 0;
-        }
+    responses?.forEach(response => {
+      const question = questionsMap[response.question_id] || { section: 'General', subsection: '' };
+      const answer = answersMap[response.answer_id] || { score: 0 };
+      const score = answer.score || 0;
+      
+      totalScore += score;
+      
+      const section = question.section || 'General';
+      if (!sectionScores[section]) {
+        sectionScores[section] = {
+          total: 0,
+          count: 0,
+          maxPossible: 0
+        };
       }
-      maxScore = responses.length * 5; // Assuming 5 points per question
+      
+      sectionScores[section].total += score;
+      sectionScores[section].count += 1;
+      sectionScores[section].maxPossible += 5;
+    });
+
+    // Calculate percentages and identify strengths/weaknesses
+    Object.keys(sectionScores).forEach(section => {
+      const data = sectionScores[section];
+      data.percentage = data.maxPossible > 0 ? Math.round((data.total / data.maxPossible) * 100) : 0;
+      data.average = data.count > 0 ? (data.total / data.count).toFixed(1) : 0;
+      
+      if (data.percentage >= 70) {
+        strengths.push(`${section} (${data.percentage}%)`);
+      } else if (data.percentage <= 40) {
+        weaknesses.push(`${section} (${data.percentage}%)`);
+      }
+    });
+
+    const responseCount = responses?.length || 0;
+    const maxScore = responseCount * 5;
+    const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
+
+    // Get classification
+    const classificationResult = classifyTalent(totalScore, assessmentType, maxScore);
+    const classification = classificationResult.label;
+
+    // Generate recommendations
+    const recommendations = [];
+    if (weaknesses.length > 0) {
+      recommendations.push(`Focus on developing: ${weaknesses.join(', ')}`);
     }
+    if (strengths.length > 0) {
+      recommendations.push(`Leverage strengths in: ${strengths.join(', ')}`);
+    }
+
+    // Determine risk level
+    const weakSections = Object.values(sectionScores).filter(d => d.percentage < 40).length;
+    const riskLevel = percentage < 40 || weakSections > 3 ? 'high' : percentage < 60 ? 'medium' : 'low';
+    const readiness = percentage >= 70 ? 'ready' : percentage >= 50 ? 'development_needed' : 'not_ready';
 
     // Update session to completed
-    const { error: updateError } = await supabase
-      .from('assessment_sessions')
-      .update({ 
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-        time_spent_seconds: time_spent || session.time_spent_seconds || 0,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', session_id);
-
-    if (updateError) {
-      console.error('❌ Error updating session:', updateError);
-      return res.status(500).json({ error: 'Failed to update session', details: updateError.message });
-    }
-
-    // Create assessment result
-    const { data: result, error: resultError } = await supabase
-      .from('assessment_results')
-      .insert({
-        session_id: session_id,
-        user_id: user_id,
-        assessment_id: assessment_id,
-        total_score: totalScore,
-        max_score: maxScore,
-        responses_count: responses?.length || 0,
-        completed_at: new Date().toISOString()
-      })
-      .select()
-      .single();
-
-    if (resultError) {
-      console.error('❌ Error creating result:', resultError);
-      return res.status(500).json({ error: 'Failed to create result', details: resultError.message });
+    if (sessionId) {
+      await supabase
+        .from('assessment_sessions')
+        .update({ 
+          status: 'completed',
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', sessionId);
     }
 
     // Update candidate_assessments
-    const { error: candidateError } = await supabase
+    await supabase
       .from('candidate_assessments')
       .upsert({
-        user_id: user_id,
-        assessment_id: assessment_id,
-        session_id: session_id,
-        result_id: result.id,
+        user_id: userId,
+        assessment_id: assessmentId,
+        session_id: sessionId,
         status: 'completed',
         score: totalScore,
-        completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'user_id,assessment_id'
-      });
+        completed_at: new Date().toISOString()
+      }, { onConflict: 'user_id, assessment_id' });
 
-    if (candidateError) {
-      console.error('⚠️ Error updating candidate_assessments:', candidateError);
-      // Don't fail the request for this
-    }
+    // Store detailed results
+    await supabase
+      .from('assessment_results')
+      .upsert({
+        user_id: userId,
+        assessment_id: assessmentId,
+        session_id: sessionId,
+        total_score: totalScore,
+        max_score: maxScore,
+        percentage_score: percentage,
+        category_scores: sectionScores,
+        strengths: strengths,
+        weaknesses: weaknesses,
+        recommendations: recommendations,
+        risk_level: riskLevel,
+        readiness: readiness,
+        completed_at: new Date().toISOString()
+      }, { onConflict: 'user_id, assessment_id' });
 
-    console.log('✅ Assessment submitted successfully. Result ID:', result.id);
-
+    console.log("✅ Assessment submitted. Score:", totalScore, "Classification:", classification);
+    
     return res.status(200).json({ 
-      success: true, 
-      message: 'Assessment submitted successfully',
-      result_id: result.id,
+      success: true,
       score: totalScore,
       max_score: maxScore,
-      responses_count: responses?.length || 0
+      percentage: percentage,
+      classification: classification,
+      strengths: strengths,
+      weaknesses: weaknesses,
+      recommendations: recommendations,
+      message: "Assessment submitted successfully" 
     });
 
-  } catch (error) {
-    console.error('❌ Unexpected error in submit-assessment:', error);
-    return res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
+  } catch (err) {
+    console.error("❌ Submit assessment error:", err);
+    return res.status(500).json({ error: "server_error", message: err.message });
   }
 }
