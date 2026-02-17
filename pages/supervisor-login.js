@@ -13,19 +13,22 @@ export default function SupervisorLogin() {
 
   // Check if already logged in
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const session = localStorage.getItem("supervisorSession");
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        try {
-          const parsed = JSON.parse(session);
-          if (parsed.loggedIn) {
-            router.push("/supervisor");
-          }
-        } catch (e) {
-          // Invalid session
+        // Check if user is a supervisor
+        const { data: supervisor } = await supabase
+          .from("supervisors")
+          .select("id")
+          .eq("id", session.user.id)
+          .single();
+
+        if (supervisor) {
+          router.push("/supervisor");
         }
       }
-    }
+    };
+    checkSession();
   }, [router]);
 
   const handleLogin = async (e) => {
@@ -34,43 +37,47 @@ export default function SupervisorLogin() {
     setError("");
 
     try {
-      // Query supervisors table
-      const { data, error } = await supabase
+      // First, check if this email exists in supervisors table
+      const { data: supervisor, error: supervisorError } = await supabase
         .from("supervisors")
         .select("*")
         .eq("email", email.toLowerCase().trim())
         .eq("is_active", true)
         .single();
 
-      if (error || !data) {
+      if (supervisorError || !supervisor) {
         throw new Error("Invalid email or password");
       }
 
-      // Check password against the password column
-      if (data.password !== password) {
+      // Attempt to sign in with Supabase Auth
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.toLowerCase().trim(),
+        password: password
+      });
+
+      if (error) {
+        console.error("Auth error:", error);
         throw new Error("Invalid email or password");
       }
 
-      // Create session
-      const session = {
-        id: data.id,
-        email: data.email,
-        full_name: data.full_name,
-        role: data.role,
-        loggedIn: true,
-        loginTime: new Date().toISOString()
-      };
+      if (!data.user) {
+        throw new Error("Invalid email or password");
+      }
 
-      localStorage.setItem("supervisorSession", JSON.stringify(session));
-
-      // Update last login
+      // Update last login timestamp
       await supabase
         .from("supervisors")
-        .update({ last_login: new Date().toISOString() })
-        .eq("id", data.id);
+        .update({ 
+          last_login: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", supervisor.id);
 
+      // Redirect to supervisor dashboard
       router.push("/supervisor");
+      
     } catch (err) {
+      console.error("Login error:", err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -154,15 +161,6 @@ export default function SupervisorLogin() {
             )}
           </button>
         </form>
-
-        {/* Demo Credentials */}
-        <div style={styles.demo}>
-          <p style={styles.demoTitle}>Demo Credentials:</p>
-          <p style={styles.demoText}>Email: supervisor@stratavax.com</p>
-          <p style={styles.demoText}>Password: password123</p>
-          <p style={styles.demoText}>Email: sbyiadom88@gmail.com</p>
-          <p style={styles.demoText}>Password: password123</p>
-        </div>
 
         {/* Footer */}
         <div style={styles.footer}>
@@ -319,26 +317,8 @@ const styles = {
     borderRadius: '50%',
     animation: 'spin 1s linear infinite'
   },
-  demo: {
-    marginTop: '30px',
-    padding: '15px',
-    background: '#f8f9fa',
-    borderRadius: '6px',
-    textAlign: 'center'
-  },
-  demoTitle: {
-    margin: '0 0 8px 0',
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#333'
-  },
-  demoText: {
-    margin: '4px 0',
-    fontSize: '12px',
-    color: '#666'
-  },
   footer: {
-    marginTop: '20px',
+    marginTop: '30px',
     textAlign: 'center'
   },
   footerLink: {
