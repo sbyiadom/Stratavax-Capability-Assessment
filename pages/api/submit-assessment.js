@@ -49,7 +49,7 @@ export default async function handler(req, res) {
     }
 
     // ===== SCORE CALCULATION =====
-    // Get all responses for this user and assessment
+    // Get all responses for this user and assessment with scores
     console.log("📊 Fetching responses for score calculation...");
     const { data: responses, error: responsesError } = await supabase
       .from("responses")
@@ -57,7 +57,7 @@ export default async function handler(req, res) {
         id,
         question_id,
         answer_id,
-        unique_answers!inner (
+        unique_answers:answer_id (
           score
         )
       `)
@@ -66,19 +66,29 @@ export default async function handler(req, res) {
 
     if (responsesError) {
       console.error("❌ Error fetching responses:", responsesError);
-      // Continue with submission even if score calculation fails
+      return res.status(500).json({ 
+        error: "Failed to fetch responses",
+        message: responsesError.message 
+      });
     }
+
+    console.log(`📊 Found ${responses?.length || 0} responses`);
 
     // Calculate total score
     let totalScore = 0;
     const responseCount = responses?.length || 0;
-    const maxScore = responseCount * 5; // Assuming 5 points per question
     
     responses?.forEach(response => {
-      totalScore += response.unique_answers?.score || 0;
+      // Access score from the joined unique_answers
+      const score = response.unique_answers?.score || 0;
+      totalScore += score;
+      console.log(`Question ${response.question_id}: score ${score}`);
     });
 
-    console.log(`📊 Calculated score: ${totalScore}/${maxScore} from ${responseCount} responses`);
+    const maxScore = responseCount * 5; // Assuming 5 points per question
+    const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
+
+    console.log(`📊 Calculated score: ${totalScore}/${maxScore} (${percentage}%)`);
 
     // Get assessment type for classification
     const { data: assessment } = await supabase
@@ -111,7 +121,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // Insert into candidate_assessments WITHOUT classification column
+    // Insert into candidate_assessments with score
     const { error: candidateError } = await supabase
       .from('candidate_assessments')
       .upsert({
@@ -133,7 +143,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // Store classification in a separate table or in assessment_results
+    // Store in assessment_results with classification
     const { error: resultError } = await supabase
       .from('assessment_results')
       .upsert({
@@ -160,7 +170,9 @@ export default async function handler(req, res) {
       success: true,
       score: totalScore,
       max_score: maxScore,
+      percentage: percentage,
       classification: classification,
+      responses_count: responseCount,
       message: "Assessment submitted successfully" 
     });
 
