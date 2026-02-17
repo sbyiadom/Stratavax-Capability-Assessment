@@ -268,7 +268,7 @@ export default function AssessmentPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Submit assessment - UPDATED to work with new API
+  // Submit assessment - FIXED VERSION
   const handleSubmit = async () => {
     if (!session || alreadySubmitted) return;
 
@@ -308,6 +308,7 @@ export default function AssessmentPage() {
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
       
+      // Redirect to dashboard after showing success message
       setTimeout(() => {
         router.push('/candidate/dashboard');
       }, 3000);
@@ -322,17 +323,14 @@ export default function AssessmentPage() {
         setTimeout(() => router.push('/candidate/dashboard'), 2000);
       } else {
         alert(`Failed to submit assessment: ${error.message}`);
+        setIsSubmitting(false);
       }
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
-  // Debug back button
+  // Debug back button - FIXED to prevent undefined redirect
   const handleBackClick = async () => {
     console.log("🔙 Back button clicked");
-    console.log("Current user:", user);
-    console.log("Navigating to: /assessment/pre");
     
     // Check if user is still authenticated
     const { data: { session: authSession } } = await supabase.auth.getSession();
@@ -380,8 +378,8 @@ export default function AssessmentPage() {
           <div style={styles.successIcon}>✅</div>
           <h2 style={{ marginBottom: '15px' }}>Assessment Already Completed</h2>
           <p style={{ marginBottom: '25px', color: '#64748b' }}>You have already submitted this assessment.</p>
-          <button onClick={() => router.push('/assessment/pre')} style={styles.primaryButton}>
-            ← Return to Assessments
+          <button onClick={() => router.push('/candidate/dashboard')} style={styles.primaryButton}>
+            ← Go to Dashboard
           </button>
         </div>
       </div>
@@ -410,8 +408,8 @@ export default function AssessmentPage() {
           <div style={styles.errorIcon}>📭</div>
           <h2 style={{ marginBottom: '15px' }}>No Questions Available</h2>
           <p style={{ marginBottom: '25px', color: '#64748b' }}>This assessment doesn't have any questions yet.</p>
-          <button onClick={() => router.push('/assessment/pre')} style={styles.primaryButton}>
-            ← Back
+          <button onClick={() => router.push('/candidate/dashboard')} style={styles.primaryButton}>
+            ← Go to Dashboard
           </button>
         </div>
       </div>
@@ -465,7 +463,7 @@ export default function AssessmentPage() {
             <div style={styles.successIconLarge}>✓</div>
             <h2 style={{ color: '#2e7d32', marginBottom: '10px' }}>Assessment Complete!</h2>
             <p style={{ marginBottom: '5px' }}>Your {assessment?.title} has been successfully submitted.</p>
-            <p style={{ color: '#64748b' }}>Redirecting to assessment selection...</p>
+            <p style={{ color: '#64748b' }}>Redirecting to dashboard...</p>
           </div>
         </div>
       )}
