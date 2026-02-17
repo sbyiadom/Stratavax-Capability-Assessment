@@ -45,12 +45,13 @@ export default async function handler(req, res) {
       console.log("✅ Session found:", { userId, assessmentId });
     }
 
-    // First, check if already submitted in assessments_completed table
+    // First, check if already submitted in candidate_assessments
     const { data: existingSubmission, error: checkError } = await supabase
-      .from("assessments_completed")
+      .from("candidate_assessments")
       .select("id")
       .eq("user_id", userId)
       .eq("assessment_id", assessmentId)
+      .eq("status", "completed")
       .maybeSingle();
 
     if (checkError) {
@@ -65,23 +66,43 @@ export default async function handler(req, res) {
       });
     }
 
-    // Mark as submitted in assessments_completed table
+    // Update the assessment session to completed
+    if (sessionId) {
+      const { error: sessionUpdateError } = await supabase
+        .from("assessment_sessions")
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString()
+        })
+        .eq("id", sessionId);
+
+      if (sessionUpdateError) {
+        console.error("❌ Error updating session:", sessionUpdateError);
+        // Continue anyway, this is not critical
+      }
+    }
+
+    // Mark as submitted in candidate_assessments
     console.log("📝 Marking assessment as submitted for user:", userId);
     
-    const { data, error } = await supabase
-      .from("assessments_completed")
-      .insert({
+    const { error: candidateError } = await supabase
+      .from("candidate_assessments")
+      .upsert({
         user_id: userId,
         assessment_id: assessmentId,
-        completed_at: new Date().toISOString()
-      })
-      .select();
+        session_id: sessionId,
+        status: "completed",
+        completed_at: new Date().toISOString(),
+        score: 0 // Will be updated later with actual score
+      }, { 
+        onConflict: 'user_id,assessment_id' 
+      });
 
-    if (error) {
-      console.error("❌ Database error:", error);
+    if (candidateError) {
+      console.error("❌ Database error:", candidateError);
       
       // Check for duplicate submission error
-      if (error.code === '23505') {
+      if (candidateError.code === '23505') {
         return res.status(400).json({ 
           error: "already_submitted",
           message: "Assessment has already been submitted" 
@@ -90,9 +111,21 @@ export default async function handler(req, res) {
       
       return res.status(500).json({ 
         error: "database_error", 
-        message: error.message 
+        message: candidateError.message 
       });
     }
+
+    // Also mark in assessments table for backward compatibility
+    await supabase
+      .from("assessments")
+      .upsert({
+        id: assessmentId,
+        user_id: userId,
+        submitted_at: new Date().toISOString(),
+        status: "submitted"
+      }, { 
+        onConflict: 'id' 
+      });
 
     console.log("✅ Assessment submitted successfully");
     
