@@ -1,186 +1,72 @@
-import { createClient } from '@supabase/supabase-js';
-import { classifyTalent } from '../../utils/classification';
-
-export default async function handler(req, res) {
-  // Only allow POST requests
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+[
+  {
+    "response_id": 79,
+    "question_id": 4523,
+    "answer_id": 17891,
+    "score": 2,
+    "answer_text": "Pursue all simultaneously."
+  },
+  {
+    "response_id": 197,
+    "question_id": 4590,
+    "answer_id": 18159,
+    "score": 1,
+    "answer_text": "Evidence-based decisions."
+  },
+  {
+    "response_id": 198,
+    "question_id": 4589,
+    "answer_id": 18155,
+    "score": 3,
+    "answer_text": "Celebrate and maintain course."
+  },
+  {
+    "response_id": 199,
+    "question_id": 4593,
+    "answer_id": 18171,
+    "score": 1,
+    "answer_text": "Personal awards."
+  },
+  {
+    "response_id": 200,
+    "question_id": 4577,
+    "answer_id": 18107,
+    "score": 2,
+    "answer_text": "Maintain harmony."
+  },
+  {
+    "response_id": 201,
+    "question_id": 4591,
+    "answer_id": 18163,
+    "score": 2,
+    "answer_text": "Innovation."
+  },
+  {
+    "response_id": 202,
+    "question_id": 4520,
+    "answer_id": 17879,
+    "score": 2,
+    "answer_text": "Annual bonuses only."
+  },
+  {
+    "response_id": 203,
+    "question_id": 4515,
+    "answer_id": 17859,
+    "score": 5,
+    "answer_text": "Share only confirmed details and outline next steps clearly."
+  },
+  {
+    "response_id": 204,
+    "question_id": 4558,
+    "answer_id": 18031,
+    "score": 3,
+    "answer_text": "Stability."
+  },
+  {
+    "response_id": 205,
+    "question_id": 4505,
+    "answer_id": 17819,
+    "score": 2,
+    "answer_text": "Reward consistency and avoid distraction."
   }
-
-  console.log("📥 Submit API called with body:", req.body);
-
-  try {
-    const { sessionId, user_id, assessment_id } = req.body;
-    
-    // We need either sessionId or (user_id and assessment_id)
-    if (!sessionId && (!user_id || !assessment_id)) {
-      return res.status(400).json({ 
-        error: "Missing required fields" 
-      });
-    }
-
-    // Initialize Supabase with service role key to bypass RLS
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
-
-    let userId = user_id;
-    let assessmentId = assessment_id;
-
-    // If we have sessionId, get the details from the session
-    if (sessionId && !userId) {
-      console.log("🔍 Fetching session details for ID:", sessionId);
-      
-      const { data: session, error: sessionError } = await supabase
-        .from('assessment_sessions')
-        .select('user_id, assessment_id')
-        .eq('id', sessionId)
-        .single();
-
-      if (sessionError || !session) {
-        console.error("❌ Session fetch error:", sessionError);
-        return res.status(404).json({ error: "Session not found" });
-      }
-
-      userId = session.user_id;
-      assessmentId = session.assessment_id;
-      console.log("✅ Session found:", { userId, assessmentId });
-    }
-
-    // ===== SCORE CALCULATION =====
-    // Get all responses for this user and assessment with scores
-    console.log("📊 Fetching responses for score calculation...");
-    const { data: responses, error: responsesError } = await supabase
-      .from("responses")
-      .select(`
-        id,
-        question_id,
-        answer_id,
-        unique_answers:answer_id (
-          score
-        )
-      `)
-      .eq("user_id", userId)
-      .eq("assessment_id", assessmentId);
-
-    if (responsesError) {
-      console.error("❌ Error fetching responses:", responsesError);
-      return res.status(500).json({ 
-        error: "Failed to fetch responses",
-        message: responsesError.message 
-      });
-    }
-
-    console.log(`📊 Found ${responses?.length || 0} responses`);
-
-    // Calculate total score
-    let totalScore = 0;
-    const responseCount = responses?.length || 0;
-    
-    responses?.forEach(response => {
-      // Access score from the joined unique_answers
-      const score = response.unique_answers?.score || 0;
-      totalScore += score;
-      console.log(`Question ${response.question_id}: score ${score}`);
-    });
-
-    const maxScore = responseCount * 5; // Assuming 5 points per question
-    const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
-
-    console.log(`📊 Calculated score: ${totalScore}/${maxScore} (${percentage}%)`);
-
-    // Get assessment type for classification
-    const { data: assessment } = await supabase
-      .from('assessments')
-      .select('assessment_type:assessment_types(code)')
-      .eq('id', assessmentId)
-      .single();
-
-    const assessmentType = assessment?.assessment_type?.code || 'general';
-    
-    // Use your classification utility
-    const classificationResult = classifyTalent(totalScore, assessmentType, maxScore);
-    const classification = classificationResult.label;
-
-    console.log(`📊 Classification: ${classification}`);
-
-    // Update assessment session to completed
-    if (sessionId) {
-      const { error: sessionError } = await supabase
-        .from('assessment_sessions')
-        .update({ 
-          status: 'completed',
-          completed_at: new Date().toISOString()
-        })
-        .eq('id', sessionId);
-
-      if (sessionError) {
-        console.error("❌ Error updating session:", sessionError);
-        // Continue anyway - this is not critical
-      }
-    }
-
-    // Insert into candidate_assessments with score
-    const { error: candidateError } = await supabase
-      .from('candidate_assessments')
-      .upsert({
-        user_id: userId,
-        assessment_id: assessmentId,
-        session_id: sessionId,
-        status: 'completed',
-        score: totalScore,
-        completed_at: new Date().toISOString()
-      }, { 
-        onConflict: 'user_id, assessment_id' 
-      });
-
-    if (candidateError) {
-      console.error("❌ Error updating candidate_assessments:", candidateError);
-      return res.status(500).json({ 
-        error: "Failed to save submission",
-        message: candidateError.message 
-      });
-    }
-
-    // Store in assessment_results with classification
-    const { error: resultError } = await supabase
-      .from('assessment_results')
-      .upsert({
-        user_id: userId,
-        assessment_id: assessmentId,
-        session_id: sessionId,
-        total_score: totalScore,
-        max_score: maxScore,
-        classification: classification,
-        responses_count: responseCount,
-        completed_at: new Date().toISOString()
-      }, { 
-        onConflict: 'user_id, assessment_id' 
-      });
-
-    if (resultError) {
-      console.error("❌ Error updating assessment_results:", resultError);
-      // Continue anyway - not critical
-    }
-
-    console.log("✅ Assessment submitted successfully with score:", totalScore);
-    
-    return res.status(200).json({ 
-      success: true,
-      score: totalScore,
-      max_score: maxScore,
-      percentage: percentage,
-      classification: classification,
-      responses_count: responseCount,
-      message: "Assessment submitted successfully" 
-    });
-
-  } catch (err) {
-    console.error("❌ Submit assessment error:", err);
-    return res.status(500).json({ 
-      error: "server_error", 
-      message: err.message 
-    });
-  }
-}
+]
