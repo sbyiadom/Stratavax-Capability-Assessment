@@ -268,7 +268,7 @@ export default function AssessmentPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Submit assessment - FIXED VERSION
+  // Submit assessment - OPTIMIZED for immediate submission
   const handleSubmit = async () => {
     if (!session || alreadySubmitted) return;
 
@@ -292,26 +292,26 @@ export default function AssessmentPage() {
     setShowSubmitModal(false);
 
     try {
-      // Save any pending responses first
-      for (const [questionId, answerId] of Object.entries(answers)) {
-        await saveUniqueResponse(session.id, user.id, assessmentId, questionId, answerId);
-      }
-
-      // Save progress and timer
-      await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id);
-      await updateSessionTimer(session.id, elapsedSeconds);
+      // OPTIMIZATION: Don't resave all responses - they're already saved
+      // Just save final progress and submit in parallel
+      
+      // Save progress and timer (quick operations)
+      await Promise.all([
+        saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id),
+        updateSessionTimer(session.id, elapsedSeconds)
+      ]);
       
       console.log("📤 Calling submitAssessment with session:", session.id);
+      
+      // Submit assessment (API call)
       const result = await submitAssessment(session.id);
       console.log("✅ Submit successful:", result);
       
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
       
-      // Redirect to dashboard after showing success message
-      setTimeout(() => {
-        router.push('/candidate/dashboard');
-      }, 3000);
+      // Redirect immediately - no delay
+      router.push('/candidate/dashboard');
       
     } catch (error) {
       console.error("❌ Submission error:", error);
@@ -320,7 +320,7 @@ export default function AssessmentPage() {
       if (error.message === "already_submitted" || error.message?.includes("already submitted")) {
         setAlreadySubmitted(true);
         alert("This assessment has already been submitted.");
-        setTimeout(() => router.push('/candidate/dashboard'), 2000);
+        router.push('/candidate/dashboard');
       } else {
         alert(`Failed to submit assessment: ${error.message}`);
         setIsSubmitting(false);
