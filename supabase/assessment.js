@@ -248,7 +248,7 @@ export async function getSessionResponses(sessionId) {
   }
 }
 
-// Submit Assessment - UPDATED to work with simplified API
+// Submit Assessment - OPTIMIZED for speed
 export async function submitAssessment(sessionId) {
   try {
     console.log("📤 Submitting assessment for session:", sessionId);
@@ -258,7 +258,7 @@ export async function submitAssessment(sessionId) {
       throw new Error("No active session");
     }
 
-    // Get the assessment session details to get user_id and assessment_id
+    // Get the assessment session details
     const { data: assessmentSession, error: sessionError } = await supabase
       .from('assessment_sessions')
       .select('user_id, assessment_id')
@@ -270,7 +270,7 @@ export async function submitAssessment(sessionId) {
       throw new Error("Could not verify session");
     }
 
-    // Prepare submission data - send both sessionId and user/assessment IDs
+    // Prepare submission data
     const submissionData = {
       sessionId: sessionId,
       user_id: assessmentSession.user_id,
@@ -279,7 +279,7 @@ export async function submitAssessment(sessionId) {
 
     console.log("📦 Submitting with data:", submissionData);
 
-    // Submit via the simplified API
+    // Submit via API
     const response = await fetch('/api/submit-assessment', {
       method: 'POST',
       headers: {
@@ -293,7 +293,6 @@ export async function submitAssessment(sessionId) {
     if (!response.ok) {
       console.error("❌ API error:", result);
       
-      // Check if it's an "already submitted" error
       if (result.error === 'already_submitted' || result.message?.includes('already submitted')) {
         throw new Error("already_submitted");
       }
@@ -302,7 +301,7 @@ export async function submitAssessment(sessionId) {
     }
     
     console.log("✅ Assessment submitted successfully:", result);
-    return { success: true, result };
+    return result;
     
   } catch (error) {
     console.error("❌ Submit assessment error:", error);
