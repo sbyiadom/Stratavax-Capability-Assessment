@@ -1,4 +1,4 @@
-import { supabase } from "../../supabase/client";
+import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
   // Only allow POST requests
@@ -14,9 +14,15 @@ export default async function handler(req, res) {
     // We need either sessionId or (user_id and assessment_id)
     if (!sessionId && (!user_id || !assessment_id)) {
       return res.status(400).json({ 
-        error: "Either sessionId or both user_id and assessment_id required" 
+        error: "Missing required fields" 
       });
     }
+
+    // Initialize Supabase with service role key to bypass RLS
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
 
     let userId = user_id;
     let assessmentId = assessment_id;
@@ -31,12 +37,8 @@ export default async function handler(req, res) {
         .eq('id', sessionId)
         .single();
 
-      if (sessionError) {
+      if (sessionError || !session) {
         console.error("❌ Session fetch error:", sessionError);
-        return res.status(404).json({ error: "Session not found" });
-      }
-
-      if (!session) {
         return res.status(404).json({ error: "Session not found" });
       }
 
@@ -45,87 +47,42 @@ export default async function handler(req, res) {
       console.log("✅ Session found:", { userId, assessmentId });
     }
 
-    // First, check if already submitted in candidate_assessments
-    const { data: existingSubmission, error: checkError } = await supabase
-      .from("candidate_assessments")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("assessment_id", assessmentId)
-      .eq("status", "completed")
-      .maybeSingle();
-
-    if (checkError) {
-      console.error("❌ Error checking existing submission:", checkError);
-    }
-
-    if (existingSubmission) {
-      console.log("⚠️ Assessment already submitted");
-      return res.status(400).json({ 
-        error: "already_submitted",
-        message: "Assessment has already been submitted" 
-      });
-    }
-
-    // Update the assessment session to completed
+    // Update assessment session to completed
     if (sessionId) {
-      const { error: sessionUpdateError } = await supabase
-        .from("assessment_sessions")
-        .update({
-          status: "completed",
+      const { error: sessionError } = await supabase
+        .from('assessment_sessions')
+        .update({ 
+          status: 'completed',
           completed_at: new Date().toISOString()
         })
-        .eq("id", sessionId);
+        .eq('id', sessionId);
 
-      if (sessionUpdateError) {
-        console.error("❌ Error updating session:", sessionUpdateError);
-        // Continue anyway, this is not critical
+      if (sessionError) {
+        console.error("❌ Error updating session:", sessionError);
+        // Continue anyway - this is not critical
       }
     }
 
-    // Mark as submitted in candidate_assessments
-    console.log("📝 Marking assessment as submitted for user:", userId);
-    
+    // Insert into candidate_assessments
     const { error: candidateError } = await supabase
-      .from("candidate_assessments")
+      .from('candidate_assessments')
       .upsert({
         user_id: userId,
         assessment_id: assessmentId,
         session_id: sessionId,
-        status: "completed",
-        completed_at: new Date().toISOString(),
-        score: 0 // Will be updated later with actual score
+        status: 'completed',
+        completed_at: new Date().toISOString()
       }, { 
-        onConflict: 'user_id,assessment_id' 
+        onConflict: 'user_id, assessment_id' 
       });
 
     if (candidateError) {
-      console.error("❌ Database error:", candidateError);
-      
-      // Check for duplicate submission error
-      if (candidateError.code === '23505') {
-        return res.status(400).json({ 
-          error: "already_submitted",
-          message: "Assessment has already been submitted" 
-        });
-      }
-      
+      console.error("❌ Error updating candidate_assessments:", candidateError);
       return res.status(500).json({ 
-        error: "database_error", 
+        error: "Failed to save submission",
         message: candidateError.message 
       });
     }
-
-    // Also mark in assessments table for backward compatibility
-    await supabase
-      .from("assessments")
-      .upsert({
-        id: assessmentId,
-        user_id: userId,
-        submitted_at: new Date().toISOString(),
-        status: "submitted"
-      }, { 
-        onConflict: 'id' 
-      });
 
     console.log("✅ Assessment submitted successfully");
     
