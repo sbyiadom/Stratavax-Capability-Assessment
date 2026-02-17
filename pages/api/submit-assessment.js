@@ -45,20 +45,37 @@ export default async function handler(req, res) {
       console.log("✅ Session found:", { userId, assessmentId });
     }
 
-    // Mark as submitted in assessments table (like original working code)
+    // First, check if already submitted in assessments_completed table
+    const { data: existingSubmission, error: checkError } = await supabase
+      .from("assessments_completed")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("assessment_id", assessmentId)
+      .maybeSingle();
+
+    if (checkError) {
+      console.error("❌ Error checking existing submission:", checkError);
+    }
+
+    if (existingSubmission) {
+      console.log("⚠️ Assessment already submitted");
+      return res.status(400).json({ 
+        error: "already_submitted",
+        message: "Assessment has already been submitted" 
+      });
+    }
+
+    // Mark as submitted in assessments_completed table
     console.log("📝 Marking assessment as submitted for user:", userId);
     
     const { data, error } = await supabase
-      .from("assessments")
-      .upsert(
-        {
-          id: assessmentId,
-          user_id: userId,
-          submitted_at: new Date().toISOString(),
-          status: "submitted",
-        },
-        { onConflict: ["id"] }
-      );
+      .from("assessments_completed")
+      .insert({
+        user_id: userId,
+        assessment_id: assessmentId,
+        completed_at: new Date().toISOString()
+      })
+      .select();
 
     if (error) {
       console.error("❌ Database error:", error);
