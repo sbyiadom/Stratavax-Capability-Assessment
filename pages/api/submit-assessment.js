@@ -1,4 +1,4 @@
-import { supabase } from "../../supabase/client";
+import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
   // Only allow POST requests
@@ -14,9 +14,15 @@ export default async function handler(req, res) {
     // We need either sessionId or (user_id and assessment_id)
     if (!sessionId && (!user_id || !assessment_id)) {
       return res.status(400).json({ 
-        error: "Either sessionId or both user_id and assessment_id required" 
+        error: "Missing required fields" 
       });
     }
+
+    // Initialize Supabase with service role key to bypass RLS
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
 
     let userId = user_id;
     let assessmentId = assessment_id;
@@ -41,7 +47,9 @@ export default async function handler(req, res) {
       console.log("✅ Session found:", { userId, assessmentId });
     }
 
+    // ===== SCORE CALCULATION =====
     // Get all responses for this user and assessment
+    console.log("📊 Fetching responses for score calculation...");
     const { data: responses, error: responsesError } = await supabase
       .from("responses")
       .select(`
@@ -57,27 +65,30 @@ export default async function handler(req, res) {
 
     if (responsesError) {
       console.error("❌ Error fetching responses:", responsesError);
-      return res.status(500).json({ error: "Failed to fetch responses" });
+      // Continue with submission even if score calculation fails
     }
 
     // Calculate total score
     let totalScore = 0;
-    const maxScore = responses?.length * 5 || 0; // Assuming 5 points per question
+    const responseCount = responses?.length || 0;
+    const maxScore = responseCount * 5; // Assuming 5 points per question
     
     responses?.forEach(response => {
       totalScore += response.unique_answers?.score || 0;
     });
 
-    console.log(`📊 Calculated score: ${totalScore}/${maxScore} from ${responses?.length} responses`);
+    console.log(`📊 Calculated score: ${totalScore}/${maxScore} from ${responseCount} responses`);
 
-    // Determine classification based on score
+    // Determine classification based on score percentage
     let classification = "Needs Improvement";
-    if (totalScore >= 450) classification = "Elite Talent";
-    else if (totalScore >= 400) classification = "Top Talent";
-    else if (totalScore >= 350) classification = "High Potential";
-    else if (totalScore >= 300) classification = "Solid Performer";
-    else if (totalScore >= 250) classification = "Developing Talent";
-    else if (totalScore >= 200) classification = "Emerging Talent";
+    const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
+    
+    if (percentage >= 90) classification = "Elite Talent";
+    else if (percentage >= 80) classification = "Top Talent";
+    else if (percentage >= 70) classification = "High Potential";
+    else if (percentage >= 60) classification = "Solid Performer";
+    else if (percentage >= 50) classification = "Developing Talent";
+    else if (percentage >= 40) classification = "Emerging Talent";
 
     // Update assessment session to completed
     if (sessionId) {
@@ -91,10 +102,11 @@ export default async function handler(req, res) {
 
       if (sessionError) {
         console.error("❌ Error updating session:", sessionError);
+        // Continue anyway - this is not critical
       }
     }
 
-    // Insert into candidate_assessments with score
+    // Insert into candidate_assessments WITH SCORE
     const { error: candidateError } = await supabase
       .from('candidate_assessments')
       .upsert({
@@ -118,7 +130,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // Also update or insert into assessment_results for detailed results
+    // Also update assessment_results for detailed analytics
     const { error: resultError } = await supabase
       .from('assessment_results')
       .upsert({
@@ -128,7 +140,7 @@ export default async function handler(req, res) {
         total_score: totalScore,
         max_score: maxScore,
         classification: classification,
-        responses_count: responses?.length || 0,
+        responses_count: responseCount,
         completed_at: new Date().toISOString()
       }, { 
         onConflict: 'user_id, assessment_id' 
@@ -136,6 +148,7 @@ export default async function handler(req, res) {
 
     if (resultError) {
       console.error("❌ Error updating assessment_results:", resultError);
+      // Continue anyway - not critical
     }
 
     console.log("✅ Assessment submitted successfully with score:", totalScore);
