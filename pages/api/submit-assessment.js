@@ -2,7 +2,6 @@ import { createClient } from '@supabase/supabase-js';
 import { classifyTalent } from '../../utils/classification';
 
 export default async function handler(req, res) {
-  // Only allow POST requests
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -48,10 +47,10 @@ export default async function handler(req, res) {
 
     const assessmentType = assessment?.assessment_type?.code || 'general';
 
-    // STEP 1: Get all responses (just answer_ids)
+    // Get all responses for this user
     const { data: responses, error: responsesError } = await supabase
       .from("responses")
-      .select("id, question_id, answer_id")
+      .select("question_id, answer_id")
       .eq("user_id", userId)
       .eq("assessment_id", assessmentId);
 
@@ -65,45 +64,41 @@ export default async function handler(req, res) {
 
     console.log(`📊 Found ${responses?.length || 0} responses`);
 
-    // STEP 2: Get all unique questions for section info
-    const questionIds = responses?.map(r => r.question_id) || [];
-    let questionsMap = {};
-    
-    if (questionIds.length > 0) {
-      const { data: questions } = await supabase
-        .from("unique_questions")
-        .select("id, section, subsection")
-        .in("id", questionIds);
-      
-      questions?.forEach(q => {
-        questionsMap[q.id] = q;
-      });
+    if (!responses || responses.length === 0) {
+      return res.status(400).json({ error: "No responses found for this assessment" });
     }
 
-    // STEP 3: Get all answers with scores
-    const answerIds = responses?.map(r => r.answer_id) || [];
-    let answersMap = {};
-    
-    if (answerIds.length > 0) {
-      const { data: answers } = await supabase
-        .from("unique_answers")
-        .select("id, score, answer_text")
-        .in("id", answerIds);
-      
-      answers?.forEach(a => {
-        answersMap[a.id] = a;
-      });
-    }
+    // Get question details for all questions
+    const questionIds = responses.map(r => r.question_id);
+    const { data: questions } = await supabase
+      .from("unique_questions")
+      .select("id, section, subsection")
+      .in("id", questionIds);
 
-    // STEP 4: Calculate scores and build section data
+    const questionMap = {};
+    questions?.forEach(q => {
+      questionMap[q.id] = q;
+    });
+
+    // Get answer scores for all answers
+    const answerIds = responses.map(r => r.answer_id);
+    const { data: answers } = await supabase
+      .from("unique_answers")
+      .select("id, score")
+      .in("id", answerIds);
+
+    const answerMap = {};
+    answers?.forEach(a => {
+      answerMap[a.id] = a;
+    });
+
+    // Calculate scores by section
     let totalScore = 0;
     const sectionScores = {};
-    const strengths = [];
-    const weaknesses = [];
 
-    responses?.forEach(response => {
-      const question = questionsMap[response.question_id] || { section: 'General', subsection: '' };
-      const answer = answersMap[response.answer_id] || { score: 0 };
+    responses.forEach(response => {
+      const question = questionMap[response.question_id] || { section: 'General' };
+      const answer = answerMap[response.answer_id] || { score: 0 };
       const score = answer.score || 0;
       
       totalScore += score;
@@ -122,26 +117,32 @@ export default async function handler(req, res) {
       sectionScores[section].maxPossible += 5;
     });
 
-    // Calculate percentages and identify strengths/weaknesses
+    // Calculate percentages
     Object.keys(sectionScores).forEach(section => {
       const data = sectionScores[section];
       data.percentage = data.maxPossible > 0 ? Math.round((data.total / data.maxPossible) * 100) : 0;
-      data.average = data.count > 0 ? (data.total / data.count).toFixed(1) : 0;
-      
-      if (data.percentage >= 70) {
-        strengths.push(`${section} (${data.percentage}%)`);
-      } else if (data.percentage <= 40) {
-        weaknesses.push(`${section} (${data.percentage}%)`);
-      }
+      data.average = data.count > 0 ? Number((data.total / data.count).toFixed(1)) : 0;
     });
 
-    const responseCount = responses?.length || 0;
+    const responseCount = responses.length;
     const maxScore = responseCount * 5;
     const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
 
     // Get classification
     const classificationResult = classifyTalent(totalScore, assessmentType, maxScore);
     const classification = classificationResult.label;
+
+    // Identify strengths and weaknesses
+    const strengths = [];
+    const weaknesses = [];
+
+    Object.entries(sectionScores).forEach(([section, data]) => {
+      if (data.percentage >= 70) {
+        strengths.push(`${section} (${data.percentage}%)`);
+      } else if (data.percentage <= 40) {
+        weaknesses.push(`${section} (${data.percentage}%)`);
+      }
+    });
 
     // Generate recommendations
     const recommendations = [];
@@ -150,6 +151,9 @@ export default async function handler(req, res) {
     }
     if (strengths.length > 0) {
       recommendations.push(`Leverage strengths in: ${strengths.join(', ')}`);
+    }
+    if (recommendations.length === 0) {
+      recommendations.push('Continue building on your solid performance across all areas.');
     }
 
     // Determine risk level
@@ -180,8 +184,8 @@ export default async function handler(req, res) {
         completed_at: new Date().toISOString()
       }, { onConflict: 'user_id, assessment_id' });
 
-    // Store detailed results
-    await supabase
+    // Store in assessment_results
+    const { error: resultError } = await supabase
       .from('assessment_results')
       .upsert({
         user_id: userId,
@@ -191,6 +195,7 @@ export default async function handler(req, res) {
         max_score: maxScore,
         percentage_score: percentage,
         category_scores: sectionScores,
+        interpretations: { summary: classificationResult.description || '' },
         strengths: strengths,
         weaknesses: weaknesses,
         recommendations: recommendations,
@@ -198,6 +203,10 @@ export default async function handler(req, res) {
         readiness: readiness,
         completed_at: new Date().toISOString()
       }, { onConflict: 'user_id, assessment_id' });
+
+    if (resultError) {
+      console.error("❌ Error storing results:", resultError);
+    }
 
     console.log("✅ Assessment submitted. Score:", totalScore, "Classification:", classification);
     
@@ -214,7 +223,10 @@ export default async function handler(req, res) {
     });
 
   } catch (err) {
-    console.error("❌ Submit assessment error:", err);
-    return res.status(500).json({ error: "server_error", message: err.message });
+    console.error("❌ Fatal error:", err);
+    return res.status(500).json({ 
+      error: "server_error", 
+      message: err.message 
+    });
   }
 }
