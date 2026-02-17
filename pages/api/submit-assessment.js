@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from "../../supabase/client";
 
 export default async function handler(req, res) {
   // Only allow POST requests
@@ -14,15 +14,9 @@ export default async function handler(req, res) {
     // We need either sessionId or (user_id and assessment_id)
     if (!sessionId && (!user_id || !assessment_id)) {
       return res.status(400).json({ 
-        error: "Missing required fields" 
+        error: "Either sessionId or both user_id and assessment_id required" 
       });
     }
-
-    // Initialize Supabase with service role key to bypass RLS
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
 
     let userId = user_id;
     let assessmentId = assessment_id;
@@ -47,6 +41,44 @@ export default async function handler(req, res) {
       console.log("✅ Session found:", { userId, assessmentId });
     }
 
+    // Get all responses for this user and assessment
+    const { data: responses, error: responsesError } = await supabase
+      .from("responses")
+      .select(`
+        id,
+        question_id,
+        answer_id,
+        unique_answers!inner (
+          score
+        )
+      `)
+      .eq("user_id", userId)
+      .eq("assessment_id", assessmentId);
+
+    if (responsesError) {
+      console.error("❌ Error fetching responses:", responsesError);
+      return res.status(500).json({ error: "Failed to fetch responses" });
+    }
+
+    // Calculate total score
+    let totalScore = 0;
+    const maxScore = responses?.length * 5 || 0; // Assuming 5 points per question
+    
+    responses?.forEach(response => {
+      totalScore += response.unique_answers?.score || 0;
+    });
+
+    console.log(`📊 Calculated score: ${totalScore}/${maxScore} from ${responses?.length} responses`);
+
+    // Determine classification based on score
+    let classification = "Needs Improvement";
+    if (totalScore >= 450) classification = "Elite Talent";
+    else if (totalScore >= 400) classification = "Top Talent";
+    else if (totalScore >= 350) classification = "High Potential";
+    else if (totalScore >= 300) classification = "Solid Performer";
+    else if (totalScore >= 250) classification = "Developing Talent";
+    else if (totalScore >= 200) classification = "Emerging Talent";
+
     // Update assessment session to completed
     if (sessionId) {
       const { error: sessionError } = await supabase
@@ -59,11 +91,10 @@ export default async function handler(req, res) {
 
       if (sessionError) {
         console.error("❌ Error updating session:", sessionError);
-        // Continue anyway - this is not critical
       }
     }
 
-    // Insert into candidate_assessments
+    // Insert into candidate_assessments with score
     const { error: candidateError } = await supabase
       .from('candidate_assessments')
       .upsert({
@@ -71,6 +102,9 @@ export default async function handler(req, res) {
         assessment_id: assessmentId,
         session_id: sessionId,
         status: 'completed',
+        score: totalScore,
+        max_score: maxScore,
+        classification: classification,
         completed_at: new Date().toISOString()
       }, { 
         onConflict: 'user_id, assessment_id' 
@@ -84,10 +118,33 @@ export default async function handler(req, res) {
       });
     }
 
-    console.log("✅ Assessment submitted successfully");
+    // Also update or insert into assessment_results for detailed results
+    const { error: resultError } = await supabase
+      .from('assessment_results')
+      .upsert({
+        user_id: userId,
+        assessment_id: assessmentId,
+        session_id: sessionId,
+        total_score: totalScore,
+        max_score: maxScore,
+        classification: classification,
+        responses_count: responses?.length || 0,
+        completed_at: new Date().toISOString()
+      }, { 
+        onConflict: 'user_id, assessment_id' 
+      });
+
+    if (resultError) {
+      console.error("❌ Error updating assessment_results:", resultError);
+    }
+
+    console.log("✅ Assessment submitted successfully with score:", totalScore);
     
     return res.status(200).json({ 
       success: true,
+      score: totalScore,
+      max_score: maxScore,
+      classification: classification,
       message: "Assessment submitted successfully" 
     });
 
