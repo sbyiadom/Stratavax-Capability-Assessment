@@ -6,6 +6,7 @@ export default async function handler(req, res) {
   }
 
   console.log("📥 Submit API called");
+  console.log("Headers:", JSON.stringify(req.headers, null, 2));
 
   try {
     const { sessionId, user_id, assessment_id } = req.body;
@@ -14,8 +15,34 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    // Use service role client
-    const supabase = createClient(
+    // Check for authorization header
+    const authHeader = req.headers.authorization;
+    console.log("Auth header present:", !!authHeader);
+    
+    if (!authHeader) {
+      console.log("No auth header found, headers:", Object.keys(req.headers));
+      return res.status(401).json({ error: "No authorization token" });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    console.log("Token length:", token.length);
+    console.log("Token first 20 chars:", token.substring(0, 20));
+
+    // Create a client with the user's token
+    const userClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      }
+    );
+
+    // Create service client
+    const serviceClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
@@ -24,55 +51,92 @@ export default async function handler(req, res) {
     let assessmentId = assessment_id;
 
     if (sessionId && !userId) {
-      const { data: session, error: sessionError } = await supabase
+      console.log("Fetching session:", sessionId);
+      const { data: session, error: sessionError } = await serviceClient
         .from('assessment_sessions')
         .select('user_id, assessment_id')
         .eq('id', sessionId)
         .single();
 
       if (sessionError || !session) {
+        console.error("Session error:", sessionError);
         return res.status(404).json({ error: "Session not found" });
       }
 
       userId = session.user_id;
       assessmentId = session.assessment_id;
+      console.log("Session user:", userId, "assessment:", assessmentId);
     }
 
-    // Get all responses with their answer scores
-    const { data: responses, error: responsesError } = await supabase
+    // Test user client first
+    console.log("Testing user client with a simple query");
+    const { error: testError } = await userClient
+      .from('assessment_types')
+      .select('count', { count: 'exact', head: true });
+
+    if (testError) {
+      console.error("User client test failed:", testError);
+    } else {
+      console.log("User client test passed");
+    }
+
+    // Get responses using the user's token
+    console.log("Fetching responses for user:", userId);
+    const { data: responses, error: responsesError } = await userClient
       .from('responses')
-      .select(`
-        answer_id,
-        unique_answers!inner (
-          score
-        )
-      `)
+      .select('answer_id')
       .eq('user_id', userId)
       .eq('assessment_id', assessmentId);
 
     if (responsesError) {
       console.error("❌ Responses error:", responsesError);
+      console.error("Error code:", responsesError.code);
+      console.error("Error details:", responsesError.details);
+      console.error("Error hint:", responsesError.hint);
+      
       return res.status(500).json({ 
         error: "Failed to fetch responses",
-        message: responsesError.message 
+        message: responsesError.message,
+        code: responsesError.code,
+        hint: responsesError.hint
       });
     }
+
+    console.log(`Found ${responses?.length || 0} responses`);
 
     if (!responses || responses.length === 0) {
       return res.status(400).json({ error: "No responses found" });
     }
 
+    // Get answer IDs
+    const answerIds = responses.map(r => r.answer_id).filter(Boolean);
+    console.log(`Fetching ${answerIds.length} answers`);
+
+    // Get scores
+    const { data: answers, error: answersError } = await userClient
+      .from('unique_answers')
+      .select('score')
+      .in('id', answerIds);
+
+    if (answersError) {
+      console.error("❌ Answers error:", answersError);
+      return res.status(500).json({ 
+        error: "Failed to fetch answers",
+        message: answersError.message 
+      });
+    }
+
     // Calculate total score
     let totalScore = 0;
-    for (const response of responses) {
-      totalScore += response.unique_answers?.score || 0;
-    }
+    answers.forEach(answer => {
+      totalScore += answer.score || 0;
+    });
 
     console.log("✅ Calculated score:", totalScore);
 
-    // Update session to completed
+    // Update session
     if (sessionId) {
-      await supabase
+      await serviceClient
         .from('assessment_sessions')
         .update({ 
           status: 'completed',
@@ -82,7 +146,7 @@ export default async function handler(req, res) {
     }
 
     // Save to candidate_assessments
-    const { error: candidateError } = await supabase
+    const { error: candidateError } = await serviceClient
       .from('candidate_assessments')
       .upsert({
         user_id: userId,
@@ -103,25 +167,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Calculate percentage
-    const maxScore = responses.length * 5;
-    const percentage = Math.round((totalScore / maxScore) * 100);
-
-    // Save to assessment_results
-    await supabase
-      .from('assessment_results')
-      .upsert({
-        user_id: userId,
-        assessment_id: assessmentId,
-        session_id: sessionId,
-        total_score: totalScore,
-        max_score: maxScore,
-        percentage_score: percentage,
-        completed_at: new Date().toISOString()
-      }, { 
-        onConflict: 'user_id, assessment_id' 
-      });
-
     return res.status(200).json({ 
       success: true,
       score: totalScore,
@@ -132,7 +177,8 @@ export default async function handler(req, res) {
     console.error("❌ Error:", err);
     return res.status(500).json({ 
       error: "server_error", 
-      message: err.message 
+      message: err.message,
+      stack: err.stack
     });
   }
 }
