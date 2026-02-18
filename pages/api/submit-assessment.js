@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { generatePersonalizedReport } from '../../utils/personalizedReportGenerator';
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -200,7 +201,7 @@ export default async function handler(req, res) {
     // Get assessment type for the result
     const { data: assessment, error: assessmentError } = await serviceClient
       .from('assessments')
-      .select('assessment_type_id')
+      .select('assessment_type_id, assessment_type:assessment_types(code)')
       .eq('id', assessmentId)
       .single();
 
@@ -208,8 +209,28 @@ export default async function handler(req, res) {
       console.error("❌ Assessment error:", assessmentError);
     }
 
-    console.log("📝 Preparing assessment_results insert...");
-    
+    // Get candidate name for the report
+    let candidateName = 'Candidate';
+    const { data: userData } = await serviceClient
+      .from('users')
+      .select('email')
+      .eq('id', userId)
+      .single();
+
+    if (userData?.email) {
+      candidateName = userData.email.split('@')[0];
+    }
+
+    // Generate personalized report
+    const personalizedReport = generatePersonalizedReport(
+      userId,
+      assessment?.assessment_type?.code || 'general',
+      responses,
+      candidateName
+    );
+
+    console.log("✅ Personalized report generated");
+
     // Prepare the data for assessment_results
     const resultData = {
       user_id: userId,
@@ -220,24 +241,29 @@ export default async function handler(req, res) {
       max_score: maxScore,
       percentage_score: percentageScore,
       category_scores: categoryScores,
+      subsection_scores: personalizedReport.detailedAnalysis,
       interpretations: {
         classification,
+        executiveSummary: personalizedReport.executiveSummary,
+        overallProfile: personalizedReport.overallProfile,
+        overallTraits: personalizedReport.overallTraits,
+        overallRecommendations: personalizedReport.overallRecommendations,
         summary: `Overall performance: ${percentageScore}% - ${classification}`,
         strengths: strengths.map(s => s.area),
         weaknesses: weaknesses.map(w => w.area)
       },
-      strengths: strengths,
-      weaknesses: weaknesses,
-      recommendations: [
-        ...strengths.map(s => `Leverage strength in ${s.area} (${s.percentage}%)`),
-        ...weaknesses.map(w => `Focus on developing ${w.area} (${w.percentage}%)`)
-      ],
+      strengths: personalizedReport.strengths,
+      weaknesses: personalizedReport.weaknesses,
+      recommendations: personalizedReport.keyRecommendations,
+      development_plan: personalizedReport.developmentPlan,
+      unique_insights: personalizedReport.uniqueInsights,
+      detailed_analysis: personalizedReport,
       risk_level: percentageScore < 40 ? 'high' : percentageScore < 60 ? 'medium' : 'low',
       readiness: percentageScore >= 70 ? 'ready' : percentageScore >= 50 ? 'development_needed' : 'not_ready',
       completed_at: new Date().toISOString()
     };
 
-    console.log("📦 Inserting into assessment_results:", JSON.stringify(resultData, null, 2));
+    console.log("📦 Inserting into assessment_results...");
 
     // Save to assessment_results
     const { data: insertedData, error: resultsError } = await serviceClient
