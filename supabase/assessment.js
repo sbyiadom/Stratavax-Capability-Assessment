@@ -466,7 +466,7 @@ function shuffleArray(array) {
 }
 
 /**
- * Get unique questions for any assessment type - FIXED VERSION
+ * Get unique questions for any assessment type - FIXED VERSION with randomized answers
  * Each question has its own unique answers that are never reused
  */
 export async function getUniqueQuestions(assessmentId) {
@@ -477,6 +477,95 @@ export async function getUniqueQuestions(assessmentId) {
       console.error("❌ No assessmentId provided");
       return [];
     }
+
+    // First get the assessment to know its type
+    const { data: assessment, error: aError } = await supabase
+      .from('assessments')
+      .select('assessment_type_id, title')
+      .eq('id', assessmentId)
+      .single();
+
+    if (aError) {
+      console.error("❌ Error fetching assessment:", aError);
+      return [];
+    }
+
+    console.log("📊 Assessment type ID:", assessment.assessment_type_id);
+
+    // Get all unique questions for this assessment type with their answers
+    const { data: questions, error: qError } = await supabase
+      .from('unique_questions')
+      .select(`
+        id,
+        section,
+        subsection,
+        question_text,
+        display_order,
+        unique_answers (
+          id,
+          answer_text,
+          score,
+          display_order
+        )
+      `)
+      .eq('assessment_type_id', assessment.assessment_type_id)
+      .order('display_order');
+
+    if (qError) {
+      console.error("❌ Error fetching unique questions:", qError);
+      return [];
+    }
+
+    if (!questions || questions.length === 0) {
+      console.log("⚠️ No unique questions found for assessment type ID:", assessment.assessment_type_id);
+      return [];
+    }
+
+    console.log(`✅ Found ${questions.length} unique questions`);
+
+    // Format the questions with RANDOMIZED answer order
+    const formattedQuestions = questions.map((q, index) => {
+      // Get all answers for this question
+      const answers = (q.unique_answers || []).map(a => ({
+        id: a.id,
+        answer_text: a.answer_text,
+        score: a.score,
+        display_order: a.display_order
+      }));
+
+      // SHUFFLE the answers randomly
+      const shuffledAnswers = shuffleArray(answers);
+
+      return {
+        id: q.id,
+        question_text: q.question_text,
+        section: q.section,
+        subsection: q.subsection,
+        display_order: index + 1,
+        answers: shuffledAnswers
+      };
+    });
+
+    console.log(`✅ Returning ${formattedQuestions.length} formatted questions with randomized answers`);
+    return formattedQuestions;
+
+  } catch (error) {
+    console.error("❌ Error in getUniqueQuestions:", error);
+    return [];
+  }
+}
+
+// Fisher-Yates shuffle algorithm for true randomness
+function shuffleArray(array) {
+  if (!array || !Array.isArray(array)) return [];
+  
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
 
     // First get the assessment to know its type
     const { data: assessment, error: aError } = await supabase
@@ -562,6 +651,7 @@ export async function getUniqueQuestions(assessmentId) {
 }
 
 /**
+/**
  * Save response for unique questions - FIXED VERSION
  */
 export async function saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id) {
@@ -627,7 +717,6 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
     return { success: false, error: error.message };
   }
 }
-
 // ========== LEGACY FUNCTIONS (for backward compatibility) ==========
 
 export async function getRandomizedQuestions(candidateId, assessmentId) {
@@ -643,6 +732,7 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveUniqueResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
+
 
 
 
