@@ -279,11 +279,12 @@ export async function submitAssessment(sessionId) {
 
     console.log("📦 Submitting with data:", submissionData);
 
-    // Submit via API
+    // Submit via API with the user's access token
     const response = await fetch('/api/submit-assessment', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}` // Add this line
       },
       body: JSON.stringify(submissionData)
     });
@@ -293,7 +294,10 @@ export async function submitAssessment(sessionId) {
     if (!response.ok) {
       console.error("❌ API error:", result);
       
-      if (result.error === 'already_submitted' || result.message?.includes('already submitted')) {
+      // Check if it's an "already submitted" error
+      if (result.error === 'already_submitted' || 
+          result.message?.includes('already submitted') ||
+          result.error === 'assessment_already_completed') {
         throw new Error("already_submitted");
       }
       
@@ -668,3 +672,4 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveUniqueResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
+
