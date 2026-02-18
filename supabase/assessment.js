@@ -248,17 +248,19 @@ export async function getSessionResponses(sessionId) {
   }
 }
 
-// Submit Assessment - OPTIMIZED for speed
+
 export async function submitAssessment(sessionId) {
   try {
     console.log("📤 Submitting assessment for session:", sessionId);
     
     const { data: { session } } = await supabase.auth.getSession();
+    console.log("Current session user:", session?.user?.id);
+    console.log("Token present:", !!session?.access_token);
+    
     if (!session) {
       throw new Error("No active session");
     }
 
-    // Get the assessment session details
     const { data: assessmentSession, error: sessionError } = await supabase
       .from('assessment_sessions')
       .select('user_id, assessment_id')
@@ -270,7 +272,6 @@ export async function submitAssessment(sessionId) {
       throw new Error("Could not verify session");
     }
 
-    // Prepare submission data
     const submissionData = {
       sessionId: sessionId,
       user_id: assessmentSession.user_id,
@@ -278,17 +279,20 @@ export async function submitAssessment(sessionId) {
     };
 
     console.log("📦 Submitting with data:", submissionData);
+    console.log("📦 With token:", session.access_token.substring(0, 20) + "...");
 
-    // Submit via API
     const response = await fetch('/api/submit-assessment', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
       },
       body: JSON.stringify(submissionData)
     });
 
     const result = await response.json();
+    console.log("Response status:", response.status);
+    console.log("Response body:", result);
     
     if (!response.ok) {
       console.error("❌ API error:", result);
@@ -303,29 +307,6 @@ export async function submitAssessment(sessionId) {
     throw error;
   }
 }
-// Get Assessment Results
-export async function getAssessmentResult(resultId) {
-  try {
-    const { data, error } = await supabase
-      .from('assessment_results')
-      .select(`
-        *,
-        assessment:assessments(
-          *,
-          assessment_type:assessment_types(*)
-        )
-      `)
-      .eq('id', resultId)
-      .single();
-
-    if (error) throw error;
-    return data;
-  } catch (error) {
-    console.error("Error in getAssessmentResult:", error);
-    throw error;
-  }
-}
-
 export async function getUserAssessmentResults(userId) {
   try {
     const { data, error } = await supabase
@@ -662,5 +643,6 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveUniqueResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
+
 
 
