@@ -1,5 +1,17 @@
 import { supabase } from './client';
 
+// Fisher-Yates shuffle algorithm for true randomness
+function shuffleArray(array) {
+  if (!array || !Array.isArray(array)) return [];
+  
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
 // Assessment Types
 export async function getAssessmentTypes() {
   try {
@@ -248,15 +260,12 @@ export async function getSessionResponses(sessionId) {
   }
 }
 
-
+// Submit Assessment - OPTIMIZED for speed
 export async function submitAssessment(sessionId) {
   try {
     console.log("📤 Submitting assessment for session:", sessionId);
     
     const { data: { session } } = await supabase.auth.getSession();
-    console.log("Current session user:", session?.user?.id);
-    console.log("Token present:", !!session?.access_token);
-    
     if (!session) {
       throw new Error("No active session");
     }
@@ -279,7 +288,6 @@ export async function submitAssessment(sessionId) {
     };
 
     console.log("📦 Submitting with data:", submissionData);
-    console.log("📦 With token:", session.access_token.substring(0, 20) + "...");
 
     const response = await fetch('/api/submit-assessment', {
       method: 'POST',
@@ -291,8 +299,6 @@ export async function submitAssessment(sessionId) {
     });
 
     const result = await response.json();
-    console.log("Response status:", response.status);
-    console.log("Response body:", result);
     
     if (!response.ok) {
       console.error("❌ API error:", result);
@@ -307,6 +313,30 @@ export async function submitAssessment(sessionId) {
     throw error;
   }
 }
+
+// Get Assessment Results
+export async function getAssessmentResult(resultId) {
+  try {
+    const { data, error } = await supabase
+      .from('assessment_results')
+      .select(`
+        *,
+        assessment:assessments(
+          *,
+          assessment_type:assessment_types(*)
+        )
+      `)
+      .eq('id', resultId)
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error("Error in getAssessmentResult:", error);
+    throw error;
+  }
+}
+
 export async function getUserAssessmentResults(userId) {
   try {
     const { data, error } = await supabase
@@ -453,21 +483,9 @@ export async function isAssessmentCompleted(userId, assessmentId) {
   }
 }
 
-// ========== HELPER FUNCTIONS ==========
-
-function shuffleArray(array) {
-  if (!array || !Array.isArray(array)) return [];
-  const shuffled = [...array];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
-}
-
 /**
- * Get unique questions for any assessment type - FIXED VERSION with randomized answers
- * Each question has its own unique answers that are never reused
+ * Get unique questions for any assessment type - COMPLETELY RANDOMIZED
+ * Both questions and answers are randomized for each candidate
  */
 export async function getUniqueQuestions(assessmentId) {
   try {
@@ -508,8 +526,7 @@ export async function getUniqueQuestions(assessmentId) {
           display_order
         )
       `)
-      .eq('assessment_type_id', assessment.assessment_type_id)
-      .order('display_order');
+      .eq('assessment_type_id', assessment.assessment_type_id);
 
     if (qError) {
       console.error("❌ Error fetching unique questions:", qError);
@@ -523,8 +540,11 @@ export async function getUniqueQuestions(assessmentId) {
 
     console.log(`✅ Found ${questions.length} unique questions`);
 
-    // Format the questions with RANDOMIZED answer order
-    const formattedQuestions = questions.map((q, index) => {
+    // SHUFFLE THE QUESTIONS ORDER first
+    const shuffledQuestions = shuffleArray(questions);
+
+    // Then format each question with randomized answers
+    const formattedQuestions = shuffledQuestions.map((q, index) => {
       // Get all answers for this question
       const answers = (q.unique_answers || []).map(a => ({
         id: a.id,
@@ -546,7 +566,13 @@ export async function getUniqueQuestions(assessmentId) {
       };
     });
 
-    console.log(`✅ Returning ${formattedQuestions.length} formatted questions with randomized answers`);
+    console.log(`✅ Returning ${formattedQuestions.length} randomized questions with randomized answers`);
+    
+    // Log first question to show randomization worked
+    if (formattedQuestions.length > 0) {
+      console.log("Sample first question ID:", formattedQuestions[0].id);
+    }
+    
     return formattedQuestions;
 
   } catch (error) {
@@ -555,102 +581,6 @@ export async function getUniqueQuestions(assessmentId) {
   }
 }
 
-// Fisher-Yates shuffle algorithm for true randomness
-function shuffleArray(array) {
-  if (!array || !Array.isArray(array)) return [];
-  
-  const shuffled = [...array];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
-}
-
-    // First get the assessment to know its type
-    const { data: assessment, error: aError } = await supabase
-      .from('assessments')
-      .select('assessment_type_id, title')
-      .eq('id', assessmentId)
-      .single();
-
-    if (aError) {
-      console.error("❌ Error fetching assessment:", aError);
-      return [];
-    }
-
-    console.log("📊 Assessment type ID:", assessment.assessment_type_id);
-
-    // Get all unique questions for this assessment type with their answers
-    const { data: questions, error: qError } = await supabase
-      .from('unique_questions')
-      .select(`
-        id,
-        section,
-        subsection,
-        question_text,
-        display_order,
-        unique_answers (
-          id,
-          answer_text,
-          score,
-          display_order
-        )
-      `)
-      .eq('assessment_type_id', assessment.assessment_type_id)
-      .order('display_order');
-
-    if (qError) {
-      console.error("❌ Error fetching unique questions:", qError);
-      return [];
-    }
-
-    if (!questions || questions.length === 0) {
-      console.log("⚠️ No unique questions found for assessment type ID:", assessment.assessment_type_id);
-      
-      // Try to get the assessment type name for better debugging
-      const { data: typeData } = await supabase
-        .from('assessment_types')
-        .select('name')
-        .eq('id', assessment.assessment_type_id)
-        .single();
-      
-      console.log("Assessment type name:", typeData?.name);
-      
-      return [];
-    }
-
-    console.log(`✅ Found ${questions.length} unique questions`);
-
-    // Format the questions for the frontend - NO SHUFFLING for now to ensure consistency
-    const formattedQuestions = questions.map((q, index) => {
-      return {
-        id: q.id,
-        question_text: q.question_text,
-        section: q.section,
-        subsection: q.subsection,
-        display_order: index + 1,
-        answers: (q.unique_answers || [])
-          .map(a => ({
-            id: a.id,
-            answer_text: a.answer_text,
-            score: a.score,
-            display_order: a.display_order
-          }))
-          .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-      };
-    });
-
-    console.log(`✅ Returning ${formattedQuestions.length} formatted questions`);
-    return formattedQuestions;
-
-  } catch (error) {
-    console.error("❌ Error in getUniqueQuestions:", error);
-    return [];
-  }
-}
-
-/**
 /**
  * Save response for unique questions - FIXED VERSION
  */
@@ -717,6 +647,7 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
     return { success: false, error: error.message };
   }
 }
+
 // ========== LEGACY FUNCTIONS (for backward compatibility) ==========
 
 export async function getRandomizedQuestions(candidateId, assessmentId) {
@@ -732,7 +663,3 @@ export async function saveRandomizedResponse(session_id, user_id, assessment_id,
 export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveUniqueResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
-
-
-
-
