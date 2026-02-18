@@ -15,10 +15,31 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
+    // IMPORTANT: Initialize Supabase with service role key to bypass RLS
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
     );
+
+    // Test the connection first
+    const { error: testError } = await supabase
+      .from('responses')
+      .select('count', { count: 'exact', head: true });
+
+    if (testError) {
+      console.error("❌ Permission test failed:", testError);
+      return res.status(500).json({ 
+        error: "Database permission error",
+        details: testError.message,
+        hint: "Check if SUPABASE_SERVICE_ROLE_KEY is correct and has proper permissions"
+      });
+    }
 
     let userId = user_id;
     let assessmentId = assessment_id;
@@ -58,7 +79,8 @@ export default async function handler(req, res) {
       console.error("❌ Error fetching responses:", responsesError);
       return res.status(500).json({ 
         error: "Failed to fetch responses",
-        details: responsesError.message 
+        details: responsesError.message,
+        code: responsesError.code
       });
     }
 
@@ -72,7 +94,7 @@ export default async function handler(req, res) {
     }
 
     // Step 2: Get all unique question IDs from responses
-    const questionIds = responses.map(r => r.question_id).filter(Boolean);
+    const questionIds = [...new Set(responses.map(r => r.question_id).filter(Boolean))];
     
     // Step 3: Fetch question details including section
     const { data: questions, error: questionsError } = await supabase
@@ -95,7 +117,7 @@ export default async function handler(req, res) {
     });
 
     // Step 4: Get all unique answer IDs from responses
-    const answerIds = responses.map(r => r.answer_id).filter(Boolean);
+    const answerIds = [...new Set(responses.map(r => r.answer_id).filter(Boolean))];
     
     // Step 5: Fetch answer details including scores
     const { data: answers, error: answersError } = await supabase
@@ -126,8 +148,13 @@ export default async function handler(req, res) {
       const question = questionMap[response.question_id];
       const answer = answerMap[response.answer_id];
       
-      if (!question || !answer) {
-        console.warn("⚠️ Missing question or answer for response:", response.id);
+      if (!question) {
+        console.warn("⚠️ Missing question for response:", response.id, "question_id:", response.question_id);
+        return;
+      }
+      
+      if (!answer) {
+        console.warn("⚠️ Missing answer for response:", response.id, "answer_id:", response.answer_id);
         return;
       }
 
