@@ -61,6 +61,7 @@ export default async function handler(req, res) {
     }
 
     // Get responses using the read client (with user token first)
+    let responsesData;
     const { data: responses, error: responsesError } = await readClient
       .from('responses')
       .select('answer_id')
@@ -85,15 +86,17 @@ export default async function handler(req, res) {
         });
       }
 
-      responses = fallbackResponses;
+      responsesData = fallbackResponses;
+    } else {
+      responsesData = responses;
     }
 
-    if (!responses || responses.length === 0) {
+    if (!responsesData || responsesData.length === 0) {
       return res.status(400).json({ error: "No responses found" });
     }
 
     // Get answer IDs and fetch scores
-    const answerIds = responses.map(r => r.answer_id).filter(Boolean);
+    const answerIds = responsesData.map(r => r.answer_id).filter(Boolean);
 
     const { data: answers, error: answersError } = await serviceClient
       .from('unique_answers')
@@ -150,7 +153,7 @@ export default async function handler(req, res) {
     }
 
     // Calculate percentage for assessment_results
-    const maxScore = responses.length * 5;
+    const maxScore = responsesData.length * 5;
     const percentage = Math.round((totalScore / maxScore) * 100);
 
     // Save to assessment_results
