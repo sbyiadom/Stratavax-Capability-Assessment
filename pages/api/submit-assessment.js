@@ -47,71 +47,106 @@ export default async function handler(req, res) {
 
     console.log(`📝 Processing submission for user: ${userId}, assessment: ${assessmentId}`);
 
-    // Step 1: Get all responses with their associated answer scores in a single query
-    // This ensures we get accurate data directly from the database
-    const { data: responsesWithScores, error: responsesError } = await supabase
+    // Step 1: Get all responses for this user and assessment
+    const { data: responses, error: responsesError } = await supabase
       .from('responses')
-      .select(`
-        id,
-        question_id,
-        answer_id,
-        unique_questions!inner (
-          id,
-          section,
-          subsection,
-          text
-        ),
-        unique_answers!inner (
-          id,
-          score,
-          text
-        )
-      `)
+      .select('*')
       .eq('user_id', userId)
       .eq('assessment_id', assessmentId);
 
     if (responsesError) {
-      console.error("❌ Error fetching responses with scores:", responsesError);
+      console.error("❌ Error fetching responses:", responsesError);
       return res.status(500).json({ 
         error: "Failed to fetch responses",
         details: responsesError.message 
       });
     }
 
-    console.log(`📊 Found ${responsesWithScores?.length || 0} responses with scores`);
+    console.log(`📊 Found ${responses?.length || 0} responses`);
 
-    if (!responsesWithScores || responsesWithScores.length === 0) {
+    if (!responses || responses.length === 0) {
       return res.status(400).json({ 
         error: "No responses found for this assessment",
         details: "Cannot calculate scores without responses"
       });
     }
 
-    // Step 2: Calculate scores from the actual response data
+    // Step 2: Get all unique question IDs from responses
+    const questionIds = responses.map(r => r.question_id).filter(Boolean);
+    
+    // Step 3: Fetch question details including section
+    const { data: questions, error: questionsError } = await supabase
+      .from('unique_questions')
+      .select('id, section, subsection, text')
+      .in('id', questionIds);
+
+    if (questionsError) {
+      console.error("❌ Error fetching questions:", questionsError);
+      return res.status(500).json({ 
+        error: "Failed to fetch question details",
+        details: questionsError.message 
+      });
+    }
+
+    // Create a map of question_id -> question details
+    const questionMap = {};
+    questions?.forEach(q => {
+      questionMap[q.id] = q;
+    });
+
+    // Step 4: Get all unique answer IDs from responses
+    const answerIds = responses.map(r => r.answer_id).filter(Boolean);
+    
+    // Step 5: Fetch answer details including scores
+    const { data: answers, error: answersError } = await supabase
+      .from('unique_answers')
+      .select('id, score, text')
+      .in('id', answerIds);
+
+    if (answersError) {
+      console.error("❌ Error fetching answers:", answersError);
+      return res.status(500).json({ 
+        error: "Failed to fetch answer details",
+        details: answersError.message 
+      });
+    }
+
+    // Create a map of answer_id -> answer details
+    const answerMap = {};
+    answers?.forEach(a => {
+      answerMap[a.id] = a;
+    });
+
+    // Step 6: Calculate scores
     let totalScore = 0;
     const sectionScores = {};
-    const questionScores = []; // For detailed reporting
+    const questionScores = [];
 
-    responsesWithScores.forEach(response => {
-      // Get the actual score from the joined unique_answers
-      const score = response.unique_answers?.score || 0;
-      const section = response.unique_questions?.section || 'General';
-      const subsection = response.unique_questions?.subsection;
-      const questionText = response.unique_questions?.text;
+    responses.forEach(response => {
+      const question = questionMap[response.question_id];
+      const answer = answerMap[response.answer_id];
+      
+      if (!question || !answer) {
+        console.warn("⚠️ Missing question or answer for response:", response.id);
+        return;
+      }
+
+      const score = answer.score || 0;
+      const section = question.section || 'General';
+      const subsection = question.subsection;
       
       totalScore += score;
       
-      // Track individual question scores for detailed reporting
       questionScores.push({
         questionId: response.question_id,
-        questionText,
+        questionText: question.text,
         section,
         subsection,
         score,
-        maxScore: 5 // Assuming max score is 5
+        answerText: answer.text,
+        maxScore: 5
       });
 
-      // Initialize section if not exists
       if (!sectionScores[section]) {
         sectionScores[section] = {
           total: 0,
@@ -121,60 +156,34 @@ export default async function handler(req, res) {
         };
       }
       
-      // Add to section totals
       sectionScores[section].total += score;
       sectionScores[section].count += 1;
-      sectionScores[section].maxPossible += 5; // Max score per question
+      sectionScores[section].maxPossible += 5;
       sectionScores[section].questions.push({
+        questionText: question.text,
         subsection,
-        questionText,
         score,
+        answerText: answer.text,
         maxScore: 5
       });
     });
 
-    // Step 3: Calculate section percentages and averages
+    // Calculate section percentages
     Object.keys(sectionScores).forEach(section => {
       const data = sectionScores[section];
-      data.percentage = Math.round((data.total / data.maxPossible) * 100);
-      data.average = Number((data.total / data.count).toFixed(2));
-      
-      // Calculate subsection scores if needed
-      const subsectionScores = {};
-      data.questions.forEach(q => {
-        if (q.subsection) {
-          if (!subsectionScores[q.subsection]) {
-            subsectionScores[q.subsection] = {
-              total: 0,
-              count: 0,
-              maxPossible: 0
-            };
-          }
-          subsectionScores[q.subsection].total += q.score;
-          subsectionScores[q.subsection].count += 1;
-          subsectionScores[q.subsection].maxPossible += q.maxScore;
-        }
-      });
-      
-      // Calculate subsection percentages
-      Object.keys(subsectionScores).forEach(subsection => {
-        const subData = subsectionScores[subsection];
-        subData.percentage = Math.round((subData.total / subData.maxPossible) * 100);
-        subData.average = Number((subData.total / subData.count).toFixed(2));
-      });
-      
-      data.subsections = subsectionScores;
+      data.percentage = data.maxPossible > 0 ? Math.round((data.total / data.maxPossible) * 100) : 0;
+      data.average = data.count > 0 ? Number((data.total / data.count).toFixed(2)) : 0;
     });
 
-    const responseCount = responsesWithScores.length;
+    const responseCount = responses.length;
     const maxScore = responseCount * 5;
-    const percentage = Math.round((totalScore / maxScore) * 100);
+    const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
 
     console.log("📊 Score Calculation:");
     console.log(`   Total Score: ${totalScore}/${maxScore} (${percentage}%)`);
     console.log("   Sections:", Object.keys(sectionScores));
 
-    // Step 4: Get assessment type for classification
+    // Step 7: Get assessment type
     const { data: assessment, error: assessmentError } = await supabase
       .from('assessments')
       .select('assessment_type_id, assessment_type:assessment_types(code, name)')
@@ -187,61 +196,40 @@ export default async function handler(req, res) {
 
     const assessmentType = assessment?.assessment_type?.code || 'general';
 
-    // Step 5: Get classification
+    // Step 8: Get classification
     const classificationResult = classifyTalent(totalScore, assessmentType, maxScore);
     const classification = classificationResult.label;
 
-    // Step 6: Identify strengths and weaknesses based on actual scores
+    // Step 9: Identify strengths and weaknesses
     const strengths = [];
     const weaknesses = [];
 
     Object.entries(sectionScores).forEach(([section, data]) => {
       if (data.percentage >= 70) {
-        strengths.push({
-          area: section,
-          percentage: data.percentage,
-          score: data.total,
-          maxPossible: data.maxPossible
-        });
+        strengths.push(`${section} (${data.percentage}%)`);
       } else if (data.percentage <= 40) {
-        weaknesses.push({
-          area: section,
-          percentage: data.percentage,
-          score: data.total,
-          maxPossible: data.maxPossible
-        });
+        weaknesses.push(`${section} (${data.percentage}%)`);
       }
     });
 
-    // Step 7: Generate specific recommendations based on actual weaknesses
+    // Step 10: Generate recommendations
     const recommendations = [];
     if (weaknesses.length > 0) {
-      recommendations.push({
-        type: 'development',
-        areas: weaknesses.map(w => `${w.area} (${w.percentage}%)`),
-        message: `Focus on developing: ${weaknesses.map(w => w.area).join(', ')}`
-      });
+      recommendations.push(`Focus on developing: ${weaknesses.join(', ')}`);
     }
     if (strengths.length > 0) {
-      recommendations.push({
-        type: 'strength',
-        areas: strengths.map(s => `${s.area} (${s.percentage}%)`),
-        message: `Leverage strengths in: ${strengths.map(s => s.area).join(', ')}`
-      });
+      recommendations.push(`Leverage strengths in: ${strengths.join(', ')}`);
     }
     if (recommendations.length === 0) {
-      recommendations.push({
-        type: 'general',
-        message: 'Continue building on your solid performance across all areas.'
-      });
+      recommendations.push('Continue building on your solid performance across all areas.');
     }
 
-    // Step 8: Calculate risk and readiness based on actual performance
+    // Step 11: Calculate risk and readiness
     const weakSections = Object.values(sectionScores).filter(d => d.percentage < 40).length;
     const riskLevel = percentage < 40 || weakSections > 3 ? 'high' : percentage < 60 ? 'medium' : 'low';
     const readiness = percentage >= 70 ? 'ready' : percentage >= 50 ? 'development_needed' : 'not_ready';
 
-    // Step 9: Update session to completed
+    // Step 12: Update session to completed
     if (sessionId) {
       const { error: sessionUpdateError } = await supabase
         .from('assessment_sessions')
@@ -256,7 +244,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // Step 10: Update candidate_assessments with the actual score
+    // Step 13: Update candidate_assessments
     const { error: candidateError } = await supabase
       .from('candidate_assessments')
       .upsert({
@@ -267,15 +255,14 @@ export default async function handler(req, res) {
         score: totalScore,
         completed_at: new Date().toISOString()
       }, { 
-        onConflict: 'user_id, assessment_id',
-        ignoreDuplicates: false
+        onConflict: 'user_id, assessment_id'
       });
 
     if (candidateError) {
       console.error("❌ Error updating candidate_assessments:", candidateError);
     }
 
-    // Step 11: Store detailed results in assessment_results
+    // Step 14: Store in assessment_results
     const { error: resultError } = await supabase
       .from('assessment_results')
       .upsert({
@@ -286,12 +273,9 @@ export default async function handler(req, res) {
         max_score: maxScore,
         percentage_score: percentage,
         category_scores: sectionScores,
-        question_scores: questionScores, // Detailed question-level scores
         interpretations: { 
           summary: classificationResult.description || '',
-          classification: classification,
-          risk_level: riskLevel,
-          readiness: readiness
+          classification: classification
         },
         strengths: strengths,
         weaknesses: weaknesses,
@@ -300,8 +284,7 @@ export default async function handler(req, res) {
         readiness: readiness,
         completed_at: new Date().toISOString()
       }, { 
-        onConflict: 'user_id, assessment_id',
-        ignoreDuplicates: false
+        onConflict: 'user_id, assessment_id'
       });
 
     if (resultError) {
@@ -309,24 +292,6 @@ export default async function handler(req, res) {
       return res.status(500).json({
         error: "Failed to store results",
         details: resultError.message
-      });
-    }
-
-    // Step 12: Verify the data was saved correctly
-    const { data: savedResult, error: verifyError } = await supabase
-      .from('assessment_results')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('assessment_id', assessmentId)
-      .single();
-
-    if (verifyError) {
-      console.warn("⚠️ Could not verify saved results:", verifyError);
-    } else {
-      console.log("✅ Verified saved result:", {
-        score: savedResult.total_score,
-        percentage: savedResult.percentage_score,
-        sections: Object.keys(savedResult.category_scores || {})
       });
     }
 
@@ -338,9 +303,9 @@ export default async function handler(req, res) {
       max_score: maxScore,
       percentage: percentage,
       classification: classification,
-      strengths: strengths.map(s => `${s.area} (${s.percentage}%)`),
-      weaknesses: weaknesses.map(w => `${w.area} (${w.percentage}%)`),
-      recommendations: recommendations.map(r => r.message),
+      strengths: strengths,
+      weaknesses: weaknesses,
+      recommendations: recommendations,
       section_scores: sectionScores,
       message: "Assessment submitted successfully" 
     });
