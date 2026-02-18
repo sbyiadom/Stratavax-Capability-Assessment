@@ -17,93 +17,22 @@ export default function CandidateReport() {
   const [strengths, setStrengths] = useState([]);
   const [weaknesses, setWeaknesses] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
+  const [developmentPlan, setDevelopmentPlan] = useState([]);
+  const [executiveSummary, setExecutiveSummary] = useState('');
+  const [overallProfile, setOverallProfile] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
 
-  // Assessment type configurations
-  const assessmentConfig = {
-    'general': {
-      name: 'General Assessment',
-      icon: '📊',
-      color: '#607D8B',
-      gradient: 'linear-gradient(135deg, #607D8B, #455A64)',
-      categories: ['Cognitive Abilities', 'Personality Assessment', 'Leadership Potential', 'Technical Competence', 'Performance Metrics']
-    },
-    'leadership': {
-      name: 'Leadership Assessment',
-      icon: '👑',
-      color: '#9C27B0',
-      gradient: 'linear-gradient(135deg, #9C27B0, #6A1B9A)',
-      categories: ['Leadership Potential']
-    },
-    'cognitive': {
-      name: 'Cognitive Ability Assessment',
-      icon: '🧠',
-      color: '#4A6FA5',
-      gradient: 'linear-gradient(135deg, #4A6FA5, #2C3E50)',
-      categories: ['Cognitive Abilities']
-    },
-    'technical': {
-      name: 'Technical Assessment',
-      icon: '⚙️',
-      color: '#F44336',
-      gradient: 'linear-gradient(135deg, #F44336, #C62828)',
-      categories: ['Technical Competence']
-    },
-    'personality': {
-      name: 'Personality Assessment',
-      icon: '🌟',
-      color: '#4CAF50',
-      gradient: 'linear-gradient(135deg, #4CAF50, #2E7D32)',
-      categories: ['Personality Assessment']
-    },
-    'performance': {
-      name: 'Performance Assessment',
-      icon: '📈',
-      color: '#FF9800',
-      gradient: 'linear-gradient(135deg, #FF9800, #F57C00)',
-      categories: ['Performance Metrics']
-    },
-    'behavioral': {
-      name: 'Behavioral & Soft Skills',
-      icon: '🤝',
-      color: '#00ACC1',
-      gradient: 'linear-gradient(135deg, #00ACC1, #006064)',
-      categories: ['Communication', 'Teamwork', 'Emotional Intelligence', 'Adaptability']
-    },
-    'manufacturing': {
-      name: 'Manufacturing Technical Skills',
-      icon: '🏭',
-      color: '#795548',
-      gradient: 'linear-gradient(135deg, #795548, #4E342E)',
-      categories: ['Equipment Operation', 'Safety Protocols', 'Quality Control', 'Maintenance']
-    },
-    'cultural': {
-      name: 'Cultural & Attitudinal Fit',
-      icon: '🎯',
-      color: '#E91E63',
-      gradient: 'linear-gradient(135deg, #E91E63, #AD1457)',
-      categories: ['Values Alignment', 'Work Ethic', 'Adaptability', 'Initiative']
-    }
-  };
-
   // Get classification based on score
-  const getClassification = useCallback((score, assessmentType = 'general') => {
-    if (assessmentType === 'general') {
-      if (score >= 450) return { label: "Elite Talent", color: "#2E7D32", description: "Exceptional performer demonstrating mastery across all categories. Ready for senior roles." };
-      if (score >= 400) return { label: "Top Talent", color: "#4CAF50", description: "Outstanding performer with clear strengths. Shows strong leadership potential." };
-      if (score >= 350) return { label: "High Potential", color: "#2196F3", description: "Strong performer with clear development areas. Shows promise for growth." };
-      if (score >= 300) return { label: "Solid Performer", color: "#FF9800", description: "Reliable performer meeting core requirements. Good foundation to build upon." };
-      if (score >= 250) return { label: "Developing Talent", color: "#9C27B0", description: "Shows foundational skills with clear development needs." };
-      if (score >= 200) return { label: "Emerging Talent", color: "#795548", description: "Early-stage performer requiring significant development." };
-      return { label: "Needs Improvement", color: "#F44336", description: "Performance below expectations. Needs intensive development plan." };
-    } else {
-      if (score >= 90) return { label: "Exceptional", color: "#2E7D32", description: "Exceptional performance. Demonstrates mastery in this area." };
-      if (score >= 80) return { label: "Advanced", color: "#4CAF50", description: "Advanced proficiency. Strong capabilities with room for growth." };
-      if (score >= 70) return { label: "Proficient", color: "#2196F3", description: "Proficient. Meets expectations with solid performance." };
-      if (score >= 60) return { label: "Developing", color: "#FF9800", description: "Developing. Shows potential with targeted development needed." };
-      if (score >= 50) return { label: "Basic", color: "#9C27B0", description: "Basic understanding. Requires structured development." };
-      return { label: "Needs Improvement", color: "#F44336", description: "Needs significant improvement. Requires intensive support." };
-    }
+  const getClassification = useCallback((score, maxScore = 500) => {
+    const percentage = (score / maxScore) * 100;
+    
+    if (percentage >= 90) return { label: "Elite Talent", color: "#2E7D32", description: "Exceptional performer demonstrating mastery across all categories. Ready for senior roles." };
+    if (percentage >= 80) return { label: "Top Talent", color: "#4CAF50", description: "Outstanding performer with clear strengths. Shows strong leadership potential." };
+    if (percentage >= 70) return { label: "High Potential", color: "#2196F3", description: "Strong performer with clear development areas. Shows promise for growth." };
+    if (percentage >= 60) return { label: "Solid Performer", color: "#FF9800", description: "Reliable performer meeting core requirements. Good foundation to build upon." };
+    if (percentage >= 50) return { label: "Developing Talent", color: "#9C27B0", description: "Shows foundational skills with clear development needs." };
+    if (percentage >= 40) return { label: "Emerging Talent", color: "#795548", description: "Early-stage performer requiring significant development." };
+    return { label: "Needs Improvement", color: "#F44336", description: "Performance below expectations. Needs intensive development plan." };
   }, []);
 
   // Get grade based on percentage
@@ -149,39 +78,81 @@ export default function CandidateReport() {
       try {
         setLoading(true);
 
-        // Get candidate info and all assessments
-        const { data: candidateData, error } = await supabase
-          .from('supervisor_dashboard')
-          .select('*')
-          .eq('user_id', user_id)
+        // Get candidate info from auth.users or candidate_profiles
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('email, user_metadata')
+          .eq('id', user_id)
           .single();
 
-        if (error) throw error;
+        if (userError) {
+          console.error("Error fetching user:", userError);
+        }
 
-        setCandidate(candidateData);
-        setAssessments(candidateData.assessments || []);
+        setCandidate({
+          id: user_id,
+          full_name: userData?.user_metadata?.full_name || 'Candidate',
+          email: userData?.email || 'No email'
+        });
 
-        // Select the most recent assessment by default
-        if (candidateData.assessments?.length > 0) {
-          const mostRecent = candidateData.assessments[0];
+        // Get all completed assessments for this candidate from assessment_results
+        const { data: resultsData, error: resultsError } = await supabase
+          .from('assessment_results')
+          .select(`
+            *,
+            assessments (
+              id,
+              title,
+              assessment_type:assessment_types (
+                code,
+                name,
+                icon,
+                color
+              )
+            )
+          `)
+          .eq('user_id', user_id)
+          .order('completed_at', { ascending: false });
+
+        if (resultsError) {
+          console.error("Error fetching results:", resultsError);
+        }
+
+        if (resultsData && resultsData.length > 0) {
+          // Transform the data for the assessments list
+          const formattedAssessments = resultsData.map(result => ({
+            result_id: result.id,
+            assessment_id: result.assessment_id,
+            assessment_name: result.assessments?.title || 'Assessment',
+            assessment_type: result.assessments?.assessment_type?.code || 'general',
+            score: result.total_score,
+            max_score: result.max_score,
+            percentage: result.percentage_score,
+            completed_at: result.completed_at,
+            category_scores: result.category_scores,
+            strengths: result.strengths || [],
+            weaknesses: result.weaknesses || [],
+            recommendations: result.recommendations || [],
+            development_plan: result.development_plan || [],
+            executive_summary: result.interpretations?.executiveSummary || '',
+            overall_profile: result.interpretations?.overallProfile || ''
+          }));
+
+          setAssessments(formattedAssessments);
+          
+          // Select the most recent assessment
+          const mostRecent = formattedAssessments[0];
           setSelectedAssessment(mostRecent);
           
-          // Fetch detailed results if available
-          if (mostRecent.result_id) {
-            const { data: resultData } = await supabase
-              .from('assessment_results')
-              .select('*')
-              .eq('id', mostRecent.result_id)
-              .single();
-
-            if (resultData) {
-              setAssessmentResult(resultData);
-              setCategoryScores(resultData.category_scores || {});
-              setStrengths(resultData.strengths || []);
-              setWeaknesses(resultData.weaknesses || []);
-              setRecommendations(resultData.recommendations || []);
-            }
-          }
+          // Set the detailed data
+          setAssessmentResult(mostRecent);
+          setCategoryScores(mostRecent.category_scores || {});
+          setStrengths(mostRecent.strengths || []);
+          setWeaknesses(mostRecent.weaknesses || []);
+          setRecommendations(mostRecent.recommendations || []);
+          setDevelopmentPlan(mostRecent.development_plan || []);
+          setExecutiveSummary(mostRecent.executive_summary || '');
+          setOverallProfile(mostRecent.overall_profile || '');
         }
 
       } catch (error) {
@@ -199,26 +170,24 @@ export default function CandidateReport() {
     setSelectedAssessment(assessment);
     setActiveTab('overview');
     
-    if (assessment?.result_id) {
-      const { data } = await supabase
-        .from('assessment_results')
-        .select('*')
-        .eq('id', assessment.result_id)
-        .single();
-
-      if (data) {
-        setAssessmentResult(data);
-        setCategoryScores(data.category_scores || {});
-        setStrengths(data.strengths || []);
-        setWeaknesses(data.weaknesses || []);
-        setRecommendations(data.recommendations || []);
-      }
+    if (assessment) {
+      setAssessmentResult(assessment);
+      setCategoryScores(assessment.category_scores || {});
+      setStrengths(assessment.strengths || []);
+      setWeaknesses(assessment.weaknesses || []);
+      setRecommendations(assessment.recommendations || []);
+      setDevelopmentPlan(assessment.development_plan || []);
+      setExecutiveSummary(assessment.executive_summary || '');
+      setOverallProfile(assessment.overall_profile || '');
     } else {
       setAssessmentResult(null);
       setCategoryScores({});
       setStrengths([]);
       setWeaknesses([]);
       setRecommendations([]);
+      setDevelopmentPlan([]);
+      setExecutiveSummary('');
+      setOverallProfile('');
     }
   };
 
@@ -260,9 +229,8 @@ export default function CandidateReport() {
   }
 
   const currentAssessment = selectedAssessment || assessments[0];
-  const config = assessmentConfig[currentAssessment?.assessment_type] || assessmentConfig.general;
   const classification = currentAssessment?.score ? 
-    getClassification(currentAssessment.score, currentAssessment.assessment_type) : 
+    getClassification(currentAssessment.score, currentAssessment.max_score) : 
     { label: 'N/A', color: '#666', description: '' };
 
   return (
@@ -308,11 +276,10 @@ export default function CandidateReport() {
             {/* Assessment Summary Card */}
             <div style={{
               ...styles.summaryCard,
-              background: config.gradient
+              background: `linear-gradient(135deg, ${classification.color}, ${adjustColor(classification.color, -20)})`
             }}>
               <div style={styles.summaryContent}>
                 <div>
-                  <div style={styles.summaryIcon}>{config.icon}</div>
                   <h2 style={styles.summaryTitle}>{currentAssessment.assessment_name}</h2>
                   <p style={styles.summaryDate}>
                     Completed on {new Date(currentAssessment.completed_at).toLocaleDateString()} at{' '}
@@ -321,15 +288,20 @@ export default function CandidateReport() {
                 </div>
                 <div style={styles.scoreCard}>
                   <div style={styles.scoreLabel}>Overall Score</div>
-                  <div style={{ ...styles.scoreValue, color: classification.color }}>
-                    {currentAssessment.score}/{currentAssessment.max_score || 100}
+                  <div style={{ ...styles.scoreValue, color: 'white' }}>
+                    {currentAssessment.score}/{currentAssessment.max_score}
                   </div>
-                  <div style={{ ...styles.classification, color: classification.color }}>
+                  <div style={styles.scorePercentage}>
+                    {currentAssessment.percentage}%
+                  </div>
+                  <div style={styles.classification}>
                     {classification.label}
                   </div>
                 </div>
               </div>
-              <p style={styles.classificationDescription}>{classification.description}</p>
+              {executiveSummary && (
+                <p style={styles.classificationDescription}>{executiveSummary}</p>
+              )}
             </div>
 
             {/* Tabs */}
@@ -338,8 +310,8 @@ export default function CandidateReport() {
                 onClick={() => setActiveTab('overview')}
                 style={{
                   ...styles.tab,
-                  borderBottom: activeTab === 'overview' ? `3px solid ${config.color}` : '3px solid transparent',
-                  color: activeTab === 'overview' ? config.color : '#666'
+                  borderBottom: activeTab === 'overview' ? `3px solid ${classification.color}` : '3px solid transparent',
+                  color: activeTab === 'overview' ? classification.color : '#666'
                 }}
               >
                 Overview
@@ -348,8 +320,8 @@ export default function CandidateReport() {
                 onClick={() => setActiveTab('categories')}
                 style={{
                   ...styles.tab,
-                  borderBottom: activeTab === 'categories' ? `3px solid ${config.color}` : '3px solid transparent',
-                  color: activeTab === 'categories' ? config.color : '#666'
+                  borderBottom: activeTab === 'categories' ? `3px solid ${classification.color}` : '3px solid transparent',
+                  color: activeTab === 'categories' ? classification.color : '#666'
                 }}
               >
                 Category Breakdown
@@ -358,8 +330,8 @@ export default function CandidateReport() {
                 onClick={() => setActiveTab('analysis')}
                 style={{
                   ...styles.tab,
-                  borderBottom: activeTab === 'analysis' ? `3px solid ${config.color}` : '3px solid transparent',
-                  color: activeTab === 'analysis' ? config.color : '#666'
+                  borderBottom: activeTab === 'analysis' ? `3px solid ${classification.color}` : '3px solid transparent',
+                  color: activeTab === 'analysis' ? classification.color : '#666'
                 }}
               >
                 Strengths & Weaknesses
@@ -368,11 +340,11 @@ export default function CandidateReport() {
                 onClick={() => setActiveTab('recommendations')}
                 style={{
                   ...styles.tab,
-                  borderBottom: activeTab === 'recommendations' ? `3px solid ${config.color}` : '3px solid transparent',
-                  color: activeTab === 'recommendations' ? config.color : '#666'
+                  borderBottom: activeTab === 'recommendations' ? `3px solid ${classification.color}` : '3px solid transparent',
+                  color: activeTab === 'recommendations' ? classification.color : '#666'
                 }}
               >
-                Recommendations
+                Development Plan
               </button>
             </div>
 
@@ -387,13 +359,13 @@ export default function CandidateReport() {
                       <div style={styles.overviewStat}>
                         <span style={styles.overviewStatLabel}>Total Score</span>
                         <span style={{ ...styles.overviewStatValue, color: classification.color }}>
-                          {currentAssessment.score}/{currentAssessment.max_score || 100}
+                          {currentAssessment.score}/{currentAssessment.max_score}
                         </span>
                       </div>
                       <div style={styles.overviewStat}>
                         <span style={styles.overviewStatLabel}>Percentage</span>
                         <span style={styles.overviewStatValue}>
-                          {Math.round((currentAssessment.score / (currentAssessment.max_score || 100)) * 100)}%
+                          {currentAssessment.percentage}%
                         </span>
                       </div>
                       <div style={styles.overviewStat}>
@@ -403,34 +375,17 @@ export default function CandidateReport() {
                         </span>
                       </div>
                       <div style={styles.overviewStat}>
-                        <span style={styles.overviewStatLabel}>Questions</span>
-                        <span style={styles.overviewStatValue}>{config.categories.length} categories</span>
+                        <span style={styles.overviewStatLabel}>Categories Assessed</span>
+                        <span style={styles.overviewStatValue}>
+                          {Object.keys(categoryScores).length}
+                        </span>
                       </div>
                     </div>
                   </div>
 
                   <div style={styles.overviewCard}>
-                    <h3 style={styles.overviewCardTitle}>Category Highlights</h3>
-                    <div style={styles.categoryHighlights}>
-                      {Object.entries(categoryScores).map(([category, data]) => {
-                        const grade = getGrade(data.percentage);
-                        return (
-                          <div key={category} style={styles.highlightItem}>
-                            <div style={styles.highlightCategory}>{category}</div>
-                            <div style={styles.highlightBar}>
-                              <div style={{
-                                ...styles.highlightFill,
-                                width: `${data.percentage}%`,
-                                background: config.gradient
-                              }} />
-                            </div>
-                            <div style={{ ...styles.highlightGrade, color: grade.color }}>
-                              {grade.grade} • {data.percentage}%
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <h3 style={styles.overviewCardTitle}>Overall Profile</h3>
+                    <p style={styles.profileText}>{overallProfile || classification.description}</p>
                   </div>
 
                   <div style={styles.overviewCard}>
@@ -439,10 +394,10 @@ export default function CandidateReport() {
                       {strengths.length > 0 && (
                         <div style={styles.insightSection}>
                           <h4 style={styles.insightTitle}>Strengths</h4>
-                          {strengths.map((s, i) => (
+                          {strengths.slice(0, 3).map((s, i) => (
                             <div key={i} style={styles.insightItem}>
                               <span style={styles.insightBullet}>✓</span>
-                              <span>{s}</span>
+                              <span>{s.area || s}</span>
                             </div>
                           ))}
                         </div>
@@ -450,10 +405,10 @@ export default function CandidateReport() {
                       {weaknesses.length > 0 && (
                         <div style={styles.insightSection}>
                           <h4 style={styles.insightTitle}>Development Areas</h4>
-                          {weaknesses.map((w, i) => (
+                          {weaknesses.slice(0, 3).map((w, i) => (
                             <div key={i} style={styles.insightItem}>
                               <span style={styles.insightBullet}>!</span>
-                              <span>{w}</span>
+                              <span>{w.area || w}</span>
                             </div>
                           ))}
                         </div>
@@ -489,7 +444,7 @@ export default function CandidateReport() {
                         <div style={styles.categoryScore}>
                           <div style={styles.scoreRow}>
                             <span>Score</span>
-                            <span style={{ fontWeight: 600 }}>{data.score}/{data.max_possible}</span>
+                            <span style={{ fontWeight: 600 }}>{data.score}/{data.maxPossible}</span>
                           </div>
                           <div style={styles.scoreRow}>
                             <span>Average</span>
@@ -507,16 +462,26 @@ export default function CandidateReport() {
                           <div style={{
                             ...styles.progressFill,
                             width: `${data.percentage}%`,
-                            background: config.gradient
+                            background: `linear-gradient(90deg, ${classification.color}, ${adjustColor(classification.color, 20)})`
                           }} />
                         </div>
 
                         <div style={styles.categoryInterpretation}>
-                          {data.percentage >= 80 && `Exceptional performance in ${category}. Demonstrates mastery.`}
-                          {data.percentage >= 60 && data.percentage < 80 && `Good performance in ${category} with room for growth.`}
-                          {data.percentage >= 40 && data.percentage < 60 && `Developing in ${category}. Needs focused attention.`}
-                          {data.percentage < 40 && `Significant development needed in ${category}. Requires structured support.`}
+                          {data.analysis || (
+                            data.percentage >= 80 ? `Exceptional performance in ${category}. Demonstrates mastery.` :
+                            data.percentage >= 60 ? `Good performance in ${category} with room for growth.` :
+                            data.percentage >= 40 ? `Developing in ${category}. Needs focused attention.` :
+                            `Significant development needed in ${category}. Requires structured support.`
+                          )}
                         </div>
+
+                        {data.traits && data.traits.length > 0 && (
+                          <div style={styles.traitsContainer}>
+                            {data.traits.map((trait, idx) => (
+                              <span key={idx} style={styles.traitTag}>{trait}</span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -537,12 +502,22 @@ export default function CandidateReport() {
                         {strengths.map((strength, index) => (
                           <div key={index} style={styles.strengthItem}>
                             <div style={styles.strengthHeader}>
-                              <span style={styles.strengthName}>{strength}</span>
+                              <span style={styles.strengthName}>{strength.area || strength}</span>
+                              {strength.percentage && (
+                                <span style={styles.strengthScore}>{strength.percentage}%</span>
+                              )}
                             </div>
                             <p style={styles.strengthDesc}>
-                              Strong performance indicates capability in this area. 
-                              Leverage this strength in relevant roles and responsibilities.
+                              {strength.insights || strength.analysis || 
+                               `Strong performance indicates capability in this area. Leverage this strength in relevant roles.`}
                             </p>
+                            {strength.traits && strength.traits.length > 0 && (
+                              <div style={styles.traitsList}>
+                                {strength.traits.map((trait, idx) => (
+                                  <span key={idx} style={styles.traitTag}>{trait}</span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -562,11 +537,22 @@ export default function CandidateReport() {
                         {weaknesses.map((weakness, index) => (
                           <div key={index} style={styles.weaknessItem}>
                             <div style={styles.weaknessHeader}>
-                              <span style={styles.weaknessName}>{weakness}</span>
+                              <span style={styles.weaknessName}>{weakness.area || weakness}</span>
+                              {weakness.percentage && (
+                                <span style={styles.weaknessScore}>{weakness.percentage}%</span>
+                              )}
                             </div>
                             <p style={styles.weaknessDesc}>
-                              Needs development in this area. Focused training and support recommended.
+                              {weakness.insights || weakness.analysis ||
+                               `Needs development in this area. Focused training and support recommended.`}
                             </p>
+                            {weakness.recommendations && weakness.recommendations.length > 0 && (
+                              <div style={styles.recommendationTags}>
+                                {weakness.recommendations.map((rec, idx) => (
+                                  <span key={idx} style={styles.recommendationTag}>{rec}</span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -577,20 +563,38 @@ export default function CandidateReport() {
                 </div>
               )}
 
-              {/* Recommendations Tab */}
+              {/* Recommendations/Development Plan Tab */}
               {activeTab === 'recommendations' && (
                 <div style={styles.recommendationsContainer}>
-                  {recommendations.length > 0 ? (
+                  {developmentPlan.length > 0 ? (
+                    <div style={styles.planSteps}>
+                      {developmentPlan.map((step, index) => (
+                        <div key={index} style={styles.planStep}>
+                          <div style={styles.stepNumber}>{index + 1}</div>
+                          <div style={styles.stepContent}>
+                            <p style={styles.stepText}>{step}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : recommendations.length > 0 ? (
                     <div style={styles.recommendationsList}>
                       {recommendations.map((rec, index) => (
                         <div key={index} style={styles.recommendationCard}>
                           <div style={styles.recommendationHeader}>
                             <span style={styles.recommendationNumber}>{index + 1}</span>
                             <span style={styles.recommendationPriority}>
-                              {rec.includes('strength') ? 'Leverage' : 'Development'}
+                              {rec.type === 'strength' ? 'Leverage' : 'Development'}
                             </span>
                           </div>
-                          <p style={styles.recommendationText}>{rec}</p>
+                          <p style={styles.recommendationText}>{rec.message || rec}</p>
+                          {rec.areas && rec.areas.length > 0 && (
+                            <div style={styles.recommendationAreas}>
+                              {rec.areas.map((area, idx) => (
+                                <span key={idx} style={styles.recommendationArea}>{area}</span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -599,40 +603,6 @@ export default function CandidateReport() {
                       <p>No specific recommendations available.</p>
                     </div>
                   )}
-
-                  {/* Development Plan */}
-                  <div style={styles.planCard}>
-                    <h3 style={styles.planTitle}>Suggested Development Plan</h3>
-                    <div style={styles.planSteps}>
-                      <div style={styles.planStep}>
-                        <div style={styles.stepNumber}>1</div>
-                        <div>
-                          <h4 style={styles.stepTitle}>Immediate Actions (0-30 days)</h4>
-                          <p style={styles.stepDesc}>
-                            Focus on top development areas through targeted training and mentoring.
-                          </p>
-                        </div>
-                      </div>
-                      <div style={styles.planStep}>
-                        <div style={styles.stepNumber}>2</div>
-                        <div>
-                          <h4 style={styles.stepTitle}>Short-term Goals (30-90 days)</h4>
-                          <p style={styles.stepDesc}>
-                            Apply learning in practical scenarios with supervisor guidance.
-                          </p>
-                        </div>
-                      </div>
-                      <div style={styles.planStep}>
-                        <div style={styles.stepNumber}>3</div>
-                        <div>
-                          <h4 style={styles.stepTitle}>Long-term Development (90+ days)</h4>
-                          <p style={styles.stepDesc}>
-                            Leverage strengths in challenging assignments and leadership roles.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               )}
             </div>
@@ -657,6 +627,27 @@ export default function CandidateReport() {
       `}</style>
     </AppLayout>
   );
+}
+
+// Helper function to adjust color brightness
+function adjustColor(hex, percent) {
+  if (!hex) return '#666';
+  
+  // Remove # if present
+  hex = hex.replace('#', '');
+  
+  // Parse the color
+  let r = parseInt(hex.substring(0, 2), 16);
+  let g = parseInt(hex.substring(2, 4), 16);
+  let b = parseInt(hex.substring(4, 6), 16);
+  
+  // Adjust brightness
+  r = Math.max(0, Math.min(255, r + percent));
+  g = Math.max(0, Math.min(255, g + percent));
+  b = Math.max(0, Math.min(255, b + percent));
+  
+  // Convert back to hex
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
 const styles = {
@@ -755,10 +746,6 @@ const styles = {
     alignItems: 'flex-start',
     marginBottom: '20px'
   },
-  summaryIcon: {
-    fontSize: '40px',
-    marginBottom: '10px'
-  },
   summaryTitle: {
     fontSize: '20px',
     fontWeight: 600,
@@ -786,10 +773,18 @@ const styles = {
     fontWeight: 700,
     lineHeight: 1
   },
+  scorePercentage: {
+    fontSize: '16px',
+    fontWeight: 600,
+    marginTop: '5px'
+  },
   classification: {
     fontSize: '14px',
     fontWeight: 600,
-    marginTop: '5px'
+    marginTop: '10px',
+    padding: '5px 10px',
+    background: 'rgba(0,0,0,0.2)',
+    borderRadius: '4px'
   },
   classificationDescription: {
     fontSize: '14px',
@@ -854,35 +849,11 @@ const styles = {
     fontSize: '15px',
     fontWeight: 600
   },
-  categoryHighlights: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '15px'
-  },
-  highlightItem: {
-    display: 'grid',
-    gridTemplateColumns: '120px 1fr 60px',
-    gap: '10px',
-    alignItems: 'center'
-  },
-  highlightCategory: {
-    fontSize: '12px',
-    color: '#666'
-  },
-  highlightBar: {
-    height: '8px',
-    background: '#f0f0f0',
-    borderRadius: '4px',
-    overflow: 'hidden'
-  },
-  highlightFill: {
-    height: '100%',
-    borderRadius: '4px'
-  },
-  highlightGrade: {
-    fontSize: '12px',
-    fontWeight: 600,
-    textAlign: 'right'
+  profileText: {
+    fontSize: '14px',
+    color: '#555',
+    lineHeight: '1.6',
+    margin: 0
   },
   insights: {
     display: 'flex',
@@ -910,7 +881,7 @@ const styles = {
   },
   categoriesGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
     gap: '20px'
   },
   categoryCard: {
@@ -967,11 +938,25 @@ const styles = {
     lineHeight: '1.5',
     padding: '10px',
     background: '#f8f9fa',
-    borderRadius: '6px'
+    borderRadius: '6px',
+    marginBottom: '10px'
+  },
+  traitsContainer: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '5px'
+  },
+  traitTag: {
+    padding: '4px 8px',
+    background: '#e3f2fd',
+    color: '#1565c0',
+    borderRadius: '4px',
+    fontSize: '11px',
+    fontWeight: 500
   },
   analysisGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
     gap: '20px'
   },
   analysisCard: {
@@ -1003,6 +988,9 @@ const styles = {
     borderLeft: '4px solid #4caf50'
   },
   strengthHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: '8px'
   },
   strengthName: {
@@ -1010,8 +998,16 @@ const styles = {
     fontWeight: 600,
     color: '#2e7d32'
   },
+  strengthScore: {
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#2e7d32',
+    background: '#e8f5e9',
+    padding: '2px 6px',
+    borderRadius: '4px'
+  },
   strengthDesc: {
-    margin: 0,
+    margin: '0 0 10px 0',
     fontSize: '12px',
     color: '#555',
     lineHeight: '1.5'
@@ -1028,6 +1024,9 @@ const styles = {
     borderLeft: '4px solid #f44336'
   },
   weaknessHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: '8px'
   },
   weaknessName: {
@@ -1035,11 +1034,37 @@ const styles = {
     fontWeight: 600,
     color: '#c62828'
   },
+  weaknessScore: {
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#c62828',
+    background: '#ffebee',
+    padding: '2px 6px',
+    borderRadius: '4px'
+  },
   weaknessDesc: {
-    margin: 0,
+    margin: '0 0 10px 0',
     fontSize: '12px',
     color: '#555',
     lineHeight: '1.5'
+  },
+  traitsList: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '5px'
+  },
+  recommendationTags: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '5px',
+    marginTop: '10px'
+  },
+  recommendationTag: {
+    padding: '4px 8px',
+    background: '#fff3e0',
+    color: '#e65100',
+    borderRadius: '4px',
+    fontSize: '11px'
   },
   noData: {
     color: '#666',
@@ -1048,9 +1073,10 @@ const styles = {
     padding: '20px'
   },
   recommendationsContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px'
+    background: 'white',
+    padding: '30px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
   },
   recommendationsList: {
     display: 'grid',
@@ -1058,10 +1084,9 @@ const styles = {
     gap: '15px'
   },
   recommendationCard: {
-    background: 'white',
     padding: '20px',
+    background: '#f8f9fa',
     borderRadius: '8px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
     borderLeft: '4px solid #1565c0'
   },
   recommendationHeader: {
@@ -1091,27 +1116,21 @@ const styles = {
     borderRadius: '4px'
   },
   recommendationText: {
-    margin: 0,
+    margin: '0 0 10px 0',
     fontSize: '13px',
     color: '#555',
     lineHeight: '1.5'
   },
-  noRecommendations: {
-    textAlign: 'center',
-    padding: '40px',
-    background: 'white',
-    borderRadius: '8px'
+  recommendationAreas: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '5px'
   },
-  planCard: {
-    background: 'white',
-    padding: '25px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
-  },
-  planTitle: {
-    margin: '0 0 20px 0',
-    fontSize: '16px',
-    fontWeight: 600,
+  recommendationArea: {
+    padding: '3px 8px',
+    background: '#e0e0e0',
+    borderRadius: '4px',
+    fontSize: '11px',
     color: '#333'
   },
   planSteps: {
@@ -1139,17 +1158,19 @@ const styles = {
     fontWeight: 600,
     flexShrink: 0
   },
-  stepTitle: {
-    margin: '0 0 5px 0',
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#333'
+  stepContent: {
+    flex: 1
   },
-  stepDesc: {
+  stepText: {
     margin: 0,
-    fontSize: '12px',
-    color: '#666',
+    fontSize: '13px',
+    color: '#555',
     lineHeight: '1.5'
+  },
+  noRecommendations: {
+    textAlign: 'center',
+    padding: '40px',
+    color: '#666'
   },
   noAssessment: {
     textAlign: 'center',
