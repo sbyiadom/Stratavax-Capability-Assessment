@@ -132,20 +132,8 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
       throw assessmentError;
     }
 
-    // Get time limit from assessment type
-    let timeLimit = 60; // default 60 minutes
-    const { data: assessmentType, error: typeError } = await supabase
-      .from('assessment_types')
-      .select('time_limit_minutes')
-      .eq('id', assessment.assessment_type_id)
-      .single();
-
-    if (typeError) {
-      console.error("Error fetching assessment type:", typeError);
-      // Use default time limit
-    } else {
-      timeLimit = assessmentType?.time_limit_minutes || 60;
-    }
+    // Force 3 hours (180 minutes) for all assessments
+    const timeLimit = 180; // 3 hours in minutes
 
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + timeLimit);
