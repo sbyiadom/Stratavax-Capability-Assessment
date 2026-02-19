@@ -64,12 +64,16 @@ export default function CandidateReport() {
       try {
         setLoading(true);
 
-        // Get candidate info
-        const { data: profileData } = await supabase
+        // Get candidate info - FIXED: use maybeSingle() instead of single()
+        const { data: profileData, error: profileError } = await supabase
           .from('candidate_profiles')
           .select('*')
           .eq('id', user_id)
-          .single();
+          .maybeSingle();
+
+        if (profileError) {
+          console.error("Error fetching profile:", profileError);
+        }
 
         setCandidate({
           id: user_id,
@@ -78,7 +82,7 @@ export default function CandidateReport() {
         });
 
         // Get assessments
-        const { data: candidateAssessments } = await supabase
+        const { data: candidateAssessments, error: candidateError } = await supabase
           .from('candidate_assessments')
           .select(`
             id,
@@ -98,11 +102,19 @@ export default function CandidateReport() {
           .eq('status', 'completed')
           .order('completed_at', { ascending: false });
 
+        if (candidateError) {
+          console.error("Error fetching candidate assessments:", candidateError);
+        }
+
         // Get detailed results
-        const { data: resultsData } = await supabase
+        const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
           .select('*')
           .eq('user_id', user_id);
+
+        if (resultsError) {
+          console.error("Error fetching assessment results:", resultsError);
+        }
 
         const resultsMap = {};
         if (resultsData) {
