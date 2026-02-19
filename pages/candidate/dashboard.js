@@ -95,7 +95,6 @@ export default function CandidateDashboard() {
       if (error) throw error;
       
       if (data) {
-        // Transform to match the expected format in the UI
         const transformedTypes = data.map(type => ({
           id: type.code,
           label: type.name,
@@ -135,7 +134,6 @@ export default function CandidateDashboard() {
       if (error) throw error;
       
       if (data) {
-        // Ensure only one per type
         const uniqueAssessments = removeDuplicateAssessments(data);
         setAssessments(uniqueAssessments);
       }
@@ -159,7 +157,6 @@ export default function CandidateDashboard() {
 
   const fetchUserProgress = async () => {
     try {
-      // Get completed assessments from candidate_assessments
       const { data: completed, error: completedError } = await supabase
         .from("candidate_assessments")
         .select("assessment_id, score, completed_at, status")
@@ -170,7 +167,6 @@ export default function CandidateDashboard() {
         setCompletedAssessments(completed);
       }
 
-      // Get in-progress assessments
       const { data: inProgress, error: inProgressError } = await supabase
         .from("assessment_sessions")
         .select("assessment_id, time_spent_seconds, updated_at")
@@ -199,7 +195,6 @@ export default function CandidateDashboard() {
 
   const getAssessmentScore = (assessmentId) => {
     const completed = completedAssessments.find(a => a.assessment_id === assessmentId);
-    // Convert to percentage based on max score
     const assessment = assessments.find(a => a.id === assessmentId);
     const maxScore = assessment?.assessment_type?.max_score || 100;
     return completed?.score ? Math.round((completed.score / maxScore) * 100) : null;
@@ -213,30 +208,11 @@ export default function CandidateDashboard() {
     return assessments.length;
   };
 
-  const handleStartAssessment = (e, assessmentId) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (assessmentId) {
-      router.push(`/assessment/${assessmentId}`);
-    }
-  };
-
-  const formatTime = (minutes) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-  };
-
-  const isPassed = (score) => {
-    return score >= 80;
-  };
-
   if (authLoading || loading) {
     return (
       <div style={styles.loadingContainer}>
-        <div style={styles.loadingOverlay} />
         <div style={styles.loadingContent}>
-          <div style={styles.loadingLogo}>🏢 Stratavax</div>
+          <div style={styles.loadingLogo}>Stratavax</div>
           <div style={styles.loadingSpinner} />
           <div style={styles.loadingText}>Loading your dashboard...</div>
         </div>
@@ -250,503 +226,224 @@ export default function CandidateDashboard() {
   const activeAssessment = activeTab ? getAssessmentByType(activeTab) : null;
   const completedCount = getCompletedCount();
   const totalAssessments = getTotalAssessments();
-  const progressPercentage = totalAssessments > 0 ? Math.round((completedCount / totalAssessments) * 100) : 0;
 
   return (
     <AppLayout>
-      {/* Hero Section with Parallax Background */}
-      <div style={styles.heroWrapper}>
-        <div style={styles.heroBackground} />
-        <div style={styles.heroOverlay} />
-        <div style={styles.heroContent}>
-          <div style={styles.heroBadge}>Candidate Dashboard</div>
-          <h1 style={styles.heroTitle}>
-            Welcome back, <span style={styles.heroName}>{userName}</span>
-          </h1>
-          <p style={styles.heroSubtitle}>
-            Track your progress and continue your assessments. Each assessment contains 100 questions and has its own time limit.
-          </p>
-          
-          {/* Progress Card */}
-          <div style={styles.progressCard}>
-            <div style={styles.progressInfo}>
-              <div style={styles.progressLabel}>Your Journey</div>
-              <div style={styles.progressStats}>
-                <span style={styles.progressCount}>{completedCount}</span>
-                <span style={styles.progressTotal}>/{totalAssessments}</span>
-                <span style={styles.progressText}>assessments completed</span>
-              </div>
-            </div>
-            <div style={styles.progressCircleContainer}>
-              <svg width="100" height="100" viewBox="0 0 100 100">
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="45"
-                  fill="none"
-                  stroke="rgba(255,255,255,0.2)"
-                  strokeWidth="8"
-                />
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="45"
-                  fill="none"
-                  stroke="white"
-                  strokeWidth="8"
-                  strokeLinecap="round"
-                  strokeDasharray={`${progressPercentage * 2.83} 283`}
-                  strokeDashoffset="0"
-                  transform="rotate(-90 50 50)"
-                  style={styles.progressCircleFill}
-                />
-              </svg>
-              <div style={styles.progressPercentage}>
-                {progressPercentage}%
-              </div>
-            </div>
-          </div>
+      {/* Simple Header */}
+      <div style={styles.header}>
+        <div style={styles.headerContent}>
+          <h1 style={styles.headerTitle}>Stratavax Assessment</h1>
+          <button
+            onClick={async () => {
+              await supabase.auth.signOut();
+              router.push("/login");
+            }}
+            style={styles.logoutButton}
+          >
+            Logout
+          </button>
         </div>
-        
-        {/* Wave Divider */}
-        <div style={styles.waveDivider}>
-          <svg viewBox="0 0 1440 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M0 120L60 105C120 90 240 60 360 45C480 30 600 30 720 37.5C840 45 960 60 1080 67.5C1200 75 1320 75 1380 75L1440 75V120H1380C1320 120 1200 120 1080 120C960 120 840 120 720 120C600 120 480 120 360 120C240 120 120 120 60 120H0Z" fill="#f8fafc"/>
-          </svg>
+      </div>
+
+      {/* Compact Welcome Section */}
+      <div style={styles.welcomeSection}>
+        <div style={styles.welcomeContent}>
+          <h2 style={styles.welcomeTitle}>
+            Welcome back, <span style={styles.welcomeName}>{userName}</span>
+          </h2>
+          <p style={styles.welcomeText}>
+            Track your progress and continue your assessments.
+          </p>
+        </div>
+        <div style={styles.progressBadge}>
+          <span style={styles.progressCount}>{completedCount}</span>
+          <span style={styles.progressTotal}>/{totalAssessments}</span>
+          <span style={styles.progressLabel}>Completed</span>
         </div>
       </div>
 
       {/* Main Content */}
       <div style={styles.mainContent}>
-        <div style={styles.container}>
-          
-          {/* Section Header */}
-          <div style={styles.sectionHeader}>
-            <div>
-              <h2 style={styles.sectionTitle}>Your Assessments</h2>
-              <p style={styles.sectionDescription}>
-                Select an assessment to begin or continue. Your progress is automatically saved.
-              </p>
-            </div>
-            <div style={styles.statsBadge}>
-              <span style={styles.statsIcon}>📊</span>
-              <span style={styles.statsText}>{completedCount}/{totalAssessments} Completed</span>
-            </div>
-          </div>
-
-          {/* Assessment Tabs */}
-          {assessmentTypes.length > 0 && (
-            <div style={styles.tabsContainer}>
-              {assessmentTypes.map(tab => {
-                const isActive = activeTab === tab.id;
-                const hasAssessment = !!getAssessmentByType(tab.id);
-                const bgConfig = assessmentBackgrounds[tab.id] || {
-                  gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  color: '#667eea'
-                };
-                
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => hasAssessment && setActiveTab(tab.id)}
-                    disabled={!hasAssessment}
-                    style={{
-                      ...styles.tabButton,
-                      background: isActive ? bgConfig.gradient : 'white',
-                      color: isActive ? 'white' : '#64748b',
-                      borderColor: isActive ? 'transparent' : '#e2e8f0',
-                      opacity: hasAssessment ? 1 : 0.5,
-                      boxShadow: isActive ? `0 10px 20px ${bgConfig.color}40` : 'none'
-                    }}
-                  >
-                    <span style={styles.tabIcon}>{tab.icon}</span>
-                    <div style={styles.tabInfo}>
-                      <div style={styles.tabLabel}>{tab.shortLabel}</div>
-                      <div style={styles.tabMeta}>
-                        {hasAssessment ? '1 assessment' : 'Coming soon'}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Active Tab Header */}
-          {activeTypeConfig && (
-            <div style={styles.activeTabHeader}>
-              <div>
-                <h3 style={styles.activeTabTitle}>
-                  <span style={styles.activeTabIcon}>{activeTypeConfig.icon}</span>
-                  {activeTypeConfig.label}
-                </h3>
-                <p style={styles.activeTabDescription}>{activeTypeConfig.description}</p>
-              </div>
-              <div style={{
-                ...styles.activeTabBadge,
-                background: activeTypeConfig.lightColor,
-                color: activeTypeConfig.color
-              }}>
-                {activeAssessment ? (isAssessmentCompleted(activeAssessment.id) ? '✓ Completed' : '📝 Not Started') : 'No assessment'}
-              </div>
-            </div>
-          )}
-
-          {/* Assessment Cards */}
-          {activeAssessment ? (
-            <div style={styles.cardsGrid}>
-              {(() => {
-                const assessment = activeAssessment;
-                const completed = isAssessmentCompleted(assessment.id);
-                const inProgress = isAssessmentInProgress(assessment.id);
-                const score = getAssessmentScore(assessment.id);
-                const passed = completed && score >= 80;
-                const bgConfig = assessmentBackgrounds[activeTab] || {
-                  image: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1920&q=80',
-                  pattern: 'https://www.transparenttextures.com/patterns/cubes.png',
-                  color: activeTypeConfig?.color || '#667eea'
-                };
-                const isHovered = hoveredCard === assessment.id;
-
-                return (
-                  <div
-                    key={assessment.id}
-                    style={{
-                      ...styles.assessmentCard,
-                      ...(isHovered && !completed && styles.assessmentCardHovered),
-                      borderColor: completed 
-                        ? passed 
-                          ? '#4CAF50' 
-                          : '#FF9800'
-                        : inProgress
-                          ? activeTypeConfig?.color || '#667eea'
-                          : 'transparent',
-                      cursor: completed ? 'default' : 'pointer'
-                    }}
-                    onMouseEnter={() => !completed && setHoveredCard(assessment.id)}
-                    onMouseLeave={() => setHoveredCard(null)}
-                    onClick={() => {
-                      if (!completed && assessment) {
-                        router.push(`/assessment/${assessment.id}`);
-                      }
-                    }}
-                  >
-                    {/* Card Background Image */}
-                    <div style={{
-                      ...styles.cardBackground,
-                      backgroundImage: `url(${bgConfig.image})`,
-                      opacity: isHovered && !completed ? 0.15 : 0.1,
-                    }} />
-                    
-                    {/* Pattern Overlay */}
-                    <div style={{
-                      ...styles.cardPattern,
-                      backgroundImage: `url(${bgConfig.pattern})`,
-                      opacity: isHovered && !completed ? 0.1 : 0.05,
-                    }} />
-
-                    {/* Status Badge */}
-                    <div style={{
-                      ...styles.statusBadge,
-                      background: completed 
-                        ? passed 
-                          ? 'linear-gradient(135deg, #4CAF50, #2E7D32)'
-                          : 'linear-gradient(135deg, #FF9800, #F57C00)'
-                        : inProgress
-                          ? activeTypeConfig?.iconBg || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-                          : 'linear-gradient(135deg, #94a3b8, #64748b)',
-                    }}>
-                      {completed 
-                        ? passed 
-                          ? '✓ Passed' 
-                          : '⚠️ Needs Review'
-                        : inProgress
-                          ? '🕐 In Progress'
-                          : '📝 Ready to Start'
-                      }
-                    </div>
-
-                    {/* Card Header */}
-                    <div style={styles.cardHeader}>
-                      <div style={{
-                        ...styles.cardIcon,
-                        background: activeTypeConfig?.iconBg || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                        boxShadow: isHovered && !completed ? `0 10px 20px ${bgConfig.color}40` : 'none',
-                      }}>
-                        {activeTypeConfig?.icon || '📋'}
-                      </div>
-                      <div style={styles.cardTitleWrapper}>
-                        <h4 style={styles.cardTitle}>{assessment.title}</h4>
-                        <div style={styles.cardMeta}>
-                          <span style={styles.metaItem}>
-                            <span style={styles.metaIcon}>⏱️</span> {activeTypeConfig?.duration || 60} mins
-                          </span>
-                          <span style={styles.metaItem}>
-                            <span style={styles.metaIcon}>📝</span> {activeTypeConfig?.questions || 100} Q
-                          </span>
-                          <span style={styles.metaItem}>
-                            <span style={styles.metaIcon}>🎯</span> 80% pass
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Description */}
-                    <p style={styles.cardDescription}>
-                      {isHovered && !completed ? activeTypeConfig?.longDescription : activeTypeConfig?.description}
-                    </p>
-
-                    {/* Features List - Show on Hover */}
-                    {isHovered && !completed && activeTypeConfig?.features && (
-                      <div style={styles.featuresList}>
-                        {activeTypeConfig.features.map((feature, idx) => (
-                          <span key={idx} style={styles.featureTag}>
-                            {feature}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Score Display for Completed */}
-                    {completed && (
-                      <div style={{
-                        ...styles.scoreCard,
-                        background: passed 
-                          ? 'linear-gradient(135deg, #E8F5E9, #C8E6C9)'
-                          : 'linear-gradient(135deg, #FFF3E0, #FFE0B2)',
-                        borderColor: passed ? '#4CAF50' : '#FF9800'
-                      }}>
-                        <div style={styles.scoreHeader}>
-                          <span style={styles.scoreLabel}>Your Score</span>
-                          <span style={{
-                            ...styles.scoreValue,
-                            color: passed ? '#2E7D32' : '#E65100'
-                          }}>
-                            {score}%
-                          </span>
-                        </div>
-                        <div style={styles.scoreBar}>
-                          <div style={{
-                            ...styles.scoreBarFill,
-                            width: `${score}%`,
-                            background: passed 
-                              ? 'linear-gradient(90deg, #4CAF50, #2E7D32)'
-                              : 'linear-gradient(90deg, #FF9800, #F57C00)'
-                          }} />
-                        </div>
-                        <div style={styles.scoreDate}>
-                          {passed ? '✓ Passed' : '⚡ Below passing score (80%)'}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* In Progress Indicator */}
-                    {inProgress && !completed && (
-                      <div style={{
-                        ...styles.inProgressCard,
-                        background: `${bgConfig.color}10`,
-                        borderColor: bgConfig.color
-                      }}>
-                        <span style={styles.inProgressIcon}>🕐</span>
-                        <span style={styles.inProgressText}>You have an assessment in progress</span>
-                      </div>
-                    )}
-
-                    {/* Action Button */}
-                    {!completed && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (assessment) {
-                            router.push(`/assessment/${assessment.id}`);
-                          }
-                        }}
-                        style={{
-                          ...styles.actionButton,
-                          background: inProgress 
-                            ? activeTypeConfig?.iconBg || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-                            : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                          transform: isHovered ? 'translateY(-2px)' : 'translateY(0)',
-                          boxShadow: isHovered 
-                            ? `0 20px 30px ${bgConfig.color}40`
-                            : '0 4px 6px rgba(0,0,0,0.05)',
-                        }}
-                      >
-                        <span style={styles.buttonIcon}>
-                          {inProgress ? '🕐' : '🚀'}
-                        </span>
-                        <span style={styles.buttonText}>
-                          {inProgress ? 'Continue Assessment' : 'Start Assessment'}
-                        </span>
-                      </button>
-                    )}
-
-                    {completed && (
-                      <div style={styles.completedBadge}>
-                        <span style={styles.completedIcon}>✓</span>
-                        <span style={styles.completedText}>Assessment Completed</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
-          ) : (
-            <div style={styles.emptyState}>
-              <div style={styles.emptyStateIcon}>🔧</div>
-              <h3 style={styles.emptyStateTitle}>Assessment Coming Soon</h3>
-              <p style={styles.emptyStateText}>
-                {activeTypeConfig?.label ? `The ${activeTypeConfig.label.toLowerCase()} is being prepared.` : 'No assessments available at this time.'} Please check back later.
-              </p>
-            </div>
-          )}
-
-          {/* Journey Progress Section */}
-          <div style={styles.journeySection}>
-            <h3 style={styles.journeyTitle}>
-              <span style={styles.journeyIcon}>📈</span>
-              Your Assessment Journey
-            </h3>
+        {/* Assessment Tabs */}
+        <div style={styles.tabsContainer}>
+          {assessmentTypes.map(tab => {
+            const isActive = activeTab === tab.id;
+            const hasAssessment = !!getAssessmentByType(tab.id);
             
-            <div style={styles.journeyGrid}>
-              {assessmentTypes.map(type => {
-                const typeAssessment = getAssessmentByType(type.id);
-                const hasAssessment = !!typeAssessment;
-                const isCompleted = typeAssessment ? isAssessmentCompleted(typeAssessment.id) : false;
-                const completedCount = isCompleted ? 1 : 0;
-                const progress = isCompleted ? 100 : 0;
-                const bgConfig = assessmentBackgrounds[type.id] || {
-                  color: '#667eea'
-                };
-                
-                return (
-                  <div key={type.id} style={{
-                    ...styles.journeyCard,
-                    background: `linear-gradient(135deg, ${type.color}08, ${type.color}02)`,
-                    borderColor: isCompleted ? type.color : '#e2e8f0',
-                    opacity: hasAssessment ? 1 : 0.6
-                  }}>
-                    <div style={styles.journeyCardHeader}>
-                      <span style={styles.journeyCardIcon}>{type.icon}</span>
-                      <div>
-                        <span style={{...styles.journeyCardLabel, color: type.color}}>
-                          {type.shortLabel}
-                        </span>
-                        {isCompleted && (
-                          <span style={styles.journeyCardCompleted}>✓ Completed</span>
-                        )}
-                      </div>
-                    </div>
-                    <div style={styles.journeyCardProgress}>
-                      <span style={styles.journeyCardStat}>{completedCount}/1</span>
-                      <div style={styles.journeyProgressBar}>
-                        <div style={{
-                          ...styles.journeyProgressFill,
-                          width: `${progress}%`,
-                          background: `linear-gradient(90deg, ${type.color}, ${type.color}dd)`
-                        }} />
-                      </div>
-                    </div>
-                    {!hasAssessment && (
-                      <div style={styles.journeyComingSoon}>Coming soon</div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Guidelines Section */}
-          <div style={styles.guidelinesWrapper}>
-            <div style={styles.guidelinesBackground} />
-            <div style={styles.guidelinesContent}>
-              <div style={styles.guidelinesHeader}>
-                <span style={styles.guidelinesIcon}>📌</span>
-                <h3 style={styles.guidelinesTitle}>Important Guidelines</h3>
-              </div>
-              
-              <div style={styles.guidelinesGrid}>
-                <div style={styles.guidelineCard}>
-                  <div style={styles.guidelineIconWrapper}>
-                    <span style={styles.guidelineIcon}>⏰</span>
-                  </div>
-                  <div style={styles.guidelineTextWrapper}>
-                    <h4 style={styles.guidelineTitle}>Timed Assessments</h4>
-                    <p style={styles.guidelineText}>
-                      Each assessment has its own time limit. The timer starts when you begin and pauses if you log off.
-                    </p>
-                  </div>
-                </div>
-
-                <div style={styles.guidelineCard}>
-                  <div style={styles.guidelineIconWrapper}>
-                    <span style={styles.guidelineIcon}>🔄</span>
-                  </div>
-                  <div style={styles.guidelineTextWrapper}>
-                    <h4 style={styles.guidelineTitle}>One Attempt Only</h4>
-                    <p style={styles.guidelineText}>
-                      Each assessment can only be taken once. Make sure you're in a quiet environment before starting.
-                    </p>
-                  </div>
-                </div>
-
-                <div style={styles.guidelineCard}>
-                  <div style={styles.guidelineIconWrapper}>
-                    <span style={styles.guidelineIcon}>💾</span>
-                  </div>
-                  <div style={styles.guidelineTextWrapper}>
-                    <h4 style={styles.guidelineTitle}>Auto-Save Enabled</h4>
-                    <p style={styles.guidelineText}>
-                      Your answers are automatically saved. You can leave and return to resume where you left off.
-                    </p>
-                  </div>
-                </div>
-
-                <div style={styles.guidelineCard}>
-                  <div style={styles.guidelineIconWrapper}>
-                    <span style={styles.guidelineIcon}>🛡️</span>
-                  </div>
-                  <div style={styles.guidelineTextWrapper}>
-                    <h4 style={styles.guidelineTitle}>Anti-Cheat Protection</h4>
-                    <p style={styles.guidelineText}>
-                      Right-click, copy/paste, and text selection are disabled during assessments to maintain integrity.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div style={styles.tipCard}>
-                <span style={styles.tipIcon}>💡</span>
-                <div style={styles.tipContent}>
-                  <strong style={styles.tipTitle}>Pro Tip:</strong>
-                  <span style={styles.tipText}>
-                    You don't need to complete all assessments at once. Take them one at a time when you're ready. 
-                    Your progress is automatically saved, and you can always return to continue.
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div style={styles.footer}>
-            <div style={styles.footerLeft}>
-              <span style={styles.footerLogo}>🏢 Stratavax</span>
-              <span style={styles.footerCopyright}>© 2025 Assessment Portal</span>
-            </div>
-            <div style={styles.footerRight}>
-              <span style={styles.footerEmail}>support@stratavax.com</span>
+            return (
               <button
-                onClick={async () => {
-                  await supabase.auth.signOut();
-                  router.push("/login");
+                key={tab.id}
+                onClick={() => hasAssessment && setActiveTab(tab.id)}
+                disabled={!hasAssessment}
+                style={{
+                  ...styles.tabButton,
+                  background: isActive ? assessmentBackgrounds[tab.id]?.gradient || tab.iconBg : '#f5f5f5',
+                  color: isActive ? 'white' : '#666',
+                  opacity: hasAssessment ? 1 : 0.4
                 }}
-                style={styles.logoutButton}
-                onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
-                onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
               >
-                Logout
+                <span style={styles.tabIcon}>{tab.icon}</span>
+                <span style={styles.tabLabel}>{tab.shortLabel}</span>
               </button>
+            );
+          })}
+        </div>
+
+        {/* Active Assessment Card */}
+        {activeAssessment ? (
+          <div style={styles.card}>
+            <div style={styles.cardHeader}>
+              <span style={styles.cardIcon}>{activeTypeConfig?.icon}</span>
+              <div style={styles.cardInfo}>
+                <h3 style={styles.cardTitle}>{activeAssessment.title}</h3>
+                <div style={styles.cardMeta}>
+                  <span>⏱️ {activeTypeConfig?.duration || 60} mins</span>
+                  <span>📝 {activeTypeConfig?.questions || 100} questions</span>
+                </div>
+              </div>
+              <div style={styles.cardStatus}>
+                {(() => {
+                  const completed = isAssessmentCompleted(activeAssessment.id);
+                  const inProgress = isAssessmentInProgress(activeAssessment.id);
+                  const score = getAssessmentScore(activeAssessment.id);
+                  
+                  if (completed) {
+                    return (
+                      <span style={{
+                        ...styles.statusBadge,
+                        background: score >= 80 ? '#4caf5020' : '#ff980020',
+                        color: score >= 80 ? '#2e7d32' : '#ed6c02'
+                      }}>
+                        {score >= 80 ? '✓ Passed' : '⚠️ Review'} • {score}%
+                      </span>
+                    );
+                  } else if (inProgress) {
+                    return (
+                      <span style={{...styles.statusBadge, background: '#1565c020', color: '#1565c0'}}>
+                        🕐 In Progress
+                      </span>
+                    );
+                  } else {
+                    return (
+                      <span style={{...styles.statusBadge, background: '#f5f5f5', color: '#666'}}>
+                        📝 Ready
+                      </span>
+                    );
+                  }
+                })()}
+              </div>
+            </div>
+            <button
+              onClick={() => router.push(`/assessment/${activeAssessment.id}`)}
+              style={styles.startButton}
+            >
+              {isAssessmentInProgress(activeAssessment.id) ? 'Continue →' : 'Start →'}
+            </button>
+          </div>
+        ) : (
+          <div style={styles.emptyState}>
+            <p>No assessment available for this type.</p>
+          </div>
+        )}
+
+        {/* Progress Grid */}
+        <div style={styles.progressSection}>
+          <h3 style={styles.sectionTitle}>Your Progress</h3>
+          <div style={styles.progressGrid}>
+            {assessmentTypes.map(type => {
+              const typeAssessment = getAssessmentByType(type.id);
+              const isCompleted = typeAssessment ? isAssessmentCompleted(typeAssessment.id) : false;
+              const isInProgress = typeAssessment ? isAssessmentInProgress(typeAssessment.id) : false;
+              
+              let statusColor = '#999';
+              let statusText = 'Not Started';
+              
+              if (isCompleted) {
+                statusColor = '#2e7d32';
+                statusText = 'Completed';
+              } else if (isInProgress) {
+                statusColor = '#1565c0';
+                statusText = 'In Progress';
+              }
+              
+              return (
+                <div key={type.id} style={styles.progressItem}>
+                  <span style={styles.progressIcon}>{type.icon}</span>
+                  <span style={styles.progressName}>{type.shortLabel}</span>
+                  <span style={{...styles.progressStatus, color: statusColor}}>{statusText}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Guidelines Section - Kept exactly as you like it */}
+        <div style={styles.guidelinesWrapper}>
+          <div style={styles.guidelinesBackground} />
+          <div style={styles.guidelinesContent}>
+            <div style={styles.guidelinesHeader}>
+              <span style={styles.guidelinesIcon}>📌</span>
+              <h3 style={styles.guidelinesTitle}>Important Guidelines</h3>
+            </div>
+            
+            <div style={styles.guidelinesGrid}>
+              <div style={styles.guidelineCard}>
+                <div style={styles.guidelineIconWrapper}>
+                  <span style={styles.guidelineIcon}>⏰</span>
+                </div>
+                <div style={styles.guidelineTextWrapper}>
+                  <h4 style={styles.guidelineTitle}>Timed Assessments</h4>
+                  <p style={styles.guidelineText}>
+                    Each assessment has its own time limit. The timer starts when you begin and pauses if you log off.
+                  </p>
+                </div>
+              </div>
+
+              <div style={styles.guidelineCard}>
+                <div style={styles.guidelineIconWrapper}>
+                  <span style={styles.guidelineIcon}>🔄</span>
+                </div>
+                <div style={styles.guidelineTextWrapper}>
+                  <h4 style={styles.guidelineTitle}>One Attempt Only</h4>
+                  <p style={styles.guidelineText}>
+                    Each assessment can only be taken once. Make sure you're in a quiet environment before starting.
+                  </p>
+                </div>
+              </div>
+
+              <div style={styles.guidelineCard}>
+                <div style={styles.guidelineIconWrapper}>
+                  <span style={styles.guidelineIcon}>💾</span>
+                </div>
+                <div style={styles.guidelineTextWrapper}>
+                  <h4 style={styles.guidelineTitle}>Auto-Save Enabled</h4>
+                  <p style={styles.guidelineText}>
+                    Your answers are automatically saved. You can leave and return to resume where you left off.
+                  </p>
+                </div>
+              </div>
+
+              <div style={styles.guidelineCard}>
+                <div style={styles.guidelineIconWrapper}>
+                  <span style={styles.guidelineIcon}>🛡️</span>
+                </div>
+                <div style={styles.guidelineTextWrapper}>
+                  <h4 style={styles.guidelineTitle}>Anti-Cheat Protection</h4>
+                  <p style={styles.guidelineText}>
+                    Right-click, copy/paste, and text selection are disabled during assessments to maintain integrity.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div style={styles.tipCard}>
+              <span style={styles.tipIcon}>💡</span>
+              <div style={styles.tipContent}>
+                <strong style={styles.tipTitle}>Pro Tip:</strong>
+                <span style={styles.tipText}>
+                  Take assessments one at a time when you're ready. Your progress is automatically saved.
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -757,649 +454,261 @@ export default function CandidateDashboard() {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
-        @keyframes slowZoom {
-          0% { transform: scale(1); }
-          100% { transform: scale(1.1); }
-        }
-        @keyframes slideIn {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
       `}</style>
     </AppLayout>
   );
 }
 
-// ===== STYLES ===== (keeping all your existing styles)
 const styles = {
   loadingContainer: {
     minHeight: '100vh',
-    position: 'relative',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: 'linear-gradient(135deg, #1a2639 0%, #2d3748 100%)',
-    overflow: 'hidden'
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundImage: 'url(https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1920&q=80)',
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-    opacity: 0.1,
-    filter: 'blur(10px)'
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
   },
   loadingContent: {
-    position: 'relative',
     textAlign: 'center',
-    color: 'white',
-    zIndex: 1,
-    animation: 'slideIn 0.5s ease'
+    color: 'white'
   },
   loadingLogo: {
-    fontSize: '36px',
-    fontWeight: '800',
-    marginBottom: '30px',
-    letterSpacing: '2px'
-  },
-  loadingSpinner: {
-    width: '70px',
-    height: '70px',
-    border: '5px solid rgba(255,255,255,0.2)',
-    borderTop: '5px solid white',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite',
-    margin: '0 auto 30px'
-  },
-  loadingText: {
-    fontSize: '18px',
-    opacity: 0.9
-  },
-  heroWrapper: {
-    position: 'relative',
-    height: '400px',
-    overflow: 'hidden'
-  },
-  heroBackground: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundImage: 'url(https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1920&q=80)',
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-    filter: 'brightness(0.7)',
-    transform: 'scale(1.1)',
-    animation: 'slowZoom 20s infinite alternate'
-  },
-  heroOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'linear-gradient(135deg, rgba(102,126,234,0.95) 0%, rgba(118,75,162,0.95) 100%)'
-  },
-  heroContent: {
-    position: 'relative',
-    maxWidth: '1200px',
-    margin: '0 auto',
-    padding: '60px 20px',
-    color: 'white',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    textAlign: 'center'
-  },
-  heroBadge: {
-    background: 'rgba(255,255,255,0.2)',
-    backdropFilter: 'blur(10px)',
-    padding: '8px 20px',
-    borderRadius: '30px',
-    fontSize: '14px',
-    fontWeight: '600',
-    marginBottom: '20px',
-    border: '1px solid rgba(255,255,255,0.3)'
-  },
-  heroTitle: {
-    fontSize: '48px',
-    fontWeight: '800',
-    marginBottom: '20px',
-    lineHeight: 1.2
-  },
-  heroName: {
-    color: '#FFEAA7',
-    textShadow: '0 2px 10px rgba(0,0,0,0.2)'
-  },
-  heroSubtitle: {
-    fontSize: '18px',
-    maxWidth: '800px',
-    marginBottom: '40px',
-    opacity: 0.95,
-    lineHeight: 1.6
-  },
-  progressCard: {
-    background: 'rgba(255,255,255,0.1)',
-    backdropFilter: 'blur(10px)',
-    borderRadius: '20px',
-    padding: '25px 35px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '40px',
-    border: '1px solid rgba(255,255,255,0.2)'
-  },
-  progressInfo: {
-    textAlign: 'left'
-  },
-  progressLabel: {
-    fontSize: '14px',
-    opacity: 0.9,
-    marginBottom: '10px',
-    textTransform: 'uppercase',
-    letterSpacing: '1px'
-  },
-  progressStats: {
-    display: 'flex',
-    alignItems: 'baseline',
-    gap: '5px'
-  },
-  progressCount: {
-    fontSize: '48px',
-    fontWeight: '800',
-    lineHeight: 1
-  },
-  progressTotal: {
-    fontSize: '24px',
-    opacity: 0.8,
-    marginLeft: '5px'
-  },
-  progressText: {
-    fontSize: '16px',
-    marginLeft: '15px',
-    opacity: 0.9
-  },
-  progressCircleContainer: {
-    position: 'relative',
-    width: '100px',
-    height: '100px'
-  },
-  progressCircleFill: {
-    transition: 'stroke-dasharray 0.5s ease'
-  },
-  progressPercentage: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: 'translate(-50%, -50%)',
-    fontSize: '24px',
-    fontWeight: '700'
-  },
-  waveDivider: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    lineHeight: 0
-  },
-  mainContent: {
-    background: '#f8fafc',
-    padding: '40px 0'
-  },
-  container: {
-    maxWidth: '1400px',
-    margin: '0 auto',
-    padding: '0 20px'
-  },
-  sectionHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '30px',
-    flexWrap: 'wrap',
-    gap: '20px'
-  },
-  sectionTitle: {
     fontSize: '32px',
     fontWeight: '700',
-    color: '#1a2639',
-    marginBottom: '10px'
+    marginBottom: '20px',
+    letterSpacing: '1px'
   },
-  sectionDescription: {
+  loadingSpinner: {
+    width: '50px',
+    height: '50px',
+    border: '4px solid rgba(255,255,255,0.2)',
+    borderTop: '4px solid white',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite',
+    margin: '0 auto 20px'
+  },
+  loadingText: {
     fontSize: '16px',
-    color: '#64748b',
-    maxWidth: '600px',
-    lineHeight: 1.6
+    opacity: 0.9
   },
-  statsBadge: {
+  header: {
     background: 'white',
+    borderBottom: '1px solid #e0e0e0',
     padding: '12px 24px',
-    borderRadius: '40px',
-    boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
+    position: 'sticky',
+    top: 0,
+    zIndex: 100
+  },
+  headerContent: {
+    maxWidth: '1200px',
+    margin: '0 auto',
     display: 'flex',
-    alignItems: 'center',
-    gap: '10px'
+    justifyContent: 'space-between',
+    alignItems: 'center'
   },
-  statsIcon: {
-    fontSize: '20px'
-  },
-  statsText: {
-    fontSize: '16px',
+  headerTitle: {
+    fontSize: '20px',
     fontWeight: '600',
-    color: '#1a2639'
+    color: '#1565c0',
+    margin: 0
+  },
+  logoutButton: {
+    padding: '6px 16px',
+    background: '#f5f5f5',
+    color: '#666',
+    border: '1px solid #ddd',
+    borderRadius: '20px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    transition: 'all 0.2s'
+  },
+  welcomeSection: {
+    maxWidth: '1200px',
+    margin: '24px auto 16px',
+    padding: '0 20px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  welcomeContent: {
+    flex: 1
+  },
+  welcomeTitle: {
+    fontSize: '24px',
+    fontWeight: '600',
+    margin: '0 0 4px 0',
+    color: '#333'
+  },
+  welcomeName: {
+    color: '#1565c0'
+  },
+  welcomeText: {
+    fontSize: '14px',
+    color: '#666',
+    margin: 0
+  },
+  progressBadge: {
+    background: '#f5f5f5',
+    padding: '8px 16px',
+    borderRadius: '30px',
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: '2px'
+  },
+  progressCount: {
+    fontSize: '20px',
+    fontWeight: '700',
+    color: '#1565c0'
+  },
+  progressTotal: {
+    fontSize: '14px',
+    color: '#666'
+  },
+  progressLabel: {
+    fontSize: '13px',
+    color: '#666',
+    marginLeft: '8px'
+  },
+  mainContent: {
+    maxWidth: '1200px',
+    margin: '0 auto',
+    padding: '0 20px 40px'
   },
   tabsContainer: {
     display: 'flex',
-    gap: '12px',
-    marginBottom: '30px',
+    gap: '8px',
+    marginBottom: '20px',
     flexWrap: 'wrap'
   },
   tabButton: {
-    padding: '12px 24px',
-    border: '2px solid',
-    borderRadius: '40px',
+    padding: '8px 16px',
+    border: 'none',
+    borderRadius: '30px',
     cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '600',
+    fontSize: '13px',
+    fontWeight: '500',
     display: 'flex',
     alignItems: 'center',
-    gap: '10px',
-    transition: 'all 0.3s ease',
-    flex: '1 1 auto',
-    minWidth: '160px'
+    gap: '6px',
+    transition: 'all 0.2s'
   },
   tabIcon: {
-    fontSize: '20px'
-  },
-  tabInfo: {
-    textAlign: 'left'
+    fontSize: '16px'
   },
   tabLabel: {
-    fontSize: '14px',
-    fontWeight: '600',
-    marginBottom: '2px'
+    textTransform: 'capitalize'
   },
-  tabMeta: {
-    fontSize: '11px',
-    opacity: 0.8
-  },
-  activeTabHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '25px',
-    padding: '20px',
+  card: {
     background: 'white',
-    borderRadius: '16px',
-    boxShadow: '0 4px 6px rgba(0,0,0,0.05)'
-  },
-  activeTabTitle: {
-    margin: '0 0 8px 0',
-    fontSize: '24px',
-    fontWeight: '700',
-    color: '#1a2639',
+    borderRadius: '12px',
+    padding: '16px 20px',
+    marginBottom: '30px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    border: '1px solid #f0f0f0',
     display: 'flex',
     alignItems: 'center',
-    gap: '10px'
-  },
-  activeTabIcon: {
-    fontSize: '28px'
-  },
-  activeTabDescription: {
-    margin: 0,
-    color: '#64748b',
-    fontSize: '14px'
-  },
-  activeTabBadge: {
-    padding: '8px 20px',
-    borderRadius: '30px',
-    fontSize: '14px',
-    fontWeight: '600'
-  },
-  cardsGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr',
-    gap: '30px',
-    marginBottom: '50px'
-  },
-  assessmentCard: {
-    position: 'relative',
-    background: 'white',
-    borderRadius: '24px',
-    padding: '35px',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.05)',
-    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    border: '2px solid transparent',
-    overflow: 'hidden',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px'
-  },
-  assessmentCardHovered: {
-    transform: 'translateY(-8px)',
-    boxShadow: '0 30px 60px rgba(0,0,0,0.12)'
-  },
-  cardBackground: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-    transition: 'opacity 0.3s ease',
-    zIndex: 0
-  },
-  cardPattern: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundRepeat: 'repeat',
-    transition: 'opacity 0.3s ease',
-    zIndex: 0
-  },
-  statusBadge: {
-    position: 'absolute',
-    top: '20px',
-    right: '20px',
-    padding: '8px 20px',
-    borderRadius: '30px',
-    fontSize: '13px',
-    fontWeight: '600',
-    color: 'white',
-    zIndex: 2
+    justifyContent: 'space-between'
   },
   cardHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '20px',
-    position: 'relative',
-    zIndex: 2
+    gap: '16px',
+    flex: 1
   },
   cardIcon: {
-    width: '70px',
-    height: '70px',
-    borderRadius: '20px',
+    fontSize: '32px',
+    width: '48px',
+    height: '48px',
+    background: '#f5f5f5',
+    borderRadius: '12px',
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '36px',
-    transition: 'all 0.3s ease',
-    flexShrink: 0
+    justifyContent: 'center'
   },
-  cardTitleWrapper: {
+  cardInfo: {
     flex: 1
   },
   cardTitle: {
-    margin: '0 0 10px 0',
-    color: '#1a2639',
-    fontSize: '24px',
-    fontWeight: '700'
+    fontSize: '16px',
+    fontWeight: '600',
+    margin: '0 0 4px 0',
+    color: '#333'
   },
   cardMeta: {
     display: 'flex',
-    gap: '20px',
-    flexWrap: 'wrap'
-  },
-  metaItem: {
-    fontSize: '14px',
-    color: '#64748b',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px'
-  },
-  metaIcon: {
-    fontSize: '16px'
-  },
-  cardDescription: {
-    position: 'relative',
-    zIndex: 2,
-    color: '#475569',
-    fontSize: '16px',
-    lineHeight: '1.6',
-    marginBottom: '10px',
-    minHeight: '70px'
-  },
-  featuresList: {
-    position: 'relative',
-    zIndex: 2,
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '10px',
-    marginBottom: '20px'
-  },
-  featureTag: {
-    padding: '6px 16px',
-    background: '#f1f5f9',
-    borderRadius: '30px',
+    gap: '16px',
     fontSize: '12px',
-    fontWeight: '500',
-    color: '#475569'
+    color: '#666'
   },
-  scoreCard: {
-    position: 'relative',
-    zIndex: 2,
-    borderRadius: '16px',
-    padding: '20px',
-    border: '1px solid',
-    marginBottom: '10px'
+  cardStatus: {
+    marginRight: '16px'
   },
-  scoreHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '12px'
-  },
-  scoreLabel: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#1e293b'
-  },
-  scoreValue: {
-    fontSize: '28px',
-    fontWeight: '700'
-  },
-  scoreBar: {
-    height: '10px',
-    background: '#e2e8f0',
-    borderRadius: '5px',
-    overflow: 'hidden',
-    marginBottom: '12px'
-  },
-  scoreBarFill: {
-    height: '100%',
-    borderRadius: '5px',
-    transition: 'width 0.3s ease'
-  },
-  scoreDate: {
+  statusBadge: {
+    padding: '4px 12px',
+    borderRadius: '20px',
     fontSize: '12px',
-    color: '#64748b',
-    textAlign: 'right'
-  },
-  inProgressCard: {
-    position: 'relative',
-    zIndex: 2,
-    borderRadius: '16px',
-    padding: '16px',
-    border: '1px solid',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '10px'
-  },
-  inProgressIcon: {
-    fontSize: '20px'
-  },
-  inProgressText: {
-    fontSize: '14px',
     fontWeight: '500'
   },
-  actionButton: {
-    position: 'relative',
-    zIndex: 2,
-    width: '100%',
-    padding: '18px 24px',
+  startButton: {
+    padding: '8px 20px',
+    background: '#1565c0',
     color: 'white',
     border: 'none',
-    borderRadius: '16px',
-    fontSize: '18px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'all 0.3s ease',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '12px'
-  },
-  buttonIcon: {
-    fontSize: '22px'
-  },
-  buttonText: {
-    letterSpacing: '0.5px'
-  },
-  completedBadge: {
-    position: 'relative',
-    zIndex: 2,
-    padding: '16px',
-    background: '#f8fafc',
-    borderRadius: '16px',
+    borderRadius: '30px',
     fontSize: '14px',
-    color: '#64748b',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    justifyContent: 'center'
-  },
-  completedIcon: {
-    width: '24px',
-    height: '24px',
-    borderRadius: '50%',
-    background: '#4caf50',
-    color: 'white',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '14px'
-  },
-  completedText: {
-    fontWeight: '500'
+    fontWeight: '500',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap'
   },
   emptyState: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '60px 20px',
     textAlign: 'center',
-    boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
-    marginBottom: '50px'
+    padding: '40px',
+    background: 'white',
+    borderRadius: '12px',
+    marginBottom: '30px'
   },
-  emptyStateIcon: {
-    fontSize: '48px',
-    marginBottom: '20px'
+  progressSection: {
+    marginBottom: '40px'
   },
-  emptyStateTitle: {
-    color: '#1a2639',
-    marginBottom: '10px',
-    fontSize: '24px',
-    fontWeight: '600'
+  sectionTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#333',
+    margin: '0 0 16px 0'
   },
-  emptyStateText: {
-    color: '#64748b',
-    maxWidth: '400px',
-    margin: '0 auto',
-    fontSize: '16px'
-  },
-  journeySection: {
-    marginBottom: '50px'
-  },
-  journeyTitle: {
-    fontSize: '24px',
-    fontWeight: '700',
-    color: '#1a2639',
-    marginBottom: '25px',
-    display: 'flex',
-    alignItems: 'center',
+  progressGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
     gap: '10px'
   },
-  journeyIcon: {
-    fontSize: '28px'
-  },
-  journeyGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '20px'
-  },
-  journeyCard: {
-    padding: '20px',
-    borderRadius: '16px',
-    border: '2px solid',
-    transition: 'transform 0.2s ease'
-  },
-  journeyCardHeader: {
+  progressItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    marginBottom: '15px'
+    gap: '8px',
+    padding: '10px 12px',
+    background: '#f8f9fa',
+    borderRadius: '8px',
+    border: '1px solid #f0f0f0'
   },
-  journeyCardIcon: {
-    fontSize: '24px'
+  progressIcon: {
+    fontSize: '18px'
   },
-  journeyCardLabel: {
-    fontSize: '16px',
-    fontWeight: '600',
-    display: 'block',
-    marginBottom: '4px'
+  progressName: {
+    fontSize: '13px',
+    fontWeight: '500',
+    color: '#333',
+    flex: 1,
+    textTransform: 'capitalize'
   },
-  journeyCardCompleted: {
+  progressStatus: {
     fontSize: '11px',
-    color: '#4caf50',
     fontWeight: '500'
   },
-  journeyCardProgress: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px'
-  },
-  journeyCardStat: {
-    fontSize: '18px',
-    fontWeight: '700',
-    minWidth: '45px'
-  },
-  journeyProgressBar: {
-    flex: 1,
-    height: '8px',
-    background: '#e2e8f0',
-    borderRadius: '4px',
-    overflow: 'hidden'
-  },
-  journeyProgressFill: {
-    height: '100%',
-    borderRadius: '4px',
-    transition: 'width 0.3s ease'
-  },
-  journeyComingSoon: {
-    fontSize: '12px',
-    color: '#94a3b8',
-    marginTop: '10px',
-    textAlign: 'center',
-    fontStyle: 'italic'
-  },
+  // Guidelines section - kept exactly as you had it
   guidelinesWrapper: {
     position: 'relative',
     borderRadius: '32px',
     overflow: 'hidden',
-    marginBottom: '40px'
+    marginTop: '20px'
   },
   guidelinesBackground: {
     position: 'absolute',
@@ -1498,48 +807,5 @@ const styles = {
   },
   tipText: {
     opacity: 0.9
-  },
-  footer: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '30px 0',
-    borderTop: '1px solid #e2e8f0',
-    flexWrap: 'wrap',
-    gap: '20px'
-  },
-  footerLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '20px'
-  },
-  footerLogo: {
-    fontSize: '18px',
-    fontWeight: '700',
-    color: '#1a2639'
-  },
-  footerCopyright: {
-    fontSize: '14px',
-    color: '#64748b'
-  },
-  footerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '20px'
-  },
-  footerEmail: {
-    fontSize: '14px',
-    color: '#64748b'
-  },
-  logoutButton: {
-    padding: '10px 24px',
-    background: 'transparent',
-    color: '#64748b',
-    border: '2px solid #e2e8f0',
-    borderRadius: '30px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '600',
-    transition: 'all 0.2s'
   }
 };
