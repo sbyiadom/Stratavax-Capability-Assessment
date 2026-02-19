@@ -21,7 +21,7 @@ export default function SupervisorDashboard() {
 
   // Check supervisor authentication
   useEffect(() => {
-    const checkAuth = () => {
+    const checkAuth = async () => {
       if (typeof window !== 'undefined') {
         const supervisorSession = localStorage.getItem("supervisorSession");
         if (!supervisorSession) {
@@ -32,11 +32,41 @@ export default function SupervisorDashboard() {
         try {
           const session = JSON.parse(supervisorSession);
           if (session.loggedIn) {
-            setIsSupervisor(true);
+            // Verify with Supabase that this is still a valid supervisor
+            const { data: { user } } = await supabase.auth.getUser();
+            
+            if (user) {
+              // Check if user exists in supervisors table
+              const { data, error } = await supabase
+                .from('supervisors')
+                .select('id')
+                .eq('user_id', user.id)
+                .maybeSingle();
+              
+              if (error) {
+                console.error("Error checking supervisor status:", error);
+              }
+              
+              // If they're in the supervisors table, grant access
+              if (data) {
+                setIsSupervisor(true);
+              } else {
+                // Not a supervisor, redirect to login
+                console.log("User not found in supervisors table, redirecting...");
+                localStorage.removeItem("supervisorSession");
+                router.push("/supervisor-login");
+              }
+            } else {
+              // No user found, redirect to login
+              console.log("No user found, redirecting...");
+              localStorage.removeItem("supervisorSession");
+              router.push("/supervisor-login");
+            }
           } else {
             router.push("/supervisor-login");
           }
-        } catch {
+        } catch (error) {
+          console.error("Auth check error:", error);
           router.push("/supervisor-login");
         }
       }
@@ -286,8 +316,8 @@ export default function SupervisorDashboard() {
                     const isExpanded = expandedCandidate === candidate.user_id;
 
                     return (
-                      <>
-                        <tr key={candidate.user_id} style={styles.tableRow}>
+                      <React.Fragment key={candidate.user_id}>
+                        <tr style={styles.tableRow}>
                           <td style={styles.tableCell}>
                             <div style={styles.candidateName}>{candidate.full_name}</div>
                             <div style={styles.candidateId}>ID: {candidate.user_id.substring(0, 8)}...</div>
@@ -449,7 +479,7 @@ export default function SupervisorDashboard() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
