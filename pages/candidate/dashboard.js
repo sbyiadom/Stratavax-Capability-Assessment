@@ -851,7 +851,7 @@ const styles = {
     fontSize: '16px',
     fontWeight: '600',
     color: '#0f172a',
-    margin: '0 0 '16px' 0'
+    margin: '0 0 16px 0'
   },
   areasGrid: {
     display: 'grid',
