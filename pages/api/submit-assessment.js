@@ -243,7 +243,7 @@ export default async function handler(req, res) {
       ...weaknessesList.map(w => `Focus on developing ${w.area} (${w.percentage}%)`)
     ];
 
-    // Prepare strengths and weaknesses as simple arrays
+    // Prepare strengths and weaknesses as simple arrays of strings
     const strengthsArray = strengthsList.map(s => `${s.area} (${s.percentage}%)`);
     const weaknessesArray = weaknessesList.map(w => `${w.area} (${w.percentage}%)`);
 
@@ -275,7 +275,7 @@ export default async function handler(req, res) {
       completed_at: new Date().toISOString()
     };
 
-    console.log("📦 Inserting into assessment_results...");
+    console.log("📦 Inserting into assessment_results with data:", JSON.stringify(resultData, null, 2));
 
     // Save to assessment_results
     const { data: insertedData, error: resultsError } = await serviceClient
@@ -284,10 +284,15 @@ export default async function handler(req, res) {
       .select();
 
     if (resultsError) {
-      console.error("❌ Results error:", resultsError);
-      console.error("❌ Results error code:", resultsError.code);
-      console.error("❌ Results error message:", resultsError.message);
-      console.error("❌ Results error details:", resultsError.details);
+      console.error("❌ Results error - Full details:", {
+        message: resultsError.message,
+        code: resultsError.code,
+        details: resultsError.details,
+        hint: resultsError.hint
+      });
+      
+      // Log the data that failed
+      console.error("❌ Data that failed to insert:", JSON.stringify(resultData, null, 2));
       
       // Even if assessment_results fails, we already saved to candidate_assessments
       // So the score is still saved
@@ -296,7 +301,7 @@ export default async function handler(req, res) {
         score: totalScore,
         percentage: percentageScore,
         classification,
-        warning: "Score saved but detailed report failed to save",
+        warning: "Score saved but detailed report failed to save: " + resultsError.message,
         message: "Assessment submitted successfully (score only)" 
       });
     }
