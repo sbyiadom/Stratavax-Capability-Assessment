@@ -396,9 +396,6 @@ export default function CandidateReport() {
                     } else if (data.percentage >= 60) {
                       rowColor = '#fff3e0'; // Light orange
                       assessmentText = 'Average';
-                    } else if (data.percentage >= 50) {
-                      rowColor = '#ffebee'; // Light red
-                      assessmentText = 'Below Average';
                     } else {
                       rowColor = '#ffebee'; // Light red
                       assessmentText = 'Below Average';
@@ -488,29 +485,19 @@ export default function CandidateReport() {
               <p style={styles.profileDescription}>{professionalInterpretation.profileDescription}</p>
             </div>
             
-            {/* Domain Summaries */}
-            <h3 style={styles.sectionTitle}>📊 Domain-Level Analysis</h3>
-            <div style={styles.domainGrid}>
-              {Object.entries(professionalInterpretation.domainSummaries || {}).map(([domain, data]) => (
-                <div key={domain} style={styles.domainCard}>
-                  <h4 style={styles.domainName}>{data.name}</h4>
-                  <div style={styles.domainScore}>
-                    <span style={styles.domainAverage}>{data.average}%</span>
-                    <span style={styles.domainLevel}>{data.level}</span>
-                  </div>
-                  <p style={styles.domainSummary}>{data.summary}</p>
-                  <small style={styles.domainRelevance}>{data.leadershipRelevance}</small>
-                </div>
-              ))}
+            {/* Overall Summary */}
+            <div style={styles.overallSummaryCard}>
+              <p style={styles.overallSummaryText}>{professionalInterpretation.overallSummary}</p>
             </div>
             
             {/* Category Breakdown */}
             <h3 style={styles.sectionTitle}>📈 Category Breakdown & What It Means</h3>
             <div style={styles.categoryGrid}>
-              {Object.entries(professionalInterpretation.categoryInterpretations || {}).map(([category, data]) => {
+              {Object.entries(professionalInterpretation.categoryInterpretation || {}).map(([category, data]) => {
                 let levelColor = '';
-                if (data.level === 'high') levelColor = '#2E7D32';
-                else if (data.level === 'medium') levelColor = '#F57C00';
+                if (data.level === 'excellent') levelColor = '#2E7D32';
+                else if (data.level === 'good') levelColor = '#4CAF50';
+                else if (data.level === 'average') levelColor = '#F57C00';
                 else levelColor = '#C62828';
                 
                 return (
@@ -520,7 +507,6 @@ export default function CandidateReport() {
                       <span style={{...styles.categoryScore, color: levelColor}}>{data.score}%</span>
                     </div>
                     <p style={styles.categoryInterpretation}>{data.interpretation}</p>
-                    <small style={styles.categoryRelevance}>{data.leadershipRelevance}</small>
                   </div>
                 );
               })}
@@ -540,7 +526,7 @@ export default function CandidateReport() {
               <div style={styles.insightColumn}>
                 <h4 style={styles.insightTitle}>Risk Areas:</h4>
                 <ul style={styles.insightList}>
-                  {professionalInterpretation.concerns?.map((item, i) => (
+                  {professionalInterpretation.risks?.map((item, i) => (
                     <li key={i} style={styles.insightItem}>{item}</li>
                   ))}
                 </ul>
@@ -552,14 +538,29 @@ export default function CandidateReport() {
               <>
                 <h3 style={styles.sectionTitle}>🎯 Development Focus</h3>
                 <div style={styles.developmentList}>
-                  {professionalInterpretation.developmentFocus.map((area, i) => (
+                  {professionalInterpretation.developmentFocus.map((item, i) => (
                     <div key={i} style={styles.developmentItem}>
-                      <span style={styles.developmentPriority}>{i === 0 ? '🔴 High' : i === 1 ? '🟡 Medium' : '🟢 Low'}</span>
-                      <span style={styles.developmentArea}>{area}</span>
+                      <span style={styles.developmentPriority}>
+                        {item.priority === 'High' ? '🔴 High' : 
+                         item.priority === 'Medium' ? '🟡 Medium' : '🟢 Low'}
+                      </span>
+                      <span style={styles.developmentArea}>{item.area}</span>
                     </div>
                   ))}
                 </div>
               </>
+            )}
+            
+            {/* Top Strengths */}
+            {professionalInterpretation.topStrengths?.length > 0 && (
+              <div style={styles.topStrengthsCard}>
+                <h4 style={styles.topStrengthsTitle}>✨ Top Strengths</h4>
+                <div style={styles.topStrengthsList}>
+                  {professionalInterpretation.topStrengths.map((strength, i) => (
+                    <span key={i} style={styles.topStrengthTag}>{strength}</span>
+                  ))}
+                </div>
+              </div>
             )}
             
             {/* Overall Grade Interpretation */}
@@ -1261,59 +1262,24 @@ const styles = {
     lineHeight: '1.6',
     margin: 0
   },
+  overallSummaryCard: {
+    background: '#e3f2fd',
+    padding: '20px',
+    borderRadius: '12px',
+    marginBottom: '30px'
+  },
+  overallSummaryText: {
+    fontSize: '15px',
+    color: '#1565c0',
+    lineHeight: '1.6',
+    margin: 0,
+    fontStyle: 'italic'
+  },
   sectionTitle: {
     fontSize: '20px',
     fontWeight: 600,
     color: '#333',
     margin: '30px 0 20px 0'
-  },
-  domainGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-    gap: '20px',
-    marginBottom: '30px'
-  },
-  domainCard: {
-    background: '#f8f9fa',
-    padding: '20px',
-    borderRadius: '12px',
-    border: '1px solid #e0e0e0'
-  },
-  domainName: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#333',
-    margin: '0 0 10px 0'
-  },
-  domainScore: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    marginBottom: '10px'
-  },
-  domainAverage: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#1565c0'
-  },
-  domainLevel: {
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '12px',
-    fontWeight: 600,
-    background: '#e3f2fd',
-    color: '#1565c0'
-  },
-  domainSummary: {
-    fontSize: '14px',
-    color: '#555',
-    lineHeight: '1.5',
-    margin: '0 0 10px 0'
-  },
-  domainRelevance: {
-    fontSize: '12px',
-    color: '#888',
-    fontStyle: 'italic'
   },
   categoryGrid: {
     display: 'grid',
@@ -1347,11 +1313,7 @@ const styles = {
     fontSize: '14px',
     color: '#555',
     lineHeight: '1.5',
-    marginBottom: '8px'
-  },
-  categoryRelevance: {
-    fontSize: '12px',
-    color: '#888'
+    margin: 0
   },
   profileInsights: {
     display: 'grid',
@@ -1403,6 +1365,32 @@ const styles = {
   developmentArea: {
     fontSize: '14px',
     color: '#333'
+  },
+  topStrengthsCard: {
+    background: '#E8F5E9',
+    padding: '20px',
+    borderRadius: '12px',
+    marginBottom: '20px'
+  },
+  topStrengthsTitle: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#2E7D32',
+    margin: '0 0 15px 0'
+  },
+  topStrengthsList: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '10px'
+  },
+  topStrengthTag: {
+    padding: '6px 12px',
+    background: 'white',
+    color: '#2E7D32',
+    borderRadius: '20px',
+    fontSize: '13px',
+    fontWeight: 500,
+    border: '1px solid #2E7D32'
   },
   gradeInterpretation: {
     background: '#e3f2fd',
