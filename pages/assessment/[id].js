@@ -60,10 +60,10 @@ export default function AssessmentPage() {
   const [answers, setAnswers] = useState({});
   const [saveStatus, setSaveStatus] = useState({});
   
-  // Timer
+  // Timer - Set to 3 hours (10800 seconds) for all assessments
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [timeLimit, setTimeLimit] = useState(3600);
-  const [timeRemaining, setTimeRemaining] = useState(3600);
+  const [timeLimit, setTimeLimit] = useState(10800); // 3 hours = 10800 seconds
+  const [timeRemaining, setTimeRemaining] = useState(10800);
   
   // UI state
   const [showSubmitModal, setShowSubmitModal] = useState(false);
@@ -117,7 +117,9 @@ export default function AssessmentPage() {
         const assessmentData = await getAssessmentById(assessmentId);
         setAssessment(assessmentData);
         setAssessmentType(assessmentData?.assessment_type);
-        setTimeLimit(assessmentData?.assessment_type?.time_limit_minutes * 60 || 3600);
+        // Force 3 hours (10800 seconds) for all assessments
+        setTimeLimit(10800); // 3 hours = 10800 seconds
+        setTimeRemaining(10800);
 
         // Create or get session
         const sessionData = await createAssessmentSession(
@@ -747,12 +749,8 @@ export default function AssessmentPage() {
                   <span style={{ fontWeight: 600 }}>{assessment?.title}</span>
                 </div>
                 <div style={styles.infoRow}>
-                  <span>Max Score:</span>
-                  <span style={{ fontWeight: 600 }}>{assessmentType?.max_score || 100}</span>
-                </div>
-                <div style={styles.infoRow}>
                   <span>Time Limit:</span>
-                  <span style={{ fontWeight: 600 }}>{assessmentType?.time_limit_minutes || 60} minutes</span>
+                  <span style={{ fontWeight: 600 }}>3 hours</span>
                 </div>
               </div>
             </div>
