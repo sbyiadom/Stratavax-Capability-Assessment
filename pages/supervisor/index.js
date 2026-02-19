@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
@@ -21,27 +21,24 @@ export default function SupervisorDashboard() {
 
   // Check supervisor authentication
   useEffect(() => {
-    const checkAuth = async () => {
+    const checkAuth = () => {
       if (typeof window !== 'undefined') {
         const supervisorSession = localStorage.getItem("supervisorSession");
-        
-        // For demo purposes, if we have a session in localStorage, consider it valid
-        if (supervisorSession) {
-          try {
-            const session = JSON.parse(supervisorSession);
-            if (session.loggedIn) {
-              console.log("Supervisor session found in localStorage, granting access");
-              setIsSupervisor(true);
-              return;
-            }
-          } catch (e) {
-            console.error("Error parsing supervisor session:", e);
-          }
+        if (!supervisorSession) {
+          router.push("/supervisor-login");
+          return;
         }
         
-        // If no valid session, redirect to login
-        console.log("No valid supervisor session, redirecting to login");
-        router.push("/supervisor-login");
+        try {
+          const session = JSON.parse(supervisorSession);
+          if (session.loggedIn) {
+            setIsSupervisor(true);
+          } else {
+            router.push("/supervisor-login");
+          }
+        } catch {
+          router.push("/supervisor-login");
+        }
       }
     };
     checkAuth();
@@ -289,8 +286,8 @@ export default function SupervisorDashboard() {
                     const isExpanded = expandedCandidate === candidate.user_id;
 
                     return (
-                      <React.Fragment key={candidate.user_id}>
-                        <tr style={styles.tableRow}>
+                      <>
+                        <tr key={candidate.user_id} style={styles.tableRow}>
                           <td style={styles.tableCell}>
                             <div style={styles.candidateName}>{candidate.full_name}</div>
                             <div style={styles.candidateId}>ID: {candidate.user_id.substring(0, 8)}...</div>
@@ -452,7 +449,7 @@ export default function SupervisorDashboard() {
                             </td>
                           </tr>
                         )}
-                      </React.Fragment>
+                      </>
                     );
                   })}
                 </tbody>
