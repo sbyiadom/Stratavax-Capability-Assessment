@@ -110,37 +110,37 @@ export const getOverallRating = (percentage, strengths, weaknesses, assessmentTy
     return {
       title: 'Strong Performer',
       icon: '🌟',
-      message: `Demonstrates strong ${descriptor.strengths[0]} capabilities. Ready for increased responsibility.`
+      message: `Demonstrates strong capabilities. Ready for increased responsibility.`
     };
   } else if (percentage >= 70) {
     return {
       title: 'Competent Performer',
       icon: '📈',
-      message: `Shows solid performance with ${strengthCount} key ${strengthCount === 1 ? 'strength' : 'strengths'} in ${descriptor.strengths.slice(0,2).join(' and ')}.`
+      message: `Shows solid performance with ${strengthCount} key ${strengthCount === 1 ? 'strength' : 'strengths'}.`
     };
   } else if (percentage >= 60) {
     return {
       title: 'Developing Performer',
       icon: '🌱',
-      message: `Has foundational skills with ${weaknessCount} ${weaknessCount === 1 ? 'area' : 'areas'} needing attention in ${descriptor.weaknesses[0]}.`
+      message: `Has foundational skills with ${weaknessCount} ${weaknessCount === 1 ? 'area' : 'areas'} needing attention.`
     };
   } else if (percentage >= 50) {
     return {
       title: 'Emerging Talent',
       icon: '🌿',
-      message: `Building core competencies. Requires guidance in ${weaknesses.slice(0,2).map(w => w.area || w).join(' and ')}.`
+      message: `Building core competencies. Requires guidance in key areas.`
     };
   } else if (percentage >= 40) {
     return {
       title: 'Needs Development',
       icon: '🎯',
-      message: `Significant opportunities for growth in ${descriptor.weaknesses.slice(0,2).join(' and ')}.`
+      message: `Significant opportunities for growth identified.`
     };
   } else {
     return {
       title: 'Intensive Support Needed',
       icon: '⚠️',
-      message: `Requires structured intervention in ${descriptor.weaknesses.join(' and ')} to build foundational capabilities.`
+      message: `Requires structured intervention to build foundational capabilities.`
     };
   }
 };
@@ -205,51 +205,6 @@ export const getWeaknessComment = (area, percentage, allWeaknesses, assessmentTy
     return `🔸 Priority area: ${randomPhrase}`;
   }
   return randomPhrase;
-};
-
-// Dynamic executive summary generator
-export const generateExecutiveSummary = (name, score, maxScore, percentage, grade, rating, strengths, weaknesses, categoryCount, assessmentType = 'general') => {
-  const descriptor = assessmentDescriptors[assessmentType] || assessmentDescriptors.general;
-  
-  const introPhrases = [
-    `${name} completed the ${descriptor.name} with a total score of ${score}/${maxScore} (${percentage}%), achieving a grade of ${grade}.`,
-    `In the ${descriptor.name}, ${name} scored ${score}/${maxScore} (${percentage}%), earning a grade of ${grade}.`,
-    `${name} demonstrated ${percentage}% proficiency (${grade}) on the ${descriptor.name}, scoring ${score}/${maxScore}.`
-  ];
-  
-  const strengthPhrases = [
-    `They demonstrated particular strength in ${strengths[0]?.area || strengths[0] || descriptor.strengths[0]}`,
-    `Their performance was notably strong in ${strengths[0]?.area || strengths[0] || descriptor.strengths[0]}`,
-    `Exceptional performance was observed in ${strengths[0]?.area || strengths[0] || descriptor.strengths[0]}`
-  ];
-  
-  const weaknessPhrases = [
-    `Key development opportunities include ${weaknesses[0]?.area || weaknesses[0] || descriptor.weaknesses[0]}`,
-    `Areas requiring attention are ${weaknesses[0]?.area || weaknesses[0] || descriptor.weaknesses[0]}`,
-    `Growth is needed in ${weaknesses[0]?.area || weaknesses[0] || descriptor.weaknesses[0]}`
-  ];
-  
-  let summary = introPhrases[Math.floor(Math.random() * introPhrases.length)] + ' ';
-  
-  if (strengths.length > 0) {
-    summary += strengthPhrases[Math.floor(Math.random() * strengthPhrases.length)];
-    if (strengths.length > 1) {
-      summary += ` and ${strengths.length - 1} other ${strengths.length > 2 ? 'areas' : 'area'}`;
-    }
-    summary += '. ';
-  }
-  
-  if (weaknesses.length > 0) {
-    summary += weaknessPhrases[Math.floor(Math.random() * weaknessPhrases.length)];
-    if (weaknesses.length > 1) {
-      summary += ` and ${weaknesses.length - 1} other ${weaknesses.length > 2 ? 'areas' : 'area'}`;
-    }
-    summary += '. ';
-  }
-  
-  summary += rating.message;
-  
-  return summary;
 };
 
 // Generate personalized recommendations based on weaknesses
@@ -319,7 +274,7 @@ export const generateDevelopmentPlan = (weaknesses, strengths, assessmentType = 
   });
   
   // Short-term goals (30-60 days) - practice and application
-  weaknesses.slice(0, 2).forEach((w) => {
+  weaknesses.slice(3, 5).forEach((w) => {
     const area = w.area || w;
     plan.shortTerm.push({
       area,
@@ -342,12 +297,8 @@ export const generateDevelopmentPlan = (weaknesses, strengths, assessmentType = 
 };
 
 // ========== MAIN EXPORT FUNCTION ==========
-// This is the function that your API route is trying to import
 export const generatePersonalizedReport = (userId, assessmentType, responses, candidateName) => {
   console.log(`📊 Generating personalized report for ${candidateName} (${userId}) on ${assessmentType} assessment`);
-  
-  // Create a simple report structure
-  // In a real implementation, you would process the responses and generate meaningful insights
   
   // Calculate category scores from responses
   const categoryScores = {};
@@ -356,8 +307,10 @@ export const generatePersonalizedReport = (userId, assessmentType, responses, ca
   let totalScore = 0;
   
   responses.forEach(response => {
-    const section = response.unique_questions?.section || 'General';
-    const score = response.unique_answers?.score || 0;
+    const question = response.unique_questions;
+    const answer = response.unique_answers;
+    const section = question?.section || 'General';
+    const score = answer?.score || 0;
     totalScore += score;
     
     if (!categoryScores[section]) {
@@ -365,7 +318,9 @@ export const generatePersonalizedReport = (userId, assessmentType, responses, ca
         total: 0,
         count: 0,
         maxPossible: 0,
-        percentage: 0
+        average: 0,
+        percentage: 0,
+        score: 0
       };
     }
     
@@ -374,10 +329,12 @@ export const generatePersonalizedReport = (userId, assessmentType, responses, ca
     categoryScores[section].maxPossible += 5;
   });
   
-  // Calculate percentages
+  // Calculate percentages and identify strengths/weaknesses
   Object.keys(categoryScores).forEach(section => {
     const data = categoryScores[section];
     data.percentage = Math.round((data.total / data.maxPossible) * 100);
+    data.average = Number((data.total / data.count).toFixed(2));
+    data.score = data.total; // Add the actual score
     
     if (data.percentage >= 70) {
       strengths.push({
@@ -386,7 +343,7 @@ export const generatePersonalizedReport = (userId, assessmentType, responses, ca
         score: data.total,
         maxPossible: data.maxPossible
       });
-    } else if (data.percentage <= 40) {
+    } else if (data.percentage <= 50) { // Changed from 40 to 50 to catch more weaknesses
       weaknesses.push({
         area: section,
         percentage: data.percentage,
@@ -401,27 +358,42 @@ export const generatePersonalizedReport = (userId, assessmentType, responses, ca
   const grade = getGradeInfo(percentageScore);
   const rating = getOverallRating(percentageScore, strengths, weaknesses, assessmentType);
   
-  // Generate executive summary
-  const executiveSummary = generateExecutiveSummary(
-    candidateName,
-    totalScore,
-    maxScore,
-    percentageScore,
-    grade.grade,
-    rating,
-    strengths,
-    weaknesses,
-    Object.keys(categoryScores).length,
-    assessmentType
+  // Generate executive summary with ACTUAL data
+  const executiveSummary = `${candidateName} completed the ${assessmentDescriptors[assessmentType]?.name || 'Assessment'} with a total score of ${totalScore}/${maxScore} (${percentageScore}%). ` + 
+    (strengths.length > 0 ? `Key strengths include ${strengths.map(s => `${s.area} (${s.percentage}%)`).join(', ')}. ` : '') +
+    (weaknesses.length > 0 ? `Development needed in ${weaknesses.map(w => `${w.area} (${w.percentage}%)`).join(', ')}. ` : '') +
+    rating.message;
+  
+  // Generate recommendations based on ACTUAL weaknesses
+  const recommendationsList = weaknesses.map(w => 
+    `Focus on improving ${w.area} (currently ${w.percentage}%) through targeted training and practice.`
   );
   
-  // Generate recommendations
-  const recommendationsList = generateRecommendations(weaknesses, assessmentType);
+  if (strengths.length > 0) {
+    recommendationsList.push(`Leverage strengths in ${strengths.map(s => s.area).join(', ')} for greater impact.`);
+  }
   
-  // Generate development plan
-  const developmentPlan = generateDevelopmentPlan(weaknesses, strengths, assessmentType);
+  // Generate development plan based on ACTUAL data
+  const developmentPlan = {
+    immediate: weaknesses.slice(0, 3).map((w, index) => ({
+      area: w.area,
+      action: `Begin focused development in ${w.area}`,
+      recommendation: `Complete foundational training and practice exercises in ${w.area}`,
+      priority: index === 0 ? 'High' : 'Medium'
+    })),
+    shortTerm: weaknesses.slice(3, 5).map(w => ({
+      area: w.area,
+      action: `Apply learning in practical scenarios`,
+      recommendation: `Practice ${w.area} skills through real projects with supervision`
+    })),
+    longTerm: strengths.slice(0, 2).map(s => ({
+      area: s.area,
+      action: `Leverage strength in ${s.area}`,
+      recommendation: `Mentor others and take on challenging projects involving ${s.area}`
+    }))
+  };
   
-  // Return the complete report
+  // Return the complete report with ACTUAL data
   return {
     userId,
     assessmentType,
@@ -443,7 +415,9 @@ export const generatePersonalizedReport = (userId, assessmentType, responses, ca
     interpretations: {
       classification: grade.description,
       summary: executiveSummary,
-      overallProfile: rating.message
+      overallProfile: rating.message,
+      strengths: strengths.map(s => s.area),
+      weaknesses: weaknesses.map(w => w.area)
     }
   };
 };
