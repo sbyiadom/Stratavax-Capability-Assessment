@@ -256,7 +256,10 @@ export default async function handler(req, res) {
       summary: `Overall performance: ${percentageScore}% - ${classification}`
     };
 
-    // Prepare the data for assessment_results - REMOVED percentage_score since it's a generated column
+    // Calculate percentage as a decimal for the generated column
+    const percentageDecimal = Number((totalScore / maxScore).toFixed(4));
+
+    // Prepare the data for assessment_results - matching your successful test insert
     const resultData = {
       user_id: userId,
       assessment_id: assessmentId,
@@ -264,7 +267,7 @@ export default async function handler(req, res) {
       assessment_type_id: assessment?.assessment_type_id || null,
       total_score: totalScore,
       max_score: maxScore,
-      // percentage_score is REMOVED - it's a generated column
+      percentage_score: percentageDecimal, // Include this as shown in your test insert
       category_scores: categoryScores,
       interpretations: interpretationsObj,
       strengths: strengthsArray,
