@@ -1,1019 +1,533 @@
 /**
- * Universal Category Mapper
- * Maps categories from different assessment types to interpretation domains
+ * Focused Category Mapper
+ * Provides professional interpretations based on actual category scores
  */
 
-// Category definitions by assessment type
-export const assessmentTypeDefinitions = {
-  'general': {
-    name: 'General Assessment',
-    description: 'Comprehensive evaluation of overall capabilities',
-    categories: {
-      'Cognitive Ability': {
-        domain: 'cognitive',
-        weight: 'high',
-        leadershipRelevance: 'Critical',
-        interpretation: {
-          high: 'Strong analytical and strategic thinking capabilities',
-          medium: 'Moderate cognitive abilities suitable for most roles',
-          low: 'Cognitive limitations that may impact complex problem-solving'
-        }
-      },
-      'Communication': {
-        domain: 'interpersonal',
-        weight: 'high',
-        leadershipRelevance: 'Essential',
-        interpretation: {
-          high: 'Excellent communication skills - articulate and persuasive',
-          medium: 'Adequate communication for team collaboration',
-          low: 'Communication challenges that may affect influence'
-        }
-      },
-      'Cultural & Attitudinal Fit': {
-        domain: 'cultural',
-        weight: 'foundational',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Strong cultural alignment and positive attitude',
-          medium: 'Generally aligned with some adaptation needed',
-          low: 'Potential cultural mismatch requiring attention'
-        }
-      },
-      'Emotional Intelligence': {
-        domain: 'interpersonal',
-        weight: 'high',
-        leadershipRelevance: 'Critical for leadership',
-        interpretation: {
-          high: 'High emotional intelligence - self-aware and empathetic',
-          medium: 'Moderate emotional awareness with room to grow',
-          low: 'Emotional intelligence gaps affecting relationships'
-        }
-      },
-      'Ethics & Integrity': {
-        domain: 'values',
-        weight: 'foundational',
-        leadershipRelevance: 'Non-negotiable',
-        interpretation: {
-          high: 'Strong ethical foundation - trustworthy and principled',
-          medium: 'Generally ethical but may need guidance in gray areas',
-          low: 'Ethical concerns requiring attention'
-        }
-      },
-      'Leadership & Management': {
-        domain: 'leadership',
-        weight: 'high',
-        leadershipRelevance: 'Core',
-        interpretation: {
-          high: 'Strong leadership potential - strategic and influential',
-          medium: 'Emerging leadership capabilities',
-          low: 'Leadership skills need significant development'
-        }
-      },
-      'Performance Metrics': {
-        domain: 'operational',
-        weight: 'moderate',
-        leadershipRelevance: 'Important for results',
-        interpretation: {
-          high: 'Results-driven with strong accountability',
-          medium: 'Can meet targets with guidance',
-          low: 'Needs development in goal-setting and accountability'
-        }
-      },
-      'Personality & Behavioral': {
-        domain: 'behavioral',
-        weight: 'moderate',
-        leadershipRelevance: 'Influences team dynamics',
-        interpretation: {
-          high: 'Stable, resilient, and adaptable',
-          medium: 'Generally stable but not high-impact',
-          low: 'Behavioral concerns affecting performance'
-        }
-      },
-      'Problem-Solving': {
-        domain: 'cognitive',
-        weight: 'high',
-        leadershipRelevance: 'Critical',
-        interpretation: {
-          high: 'Strong problem-solving - systematic and creative',
-          medium: 'Can solve routine problems effectively',
-          low: 'Struggles with complex problem-solving'
-        }
-      },
-      'Technical & Manufacturing': {
-        domain: 'technical',
-        weight: 'role-specific',
-        leadershipRelevance: 'Domain expertise',
-        interpretation: {
-          high: 'Strong technical expertise - domain expert',
-          medium: 'Solid technical foundation',
-          low: 'Technical knowledge gaps requiring training'
-        }
-      }
-    }
+// Score thresholds for interpretation
+const THRESHOLDS = {
+  EXCELLENT: 80,
+  GOOD: 70,
+  AVERAGE: 60,
+  BELOW_AVERAGE: 50
+};
+
+// Get level based on score
+const getLevel = (score) => {
+  if (score >= THRESHOLDS.EXCELLENT) return 'excellent';
+  if (score >= THRESHOLDS.GOOD) return 'good';
+  if (score >= THRESHOLDS.AVERAGE) return 'average';
+  if (score >= THRESHOLDS.BELOW_AVERAGE) return 'below_average';
+  return 'poor';
+};
+
+// Category interpretations by assessment type
+const categoryInterpretations = {
+  // General Assessment Categories
+  'Cognitive Ability': {
+    excellent: 'Strong analytical and strategic thinking capabilities. Can handle complex problems effectively.',
+    good: 'Good cognitive abilities. Handles most challenges well with occasional support.',
+    average: 'Moderate cognitive abilities. Benefits from structured approaches to complex problems.',
+    below_average: 'Cognitive abilities need development. May struggle with complex problem-solving.',
+    poor: 'Significant cognitive gaps. Requires clear guidance and simplified tasks.'
   },
-  
-  'leadership': {
-    name: 'Leadership Assessment',
-    description: 'Evaluation of leadership potential and capabilities',
-    categories: {
-      'Change Leadership & Agility': {
-        domain: 'leadership',
-        weight: 'high',
-        leadershipRelevance: 'Core',
-        interpretation: {
-          high: 'Exceptional change leadership - adapts and drives transformation',
-          medium: 'Can manage change with support',
-          low: 'Struggles with change and adaptation'
-        }
-      },
-      'Communication & Influence': {
-        domain: 'interpersonal',
-        weight: 'high',
-        leadershipRelevance: 'Essential',
-        interpretation: {
-          high: 'Powerful communicator who influences effectively',
-          medium: 'Good communicator with developing influence',
-          low: 'Communication and influence need development'
-        }
-      },
-      'Cultural Alignment': {
-        domain: 'cultural',
-        weight: 'foundational',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Strong cultural ambassador - models values',
-          medium: 'Generally aligned with culture',
-          low: 'Cultural misalignment risk'
-        }
-      },
-      'Cultural Competence & Inclusivity': {
-        domain: 'cultural',
-        weight: 'high',
-        leadershipRelevance: 'Critical for modern leadership',
-        interpretation: {
-          high: 'Champions diversity and inclusion effectively',
-          medium: 'Aware of diversity but needs development',
-          low: 'Limited cultural competence'
-        }
-      },
-      'Decision-Making & Problem-Solving': {
-        domain: 'cognitive',
-        weight: 'high',
-        leadershipRelevance: 'Core',
-        interpretation: {
-          high: 'Decisive and analytical - makes sound judgments',
-          medium: 'Makes reasonable decisions with input',
-          low: 'Decision-making needs significant improvement'
-        }
-      },
-      'Derailer Identification': {
-        domain: 'behavioral',
-        weight: 'high',
-        leadershipRelevance: 'Critical awareness',
-        interpretation: {
-          high: 'Self-aware - recognizes and manages derailers',
-          medium: 'Some awareness of derailers',
-          low: 'Limited self-awareness of derailers'
-        }
-      },
-      'Empathy & Relationship Building': {
-        domain: 'interpersonal',
-        weight: 'high',
-        leadershipRelevance: 'Essential',
-        interpretation: {
-          high: 'Builds strong, trusting relationships',
-          medium: 'Good relationship builder',
-          low: 'Struggles with relationship building'
-        }
-      },
-      'Execution & Results Orientation': {
-        domain: 'operational',
-        weight: 'high',
-        leadershipRelevance: 'Core',
-        interpretation: {
-          high: 'Drives results with disciplined execution',
-          medium: 'Delivers results with guidance',
-          low: 'Execution and results need improvement'
-        }
-      },
-      'Integrated Leadership Judgment': {
-        domain: 'leadership',
-        weight: 'high',
-        leadershipRelevance: 'Critical',
-        interpretation: {
-          high: 'Exceptional judgment - balances multiple factors',
-          medium: 'Sound judgment in most situations',
-          low: 'Judgment concerns in complex situations'
-        }
-      },
-      'Learning Agility': {
-        domain: 'cognitive',
-        weight: 'high',
-        leadershipRelevance: 'Essential for growth',
-        interpretation: {
-          high: 'Rapid learner - adapts quickly to new situations',
-          medium: 'Learns at a steady pace',
-          low: 'Learning agility needs development'
-        }
-      },
-      'People Management & Coaching': {
-        domain: 'leadership',
-        weight: 'high',
-        leadershipRelevance: 'Core',
-        interpretation: {
-          high: 'Develops and coaches others effectively',
-          medium: 'Adequate people manager',
-          low: 'People management skills need development'
-        }
-      },
-      'Resilience & Stress Management': {
-        domain: 'behavioral',
-        weight: 'high',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Highly resilient - thrives under pressure',
-          medium: 'Manages stress adequately',
-          low: 'Stress management concerns'
-        }
-      },
-      'Role Readiness': {
-        domain: 'career',
-        weight: 'moderate',
-        leadershipRelevance: 'Readiness indicator',
-        interpretation: {
-          high: 'Ready for increased responsibility now',
-          medium: 'Ready with some development',
-          low: 'Needs more experience before promotion'
-        }
-      },
-      'Self-Awareness & Self-Regulation': {
-        domain: 'behavioral',
-        weight: 'high',
-        leadershipRelevance: 'Essential',
-        interpretation: {
-          high: 'Highly self-aware and well-regulated',
-          medium: 'Good self-awareness',
-          low: 'Limited self-awareness'
-        }
-      },
-      'Values & Drivers': {
-        domain: 'values',
-        weight: 'foundational',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Values strongly aligned with leadership',
-          medium: 'Generally aligned values',
-          low: 'Values misalignment risk'
-        }
-      },
-      'Vision & Strategic Thinking': {
-        domain: 'cognitive',
-        weight: 'high',
-        leadershipRelevance: 'Core',
-        interpretation: {
-          high: 'Strategic thinker with compelling vision',
-          medium: 'Good strategic thinking',
-          low: 'Strategic thinking needs development'
-        }
-      }
-    }
+  'Communication': {
+    excellent: 'Exceptional communicator. Articulates ideas clearly and persuasively.',
+    good: 'Good communication skills. Expresses ideas effectively in most situations.',
+    average: 'Adequate communication. Can convey basic ideas but may struggle with complex messaging.',
+    below_average: 'Communication needs improvement. May have difficulty expressing ideas clearly.',
+    poor: 'Poor communication skills. Significant development needed.'
   },
-  
-  'cognitive': {
-    name: 'Cognitive Ability Assessment',
-    description: 'Evaluation of analytical and reasoning capabilities',
-    categories: {
-      'Logical / Abstract Reasoning': {
-        domain: 'cognitive',
-        weight: 'high',
-        leadershipRelevance: 'Critical',
-        interpretation: {
-          high: 'Strong logical reasoning - excellent pattern recognition',
-          medium: 'Good logical reasoning abilities',
-          low: 'Logical reasoning needs development'
-        }
-      },
-      'Mechanical Reasoning': {
-        domain: 'technical',
-        weight: 'moderate',
-        leadershipRelevance: 'Role-specific',
-        interpretation: {
-          high: 'Strong mechanical understanding',
-          medium: 'Good mechanical aptitude',
-          low: 'Mechanical reasoning needs improvement'
-        }
-      },
-      'Memory & Attention': {
-        domain: 'cognitive',
-        weight: 'moderate',
-        leadershipRelevance: 'Supporting',
-        interpretation: {
-          high: 'Excellent memory and attention to detail',
-          medium: 'Good memory and focus',
-          low: 'Memory and attention concerns'
-        }
-      },
-      'Numerical Reasoning': {
-        domain: 'cognitive',
-        weight: 'high',
-        leadershipRelevance: 'Important for analytical roles',
-        interpretation: {
-          high: 'Strong numerical reasoning - comfortable with data',
-          medium: 'Good numerical skills',
-          low: 'Numerical reasoning needs development'
-        }
-      },
-      'Perceptual Speed & Accuracy': {
-        domain: 'cognitive',
-        weight: 'moderate',
-        leadershipRelevance: 'Supporting',
-        interpretation: {
-          high: 'Fast and accurate - excellent attention',
-          medium: 'Good speed and accuracy',
-          low: 'Processing speed concerns'
-        }
-      },
-      'Spatial Reasoning': {
-        domain: 'cognitive',
-        weight: 'moderate',
-        leadershipRelevance: 'Role-specific',
-        interpretation: {
-          high: 'Strong spatial reasoning',
-          medium: 'Good spatial skills',
-          low: 'Spatial reasoning needs improvement'
-        }
-      },
-      'Verbal Reasoning': {
-        domain: 'cognitive',
-        weight: 'high',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Strong verbal reasoning - excellent comprehension',
-          medium: 'Good verbal skills',
-          low: 'Verbal reasoning needs development'
-        }
-      }
-    }
+  'Cultural & Attitudinal Fit': {
+    excellent: 'Strong cultural alignment. Embodies company values and enhances team dynamics.',
+    good: 'Good cultural fit. Generally aligned with organizational values.',
+    average: 'Moderate cultural alignment. Some areas may need attention.',
+    below_average: 'Cultural fit concerns. May not fully align with company values.',
+    poor: 'Poor cultural fit. Significant misalignment with organizational culture.'
   },
-  
-  'technical': {
-    name: 'Technical Competence Assessment',
-    description: 'Evaluation of technical knowledge and skills',
-    categories: {
-      'CIP & Maintenance': {
-        domain: 'technical',
-        weight: 'high',
-        leadershipRelevance: 'Domain expertise',
-        interpretation: {
-          high: 'Strong CIP and maintenance expertise',
-          medium: 'Good understanding of CIP processes',
-          low: 'CIP knowledge needs development'
-        }
-      },
-      'Conveyors & Line Efficiency': {
-        domain: 'technical',
-        weight: 'high',
-        leadershipRelevance: 'Domain expertise',
-        interpretation: {
-          high: 'Expert in conveyor systems and line efficiency',
-          medium: 'Good understanding of line operations',
-          low: 'Conveyor knowledge needs improvement'
-        }
-      },
-      'Filling & Bottling': {
-        domain: 'technical',
-        weight: 'high',
-        leadershipRelevance: 'Domain expertise',
-        interpretation: {
-          high: 'Expert in filling and bottling processes',
-          medium: 'Good understanding of filling operations',
-          low: 'Filling process knowledge needs development'
-        }
-      },
-      'Packaging & Labeling': {
-        domain: 'technical',
-        weight: 'high',
-        leadershipRelevance: 'Domain expertise',
-        interpretation: {
-          high: 'Strong packaging and labeling expertise',
-          medium: 'Good understanding of packaging',
-          low: 'Packaging knowledge needs improvement'
-        }
-      },
-      'Safety & Efficiency': {
-        domain: 'technical',
-        weight: 'foundational',
-        leadershipRelevance: 'Critical',
-        interpretation: {
-          high: 'Strong safety focus and efficiency mindset',
-          medium: 'Good safety awareness',
-          low: 'Safety knowledge needs development'
-        }
-      },
-      'Water Treatment & Quality': {
-        domain: 'technical',
-        weight: 'high',
-        leadershipRelevance: 'Domain expertise',
-        interpretation: {
-          high: 'Expert in water treatment and quality control',
-          medium: 'Good understanding of water quality',
-          low: 'Water treatment knowledge needs improvement'
-        }
-      }
-    }
+  'Emotional Intelligence': {
+    excellent: 'High emotional intelligence. Self-aware, empathetic, and skilled at managing relationships.',
+    good: 'Good emotional awareness. Navigates interpersonal situations well.',
+    average: 'Moderate emotional intelligence. May struggle with complex interpersonal dynamics.',
+    below_average: 'Emotional intelligence needs development. Challenges with self-awareness and empathy.',
+    poor: 'Poor emotional intelligence. Significant interpersonal challenges.'
   },
-  
-  'performance': {
-    name: 'Performance Assessment',
-    description: 'Evaluation of performance management capabilities',
-    categories: {
-      'Employee Engagement and Behavior': {
-        domain: 'interpersonal',
-        weight: 'high',
-        leadershipRelevance: 'Important for people management',
-        interpretation: {
-          high: 'Strong at engaging and motivating teams',
-          medium: 'Good understanding of engagement',
-          low: 'Engagement skills need development'
-        }
-      },
-      'Financial and Operational Performance': {
-        domain: 'operational',
-        weight: 'high',
-        leadershipRelevance: 'Critical for business acumen',
-        interpretation: {
-          high: 'Strong financial and operational understanding',
-          medium: 'Good business acumen',
-          low: 'Financial knowledge needs improvement'
-        }
-      },
-      'Goal Achievement and Strategic Alignment': {
-        domain: 'strategic',
-        weight: 'high',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Excellent at goal setting and strategic alignment',
-          medium: 'Good understanding of goals',
-          low: 'Goal achievement needs development'
-        }
-      },
-      'Productivity and Efficiency': {
-        domain: 'operational',
-        weight: 'high',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Highly productive and efficiency-focused',
-          medium: 'Good productivity',
-          low: 'Productivity needs improvement'
-        }
-      },
-      'Work Quality and Effectiveness': {
-        domain: 'operational',
-        weight: 'high',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Consistently high-quality work',
-          medium: 'Good work quality',
-          low: 'Quality concerns need attention'
-        }
-      }
-    }
+  'Ethics & Integrity': {
+    excellent: 'Strong ethical foundation. Trustworthy and principled decision-maker.',
+    good: 'Good integrity. Generally makes ethical choices with sound judgment.',
+    average: 'Adequate ethical awareness. May need guidance in complex situations.',
+    below_average: 'Ethical concerns. Requires clear boundaries and supervision.',
+    poor: 'Poor ethical judgment. Significant risk area.'
   },
-  
-  'cultural': {
-    name: 'Cultural & Attitudinal Fit Assessment',
-    description: 'Evaluation of cultural alignment and attitude',
-    categories: {
-      'Attitude': {
-        domain: 'behavioral',
-        weight: 'foundational',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Positive attitude - adaptable and motivated',
-          medium: 'Generally positive attitude',
-          low: 'Attitude concerns need attention'
-        }
-      },
-      'Core Values': {
-        domain: 'values',
-        weight: 'foundational',
-        leadershipRelevance: 'Critical',
-        interpretation: {
-          high: 'Strong values alignment - principled',
-          medium: 'Generally aligned with values',
-          low: 'Values misalignment risk'
-        }
-      },
-      'Environmental Fit': {
-        domain: 'cultural',
-        weight: 'moderate',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Excellent environmental fit',
-          medium: 'Good fit with environment',
-          low: 'Environmental mismatch concerns'
-        }
-      },
-      'Interpersonal': {
-        domain: 'interpersonal',
-        weight: 'high',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Strong interpersonal skills',
-          medium: 'Good with people',
-          low: 'Interpersonal skills need development'
-        }
-      },
-      'Leadership': {
-        domain: 'leadership',
-        weight: 'high',
-        leadershipRelevance: 'Core',
-        interpretation: {
-          high: 'Strong leadership potential',
-          medium: 'Emerging leadership',
-          low: 'Leadership needs development'
-        }
-      },
-      'Work Style': {
-        domain: 'behavioral',
-        weight: 'moderate',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Effective work style - adaptable and productive',
-          medium: 'Good work habits',
-          low: 'Work style concerns'
-        }
-      }
-    }
+  'Leadership & Management': {
+    excellent: 'Strong leadership potential. Strategic thinker who inspires and develops others.',
+    good: 'Good leadership capabilities. Can manage teams and drive results effectively.',
+    average: 'Moderate leadership skills. May need support in people management.',
+    below_average: 'Leadership needs development. Challenges with team management.',
+    poor: 'Poor leadership potential. Not ready for management roles.'
   },
-  
-  'personality': {
-    name: 'Personality Assessment',
-    description: 'Evaluation of personality traits and behavioral patterns',
-    categories: {
-      'Agreeableness': {
-        domain: 'interpersonal',
-        weight: 'moderate',
-        leadershipRelevance: 'Team dynamics',
-        interpretation: {
-          high: 'Highly agreeable - collaborative and cooperative',
-          medium: 'Generally agreeable',
-          low: 'May be perceived as difficult'
-        }
-      },
-      'Behavioral Style': {
-        domain: 'behavioral',
-        weight: 'high',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Adaptable behavioral style - flexible',
-          medium: 'Consistent behavioral patterns',
-          low: 'Behavioral rigidity concerns'
-        }
-      },
-      'Cognitive Patterns': {
-        domain: 'cognitive',
-        weight: 'high',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Flexible thinking - creative and adaptable',
-          medium: 'Pragmatic thinking style',
-          low: 'Rigid thinking patterns'
-        }
-      },
-      'Conscientiousness': {
-        domain: 'behavioral',
-        weight: 'high',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Highly conscientious - organized and reliable',
-          medium: 'Generally conscientious',
-          low: 'Organization and reliability concerns'
-        }
-      },
-      'Emotional Intelligence': {
-        domain: 'interpersonal',
-        weight: 'high',
-        leadershipRelevance: 'Critical',
-        interpretation: {
-          high: 'High emotional intelligence - self-aware',
-          medium: 'Moderate emotional awareness',
-          low: 'Emotional intelligence gaps'
-        }
-      },
-      'Extraversion': {
-        domain: 'interpersonal',
-        weight: 'moderate',
-        leadershipRelevance: 'Team dynamics',
-        interpretation: {
-          high: 'Extraverted - energized by interaction',
-          medium: 'Balanced social approach',
-          low: 'Introverted - may need solo work'
-        }
-      },
-      'Integrity': {
-        domain: 'values',
-        weight: 'foundational',
-        leadershipRelevance: 'Non-negotiable',
-        interpretation: {
-          high: 'High integrity - trustworthy',
-          medium: 'Generally ethical',
-          low: 'Integrity concerns'
-        }
-      },
-      'Mixed Traits': {
-        domain: 'behavioral',
-        weight: 'moderate',
-        leadershipRelevance: 'Contextual',
-        interpretation: {
-          high: 'Well-balanced personality',
-          medium: 'Typical personality profile',
-          low: 'Extreme traits that may impact work'
-        }
-      },
-      'Motivations': {
-        domain: 'values',
-        weight: 'high',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Strong intrinsic motivation',
-          medium: 'Appropriately motivated',
-          low: 'Motivation concerns'
-        }
-      },
-      'Neuroticism': {
-        domain: 'behavioral',
-        weight: 'high',
-        leadershipRelevance: 'Stress management',
-        interpretation: {
-          high: 'Emotionally stable - handles pressure well',
-          medium: 'Generally stable',
-          low: 'Emotional volatility concerns'
-        }
-      },
-      'Openness to Experience': {
-        domain: 'cognitive',
-        weight: 'moderate',
-        leadershipRelevance: 'Innovation',
-        interpretation: {
-          high: 'Open to new ideas - innovative',
-          medium: 'Open to change',
-          low: 'Resistant to new approaches'
-        }
-      },
-      'Performance Risks': {
-        domain: 'behavioral',
-        weight: 'high',
-        leadershipRelevance: 'Risk identification',
-        interpretation: {
-          high: 'Low performance risk',
-          medium: 'Some performance risks',
-          low: 'Significant performance risks'
-        }
-      },
-      'Stress Management': {
-        domain: 'behavioral',
-        weight: 'high',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Excellent stress management',
-          medium: 'Adequate stress handling',
-          low: 'Stress vulnerability'
-        }
-      },
-      'Work Pace': {
-        domain: 'behavioral',
-        weight: 'moderate',
-        leadershipRelevance: 'Productivity',
-        interpretation: {
-          high: 'Fast-paced and productive',
-          medium: 'Sustainable work pace',
-          low: 'Work pace concerns'
-        }
-      }
-    }
+  'Performance Metrics': {
+    excellent: 'Results-driven with strong accountability. Sets and achieves challenging goals.',
+    good: 'Good performance orientation. Meets targets and tracks progress effectively.',
+    average: 'Adequate focus on results. May need guidance in goal setting.',
+    below_average: 'Performance focus needs improvement. Challenges with accountability.',
+    poor: 'Poor results orientation. Significant gaps in performance management.'
   },
-  
-  'behavioral': {
-    name: 'Behavioral & Soft Skills Assessment',
-    description: 'Evaluation of behavioral competencies and soft skills',
-    categories: {
-      'Adaptability': {
-        domain: 'behavioral',
-        weight: 'high',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Highly adaptable - thrives on change',
-          medium: 'Adapts with support',
-          low: 'Struggles with change'
-        }
-      },
-      'Clinical': {
-        domain: 'specialized',
-        weight: 'role-specific',
-        leadershipRelevance: 'Specialized',
-        interpretation: {
-          high: 'Strong clinical understanding',
-          medium: 'Good clinical awareness',
-          low: 'Clinical knowledge needs development'
-        }
-      },
-      'Collaboration': {
-        domain: 'interpersonal',
-        weight: 'high',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Excellent collaborator - team player',
-          medium: 'Works well in teams',
-          low: 'Collaboration challenges'
-        }
-      },
-      'Communication Style': {
-        domain: 'interpersonal',
-        weight: 'high',
-        leadershipRelevance: 'Important',
-        interpretation: {
-          high: 'Effective communicator - adaptable style',
-          medium: 'Clear communicator',
-          low: 'Communication style concerns'
-        }
-      },
-      'Decision-Making': {
-        domain: 'cognitive',
-        weight: 'high',
-        leadershipRelevance: 'Critical',
-        interpretation: {
-          high: 'Sound decision-making - considers options',
-          medium: 'Makes reasonable decisions',
-          low: 'Decision-making needs improvement'
-        }
-      },
-      'FBA': {
-        domain: 'specialized',
-        weight: 'role-specific',
-        leadershipRelevance: 'Specialized',
-        interpretation: {
-          high: 'Strong FBA understanding',
-          medium: 'Good FBA knowledge',
-          low: 'FBA needs development'
-        }
-      },
-      'Leadership': {
-        domain: 'leadership',
-        weight: 'high',
-        leadershipRelevance: 'Core',
-        interpretation: {
-          high: 'Natural leader - inspires others',
-          medium: 'Emerging leader',
-          low: 'Leadership potential needs development'
-        }
-      }
-    }
+  'Personality & Behavioral': {
+    excellent: 'Stable, resilient, and adaptable. Positive work patterns.',
+    good: 'Good behavioral profile. Generally stable and reliable.',
+    average: 'Moderate behavioral patterns. May have some inconsistencies.',
+    below_average: 'Behavioral concerns. May lack resilience or adaptability.',
+    poor: 'Poor behavioral profile. Significant concerns needing attention.'
+  },
+  'Problem-Solving': {
+    excellent: 'Excellent problem-solver. Systematic, creative, and effective.',
+    good: 'Good problem-solving skills. Handles most challenges effectively.',
+    average: 'Moderate problem-solving. May need support with complex issues.',
+    below_average: 'Problem-solving needs development. Struggles with analysis.',
+    poor: 'Poor problem-solving. Significant difficulties with challenges.'
+  },
+  'Technical & Manufacturing': {
+    excellent: 'Strong technical expertise. Deep understanding of systems and processes.',
+    good: 'Good technical knowledge. Handles most technical tasks effectively.',
+    average: 'Moderate technical skills. May need training in advanced areas.',
+    below_average: 'Technical knowledge needs development. Requires training.',
+    poor: 'Poor technical expertise. Significant knowledge gaps.'
+  },
+
+  // Leadership Assessment Categories
+  'Change Leadership & Agility': {
+    excellent: 'Exceptional change leader. Drives transformation and adapts quickly.',
+    good: 'Good at managing change. Adapts well to new situations.',
+    average: 'Moderate change agility. May need support during transitions.',
+    below_average: 'Change management needs development. Struggles with adaptation.',
+    poor: 'Poor change agility. Resists or struggles with change.'
+  },
+  'Communication & Influence': {
+    excellent: 'Powerful communicator who influences effectively at all levels.',
+    good: 'Good communicator with developing influence skills.',
+    average: 'Adequate communication. May struggle with persuasion.',
+    below_average: 'Communication needs improvement. Limited influence.',
+    poor: 'Poor communication and influence skills.'
+  },
+  'Cultural Alignment': {
+    excellent: 'Strong cultural ambassador. Models and reinforces values.',
+    good: 'Good cultural alignment. Generally embodies company values.',
+    average: 'Moderate cultural fit. Some areas of misalignment.',
+    below_average: 'Cultural concerns. May not fully align with values.',
+    poor: 'Poor cultural fit. Significant misalignment.'
+  },
+  'Cultural Competence & Inclusivity': {
+    excellent: 'Champions diversity and inclusion. Creates inclusive environments.',
+    good: 'Good cultural competence. Values diversity and inclusion.',
+    average: 'Moderate awareness of diversity issues. Needs development.',
+    below_average: 'Limited cultural competence. May need training.',
+    poor: 'Poor cultural competence. Concerns in this area.'
+  },
+  'Decision-Making & Problem-Solving': {
+    excellent: 'Decisive and analytical. Makes sound judgments consistently.',
+    good: 'Good decision-maker. Handles most decisions effectively.',
+    average: 'Moderate decision-making. May need support with complex choices.',
+    below_average: 'Decision-making needs improvement. Struggles with analysis.',
+    poor: 'Poor decision-making. Significant concerns.'
+  },
+  'Derailer Identification': {
+    excellent: 'Highly self-aware. Recognizes and manages potential derailers.',
+    good: 'Good self-awareness. Aware of most derailers.',
+    average: 'Moderate awareness. May miss some derailers.',
+    below_average: 'Limited self-awareness. Derailer risk.',
+    poor: 'Poor self-awareness. Significant derailer concerns.'
+  },
+  'Empathy & Relationship Building': {
+    excellent: 'Builds strong, trusting relationships. Highly empathetic.',
+    good: 'Good relationship builder. Connects well with others.',
+    average: 'Moderate relationship skills. May need development.',
+    below_average: 'Relationship building needs improvement.',
+    poor: 'Poor relationship skills. Difficulty connecting with others.'
+  },
+  'Execution & Results Orientation': {
+    excellent: 'Drives results with disciplined execution. Highly accountable.',
+    good: 'Good execution focus. Delivers results consistently.',
+    average: 'Moderate execution. May need help with follow-through.',
+    below_average: 'Execution needs improvement. Inconsistent results.',
+    poor: 'Poor execution. Significant accountability concerns.'
+  },
+  'Integrated Leadership Judgment': {
+    excellent: 'Exceptional judgment. Balances multiple factors effectively.',
+    good: 'Good judgment. Makes sound decisions in most situations.',
+    average: 'Moderate judgment. May need support in complex scenarios.',
+    below_average: 'Judgment concerns. Needs development.',
+    poor: 'Poor judgment. Significant concerns.'
+  },
+  'Learning Agility': {
+    excellent: 'Rapid learner. Adapts quickly to new situations.',
+    good: 'Good learning agility. Picks up new concepts well.',
+    average: 'Moderate learning pace. Needs time to master new areas.',
+    below_average: 'Learning agility needs development. Slow to adapt.',
+    poor: 'Poor learning agility. Difficulty acquiring new skills.'
+  },
+  'People Management & Coaching': {
+    excellent: 'Develops and coaches others effectively. Strong people manager.',
+    good: 'Good people manager. Supports team development.',
+    average: 'Moderate people skills. Needs development in coaching.',
+    below_average: 'People management needs improvement.',
+    poor: 'Poor people management. Significant concerns.'
+  },
+  'Resilience & Stress Management': {
+    excellent: 'Highly resilient. Thrives under pressure.',
+    good: 'Good stress management. Handles pressure well.',
+    average: 'Moderate resilience. May struggle under intense pressure.',
+    below_average: 'Stress management needs improvement.',
+    poor: 'Poor resilience. Significant concerns.'
+  },
+  'Role Readiness': {
+    excellent: 'Ready for increased responsibility now.',
+    good: 'Ready with some development support.',
+    average: 'Needs more experience before advancement.',
+    below_average: 'Significant development needed before ready.',
+    poor: 'Not ready for advancement at this time.'
+  },
+  'Self-Awareness & Self-Regulation': {
+    excellent: 'Highly self-aware and well-regulated.',
+    good: 'Good self-awareness. Regulates well.',
+    average: 'Moderate self-awareness. May have blind spots.',
+    below_average: 'Limited self-awareness. Needs development.',
+    poor: 'Poor self-awareness. Significant concerns.'
+  },
+  'Values & Drivers': {
+    excellent: 'Strong values alignment. Highly motivated by purpose.',
+    good: 'Good values alignment. Appropriately motivated.',
+    average: 'Moderate alignment. May have some conflicts.',
+    below_average: 'Values misalignment concerns.',
+    poor: 'Poor values alignment. Significant concerns.'
+  },
+  'Vision & Strategic Thinking': {
+    excellent: 'Strategic thinker with compelling vision.',
+    good: 'Good strategic thinking. Sees the big picture.',
+    average: 'Moderate strategic ability. Needs development.',
+    below_average: 'Limited strategic thinking. Tactical focus.',
+    poor: 'Poor strategic thinking. Significant concerns.'
+  },
+
+  // Cognitive Assessment Categories
+  'Logical / Abstract Reasoning': {
+    excellent: 'Strong logical reasoning. Excellent pattern recognition.',
+    good: 'Good logical reasoning. Handles abstract concepts well.',
+    average: 'Moderate logical skills. May need support with complex logic.',
+    below_average: 'Logical reasoning needs development.',
+    poor: 'Poor logical reasoning. Significant concerns.'
+  },
+  'Mechanical Reasoning': {
+    excellent: 'Strong mechanical understanding. Natural aptitude.',
+    good: 'Good mechanical reasoning. Understands mechanical concepts.',
+    average: 'Moderate mechanical skills. Needs development.',
+    below_average: 'Mechanical reasoning needs improvement.',
+    poor: 'Poor mechanical reasoning. Significant gaps.'
+  },
+  'Memory & Attention': {
+    excellent: 'Excellent memory and attention to detail.',
+    good: 'Good memory and focus. Attentive to details.',
+    average: 'Moderate memory. May miss some details.',
+    below_average: 'Memory and attention need improvement.',
+    poor: 'Poor memory and attention. Significant concerns.'
+  },
+  'Numerical Reasoning': {
+    excellent: 'Strong numerical reasoning. Comfortable with data.',
+    good: 'Good numerical skills. Handles numbers well.',
+    average: 'Moderate numerical ability. Needs support with complex math.',
+    below_average: 'Numerical reasoning needs development.',
+    poor: 'Poor numerical reasoning. Significant gaps.'
+  },
+  'Perceptual Speed & Accuracy': {
+    excellent: 'Fast and accurate. Excellent attention.',
+    good: 'Good speed and accuracy. Reliable.',
+    average: 'Moderate speed. May need more time.',
+    below_average: 'Speed and accuracy need improvement.',
+    poor: 'Poor perceptual skills. Significant concerns.'
+  },
+  'Spatial Reasoning': {
+    excellent: 'Strong spatial reasoning. Visualizes well.',
+    good: 'Good spatial skills. Handles spatial tasks well.',
+    average: 'Moderate spatial ability. Needs development.',
+    below_average: 'Spatial reasoning needs improvement.',
+    poor: 'Poor spatial reasoning. Significant gaps.'
+  },
+  'Verbal Reasoning': {
+    excellent: 'Strong verbal reasoning. Excellent comprehension.',
+    good: 'Good verbal skills. Understands language well.',
+    average: 'Moderate verbal ability. May need support.',
+    below_average: 'Verbal reasoning needs development.',
+    poor: 'Poor verbal reasoning. Significant concerns.'
+  },
+
+  // Technical Assessment Categories
+  'CIP & Maintenance': {
+    excellent: 'Strong CIP and maintenance expertise.',
+    good: 'Good understanding of CIP processes.',
+    average: 'Moderate CIP knowledge. Needs training.',
+    below_average: 'CIP knowledge needs development.',
+    poor: 'Poor CIP understanding. Significant gaps.'
+  },
+  'Conveyors & Line Efficiency': {
+    excellent: 'Expert in conveyor systems and line efficiency.',
+    good: 'Good understanding of line operations.',
+    average: 'Moderate conveyor knowledge. Needs training.',
+    below_average: 'Conveyor knowledge needs improvement.',
+    poor: 'Poor understanding. Significant gaps.'
+  },
+  'Filling & Bottling': {
+    excellent: 'Expert in filling and bottling processes.',
+    good: 'Good understanding of filling operations.',
+    average: 'Moderate filling knowledge. Needs training.',
+    below_average: 'Filling knowledge needs development.',
+    poor: 'Poor understanding. Significant gaps.'
+  },
+  'Packaging & Labeling': {
+    excellent: 'Strong packaging and labeling expertise.',
+    good: 'Good understanding of packaging.',
+    average: 'Moderate packaging knowledge. Needs training.',
+    below_average: 'Packaging knowledge needs improvement.',
+    poor: 'Poor understanding. Significant gaps.'
+  },
+  'Safety & Efficiency': {
+    excellent: 'Strong safety focus and efficiency mindset.',
+    good: 'Good safety awareness. Understands efficiency.',
+    average: 'Moderate safety knowledge. Needs training.',
+    below_average: 'Safety knowledge needs development.',
+    poor: 'Poor safety understanding. Significant concerns.'
+  },
+  'Water Treatment & Quality': {
+    excellent: 'Expert in water treatment and quality control.',
+    good: 'Good understanding of water quality.',
+    average: 'Moderate water treatment knowledge. Needs training.',
+    below_average: 'Water treatment knowledge needs improvement.',
+    poor: 'Poor understanding. Significant gaps.'
+  },
+
+  // Performance Assessment Categories
+  'Employee Engagement and Behavior': {
+    excellent: 'Strong at engaging and motivating teams.',
+    good: 'Good understanding of engagement.',
+    average: 'Moderate engagement skills. Needs development.',
+    below_average: 'Engagement skills need improvement.',
+    poor: 'Poor engagement skills. Significant concerns.'
+  },
+  'Financial and Operational Performance': {
+    excellent: 'Strong financial and operational understanding.',
+    good: 'Good business acumen. Understands operations.',
+    average: 'Moderate financial knowledge. Needs development.',
+    below_average: 'Financial knowledge needs improvement.',
+    poor: 'Poor financial understanding. Significant gaps.'
+  },
+  'Goal Achievement and Strategic Alignment': {
+    excellent: 'Excellent at goal setting and strategic alignment.',
+    good: 'Good understanding of goals and alignment.',
+    average: 'Moderate goal achievement. Needs support.',
+    below_average: 'Goal achievement needs improvement.',
+    poor: 'Poor goal orientation. Significant concerns.'
+  },
+  'Productivity and Efficiency': {
+    excellent: 'Highly productive and efficiency-focused.',
+    good: 'Good productivity. Understands efficiency.',
+    average: 'Moderate productivity. Needs improvement.',
+    below_average: 'Productivity needs development.',
+    poor: 'Poor productivity. Significant concerns.'
+  },
+  'Work Quality and Effectiveness': {
+    excellent: 'Consistently high-quality work.',
+    good: 'Good work quality. Reliable.',
+    average: 'Moderate quality. May need improvement.',
+    below_average: 'Work quality needs development.',
+    poor: 'Poor quality. Significant concerns.'
+  },
+
+  // Cultural Assessment Categories
+  'Attitude': {
+    excellent: 'Positive attitude. Highly motivated and adaptable.',
+    good: 'Good attitude. Generally positive and willing.',
+    average: 'Moderate attitude. May have occasional concerns.',
+    below_average: 'Attitude concerns. Needs development.',
+    poor: 'Poor attitude. Significant concerns.'
+  },
+  'Core Values': {
+    excellent: 'Strong values alignment. Principled and consistent.',
+    good: 'Good values alignment. Generally aligned.',
+    average: 'Moderate alignment. May have some conflicts.',
+    below_average: 'Values misalignment concerns.',
+    poor: 'Poor values alignment. Significant concerns.'
+  },
+  'Environmental Fit': {
+    excellent: 'Excellent environmental fit. Thrives in the setting.',
+    good: 'Good fit with environment. Comfortable.',
+    average: 'Moderate fit. May need adjustment.',
+    below_average: 'Environmental mismatch concerns.',
+    poor: 'Poor environmental fit. Significant concerns.'
+  },
+  'Interpersonal': {
+    excellent: 'Strong interpersonal skills. Builds relationships well.',
+    good: 'Good interpersonal skills. Works well with others.',
+    average: 'Moderate interpersonal skills. May need development.',
+    below_average: 'Interpersonal skills need improvement.',
+    poor: 'Poor interpersonal skills. Significant concerns.'
+  },
+  'Leadership': {
+    excellent: 'Strong leadership potential. Inspires others.',
+    good: 'Good leadership capabilities. Guides teams well.',
+    average: 'Moderate leadership skills. Needs development.',
+    below_average: 'Leadership needs improvement.',
+    poor: 'Poor leadership. Significant concerns.'
+  },
+  'Work Style': {
+    excellent: 'Effective work style. Adaptable and productive.',
+    good: 'Good work habits. Reliable and consistent.',
+    average: 'Moderate work style. May need adjustment.',
+    below_average: 'Work style concerns. Needs improvement.',
+    poor: 'Poor work style. Significant concerns.'
   }
 };
 
-// Domain-based interpretation templates
-const domainInterpretations = {
-  'cognitive': {
-    name: 'Cognitive & Analytical',
-    leadershipRelevance: 'Critical for strategic thinking and problem-solving',
-    overall: (scores) => {
-      const avg = scores.filter(s => s.domain === 'cognitive').reduce((a, b) => a + b.score, 0) / scores.length;
-      if (avg >= 70) return 'Strong cognitive capabilities - handles complexity well';
-      if (avg >= 50) return 'Moderate cognitive abilities - suitable for most roles';
-      return 'Cognitive development needed - may struggle with complexity';
-    }
-  },
-  'interpersonal': {
-    name: 'Interpersonal & Communication',
-    leadershipRelevance: 'Essential for collaboration and influence',
-    overall: (scores) => {
-      const avg = scores.filter(s => s.domain === 'interpersonal').reduce((a, b) => a + b.score, 0) / scores.length;
-      if (avg >= 70) return 'Strong interpersonal skills - builds relationships effectively';
-      if (avg >= 50) return 'Good interpersonal abilities - works well with others';
-      return 'Interpersonal skills need development';
-    }
-  },
-  'leadership': {
-    name: 'Leadership & Management',
-    leadershipRelevance: 'Core leadership competencies',
-    overall: (scores) => {
-      const avg = scores.filter(s => s.domain === 'leadership').reduce((a, b) => a + b.score, 0) / scores.length;
-      if (avg >= 70) return 'Strong leadership potential - ready for increased responsibility';
-      if (avg >= 50) return 'Emerging leadership capabilities - good foundation';
-      return 'Leadership skills need significant development';
-    }
-  },
-  'operational': {
-    name: 'Operational & Execution',
-    leadershipRelevance: 'Important for results delivery',
-    overall: (scores) => {
-      const avg = scores.filter(s => s.domain === 'operational').reduce((a, b) => a + b.score, 0) / scores.length;
-      if (avg >= 70) return 'Strong operational focus - delivers results';
-      if (avg >= 50) return 'Good operational capabilities';
-      return 'Operational execution needs improvement';
-    }
-  },
-  'technical': {
-    name: 'Technical & Domain Expertise',
-    leadershipRelevance: 'Role-specific knowledge',
-    overall: (scores) => {
-      const avg = scores.filter(s => s.domain === 'technical').reduce((a, b) => a + b.score, 0) / scores.length;
-      if (avg >= 70) return 'Strong technical expertise - domain expert';
-      if (avg >= 50) return 'Good technical foundation';
-      return 'Technical knowledge needs development';
-    }
-  },
-  'values': {
-    name: 'Values & Ethics',
-    leadershipRelevance: 'Foundational for trust',
-    overall: (scores) => {
-      const avg = scores.filter(s => s.domain === 'values').reduce((a, b) => a + b.score, 0) / scores.length;
-      if (avg >= 70) return 'Strong values alignment - trustworthy';
-      if (avg >= 50) return 'Generally aligned with values';
-      return 'Values misalignment concerns';
-    }
-  },
-  'behavioral': {
-    name: 'Behavioral & Work Style',
-    leadershipRelevance: 'Influences team dynamics',
-    overall: (scores) => {
-      const avg = scores.filter(s => s.domain === 'behavioral').reduce((a, b) => a + b.score, 0) / scores.length;
-      if (avg >= 70) return 'Strong behavioral profile - stable and adaptable';
-      if (avg >= 50) return 'Good behavioral patterns';
-      return 'Behavioral concerns need attention';
-    }
-  },
-  'cultural': {
-    name: 'Cultural & Attitudinal Fit',
-    leadershipRelevance: 'Important for alignment',
-    overall: (scores) => {
-      const avg = scores.filter(s => s.domain === 'cultural').reduce((a, b) => a + b.score, 0) / scores.length;
-      if (avg >= 70) return 'Strong cultural fit - values aligned';
-      if (avg >= 50) return 'Generally good cultural fit';
-      return 'Cultural alignment concerns';
-    }
-  },
-  'strategic': {
-    name: 'Strategic & Vision',
-    leadershipRelevance: 'Critical for direction-setting',
-    overall: (scores) => {
-      const avg = scores.filter(s => s.domain === 'strategic').reduce((a, b) => a + b.score, 0) / scores.length;
-      if (avg >= 70) return 'Strong strategic thinking - sees big picture';
-      if (avg >= 50) return 'Good strategic awareness';
-      return 'Strategic thinking needs development';
-    }
-  },
-  'career': {
-    name: 'Career & Readiness',
-    leadershipRelevance: 'Readiness indicator',
-    overall: (scores) => {
-      const avg = scores.filter(s => s.domain === 'career').reduce((a, b) => a + b.score, 0) / scores.length;
-      if (avg >= 70) return 'Ready for advancement';
-      if (avg >= 50) return 'Ready with support';
-      return 'Needs more experience';
-    }
+// Generate overall profile summary based on scores
+const getProfileSummary = (scores) => {
+  const values = Object.values(scores);
+  const avg = values.reduce((a, b) => a + b, 0) / values.length;
+  const excellent = values.filter(s => s >= 80).length;
+  const poor = values.filter(s => s < 50).length;
+
+  if (excellent >= 5 && poor === 0) {
+    return {
+      type: 'High-Performer',
+      description: 'This candidate demonstrates strong overall capability with consistent performance across most areas. Ready for challenging roles and increased responsibility.'
+    };
+  } else if (excellent >= 3 && poor <= 1) {
+    return {
+      type: 'Solid Performer',
+      description: 'This candidate shows solid performance with clear strengths and manageable development areas. Good potential for growth.'
+    };
+  } else if (avg >= 60 && poor <= 2) {
+    return {
+      type: 'Developing Performer',
+      description: 'This candidate has foundational skills with identified development areas. Requires targeted support to reach full potential.'
+    };
+  } else if (poor >= 3) {
+    return {
+      type: 'Development Priority',
+      description: 'This candidate has significant development needs across multiple areas. Requires intensive support and structured training.'
+    };
+  } else {
+    return {
+      type: 'Balanced Profile',
+      description: 'This candidate shows a mix of strengths and development areas. Suitable for structured roles with supervision.'
+    };
   }
 };
 
-// Main universal interpretation function
+// Generate suitability and risks
+const getSuitabilityAndRisks = (scores) => {
+  const suitability = [];
+  const risks = [];
+  
+  const leadership = scores['Leadership & Management'] || 0;
+  const cognitive = scores['Cognitive Ability'] || 0;
+  const technical = scores['Technical & Manufacturing'] || 0;
+  const cultural = scores['Cultural & Attitudinal Fit'] || 0;
+  const ei = scores['Emotional Intelligence'] || 0;
+  const communication = scores['Communication'] || 0;
+
+  // Suitability based on strengths
+  if (leadership >= 70 && cognitive >= 70 && ei >= 60) {
+    suitability.push('Good fit for leadership or management roles');
+  }
+  if (technical >= 70) {
+    suitability.push('Well-suited for technical or specialist positions');
+  }
+  if (communication >= 70) {
+    suitability.push('Effective in client-facing or collaborative roles');
+  }
+  if (leadership >= 60 && cognitive >= 60) {
+    suitability.push('Suitable for team lead or supervisory positions');
+  }
+  if (technical >= 60 && cultural >= 60) {
+    suitability.push('Good fit for operational roles in structured environments');
+  }
+
+  // Risks based on weaknesses
+  if (cognitive < 50) {
+    risks.push('Limited cognitive capacity may impact complex problem-solving');
+  }
+  if (ei < 50) {
+    risks.push('Emotional intelligence concerns may affect team dynamics');
+  }
+  if (cultural < 50) {
+    risks.push('Cultural fit concerns - may not align with company values');
+  }
+  if (leadership < 50) {
+    risks.push('Limited leadership potential - may not suit management roles');
+  }
+  if (technical < 50 && cognitive < 50) {
+    risks.push('Significant development needed for technical or analytical roles');
+  }
+
+  return { suitability, risks };
+};
+
+// Main interpretation generator
 export const generateUniversalInterpretation = (assessmentType, candidateName, scores, strengths, weaknesses, overallPercentage) => {
-  // Get assessment definition
-  const assessmentDef = assessmentTypeDefinitions[assessmentType] || assessmentTypeDefinitions.general;
   
-  // Build category interpretations
-  const categoryInterpretations = {};
-  const domainScores = {};
-  
+  // Generate category interpretations
+  const categoryInterpretation = {};
   Object.entries(scores).forEach(([category, score]) => {
-    const categoryDef = assessmentDef.categories[category];
-    if (!categoryDef) return;
+    const level = getLevel(score);
+    const interpretation = categoryInterpretations[category]?.[level] || 
+      `${category}: ${score}% - ${level.replace('_', ' ')} performance.`;
     
-    let level = 'low';
-    if (score >= 70) level = 'high';
-    else if (score >= 50) level = 'medium';
-    
-    categoryInterpretations[category] = {
+    categoryInterpretation[category] = {
       score,
       level,
-      interpretation: categoryDef.interpretation[level],
-      domain: categoryDef.domain,
-      weight: categoryDef.weight,
-      leadershipRelevance: categoryDef.leadershipRelevance
+      interpretation
     };
-    
-    // Aggregate domain scores
-    if (!domainScores[categoryDef.domain]) {
-      domainScores[categoryDef.domain] = [];
-    }
-    domainScores[categoryDef.domain].push(score);
   });
-  
-  // Calculate domain averages
-  const domainAverages = {};
-  Object.entries(domainScores).forEach(([domain, scores]) => {
-    domainAverages[domain] = scores.reduce((a, b) => a + b, 0) / scores.length;
-  });
-  
-  // Generate domain summaries
-  const domainSummaries = {};
-  Object.entries(domainAverages).forEach(([domain, avg]) => {
-    const domainDef = domainInterpretations[domain];
-    if (domainDef) {
-      let level = 'low';
-      if (avg >= 70) level = 'high';
-      else if (avg >= 50) level = 'medium';
-      
-      domainSummaries[domain] = {
-        average: Math.round(avg),
-        level,
-        name: domainDef.name,
-        leadershipRelevance: domainDef.leadershipRelevance,
-        summary: domainDef.overall([{ domain, score: avg }])
-      };
-    }
-  });
-  
-  // Generate overall profile summary
-  const allScores = Object.values(scores);
-  const avgScore = allScores.reduce((a, b) => a + b, 0) / allScores.length;
-  const criticalLow = allScores.filter(s => s < 50).length;
-  const strongHigh = allScores.filter(s => s >= 70).length;
-  
-  let profileType = '';
-  let profileDescription = '';
-  
-  if (criticalLow >= 4) {
-    profileType = 'Development Priority';
-    profileDescription = 'This candidate has significant development needs across multiple areas. Requires intensive support and structured training.';
-  } else if (strongHigh >= 5 && criticalLow <= 1) {
-    profileType = 'High-Performer';
-    profileDescription = 'This candidate demonstrates strong capabilities across most areas. Ready for challenging roles and increased responsibility.';
-  } else if (strongHigh >= 3) {
-    profileType = 'Solid Performer';
-    profileDescription = 'This candidate shows solid performance with clear strengths and some development areas. Good potential for growth.';
-  } else if (avgScore >= 60) {
-    profileType = 'Developing Performer';
-    profileDescription = 'This candidate has foundational skills with identified development areas. Requires targeted support to reach potential.';
-  } else {
-    profileType = 'Entry-Level Foundation';
-    profileDescription = 'This candidate is building foundational skills. Requires structured development and close supervision.';
-  }
-  
-  // Generate suitability assessment
-  const suitability = [];
-  const concerns = [];
-  
-  if (criticalLow >= 3) {
-    concerns.push('Multiple critical gaps - not suitable for complex roles without development');
-  }
-  if (domainAverages['cognitive'] < 50) {
-    concerns.push('Limited cognitive capacity for strategic roles');
-  }
-  if (domainAverages['leadership'] < 50) {
-    concerns.push('Leadership potential needs significant development');
-  }
-  if (domainAverages['interpersonal'] < 50) {
-    concerns.push('Interpersonal skills may impact team dynamics');
-  }
-  if (domainAverages['values'] < 70) {
-    concerns.push('Values alignment requires attention');
-  }
-  
-  if (strongHigh >= 3) {
-    suitability.push('Leverage strengths in challenging assignments');
-  }
-  if (domainAverages['operational'] >= 70) {
-    suitability.push('Well-suited for operational and execution-focused roles');
-  }
-  if (domainAverages['technical'] >= 70) {
-    suitability.push('Strong fit for technical specialist positions');
-  }
-  if (domainAverages['leadership'] >= 70 && domainAverages['cognitive'] >= 70) {
-    suitability.push('Ready for leadership development programs');
-  }
-  
+
+  // Get profile summary
+  const profileSummary = getProfileSummary(scores);
+
+  // Get suitability and risks
+  const { suitability, risks } = getSuitabilityAndRisks(scores);
+
+  // Identify top strengths and development areas
+  const topStrengths = Object.entries(scores)
+    .filter(([_, score]) => score >= 70)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([category]) => category);
+
+  const topWeaknesses = Object.entries(scores)
+    .filter(([_, score]) => score < 60)
+    .sort((a, b) => a[1] - b[1])
+    .slice(0, 3)
+    .map(([category]) => category);
+
+  // Generate development focus
+  const developmentFocus = topWeaknesses.map((area, index) => ({
+    area,
+    priority: index === 0 ? 'High' : index === 1 ? 'Medium' : 'Low'
+  }));
+
+  // Create overall summary paragraph
+  const overallSummary = `${candidateName} completed the assessment with an overall score of ${overallPercentage}%. ` +
+    (topStrengths.length > 0 ? `Key strengths include ${topStrengths.join(', ')}. ` : '') +
+    (topWeaknesses.length > 0 ? `Development needed in ${topWeaknesses.join(', ')}. ` : '') +
+    profileSummary.description;
+
   return {
-    assessmentName: assessmentDef.name,
-    assessmentDescription: assessmentDef.description,
     candidateName,
     overallScore: overallPercentage,
-    profileType,
-    profileDescription,
-    categoryInterpretations,
-    domainSummaries,
-    strengths: strengths.map(s => ({
-      area: s.area || s,
-      percentage: s.percentage || scores[s.area || s]
-    })),
-    weaknesses: weaknesses.map(w => ({
-      area: w.area || w,
-      percentage: w.percentage || scores[w.area || w]
-    })),
-    suitability: suitability.length > 0 ? suitability : ['Standard role placement with development support'],
-    concerns: concerns.length > 0 ? concerns : ['No significant concerns identified'],
-    developmentFocus: weaknesses.slice(0, 3).map(w => w.area || w),
-    criticalAreas: allScores.filter(s => s < 50).length,
-    strongAreas: allScores.filter(s => s >= 70).length
+    profileType: profileSummary.type,
+    profileDescription: profileSummary.description,
+    overallSummary,
+    categoryInterpretation,
+    topStrengths,
+    topWeaknesses,
+    suitability: suitability.length > 0 ? suitability : ['Standard role placement with appropriate support'],
+    risks: risks.length > 0 ? risks : ['No significant risks identified'],
+    developmentFocus
   };
 };
