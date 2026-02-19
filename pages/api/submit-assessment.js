@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { generatePersonalizedReport } from '../../utils/personalizedReportGenerator';
+import { generatePersonalizedReport } from '../../utils/dynamicReportGenerator'; // Updated import
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
