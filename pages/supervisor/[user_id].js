@@ -964,4 +964,319 @@ const styles = {
   insightSection: {
     marginBottom: '15px'
   },
-  insightTitle
+  insightTitle: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#333',
+    margin: '0 0 10px 0'
+  },
+  insightItem: {
+    display: 'flex',
+    gap: '10px',
+    marginBottom: '8px',
+    fontSize: '13px',
+    color: '#555'
+  },
+  insightBullet: {
+    fontSize: '14px'
+  },
+  categoriesGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
+    gap: '20px'
+  },
+  categoryCard: {
+    background: 'white',
+    padding: '20px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+  },
+  categoryHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '15px'
+  },
+  categoryTitle: {
+    margin: 0,
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#333'
+  },
+  categoryBadge: {
+    padding: '4px 8px',
+    borderRadius: '4px',
+    fontSize: '11px',
+    fontWeight: 600
+  },
+  categoryScore: {
+    marginBottom: '15px'
+  },
+  scoreRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: '13px',
+    color: '#666',
+    marginBottom: '5px'
+  },
+  percentageValue: {
+    fontWeight: 600
+  },
+  progressBar: {
+    height: '8px',
+    background: '#f0f0f0',
+    borderRadius: '4px',
+    overflow: 'hidden',
+    marginBottom: '15px'
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: '4px'
+  },
+  categoryInterpretation: {
+    fontSize: '12px',
+    color: '#666',
+    lineHeight: '1.5',
+    padding: '10px',
+    background: '#f8f9fa',
+    borderRadius: '6px'
+  },
+  analysisGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+    gap: '20px'
+  },
+  analysisCard: {
+    background: 'white',
+    padding: '25px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+  },
+  analysisTitle: {
+    margin: '0 0 20px 0',
+    fontSize: '16px',
+    fontWeight: 600,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  },
+  analysisIcon: {
+    fontSize: '18px'
+  },
+  strengthsList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '15px'
+  },
+  strengthItem: {
+    padding: '15px',
+    background: '#f8f9fa',
+    borderRadius: '8px',
+    borderLeft: '4px solid #4caf50'
+  },
+  strengthHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '8px'
+  },
+  strengthName: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#2e7d32'
+  },
+  strengthScore: {
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#2e7d32',
+    background: '#e8f5e9',
+    padding: '2px 6px',
+    borderRadius: '4px'
+  },
+  strengthDesc: {
+    margin: 0,
+    fontSize: '12px',
+    color: '#555',
+    lineHeight: '1.5'
+  },
+  weaknessesList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '15px'
+  },
+  weaknessItem: {
+    padding: '15px',
+    background: '#f8f9fa',
+    borderRadius: '8px',
+    borderLeft: '4px solid #f44336'
+  },
+  weaknessHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '8px'
+  },
+  weaknessName: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#c62828'
+  },
+  weaknessScore: {
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#c62828',
+    background: '#ffebee',
+    padding: '2px 6px',
+    borderRadius: '4px'
+  },
+  weaknessDesc: {
+    margin: 0,
+    fontSize: '12px',
+    color: '#555',
+    lineHeight: '1.5'
+  },
+  noData: {
+    color: '#666',
+    fontSize: '13px',
+    textAlign: 'center',
+    padding: '20px'
+  },
+  recommendationsContainer: {
+    background: 'white',
+    padding: '30px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+  },
+  developmentPlan: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '30px'
+  },
+  planSection: {
+    marginBottom: '20px'
+  },
+  planSectionTitle: {
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#333',
+    marginBottom: '15px',
+    paddingBottom: '5px',
+    borderBottom: '2px solid #f0f0f0'
+  },
+  planItem: {
+    padding: '15px',
+    background: '#f8f9fa',
+    borderRadius: '8px',
+    marginBottom: '10px',
+    border: '1px solid #e0e0e0'
+  },
+  planItemHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '8px'
+  },
+  planItemArea: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#1565c0'
+  },
+  planItemPriority: {
+    fontSize: '11px',
+    fontWeight: 600,
+    padding: '3px 8px',
+    background: '#e3f2fd',
+    color: '#1565c0',
+    borderRadius: '4px'
+  },
+  planItemAction: {
+    fontSize: '13px',
+    fontWeight: 500,
+    color: '#333',
+    marginBottom: '5px'
+  },
+  planItemRecommendation: {
+    fontSize: '12px',
+    color: '#666',
+    margin: 0,
+    fontStyle: 'italic'
+  },
+  recommendationsList: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gap: '15px'
+  },
+  recommendationCard: {
+    padding: '20px',
+    background: '#f8f9fa',
+    borderRadius: '8px',
+    borderLeft: '4px solid #1565c0'
+  },
+  recommendationHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '10px'
+  },
+  recommendationNumber: {
+    width: '24px',
+    height: '24px',
+    background: '#1565c0',
+    color: 'white',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '12px',
+    fontWeight: 600
+  },
+  recommendationText: {
+    margin: 0,
+    fontSize: '13px',
+    color: '#555',
+    lineHeight: '1.5'
+  },
+  noRecommendations: {
+    textAlign: 'center',
+    padding: '40px',
+    color: '#666'
+  },
+  noAssessment: {
+    textAlign: 'center',
+    padding: '60px',
+    background: 'white',
+    borderRadius: '12px'
+  },
+  simpleView: {
+    marginTop: '20px'
+  },
+  simpleCard: {
+    background: 'white',
+    padding: '40px',
+    borderRadius: '12px',
+    textAlign: 'center',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+  },
+  simpleTitle: {
+    fontSize: '20px',
+    fontWeight: 600,
+    color: '#333',
+    marginBottom: '15px'
+  },
+  simpleText: {
+    fontSize: '14px',
+    color: '#666',
+    marginBottom: '10px',
+    lineHeight: '1.6'
+  },
+  backButton: {
+    padding: '10px 20px',
+    background: '#1565c0',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    marginTop: '20px'
+  }
+};
