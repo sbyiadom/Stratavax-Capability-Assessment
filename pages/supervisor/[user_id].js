@@ -169,6 +169,18 @@ export default function CandidateReport() {
     fetchData();
   }, [isSupervisor, user_id]);
 
+  const handleAssessmentChange = (e) => {
+    const selected = assessments.find(a => a.id === e.target.value);
+    setSelectedAssessment(selected);
+    setCategoryScores(selected.category_scores);
+    setStrengths(selected.strengths);
+    setWeaknesses(selected.weaknesses);
+    setRecommendations(selected.recommendations);
+    setDevelopmentPlan(selected.development_plan);
+    setInterpretations(selected.interpretations);
+    setExecutiveSummary(selected.interpretations?.executiveSummary || '');
+  };
+
   const handleBack = () => router.push('/supervisor');
 
   if (!isSupervisor || loading) {
@@ -184,12 +196,12 @@ export default function CandidateReport() {
     return (
       <div style={styles.errorContainer}>
         <h2>No Data Available</h2>
-        <button onClick={handleBack} style={styles.button}>← Back</button>
+        <button onClick={handleBack} style={styles.button}>← Back to Dashboard</button>
       </div>
     );
   }
 
-  const current = selectedAssessment;
+  const current = selectedAssessment || assessments[0];
   const overallGrade = getGradeInfo(current.percentage);
   const overallRating = getOverallRating(current.percentage);
 
@@ -205,18 +217,8 @@ export default function CandidateReport() {
           </div>
           {assessments.length > 1 && (
             <select 
-              value={selectedAssessment?.id} 
-              onChange={(e) => {
-                const selected = assessments.find(a => a.id === e.target.value);
-                setSelectedAssessment(selected);
-                setCategoryScores(selected.category_scores);
-                setStrengths(selected.strengths);
-                setWeaknesses(selected.weaknesses);
-                setRecommendations(selected.recommendations);
-                setDevelopmentPlan(selected.development_plan);
-                setInterpretations(selected.interpretations);
-                setExecutiveSummary(selected.interpretations?.executiveSummary || '');
-              }}
+              value={current.id} 
+              onChange={handleAssessmentChange}
               style={styles.select}
             >
               {assessments.map(a => (
@@ -235,8 +237,8 @@ export default function CandidateReport() {
             <p style={styles.completionDate}>Completed: {new Date(current.completed_at).toLocaleString()}</p>
           </div>
           <div style={styles.scoreCard}>
-            <div style={styles.scoreValue}>{current.score}</div>
-            <div style={styles.scoreMax}>/{current.max_score}</div>
+            <span style={styles.scoreValue}>{current.score}</span>
+            <span style={styles.scoreMax}>/{current.max_score}</span>
           </div>
         </div>
 
@@ -255,31 +257,33 @@ export default function CandidateReport() {
         {/* Category Scores Table */}
         <div style={styles.tableCard}>
           <h3 style={styles.sectionTitle}>Performance by Category</h3>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Category</th>
-                <th style={styles.th}>Score</th>
-                <th style={styles.th}>Percentage</th>
-                <th style={styles.th}>Grade</th>
-                <th style={styles.th}>Comment</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(categoryScores).map(([category, data]) => {
-                const grade = getGradeInfo(data.percentage);
-                return (
-                  <tr key={category} style={styles.tr}>
-                    <td style={styles.td}><strong>{category}</strong></td>
-                    <td style={styles.td}>{data.score}/{data.maxPossible}</td>
-                    <td style={styles.td}>{data.percentage}%</td>
-                    <td style={{...styles.td, color: grade.color, fontWeight: 600}}>{grade.grade}</td>
-                    <td style={styles.td}>{grade.description}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div style={styles.tableWrapper}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Category</th>
+                  <th style={styles.th}>Score</th>
+                  <th style={styles.th}>Percentage</th>
+                  <th style={styles.th}>Grade</th>
+                  <th style={styles.th}>Comment</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(categoryScores).map(([category, data]) => {
+                  const grade = getGradeInfo(data.percentage);
+                  return (
+                    <tr key={category}>
+                      <td style={styles.td}><strong>{category}</strong></td>
+                      <td style={styles.td}>{data.score}/{data.maxPossible}</td>
+                      <td style={styles.td}>{data.percentage}%</td>
+                      <td style={{...styles.td, color: grade.color, fontWeight: 600}}>{grade.grade}</td>
+                      <td style={styles.td}>{grade.description}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Strengths & Weaknesses Grid */}
@@ -384,6 +388,13 @@ export default function CandidateReport() {
           <p>Report generated on {new Date().toLocaleDateString()} | Confidential</p>
         </div>
       </div>
+
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </AppLayout>
   );
 }
@@ -393,7 +404,7 @@ const styles = {
     maxWidth: '1200px',
     margin: '0 auto',
     padding: '40px 20px',
-    fontFamily: 'Arial, sans-serif'
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
   },
   loadingContainer: {
     minHeight: '100vh',
@@ -413,7 +424,7 @@ const styles = {
   },
   errorContainer: {
     textAlign: 'center',
-    padding: '60px'
+    padding: '60px 20px'
   },
   header: {
     marginBottom: '30px',
@@ -430,7 +441,12 @@ const styles = {
     color: '#1565c0',
     borderRadius: '4px',
     cursor: 'pointer',
-    fontSize: '14px'
+    fontSize: '14px',
+    transition: 'all 0.2s',
+    ':hover': {
+      background: '#1565c0',
+      color: 'white'
+    }
   },
   titleSection: {
     flex: 1
@@ -451,7 +467,8 @@ const styles = {
     border: '1px solid #ddd',
     borderRadius: '4px',
     fontSize: '14px',
-    minWidth: '250px'
+    minWidth: '250px',
+    background: 'white'
   },
   reportHeader: {
     display: 'flex',
@@ -535,7 +552,9 @@ const styles = {
     background: 'white',
     borderRadius: '8px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    border: '1px solid #e0e0e0',
+    border: '1px solid #e0e0e0'
+  },
+  tableWrapper: {
     overflowX: 'auto'
   },
   table: {
@@ -555,11 +574,6 @@ const styles = {
     padding: '12px',
     borderBottom: '1px solid #e0e0e0',
     color: '#555'
-  },
-  tr: {
-    ':hover': {
-      background: '#f8f9fa'
-    }
   },
   grid2: {
     display: 'grid',
@@ -672,13 +686,3 @@ const styles = {
     marginTop: '20px'
   }
 };
-
-// Add keyframes for spinner
-const style = document.createElement('style');
-style.textContent = `
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-`;
-document.head.appendChild(style);
