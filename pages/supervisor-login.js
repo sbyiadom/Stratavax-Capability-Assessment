@@ -1,6 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/router";
-import Link from "next/link";
 import { supabase } from "../supabase/client";
 
 export default function SupervisorLogin() {
@@ -9,36 +8,6 @@ export default function SupervisorLogin() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-
-  // Check if already logged in
-  useEffect(() => {
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        // Check if user is a supervisor by looking up their email
-        const { data: supervisor } = await supabase
-          .from("supervisors")
-          .select("id, role")
-          .eq("email", session.user.email)
-          .eq("is_active", true)
-          .maybeSingle();
-
-        if (supervisor) {
-          // Create local session for supervisor dashboard
-          const supervisorSession = {
-            id: supervisor.id,
-            email: session.user.email,
-            loggedIn: true,
-            loginTime: new Date().toISOString()
-          };
-          localStorage.setItem("supervisorSession", JSON.stringify(supervisorSession));
-          router.push("/supervisor");
-        }
-      }
-    };
-    checkSession();
-  }, [router]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -46,72 +15,53 @@ export default function SupervisorLogin() {
     setError("");
 
     try {
-      // First, attempt to sign in with Supabase Auth
+      // 1. Authenticate with Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: email.toLowerCase().trim(),
-        password: password
+        email,
+        password
       });
 
-      if (authError) {
-        console.error("Auth error:", authError);
-        throw new Error("Invalid email or password");
-      }
+      if (authError) throw authError;
 
-      if (!authData.user) {
-        throw new Error("Invalid email or password");
-      }
-
-      // Now that we're authenticated, query the supervisors table using email
+      // 2. Check if user is in supervisors table and active
       const { data: supervisor, error: supervisorError } = await supabase
-        .from("supervisors")
-        .select("*")
-        .eq("email", email.toLowerCase().trim())
-        .eq("is_active", true)
-        .maybeSingle();
+        .from('supervisors')
+        .select('*')
+        .eq('user_id', authData.user.id)
+        .eq('is_active', true)
+        .single();
 
-      if (supervisorError) {
-        console.error("Supervisor query error:", supervisorError);
+      if (supervisorError || !supervisor) {
+        // Not a supervisor, sign them out
         await supabase.auth.signOut();
-        throw new Error("Error accessing supervisor data");
+        throw new Error("You don't have supervisor access or your account is inactive");
       }
 
-      if (!supervisor) {
-        // If no supervisor record found, sign out the auth user
-        await supabase.auth.signOut();
-        throw new Error("You don't have supervisor access");
-      }
-
-      // Update last login timestamp
+      // 3. Update last login
       await supabase
-        .from("supervisors")
-        .update({ 
-          last_login: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", supervisor.id);
+        .from('supervisors')
+        .update({ last_login: new Date().toISOString() })
+        .eq('id', supervisor.id);
 
-      // Create local session for supervisor dashboard
-      const supervisorSession = {
-        id: supervisor.id,
+      // 4. Store session in localStorage
+      localStorage.setItem("supervisorSession", JSON.stringify({
+        loggedIn: true,
         user_id: authData.user.id,
         email: supervisor.email,
         full_name: supervisor.full_name,
         role: supervisor.role,
-        loggedIn: true,
-        loginTime: new Date().toISOString()
-      };
+        permissions: supervisor.permissions
+      }));
 
-      localStorage.setItem("supervisorSession", JSON.stringify(supervisorSession));
+      // 5. Redirect based on role
+      if (supervisor.role === 'admin') {
+        router.push("/admin");
+      } else {
+        router.push("/supervisor");
+      }
 
-      // Redirect to supervisor dashboard
-      router.push("/supervisor");
-      
     } catch (err) {
-      console.error("Login error:", err);
       setError(err.message);
-      
-      // Sign out if there was an error
-      await supabase.auth.signOut();
     } finally {
       setLoading(false);
     }
@@ -120,95 +70,59 @@ export default function SupervisorLogin() {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        {/* Header */}
-        <div style={styles.header}>
-          <h1 style={styles.title}>Supervisor Login</h1>
-          <p style={styles.subtitle}>Access the talent assessment dashboard</p>
-        </div>
-
-        {/* Error Message */}
+        <div style={styles.logo}>🏢 Stratavax</div>
+        <h1 style={styles.title}>Supervisor Login</h1>
+        
         {error && (
-          <div style={styles.error}>
-            <span style={styles.errorIcon}>⚠️</span>
-            <span>{error}</span>
+          <div style={styles.errorAlert}>
+            {error}
           </div>
         )}
 
-        {/* Login Form */}
-        <form onSubmit={handleLogin} style={styles.form}>
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Email Address</label>
+        <form onSubmit={handleLogin}>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="supervisor@company.com"
               required
               style={styles.input}
+              placeholder="Enter your email"
             />
           </div>
 
-          <div style={styles.inputGroup}>
+          <div style={styles.formGroup}>
             <label style={styles.label}>Password</label>
-            <div style={styles.passwordContainer}>
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                required
-                style={styles.passwordInput}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                style={styles.passwordToggle}
-              >
-                {showPassword ? "👁️" : "👁️‍🗨️"}
-              </button>
-            </div>
-          </div>
-
-          <div style={styles.options}>
-            <Link href="/supervisor-forgot-password" style={styles.forgotLink}>
-              Forgot password?
-            </Link>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              style={styles.input}
+              placeholder="Enter your password"
+            />
           </div>
 
           <button
             type="submit"
             disabled={loading}
             style={{
-              ...styles.loginButton,
-              opacity: loading ? 0.7 : 1,
+              ...styles.submitButton,
+              opacity: loading ? 0.5 : 1,
               cursor: loading ? 'not-allowed' : 'pointer'
             }}
           >
-            {loading ? (
-              <span style={styles.loadingContainer}>
-                <span style={styles.loadingSpinner} />
-                Logging in...
-              </span>
-            ) : (
-              "Login to Dashboard"
-            )}
+            {loading ? "Logging in..." : "Login"}
           </button>
         </form>
 
-        {/* Footer */}
-        <div style={styles.footer}>
-          <Link href="/" style={styles.footerLink}>
-            ← Back to Main Site
-          </Link>
+        <div style={styles.links}>
+          <a href="/login" style={styles.link}>Candidate Login</a>
+          <span style={styles.separator}>|</span>
+          <a href="/supervisor-forgot-password" style={styles.link}>Forgot Password?</a>
         </div>
       </div>
-
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }
@@ -216,150 +130,96 @@ export default function SupervisorLogin() {
 const styles = {
   container: {
     minHeight: '100vh',
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     padding: '20px'
   },
   card: {
     background: 'white',
-    borderRadius: '12px',
     padding: '40px',
+    borderRadius: '12px',
     width: '100%',
     maxWidth: '400px',
-    boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+    boxShadow: '0 10px 40px rgba(0,0,0,0.2)'
   },
-  header: {
+  logo: {
+    fontSize: '24px',
+    fontWeight: '700',
     textAlign: 'center',
-    marginBottom: '30px'
+    marginBottom: '20px',
+    color: '#1565c0'
   },
   title: {
-    margin: '0 0 10px 0',
+    margin: '0 0 30px 0',
     color: '#333',
-    fontSize: '28px',
-    fontWeight: 700
+    textAlign: 'center',
+    fontSize: '24px',
+    fontWeight: 600
   },
-  subtitle: {
-    margin: 0,
-    color: '#666',
-    fontSize: '14px'
-  },
-  error: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
+  errorAlert: {
+    padding: '12px',
     background: '#ffebee',
     color: '#c62828',
-    padding: '12px',
     borderRadius: '6px',
     marginBottom: '20px',
-    fontSize: '14px'
+    fontSize: '14px',
+    textAlign: 'center'
   },
-  errorIcon: {
-    fontSize: '16px'
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px'
-  },
-  inputGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '5px'
+  formGroup: {
+    marginBottom: '20px'
   },
   label: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#333'
+    display: 'block',
+    marginBottom: '8px',
+    color: '#333',
+    fontWeight: 500,
+    fontSize: '14px'
   },
   input: {
-    padding: '12px',
-    borderRadius: '6px',
-    border: '1px solid #e0e0e0',
-    fontSize: '14px',
-    transition: 'all 0.2s ease',
-    outline: 'none',
-    ':focus': {
-      borderColor: '#667eea',
-      boxShadow: '0 0 0 3px rgba(102,126,234,0.1)'
-    }
-  },
-  passwordContainer: {
-    position: 'relative'
-  },
-  passwordInput: {
     width: '100%',
     padding: '12px',
-    paddingRight: '40px',
     borderRadius: '6px',
-    border: '1px solid #e0e0e0',
-    fontSize: '14px',
-    outline: 'none',
+    border: '1px solid #ddd',
+    fontSize: '16px',
+    boxSizing: 'border-box',
+    transition: 'border 0.2s',
     ':focus': {
-      borderColor: '#667eea',
-      boxShadow: '0 0 0 3px rgba(102,126,234,0.1)'
+      borderColor: '#1565c0',
+      outline: 'none'
     }
   },
-  passwordToggle: {
-    position: 'absolute',
-    right: '12px',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    background: 'none',
+  submitButton: {
+    width: '100%',
+    padding: '14px',
+    background: '#1565c0',
+    color: 'white',
     border: 'none',
+    borderRadius: '6px',
+    fontSize: '16px',
+    fontWeight: 600,
     cursor: 'pointer',
-    fontSize: '18px',
-    padding: 0
+    transition: 'background 0.2s',
+    marginBottom: '20px',
+    ':hover': {
+      background: '#0d47a1'
+    }
   },
-  options: {
+  links: {
     display: 'flex',
-    justifyContent: 'flex-end'
+    justifyContent: 'center',
+    gap: '10px',
+    fontSize: '14px'
   },
-  forgotLink: {
-    color: '#667eea',
+  link: {
+    color: '#1565c0',
     textDecoration: 'none',
-    fontSize: '13px',
     ':hover': {
       textDecoration: 'underline'
     }
   },
-  loginButton: {
-    background: 'linear-gradient(135deg, #667eea, #764ba2)',
-    color: 'white',
-    border: 'none',
-    padding: '14px',
-    borderRadius: '6px',
-    fontSize: '15px',
-    fontWeight: 600,
-    transition: 'all 0.2s ease',
-    marginTop: '10px'
-  },
-  loadingContainer: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '10px'
-  },
-  loadingSpinner: {
-    width: '18px',
-    height: '18px',
-    border: '2px solid rgba(255,255,255,0.3)',
-    borderTop: '2px solid white',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite'
-  },
-  footer: {
-    marginTop: '30px',
-    textAlign: 'center'
-  },
-  footerLink: {
-    color: '#666',
-    textDecoration: 'none',
-    fontSize: '13px',
-    ':hover': {
-      color: '#667eea'
-    }
+  separator: {
+    color: '#666'
   }
 };
