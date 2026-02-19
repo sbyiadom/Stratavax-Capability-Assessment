@@ -7,9 +7,6 @@ import {
   getOverallRating,
   getStrengthComment,
   getWeaknessComment,
-  generateExecutiveSummary,
-  generateRecommendations,
-  generateDevelopmentPlan,
   gradeScale
 } from "../../utils/dynamicReportGenerator";
 
@@ -64,7 +61,7 @@ export default function CandidateReport() {
       try {
         setLoading(true);
 
-        // Get candidate info - FIXED: use maybeSingle() instead of single()
+        // Get candidate info
         const { data: profileData, error: profileError } = await supabase
           .from('candidate_profiles')
           .select('*')
@@ -81,7 +78,7 @@ export default function CandidateReport() {
           email: profileData?.email || 'Email not available'
         });
 
-        // Get assessments
+        // Get assessments with scores
         const { data: candidateAssessments, error: candidateError } = await supabase
           .from('candidate_assessments')
           .select(`
@@ -106,7 +103,7 @@ export default function CandidateReport() {
           console.error("Error fetching candidate assessments:", candidateError);
         }
 
-        // Get detailed results
+        // Get detailed results from assessment_results
         const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
           .select('*')
@@ -116,6 +113,7 @@ export default function CandidateReport() {
           console.error("Error fetching assessment results:", resultsError);
         }
 
+        // Create a map of results by assessment_id
         const resultsMap = {};
         if (resultsData) {
           resultsData.forEach(result => {
@@ -123,74 +121,56 @@ export default function CandidateReport() {
           });
         }
 
-        if (candidateAssessments) {
-          const formatted = candidateAssessments.map(assessment => {
-            const result = resultsMap[assessment.assessment_id];
-            const percentage = Math.round((assessment.score / 500) * 100);
+        // Combine the data
+        if (candidateAssessments && candidateAssessments.length > 0) {
+          const formattedAssessments = candidateAssessments.map(assessment => {
+            const detailedResult = resultsMap[assessment.assessment_id];
+            const percentage = assessment.score ? Math.round((assessment.score / 500) * 100) : 0;
             const type = assessment.assessments?.assessment_type?.code || 'general';
             
-            // Format strengths and weaknesses with percentages
-            const strengthsList = (result?.strengths || []).map(s => ({
-              area: typeof s === 'string' ? s : s.area || s,
-              percentage: typeof s === 'object' && s.percentage ? s.percentage : 
-                         result?.category_scores?.[typeof s === 'string' ? s : s.area || s]?.percentage || percentage
-            }));
-            
-            const weaknessesList = (result?.weaknesses || []).map(w => ({
-              area: typeof w === 'string' ? w : w.area || w,
-              percentage: typeof w === 'object' && w.percentage ? w.percentage : 
-                         result?.category_scores?.[typeof w === 'string' ? w : w.area || w]?.percentage || percentage
-            }));
-
             return {
               id: assessment.id,
               assessment_id: assessment.assessment_id,
               name: assessment.assessments?.title || 'Assessment',
               type,
-              score: assessment.score,
+              score: assessment.score || 0,
               max_score: 500,
               percentage,
               completed_at: assessment.completed_at,
-              category_scores: result?.category_scores || {},
-              strengths: strengthsList,
-              weaknesses: weaknessesList,
-              interpretations: result?.interpretations || {}
+              category_scores: detailedResult?.category_scores || {},
+              strengths: detailedResult?.strengths || [],
+              weaknesses: detailedResult?.weaknesses || [],
+              recommendations: detailedResult?.recommendations || [],
+              development_plan: detailedResult?.development_plan || {},
+              interpretations: detailedResult?.interpretations || {},
+              executive_summary: detailedResult?.interpretations?.summary || detailedResult?.interpretations?.executiveSummary || '',
+              overall_profile: detailedResult?.interpretations?.overallProfile || ''
             };
           });
-          setAssessments(formatted);
-          if (formatted.length > 0) {
-            setSelectedAssessment(formatted[0]);
-            const first = formatted[0];
-            setCategoryScores(first.category_scores || {});
-            setStrengths(first.strengths || []);
-            setWeaknesses(first.weaknesses || []);
-            setAssessmentType(first.type);
+
+          setAssessments(formattedAssessments);
+          
+          // Select the most recent assessment
+          if (formattedAssessments.length > 0) {
+            const mostRecent = formattedAssessments[0];
+            setSelectedAssessment(mostRecent);
             
-            // Generate dynamic content
-            const grade = getGradeInfo(first.percentage);
-            const rating = getOverallRating(first.percentage, first.strengths, first.weaknesses, first.type);
-            const execSummary = generateExecutiveSummary(
-              profileData?.full_name || 'Candidate',
-              first.score,
-              first.max_score,
-              first.percentage,
-              grade.grade,
-              rating,
-              first.strengths,
-              first.weaknesses,
-              Object.keys(first.category_scores).length,
-              first.type
-            );
-            const recs = generateRecommendations(first.weaknesses, first.type);
-            const plan = generateDevelopmentPlan(first.weaknesses, first.strengths, first.type);
-            
-            setExecutiveSummary(execSummary);
-            setRecommendations(recs);
-            setDevelopmentPlan(plan);
+            // Set the detailed data directly from the database
+            setCategoryScores(mostRecent.category_scores || {});
+            setStrengths(mostRecent.strengths || []);
+            setWeaknesses(mostRecent.weaknesses || []);
+            setRecommendations(mostRecent.recommendations || []);
+            setDevelopmentPlan(mostRecent.development_plan || {});
+            setInterpretations(mostRecent.interpretations || {});
+            setExecutiveSummary(mostRecent.executive_summary || '');
+            setAssessmentType(mostRecent.type);
           }
+        } else {
+          console.log("No completed assessments found for user:", user_id);
         }
+
       } catch (error) {
-        console.error("Error:", error);
+        console.error("Error fetching candidate data:", error);
       } finally {
         setLoading(false);
       }
@@ -201,32 +181,14 @@ export default function CandidateReport() {
   const handleAssessmentChange = (e) => {
     const selected = assessments.find(a => a.id === e.target.value);
     setSelectedAssessment(selected);
-    setCategoryScores(selected.category_scores);
-    setStrengths(selected.strengths);
-    setWeaknesses(selected.weaknesses);
+    setCategoryScores(selected.category_scores || {});
+    setStrengths(selected.strengths || []);
+    setWeaknesses(selected.weaknesses || []);
+    setRecommendations(selected.recommendations || []);
+    setDevelopmentPlan(selected.development_plan || {});
+    setInterpretations(selected.interpretations || {});
+    setExecutiveSummary(selected.executive_summary || '');
     setAssessmentType(selected.type);
-    
-    // Regenerate dynamic content
-    const grade = getGradeInfo(selected.percentage);
-    const rating = getOverallRating(selected.percentage, selected.strengths, selected.weaknesses, selected.type);
-    const execSummary = generateExecutiveSummary(
-      candidate.full_name,
-      selected.score,
-      selected.max_score,
-      selected.percentage,
-      grade.grade,
-      rating,
-      selected.strengths,
-      selected.weaknesses,
-      Object.keys(selected.category_scores).length,
-      selected.type
-    );
-    const recs = generateRecommendations(selected.weaknesses, selected.type);
-    const plan = generateDevelopmentPlan(selected.weaknesses, selected.strengths, selected.type);
-    
-    setExecutiveSummary(execSummary);
-    setRecommendations(recs);
-    setDevelopmentPlan(plan);
   };
 
   const handleBack = () => router.push('/supervisor');
@@ -240,7 +202,17 @@ export default function CandidateReport() {
     );
   }
 
-  if (!candidate || !assessments.length) {
+  if (!candidate) {
+    return (
+      <div style={styles.errorContainer}>
+        <h2>Candidate Not Found</h2>
+        <p>The requested candidate could not be found.</p>
+        <button onClick={handleBack} style={styles.primaryButton}>← Back to Dashboard</button>
+      </div>
+    );
+  }
+
+  if (!assessments || assessments.length === 0) {
     return (
       <div style={styles.errorContainer}>
         <h2>No Assessment Data Available</h2>
@@ -273,7 +245,7 @@ export default function CandidateReport() {
               >
                 {assessments.map(a => (
                   <option key={a.id} value={a.id}>
-                    {a.name} - {new Date(a.completed_at).toLocaleDateString()}
+                    {a.name} - {new Date(a.completed_at).toLocaleDateString()} ({a.score}/{a.max_score})
                   </option>
                 ))}
               </select>
@@ -312,126 +284,130 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* Executive Summary */}
-        <div style={styles.summaryCard}>
-          <div style={styles.summaryHeader}>
-            <span style={styles.summaryIcon}>📋</span>
-            <h2 style={styles.summaryTitle}>Executive Summary</h2>
+        {/* Executive Summary - Use data from database, not regenerated */}
+        {executiveSummary && (
+          <div style={styles.summaryCard}>
+            <div style={styles.summaryHeader}>
+              <span style={styles.summaryIcon}>📋</span>
+              <h2 style={styles.summaryTitle}>Executive Summary</h2>
+            </div>
+            <p style={styles.summaryText}>{executiveSummary}</p>
+            <div style={{...styles.ratingBadge, background: overallGrade.bg, color: overallGrade.color}}>
+              <span style={styles.ratingIcon}>{overallRating.icon}</span>
+              <span><strong>Overall Assessment:</strong> {overallRating.title} • Grade {overallGrade.grade}</span>
+            </div>
           </div>
-          <p style={styles.summaryText}>{executiveSummary}</p>
-          <div style={{...styles.ratingBadge, background: overallGrade.bg, color: overallGrade.color}}>
-            <span style={styles.ratingIcon}>{overallRating.icon}</span>
-            <span><strong>Overall Assessment:</strong> {overallRating.title} • Grade {overallGrade.grade}</span>
-          </div>
-        </div>
+        )}
 
-        {/* Category Performance Table - Colorful Version */}
-        <div style={styles.tableCard}>
-          <div style={styles.tableHeader}>
-            <span style={styles.tableIcon}>📊</span>
-            <h2 style={styles.tableTitle}>Performance by Category</h2>
-          </div>
-          <div style={styles.tableWrapper}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Category</th>
-                  <th style={styles.th}>Score</th>
-                  <th style={styles.th}>Percentage</th>
-                  <th style={styles.th}>Grade</th>
-                  <th style={styles.th}>Assessment</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(current.category_scores).map(([category, data]) => {
-                  const grade = getGradeInfo(data.percentage);
-                  
-                  // Determine row background color based on percentage
-                  let rowColor = '#ffffff';
-                  if (data.percentage >= 80) {
-                    rowColor = '#f0fff4'; // Light green
-                  } else if (data.percentage >= 60) {
-                    rowColor = '#fff8e1'; // Light amber
-                  } else if (data.percentage >= 40) {
-                    rowColor = '#fff3e0'; // Light orange
-                  } else {
-                    rowColor = '#ffebee'; // Light red
-                  }
-                  
-                  // Progress bar color
-                  let progressColor = '';
-                  if (data.percentage >= 80) progressColor = '#4caf50';
-                  else if (data.percentage >= 60) progressColor = '#ff9800';
-                  else if (data.percentage >= 40) progressColor = '#ff5722';
-                  else progressColor = '#f44336';
-                  
-                  return (
-                    <tr key={category} style={{ backgroundColor: rowColor, borderBottom: '1px solid #e0e0e0' }}>
-                      <td style={styles.td}>
-                        <strong style={{ color: grade.color }}>{category}</strong>
-                      </td>
-                      <td style={styles.td}>
-                        <span style={{ fontWeight: 600, color: grade.color }}>
-                          {data.score}/{data.maxPossible}
-                        </span>
-                      </td>
-                      <td style={styles.td}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <div style={{
-                            width: '80px',
-                            height: '8px',
-                            background: '#e0e0e0',
-                            borderRadius: '4px',
-                            overflow: 'hidden'
-                          }}>
-                            <div style={{
-                              width: `${data.percentage}%`,
-                              height: '100%',
-                              background: progressColor,
-                              borderRadius: '4px',
-                              transition: 'width 0.3s ease'
-                            }} />
-                          </div>
-                          <span style={{ fontWeight: 600, color: grade.color, minWidth: '45px' }}>
-                            {data.percentage}%
+        {/* Category Performance Table */}
+        {Object.keys(current.category_scores).length > 0 && (
+          <div style={styles.tableCard}>
+            <div style={styles.tableHeader}>
+              <span style={styles.tableIcon}>📊</span>
+              <h2 style={styles.tableTitle}>Performance by Category</h2>
+            </div>
+            <div style={styles.tableWrapper}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Category</th>
+                    <th style={styles.th}>Score</th>
+                    <th style={styles.th}>Percentage</th>
+                    <th style={styles.th}>Grade</th>
+                    <th style={styles.th}>Assessment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(current.category_scores).map(([category, data]) => {
+                    const grade = getGradeInfo(data.percentage);
+                    
+                    // Determine row background color based on percentage
+                    let rowColor = '#ffffff';
+                    if (data.percentage >= 80) {
+                      rowColor = '#f0fff4'; // Light green
+                    } else if (data.percentage >= 60) {
+                      rowColor = '#fff8e1'; // Light amber
+                    } else if (data.percentage >= 40) {
+                      rowColor = '#fff3e0'; // Light orange
+                    } else {
+                      rowColor = '#ffebee'; // Light red
+                    }
+                    
+                    // Progress bar color
+                    let progressColor = '';
+                    if (data.percentage >= 80) progressColor = '#4caf50';
+                    else if (data.percentage >= 60) progressColor = '#ff9800';
+                    else if (data.percentage >= 40) progressColor = '#ff5722';
+                    else progressColor = '#f44336';
+                    
+                    return (
+                      <tr key={category} style={{ backgroundColor: rowColor, borderBottom: '1px solid #e0e0e0' }}>
+                        <td style={styles.td}>
+                          <strong style={{ color: grade.color }}>{category}</strong>
+                        </td>
+                        <td style={styles.td}>
+                          <span style={{ fontWeight: 600, color: grade.color }}>
+                            {data.score}/{data.maxPossible}
                           </span>
-                        </div>
-                      </td>
-                      <td style={styles.td}>
-                        <span style={{
-                          display: 'inline-block',
-                          padding: '4px 12px',
-                          borderRadius: '20px',
-                          background: grade.bg,
-                          color: grade.color,
-                          fontWeight: 700,
-                          fontSize: '13px'
-                        }}>
-                          {grade.grade}
-                        </span>
-                      </td>
-                      <td style={styles.td}>
-                        <span style={{
-                          display: 'inline-block',
-                          padding: '4px 12px',
-                          borderRadius: '20px',
-                          background: `${grade.color}15`,
-                          color: grade.color,
-                          fontSize: '13px',
-                          fontWeight: 500
-                        }}>
-                          {grade.description}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </td>
+                        <td style={styles.td}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{
+                              width: '80px',
+                              height: '8px',
+                              background: '#e0e0e0',
+                              borderRadius: '4px',
+                              overflow: 'hidden'
+                            }}>
+                              <div style={{
+                                width: `${data.percentage}%`,
+                                height: '100%',
+                                background: progressColor,
+                                borderRadius: '4px',
+                                transition: 'width 0.3s ease'
+                              }} />
+                            </div>
+                            <span style={{ fontWeight: 600, color: grade.color, minWidth: '45px' }}>
+                              {data.percentage}%
+                            </span>
+                          </div>
+                        </td>
+                        <td style={styles.td}>
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '4px 12px',
+                            borderRadius: '20px',
+                            background: grade.bg,
+                            color: grade.color,
+                            fontWeight: 700,
+                            fontSize: '13px'
+                          }}>
+                            {grade.grade}
+                          </span>
+                        </td>
+                        <td style={styles.td}>
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '4px 12px',
+                            borderRadius: '20px',
+                            background: `${grade.color}15`,
+                            color: grade.color,
+                            fontSize: '13px',
+                            fontWeight: 500
+                          }}>
+                            {grade.description}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Strengths & Weaknesses */}
+        {/* Strengths & Weaknesses - Use data from database */}
         <div style={styles.grid2}>
           {/* Strengths Card */}
           <div style={styles.strengthCard}>
@@ -440,21 +416,26 @@ export default function CandidateReport() {
               <h3 style={styles.cardHeaderTitle}>Key Strengths</h3>
             </div>
             <div style={styles.cardContent}>
-              {current.strengths.length > 0 ? (
-                current.strengths.map((s, i) => (
-                  <div key={i} style={styles.strengthItem}>
-                    <div style={styles.strengthTitle}>
-                      <span style={styles.strengthIcon}>✓</span>
-                      <span style={styles.strengthName}>{s.area}</span>
-                      {s.percentage && (
-                        <span style={{...styles.percentageBadge, background: '#E8F5E9', color: '#2E7D32'}}>
-                          {s.percentage}%
-                        </span>
-                      )}
+              {current.strengths && current.strengths.length > 0 ? (
+                current.strengths.map((s, i) => {
+                  const area = typeof s === 'string' ? s : s.area || s;
+                  const percentage = typeof s === 'object' ? s.percentage : 
+                                    current.category_scores[area]?.percentage;
+                  return (
+                    <div key={i} style={styles.strengthItem}>
+                      <div style={styles.strengthTitle}>
+                        <span style={styles.strengthIcon}>✓</span>
+                        <span style={styles.strengthName}>{area}</span>
+                        {percentage && (
+                          <span style={{...styles.percentageBadge, background: '#E8F5E9', color: '#2E7D32'}}>
+                            {percentage}%
+                          </span>
+                        )}
+                      </div>
+                      <p style={styles.strengthComment}>{getStrengthComment(area, percentage, current.strengths, current.type)}</p>
                     </div>
-                    <p style={styles.strengthComment}>{getStrengthComment(s.area, s.percentage, current.strengths, current.type)}</p>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <p style={styles.emptyText}>No specific strengths identified in this assessment</p>
               )}
@@ -468,21 +449,26 @@ export default function CandidateReport() {
               <h3 style={styles.cardHeaderTitle}>Development Areas</h3>
             </div>
             <div style={styles.cardContent}>
-              {current.weaknesses.length > 0 ? (
-                current.weaknesses.map((w, i) => (
-                  <div key={i} style={styles.weaknessItem}>
-                    <div style={styles.weaknessTitle}>
-                      <span style={styles.weaknessIcon}>!</span>
-                      <span style={styles.weaknessName}>{w.area}</span>
-                      {w.percentage && (
-                        <span style={{...styles.percentageBadge, background: '#FFEBEE', color: '#C62828'}}>
-                          {w.percentage}%
-                        </span>
-                      )}
+              {current.weaknesses && current.weaknesses.length > 0 ? (
+                current.weaknesses.map((w, i) => {
+                  const area = typeof w === 'string' ? w : w.area || w;
+                  const percentage = typeof w === 'object' ? w.percentage : 
+                                    current.category_scores[area]?.percentage;
+                  return (
+                    <div key={i} style={styles.weaknessItem}>
+                      <div style={styles.weaknessTitle}>
+                        <span style={styles.weaknessIcon}>!</span>
+                        <span style={styles.weaknessName}>{area}</span>
+                        {percentage && (
+                          <span style={{...styles.percentageBadge, background: '#FFEBEE', color: '#C62828'}}>
+                            {percentage}%
+                          </span>
+                        )}
+                      </div>
+                      <p style={styles.weaknessComment}>{getWeaknessComment(area, percentage, current.weaknesses, current.type)}</p>
                     </div>
-                    <p style={styles.weaknessComment}>{getWeaknessComment(w.area, w.percentage, current.weaknesses, current.type)}</p>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <p style={styles.emptyText}>No significant development areas identified</p>
               )}
@@ -491,7 +477,7 @@ export default function CandidateReport() {
         </div>
 
         {/* Recommendations Card */}
-        {recommendations.length > 0 && (
+        {current.recommendations && current.recommendations.length > 0 && (
           <div style={styles.recommendationsCard}>
             <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #1565C0, #0D47A1)'}}>
               <span style={styles.cardIcon}>💡</span>
@@ -499,7 +485,7 @@ export default function CandidateReport() {
             </div>
             <div style={styles.cardContent}>
               <ul style={styles.recommendationsList}>
-                {recommendations.map((rec, i) => (
+                {current.recommendations.map((rec, i) => (
                   <li key={i} style={styles.recommendationItem}>
                     <span style={styles.recommendationBullet}>→</span>
                     <span>{rec}</span>
@@ -511,7 +497,7 @@ export default function CandidateReport() {
         )}
 
         {/* Development Plan */}
-        {developmentPlan && Object.keys(developmentPlan).length > 0 && (
+        {current.development_plan && Object.keys(current.development_plan).length > 0 && (
           <div style={styles.planCard}>
             <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #6A1B9A, #4A0072)'}}>
               <span style={styles.cardIcon}>📅</span>
@@ -519,11 +505,11 @@ export default function CandidateReport() {
             </div>
             <div style={styles.cardContent}>
               <div style={styles.planGrid}>
-                {developmentPlan.immediate && developmentPlan.immediate.length > 0 && (
+                {current.development_plan.immediate && current.development_plan.immediate.length > 0 && (
                   <div style={styles.planPhase}>
                     <h4 style={styles.phaseTitle}>⚡ Immediate (0-30 days)</h4>
                     <ul style={styles.planList}>
-                      {developmentPlan.immediate.map((item, i) => (
+                      {current.development_plan.immediate.map((item, i) => (
                         <li key={i} style={styles.planListItem}>
                           <strong>{item.area}:</strong> {item.recommendation}
                           {item.priority && <span style={styles.priorityTag}> {item.priority} Priority</span>}
@@ -532,11 +518,11 @@ export default function CandidateReport() {
                     </ul>
                   </div>
                 )}
-                {developmentPlan.shortTerm && developmentPlan.shortTerm.length > 0 && (
+                {current.development_plan.shortTerm && current.development_plan.shortTerm.length > 0 && (
                   <div style={styles.planPhase}>
                     <h4 style={styles.phaseTitle}>📈 Short-term (30-60 days)</h4>
                     <ul style={styles.planList}>
-                      {developmentPlan.shortTerm.map((item, i) => (
+                      {current.development_plan.shortTerm.map((item, i) => (
                         <li key={i} style={styles.planListItem}>
                           <strong>{item.area}:</strong> {item.recommendation}
                         </li>
@@ -544,11 +530,11 @@ export default function CandidateReport() {
                     </ul>
                   </div>
                 )}
-                {developmentPlan.longTerm && developmentPlan.longTerm.length > 0 && (
+                {current.development_plan.longTerm && current.development_plan.longTerm.length > 0 && (
                   <div style={styles.planPhase}>
                     <h4 style={styles.phaseTitle}>🚀 Long-term (60-90+ days)</h4>
                     <ul style={styles.planList}>
-                      {developmentPlan.longTerm.map((item, i) => (
+                      {current.development_plan.longTerm.map((item, i) => (
                         <li key={i} style={styles.planListItem}>
                           <strong>{item.area}:</strong> {item.recommendation}
                         </li>
