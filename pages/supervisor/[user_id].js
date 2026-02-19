@@ -20,20 +20,68 @@ export default function CandidateReport() {
   const [interpretations, setInterpretations] = useState({});
   const [executiveSummary, setExecutiveSummary] = useState('');
 
-  // Professional grade definitions
+  // Expressive grade definitions with personality
   const gradeScale = [
-    { grade: 'A+', min: 95, color: '#1B5E20', bg: '#E8F5E9', description: 'Exceeds expectations - Mastery level' },
-    { grade: 'A', min: 90, color: '#2E7D32', bg: '#E8F5E9', description: 'Excellent performance' },
-    { grade: 'A-', min: 85, color: '#2E7D32', bg: '#E8F5E9', description: 'Very good performance' },
-    { grade: 'B+', min: 80, color: '#2E7D32', bg: '#E8F5E9', description: 'Good performance' },
-    { grade: 'B', min: 75, color: '#1565C0', bg: '#E3F2FD', description: 'Satisfactory performance' },
-    { grade: 'B-', min: 70, color: '#1565C0', bg: '#E3F2FD', description: 'Adequate performance' },
-    { grade: 'C+', min: 65, color: '#F57C00', bg: '#FFF3E0', description: 'Developing - Shows potential' },
-    { grade: 'C', min: 60, color: '#F57C00', bg: '#FFF3E0', description: 'Basic competency' },
-    { grade: 'C-', min: 55, color: '#F57C00', bg: '#FFF3E0', description: 'Minimum competency' },
-    { grade: 'D+', min: 50, color: '#C62828', bg: '#FFEBEE', description: 'Below expectations' },
-    { grade: 'D', min: 40, color: '#C62828', bg: '#FFEBEE', description: 'Significant gaps' },
-    { grade: 'F', min: 0, color: '#B71C1C', bg: '#FFEBEE', description: 'Unsatisfactory' }
+    { 
+      grade: 'A+', min: 95, color: '#0A5C2E', bg: '#E6F7E6', 
+      description: '🌟 Exceptional! Demonstrates mastery beyond expectations. A true standout performer.',
+      shortDesc: 'Exceptional performance'
+    },
+    { 
+      grade: 'A', min: 90, color: '#1E7A44', bg: '#E6F7E6', 
+      description: '⭐ Excellent! Shows deep understanding and consistent high-quality performance.',
+      shortDesc: 'Excellent performance'
+    },
+    { 
+      grade: 'A-', min: 85, color: '#2E7D32', bg: '#E8F5E9', 
+      description: '📈 Very Good! Strong capabilities with minor areas for refinement.',
+      shortDesc: 'Very good performance'
+    },
+    { 
+      grade: 'B+', min: 80, color: '#2E7D32', bg: '#E8F5E9', 
+      description: '👍 Good! Solid performance with clear strengths and growth opportunities.',
+      shortDesc: 'Good performance'
+    },
+    { 
+      grade: 'B', min: 75, color: '#1565C0', bg: '#E3F2FD', 
+      description: '📊 Satisfactory. Meets expectations with room to grow.',
+      shortDesc: 'Satisfactory performance'
+    },
+    { 
+      grade: 'B-', min: 70, color: '#1565C0', bg: '#E3F2FD', 
+      description: '📝 Adequate. Foundation is solid; focused development will yield results.',
+      shortDesc: 'Adequate performance'
+    },
+    { 
+      grade: 'C+', min: 65, color: '#E65100', bg: '#FFF3E0', 
+      description: '🌱 Developing. Shows potential; targeted guidance will accelerate growth.',
+      shortDesc: 'Developing'
+    },
+    { 
+      grade: 'C', min: 60, color: '#E65100', bg: '#FFF3E0', 
+      description: '🌿 Building competence. Core understanding present; needs practical application.',
+      shortDesc: 'Basic competency'
+    },
+    { 
+      grade: 'C-', min: 55, color: '#E65100', bg: '#FFF3E0', 
+      description: '🌱 Emerging. Foundational knowledge established; requires structured support.',
+      shortDesc: 'Minimum competency'
+    },
+    { 
+      grade: 'D+', min: 50, color: '#B71C1C', bg: '#FFEBEE', 
+      description: '⚠️ Below expectations. Significant opportunity for development.',
+      shortDesc: 'Below expectations'
+    },
+    { 
+      grade: 'D', min: 40, color: '#B71C1C', bg: '#FFEBEE', 
+      description: '🔧 Needs improvement. Critical areas require attention and support.',
+      shortDesc: 'Significant gaps'
+    },
+    { 
+      grade: 'F', min: 0, color: '#8B0000', bg: '#FFEBEE', 
+      description: '🚨 Intensive development needed. Requires structured intervention and coaching.',
+      shortDesc: 'Unsatisfactory'
+    }
   ];
 
   const getGradeInfo = (percentage) => {
@@ -41,10 +89,49 @@ export default function CandidateReport() {
   };
 
   const getOverallRating = (percentage) => {
-    if (percentage >= 80) return 'Strong Performer';
-    if (percentage >= 60) return 'Competent Performer';
-    if (percentage >= 40) return 'Developing Performer';
-    return 'Needs Development';
+    if (percentage >= 80) return {
+      title: 'Strong Performer',
+      message: 'This candidate demonstrates strong capabilities and is ready for increased responsibility.',
+      icon: '🌟'
+    };
+    if (percentage >= 60) return {
+      title: 'Competent Performer',
+      message: 'This candidate shows solid foundational skills with clear potential for growth.',
+      icon: '📈'
+    };
+    if (percentage >= 40) return {
+      title: 'Developing Performer',
+      message: 'This candidate has foundational knowledge but requires structured development.',
+      icon: '🌱'
+    };
+    return {
+      title: 'Needs Development',
+      message: 'This candidate needs significant development and intensive support.',
+      icon: '🎯'
+    };
+  };
+
+  // Generate adaptive comments for strengths and weaknesses
+  const getStrengthComment = (area, percentage) => {
+    const comments = [
+      `Demonstrates exceptional capability in ${area} - a true asset to the team.`,
+      `Shows strong mastery of ${area} concepts and applies them effectively.`,
+      `Exhibits natural aptitude for ${area} that can be leveraged for team success.`,
+      `Consistently performs well in ${area} - a reliable strength to build upon.`,
+      `Has developed robust ${area} skills that contribute significantly to performance.`
+    ];
+    return comments[Math.floor(Math.random() * comments.length)];
+  };
+
+  const getWeaknessComment = (area, percentage) => {
+    const comments = [
+      `Would benefit from focused development in ${area} to build confidence and competence.`,
+      `${area} presents an opportunity for growth with targeted training and practice.`,
+      `Additional support in ${area} will help unlock greater potential.`,
+      `Developing stronger ${area} skills should be a priority in the coming months.`,
+      `With structured guidance in ${area}, significant improvement is achievable.`
+    ];
+    return comments[Math.floor(Math.random() * comments.length)];
   };
 
   // Check supervisor authentication
@@ -187,7 +274,7 @@ export default function CandidateReport() {
     return (
       <div style={styles.loadingContainer}>
         <div style={styles.spinner} />
-        <p>Loading report...</p>
+        <p>Loading candidate report...</p>
       </div>
     );
   }
@@ -195,8 +282,9 @@ export default function CandidateReport() {
   if (!candidate || !assessments.length) {
     return (
       <div style={styles.errorContainer}>
-        <h2>No Data Available</h2>
-        <button onClick={handleBack} style={styles.button}>← Back to Dashboard</button>
+        <h2>No Assessment Data Available</h2>
+        <p>This candidate hasn't completed any assessments yet.</p>
+        <button onClick={handleBack} style={styles.primaryButton}>← Back to Dashboard</button>
       </div>
     );
   }
@@ -205,58 +293,108 @@ export default function CandidateReport() {
   const overallGrade = getGradeInfo(current.percentage);
   const overallRating = getOverallRating(current.percentage);
 
+  // Calculate strengths and weaknesses with expressive comments
+  const enhancedStrengths = strengths.map(s => ({
+    area: typeof s === 'string' ? s : s.area || s,
+    percentage: typeof s === 'object' && s.percentage ? s.percentage : 
+                categoryScores[typeof s === 'string' ? s : s.area || s]?.percentage,
+    comment: getStrengthComment(
+      typeof s === 'string' ? s : s.area || s,
+      typeof s === 'object' && s.percentage ? s.percentage : 
+      categoryScores[typeof s === 'string' ? s : s.area || s]?.percentage
+    )
+  }));
+
+  const enhancedWeaknesses = weaknesses.map(w => ({
+    area: typeof w === 'string' ? w : w.area || w,
+    percentage: typeof w === 'object' && w.percentage ? w.percentage : 
+                categoryScores[typeof w === 'string' ? w : w.area || w]?.percentage,
+    comment: getWeaknessComment(
+      typeof w === 'string' ? w : w.area || w,
+      typeof w === 'object' && w.percentage ? w.percentage : 
+      categoryScores[typeof w === 'string' ? w : w.area || w]?.percentage
+    )
+  }));
+
   return (
     <AppLayout>
       <div style={styles.container}>
-        {/* Header */}
+        {/* Header with gradient */}
         <div style={styles.header}>
-          <button onClick={handleBack} style={styles.backButton}>← Back to Dashboard</button>
-          <div style={styles.titleSection}>
-            <h1 style={styles.candidateName}>{candidate.full_name}</h1>
-            <p style={styles.candidateEmail}>{candidate.email}</p>
-          </div>
-          {assessments.length > 1 && (
-            <select 
-              value={current.id} 
-              onChange={handleAssessmentChange}
-              style={styles.select}
-            >
-              {assessments.map(a => (
-                <option key={a.id} value={a.id}>
-                  {a.name} - {new Date(a.completed_at).toLocaleDateString()}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        {/* Report Header */}
-        <div style={styles.reportHeader}>
-          <div>
-            <h2 style={styles.assessmentTitle}>{current.name}</h2>
-            <p style={styles.completionDate}>Completed: {new Date(current.completed_at).toLocaleString()}</p>
-          </div>
-          <div style={styles.scoreCard}>
-            <span style={styles.scoreValue}>{current.score}</span>
-            <span style={styles.scoreMax}>/{current.max_score}</span>
+          <button onClick={handleBack} style={styles.backButton}>← Dashboard</button>
+          <div style={styles.headerContent}>
+            <div>
+              <h1 style={styles.candidateName}>{candidate.full_name}</h1>
+              <p style={styles.candidateEmail}>{candidate.email}</p>
+            </div>
+            {assessments.length > 1 && (
+              <select 
+                value={current.id} 
+                onChange={handleAssessmentChange}
+                style={styles.assessmentSelect}
+              >
+                {assessments.map(a => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} - {new Date(a.completed_at).toLocaleDateString()}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
 
-        {/* Executive Summary */}
+        {/* Hero Score Section */}
+        <div style={{
+          ...styles.heroSection,
+          background: `linear-gradient(135deg, ${overallGrade.color}, ${adjustColor(overallGrade.color, 30)})`
+        }}>
+          <div style={styles.heroContent}>
+            <div>
+              <div style={styles.heroTitle}>{current.name}</div>
+              <div style={styles.heroDate}>Completed: {new Date(current.completed_at).toLocaleString()}</div>
+            </div>
+            <div style={styles.heroScoreCard}>
+              <span style={styles.heroScore}>{current.score}</span>
+              <span style={styles.heroMax}>/{current.max_score}</span>
+            </div>
+          </div>
+          <div style={styles.heroStats}>
+            <div style={styles.heroStat}>
+              <div style={styles.heroStatLabel}>Percentage</div>
+              <div style={styles.heroStatValue}>{current.percentage}%</div>
+            </div>
+            <div style={styles.heroStat}>
+              <div style={styles.heroStatLabel}>Grade</div>
+              <div style={{...styles.heroStatValue, fontSize: '32px'}}>{overallGrade.grade}</div>
+            </div>
+            <div style={styles.heroStat}>
+              <div style={styles.heroStatLabel}>Rating</div>
+              <div style={styles.heroStatValue}>{overallRating.title}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Executive Summary with personality */}
         <div style={styles.summaryCard}>
-          <h3 style={styles.sectionTitle}>Executive Summary</h3>
+          <div style={styles.summaryHeader}>
+            <span style={styles.summaryIcon}>📋</span>
+            <h2 style={styles.summaryTitle}>Executive Summary</h2>
+          </div>
           <p style={styles.summaryText}>
-            {executiveSummary || `${candidate.full_name} scored ${current.percentage}% (${overallGrade.grade}) on the ${current.name}, indicating they are a ${overallRating}.`}
+            {executiveSummary || `${candidate.full_name} achieved an overall score of ${current.score}/${current.max_score} (${current.percentage}%), earning a grade of ${overallGrade.grade}. ${overallRating.message} Their performance shows ${current.percentage >= 70 ? 'strong capabilities' : 'development opportunities'} across ${Object.keys(categoryScores).length} assessment categories.`}
           </p>
-          <div style={styles.overallRating}>
-            <span style={styles.ratingLabel}>Overall Rating:</span>
-            <span style={{...styles.ratingValue, color: overallGrade.color}}>{overallRating} ({overallGrade.grade})</span>
+          <div style={{...styles.ratingBadge, background: overallGrade.bg, color: overallGrade.color}}>
+            <span style={styles.ratingIcon}>{overallRating.icon}</span>
+            <span><strong>Overall Assessment:</strong> {overallRating.title} • Grade {overallGrade.grade}</span>
           </div>
         </div>
 
-        {/* Category Scores Table */}
+        {/* Category Performance Table */}
         <div style={styles.tableCard}>
-          <h3 style={styles.sectionTitle}>Performance by Category</h3>
+          <div style={styles.tableHeader}>
+            <span style={styles.tableIcon}>📊</span>
+            <h2 style={styles.tableTitle}>Performance by Category</h2>
+          </div>
           <div style={styles.tableWrapper}>
             <table style={styles.table}>
               <thead>
@@ -265,7 +403,7 @@ export default function CandidateReport() {
                   <th style={styles.th}>Score</th>
                   <th style={styles.th}>Percentage</th>
                   <th style={styles.th}>Grade</th>
-                  <th style={styles.th}>Comment</th>
+                  <th style={styles.th}>Assessment</th>
                 </tr>
               </thead>
               <tbody>
@@ -276,8 +414,8 @@ export default function CandidateReport() {
                       <td style={styles.td}><strong>{category}</strong></td>
                       <td style={styles.td}>{data.score}/{data.maxPossible}</td>
                       <td style={styles.td}>{data.percentage}%</td>
-                      <td style={{...styles.td, color: grade.color, fontWeight: 600}}>{grade.grade}</td>
-                      <td style={styles.td}>{grade.description}</td>
+                      <td style={{...styles.td, color: grade.color, fontWeight: 700}}>{grade.grade}</td>
+                      <td style={styles.td}>{grade.shortDesc}</td>
                     </tr>
                   );
                 })}
@@ -286,106 +424,138 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* Strengths & Weaknesses Grid */}
+        {/* Strengths & Weaknesses with expressive comments */}
         <div style={styles.grid2}>
           {/* Strengths Card */}
           <div style={styles.strengthCard}>
-            <h3 style={{...styles.cardTitle, color: '#2E7D32'}}>✓ Key Strengths</h3>
-            {strengths.length > 0 ? (
-              <ul style={styles.list}>
-                {strengths.map((s, i) => (
-                  <li key={i} style={styles.listItem}>
-                    <span style={styles.bullet}>✓</span>
-                    <span>{typeof s === 'string' ? s : s.area || s}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p style={styles.emptyText}>No specific strengths identified</p>
-            )}
+            <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #2E7D32, #1B5E20)'}}>
+              <span style={styles.cardIcon}>🌟</span>
+              <h3 style={styles.cardHeaderTitle}>Key Strengths</h3>
+            </div>
+            <div style={styles.cardContent}>
+              {enhancedStrengths.length > 0 ? (
+                enhancedStrengths.map((s, i) => (
+                  <div key={i} style={styles.strengthItem}>
+                    <div style={styles.strengthTitle}>
+                      <span style={styles.strengthIcon}>✓</span>
+                      <span style={styles.strengthName}>{s.area}</span>
+                      {s.percentage && (
+                        <span style={{...styles.percentageBadge, background: '#E8F5E9', color: '#2E7D32'}}>
+                          {s.percentage}%
+                        </span>
+                      )}
+                    </div>
+                    <p style={styles.strengthComment}>{s.comment}</p>
+                  </div>
+                ))
+              ) : (
+                <p style={styles.emptyText}>No specific strengths identified</p>
+              )}
+            </div>
           </div>
 
           {/* Weaknesses Card */}
           <div style={styles.weaknessCard}>
-            <h3 style={{...styles.cardTitle, color: '#C62828'}}>! Development Areas</h3>
-            {weaknesses.length > 0 ? (
-              <ul style={styles.list}>
-                {weaknesses.map((w, i) => (
-                  <li key={i} style={styles.listItem}>
-                    <span style={styles.bullet}>!</span>
-                    <span>{typeof w === 'string' ? w : w.area || w}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p style={styles.emptyText}>No development areas identified</p>
-            )}
+            <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #C62828, #8B0000)'}}>
+              <span style={styles.cardIcon}>🎯</span>
+              <h3 style={styles.cardHeaderTitle}>Development Areas</h3>
+            </div>
+            <div style={styles.cardContent}>
+              {enhancedWeaknesses.length > 0 ? (
+                enhancedWeaknesses.map((w, i) => (
+                  <div key={i} style={styles.weaknessItem}>
+                    <div style={styles.weaknessTitle}>
+                      <span style={styles.weaknessIcon}>!</span>
+                      <span style={styles.weaknessName}>{w.area}</span>
+                      {w.percentage && (
+                        <span style={{...styles.percentageBadge, background: '#FFEBEE', color: '#C62828'}}>
+                          {w.percentage}%
+                        </span>
+                      )}
+                    </div>
+                    <p style={styles.weaknessComment}>{w.comment}</p>
+                  </div>
+                ))
+              ) : (
+                <p style={styles.emptyText}>No development areas identified</p>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Recommendations Card */}
         {recommendations.length > 0 && (
           <div style={styles.recommendationsCard}>
-            <h3 style={styles.cardTitle}>📋 Recommendations</h3>
-            <ul style={styles.list}>
-              {recommendations.map((rec, i) => (
-                <li key={i} style={styles.listItem}>
-                  <span style={styles.bullet}>•</span>
-                  <span>{typeof rec === 'string' ? rec : rec.message || rec}</span>
-                </li>
-              ))}
-            </ul>
+            <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #1565C0, #0D47A1)'}}>
+              <span style={styles.cardIcon}>💡</span>
+              <h3 style={styles.cardHeaderTitle}>Recommendations</h3>
+            </div>
+            <div style={styles.cardContent}>
+              <ul style={styles.recommendationsList}>
+                {recommendations.map((rec, i) => (
+                  <li key={i} style={styles.recommendationItem}>
+                    <span style={styles.recommendationBullet}>→</span>
+                    <span>{typeof rec === 'string' ? rec : rec.message || rec}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         )}
 
         {/* Development Plan */}
         {developmentPlan && Object.keys(developmentPlan).length > 0 && (
           <div style={styles.planCard}>
-            <h3 style={styles.cardTitle}>📅 Development Action Plan</h3>
-            <div style={styles.planGrid}>
-              {developmentPlan.immediate && developmentPlan.immediate.length > 0 && (
-                <div style={styles.planPhase}>
-                  <h4 style={styles.phaseTitle}>Immediate (0-30 days)</h4>
-                  <ul style={styles.list}>
-                    {developmentPlan.immediate.map((item, i) => (
-                      <li key={i} style={styles.planItem}>
-                        <strong>{item.area}:</strong> {item.recommendation}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {developmentPlan.shortTerm && developmentPlan.shortTerm.length > 0 && (
-                <div style={styles.planPhase}>
-                  <h4 style={styles.phaseTitle}>Short-term (30-60 days)</h4>
-                  <ul style={styles.list}>
-                    {developmentPlan.shortTerm.map((item, i) => (
-                      <li key={i} style={styles.planItem}>
-                        <strong>{item.area}:</strong> {item.recommendation}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {developmentPlan.longTerm && developmentPlan.longTerm.length > 0 && (
-                <div style={styles.planPhase}>
-                  <h4 style={styles.phaseTitle}>Long-term (60-90+ days)</h4>
-                  <ul style={styles.list}>
-                    {developmentPlan.longTerm.map((item, i) => (
-                      <li key={i} style={styles.planItem}>
-                        <strong>{item.area}:</strong> {item.recommendation}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+            <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #6A1B9A, #4A0072)'}}>
+              <span style={styles.cardIcon}>📅</span>
+              <h3 style={styles.cardHeaderTitle}>Development Action Plan</h3>
+            </div>
+            <div style={styles.cardContent}>
+              <div style={styles.planGrid}>
+                {developmentPlan.immediate && developmentPlan.immediate.length > 0 && (
+                  <div style={styles.planPhase}>
+                    <h4 style={styles.phaseTitle}>⚡ Immediate (0-30 days)</h4>
+                    <ul style={styles.planList}>
+                      {developmentPlan.immediate.map((item, i) => (
+                        <li key={i} style={styles.planListItem}>
+                          <strong>{item.area}:</strong> {item.recommendation}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {developmentPlan.shortTerm && developmentPlan.shortTerm.length > 0 && (
+                  <div style={styles.planPhase}>
+                    <h4 style={styles.phaseTitle}>📈 Short-term (30-60 days)</h4>
+                    <ul style={styles.planList}>
+                      {developmentPlan.shortTerm.map((item, i) => (
+                        <li key={i} style={styles.planListItem}>
+                          <strong>{item.area}:</strong> {item.recommendation}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {developmentPlan.longTerm && developmentPlan.longTerm.length > 0 && (
+                  <div style={styles.planPhase}>
+                    <h4 style={styles.phaseTitle}>🚀 Long-term (60-90+ days)</h4>
+                    <ul style={styles.planList}>
+                      {developmentPlan.longTerm.map((item, i) => (
+                        <li key={i} style={styles.planListItem}>
+                          <strong>{item.area}:</strong> {item.recommendation}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
 
         {/* Footer */}
         <div style={styles.footer}>
-          <p>Report generated on {new Date().toLocaleDateString()} | Confidential</p>
+          <p>Report generated on {new Date().toLocaleDateString()} • Confidential</p>
         </div>
       </div>
 
@@ -394,17 +564,35 @@ export default function CandidateReport() {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
     </AppLayout>
   );
 }
 
+// Helper function to adjust color brightness
+const adjustColor = (hex, percent) => {
+  if (!hex) return '#666';
+  hex = hex.replace('#', '');
+  let r = parseInt(hex.substring(0, 2), 16);
+  let g = parseInt(hex.substring(2, 4), 16);
+  let b = parseInt(hex.substring(4, 6), 16);
+  r = Math.max(0, Math.min(255, r + percent));
+  g = Math.max(0, Math.min(255, g + percent));
+  b = Math.max(0, Math.min(255, b + percent));
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+};
+
 const styles = {
   container: {
     maxWidth: '1200px',
     margin: '0 auto',
-    padding: '40px 20px',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
+    padding: '30px 20px',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+    animation: 'fadeIn 0.5s ease'
   },
   loadingContainer: {
     minHeight: '100vh',
@@ -415,10 +603,10 @@ const styles = {
     gap: '20px'
   },
   spinner: {
-    width: '40px',
-    height: '40px',
-    border: '4px solid #f3f3f3',
-    borderTop: '4px solid #1565c0',
+    width: '50px',
+    height: '50px',
+    border: '5px solid #f3f3f3',
+    borderTop: '5px solid #1565c0',
     borderRadius: '50%',
     animation: 'spin 1s linear infinite'
   },
@@ -428,131 +616,192 @@ const styles = {
   },
   header: {
     marginBottom: '30px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: '20px'
+    background: 'white',
+    borderRadius: '12px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    padding: '20px'
   },
   backButton: {
     padding: '8px 16px',
     background: 'none',
     border: '1px solid #1565c0',
     color: '#1565c0',
-    borderRadius: '4px',
+    borderRadius: '20px',
     cursor: 'pointer',
     fontSize: '14px',
+    fontWeight: 500,
+    marginBottom: '15px',
     transition: 'all 0.2s',
     ':hover': {
       background: '#1565c0',
       color: 'white'
     }
   },
-  titleSection: {
-    flex: 1
+  headerContent: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '20px'
   },
   candidateName: {
     margin: '0 0 5px 0',
     fontSize: '28px',
-    fontWeight: 600,
-    color: '#333'
+    fontWeight: 700,
+    color: '#1a2639',
+    background: 'linear-gradient(135deg, #1a2639, #2d3748)',
+    WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent'
   },
   candidateEmail: {
     margin: 0,
     color: '#666',
     fontSize: '14px'
   },
-  select: {
-    padding: '8px 12px',
-    border: '1px solid #ddd',
-    borderRadius: '4px',
+  assessmentSelect: {
+    padding: '10px 16px',
+    border: '2px solid #e0e0e0',
+    borderRadius: '30px',
     fontSize: '14px',
-    minWidth: '250px',
-    background: 'white'
+    minWidth: '280px',
+    background: 'white',
+    cursor: 'pointer',
+    outline: 'none',
+    ':focus': {
+      borderColor: '#1565c0'
+    }
   },
-  reportHeader: {
+  heroSection: {
+    padding: '30px',
+    borderRadius: '20px',
+    color: 'white',
+    marginBottom: '30px',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+    position: 'relative',
+    overflow: 'hidden'
+  },
+  heroContent: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '30px',
-    padding: '20px',
-    background: '#f8f9fa',
-    borderRadius: '8px',
-    border: '1px solid #e0e0e0'
+    marginBottom: '25px',
+    position: 'relative',
+    zIndex: 2
   },
-  assessmentTitle: {
-    margin: '0 0 5px 0',
-    fontSize: '20px',
-    fontWeight: 600,
-    color: '#333'
+  heroTitle: {
+    fontSize: '24px',
+    fontWeight: 700,
+    marginBottom: '5px'
   },
-  completionDate: {
-    margin: 0,
-    color: '#666',
-    fontSize: '13px'
+  heroDate: {
+    fontSize: '14px',
+    opacity: 0.9
   },
-  scoreCard: {
+  heroScoreCard: {
     display: 'flex',
     alignItems: 'baseline',
+    background: 'rgba(255,255,255,0.2)',
     padding: '15px 25px',
-    background: '#1565c0',
-    borderRadius: '8px',
-    color: 'white'
+    borderRadius: '50px',
+    backdropFilter: 'blur(10px)'
   },
-  scoreValue: {
-    fontSize: '36px',
-    fontWeight: 700,
+  heroScore: {
+    fontSize: '48px',
+    fontWeight: 800,
     lineHeight: 1
   },
-  scoreMax: {
-    fontSize: '16px',
+  heroMax: {
+    fontSize: '20px',
     opacity: 0.8,
     marginLeft: '5px'
   },
+  heroStats: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '20px',
+    position: 'relative',
+    zIndex: 2
+  },
+  heroStat: {
+    textAlign: 'center',
+    padding: '15px',
+    background: 'rgba(255,255,255,0.1)',
+    borderRadius: '12px',
+    backdropFilter: 'blur(5px)'
+  },
+  heroStatLabel: {
+    fontSize: '12px',
+    opacity: 0.8,
+    marginBottom: '5px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
+  },
+  heroStatValue: {
+    fontSize: '24px',
+    fontWeight: 700
+  },
   summaryCard: {
+    background: 'white',
+    borderRadius: '16px',
     padding: '25px',
     marginBottom: '30px',
-    background: 'white',
-    borderRadius: '8px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    border: '1px solid #e0e0e0'
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    border: '1px solid #f0f0f0'
   },
-  sectionTitle: {
-    margin: '0 0 15px 0',
-    fontSize: '18px',
-    fontWeight: 600,
+  summaryHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '20px'
+  },
+  summaryIcon: {
+    fontSize: '28px'
+  },
+  summaryTitle: {
+    margin: 0,
+    fontSize: '20px',
+    fontWeight: 700,
     color: '#333'
   },
   summaryText: {
-    margin: '0 0 15px 0',
-    fontSize: '15px',
+    margin: '0 0 20px 0',
+    fontSize: '16px',
     color: '#555',
-    lineHeight: '1.6'
+    lineHeight: '1.8'
   },
-  overallRating: {
-    padding: '12px 15px',
-    background: '#f8f9fa',
-    borderRadius: '6px',
+  ratingBadge: {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px'
+    gap: '12px',
+    padding: '15px 20px',
+    borderRadius: '12px',
+    fontSize: '15px'
   },
-  ratingLabel: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#333'
-  },
-  ratingValue: {
-    fontSize: '16px',
-    fontWeight: 700
+  ratingIcon: {
+    fontSize: '24px'
   },
   tableCard: {
+    background: 'white',
+    borderRadius: '16px',
     padding: '25px',
     marginBottom: '30px',
-    background: 'white',
-    borderRadius: '8px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    border: '1px solid #e0e0e0'
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    border: '1px solid #f0f0f0'
+  },
+  tableHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '20px'
+  },
+  tableIcon: {
+    fontSize: '28px'
+  },
+  tableTitle: {
+    margin: 0,
+    fontSize: '20px',
+    fontWeight: 700,
+    color: '#333'
   },
   tableWrapper: {
     overflowX: 'auto'
@@ -564,7 +813,7 @@ const styles = {
   },
   th: {
     textAlign: 'left',
-    padding: '12px',
+    padding: '15px 12px',
     background: '#f8f9fa',
     borderBottom: '2px solid #e0e0e0',
     fontWeight: 600,
@@ -572,7 +821,7 @@ const styles = {
   },
   td: {
     padding: '12px',
-    borderBottom: '1px solid #e0e0e0',
+    borderBottom: '1px solid #f0f0f0',
     color: '#555'
   },
   grid2: {
@@ -582,61 +831,121 @@ const styles = {
     marginBottom: '30px'
   },
   strengthCard: {
-    padding: '25px',
     background: 'white',
-    borderRadius: '8px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    border: '1px solid #e0e0e0',
-    borderTop: '4px solid #2E7D32'
+    borderRadius: '16px',
+    overflow: 'hidden',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    border: '1px solid #f0f0f0'
   },
   weaknessCard: {
-    padding: '25px',
     background: 'white',
-    borderRadius: '8px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    border: '1px solid #e0e0e0',
-    borderTop: '4px solid #C62828'
+    borderRadius: '16px',
+    overflow: 'hidden',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    border: '1px solid #f0f0f0'
   },
   recommendationsCard: {
-    padding: '25px',
-    marginBottom: '30px',
     background: 'white',
-    borderRadius: '8px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    border: '1px solid #e0e0e0',
-    borderTop: '4px solid #1565c0'
+    borderRadius: '16px',
+    overflow: 'hidden',
+    marginBottom: '30px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    border: '1px solid #f0f0f0'
   },
   planCard: {
-    padding: '25px',
-    marginBottom: '30px',
     background: 'white',
-    borderRadius: '8px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    border: '1px solid #e0e0e0'
+    borderRadius: '16px',
+    overflow: 'hidden',
+    marginBottom: '30px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    border: '1px solid #f0f0f0'
   },
-  cardTitle: {
-    margin: '0 0 20px 0',
+  cardHeader: {
+    padding: '20px',
+    color: 'white',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px'
+  },
+  cardIcon: {
+    fontSize: '28px'
+  },
+  cardHeaderTitle: {
+    margin: 0,
     fontSize: '18px',
     fontWeight: 600
   },
-  list: {
-    margin: 0,
-    padding: 0,
-    listStyle: 'none'
+  cardContent: {
+    padding: '25px'
   },
-  listItem: {
+  strengthItem: {
+    marginBottom: '20px',
+    padding: '15px',
+    background: '#f8f9fa',
+    borderRadius: '12px',
+    border: '1px solid #e0e0e0'
+  },
+  strengthTitle: {
     display: 'flex',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: '10px',
-    padding: '8px 0',
-    borderBottom: '1px solid #f0f0f0',
-    fontSize: '14px',
-    color: '#555'
+    marginBottom: '10px',
+    flexWrap: 'wrap'
   },
-  bullet: {
+  strengthIcon: {
+    color: '#2E7D32',
+    fontSize: '16px',
+    fontWeight: 700
+  },
+  strengthName: {
     fontSize: '16px',
     fontWeight: 600,
-    minWidth: '20px'
+    color: '#333'
+  },
+  percentageBadge: {
+    padding: '4px 12px',
+    borderRadius: '20px',
+    fontSize: '12px',
+    fontWeight: 600,
+    marginLeft: 'auto'
+  },
+  strengthComment: {
+    margin: 0,
+    fontSize: '14px',
+    color: '#555',
+    lineHeight: '1.6',
+    fontStyle: 'italic'
+  },
+  weaknessItem: {
+    marginBottom: '20px',
+    padding: '15px',
+    background: '#f8f9fa',
+    borderRadius: '12px',
+    border: '1px solid #e0e0e0'
+  },
+  weaknessTitle: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    marginBottom: '10px',
+    flexWrap: 'wrap'
+  },
+  weaknessIcon: {
+    color: '#C62828',
+    fontSize: '16px',
+    fontWeight: 700
+  },
+  weaknessName: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#333'
+  },
+  weaknessComment: {
+    margin: 0,
+    fontSize: '14px',
+    color: '#555',
+    lineHeight: '1.6',
+    fontStyle: 'italic'
   },
   emptyText: {
     color: '#999',
@@ -645,27 +954,55 @@ const styles = {
     textAlign: 'center',
     padding: '20px'
   },
+  recommendationsList: {
+    margin: 0,
+    padding: 0,
+    listStyle: 'none'
+  },
+  recommendationItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+    padding: '12px 0',
+    borderBottom: '1px solid #f0f0f0',
+    fontSize: '15px',
+    color: '#555'
+  },
+  recommendationBullet: {
+    color: '#1565c0',
+    fontSize: '16px',
+    fontWeight: 600,
+    minWidth: '25px'
+  },
   planGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
     gap: '20px'
   },
   planPhase: {
-    padding: '15px',
+    padding: '20px',
     background: '#f8f9fa',
-    borderRadius: '6px'
+    borderRadius: '12px',
+    border: '1px solid #e0e0e0'
   },
   phaseTitle: {
     margin: '0 0 15px 0',
-    fontSize: '15px',
+    fontSize: '16px',
     fontWeight: 600,
     color: '#333'
   },
-  planItem: {
-    marginBottom: '8px',
+  planList: {
+    margin: 0,
+    padding: 0,
+    listStyle: 'none'
+  },
+  planListItem: {
+    marginBottom: '10px',
     fontSize: '13px',
     color: '#555',
-    lineHeight: '1.5'
+    lineHeight: '1.6',
+    paddingLeft: '15px',
+    borderLeft: '3px solid #1565c0'
   },
   footer: {
     marginTop: '40px',
@@ -675,14 +1012,21 @@ const styles = {
     color: '#999',
     fontSize: '12px'
   },
-  button: {
-    padding: '10px 20px',
+  primaryButton: {
+    padding: '12px 30px',
     background: '#1565c0',
     color: 'white',
     border: 'none',
-    borderRadius: '4px',
+    borderRadius: '30px',
     cursor: 'pointer',
-    fontSize: '14px',
-    marginTop: '20px'
+    fontSize: '16px',
+    fontWeight: 500,
+    marginTop: '20px',
+    transition: 'all 0.2s',
+    ':hover': {
+      background: '#0d47a1',
+      transform: 'translateY(-2px)',
+      boxShadow: '0 5px 15px rgba(21, 101, 192, 0.3)'
+    }
   }
 };
