@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "../../supabase/client";
 import AppLayout from "../../components/AppLayout";
 
 export default function ManageSupervisors() {
@@ -14,46 +13,37 @@ export default function ManageSupervisors() {
 
   // Check if current user is admin
   useEffect(() => {
-    const checkAdmin = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        router.push('/login');
-        return;
-      }
-
-      // Check if user is in supervisors table with admin role
-      const { data } = await supabase
-        .from('supervisors')
-        .select('role')
-        .eq('user_id', session.user.id)
-        .single();
-
-      if (data?.role === 'admin') {
-        setIsAdmin(true);
-        fetchSupervisors();
-      } else {
-        router.push('/supervisor');
+    const checkAdmin = () => {
+      if (typeof window !== 'undefined') {
+        const supervisorSession = localStorage.getItem("supervisorSession");
+        
+        if (supervisorSession) {
+          try {
+            const session = JSON.parse(supervisorSession);
+            if (session.loggedIn && session.role === 'admin') {
+              setIsAdmin(true);
+              fetchSupervisors();
+            } else {
+              router.push('/supervisor');
+            }
+          } catch (e) {
+            router.push('/supervisor-login');
+          }
+        } else {
+          router.push('/supervisor-login');
+        }
       }
     };
     checkAdmin();
-  }, []);
+  }, [router]);
 
   const fetchSupervisors = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('supervisors')
-        .select(`
-          *,
-          users:user_id (
-            email,
-            user_metadata
-          )
-        `)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setSupervisors(data || []);
+      // Get supervisors from localStorage
+      const stored = localStorage.getItem('supervisors');
+      const supervisorsList = stored ? JSON.parse(stored) : [];
+      setSupervisors(supervisorsList);
     } catch (error) {
       console.error('Error fetching supervisors:', error);
     } finally {
@@ -63,32 +53,29 @@ export default function ManageSupervisors() {
 
   const handleAddSupervisor = async () => {
     try {
-      // First check if user exists in auth
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', email)
-        .single();
-
-      if (userError) {
-        alert('User not found. They must register first.');
+      // Check if supervisor already exists
+      const stored = localStorage.getItem('supervisors');
+      const supervisorsList = stored ? JSON.parse(stored) : [];
+      
+      if (supervisorsList.some(s => s.email === email)) {
+        alert('Supervisor with this email already exists');
         return;
       }
 
-      // Add to supervisors table
-      const { error } = await supabase
-        .from('supervisors')
-        .insert({
-          user_id: userData.id,
-          full_name: fullName,
-          email: email,
-          role: 'supervisor',
-          is_active: true
-        });
+      // Add new supervisor
+      const newSupervisor = {
+        id: Date.now().toString(),
+        email: email,
+        full_name: fullName,
+        role: 'supervisor',
+        is_active: true,
+        created_at: new Date().toISOString()
+      };
 
-      if (error) throw error;
+      supervisorsList.push(newSupervisor);
+      localStorage.setItem('supervisors', JSON.stringify(supervisorsList));
 
-      alert('Supervisor added successfully!');
+      alert('Supervisor added successfully! They can now login.');
       setShowAddModal(false);
       setEmail('');
       setFullName('');
@@ -101,12 +88,14 @@ export default function ManageSupervisors() {
 
   const handleToggleStatus = async (id, currentStatus) => {
     try {
-      const { error } = await supabase
-        .from('supervisors')
-        .update({ is_active: !currentStatus })
-        .eq('id', id);
-
-      if (error) throw error;
+      const stored = localStorage.getItem('supervisors');
+      const supervisorsList = stored ? JSON.parse(stored) : [];
+      
+      const updatedList = supervisorsList.map(s => 
+        s.id === id ? { ...s, is_active: !currentStatus } : s
+      );
+      
+      localStorage.setItem('supervisors', JSON.stringify(updatedList));
       fetchSupervisors();
     } catch (error) {
       console.error('Error updating supervisor:', error);
@@ -117,12 +106,12 @@ export default function ManageSupervisors() {
     if (!confirm('Are you sure you want to remove this supervisor?')) return;
 
     try {
-      const { error } = await supabase
-        .from('supervisors')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      const stored = localStorage.getItem('supervisors');
+      const supervisorsList = stored ? JSON.parse(stored) : [];
+      
+      const updatedList = supervisorsList.filter(s => s.id !== id);
+      localStorage.setItem('supervisors', JSON.stringify(updatedList));
+      
       fetchSupervisors();
     } catch (error) {
       console.error('Error deleting supervisor:', error);
@@ -135,7 +124,9 @@ export default function ManageSupervisors() {
         <div style={styles.unauthorized}>
           <h2>Access Denied</h2>
           <p>You don't have permission to view this page.</p>
-          <button onClick={() => router.push('/supervisor')}>Go to Dashboard</button>
+          <button onClick={() => router.push('/supervisor')} style={styles.button}>
+            Go to Dashboard
+          </button>
         </div>
       </AppLayout>
     );
@@ -157,21 +148,21 @@ export default function ManageSupervisors() {
           <table style={styles.table}>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th>Added</th>
-                <th>Actions</th>
+                <th style={styles.th}>Name</th>
+                <th style={styles.th}>Email</th>
+                <th style={styles.th}>Role</th>
+                <th style={styles.th}>Status</th>
+                <th style={styles.th}>Added</th>
+                <th style={styles.th}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {supervisors.map(sup => (
                 <tr key={sup.id}>
-                  <td>{sup.full_name}</td>
-                  <td>{sup.email}</td>
-                  <td>{sup.role}</td>
-                  <td>
+                  <td style={styles.td}>{sup.full_name}</td>
+                  <td style={styles.td}>{sup.email}</td>
+                  <td style={styles.td}>{sup.role}</td>
+                  <td style={styles.td}>
                     <span style={{
                       ...styles.statusBadge,
                       background: sup.is_active ? '#4caf5020' : '#f4433620',
@@ -180,8 +171,8 @@ export default function ManageSupervisors() {
                       {sup.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
-                  <td>{new Date(sup.created_at).toLocaleDateString()}</td>
-                  <td>
+                  <td style={styles.td}>{new Date(sup.created_at).toLocaleDateString()}</td>
+                  <td style={styles.td}>
                     <button
                       style={styles.actionButton}
                       onClick={() => handleToggleStatus(sup.id, sup.is_active)}
@@ -189,7 +180,7 @@ export default function ManageSupervisors() {
                       {sup.is_active ? 'Deactivate' : 'Activate'}
                     </button>
                     <button
-                      style={{...styles.actionButton, background: '#f44336', color: 'white'}}
+                      style={{...styles.actionButton, background: '#f44336', color: 'white', marginLeft: '5px'}}
                       onClick={() => handleDelete(sup.id)}
                     >
                       Delete
@@ -289,15 +280,17 @@ const styles = {
     padding: '4px 12px',
     borderRadius: '20px',
     fontSize: '12px',
-    fontWeight: 600
+    fontWeight: 600,
+    display: 'inline-block'
   },
   actionButton: {
     padding: '6px 12px',
-    margin: '0 5px',
     border: 'none',
     borderRadius: '4px',
     cursor: 'pointer',
-    fontSize: '12px'
+    fontSize: '12px',
+    background: '#ff9800',
+    color: 'white'
   },
   loading: {
     textAlign: 'center',
@@ -335,7 +328,8 @@ const styles = {
     marginBottom: '15px',
     border: '1px solid #ddd',
     borderRadius: '6px',
-    fontSize: '14px'
+    fontSize: '14px',
+    boxSizing: 'border-box'
   },
   modalActions: {
     display: 'flex',
@@ -362,5 +356,15 @@ const styles = {
     textAlign: 'center',
     padding: '60px',
     color: '#666'
+  },
+  button: {
+    padding: '10px 20px',
+    background: '#1565c0',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    marginTop: '20px'
   }
 };
