@@ -263,12 +263,13 @@ export const generateDevelopmentPlan = (weaknesses, strengths, assessmentType = 
   // Immediate actions (0-30 days) - focus on top 3 weaknesses
   weaknesses.slice(0, 3).forEach((w, index) => {
     const area = w.area || w;
+    const gap = w.maxPossible ? Math.round((w.maxPossible * 0.8) - w.score) : null;
     plan.immediate.push({
       area,
       action: `Begin focused development in ${area}`,
       recommendation: index === 0 
-        ? `Complete foundational training and assessment in ${area}`
-        : `Work with mentor to identify specific ${area} improvement areas`,
+        ? `Complete foundational training in ${area} (currently ${w.score}/${w.maxPossible}, need ${gap} points to reach 80%)`
+        : `Work with mentor to identify specific ${area} improvement areas (target: 80%)`,
       priority: index === 0 ? 'High' : 'Medium'
     });
   });
@@ -276,10 +277,11 @@ export const generateDevelopmentPlan = (weaknesses, strengths, assessmentType = 
   // Short-term goals (30-60 days) - practice and application
   weaknesses.slice(3, 5).forEach((w) => {
     const area = w.area || w;
+    const gap = w.maxPossible ? Math.round((w.maxPossible * 0.8) - w.score) : null;
     plan.shortTerm.push({
       area,
       action: `Apply learning in practical scenarios`,
-      recommendation: `Practice ${area} skills through real projects with supervision`
+      recommendation: `Practice ${area} skills through real projects (need ${gap} more points to reach 80%)`
     });
   });
   
@@ -299,11 +301,12 @@ export const generateDevelopmentPlan = (weaknesses, strengths, assessmentType = 
 // ========== MAIN EXPORT FUNCTION ==========
 export const generatePersonalizedReport = (userId, assessmentType, responses, candidateName) => {
   console.log(`📊 Generating personalized report for ${candidateName} (${userId}) on ${assessmentType} assessment`);
+  console.log(`📝 Processing ${responses.length} responses`);
   
   // Calculate category scores from responses
   const categoryScores = {};
-  const strengths = [];
-  const weaknesses = [];
+  const strengthsList = [];
+  const weaknessesList = [];
   let totalScore = 0;
   
   responses.forEach(response => {
@@ -329,26 +332,31 @@ export const generatePersonalizedReport = (userId, assessmentType, responses, ca
     categoryScores[section].maxPossible += 5;
   });
   
-  // Calculate percentages and identify strengths/weaknesses
+  // Calculate percentages and identify strengths/weaknesses based on 80% threshold
   Object.keys(categoryScores).forEach(section => {
     const data = categoryScores[section];
     data.percentage = Math.round((data.total / data.maxPossible) * 100);
     data.average = Number((data.total / data.count).toFixed(2));
-    data.score = data.total; // Add the actual score
+    data.score = data.total;
     
-    if (data.percentage >= 70) {
-      strengths.push({
+    // 80% threshold for strength - anything below needs improvement
+    if (data.percentage >= 80) {
+      strengthsList.push({
         area: section,
         percentage: data.percentage,
         score: data.total,
-        maxPossible: data.maxPossible
+        maxPossible: data.maxPossible,
+        analysis: `Strong performance in ${section} (${data.percentage}%). This exceeds the 80% target with ${data.score}/${data.maxPossible} points.`
       });
-    } else if (data.percentage <= 50) { // Changed from 40 to 50 to catch more weaknesses
-      weaknesses.push({
+    } else {
+      const gap = Math.round((data.maxPossible * 0.8) - data.total);
+      weaknessesList.push({
         area: section,
         percentage: data.percentage,
         score: data.total,
-        maxPossible: data.maxPossible
+        maxPossible: data.maxPossible,
+        gap: gap > 0 ? gap : 0,
+        analysis: `Needs improvement in ${section} (${data.percentage}%). Current score ${data.score}/${data.maxPossible} is below the 80% target. Need ${gap} more points to reach target.`
       });
     }
   });
@@ -356,44 +364,31 @@ export const generatePersonalizedReport = (userId, assessmentType, responses, ca
   const maxScore = responses.length * 5;
   const percentageScore = Math.round((totalScore / maxScore) * 100);
   const grade = getGradeInfo(percentageScore);
-  const rating = getOverallRating(percentageScore, strengths, weaknesses, assessmentType);
+  const rating = getOverallRating(percentageScore, strengthsList, weaknessesList, assessmentType);
   
-  // Generate executive summary with ACTUAL data
+  // Generate executive summary with actual data
   const executiveSummary = `${candidateName} completed the ${assessmentDescriptors[assessmentType]?.name || 'Assessment'} with a total score of ${totalScore}/${maxScore} (${percentageScore}%). ` + 
-    (strengths.length > 0 ? `Key strengths include ${strengths.map(s => `${s.area} (${s.percentage}%)`).join(', ')}. ` : '') +
-    (weaknesses.length > 0 ? `Development needed in ${weaknesses.map(w => `${w.area} (${w.percentage}%)`).join(', ')}. ` : '') +
+    (strengthsList.length > 0 ? `Strengths (above 80%): ${strengthsList.map(s => `${s.area} (${s.percentage}%)`).join(', ')}. ` : 'No strengths above 80% identified. ') +
+    (weaknessesList.length > 0 ? `Development needed (below 80%): ${weaknessesList.map(w => `${w.area} (${w.percentage}%)`).join(', ')}. ` : '') +
     rating.message;
   
-  // Generate recommendations based on ACTUAL weaknesses
-  const recommendationsList = weaknesses.map(w => 
-    `Focus on improving ${w.area} (currently ${w.percentage}%) through targeted training and practice.`
-  );
+  // Generate recommendations based on weaknesses
+  const recommendationsList = [
+    ...weaknessesList.map(w => `Focus on improving ${w.area} from ${w.percentage}% to 80% target. Need ${w.gap} more point${w.gap !== 1 ? 's' : ''} to reach ${Math.round(w.maxPossible * 0.8)}/${w.maxPossible}. Recommended: targeted training and practice.`),
+    ...(strengthsList.length > 0 ? [`Leverage strengths in ${strengthsList.map(s => s.area).join(', ')} for greater impact.`] : [])
+  ];
   
-  if (strengths.length > 0) {
-    recommendationsList.push(`Leverage strengths in ${strengths.map(s => s.area).join(', ')} for greater impact.`);
-  }
+  // Format strengths and weaknesses as strings for database
+  const strengthsForDb = strengthsList.map(s => `${s.area} (${s.percentage}%)`);
+  const weaknessesForDb = weaknessesList.map(w => `${w.area} (${w.percentage}%)`);
   
-  // Generate development plan based on ACTUAL data
-  const developmentPlan = {
-    immediate: weaknesses.slice(0, 3).map((w, index) => ({
-      area: w.area,
-      action: `Begin focused development in ${w.area}`,
-      recommendation: `Complete foundational training and practice exercises in ${w.area}`,
-      priority: index === 0 ? 'High' : 'Medium'
-    })),
-    shortTerm: weaknesses.slice(3, 5).map(w => ({
-      area: w.area,
-      action: `Apply learning in practical scenarios`,
-      recommendation: `Practice ${w.area} skills through real projects with supervision`
-    })),
-    longTerm: strengths.slice(0, 2).map(s => ({
-      area: s.area,
-      action: `Leverage strength in ${s.area}`,
-      recommendation: `Mentor others and take on challenging projects involving ${s.area}`
-    }))
-  };
+  // Generate development plan
+  const developmentPlan = generateDevelopmentPlan(weaknessesList, strengthsList, assessmentType);
   
-  // Return the complete report with ACTUAL data
+  console.log("Strengths identified:", strengthsForDb);
+  console.log("Weaknesses identified:", weaknessesForDb);
+  
+  // Return the complete report
   return {
     userId,
     assessmentType,
@@ -405,8 +400,10 @@ export const generatePersonalizedReport = (userId, assessmentType, responses, ca
     gradeInfo: grade,
     rating,
     categoryScores,
-    strengths,
-    weaknesses,
+    strengths: strengthsList, // Object array with details
+    weaknesses: weaknessesList, // Object array with details
+    strengthsForDb, // String array for database
+    weaknessesForDb, // String array for database
     executiveSummary,
     recommendations: recommendationsList,
     developmentPlan,
@@ -416,8 +413,8 @@ export const generatePersonalizedReport = (userId, assessmentType, responses, ca
       classification: grade.description,
       summary: executiveSummary,
       overallProfile: rating.message,
-      strengths: strengths.map(s => s.area),
-      weaknesses: weaknesses.map(w => w.area)
+      strengths: strengthsForDb,
+      weaknesses: weaknessesForDb
     }
   };
 };
