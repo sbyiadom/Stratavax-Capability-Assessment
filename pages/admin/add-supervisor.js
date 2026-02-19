@@ -10,11 +10,11 @@ export default function AddSupervisor() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
-  const [isSupervisor, setIsSupervisor] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  // Check supervisor authentication
+  // Check admin authentication
   useEffect(() => {
-    const checkSupervisorAuth = () => {
+    const checkAdminAuth = () => {
       if (typeof window !== 'undefined') {
         const supervisorSession = localStorage.getItem("supervisorSession");
         if (!supervisorSession) {
@@ -24,10 +24,10 @@ export default function AddSupervisor() {
         
         try {
           const session = JSON.parse(supervisorSession);
-          if (session.loggedIn) {
-            setIsSupervisor(true);
+          if (session.loggedIn && session.role === 'admin') {
+            setIsAdmin(true);
           } else {
-            router.push("/supervisor-login");
+            router.push("/supervisor");
           }
         } catch {
           router.push("/supervisor-login");
@@ -35,7 +35,7 @@ export default function AddSupervisor() {
       }
     };
 
-    checkSupervisorAuth();
+    checkAdminAuth();
   }, [router]);
 
   const handleAddSupervisor = async (e) => {
@@ -51,74 +51,49 @@ export default function AddSupervisor() {
         password: password,
         options: {
           data: {
-            name: name,
-            role: "supervisor",
-            is_supervisor: true
+            full_name: name,
+            role: "supervisor"
           }
         }
       });
 
       if (authError) {
-        // If user already exists, we still add them as supervisor
+        // If user already exists, we'll try to handle that gracefully
         if (authError.message.includes("already registered")) {
-          // Get existing user ID
-          const { data: existingUser } = await supabase
-            .from("auth.users")
-            .select("id")
-            .eq("email", email)
-            .single();
-
-          if (existingUser) {
-            // Add to supervisors table
-            const { error: supervisorError } = await supabase
-              .from("supervisors")
-              .upsert({
-                user_id: existingUser.id,
-                email: email,
-                full_name: name,
-                role: "supervisor",
-                is_active: true,
-                permissions: ["view_dashboard", "view_reports", "manage_candidates"]
-              }, { onConflict: "email" });
-
-            if (supervisorError) throw supervisorError;
-
-            setSuccess(`${name} added as supervisor! They already have an auth account and can login with their existing password.`);
-            setName("");
-            setEmail("");
-            setPassword("");
-            setLoading(false);
-            return;
-          }
+          setSuccess(`⚠️ User with email ${email} already exists. They can login with their existing password.`);
+          setName("");
+          setEmail("");
+          setPassword("");
+          setLoading(false);
+          return;
         }
         throw authError;
       }
 
-      // 2. Add to supervisors table
-      const { error: supervisorError } = await supabase
-        .from("supervisors")
-        .insert({
-          user_id: authData.user.id,
-          email: email,
-          full_name: name,
-          role: "supervisor",
-          is_active: true,
-          permissions: ["view_dashboard", "view_reports", "manage_candidates"]
-        });
+      // 2. Store supervisor info in localStorage for demo purposes
+      // In production, you'd store this in a database
+      const supervisors = JSON.parse(localStorage.getItem('supervisors') || '[]');
+      
+      // Check if supervisor already exists
+      const existingIndex = supervisors.findIndex(s => s.email === email);
+      const supervisorData = {
+        id: authData?.user?.id || Date.now().toString(),
+        email: email,
+        full_name: name,
+        role: "supervisor",
+        is_active: true,
+        created_at: new Date().toISOString()
+      };
 
-      if (supervisorError) throw supervisorError;
+      if (existingIndex >= 0) {
+        supervisors[existingIndex] = supervisorData;
+      } else {
+        supervisors.push(supervisorData);
+      }
+      
+      localStorage.setItem('supervisors', JSON.stringify(supervisors));
 
-      // 3. Add to users table
-      await supabase
-        .from("users")
-        .insert({
-          id: authData.user.id,
-          email: email,
-          full_name: name,
-          role: "supervisor"
-        });
-
-      setSuccess(`✅ ${name} added as supervisor successfully!\n\nEmail: ${email}\nPassword: ${password}\n\nShare these credentials securely. They need to check email for confirmation.`);
+      setSuccess(`✅ ${name} added as supervisor successfully!\n\nEmail: ${email}\nPassword: ${password}\n\nShare these credentials securely.`);
       
       // Clear form
       setName("");
@@ -137,7 +112,7 @@ export default function AddSupervisor() {
     router.push("/supervisor-login");
   };
 
-  if (!isSupervisor) {
+  if (!isAdmin) {
     return (
       <div style={{ 
         minHeight: "100vh", 
