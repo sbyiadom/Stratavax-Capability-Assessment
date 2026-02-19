@@ -12,42 +12,73 @@ export default function CandidateReport() {
   const [candidate, setCandidate] = useState(null);
   const [assessments, setAssessments] = useState([]);
   const [selectedAssessment, setSelectedAssessment] = useState(null);
-  const [assessmentResult, setAssessmentResult] = useState(null);
   const [categoryScores, setCategoryScores] = useState({});
-  const [subsectionScores, setSubsectionScores] = useState({});
   const [strengths, setStrengths] = useState([]);
   const [weaknesses, setWeaknesses] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [developmentPlan, setDevelopmentPlan] = useState({});
   const [uniqueInsights, setUniqueInsights] = useState([]);
-  const [detailedAnalysis, setDetailedAnalysis] = useState({});
   const [interpretations, setInterpretations] = useState({});
   const [executiveSummary, setExecutiveSummary] = useState('');
   const [overallProfile, setOverallProfile] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
 
-  // Get classification based on score
-  const getClassification = useCallback((score, maxScore = 500) => {
-    const percentage = (score / maxScore) * 100;
-    
-    if (percentage >= 90) return { label: "Elite Talent", color: "#2E7D32", description: "Exceptional performer demonstrating mastery across all categories. Ready for senior roles." };
-    if (percentage >= 80) return { label: "Top Talent", color: "#4CAF50", description: "Outstanding performer with clear strengths. Shows strong leadership potential." };
-    if (percentage >= 70) return { label: "High Potential", color: "#2196F3", description: "Strong performer with clear development areas. Shows promise for growth." };
-    if (percentage >= 60) return { label: "Solid Performer", color: "#FF9800", description: "Reliable performer meeting core requirements. Good foundation to build upon." };
-    if (percentage >= 50) return { label: "Developing Talent", color: "#9C27B0", description: "Shows foundational skills with clear development needs." };
-    if (percentage >= 40) return { label: "Emerging Talent", color: "#795548", description: "Early-stage performer requiring significant development." };
-    return { label: "Needs Improvement", color: "#F44336", description: "Performance below expectations. Needs intensive development plan." };
-  }, []);
+  // Grade definitions with colors and interpretations
+  const gradeSystem = {
+    'A+': { min: 95, color: '#2E7D32', bg: '#E8F5E9', label: 'Exceptional', description: 'Demonstrates mastery beyond expectations' },
+    'A': { min: 90, color: '#2E7D32', bg: '#E8F5E9', label: 'Excellent', description: 'Strong mastery of all concepts' },
+    'A-': { min: 85, color: '#4CAF50', bg: '#E8F5E9', label: 'Very Good', description: 'Above average performance' },
+    'B+': { min: 80, color: '#4CAF50', bg: '#E8F5E9', label: 'Good', description: 'Solid understanding' },
+    'B': { min: 75, color: '#2196F3', bg: '#E3F2FD', label: 'Satisfactory', description: 'Meets expectations' },
+    'B-': { min: 70, color: '#2196F3', bg: '#E3F2FD', label: 'Adequate', description: 'Basic competency demonstrated' },
+    'C+': { min: 65, color: '#FF9800', bg: '#FFF3E0', label: 'Developing', description: 'Shows potential with some gaps' },
+    'C': { min: 60, color: '#FF9800', bg: '#FFF3E0', label: 'Emerging', description: 'Foundational understanding' },
+    'C-': { min: 55, color: '#FF9800', bg: '#FFF3E0', label: 'Basic', description: 'Minimum competency' },
+    'D+': { min: 50, color: '#F44336', bg: '#FFEBEE', label: 'Needs Improvement', description: 'Significant gaps identified' },
+    'D': { min: 40, color: '#F44336', bg: '#FFEBEE', label: 'Below Expectations', description: 'Critical areas need development' },
+    'F': { min: 0, color: '#B71C1C', bg: '#FFEBEE', label: 'Unsatisfactory', description: 'Requires intensive intervention' }
+  };
 
   // Get grade based on percentage
   const getGrade = useCallback((percentage) => {
-    if (percentage >= 90) return { grade: "A+", color: "#2E7D32" };
-    if (percentage >= 80) return { grade: "A", color: "#4CAF50" };
-    if (percentage >= 70) return { grade: "B", color: "#2196F3" };
-    if (percentage >= 60) return { grade: "C", color: "#FF9800" };
-    if (percentage >= 50) return { grade: "D", color: "#9C27B0" };
-    return { grade: "F", color: "#F44336" };
+    for (const [grade, data] of Object.entries(gradeSystem)) {
+      if (percentage >= data.min) {
+        return { 
+          grade, 
+          ...data,
+          icon: percentage >= 80 ? '🌟' : percentage >= 60 ? '📈' : '📊'
+        };
+      }
+    }
+    return { grade: 'F', ...gradeSystem['F'], icon: '⚠️' };
   }, []);
+
+  // Get classification based on score
+  const getClassification = useCallback((score, maxScore = 500) => {
+    const percentage = (score / maxScore) * 100;
+    const grade = getGrade(percentage);
+    
+    let description = '';
+    if (percentage >= 80) {
+      description = 'This candidate demonstrates strong capabilities and is ready for increased responsibility. They show mastery in key areas and have the potential to take on leadership roles.';
+    } else if (percentage >= 60) {
+      description = 'This candidate shows solid foundational skills with clear potential for growth. With targeted development in specific areas, they can advance to the next level.';
+    } else if (percentage >= 40) {
+      description = 'This candidate has foundational knowledge but requires structured development and support. Focused training in key areas will help build competency.';
+    } else {
+      description = 'This candidate needs significant development and intensive support. A structured learning plan with close mentorship is recommended.';
+    }
+    
+    return {
+      label: grade.label,
+      grade: grade.grade,
+      color: grade.color,
+      bgColor: grade.bg,
+      icon: grade.icon,
+      percentage: Math.round(percentage),
+      description
+    };
+  }, [getGrade]);
 
   // Check supervisor authentication
   useEffect(() => {
@@ -103,7 +134,7 @@ export default function CandidateReport() {
           });
         }
 
-        // First get data from candidate_assessments (always has the score)
+        // Get data from candidate_assessments
         const { data: candidateAssessments, error: candidateError } = await supabase
           .from('candidate_assessments')
           .select(`
@@ -131,7 +162,7 @@ export default function CandidateReport() {
           console.error("Error fetching candidate assessments:", candidateError);
         }
 
-        // Then try to get detailed results from assessment_results
+        // Get detailed results from assessment_results
         const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
           .select('*')
@@ -154,26 +185,21 @@ export default function CandidateReport() {
           const formattedAssessments = candidateAssessments.map(assessment => {
             const detailedResult = resultsMap[assessment.assessment_id];
             
-            // Get the assessment type code properly
-            const assessmentTypeCode = assessment.assessments?.assessment_type?.code || 'general';
-            
             return {
               result_id: detailedResult?.id || assessment.id,
               assessment_id: assessment.assessment_id,
               assessment_name: assessment.assessments?.title || 'Assessment',
-              assessment_type: assessmentTypeCode,
+              assessment_type: assessment.assessments?.assessment_type?.code || 'general',
               score: assessment.score,
-              max_score: 500, // Default max score
+              max_score: 500,
               percentage: assessment.score ? Math.round((assessment.score / 500) * 100) : 0,
               completed_at: assessment.completed_at,
               category_scores: detailedResult?.category_scores || {},
-              subsection_scores: detailedResult?.subsection_scores || {},
               strengths: detailedResult?.strengths || [],
               weaknesses: detailedResult?.weaknesses || [],
               recommendations: detailedResult?.recommendations || [],
               development_plan: detailedResult?.development_plan || {},
               unique_insights: detailedResult?.unique_insights || [],
-              detailed_analysis: detailedResult?.detailed_analysis || {},
               interpretations: detailedResult?.interpretations || {},
               executive_summary: detailedResult?.interpretations?.executiveSummary || detailedResult?.interpretations?.summary || '',
               overall_profile: detailedResult?.interpretations?.overallProfile || ''
@@ -188,21 +214,16 @@ export default function CandidateReport() {
             setSelectedAssessment(mostRecent);
             
             // Set the detailed data
-            setAssessmentResult(mostRecent);
             setCategoryScores(mostRecent.category_scores || {});
-            setSubsectionScores(mostRecent.subsection_scores || {});
             setStrengths(mostRecent.strengths || []);
             setWeaknesses(mostRecent.weaknesses || []);
             setRecommendations(mostRecent.recommendations || []);
             setDevelopmentPlan(mostRecent.development_plan || {});
             setUniqueInsights(mostRecent.unique_insights || []);
-            setDetailedAnalysis(mostRecent.detailed_analysis || {});
             setInterpretations(mostRecent.interpretations || {});
             setExecutiveSummary(mostRecent.executive_summary || '');
             setOverallProfile(mostRecent.overall_profile || '');
           }
-        } else {
-          console.log("No completed assessments found for user:", user_id);
         }
 
       } catch (error) {
@@ -221,15 +242,12 @@ export default function CandidateReport() {
     setActiveTab('overview');
     
     if (assessment) {
-      setAssessmentResult(assessment);
       setCategoryScores(assessment.category_scores || {});
-      setSubsectionScores(assessment.subsection_scores || {});
       setStrengths(assessment.strengths || []);
       setWeaknesses(assessment.weaknesses || []);
       setRecommendations(assessment.recommendations || []);
       setDevelopmentPlan(assessment.development_plan || {});
       setUniqueInsights(assessment.unique_insights || []);
-      setDetailedAnalysis(assessment.detailed_analysis || {});
       setInterpretations(assessment.interpretations || {});
       setExecutiveSummary(assessment.executive_summary || '');
       setOverallProfile(assessment.overall_profile || '');
@@ -288,21 +306,7 @@ export default function CandidateReport() {
   }
 
   const currentAssessment = selectedAssessment || assessments[0];
-  const maxPossibleScore = currentAssessment.max_score || 500;
-  const classification = currentAssessment?.score ? 
-    getClassification(currentAssessment.score, maxPossibleScore) : 
-    { label: 'N/A', color: '#666', description: '' };
-
-  // Get the appropriate executive summary based on assessment type
-  const getAssessmentExecutiveSummary = () => {
-    if (executiveSummary && executiveSummary !== 'NaN%') {
-      return executiveSummary;
-    }
-    if (currentAssessment?.interpretations?.summary) {
-      return currentAssessment.interpretations.summary;
-    }
-    return `${currentAssessment?.assessment_name || 'Assessment'} completed with a score of ${currentAssessment?.score || 0}/${maxPossibleScore} (${currentAssessment?.percentage || 0}%).`;
-  };
+  const classification = getClassification(currentAssessment.score, currentAssessment.max_score);
 
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
@@ -333,7 +337,7 @@ export default function CandidateReport() {
                 >
                   {assessments.map((a, index) => (
                     <option key={a.result_id || index} value={a.result_id}>
-                      {a.assessment_name} - {new Date(a.completed_at).toLocaleDateString()} ({a.score}/{maxPossibleScore})
+                      {a.assessment_name} - {new Date(a.completed_at).toLocaleDateString()} ({a.score}/{a.max_score})
                     </option>
                   ))}
                 </select>
@@ -342,387 +346,474 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {currentAssessment && (
-          <>
-            {/* Assessment Summary Card */}
-            <div style={{
-              ...styles.summaryCard,
-              background: `linear-gradient(135deg, ${classification.color}, ${adjustColor(classification.color, -20)})`
-            }}>
-              <div style={styles.summaryContent}>
-                <div>
-                  <h2 style={styles.summaryTitle}>{currentAssessment.assessment_name}</h2>
-                  <p style={styles.summaryDate}>
-                    Completed on {new Date(currentAssessment.completed_at).toLocaleDateString()} at{' '}
-                    {new Date(currentAssessment.completed_at).toLocaleTimeString()}
-                  </p>
-                </div>
-                <div style={styles.scoreCard}>
-                  <div style={styles.scoreLabel}>Overall Score</div>
-                  <div style={{ ...styles.scoreValue, color: 'white' }}>
-                    {currentAssessment.score}/{maxPossibleScore}
-                  </div>
-                  <div style={styles.scorePercentage}>
-                    {currentAssessment.percentage}%
-                  </div>
-                  <div style={styles.classification}>
-                    {classification.label}
-                  </div>
+        {/* Hero Score Card */}
+        <div style={{
+          ...styles.heroCard,
+          background: `linear-gradient(135deg, ${classification.color}, ${adjustColor(classification.color, -30)})`
+        }}>
+          <div style={styles.heroContent}>
+            <div style={styles.heroLeft}>
+              <div style={styles.heroIcon}>{classification.icon}</div>
+              <div>
+                <div style={styles.heroTitle}>{currentAssessment.assessment_name}</div>
+                <div style={styles.heroDate}>
+                  Completed on {new Date(currentAssessment.completed_at).toLocaleDateString()} at{' '}
+                  {new Date(currentAssessment.completed_at).toLocaleTimeString()}
                 </div>
               </div>
-              <p style={styles.classificationDescription}>
-                {getAssessmentExecutiveSummary()}
-              </p>
             </div>
+            <div style={styles.heroScore}>
+              <div style={styles.heroScoreValue}>{currentAssessment.score}</div>
+              <div style={styles.heroScoreMax}>/{currentAssessment.max_score}</div>
+            </div>
+          </div>
+          
+          <div style={styles.heroStats}>
+            <div style={styles.heroStat}>
+              <div style={styles.heroStatLabel}>Percentage</div>
+              <div style={styles.heroStatValue}>{classification.percentage}%</div>
+            </div>
+            <div style={styles.heroStat}>
+              <div style={styles.heroStatLabel}>Grade</div>
+              <div style={{...styles.heroStatValue, fontSize: '32px'}}>{classification.grade}</div>
+            </div>
+            <div style={styles.heroStat}>
+              <div style={styles.heroStatLabel}>Classification</div>
+              <div style={styles.heroStatValue}>{classification.label}</div>
+            </div>
+          </div>
+          
+          <div style={{
+            ...styles.heroBadge,
+            background: classification.bgColor,
+            color: classification.color
+          }}>
+            {classification.description}
+          </div>
+        </div>
 
-            {/* Tabs - only show if we have detailed data */}
-            {Object.keys(categoryScores).length > 0 ? (
-              <>
-                <div style={styles.tabs}>
-                  <button
-                    onClick={() => setActiveTab('overview')}
-                    style={{
-                      ...styles.tab,
-                      borderBottom: activeTab === 'overview' ? `3px solid ${classification.color}` : '3px solid transparent',
-                      color: activeTab === 'overview' ? classification.color : '#666'
-                    }}
-                  >
-                    Overview
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('categories')}
-                    style={{
-                      ...styles.tab,
-                      borderBottom: activeTab === 'categories' ? `3px solid ${classification.color}` : '3px solid transparent',
-                      color: activeTab === 'categories' ? classification.color : '#666'
-                    }}
-                  >
-                    Category Breakdown
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('analysis')}
-                    style={{
-                      ...styles.tab,
-                      borderBottom: activeTab === 'analysis' ? `3px solid ${classification.color}` : '3px solid transparent',
-                      color: activeTab === 'analysis' ? classification.color : '#666'
-                    }}
-                  >
-                    Strengths & Weaknesses
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('recommendations')}
-                    style={{
-                      ...styles.tab,
-                      borderBottom: activeTab === 'recommendations' ? `3px solid ${classification.color}` : '3px solid transparent',
-                      color: activeTab === 'recommendations' ? classification.color : '#666'
-                    }}
-                  >
-                    Development Plan
-                  </button>
+        {/* Tabs */}
+        <div style={styles.tabs}>
+          <button
+            onClick={() => setActiveTab('overview')}
+            style={{
+              ...styles.tab,
+              borderBottom: activeTab === 'overview' ? `3px solid ${classification.color}` : '3px solid transparent',
+              color: activeTab === 'overview' ? classification.color : '#666'
+            }}
+          >
+            Overview
+          </button>
+          <button
+            onClick={() => setActiveTab('categories')}
+            style={{
+              ...styles.tab,
+              borderBottom: activeTab === 'categories' ? `3px solid ${classification.color}` : '3px solid transparent',
+              color: activeTab === 'categories' ? classification.color : '#666'
+            }}
+          >
+            Category Breakdown
+          </button>
+          <button
+            onClick={() => setActiveTab('analysis')}
+            style={{
+              ...styles.tab,
+              borderBottom: activeTab === 'analysis' ? `3px solid ${classification.color}` : '3px solid transparent',
+              color: activeTab === 'analysis' ? classification.color : '#666'
+            }}
+          >
+            Strengths & Weaknesses
+          </button>
+          <button
+            onClick={() => setActiveTab('recommendations')}
+            style={{
+              ...styles.tab,
+              borderBottom: activeTab === 'recommendations' ? `3px solid ${classification.color}` : '3px solid transparent',
+              color: activeTab === 'recommendations' ? classification.color : '#666'
+            }}
+          >
+            Development Plan
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        <div style={styles.tabContent}>
+          {/* Overview Tab */}
+          {activeTab === 'overview' && (
+            <div style={styles.overviewGrid}>
+              {/* Executive Summary Card */}
+              <div style={styles.summaryCard}>
+                <div style={styles.summaryHeader}>
+                  <span style={styles.summaryIcon}>📋</span>
+                  <h3 style={styles.summaryTitle}>Executive Summary</h3>
                 </div>
+                <p style={styles.summaryText}>
+                  {executiveSummary || classification.description}
+                </p>
+              </div>
 
-                <div style={styles.tabContent}>
-                  {/* Overview Tab */}
-                  {activeTab === 'overview' && (
-                    <div style={styles.overviewGrid}>
-                      <div style={styles.overviewCard}>
-                        <h3 style={styles.overviewCardTitle}>Performance Summary</h3>
-                        <div style={styles.overviewStats}>
-                          <div style={styles.overviewStat}>
-                            <span style={styles.overviewStatLabel}>Total Score</span>
-                            <span style={{ ...styles.overviewStatValue, color: classification.color }}>
-                              {currentAssessment.score}/{maxPossibleScore}
-                            </span>
-                          </div>
-                          <div style={styles.overviewStat}>
-                            <span style={styles.overviewStatLabel}>Percentage</span>
-                            <span style={styles.overviewStatValue}>
-                              {currentAssessment.percentage}%
-                            </span>
-                          </div>
-                          <div style={styles.overviewStat}>
-                            <span style={styles.overviewStatLabel}>Classification</span>
-                            <span style={{ ...styles.overviewStatValue, color: classification.color }}>
-                              {classification.label}
-                            </span>
-                          </div>
-                          <div style={styles.overviewStat}>
-                            <span style={styles.overviewStatLabel}>Categories Assessed</span>
-                            <span style={styles.overviewStatValue}>
-                              {Object.keys(categoryScores).length}
-                            </span>
-                          </div>
-                        </div>
-                        
-                        {/* Unique Insights */}
-                        {uniqueInsights.length > 0 && (
-                          <div style={styles.insightsSection}>
-                            <h4 style={styles.insightsTitle}>Key Insights</h4>
-                            <ul style={styles.insightsList}>
-                              {uniqueInsights.map((insight, index) => (
-                                <li key={index} style={styles.insightListItem}>{insight}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
-
-                      <div style={styles.overviewCard}>
-                        <h3 style={styles.overviewCardTitle}>Overall Profile</h3>
-                        <p style={styles.profileText}>{overallProfile || interpretations?.overallProfile || classification.description}</p>
-                      </div>
-
-                      <div style={styles.overviewCard}>
-                        <h3 style={styles.overviewCardTitle}>Key Insights</h3>
-                        <div style={styles.insights}>
-                          {strengths.length > 0 && (
-                            <div style={styles.insightSection}>
-                              <h4 style={styles.insightTitle}>Strengths</h4>
-                              {strengths.slice(0, 3).map((s, i) => (
-                                <div key={i} style={styles.insightItem}>
-                                  <span style={styles.insightBullet}>✓</span>
-                                  <span>{typeof s === 'string' ? s : s.area || s}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {weaknesses.length > 0 && (
-                            <div style={styles.insightSection}>
-                              <h4 style={styles.insightTitle}>Development Areas</h4>
-                              {weaknesses.slice(0, 3).map((w, i) => (
-                                <div key={i} style={styles.insightItem}>
-                                  <span style={styles.insightBullet}>!</span>
-                                  <span>{typeof w === 'string' ? w : w.area || w}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Categories Tab */}
-                  {activeTab === 'categories' && (
-                    <div style={styles.categoriesGrid}>
-                      {Object.entries(categoryScores).map(([category, data]) => {
-                        const grade = getGrade(data.percentage);
-                        const level = data.percentage >= 70 ? 'Strength' : 
-                                     data.percentage >= 50 ? 'Average' : 'Development Area';
-                        
-                        return (
-                          <div key={category} style={styles.categoryCard}>
-                            <div style={styles.categoryHeader}>
-                              <h3 style={styles.categoryTitle}>{category}</h3>
-                              <span style={{
-                                ...styles.categoryBadge,
-                                background: level === 'Strength' ? '#4caf5020' :
-                                           level === 'Average' ? '#ff980020' : '#f4433620',
-                                color: level === 'Strength' ? '#2e7d32' :
-                                      level === 'Average' ? '#ed6c02' : '#c62828'
-                              }}>
-                                {level}
-                              </span>
-                            </div>
-
-                            <div style={styles.categoryScore}>
-                              <div style={styles.scoreRow}>
-                                <span>Score</span>
-                                <span style={{ fontWeight: 600 }}>{data.score}/{data.maxPossible}</span>
-                              </div>
-                              <div style={styles.scoreRow}>
-                                <span>Average</span>
-                                <span style={{ fontWeight: 600 }}>{data.average}/5</span>
-                              </div>
-                              <div style={styles.scoreRow}>
-                                <span>Percentage</span>
-                                <span style={{ ...styles.percentageValue, color: grade.color }}>
-                                  {data.percentage}% • Grade {grade.grade}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div style={styles.progressBar}>
-                              <div style={{
-                                ...styles.progressFill,
-                                width: `${data.percentage}%`,
-                                background: `linear-gradient(90deg, ${classification.color}, ${adjustColor(classification.color, 20)})`
-                              }} />
-                            </div>
-
-                            <div style={styles.categoryInterpretation}>
-                              {data.analysis || (
-                                data.percentage >= 80 ? `Exceptional performance in ${category}. Demonstrates mastery.` :
-                                data.percentage >= 60 ? `Good performance in ${category} with room for growth.` :
-                                data.percentage >= 40 ? `Developing in ${category}. Needs focused attention.` :
-                                `Significant development needed in ${category}. Requires structured support.`
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Analysis Tab */}
-                  {activeTab === 'analysis' && (
-                    <div style={styles.analysisGrid}>
-                      {/* Strengths */}
-                      <div style={styles.analysisCard}>
-                        <h3 style={{ ...styles.analysisTitle, color: '#2e7d32' }}>
-                          <span style={styles.analysisIcon}>✓</span>
-                          Key Strengths
-                        </h3>
-                        {strengths.length > 0 ? (
-                          <div style={styles.strengthsList}>
-                            {strengths.map((strength, index) => (
-                              <div key={index} style={styles.strengthItem}>
-                                <div style={styles.strengthHeader}>
-                                  <span style={styles.strengthName}>{typeof strength === 'string' ? strength : strength.area || strength}</span>
-                                  {strength.percentage && (
-                                    <span style={styles.strengthScore}>{strength.percentage}%</span>
-                                  )}
-                                </div>
-                                <p style={styles.strengthDesc}>
-                                  {strength.insights || strength.analysis || 
-                                   `Strong performance indicates capability in this area.`}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p style={styles.noData}>No exceptional strengths identified.</p>
-                        )}
-                      </div>
-
-                      {/* Weaknesses */}
-                      <div style={styles.analysisCard}>
-                        <h3 style={{ ...styles.analysisTitle, color: '#c62828' }}>
-                          <span style={styles.analysisIcon}>!</span>
-                          Development Areas
-                        </h3>
-                        {weaknesses.length > 0 ? (
-                          <div style={styles.weaknessesList}>
-                            {weaknesses.map((weakness, index) => (
-                              <div key={index} style={styles.weaknessItem}>
-                                <div style={styles.weaknessHeader}>
-                                  <span style={styles.weaknessName}>{typeof weakness === 'string' ? weakness : weakness.area || weakness}</span>
-                                  {weakness.percentage && (
-                                    <span style={styles.weaknessScore}>{weakness.percentage}%</span>
-                                  )}
-                                </div>
-                                <p style={styles.weaknessDesc}>
-                                  {weakness.insights || weakness.analysis ||
-                                   `Needs development in this area.`}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p style={styles.noData}>No significant development areas identified.</p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Development Plan Tab */}
-                  {activeTab === 'recommendations' && (
-                    <div style={styles.recommendationsContainer}>
-                      {developmentPlan && Object.keys(developmentPlan).length > 0 ? (
-                        <div style={styles.developmentPlan}>
-                          {/* Immediate Actions */}
-                          {developmentPlan.immediate && developmentPlan.immediate.length > 0 && (
-                            <div style={styles.planSection}>
-                              <h3 style={styles.planSectionTitle}>Immediate Actions (0-30 days)</h3>
-                              {developmentPlan.immediate.map((item, index) => (
-                                <div key={index} style={styles.planItem}>
-                                  <div style={styles.planItemHeader}>
-                                    <span style={styles.planItemArea}>{item.area}</span>
-                                    <span style={styles.planItemPriority}>{item.priority}</span>
-                                  </div>
-                                  <p style={styles.planItemAction}>{item.action}</p>
-                                  <p style={styles.planItemRecommendation}>{item.recommendation}</p>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Short-term Actions */}
-                          {developmentPlan.shortTerm && developmentPlan.shortTerm.length > 0 && (
-                            <div style={styles.planSection}>
-                              <h3 style={styles.planSectionTitle}>Short-term Goals (30-60 days)</h3>
-                              {developmentPlan.shortTerm.map((item, index) => (
-                                <div key={index} style={styles.planItem}>
-                                  <div style={styles.planItemHeader}>
-                                    <span style={styles.planItemArea}>{item.area}</span>
-                                    <span style={styles.planItemPriority}>{item.priority}</span>
-                                  </div>
-                                  <p style={styles.planItemAction}>{item.action}</p>
-                                  <p style={styles.planItemRecommendation}>{item.recommendation}</p>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Long-term Actions */}
-                          {developmentPlan.longTerm && developmentPlan.longTerm.length > 0 && (
-                            <div style={styles.planSection}>
-                              <h3 style={styles.planSectionTitle}>Long-term Development (60-90+ days)</h3>
-                              {developmentPlan.longTerm.map((item, index) => (
-                                <div key={index} style={styles.planItem}>
-                                  <div style={styles.planItemHeader}>
-                                    <span style={styles.planItemArea}>{item.area}</span>
-                                    <span style={styles.planItemPriority}>{item.priority}</span>
-                                  </div>
-                                  <p style={styles.planItemAction}>{item.action}</p>
-                                  <p style={styles.planItemRecommendation}>{item.recommendation}</p>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ) : recommendations && recommendations.length > 0 ? (
-                        <div style={styles.recommendationsList}>
-                          {recommendations.map((rec, index) => (
-                            <div key={index} style={styles.recommendationCard}>
-                              <div style={styles.recommendationHeader}>
-                                <span style={styles.recommendationNumber}>{index + 1}</span>
-                              </div>
-                              <p style={styles.recommendationText}>{typeof rec === 'string' ? rec : rec.message || JSON.stringify(rec)}</p>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div style={styles.noRecommendations}>
-                          <p>No specific recommendations available.</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
+              {/* Performance Summary Card */}
+              <div style={styles.statsCard}>
+                <div style={styles.statsHeader}>
+                  <span style={styles.statsIcon}>📊</span>
+                  <h3 style={styles.statsTitle}>Performance Summary</h3>
                 </div>
-              </>
-            ) : (
-              /* Simple view when only score is available */
-              <div style={styles.simpleView}>
-                <div style={styles.simpleCard}>
-                  <h3 style={styles.simpleTitle}>Assessment Complete</h3>
-                  <p style={styles.simpleText}>
-                    This candidate has completed the assessment with a score of <strong>{currentAssessment.score}/{maxPossibleScore}</strong> ({currentAssessment.percentage}%).
-                  </p>
-                  <p style={styles.simpleText}>
-                    Detailed breakdown and analysis will be available once the report is generated.
-                  </p>
+                <div style={styles.statsGrid}>
+                  <div style={styles.statItem}>
+                    <div style={styles.statLabel}>Total Score</div>
+                    <div style={{...styles.statValue, color: classification.color}}>
+                      {currentAssessment.score}/{currentAssessment.max_score}
+                    </div>
+                  </div>
+                  <div style={styles.statItem}>
+                    <div style={styles.statLabel}>Percentage</div>
+                    <div style={styles.statValue}>{classification.percentage}%</div>
+                  </div>
+                  <div style={styles.statItem}>
+                    <div style={styles.statLabel}>Grade</div>
+                    <div style={{...styles.statValue, color: classification.color}}>
+                      {classification.grade} ({classification.label})
+                    </div>
+                  </div>
+                  <div style={styles.statItem}>
+                    <div style={styles.statLabel}>Categories</div>
+                    <div style={styles.statValue}>{Object.keys(categoryScores).length}</div>
+                  </div>
                 </div>
               </div>
-            )}
-          </>
-        )}
+
+              {/* Key Insights Card */}
+              <div style={styles.insightsCard}>
+                <div style={styles.insightsHeader}>
+                  <span style={styles.insightsIcon}>💡</span>
+                  <h3 style={styles.insightsTitle}>Key Insights</h3>
+                </div>
+                <div style={styles.insightsContent}>
+                  {strengths.length > 0 && (
+                    <div style={styles.insightSection}>
+                      <h4 style={{...styles.insightSectionTitle, color: '#2E7D32'}}>
+                        <span style={styles.sectionIcon}>✓</span> Strengths
+                      </h4>
+                      {strengths.slice(0, 3).map((s, i) => (
+                        <div key={i} style={styles.insightItem}>
+                          <span style={styles.insightBullet}>✓</span>
+                          <span>{typeof s === 'string' ? s : s.area || s}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {weaknesses.length > 0 && (
+                    <div style={styles.insightSection}>
+                      <h4 style={{...styles.insightSectionTitle, color: '#C62828'}}>
+                        <span style={styles.sectionIcon}>!</span> Development Areas
+                      </h4>
+                      {weaknesses.slice(0, 3).map((w, i) => (
+                        <div key={i} style={styles.insightItem}>
+                          <span style={styles.insightBullet}>!</span>
+                          <span>{typeof w === 'string' ? w : w.area || w}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {uniqueInsights.length > 0 && (
+                    <div style={styles.insightSection}>
+                      <h4 style={styles.insightSectionTitle}>
+                        <span style={styles.sectionIcon}>🔍</span> Unique Observations
+                      </h4>
+                      {uniqueInsights.map((insight, i) => (
+                        <div key={i} style={styles.insightItem}>
+                          <span style={styles.insightBullet}>•</span>
+                          <span>{insight}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Categories Tab */}
+          {activeTab === 'categories' && (
+            <div style={styles.categoriesGrid}>
+              {Object.entries(categoryScores).map(([category, data]) => {
+                const grade = getGrade(data.percentage);
+                const level = data.percentage >= 70 ? 'Strength' : 
+                             data.percentage >= 50 ? 'Average' : 'Development Area';
+                
+                return (
+                  <div key={category} style={styles.categoryCard}>
+                    <div style={styles.categoryHeader}>
+                      <h3 style={styles.categoryTitle}>{category}</h3>
+                      <span style={{
+                        ...styles.categoryBadge,
+                        background: level === 'Strength' ? grade.bg :
+                                   level === 'Average' ? '#FFF3E0' : '#FFEBEE',
+                        color: level === 'Strength' ? grade.color :
+                              level === 'Average' ? '#F57C00' : '#C62828'
+                      }}>
+                        {level}
+                      </span>
+                    </div>
+
+                    <div style={styles.categoryScore}>
+                      <div style={styles.categoryScoreRow}>
+                        <span>Score</span>
+                        <span style={{ fontWeight: 600 }}>{data.score}/{data.maxPossible}</span>
+                      </div>
+                      <div style={styles.categoryScoreRow}>
+                        <span>Average</span>
+                        <span style={{ fontWeight: 600 }}>{data.average}/5</span>
+                      </div>
+                      <div style={styles.categoryScoreRow}>
+                        <span>Grade</span>
+                        <span style={{ fontWeight: 600, color: grade.color }}>
+                          {grade.grade} • {data.percentage}%
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={styles.categoryProgress}>
+                      <div style={styles.categoryProgressBar}>
+                        <div style={{
+                          ...styles.categoryProgressFill,
+                          width: `${data.percentage}%`,
+                          background: `linear-gradient(90deg, ${grade.color}, ${adjustColor(grade.color, 20)})`
+                        }} />
+                      </div>
+                    </div>
+
+                    <div style={styles.categoryInterpretation}>
+                      <span style={styles.interpretationIcon}>{grade.icon}</span>
+                      <span>{grade.description} in this area.</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Analysis Tab */}
+          {activeTab === 'analysis' && (
+            <div style={styles.analysisGrid}>
+              {/* Strengths Section */}
+              <div style={styles.analysisSection}>
+                <div style={{...styles.analysisHeader, background: 'linear-gradient(135deg, #2E7D32, #1B5E20)'}}>
+                  <span style={styles.analysisIcon}>🌟</span>
+                  <h2 style={styles.analysisTitle}>Key Strengths</h2>
+                </div>
+                <div style={styles.analysisContent}>
+                  {strengths.length > 0 ? (
+                    strengths.map((strength, index) => {
+                      const area = typeof strength === 'string' ? strength : strength.area;
+                      const percentage = strength.percentage || 
+                        (categoryScores[area]?.percentage) || 
+                        (area.match(/\d+/) ? parseInt(area.match(/\d+/)[0]) : null);
+                      const grade = percentage ? getGrade(percentage) : null;
+                      
+                      return (
+                        <div key={index} style={styles.analysisItem}>
+                          <div style={styles.analysisItemHeader}>
+                            <span style={styles.analysisItemIcon}>✓</span>
+                            <span style={styles.analysisItemTitle}>{area}</span>
+                            {percentage && (
+                              <span style={{
+                                ...styles.analysisItemBadge,
+                                background: grade?.bg || '#E8F5E9',
+                                color: grade?.color || '#2E7D32'
+                              }}>
+                                {grade?.grade || percentage}%
+                              </span>
+                            )}
+                          </div>
+                          <p style={styles.analysisItemDesc}>
+                            {strength.insights || strength.analysis || 
+                             `Demonstrates strong capability in ${area}. This is a key area of competence that can be leveraged for greater responsibility.`}
+                          </p>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p style={styles.noData}>No exceptional strengths identified.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Weaknesses Section */}
+              <div style={styles.analysisSection}>
+                <div style={{...styles.analysisHeader, background: 'linear-gradient(135deg, #C62828, #8B0000)'}}>
+                  <span style={styles.analysisIcon}>🎯</span>
+                  <h2 style={styles.analysisTitle}>Development Areas</h2>
+                </div>
+                <div style={styles.analysisContent}>
+                  {weaknesses.length > 0 ? (
+                    weaknesses.map((weakness, index) => {
+                      const area = typeof weakness === 'string' ? weakness : weakness.area;
+                      const percentage = weakness.percentage || 
+                        (categoryScores[area]?.percentage) || 
+                        (area.match(/\d+/) ? parseInt(area.match(/\d+/)[0]) : null);
+                      const grade = percentage ? getGrade(percentage) : null;
+                      
+                      return (
+                        <div key={index} style={styles.analysisItem}>
+                          <div style={styles.analysisItemHeader}>
+                            <span style={styles.analysisItemIcon}>!</span>
+                            <span style={styles.analysisItemTitle}>{area}</span>
+                            {percentage && (
+                              <span style={{
+                                ...styles.analysisItemBadge,
+                                background: grade?.bg || '#FFEBEE',
+                                color: grade?.color || '#C62828'
+                              }}>
+                                {grade?.grade || percentage}%
+                              </span>
+                            )}
+                          </div>
+                          <p style={styles.analysisItemDesc}>
+                            {weakness.insights || weakness.analysis ||
+                             `Needs focused development in ${area}. This area requires attention through targeted training and practice.`}
+                          </p>
+                          {weakness.recommendations && weakness.recommendations.length > 0 && (
+                            <div style={styles.recommendationTags}>
+                              {weakness.recommendations.map((rec, idx) => (
+                                <span key={idx} style={styles.recommendationTag}>{rec}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p style={styles.noData}>No significant development areas identified.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Development Plan Tab */}
+          {activeTab === 'recommendations' && (
+            <div style={styles.planContainer}>
+              {/* Overall Recommendations */}
+              {recommendations.length > 0 && (
+                <div style={styles.recommendationsSection}>
+                  <h3 style={styles.sectionHeader}>
+                    <span style={styles.sectionIcon}>📌</span>
+                    Key Recommendations
+                  </h3>
+                  <div style={styles.recommendationsGrid}>
+                    {recommendations.map((rec, index) => (
+                      <div key={index} style={styles.recommendationCard}>
+                        <div style={styles.recommendationNumber}>{index + 1}</div>
+                        <p style={styles.recommendationText}>
+                          {typeof rec === 'string' ? rec : rec.message || JSON.stringify(rec)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Structured Development Plan */}
+              {developmentPlan && Object.keys(developmentPlan).length > 0 && (
+                <div style={styles.planSections}>
+                  {/* Immediate Actions */}
+                  {developmentPlan.immediate && developmentPlan.immediate.length > 0 && (
+                    <div style={styles.planPhase}>
+                      <div style={styles.phaseHeader}>
+                        <span style={styles.phaseIcon}>⚡</span>
+                        <div>
+                          <h3 style={styles.phaseTitle}>Immediate Actions</h3>
+                          <p style={styles.phaseTimeline}>0-30 days</p>
+                        </div>
+                      </div>
+                      <div style={styles.phaseContent}>
+                        {developmentPlan.immediate.map((item, index) => (
+                          <div key={index} style={styles.phaseItem}>
+                            <div style={styles.phaseItemHeader}>
+                              <span style={styles.phaseItemArea}>{item.area}</span>
+                              <span style={styles.phaseItemPriority}>High Priority</span>
+                            </div>
+                            <p style={styles.phaseItemAction}>{item.action}</p>
+                            <p style={styles.phaseItemDesc}>{item.recommendation}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Short-term Goals */}
+                  {developmentPlan.shortTerm && developmentPlan.shortTerm.length > 0 && (
+                    <div style={styles.planPhase}>
+                      <div style={styles.phaseHeader}>
+                        <span style={styles.phaseIcon}>📅</span>
+                        <div>
+                          <h3 style={styles.phaseTitle}>Short-term Goals</h3>
+                          <p style={styles.phaseTimeline}>30-60 days</p>
+                        </div>
+                      </div>
+                      <div style={styles.phaseContent}>
+                        {developmentPlan.shortTerm.map((item, index) => (
+                          <div key={index} style={styles.phaseItem}>
+                            <div style={styles.phaseItemHeader}>
+                              <span style={styles.phaseItemArea}>{item.area}</span>
+                              <span style={styles.phaseItemPriority}>Medium Priority</span>
+                            </div>
+                            <p style={styles.phaseItemAction}>{item.action}</p>
+                            <p style={styles.phaseItemDesc}>{item.recommendation}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Long-term Development */}
+                  {developmentPlan.longTerm && developmentPlan.longTerm.length > 0 && (
+                    <div style={styles.planPhase}>
+                      <div style={styles.phaseHeader}>
+                        <span style={styles.phaseIcon}>🚀</span>
+                        <div>
+                          <h3 style={styles.phaseTitle}>Long-term Development</h3>
+                          <p style={styles.phaseTimeline}>60-90+ days</p>
+                        </div>
+                      </div>
+                      <div style={styles.phaseContent}>
+                        {developmentPlan.longTerm.map((item, index) => (
+                          <div key={index} style={styles.phaseItem}>
+                            <div style={styles.phaseItemHeader}>
+                              <span style={styles.phaseItemArea}>{item.area}</span>
+                              <span style={styles.phaseItemPriority}>Growth Opportunity</span>
+                            </div>
+                            <p style={styles.phaseItemAction}>{item.action}</p>
+                            <p style={styles.phaseItemDesc}>{item.recommendation}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={styles.footer}>
+          <p>Report generated on {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}</p>
+          <p style={styles.footerNote}>This report is confidential and should be used for development purposes only.</p>
+        </div>
       </div>
 
       <style jsx>{`
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </AppLayout>
@@ -771,8 +862,10 @@ const styles = {
   },
   container: {
     width: '90vw',
+    maxWidth: '1400px',
     margin: '0 auto',
-    padding: '30px 20px'
+    padding: '30px 20px',
+    animation: 'fadeIn 0.5s ease'
   },
   header: {
     marginBottom: '30px'
@@ -787,7 +880,11 @@ const styles = {
     marginBottom: '15px',
     display: 'flex',
     alignItems: 'center',
-    gap: '5px'
+    gap: '5px',
+    transition: 'color 0.2s',
+    ':hover': {
+      color: '#0d47a1'
+    }
   },
   headerContent: {
     display: 'flex',
@@ -799,7 +896,8 @@ const styles = {
   candidateName: {
     margin: '0 0 5px 0',
     color: '#333',
-    fontSize: '24px'
+    fontSize: '28px',
+    fontWeight: 700
   },
   candidateEmail: {
     margin: 0,
@@ -808,167 +906,239 @@ const styles = {
   },
   selector: {
     background: '#f8f9fa',
-    padding: '15px',
-    borderRadius: '8px',
-    minWidth: '300px'
+    padding: '15px 20px',
+    borderRadius: '12px',
+    minWidth: '350px',
+    border: '1px solid #e0e0e0'
   },
   selectorLabel: {
     display: 'block',
     fontSize: '12px',
     color: '#666',
-    marginBottom: '5px'
+    marginBottom: '5px',
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   },
   select: {
     width: '100%',
     padding: '10px',
-    borderRadius: '6px',
+    borderRadius: '8px',
     border: '1px solid #ddd',
-    fontSize: '13px'
+    fontSize: '14px',
+    background: 'white',
+    cursor: 'pointer'
   },
-  summaryCard: {
+  heroCard: {
     padding: '30px',
-    borderRadius: '12px',
+    borderRadius: '20px',
     color: 'white',
     marginBottom: '30px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
+    boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+    position: 'relative',
+    overflow: 'hidden'
   },
-  summaryContent: {
+  heroContent: {
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: '20px'
+    alignItems: 'center',
+    marginBottom: '25px',
+    position: 'relative',
+    zIndex: 2
   },
-  summaryTitle: {
-    fontSize: '20px',
-    fontWeight: 600,
-    margin: '0 0 5px 0'
+  heroLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '20px'
   },
-  summaryDate: {
-    fontSize: '13px',
-    opacity: 0.9,
-    margin: 0
+  heroIcon: {
+    fontSize: '48px',
+    background: 'rgba(255,255,255,0.2)',
+    width: '80px',
+    height: '80px',
+    borderRadius: '40px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backdropFilter: 'blur(10px)'
   },
-  scoreCard: {
-    background: 'rgba(255,255,255,0.15)',
-    padding: '20px',
-    borderRadius: '10px',
-    textAlign: 'center',
-    minWidth: '150px'
-  },
-  scoreLabel: {
-    fontSize: '12px',
-    opacity: 0.9,
+  heroTitle: {
+    fontSize: '24px',
+    fontWeight: 700,
     marginBottom: '5px'
   },
-  scoreValue: {
-    fontSize: '32px',
-    fontWeight: 700,
+  heroDate: {
+    fontSize: '14px',
+    opacity: 0.9
+  },
+  heroScore: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: '5px',
+    background: 'rgba(255,255,255,0.2)',
+    padding: '15px 25px',
+    borderRadius: '50px',
+    backdropFilter: 'blur(10px)'
+  },
+  heroScoreValue: {
+    fontSize: '48px',
+    fontWeight: 800,
     lineHeight: 1
   },
-  scorePercentage: {
-    fontSize: '16px',
-    fontWeight: 600,
-    marginTop: '5px'
+  heroScoreMax: {
+    fontSize: '20px',
+    opacity: 0.8
   },
-  classification: {
-    fontSize: '14px',
-    fontWeight: 600,
-    marginTop: '10px',
-    padding: '5px 10px',
-    background: 'rgba(0,0,0,0.2)',
-    borderRadius: '4px'
+  heroStats: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '20px',
+    marginBottom: '25px',
+    position: 'relative',
+    zIndex: 2
   },
-  classificationDescription: {
-    fontSize: '14px',
-    opacity: 0.9,
-    margin: 0,
+  heroStat: {
+    textAlign: 'center',
     padding: '15px',
-    background: 'rgba(0,0,0,0.1)',
-    borderRadius: '8px'
+    background: 'rgba(255,255,255,0.1)',
+    borderRadius: '12px',
+    backdropFilter: 'blur(5px)'
+  },
+  heroStatLabel: {
+    fontSize: '12px',
+    opacity: 0.8,
+    marginBottom: '5px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
+  },
+  heroStatValue: {
+    fontSize: '24px',
+    fontWeight: 700
+  },
+  heroBadge: {
+    padding: '15px 20px',
+    borderRadius: '12px',
+    fontSize: '14px',
+    lineHeight: '1.5',
+    position: 'relative',
+    zIndex: 2
   },
   tabs: {
     display: 'flex',
-    gap: '20px',
+    gap: '30px',
     borderBottom: '2px solid #e0e0e0',
     marginBottom: '30px'
   },
   tab: {
-    padding: '10px 0',
+    padding: '12px 0',
     background: 'none',
     border: 'none',
-    fontSize: '14px',
+    fontSize: '15px',
     fontWeight: 600,
     cursor: 'pointer',
-    transition: 'all 0.2s ease'
+    transition: 'all 0.2s ease',
+    marginBottom: '-2px'
   },
   tabContent: {
-    minHeight: '400px'
+    minHeight: '500px',
+    animation: 'fadeIn 0.3s ease'
   },
   overviewGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
-    gap: '20px'
+    gap: '25px'
   },
-  overviewCard: {
+  summaryCard: {
     background: 'white',
     padding: '25px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+    borderRadius: '16px',
+    boxShadow: '0 2px 12px rgba(0,0,0,0.08)'
   },
-  overviewCardTitle: {
-    margin: '0 0 20px 0',
-    fontSize: '16px',
+  summaryHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '20px'
+  },
+  summaryIcon: {
+    fontSize: '28px'
+  },
+  summaryTitle: {
+    margin: 0,
+    fontSize: '18px',
     fontWeight: 600,
     color: '#333'
   },
-  overviewStats: {
+  summaryText: {
+    margin: 0,
+    fontSize: '15px',
+    color: '#555',
+    lineHeight: '1.6'
+  },
+  statsCard: {
+    background: 'white',
+    padding: '25px',
+    borderRadius: '16px',
+    boxShadow: '0 2px 12px rgba(0,0,0,0.08)'
+  },
+  statsHeader: {
     display: 'flex',
-    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '20px'
+  },
+  statsIcon: {
+    fontSize: '28px'
+  },
+  statsTitle: {
+    margin: 0,
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#333'
+  },
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
     gap: '15px'
   },
-  overviewStat: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '10px 0',
-    borderBottom: '1px solid #f0f0f0'
-  },
-  overviewStatLabel: {
-    fontSize: '13px',
-    color: '#666'
-  },
-  overviewStatValue: {
-    fontSize: '15px',
-    fontWeight: 600
-  },
-  insightsSection: {
-    marginTop: '20px',
+  statItem: {
     padding: '15px',
     background: '#f8f9fa',
-    borderRadius: '8px'
+    borderRadius: '12px'
+  },
+  statLabel: {
+    fontSize: '12px',
+    color: '#666',
+    marginBottom: '5px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
+  },
+  statValue: {
+    fontSize: '20px',
+    fontWeight: 700
+  },
+  insightsCard: {
+    background: 'white',
+    padding: '25px',
+    borderRadius: '16px',
+    boxShadow: '0 2px 12px rgba(0,0,0,0.08)'
+  },
+  insightsHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '20px'
+  },
+  insightsIcon: {
+    fontSize: '28px'
   },
   insightsTitle: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#333',
-    margin: '0 0 10px 0'
-  },
-  insightsList: {
     margin: 0,
-    paddingLeft: '20px',
-    color: '#555'
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#333'
   },
-  insightListItem: {
-    fontSize: '13px',
-    marginBottom: '5px'
-  },
-  profileText: {
-    fontSize: '14px',
-    color: '#555',
-    lineHeight: '1.6',
-    margin: 0
-  },
-  insights: {
+  insightsContent: {
     display: 'flex',
     flexDirection: 'column',
     gap: '20px'
@@ -976,21 +1146,27 @@ const styles = {
   insightSection: {
     marginBottom: '15px'
   },
-  insightTitle: {
-    fontSize: '14px',
+  insightSectionTitle: {
+    fontSize: '15px',
     fontWeight: 600,
-    color: '#333',
-    margin: '0 0 10px 0'
+    margin: '0 0 12px 0',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  },
+  sectionIcon: {
+    fontSize: '16px'
   },
   insightItem: {
     display: 'flex',
     gap: '10px',
-    marginBottom: '8px',
-    fontSize: '13px',
-    color: '#555'
+    marginBottom: '10px',
+    fontSize: '14px',
+    color: '#555',
+    lineHeight: '1.5'
   },
   insightBullet: {
-    fontSize: '14px'
+    fontSize: '16px'
   },
   categoriesGrid: {
     display: 'grid',
@@ -1000,8 +1176,13 @@ const styles = {
   categoryCard: {
     background: 'white',
     padding: '20px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+    borderRadius: '16px',
+    boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+    transition: 'transform 0.2s, boxShadow 0.2s',
+    ':hover': {
+      transform: 'translateY(-2px)',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.12)'
+    }
   },
   categoryHeader: {
     display: 'flex',
@@ -1016,204 +1197,160 @@ const styles = {
     color: '#333'
   },
   categoryBadge: {
-    padding: '4px 8px',
-    borderRadius: '4px',
+    padding: '4px 10px',
+    borderRadius: '20px',
     fontSize: '11px',
     fontWeight: 600
   },
   categoryScore: {
     marginBottom: '15px'
   },
-  scoreRow: {
+  categoryScoreRow: {
     display: 'flex',
     justifyContent: 'space-between',
     fontSize: '13px',
     color: '#666',
     marginBottom: '5px'
   },
-  percentageValue: {
-    fontWeight: 600
+  categoryProgress: {
+    marginBottom: '15px'
   },
-  progressBar: {
+  categoryProgressBar: {
     height: '8px',
     background: '#f0f0f0',
     borderRadius: '4px',
-    overflow: 'hidden',
-    marginBottom: '15px'
+    overflow: 'hidden'
   },
-  progressFill: {
+  categoryProgressFill: {
     height: '100%',
-    borderRadius: '4px'
+    borderRadius: '4px',
+    transition: 'width 0.3s ease'
   },
   categoryInterpretation: {
-    fontSize: '12px',
-    color: '#666',
-    lineHeight: '1.5',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
     padding: '10px',
     background: '#f8f9fa',
-    borderRadius: '6px'
+    borderRadius: '8px',
+    fontSize: '12px',
+    color: '#555'
+  },
+  interpretationIcon: {
+    fontSize: '14px'
   },
   analysisGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
-    gap: '20px'
+    gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))',
+    gap: '25px'
   },
-  analysisCard: {
+  analysisSection: {
     background: 'white',
-    padding: '25px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+    borderRadius: '16px',
+    overflow: 'hidden',
+    boxShadow: '0 2px 12px rgba(0,0,0,0.08)'
   },
-  analysisTitle: {
-    margin: '0 0 20px 0',
-    fontSize: '16px',
-    fontWeight: 600,
+  analysisHeader: {
+    padding: '20px',
+    color: 'white',
     display: 'flex',
     alignItems: 'center',
-    gap: '8px'
+    gap: '12px'
   },
   analysisIcon: {
-    fontSize: '18px'
+    fontSize: '28px'
   },
-  strengthsList: {
+  analysisTitle: {
+    margin: 0,
+    fontSize: '18px',
+    fontWeight: 600
+  },
+  analysisContent: {
+    padding: '20px',
     display: 'flex',
     flexDirection: 'column',
     gap: '15px'
   },
-  strengthItem: {
+  analysisItem: {
     padding: '15px',
     background: '#f8f9fa',
-    borderRadius: '8px',
-    borderLeft: '4px solid #4caf50'
+    borderRadius: '12px',
+    border: '1px solid #e0e0e0'
   },
-  strengthHeader: {
+  analysisItemHeader: {
     display: 'flex',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '8px'
+    gap: '10px',
+    marginBottom: '10px',
+    flexWrap: 'wrap'
   },
-  strengthName: {
-    fontSize: '14px',
+  analysisItemIcon: {
+    fontSize: '16px',
+    fontWeight: 600
+  },
+  analysisItemTitle: {
+    fontSize: '15px',
     fontWeight: 600,
-    color: '#2e7d32'
+    color: '#333'
   },
-  strengthScore: {
-    fontSize: '12px',
+  analysisItemBadge: {
+    padding: '3px 10px',
+    borderRadius: '20px',
+    fontSize: '11px',
     fontWeight: 600,
-    color: '#2e7d32',
-    background: '#e8f5e9',
-    padding: '2px 6px',
-    borderRadius: '4px'
+    marginLeft: 'auto'
   },
-  strengthDesc: {
+  analysisItemDesc: {
     margin: 0,
-    fontSize: '12px',
+    fontSize: '13px',
     color: '#555',
     lineHeight: '1.5'
   },
-  weaknessesList: {
+  recommendationTags: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: '15px'
+    flexWrap: 'wrap',
+    gap: '5px',
+    marginTop: '10px'
   },
-  weaknessItem: {
-    padding: '15px',
-    background: '#f8f9fa',
-    borderRadius: '8px',
-    borderLeft: '4px solid #f44336'
-  },
-  weaknessHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '8px'
-  },
-  weaknessName: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#c62828'
-  },
-  weaknessScore: {
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#c62828',
-    background: '#ffebee',
-    padding: '2px 6px',
-    borderRadius: '4px'
-  },
-  weaknessDesc: {
-    margin: 0,
-    fontSize: '12px',
-    color: '#555',
-    lineHeight: '1.5'
+  recommendationTag: {
+    padding: '4px 10px',
+    background: '#fff3e0',
+    color: '#e65100',
+    borderRadius: '20px',
+    fontSize: '11px'
   },
   noData: {
     color: '#666',
-    fontSize: '13px',
+    fontSize: '14px',
     textAlign: 'center',
-    padding: '20px'
-  },
-  recommendationsContainer: {
-    background: 'white',
     padding: '30px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+    background: '#f8f9fa',
+    borderRadius: '12px'
   },
-  developmentPlan: {
+  planContainer: {
     display: 'flex',
     flexDirection: 'column',
     gap: '30px'
   },
-  planSection: {
-    marginBottom: '20px'
+  recommendationsSection: {
+    background: 'white',
+    padding: '25px',
+    borderRadius: '16px',
+    boxShadow: '0 2px 12px rgba(0,0,0,0.08)'
   },
-  planSectionTitle: {
+  sectionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    margin: '0 0 20px 0',
     fontSize: '18px',
     fontWeight: 600,
-    color: '#333',
-    marginBottom: '15px',
-    paddingBottom: '5px',
-    borderBottom: '2px solid #f0f0f0'
+    color: '#333'
   },
-  planItem: {
-    padding: '15px',
-    background: '#f8f9fa',
-    borderRadius: '8px',
-    marginBottom: '10px',
-    border: '1px solid #e0e0e0'
+  sectionIcon: {
+    fontSize: '24px'
   },
-  planItemHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '8px'
-  },
-  planItemArea: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#1565c0'
-  },
-  planItemPriority: {
-    fontSize: '11px',
-    fontWeight: 600,
-    padding: '3px 8px',
-    background: '#e3f2fd',
-    color: '#1565c0',
-    borderRadius: '4px'
-  },
-  planItemAction: {
-    fontSize: '13px',
-    fontWeight: 500,
-    color: '#333',
-    marginBottom: '5px'
-  },
-  planItemRecommendation: {
-    fontSize: '12px',
-    color: '#666',
-    margin: 0,
-    fontStyle: 'italic'
-  },
-  recommendationsList: {
+  recommendationsGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
     gap: '15px'
@@ -1221,74 +1358,133 @@ const styles = {
   recommendationCard: {
     padding: '20px',
     background: '#f8f9fa',
-    borderRadius: '8px',
-    borderLeft: '4px solid #1565c0'
-  },
-  recommendationHeader: {
+    borderRadius: '12px',
+    borderLeft: '4px solid #1565c0',
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '10px'
+    alignItems: 'flex-start',
+    gap: '15px'
   },
   recommendationNumber: {
-    width: '24px',
-    height: '24px',
+    width: '28px',
+    height: '28px',
     background: '#1565c0',
     color: 'white',
     borderRadius: '50%',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '12px',
-    fontWeight: 600
+    fontSize: '14px',
+    fontWeight: 600,
+    flexShrink: 0
   },
   recommendationText: {
     margin: 0,
-    fontSize: '13px',
+    fontSize: '14px',
     color: '#555',
-    lineHeight: '1.5'
+    lineHeight: '1.5',
+    flex: 1
   },
-  noRecommendations: {
-    textAlign: 'center',
-    padding: '40px',
+  planSections: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '25px'
+  },
+  planPhase: {
+    background: 'white',
+    borderRadius: '16px',
+    overflow: 'hidden',
+    boxShadow: '0 2px 12px rgba(0,0,0,0.08)'
+  },
+  phaseHeader: {
+    padding: '20px',
+    background: '#f8f9fa',
+    borderBottom: '2px solid #e0e0e0',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '15px'
+  },
+  phaseIcon: {
+    fontSize: '32px'
+  },
+  phaseTitle: {
+    margin: '0 0 5px 0',
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#333'
+  },
+  phaseTimeline: {
+    margin: 0,
+    fontSize: '13px',
     color: '#666'
   },
-  noAssessment: {
-    textAlign: 'center',
-    padding: '60px',
-    background: 'white',
-    borderRadius: '12px'
+  phaseContent: {
+    padding: '20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '15px'
   },
-  simpleView: {
-    marginTop: '20px'
-  },
-  simpleCard: {
-    background: 'white',
-    padding: '40px',
+  phaseItem: {
+    padding: '15px',
+    background: '#f8f9fa',
     borderRadius: '12px',
-    textAlign: 'center',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+    border: '1px solid #e0e0e0'
   },
-  simpleTitle: {
-    fontSize: '20px',
-    fontWeight: 600,
-    color: '#333',
-    marginBottom: '15px'
-  },
-  simpleText: {
-    fontSize: '14px',
-    color: '#666',
+  phaseItemHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: '10px',
-    lineHeight: '1.6'
+    flexWrap: 'wrap',
+    gap: '10px'
+  },
+  phaseItemArea: {
+    fontSize: '15px',
+    fontWeight: 600,
+    color: '#1565c0'
+  },
+  phaseItemPriority: {
+    fontSize: '11px',
+    fontWeight: 600,
+    padding: '3px 10px',
+    background: '#e3f2fd',
+    color: '#1565c0',
+    borderRadius: '20px'
+  },
+  phaseItemAction: {
+    margin: '0 0 8px 0',
+    fontSize: '14px',
+    fontWeight: 500,
+    color: '#333'
+  },
+  phaseItemDesc: {
+    margin: 0,
+    fontSize: '13px',
+    color: '#666',
+    fontStyle: 'italic'
+  },
+  footer: {
+    marginTop: '40px',
+    paddingTop: '20px',
+    borderTop: '1px solid #e0e0e0',
+    textAlign: 'center'
+  },
+  footerNote: {
+    fontSize: '11px',
+    color: '#999',
+    marginTop: '5px'
   },
   backButton: {
     padding: '10px 20px',
     background: '#1565c0',
     color: 'white',
     border: 'none',
-    borderRadius: '6px',
+    borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '14px',
-    marginTop: '20px'
+    marginTop: '20px',
+    transition: 'background 0.2s',
+    ':hover': {
+      background: '#0d47a1'
+    }
   }
 };
