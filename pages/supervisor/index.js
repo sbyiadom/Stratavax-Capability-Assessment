@@ -17,6 +17,7 @@ export default function SupervisorDashboard() {
     byType: {}
   });
   const [resetInProgress, setResetInProgress] = useState(null);
+  const [expandedCandidate, setExpandedCandidate] = useState(null);
 
   // Check supervisor authentication
   useEffect(() => {
@@ -128,8 +129,8 @@ export default function SupervisorDashboard() {
     router.push("/supervisor-login");
   };
 
-  const handleResetAssessment = async (userId, assessmentId, assessmentName) => {
-    if (!confirm(`⚠️ Are you sure you want to reset the ${assessmentName} for this candidate?\n\nThis will permanently delete ALL previous responses, scores, and reports. The candidate will be able to retake the assessment.`)) {
+  const handleResetAssessment = async (userId, assessmentId, assessmentName, assessmentType) => {
+    if (!confirm(`⚠️ Are you sure you want to reset the ${assessmentName} (${assessmentType}) for this candidate?\n\nThis will permanently delete ALL previous responses, scores, and reports. The candidate will be able to retake this specific assessment.`)) {
       return;
     }
 
@@ -147,7 +148,7 @@ export default function SupervisorDashboard() {
       const data = await response.json();
 
       if (data.success) {
-        alert('✅ Assessment reset successfully. Candidate can now retake it.');
+        alert(`✅ ${assessmentName} reset successfully. Candidate can now retake it.`);
         // Refresh the data
         window.location.reload();
       } else {
@@ -158,6 +159,14 @@ export default function SupervisorDashboard() {
       alert('❌ Error resetting assessment');
     } finally {
       setResetInProgress(null);
+    }
+  };
+
+  const toggleCandidateExpansion = (candidateId) => {
+    if (expandedCandidate === candidateId) {
+      setExpandedCandidate(null);
+    } else {
+      setExpandedCandidate(candidateId);
     }
   };
 
@@ -274,111 +283,173 @@ export default function SupervisorDashboard() {
                     const score = latestAssessment.score || 0;
                     const assessmentType = latestAssessment.assessment_type || 'general';
                     const classification = getClassification(score, assessmentType);
-                    const isResetting = resetInProgress === `${candidate.user_id}-${latestAssessment.assessment_id}`;
+                    const isExpanded = expandedCandidate === candidate.user_id;
 
                     return (
-                      <tr key={candidate.user_id} style={styles.tableRow}>
-                        <td style={styles.tableCell}>
-                          <div style={styles.candidateName}>{candidate.full_name}</div>
-                          <div style={styles.candidateId}>ID: {candidate.user_id.substring(0, 8)}...</div>
-                        </td>
-                        <td style={styles.tableCell}>
-                          <div style={styles.candidateEmail}>{candidate.email}</div>
-                        </td>
-                        <td style={styles.tableCell}>
-                          <div style={styles.assessmentTags}>
-                            {candidate.assessment_breakdown && 
-                              Object.entries(candidate.assessment_breakdown).map(([type, count]) => 
-                                count > 0 && (
-                                  <span key={type} style={{
-                                    ...styles.assessmentTag,
-                                    background: type === 'general' ? '#e3f2fd' :
-                                               type === 'leadership' ? '#f3e5f5' :
-                                               type === 'cognitive' ? '#e8f5e9' :
-                                               type === 'technical' ? '#ffebee' :
-                                               type === 'personality' ? '#e0f2f1' :
-                                               type === 'performance' ? '#fff3e0' :
-                                               '#f1f5f9',
-                                    color: type === 'general' ? '#1565c0' :
-                                           type === 'leadership' ? '#7b1fa2' :
-                                           type === 'cognitive' ? '#2e7d32' :
-                                           type === 'technical' ? '#c62828' :
-                                           type === 'personality' ? '#00695c' :
-                                           type === 'performance' ? '#ef6c00' :
-                                           '#37474f'
-                                  }}>
-                                    {type}: {count}
-                                  </span>
-                                )
-                              )
-                            }
-                          </div>
-                          <div style={styles.totalAssessments}>
-                            Total: {candidate.total_assessments_taken} assessment{candidate.total_assessments_taken !== 1 ? 's' : ''}
-                          </div>
-                        </td>
-                        <td style={styles.tableCell}>
-                          <span style={{
-                            ...styles.scoreBadge,
-                            background: score >= 400 ? '#e8f5e9' :
-                                       score >= 350 ? '#e3f2fd' :
-                                       score >= 300 ? '#fff3e0' :
-                                       score >= 250 ? '#f3e5f5' :
-                                       '#ffebee',
-                            color: score >= 400 ? '#2e7d32' :
-                                  score >= 350 ? '#1565c0' :
-                                  score >= 300 ? '#f57c00' :
-                                  score >= 250 ? '#7b1fa2' :
-                                  '#c62828'
-                          }}>
-                            {score}/{latestAssessment.max_score || 100}
-                          </span>
-                        </td>
-                        <td style={styles.tableCell}>
-                          <span style={{
-                            ...styles.classificationBadge,
-                            color: classification.color,
-                            background: `${classification.color}15`
-                          }}>
-                            {classification.label}
-                          </span>
-                        </td>
-                        <td style={styles.tableCell}>
-                          <span style={styles.date}>
-                            {latestAssessment.completed_at 
-                              ? new Date(latestAssessment.completed_at).toLocaleDateString()
-                              : 'N/A'
-                            }
-                          </span>
-                        </td>
-                        <td style={styles.tableCell}>
-                          <div style={styles.actionButtons}>
-                            <Link href={`/supervisor/${candidate.user_id}`} legacyBehavior>
-                              <a style={styles.viewButton}>
-                                View Reports
-                              </a>
-                            </Link>
-                            {latestAssessment.assessment_id && (
-                              <button
-                                onClick={() => handleResetAssessment(
-                                  candidate.user_id, 
-                                  latestAssessment.assessment_id,
-                                  latestAssessment.assessment_name || 'Assessment'
-                                )}
-                                disabled={isResetting}
-                                style={{
-                                  ...styles.resetButton,
-                                  opacity: isResetting ? 0.5 : 1,
-                                  cursor: isResetting ? 'not-allowed' : 'pointer'
-                                }}
-                                title="Reset assessment so candidate can retake"
-                              >
-                                {isResetting ? '⏳ Resetting...' : '🔄 Reset'}
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
+                      <>
+                        <tr key={candidate.user_id} style={styles.tableRow}>
+                          <td style={styles.tableCell}>
+                            <div style={styles.candidateName}>{candidate.full_name}</div>
+                            <div style={styles.candidateId}>ID: {candidate.user_id.substring(0, 8)}...</div>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <div style={styles.candidateEmail}>{candidate.email}</div>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <button 
+                              onClick={() => toggleCandidateExpansion(candidate.user_id)}
+                              style={styles.expandButton}
+                            >
+                              <span style={styles.assessmentTags}>
+                                {candidate.assessment_breakdown && 
+                                  Object.entries(candidate.assessment_breakdown).map(([type, count]) => 
+                                    count > 0 && (
+                                      <span key={type} style={{
+                                        ...styles.assessmentTag,
+                                        background: type === 'general' ? '#e3f2fd' :
+                                                   type === 'leadership' ? '#f3e5f5' :
+                                                   type === 'cognitive' ? '#e8f5e9' :
+                                                   type === 'technical' ? '#ffebee' :
+                                                   type === 'personality' ? '#e0f2f1' :
+                                                   type === 'performance' ? '#fff3e0' :
+                                                   '#f1f5f9',
+                                        color: type === 'general' ? '#1565c0' :
+                                               type === 'leadership' ? '#7b1fa2' :
+                                               type === 'cognitive' ? '#2e7d32' :
+                                               type === 'technical' ? '#c62828' :
+                                               type === 'personality' ? '#00695c' :
+                                               type === 'performance' ? '#ef6c00' :
+                                               '#37474f'
+                                      }}>
+                                        {type}: {count}
+                                      </span>
+                                    )
+                                  )
+                                }
+                              </span>
+                              <span style={styles.expandIcon}>{isExpanded ? '▲' : '▼'}</span>
+                            </button>
+                            <div style={styles.totalAssessments}>
+                              Total: {candidate.total_assessments_taken} assessment{candidate.total_assessments_taken !== 1 ? 's' : ''}
+                            </div>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <span style={{
+                              ...styles.scoreBadge,
+                              background: score >= 400 ? '#e8f5e9' :
+                                         score >= 350 ? '#e3f2fd' :
+                                         score >= 300 ? '#fff3e0' :
+                                         score >= 250 ? '#f3e5f5' :
+                                         '#ffebee',
+                              color: score >= 400 ? '#2e7d32' :
+                                    score >= 350 ? '#1565c0' :
+                                    score >= 300 ? '#f57c00' :
+                                    score >= 250 ? '#7b1fa2' :
+                                    '#c62828'
+                            }}>
+                              {score}/{latestAssessment.max_score || 100}
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <span style={{
+                              ...styles.classificationBadge,
+                              color: classification.color,
+                              background: `${classification.color}15`
+                            }}>
+                              {classification.label}
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <span style={styles.date}>
+                              {latestAssessment.completed_at 
+                                ? new Date(latestAssessment.completed_at).toLocaleDateString()
+                                : 'N/A'
+                              }
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <div style={styles.actionButtons}>
+                              <Link href={`/supervisor/${candidate.user_id}`} legacyBehavior>
+                                <a style={styles.viewButton}>
+                                  View Reports
+                                </a>
+                              </Link>
+                            </div>
+                          </td>
+                        </tr>
+                        
+                        {/* Expanded Row for Individual Assessments */}
+                        {isExpanded && candidate.assessments && candidate.assessments.length > 0 && (
+                          <tr style={styles.expandedRow}>
+                            <td colSpan="7" style={styles.expandedCell}>
+                              <div style={styles.individualAssessments}>
+                                <h4 style={styles.individualTitle}>Individual Assessments</h4>
+                                <div style={styles.assessmentList}>
+                                  {candidate.assessments.map((assessment, index) => {
+                                    const isResetting = resetInProgress === `${candidate.user_id}-${assessment.assessment_id}`;
+                                    const assessmentClassification = getClassification(assessment.score || 0, assessment.assessment_type || 'general');
+                                    
+                                    return (
+                                      <div key={index} style={styles.assessmentItem}>
+                                        <div style={styles.assessmentItemHeader}>
+                                          <span style={styles.assessmentItemName}>
+                                            {assessment.assessment_name || 'Assessment'} 
+                                            <span style={styles.assessmentItemType}>({assessment.assessment_type || 'general'})</span>
+                                          </span>
+                                          <span style={styles.assessmentItemDate}>
+                                            {assessment.completed_at ? new Date(assessment.completed_at).toLocaleDateString() : 'N/A'}
+                                          </span>
+                                        </div>
+                                        <div style={styles.assessmentItemDetails}>
+                                          <div style={styles.assessmentItemScore}>
+                                            <span style={styles.scoreLabel}>Score:</span>
+                                            <span style={{
+                                              ...styles.scoreValue,
+                                              color: assessmentClassification.color,
+                                              fontWeight: 600
+                                            }}>
+                                              {assessment.score || 0}/{assessment.max_score || 100}
+                                            </span>
+                                            <span style={styles.scorePercentage}>
+                                              ({Math.round((assessment.score || 0) / (assessment.max_score || 100) * 100)}%)
+                                            </span>
+                                          </div>
+                                          <div style={styles.assessmentItemClassification}>
+                                            <span style={styles.classificationLabel}>Grade:</span>
+                                            <span style={{
+                                              ...styles.classificationValue,
+                                              color: assessmentClassification.color
+                                            }}>
+                                              {assessmentClassification.label}
+                                            </span>
+                                          </div>
+                                          <button
+                                            onClick={() => handleResetAssessment(
+                                              candidate.user_id,
+                                              assessment.assessment_id,
+                                              assessment.assessment_name || 'Assessment',
+                                              assessment.assessment_type || 'general'
+                                            )}
+                                            disabled={isResetting}
+                                            style={{
+                                              ...styles.individualResetButton,
+                                              opacity: isResetting ? 0.5 : 1,
+                                              cursor: isResetting ? 'not-allowed' : 'pointer'
+                                            }}
+                                            title="Reset this specific assessment"
+                                          >
+                                            {isResetting ? '⏳ Resetting...' : '🔄 Reset This Assessment'}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
                     );
                   })}
                 </tbody>
@@ -387,7 +458,7 @@ export default function SupervisorDashboard() {
           )}
         </div>
 
-        {/* Admin Link - Only visible to admins */}
+        {/* Admin Link */}
         <div style={styles.adminLink}>
           <Link href="/admin/manage-supervisors" legacyBehavior>
             <a style={styles.adminLinkText}>👥 Manage Supervisors</a>
@@ -583,11 +654,22 @@ const styles = {
     fontSize: '13px',
     color: '#1565c0'
   },
+  expandButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    padding: '5px',
+    width: '100%',
+    textAlign: 'left'
+  },
   assessmentTags: {
     display: 'flex',
     gap: '5px',
     flexWrap: 'wrap',
-    marginBottom: '5px'
+    flex: 1
   },
   assessmentTag: {
     padding: '4px 8px',
@@ -596,9 +678,15 @@ const styles = {
     fontWeight: 600,
     textTransform: 'capitalize'
   },
+  expandIcon: {
+    fontSize: '12px',
+    color: '#1565c0',
+    fontWeight: 600
+  },
   totalAssessments: {
     fontSize: '11px',
-    color: '#666'
+    color: '#666',
+    marginTop: '5px'
   },
   scoreBadge: {
     display: 'inline-block',
@@ -638,19 +726,105 @@ const styles = {
       transform: 'translateY(-1px)'
     }
   },
-  resetButton: {
+  expandedRow: {
+    background: '#f8f9fa'
+  },
+  expandedCell: {
+    padding: '20px',
+    borderBottom: '2px solid #e0e0e0'
+  },
+  individualAssessments: {
+    width: '100%'
+  },
+  individualTitle: {
+    margin: '0 0 15px 0',
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#333'
+  },
+  assessmentList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '15px'
+  },
+  assessmentItem: {
+    background: 'white',
+    padding: '15px',
+    borderRadius: '8px',
+    border: '1px solid #e0e0e0',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+  },
+  assessmentItemHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '10px',
+    paddingBottom: '10px',
+    borderBottom: '1px solid #f0f0f0'
+  },
+  assessmentItemName: {
+    fontSize: '15px',
+    fontWeight: 600,
+    color: '#1565c0'
+  },
+  assessmentItemType: {
+    fontSize: '12px',
+    color: '#666',
+    marginLeft: '8px',
+    fontWeight: 'normal'
+  },
+  assessmentItemDate: {
+    fontSize: '12px',
+    color: '#888'
+  },
+  assessmentItemDetails: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '20px',
+    flexWrap: 'wrap'
+  },
+  assessmentItemScore: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  },
+  scoreLabel: {
+    fontSize: '13px',
+    color: '#666'
+  },
+  scoreValue: {
+    fontSize: '15px'
+  },
+  scorePercentage: {
+    fontSize: '12px',
+    color: '#888'
+  },
+  assessmentItemClassification: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  },
+  classificationLabel: {
+    fontSize: '13px',
+    color: '#666'
+  },
+  classificationValue: {
+    fontSize: '13px',
+    fontWeight: 600
+  },
+  individualResetButton: {
+    marginLeft: 'auto',
     background: '#ff9800',
     color: 'white',
     border: 'none',
-    padding: '8px 16px',
-    borderRadius: '6px',
-    fontSize: '13px',
+    padding: '6px 12px',
+    borderRadius: '4px',
+    fontSize: '12px',
     fontWeight: 500,
     cursor: 'pointer',
     transition: 'all 0.2s',
     ':hover': {
-      background: '#f57c00',
-      transform: 'translateY(-1px)'
+      background: '#f57c00'
     }
   },
   adminLink: {
