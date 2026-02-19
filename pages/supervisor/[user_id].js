@@ -154,11 +154,14 @@ export default function CandidateReport() {
           const formattedAssessments = candidateAssessments.map(assessment => {
             const detailedResult = resultsMap[assessment.assessment_id];
             
+            // Get the assessment type code properly
+            const assessmentTypeCode = assessment.assessments?.assessment_type?.code || 'general';
+            
             return {
               result_id: detailedResult?.id || assessment.id,
               assessment_id: assessment.assessment_id,
               assessment_name: assessment.assessments?.title || 'Assessment',
-              assessment_type: assessment.assessments?.assessment_type?.code || 'general',
+              assessment_type: assessmentTypeCode,
               score: assessment.score,
               max_score: 500, // Default max score
               percentage: assessment.score ? Math.round((assessment.score / 500) * 100) : 0,
@@ -172,7 +175,7 @@ export default function CandidateReport() {
               unique_insights: detailedResult?.unique_insights || [],
               detailed_analysis: detailedResult?.detailed_analysis || {},
               interpretations: detailedResult?.interpretations || {},
-              executive_summary: detailedResult?.interpretations?.executiveSummary || '',
+              executive_summary: detailedResult?.interpretations?.executiveSummary || detailedResult?.interpretations?.summary || '',
               overall_profile: detailedResult?.interpretations?.overallProfile || ''
             };
           });
@@ -290,6 +293,17 @@ export default function CandidateReport() {
     getClassification(currentAssessment.score, maxPossibleScore) : 
     { label: 'N/A', color: '#666', description: '' };
 
+  // Get the appropriate executive summary based on assessment type
+  const getAssessmentExecutiveSummary = () => {
+    if (executiveSummary && executiveSummary !== 'NaN%') {
+      return executiveSummary;
+    }
+    if (currentAssessment?.interpretations?.summary) {
+      return currentAssessment.interpretations.summary;
+    }
+    return `${currentAssessment?.assessment_name || 'Assessment'} completed with a score of ${currentAssessment?.score || 0}/${maxPossibleScore} (${currentAssessment?.percentage || 0}%).`;
+  };
+
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
       <div style={styles.container}>
@@ -356,11 +370,9 @@ export default function CandidateReport() {
                   </div>
                 </div>
               </div>
-              {(executiveSummary || currentAssessment.interpretations?.summary) && (
-                <p style={styles.classificationDescription}>
-                  {executiveSummary || currentAssessment.interpretations?.summary}
-                </p>
-              )}
+              <p style={styles.classificationDescription}>
+                {getAssessmentExecutiveSummary()}
+              </p>
             </div>
 
             {/* Tabs - only show if we have detailed data */}
@@ -469,7 +481,7 @@ export default function CandidateReport() {
                               {strengths.slice(0, 3).map((s, i) => (
                                 <div key={i} style={styles.insightItem}>
                                   <span style={styles.insightBullet}>✓</span>
-                                  <span>{s.area || s}</span>
+                                  <span>{typeof s === 'string' ? s : s.area || s}</span>
                                 </div>
                               ))}
                             </div>
@@ -480,7 +492,7 @@ export default function CandidateReport() {
                               {weaknesses.slice(0, 3).map((w, i) => (
                                 <div key={i} style={styles.insightItem}>
                                   <span style={styles.insightBullet}>!</span>
-                                  <span>{w.area || w}</span>
+                                  <span>{typeof w === 'string' ? w : w.area || w}</span>
                                 </div>
                               ))}
                             </div>
@@ -566,7 +578,7 @@ export default function CandidateReport() {
                             {strengths.map((strength, index) => (
                               <div key={index} style={styles.strengthItem}>
                                 <div style={styles.strengthHeader}>
-                                  <span style={styles.strengthName}>{strength.area || strength}</span>
+                                  <span style={styles.strengthName}>{typeof strength === 'string' ? strength : strength.area || strength}</span>
                                   {strength.percentage && (
                                     <span style={styles.strengthScore}>{strength.percentage}%</span>
                                   )}
@@ -594,7 +606,7 @@ export default function CandidateReport() {
                             {weaknesses.map((weakness, index) => (
                               <div key={index} style={styles.weaknessItem}>
                                 <div style={styles.weaknessHeader}>
-                                  <span style={styles.weaknessName}>{weakness.area || weakness}</span>
+                                  <span style={styles.weaknessName}>{typeof weakness === 'string' ? weakness : weakness.area || weakness}</span>
                                   {weakness.percentage && (
                                     <span style={styles.weaknessScore}>{weakness.percentage}%</span>
                                   )}
