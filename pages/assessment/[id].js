@@ -591,9 +591,9 @@ export default function AssessmentPage() {
                         background: isSelected ? `linear-gradient(135deg, ${assessmentType?.gradient_start || '#667eea'}, ${assessmentType?.gradient_end || '#764ba2'})` : 
                                    isHovered ? '#f8fafc' : 'white',
                         borderColor: isSelected ? assessmentType?.gradient_start || '#667eea' : '#e2e8f0',
-                        transform: isSelected || isHovered ? 'translateY(-2px)' : 'translateY(0)',
-                        boxShadow: isSelected ? '0 4px 12px rgba(102, 126, 234, 0.3)' : 
-                                  isHovered ? '0 4px 12px rgba(0,0,0,0.1)' : '0 2px 4px rgba(0,0,0,0.05)'
+                        transform: isSelected || isHovered ? 'translateY(-1px)' : 'translateY(0)',
+                        boxShadow: isSelected ? '0 2px 8px rgba(102, 126, 234, 0.2)' : 
+                                  isHovered ? '0 2px 8px rgba(0,0,0,0.05)' : '0 1px 3px rgba(0,0,0,0.05)'
                       }}
                       onMouseEnter={() => setHoveredAnswer(answer.id)}
                       onMouseLeave={() => setHoveredAnswer(null)}
@@ -782,7 +782,7 @@ export default function AssessmentPage() {
   );
 }
 
-// Styles
+// Styles - COMPACT VERSION with reduced sizes
 const styles = {
   loadingContainer: {
     minHeight: '100vh',
@@ -928,127 +928,127 @@ const styles = {
     boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
   },
   progressTrack: {
-    height: '10px',
+    height: '8px',
     background: '#e2e8f0',
-    borderRadius: '5px',
+    borderRadius: '4px',
     overflow: 'hidden',
-    marginBottom: '12px'
+    marginBottom: '10px'
   },
   progressFill: {
     height: '100%',
     transition: 'width 0.3s ease',
-    borderRadius: '5px'
+    borderRadius: '4px'
   },
   progressStats: {
     display: 'flex',
     justifyContent: 'space-between',
-    fontSize: '14px',
+    fontSize: '13px',
     color: '#64748b',
     fontWeight: 500
   },
   questionCard: {
     background: 'white',
     borderRadius: '16px',
-    padding: '32px',
+    padding: '24px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
   },
   sectionBadge: {
     display: 'flex',
     alignItems: 'center',
-    gap: '16px',
-    marginBottom: '24px'
+    gap: '12px',
+    marginBottom: '20px'
   },
   sectionIcon: {
-    width: '50px',
-    height: '50px',
-    borderRadius: '12px',
+    width: '44px',
+    height: '44px',
+    borderRadius: '10px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '28px',
+    fontSize: '24px',
     color: 'white',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+    boxShadow: '0 4px 10px rgba(0,0,0,0.15)'
   },
   sectionName: {
-    fontSize: '20px',
+    fontSize: '18px',
     fontWeight: 700,
     color: '#1e293b'
   },
   subsection: {
-    fontSize: '14px',
+    fontSize: '13px',
     color: '#64748b',
-    marginTop: '4px'
+    marginTop: '2px'
   },
   questionText: {
-    fontSize: '20px',
-    lineHeight: '1.6',
+    fontSize: '18px',
+    lineHeight: '1.5',
     color: '#1e293b',
-    marginBottom: '24px',
+    marginBottom: '20px',
     fontWeight: 500,
-    padding: '20px',
+    padding: '16px',
     background: '#f8fafc',
-    borderRadius: '12px',
+    borderRadius: '10px',
     border: '1px solid #e2e8f0'
   },
   saveStatus: {
-    padding: '12px 20px',
+    padding: '10px 16px',
     border: '1px solid',
-    borderRadius: '10px',
-    marginBottom: '24px',
-    fontSize: '14px',
+    borderRadius: '8px',
+    marginBottom: '20px',
+    fontSize: '13px',
     fontWeight: 500,
     textAlign: 'center'
   },
   answersContainer: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '16px',
-    marginBottom: '32px'
+    gap: '10px',
+    marginBottom: '24px'
   },
   answerCard: {
-    padding: '20px',
+    padding: '12px 16px',
     border: '2px solid',
-    borderRadius: '16px',
+    borderRadius: '12px',
     cursor: 'pointer',
     textAlign: 'left',
-    fontSize: '16px',
+    fontSize: '14px',
     display: 'flex',
-    alignItems: 'flex-start',
-    gap: '16px',
+    alignItems: 'center',
+    gap: '12px',
     transition: 'all 0.2s ease',
     width: '100%',
-    minHeight: '100px',
+    minHeight: '56px',
     background: 'white',
-    lineHeight: '1.5'
+    lineHeight: '1.4'
   },
   answerLetter: {
-    width: '36px',
-    height: '36px',
-    borderRadius: '10px',
+    width: '28px',
+    height: '28px',
+    borderRadius: '8px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '18px',
+    fontSize: '14px',
     fontWeight: 700,
     flexShrink: 0
   },
   answerText: {
     flex: 1,
-    fontSize: '15px'
+    fontSize: '14px'
   },
   navigation: {
     display: 'flex',
     justifyContent: 'space-between',
-    gap: '16px',
+    gap: '12px',
     marginTop: '8px'
   },
   navButton: {
-    padding: '14px 28px',
-    borderRadius: '12px',
-    fontSize: '16px',
+    padding: '10px 20px',
+    borderRadius: '10px',
+    fontSize: '14px',
     fontWeight: 600,
     transition: 'all 0.2s ease',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+    boxShadow: '0 2px 6px rgba(0,0,0,0.05)'
   },
   navigatorColumn: {
     position: 'sticky',
@@ -1058,63 +1058,63 @@ const styles = {
   navigatorCard: {
     background: 'white',
     borderRadius: '16px',
-    padding: '24px',
+    padding: '20px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
   },
   navigatorHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px',
-    paddingBottom: '16px',
+    gap: '8px',
+    paddingBottom: '12px',
     borderBottom: '2px solid #f1f5f9',
-    marginBottom: '20px'
+    marginBottom: '16px'
   },
   navigatorIcon: {
-    fontSize: '24px'
+    fontSize: '22px'
   },
   statsGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr 1fr',
-    gap: '10px',
-    marginBottom: '24px'
+    gap: '8px',
+    marginBottom: '20px'
   },
   statCard: {
     background: '#f8fafc',
-    padding: '16px 8px',
-    borderRadius: '12px',
+    padding: '12px 4px',
+    borderRadius: '10px',
     textAlign: 'center',
     border: '1px solid #e2e8f0'
   },
   statValue: {
-    fontSize: '24px',
+    fontSize: '20px',
     fontWeight: 800,
     lineHeight: 1.2,
-    marginBottom: '4px'
+    marginBottom: '2px'
   },
   statLabel: {
-    fontSize: '11px',
+    fontSize: '10px',
     color: '#64748b',
     fontWeight: 600,
     textTransform: 'uppercase',
-    letterSpacing: '0.5px'
+    letterSpacing: '0.3px'
   },
   questionGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(5, 1fr)',
-    gap: '8px',
-    marginBottom: '20px',
-    maxHeight: '280px',
+    gap: '6px',
+    marginBottom: '16px',
+    maxHeight: '260px',
     overflowY: 'auto',
     padding: '4px',
     background: '#f8fafc',
-    borderRadius: '12px',
+    borderRadius: '10px',
     border: '1px solid #e2e8f0'
   },
   gridItem: {
     aspectRatio: '1',
     border: '2px solid',
-    borderRadius: '10px',
-    fontSize: '14px',
+    borderRadius: '8px',
+    fontSize: '13px',
     fontWeight: 600,
     display: 'flex',
     alignItems: 'center',
@@ -1125,35 +1125,35 @@ const styles = {
   legend: {
     display: 'flex',
     justifyContent: 'space-between',
-    padding: '16px 0',
+    padding: '12px 0',
     borderTop: '2px solid #f1f5f9',
     borderBottom: '2px solid #f1f5f9',
-    marginBottom: '16px'
+    marginBottom: '12px'
   },
   legendItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    fontSize: '13px',
+    gap: '6px',
+    fontSize: '12px',
     color: '#475569',
     fontWeight: 500
   },
   legendDot: {
-    width: '14px',
-    height: '14px',
-    borderRadius: '4px'
+    width: '12px',
+    height: '12px',
+    borderRadius: '3px'
   },
   assessmentInfo: {
     background: '#f8fafc',
-    padding: '16px',
-    borderRadius: '12px',
+    padding: '12px',
+    borderRadius: '10px',
     border: '1px solid #e2e8f0'
   },
   infoRow: {
     display: 'flex',
     justifyContent: 'space-between',
-    fontSize: '14px',
-    marginBottom: '10px',
+    fontSize: '13px',
+    marginBottom: '8px',
     color: '#475569'
   },
   modalOverlay: {
