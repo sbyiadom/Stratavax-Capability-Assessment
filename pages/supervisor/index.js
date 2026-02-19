@@ -16,6 +16,7 @@ export default function SupervisorDashboard() {
     totalAssessments: 0,
     byType: {}
   });
+  const [resetInProgress, setResetInProgress] = useState(null);
 
   // Check supervisor authentication
   useEffect(() => {
@@ -127,6 +128,39 @@ export default function SupervisorDashboard() {
     router.push("/supervisor-login");
   };
 
+  const handleResetAssessment = async (userId, assessmentId, assessmentName) => {
+    if (!confirm(`⚠️ Are you sure you want to reset the ${assessmentName} for this candidate?\n\nThis will permanently delete ALL previous responses, scores, and reports. The candidate will be able to retake the assessment.`)) {
+      return;
+    }
+
+    setResetInProgress(`${userId}-${assessmentId}`);
+
+    try {
+      const response = await fetch('/api/supervisor/reset-assessment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId, assessmentId })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert('✅ Assessment reset successfully. Candidate can now retake it.');
+        // Refresh the data
+        window.location.reload();
+      } else {
+        alert('❌ Error resetting assessment: ' + (data.message || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      alert('❌ Error resetting assessment');
+    } finally {
+      setResetInProgress(null);
+    }
+  };
+
   if (!isSupervisor) {
     return (
       <div style={styles.checkingContainer}>
@@ -231,7 +265,7 @@ export default function SupervisorDashboard() {
                     <th style={styles.tableHead}>Latest Score</th>
                     <th style={styles.tableHead}>Classification</th>
                     <th style={styles.tableHead}>Last Completed</th>
-                    <th style={styles.tableHead}>Action</th>
+                    <th style={styles.tableHead}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -240,6 +274,7 @@ export default function SupervisorDashboard() {
                     const score = latestAssessment.score || 0;
                     const assessmentType = latestAssessment.assessment_type || 'general';
                     const classification = getClassification(score, assessmentType);
+                    const isResetting = resetInProgress === `${candidate.user_id}-${latestAssessment.assessment_id}`;
 
                     return (
                       <tr key={candidate.user_id} style={styles.tableRow}>
@@ -317,11 +352,31 @@ export default function SupervisorDashboard() {
                           </span>
                         </td>
                         <td style={styles.tableCell}>
-                          <Link href={`/supervisor/${candidate.user_id}`} legacyBehavior>
-                            <a style={styles.viewButton}>
-                              View Reports
-                            </a>
-                          </Link>
+                          <div style={styles.actionButtons}>
+                            <Link href={`/supervisor/${candidate.user_id}`} legacyBehavior>
+                              <a style={styles.viewButton}>
+                                View Reports
+                              </a>
+                            </Link>
+                            {latestAssessment.assessment_id && (
+                              <button
+                                onClick={() => handleResetAssessment(
+                                  candidate.user_id, 
+                                  latestAssessment.assessment_id,
+                                  latestAssessment.assessment_name || 'Assessment'
+                                )}
+                                disabled={isResetting}
+                                style={{
+                                  ...styles.resetButton,
+                                  opacity: isResetting ? 0.5 : 1,
+                                  cursor: isResetting ? 'not-allowed' : 'pointer'
+                                }}
+                                title="Reset assessment so candidate can retake"
+                              >
+                                {isResetting ? '⏳ Resetting...' : '🔄 Reset'}
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -330,6 +385,13 @@ export default function SupervisorDashboard() {
               </table>
             </div>
           )}
+        </div>
+
+        {/* Admin Link - Only visible to admins */}
+        <div style={styles.adminLink}>
+          <Link href="/admin/manage-supervisors" legacyBehavior>
+            <a style={styles.adminLinkText}>👥 Manage Supervisors</a>
+          </Link>
         </div>
       </div>
 
@@ -379,7 +441,11 @@ const styles = {
     borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '14px',
-    fontWeight: 600
+    fontWeight: 600,
+    transition: 'all 0.2s',
+    ':hover': {
+      background: '#b71c1c'
+    }
   },
   statsGrid: {
     display: 'grid',
@@ -482,7 +548,7 @@ const styles = {
   table: {
     width: '100%',
     borderCollapse: 'collapse',
-    minWidth: '1000px'
+    minWidth: '1100px'
   },
   tableHeadRow: {
     borderBottom: '2px solid #1565c0',
@@ -552,6 +618,11 @@ const styles = {
     fontSize: '13px',
     color: '#666'
   },
+  actionButtons: {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center'
+  },
   viewButton: {
     color: '#fff',
     background: '#1565c0',
@@ -565,6 +636,39 @@ const styles = {
     ':hover': {
       background: '#0d47a1',
       transform: 'translateY(-1px)'
+    }
+  },
+  resetButton: {
+    background: '#ff9800',
+    color: 'white',
+    border: 'none',
+    padding: '8px 16px',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    ':hover': {
+      background: '#f57c00',
+      transform: 'translateY(-1px)'
+    }
+  },
+  adminLink: {
+    marginTop: '30px',
+    textAlign: 'center'
+  },
+  adminLinkText: {
+    color: '#666',
+    textDecoration: 'none',
+    fontSize: '14px',
+    padding: '10px 20px',
+    display: 'inline-block',
+    borderRadius: '20px',
+    background: '#f5f5f5',
+    transition: 'all 0.2s',
+    ':hover': {
+      background: '#e0e0e0',
+      color: '#333'
     }
   }
 };
