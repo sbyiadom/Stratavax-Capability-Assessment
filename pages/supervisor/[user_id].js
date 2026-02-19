@@ -20,67 +20,67 @@ export default function CandidateReport() {
   const [interpretations, setInterpretations] = useState({});
   const [executiveSummary, setExecutiveSummary] = useState('');
 
-  // Expressive grade definitions with personality
+  // Dynamic grade definitions with personality
   const gradeScale = [
     { 
       grade: 'A+', min: 95, color: '#0A5C2E', bg: '#E6F7E6', 
-      description: '🌟 Exceptional! Demonstrates mastery beyond expectations. A true standout performer.',
-      shortDesc: 'Exceptional performance'
+      description: 'Exceptional - Mastery level',
+      message: (name) => `${name} demonstrates extraordinary capability that sets them apart from peers.`
     },
     { 
       grade: 'A', min: 90, color: '#1E7A44', bg: '#E6F7E6', 
-      description: '⭐ Excellent! Shows deep understanding and consistent high-quality performance.',
-      shortDesc: 'Excellent performance'
+      description: 'Excellent',
+      message: (name) => `${name} shows deep understanding and consistent high-quality performance.`
     },
     { 
       grade: 'A-', min: 85, color: '#2E7D32', bg: '#E8F5E9', 
-      description: '📈 Very Good! Strong capabilities with minor areas for refinement.',
-      shortDesc: 'Very good performance'
+      description: 'Very Good',
+      message: (name) => `${name} has strong capabilities with only minor areas for refinement.`
     },
     { 
       grade: 'B+', min: 80, color: '#2E7D32', bg: '#E8F5E9', 
-      description: '👍 Good! Solid performance with clear strengths and growth opportunities.',
-      shortDesc: 'Good performance'
+      description: 'Good',
+      message: (name) => `${name} delivers solid performance with clear strengths to build upon.`
     },
     { 
       grade: 'B', min: 75, color: '#1565C0', bg: '#E3F2FD', 
-      description: '📊 Satisfactory. Meets expectations with room to grow.',
-      shortDesc: 'Satisfactory performance'
+      description: 'Satisfactory',
+      message: (name) => `${name} meets expectations consistently and has room to grow.`
     },
     { 
       grade: 'B-', min: 70, color: '#1565C0', bg: '#E3F2FD', 
-      description: '📝 Adequate. Foundation is solid; focused development will yield results.',
-      shortDesc: 'Adequate performance'
+      description: 'Adequate',
+      message: (name) => `${name} has established a solid foundation for future development.`
     },
     { 
       grade: 'C+', min: 65, color: '#E65100', bg: '#FFF3E0', 
-      description: '🌱 Developing. Shows potential; targeted guidance will accelerate growth.',
-      shortDesc: 'Developing'
+      description: 'Developing',
+      message: (name) => `${name} shows potential and would benefit from targeted guidance.`
     },
     { 
       grade: 'C', min: 60, color: '#E65100', bg: '#FFF3E0', 
-      description: '🌿 Building competence. Core understanding present; needs practical application.',
-      shortDesc: 'Basic competency'
+      description: 'Basic Competency',
+      message: (name) => `${name} has core understanding but needs practical application.`
     },
     { 
       grade: 'C-', min: 55, color: '#E65100', bg: '#FFF3E0', 
-      description: '🌱 Emerging. Foundational knowledge established; requires structured support.',
-      shortDesc: 'Minimum competency'
+      description: 'Minimum Competency',
+      message: (name) => `${name} has foundational knowledge that requires structured support.`
     },
     { 
       grade: 'D+', min: 50, color: '#B71C1C', bg: '#FFEBEE', 
-      description: '⚠️ Below expectations. Significant opportunity for development.',
-      shortDesc: 'Below expectations'
+      description: 'Below Expectations',
+      message: (name) => `${name} has significant opportunities for development in key areas.`
     },
     { 
       grade: 'D', min: 40, color: '#B71C1C', bg: '#FFEBEE', 
-      description: '🔧 Needs improvement. Critical areas require attention and support.',
-      shortDesc: 'Significant gaps'
+      description: 'Significant Gaps',
+      message: (name) => `${name} requires focused attention on critical skill areas.`
     },
     { 
       grade: 'F', min: 0, color: '#8B0000', bg: '#FFEBEE', 
-      description: '🚨 Intensive development needed. Requires structured intervention and coaching.',
-      shortDesc: 'Unsatisfactory'
+      description: 'Unsatisfactory',
+      message: (name) => `${name} needs intensive intervention and structured coaching.`
     }
   ];
 
@@ -88,50 +88,117 @@ export default function CandidateReport() {
     return gradeScale.find(g => percentage >= g.min) || gradeScale[gradeScale.length - 1];
   };
 
-  const getOverallRating = (percentage) => {
-    if (percentage >= 80) return {
-      title: 'Strong Performer',
-      message: 'This candidate demonstrates strong capabilities and is ready for increased responsibility.',
-      icon: '🌟'
-    };
-    if (percentage >= 60) return {
-      title: 'Competent Performer',
-      message: 'This candidate shows solid foundational skills with clear potential for growth.',
-      icon: '📈'
-    };
-    if (percentage >= 40) return {
-      title: 'Developing Performer',
-      message: 'This candidate has foundational knowledge but requires structured development.',
-      icon: '🌱'
-    };
-    return {
-      title: 'Needs Development',
-      message: 'This candidate needs significant development and intensive support.',
-      icon: '🎯'
-    };
+  // Dynamic overall rating generator
+  const getOverallRating = (percentage, strengths, weaknesses) => {
+    const strengthCount = strengths.length;
+    const weaknessCount = weaknesses.length;
+    
+    if (percentage >= 80) {
+      return {
+        title: 'Strong Performer',
+        icon: '🌟',
+        message: `Demonstrates strong capabilities across multiple areas. Ready for increased responsibility and complex challenges.`
+      };
+    } else if (percentage >= 70) {
+      return {
+        title: 'Competent Performer',
+        icon: '📈',
+        message: `Shows solid performance with ${strengthCount} key ${strengthCount === 1 ? 'strength' : 'strengths'} identified. Focused development will accelerate growth.`
+      };
+    } else if (percentage >= 60) {
+      return {
+        title: 'Developing Performer',
+        icon: '🌱',
+        message: `Has foundational skills with ${weaknessCount} ${weaknessCount === 1 ? 'area' : 'areas'} needing attention. Structured support recommended.`
+      };
+    } else if (percentage >= 50) {
+      return {
+        title: 'Emerging Talent',
+        icon: '🌿',
+        message: `Building core competencies. Requires guidance in ${weaknesses.slice(0,2).map(w => w.area || w).join(' and ')}.`
+      };
+    } else if (percentage >= 40) {
+      return {
+        title: 'Needs Development',
+        icon: '🎯',
+        message: `Significant opportunities for growth identified. Intensive focus needed on critical skill areas.`
+      };
+    } else {
+      return {
+        title: 'Intensive Support Needed',
+        icon: '⚠️',
+        message: `Requires structured intervention and close mentoring to build foundational capabilities.`
+      };
+    }
   };
 
-  // Generate adaptive comments for strengths and weaknesses
-  const getStrengthComment = (area, percentage) => {
+  // Dynamic comment generator based on score
+  const getStrengthComment = (area, percentage, allStrengths) => {
+    const rank = allStrengths.findIndex(s => (s.area || s) === area) + 1;
+    const isTopStrength = rank === 1;
+    
     const comments = [
-      `Demonstrates exceptional capability in ${area} - a true asset to the team.`,
-      `Shows strong mastery of ${area} concepts and applies them effectively.`,
-      `Exhibits natural aptitude for ${area} that can be leveraged for team success.`,
-      `Consistently performs well in ${area} - a reliable strength to build upon.`,
-      `Has developed robust ${area} skills that contribute significantly to performance.`
+      `Exceptional performer in ${area} - this is a standout strength that distinguishes ${area === 'Leadership' ? 'them' : 'their performance'}.`,
+      `Demonstrates natural aptitude for ${area}. This capability can be leveraged for team success.`,
+      `Strong grasp of ${area} concepts. Consistently applies knowledge effectively.`,
+      `Shows particular strength in ${area}. This is a reliable area of competence.`,
+      `Performance in ${area} is notably strong and contributes positively to overall results.`
     ];
-    return comments[Math.floor(Math.random() * comments.length)];
+    
+    if (isTopStrength && percentage >= 80) {
+      return `🎯 Top strength! ${comments[0]}`;
+    }
+    return comments[rank % comments.length];
   };
 
-  const getWeaknessComment = (area, percentage) => {
+  const getWeaknessComment = (area, percentage, allWeaknesses) => {
+    const rank = allWeaknesses.findIndex(w => (w.area || w) === area) + 1;
+    const isPriority = rank <= 2;
+    
     const comments = [
-      `Would benefit from focused development in ${area} to build confidence and competence.`,
-      `${area} presents an opportunity for growth with targeted training and practice.`,
-      `Additional support in ${area} will help unlock greater potential.`,
+      `Would benefit significantly from focused development in ${area}.`,
+      `${area} presents the greatest opportunity for growth and improvement.`,
       `Developing stronger ${area} skills should be a priority in the coming months.`,
-      `With structured guidance in ${area}, significant improvement is achievable.`
+      `Additional support in ${area} will help unlock greater potential.`,
+      `With structured guidance in ${area}, noticeable improvement is achievable.`,
+      `Building competence in ${area} will enhance overall effectiveness.`
     ];
-    return comments[Math.floor(Math.random() * comments.length)];
+    
+    if (isPriority) {
+      return `🔴 Priority area: ${comments[0]}`;
+    }
+    return comments[(rank + 2) % comments.length];
+  };
+
+  // Dynamic executive summary generator
+  const generateExecutiveSummary = (name, score, maxScore, percentage, grade, rating, strengths, weaknesses, categoryCount) => {
+    const strengthWords = ['impressive', 'notable', 'significant', 'remarkable', 'encouraging'];
+    const weaknessWords = ['development opportunities', 'growth areas', 'skill gaps', 'learning edges'];
+    
+    const randomStrengthWord = strengthWords[Math.floor(Math.random() * strengthWords.length)];
+    const randomWeaknessWord = weaknessWords[Math.floor(Math.random() * weaknessWords.length)];
+    
+    let summary = `${name} completed the assessment with a total score of ${score}/${maxScore} (${percentage}%), achieving a grade of ${grade}. `;
+    
+    if (strengths.length > 0) {
+      summary += `They demonstrated ${randomStrengthWord} strength in ${strengths[0].area || strengths[0]}`;
+      if (strengths.length > 1) {
+        summary += ` and ${strengths.length - 1} other ${strengths.length > 2 ? 'areas' : 'area'}`;
+      }
+      summary += '. ';
+    }
+    
+    if (weaknesses.length > 0) {
+      summary += `Key ${randomWeaknessWord} include ${weaknesses[0].area || weaknesses[0]}`;
+      if (weaknesses.length > 1) {
+        summary += ` and ${weaknesses.length - 1} other ${weaknesses.length > 2 ? 'areas' : 'area'}`;
+      }
+      summary += '. ';
+    }
+    
+    summary += rating.message;
+    
+    return summary;
   };
 
   // Check supervisor authentication
@@ -217,6 +284,21 @@ export default function CandidateReport() {
         if (candidateAssessments) {
           const formatted = candidateAssessments.map(assessment => {
             const result = resultsMap[assessment.assessment_id];
+            const percentage = Math.round((assessment.score / 500) * 100);
+            
+            // Format strengths and weaknesses with percentages
+            const strengthsList = (result?.strengths || []).map(s => ({
+              area: typeof s === 'string' ? s : s.area || s,
+              percentage: typeof s === 'object' && s.percentage ? s.percentage : 
+                         result?.category_scores?.[typeof s === 'string' ? s : s.area || s]?.percentage || percentage
+            }));
+            
+            const weaknessesList = (result?.weaknesses || []).map(w => ({
+              area: typeof w === 'string' ? w : w.area || w,
+              percentage: typeof w === 'object' && w.percentage ? w.percentage : 
+                         result?.category_scores?.[typeof w === 'string' ? w : w.area || w]?.percentage || percentage
+            }));
+
             return {
               id: assessment.id,
               assessment_id: assessment.assessment_id,
@@ -224,11 +306,11 @@ export default function CandidateReport() {
               type: assessment.assessments?.assessment_type?.code || 'general',
               score: assessment.score,
               max_score: 500,
-              percentage: Math.round((assessment.score / 500) * 100),
+              percentage,
               completed_at: assessment.completed_at,
               category_scores: result?.category_scores || {},
-              strengths: result?.strengths || [],
-              weaknesses: result?.weaknesses || [],
+              strengths: strengthsList,
+              weaknesses: weaknessesList,
               recommendations: result?.recommendations || [],
               development_plan: result?.development_plan || {},
               interpretations: result?.interpretations || {}
@@ -244,7 +326,6 @@ export default function CandidateReport() {
             setRecommendations(first.recommendations || []);
             setDevelopmentPlan(first.development_plan || {});
             setInterpretations(first.interpretations || {});
-            setExecutiveSummary(first.interpretations?.executiveSummary || first.interpretations?.summary || '');
           }
         }
       } catch (error) {
@@ -265,7 +346,6 @@ export default function CandidateReport() {
     setRecommendations(selected.recommendations);
     setDevelopmentPlan(selected.development_plan);
     setInterpretations(selected.interpretations);
-    setExecutiveSummary(selected.interpretations?.executiveSummary || '');
   };
 
   const handleBack = () => router.push('/supervisor');
@@ -291,35 +371,25 @@ export default function CandidateReport() {
 
   const current = selectedAssessment || assessments[0];
   const overallGrade = getGradeInfo(current.percentage);
-  const overallRating = getOverallRating(current.percentage);
-
-  // Calculate strengths and weaknesses with expressive comments
-  const enhancedStrengths = strengths.map(s => ({
-    area: typeof s === 'string' ? s : s.area || s,
-    percentage: typeof s === 'object' && s.percentage ? s.percentage : 
-                categoryScores[typeof s === 'string' ? s : s.area || s]?.percentage,
-    comment: getStrengthComment(
-      typeof s === 'string' ? s : s.area || s,
-      typeof s === 'object' && s.percentage ? s.percentage : 
-      categoryScores[typeof s === 'string' ? s : s.area || s]?.percentage
-    )
-  }));
-
-  const enhancedWeaknesses = weaknesses.map(w => ({
-    area: typeof w === 'string' ? w : w.area || w,
-    percentage: typeof w === 'object' && w.percentage ? w.percentage : 
-                categoryScores[typeof w === 'string' ? w : w.area || w]?.percentage,
-    comment: getWeaknessComment(
-      typeof w === 'string' ? w : w.area || w,
-      typeof w === 'object' && w.percentage ? w.percentage : 
-      categoryScores[typeof w === 'string' ? w : w.area || w]?.percentage
-    )
-  }));
+  const overallRating = getOverallRating(current.percentage, current.strengths, current.weaknesses);
+  
+  // Generate dynamic executive summary
+  const dynamicExecutiveSummary = generateExecutiveSummary(
+    candidate.full_name,
+    current.score,
+    current.max_score,
+    current.percentage,
+    overallGrade.grade,
+    overallRating,
+    current.strengths,
+    current.weaknesses,
+    Object.keys(current.category_scores).length
+  );
 
   return (
     <AppLayout>
       <div style={styles.container}>
-        {/* Header with gradient */}
+        {/* Header */}
         <div style={styles.header}>
           <button onClick={handleBack} style={styles.backButton}>← Dashboard</button>
           <div style={styles.headerContent}>
@@ -374,15 +444,13 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* Executive Summary with personality */}
+        {/* Executive Summary - Now Dynamic */}
         <div style={styles.summaryCard}>
           <div style={styles.summaryHeader}>
             <span style={styles.summaryIcon}>📋</span>
             <h2 style={styles.summaryTitle}>Executive Summary</h2>
           </div>
-          <p style={styles.summaryText}>
-            {executiveSummary || `${candidate.full_name} achieved an overall score of ${current.score}/${current.max_score} (${current.percentage}%), earning a grade of ${overallGrade.grade}. ${overallRating.message} Their performance shows ${current.percentage >= 70 ? 'strong capabilities' : 'development opportunities'} across ${Object.keys(categoryScores).length} assessment categories.`}
-          </p>
+          <p style={styles.summaryText}>{dynamicExecutiveSummary}</p>
           <div style={{...styles.ratingBadge, background: overallGrade.bg, color: overallGrade.color}}>
             <span style={styles.ratingIcon}>{overallRating.icon}</span>
             <span><strong>Overall Assessment:</strong> {overallRating.title} • Grade {overallGrade.grade}</span>
@@ -407,7 +475,7 @@ export default function CandidateReport() {
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(categoryScores).map(([category, data]) => {
+                {Object.entries(current.category_scores).map(([category, data]) => {
                   const grade = getGradeInfo(data.percentage);
                   return (
                     <tr key={category}>
@@ -415,7 +483,7 @@ export default function CandidateReport() {
                       <td style={styles.td}>{data.score}/{data.maxPossible}</td>
                       <td style={styles.td}>{data.percentage}%</td>
                       <td style={{...styles.td, color: grade.color, fontWeight: 700}}>{grade.grade}</td>
-                      <td style={styles.td}>{grade.shortDesc}</td>
+                      <td style={styles.td}>{grade.description}</td>
                     </tr>
                   );
                 })}
@@ -424,7 +492,7 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* Strengths & Weaknesses with expressive comments */}
+        {/* Strengths & Weaknesses with Unique Comments */}
         <div style={styles.grid2}>
           {/* Strengths Card */}
           <div style={styles.strengthCard}>
@@ -433,8 +501,8 @@ export default function CandidateReport() {
               <h3 style={styles.cardHeaderTitle}>Key Strengths</h3>
             </div>
             <div style={styles.cardContent}>
-              {enhancedStrengths.length > 0 ? (
-                enhancedStrengths.map((s, i) => (
+              {current.strengths.length > 0 ? (
+                current.strengths.map((s, i) => (
                   <div key={i} style={styles.strengthItem}>
                     <div style={styles.strengthTitle}>
                       <span style={styles.strengthIcon}>✓</span>
@@ -445,11 +513,11 @@ export default function CandidateReport() {
                         </span>
                       )}
                     </div>
-                    <p style={styles.strengthComment}>{s.comment}</p>
+                    <p style={styles.strengthComment}>{getStrengthComment(s.area, s.percentage, current.strengths)}</p>
                   </div>
                 ))
               ) : (
-                <p style={styles.emptyText}>No specific strengths identified</p>
+                <p style={styles.emptyText}>No specific strengths identified in this assessment</p>
               )}
             </div>
           </div>
@@ -461,8 +529,8 @@ export default function CandidateReport() {
               <h3 style={styles.cardHeaderTitle}>Development Areas</h3>
             </div>
             <div style={styles.cardContent}>
-              {enhancedWeaknesses.length > 0 ? (
-                enhancedWeaknesses.map((w, i) => (
+              {current.weaknesses.length > 0 ? (
+                current.weaknesses.map((w, i) => (
                   <div key={i} style={styles.weaknessItem}>
                     <div style={styles.weaknessTitle}>
                       <span style={styles.weaknessIcon}>!</span>
@@ -473,18 +541,18 @@ export default function CandidateReport() {
                         </span>
                       )}
                     </div>
-                    <p style={styles.weaknessComment}>{w.comment}</p>
+                    <p style={styles.weaknessComment}>{getWeaknessComment(w.area, w.percentage, current.weaknesses)}</p>
                   </div>
                 ))
               ) : (
-                <p style={styles.emptyText}>No development areas identified</p>
+                <p style={styles.emptyText}>No significant development areas identified</p>
               )}
             </div>
           </div>
         </div>
 
         {/* Recommendations Card */}
-        {recommendations.length > 0 && (
+        {current.recommendations.length > 0 && (
           <div style={styles.recommendationsCard}>
             <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #1565C0, #0D47A1)'}}>
               <span style={styles.cardIcon}>💡</span>
@@ -492,63 +560,13 @@ export default function CandidateReport() {
             </div>
             <div style={styles.cardContent}>
               <ul style={styles.recommendationsList}>
-                {recommendations.map((rec, i) => (
+                {current.recommendations.map((rec, i) => (
                   <li key={i} style={styles.recommendationItem}>
                     <span style={styles.recommendationBullet}>→</span>
                     <span>{typeof rec === 'string' ? rec : rec.message || rec}</span>
                   </li>
                 ))}
               </ul>
-            </div>
-          </div>
-        )}
-
-        {/* Development Plan */}
-        {developmentPlan && Object.keys(developmentPlan).length > 0 && (
-          <div style={styles.planCard}>
-            <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #6A1B9A, #4A0072)'}}>
-              <span style={styles.cardIcon}>📅</span>
-              <h3 style={styles.cardHeaderTitle}>Development Action Plan</h3>
-            </div>
-            <div style={styles.cardContent}>
-              <div style={styles.planGrid}>
-                {developmentPlan.immediate && developmentPlan.immediate.length > 0 && (
-                  <div style={styles.planPhase}>
-                    <h4 style={styles.phaseTitle}>⚡ Immediate (0-30 days)</h4>
-                    <ul style={styles.planList}>
-                      {developmentPlan.immediate.map((item, i) => (
-                        <li key={i} style={styles.planListItem}>
-                          <strong>{item.area}:</strong> {item.recommendation}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {developmentPlan.shortTerm && developmentPlan.shortTerm.length > 0 && (
-                  <div style={styles.planPhase}>
-                    <h4 style={styles.phaseTitle}>📈 Short-term (30-60 days)</h4>
-                    <ul style={styles.planList}>
-                      {developmentPlan.shortTerm.map((item, i) => (
-                        <li key={i} style={styles.planListItem}>
-                          <strong>{item.area}:</strong> {item.recommendation}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {developmentPlan.longTerm && developmentPlan.longTerm.length > 0 && (
-                  <div style={styles.planPhase}>
-                    <h4 style={styles.phaseTitle}>🚀 Long-term (60-90+ days)</h4>
-                    <ul style={styles.planList}>
-                      {developmentPlan.longTerm.map((item, i) => (
-                        <li key={i} style={styles.planListItem}>
-                          <strong>{item.area}:</strong> {item.recommendation}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         )}
@@ -852,14 +870,6 @@ const styles = {
     boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
     border: '1px solid #f0f0f0'
   },
-  planCard: {
-    background: 'white',
-    borderRadius: '16px',
-    overflow: 'hidden',
-    marginBottom: '30px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    border: '1px solid #f0f0f0'
-  },
   cardHeader: {
     padding: '20px',
     color: 'white',
@@ -973,36 +983,6 @@ const styles = {
     fontSize: '16px',
     fontWeight: 600,
     minWidth: '25px'
-  },
-  planGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-    gap: '20px'
-  },
-  planPhase: {
-    padding: '20px',
-    background: '#f8f9fa',
-    borderRadius: '12px',
-    border: '1px solid #e0e0e0'
-  },
-  phaseTitle: {
-    margin: '0 0 15px 0',
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#333'
-  },
-  planList: {
-    margin: 0,
-    padding: 0,
-    listStyle: 'none'
-  },
-  planListItem: {
-    marginBottom: '10px',
-    fontSize: '13px',
-    color: '#555',
-    lineHeight: '1.6',
-    paddingLeft: '15px',
-    borderLeft: '3px solid #1565c0'
   },
   footer: {
     marginTop: '40px',
