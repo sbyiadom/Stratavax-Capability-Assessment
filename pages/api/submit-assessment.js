@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { generatePersonalizedReport } from '../../utils/dynamicReportGenerator'; // Updated import
+import { generatePersonalizedReport } from '../../utils/dynamicReportGenerator';
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -96,74 +96,47 @@ export default async function handler(req, res) {
 
     console.log(`✅ Found ${responses.length} responses`);
 
-    // Calculate scores by category
-    const categoryScores = {};
-    const strengthsList = [];
-    const weaknessesList = [];
-    let totalScore = 0;
-    const maxScore = responses.length * 5;
+    // Get assessment type for the result
+    const { data: assessment, error: assessmentError } = await serviceClient
+      .from('assessments')
+      .select('assessment_type_id, assessment_type:assessment_types(code)')
+      .eq('id', assessmentId)
+      .single();
 
-    responses.forEach(response => {
-      const question = response.unique_questions;
-      const answer = response.unique_answers;
-      const section = question.section || 'General';
-      const score = answer.score || 0;
-      
-      totalScore += score;
+    if (assessmentError) {
+      console.error("❌ Assessment error:", assessmentError);
+    }
 
-      if (!categoryScores[section]) {
-        categoryScores[section] = {
-          total: 0,
-          count: 0,
-          maxPossible: 0,
-          average: 0,
-          percentage: 0
-        };
-      }
+    // Get candidate name for the report
+    let candidateName = 'Candidate';
+    const { data: profileData } = await serviceClient
+      .from('candidate_profiles')
+      .select('full_name, email')
+      .eq('id', userId)
+      .single();
 
-      categoryScores[section].total += score;
-      categoryScores[section].count += 1;
-      categoryScores[section].maxPossible += 5;
-    });
+    if (profileData?.full_name) {
+      candidateName = profileData.full_name;
+    } else if (profileData?.email) {
+      candidateName = profileData.email.split('@')[0];
+    }
 
-    console.log("✅ Category scores calculated:", Object.keys(categoryScores));
+    // Generate personalized report - this now handles all calculations
+    const personalizedReport = generatePersonalizedReport(
+      userId,
+      assessment?.assessment_type?.code || 'general',
+      responses,
+      candidateName
+    );
 
-    // Calculate percentages and identify strengths/weaknesses
-    Object.keys(categoryScores).forEach(section => {
-      const data = categoryScores[section];
-      data.percentage = Math.round((data.total / data.maxPossible) * 100);
-      data.average = Number((data.total / data.count).toFixed(2));
-
-      if (data.percentage >= 70) {
-        strengthsList.push({
-          area: section,
-          percentage: data.percentage,
-          score: data.total,
-          maxPossible: data.maxPossible
-        });
-      } else if (data.percentage <= 40) {
-        weaknessesList.push({
-          area: section,
-          percentage: data.percentage,
-          score: data.total,
-          maxPossible: data.maxPossible
-        });
-      }
-    });
-
-    const percentageScore = Math.round((totalScore / maxScore) * 100);
-    console.log("✅ Total score:", totalScore, "Percentage:", percentageScore);
-
-    // Determine classification
-    let classification = '';
-    if (percentageScore >= 80) classification = 'Elite Talent';
-    else if (percentageScore >= 60) classification = 'High Potential';
-    else if (percentageScore >= 40) classification = 'Developing Talent';
-    else classification = 'Needs Improvement';
+    console.log("✅ Personalized report generated");
+    console.log("📊 Total score:", personalizedReport.totalScore, "Percentage:", personalizedReport.percentageScore);
 
     // Determine risk level and readiness
-    const riskLevel = percentageScore < 40 ? 'high' : percentageScore < 60 ? 'medium' : 'low';
-    const readiness = percentageScore >= 70 ? 'ready' : percentageScore >= 50 ? 'development_needed' : 'not_ready';
+    const riskLevel = personalizedReport.percentageScore < 40 ? 'high' : 
+                     personalizedReport.percentageScore < 60 ? 'medium' : 'low';
+    const readiness = personalizedReport.percentageScore >= 70 ? 'ready' : 
+                     personalizedReport.percentageScore >= 50 ? 'development_needed' : 'not_ready';
 
     // Update session to completed
     if (sessionId) {
@@ -190,7 +163,7 @@ export default async function handler(req, res) {
         assessment_id: assessmentId,
         session_id: sessionId,
         status: 'completed',
-        score: totalScore,
+        score: personalizedReport.totalScore,
         completed_at: new Date().toISOString()
       }, { 
         onConflict: 'user_id, assessment_id' 
@@ -202,70 +175,42 @@ export default async function handler(req, res) {
       console.log("✅ Candidate assessments updated");
     }
 
-    // Get assessment type for the result
-    const { data: assessment, error: assessmentError } = await serviceClient
-      .from('assessments')
-      .select('assessment_type_id, assessment_type:assessment_types(code)')
-      .eq('id', assessmentId)
-      .single();
-
-    if (assessmentError) {
-      console.error("❌ Assessment error:", assessmentError);
-    }
-
-    // Get candidate name for the report
-    let candidateName = 'Candidate';
-    const { data: profileData } = await serviceClient
-      .from('candidate_profiles')
-      .select('full_name, email')
-      .eq('id', userId)
-      .single();
-
-    if (profileData?.full_name) {
-      candidateName = profileData.full_name;
-    } else if (profileData?.email) {
-      candidateName = profileData.email.split('@')[0];
-    }
-
-    // Generate personalized report
-    const personalizedReport = generatePersonalizedReport(
-      userId,
-      assessment?.assessment_type?.code || 'general',
-      responses,
-      candidateName
+    // Prepare strengths and weaknesses as simple arrays of strings
+    const strengthsArray = personalizedReport.strengths.map(s => 
+      `${s.area} (${s.percentage}%)`
     );
-
-    console.log("✅ Personalized report generated");
+    const weaknessesArray = personalizedReport.weaknesses.map(w => 
+      `${w.area} (${w.percentage}%)`
+    );
 
     // Prepare recommendations as a simple array of strings
     const recommendationsArray = [
-      ...strengthsList.map(s => `Leverage strength in ${s.area} (${s.percentage}%)`),
-      ...weaknessesList.map(w => `Focus on developing ${w.area} (${w.percentage}%)`)
+      ...personalizedReport.recommendations
     ];
-
-    // Prepare strengths and weaknesses as simple arrays of strings
-    const strengthsArray = strengthsList.map(s => `${s.area} (${s.percentage}%)`);
-    const weaknessesArray = weaknessesList.map(w => `${w.area} (${w.percentage}%)`);
 
     // Prepare interpretations as a simple object
     const interpretationsObj = {
-      classification,
+      classification: personalizedReport.gradeInfo?.description || 
+                     (personalizedReport.percentageScore >= 80 ? 'Elite Talent' :
+                      personalizedReport.percentageScore >= 60 ? 'High Potential' :
+                      personalizedReport.percentageScore >= 40 ? 'Developing Talent' :
+                      'Needs Improvement'),
       executiveSummary: personalizedReport.executiveSummary,
       overallProfile: personalizedReport.overallProfile,
-      overallTraits: personalizedReport.overallTraits,
-      summary: `Overall performance: ${percentageScore}% - ${classification}`
+      overallTraits: personalizedReport.overallTraits || [],
+      summary: `Overall performance: ${personalizedReport.percentageScore}%`
     };
 
-    // Prepare the data for assessment_results - REMOVED percentage_score since it's a generated column
+    // Prepare the data for assessment_results
     const resultData = {
       user_id: userId,
       assessment_id: assessmentId,
       session_id: sessionId,
       assessment_type_id: assessment?.assessment_type_id || null,
-      total_score: totalScore,
-      max_score: maxScore,
-      // percentage_score is REMOVED - let the database generate it
-      category_scores: categoryScores,
+      total_score: personalizedReport.totalScore,
+      max_score: personalizedReport.maxScore,
+      // percentage_score is auto-generated by database
+      category_scores: personalizedReport.categoryScores,
       interpretations: interpretationsObj,
       strengths: strengthsArray,
       weaknesses: weaknessesArray,
@@ -298,9 +243,9 @@ export default async function handler(req, res) {
       // So the score is still saved
       return res.status(200).json({ 
         success: true,
-        score: totalScore,
-        percentage: percentageScore,
-        classification,
+        score: personalizedReport.totalScore,
+        percentage: personalizedReport.percentageScore,
+        classification: interpretationsObj.classification,
         warning: "Score saved but detailed report failed to save: " + resultsError.message,
         message: "Assessment submitted successfully (score only)" 
       });
@@ -310,9 +255,9 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ 
       success: true,
-      score: totalScore,
-      percentage: percentageScore,
-      classification,
+      score: personalizedReport.totalScore,
+      percentage: personalizedReport.percentageScore,
+      classification: interpretationsObj.classification,
       message: "Assessment submitted successfully" 
     });
 
