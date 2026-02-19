@@ -9,6 +9,7 @@ import {
   getWeaknessComment,
   gradeScale
 } from "../../utils/dynamicReportGenerator";
+import { generateUniversalInterpretation } from "../../utils/categoryMapper";
 
 export default function CandidateReport() {
   const router = useRouter();
@@ -27,6 +28,7 @@ export default function CandidateReport() {
   const [interpretations, setInterpretations] = useState({});
   const [executiveSummary, setExecutiveSummary] = useState('');
   const [assessmentType, setAssessmentType] = useState('general');
+  const [professionalInterpretation, setProfessionalInterpretation] = useState(null);
 
   // Check supervisor authentication
   useEffect(() => {
@@ -215,6 +217,29 @@ export default function CandidateReport() {
     fetchData();
   }, [isSupervisor, user_id]);
 
+  // Generate professional interpretations when data changes
+  useEffect(() => {
+    if (selectedAssessment && Object.keys(categoryScores).length > 0 && candidate) {
+      // Convert category scores to simple percentage object
+      const scoresObject = {};
+      Object.entries(categoryScores).forEach(([cat, data]) => {
+        scoresObject[cat] = data.percentage;
+      });
+      
+      // Generate universal interpretations
+      const interpretation = generateUniversalInterpretation(
+        assessmentType,
+        candidate.full_name,
+        scoresObject,
+        strengths,
+        weaknesses,
+        selectedAssessment.percentage
+      );
+      
+      setProfessionalInterpretation(interpretation);
+    }
+  }, [selectedAssessment, categoryScores, strengths, weaknesses, assessmentType, candidate]);
+
   const handleAssessmentChange = (e) => {
     const selected = assessments.find(a => a.id === e.target.value);
     setSelectedAssessment(selected);
@@ -336,7 +361,7 @@ export default function CandidateReport() {
           </div>
         )}
 
-        {/* Category Performance Table */}
+        {/* Category Performance Table - SIMPLIFIED COMMENTS */}
         {Object.keys(current.category_scores).length > 0 && (
           <div style={styles.tableCard}>
             <div style={styles.tableHeader}>
@@ -351,7 +376,7 @@ export default function CandidateReport() {
                     <th style={styles.th}>Score</th>
                     <th style={styles.th}>Percentage</th>
                     <th style={styles.th}>Grade</th>
-                    <th style={styles.th}>Analysis</th>
+                    <th style={styles.th}>Assessment</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -360,23 +385,23 @@ export default function CandidateReport() {
                     
                     // Determine row background color based on percentage
                     let rowColor = '#ffffff';
-                    let analysisText = '';
+                    let assessmentText = '';
                     
                     if (data.percentage >= 80) {
                       rowColor = '#f0fff4'; // Light green
-                      analysisText = `Strong performance (${data.percentage}%). Exceeds 80% target.`;
+                      assessmentText = 'Excellent';
                     } else if (data.percentage >= 70) {
                       rowColor = '#fff8e1'; // Light amber
-                      analysisText = `Good performance (${data.percentage}%). Close to 80% target, minor improvements needed.`;
+                      assessmentText = 'Good';
                     } else if (data.percentage >= 60) {
                       rowColor = '#fff3e0'; // Light orange
-                      analysisText = `Developing (${data.percentage}%). Needs focused attention to reach 80% target.`;
+                      assessmentText = 'Average';
                     } else if (data.percentage >= 50) {
                       rowColor = '#ffebee'; // Light red
-                      analysisText = `Below target (${data.percentage}%). Significant improvement required to reach 80%.`;
+                      assessmentText = 'Below Average';
                     } else {
                       rowColor = '#ffebee'; // Light red
-                      analysisText = `Critical gap (${data.percentage}%). Intensive development needed to reach 80%.`;
+                      assessmentText = 'Below Average';
                     }
                     
                     // Progress bar color
@@ -440,7 +465,7 @@ export default function CandidateReport() {
                             fontSize: '13px',
                             fontWeight: 500
                           }}>
-                            {analysisText}
+                            {assessmentText}
                           </span>
                         </td>
                       </tr>
@@ -448,6 +473,101 @@ export default function CandidateReport() {
                   })}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* Professional Interpretation Section */}
+        {professionalInterpretation && (
+          <div style={styles.interpretationCard}>
+            <h2 style={styles.interpretationTitle}>📋 Professional Assessment Interpretation</h2>
+            
+            {/* Profile Summary */}
+            <div style={styles.profileSummary}>
+              <span style={styles.profileBadge}>{professionalInterpretation.profileType}</span>
+              <p style={styles.profileDescription}>{professionalInterpretation.profileDescription}</p>
+            </div>
+            
+            {/* Domain Summaries */}
+            <h3 style={styles.sectionTitle}>📊 Domain-Level Analysis</h3>
+            <div style={styles.domainGrid}>
+              {Object.entries(professionalInterpretation.domainSummaries || {}).map(([domain, data]) => (
+                <div key={domain} style={styles.domainCard}>
+                  <h4 style={styles.domainName}>{data.name}</h4>
+                  <div style={styles.domainScore}>
+                    <span style={styles.domainAverage}>{data.average}%</span>
+                    <span style={styles.domainLevel}>{data.level}</span>
+                  </div>
+                  <p style={styles.domainSummary}>{data.summary}</p>
+                  <small style={styles.domainRelevance}>{data.leadershipRelevance}</small>
+                </div>
+              ))}
+            </div>
+            
+            {/* Category Breakdown */}
+            <h3 style={styles.sectionTitle}>📈 Category Breakdown & What It Means</h3>
+            <div style={styles.categoryGrid}>
+              {Object.entries(professionalInterpretation.categoryInterpretations || {}).map(([category, data]) => {
+                let levelColor = '';
+                if (data.level === 'high') levelColor = '#2E7D32';
+                else if (data.level === 'medium') levelColor = '#F57C00';
+                else levelColor = '#C62828';
+                
+                return (
+                  <div key={category} style={styles.categoryCard}>
+                    <div style={styles.categoryHeader}>
+                      <h4 style={styles.categoryName}>{category}</h4>
+                      <span style={{...styles.categoryScore, color: levelColor}}>{data.score}%</span>
+                    </div>
+                    <p style={styles.categoryInterpretation}>{data.interpretation}</p>
+                    <small style={styles.categoryRelevance}>{data.leadershipRelevance}</small>
+                  </div>
+                );
+              })}
+            </div>
+            
+            {/* What This Profile Suggests */}
+            <h3 style={styles.sectionTitle}>🎯 What This Profile Suggests</h3>
+            <div style={styles.profileInsights}>
+              <div style={styles.insightColumn}>
+                <h4 style={styles.insightTitle}>Best Fit:</h4>
+                <ul style={styles.insightList}>
+                  {professionalInterpretation.suitability?.map((item, i) => (
+                    <li key={i} style={styles.insightItem}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+              <div style={styles.insightColumn}>
+                <h4 style={styles.insightTitle}>Risk Areas:</h4>
+                <ul style={styles.insightList}>
+                  {professionalInterpretation.concerns?.map((item, i) => (
+                    <li key={i} style={styles.insightItem}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            
+            {/* Development Focus */}
+            {professionalInterpretation.developmentFocus?.length > 0 && (
+              <>
+                <h3 style={styles.sectionTitle}>🎯 Development Focus</h3>
+                <div style={styles.developmentList}>
+                  {professionalInterpretation.developmentFocus.map((area, i) => (
+                    <div key={i} style={styles.developmentItem}>
+                      <span style={styles.developmentPriority}>{i === 0 ? '🔴 High' : i === 1 ? '🟡 Medium' : '🟢 Low'}</span>
+                      <span style={styles.developmentArea}>{area}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            
+            {/* Overall Grade Interpretation */}
+            <div style={styles.gradeInterpretation}>
+              <h4 style={styles.gradeTitle}>📌 Overall Assessment</h4>
+              <p style={styles.gradeText}>
+                {professionalInterpretation.overallScore}% overall. {professionalInterpretation.profileDescription}
+              </p>
             </div>
           </div>
         )}
@@ -1100,5 +1220,206 @@ const styles = {
       transform: 'translateY(-2px)',
       boxShadow: '0 5px 15px rgba(21, 101, 192, 0.3)'
     }
+  },
+  // New styles for interpretation section
+  interpretationCard: {
+    background: 'white',
+    borderRadius: '16px',
+    padding: '30px',
+    marginTop: '30px',
+    marginBottom: '30px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    border: '1px solid #f0f0f0'
+  },
+  interpretationTitle: {
+    fontSize: '24px',
+    fontWeight: 700,
+    color: '#333',
+    marginBottom: '25px',
+    paddingBottom: '15px',
+    borderBottom: '2px solid #1565c0'
+  },
+  profileSummary: {
+    background: '#f8f9fa',
+    padding: '20px',
+    borderRadius: '12px',
+    marginBottom: '30px'
+  },
+  profileBadge: {
+    display: 'inline-block',
+    padding: '6px 16px',
+    background: '#1565c0',
+    color: 'white',
+    borderRadius: '20px',
+    fontSize: '14px',
+    fontWeight: 600,
+    marginBottom: '12px'
+  },
+  profileDescription: {
+    fontSize: '16px',
+    color: '#555',
+    lineHeight: '1.6',
+    margin: 0
+  },
+  sectionTitle: {
+    fontSize: '20px',
+    fontWeight: 600,
+    color: '#333',
+    margin: '30px 0 20px 0'
+  },
+  domainGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gap: '20px',
+    marginBottom: '30px'
+  },
+  domainCard: {
+    background: '#f8f9fa',
+    padding: '20px',
+    borderRadius: '12px',
+    border: '1px solid #e0e0e0'
+  },
+  domainName: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#333',
+    margin: '0 0 10px 0'
+  },
+  domainScore: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    marginBottom: '10px'
+  },
+  domainAverage: {
+    fontSize: '24px',
+    fontWeight: 700,
+    color: '#1565c0'
+  },
+  domainLevel: {
+    padding: '4px 12px',
+    borderRadius: '20px',
+    fontSize: '12px',
+    fontWeight: 600,
+    background: '#e3f2fd',
+    color: '#1565c0'
+  },
+  domainSummary: {
+    fontSize: '14px',
+    color: '#555',
+    lineHeight: '1.5',
+    margin: '0 0 10px 0'
+  },
+  domainRelevance: {
+    fontSize: '12px',
+    color: '#888',
+    fontStyle: 'italic'
+  },
+  categoryGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
+    gap: '15px',
+    marginBottom: '30px'
+  },
+  categoryCard: {
+    background: '#f8f9fa',
+    padding: '20px',
+    borderRadius: '12px',
+    border: '1px solid #e0e0e0'
+  },
+  categoryHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '10px'
+  },
+  categoryName: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#333',
+    margin: 0
+  },
+  categoryScore: {
+    fontSize: '18px',
+    fontWeight: 700
+  },
+  categoryInterpretation: {
+    fontSize: '14px',
+    color: '#555',
+    lineHeight: '1.5',
+    marginBottom: '8px'
+  },
+  categoryRelevance: {
+    fontSize: '12px',
+    color: '#888'
+  },
+  profileInsights: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '20px',
+    marginBottom: '30px'
+  },
+  insightColumn: {
+    background: '#f8f9fa',
+    padding: '20px',
+    borderRadius: '12px'
+  },
+  insightTitle: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#333',
+    margin: '0 0 15px 0'
+  },
+  insightList: {
+    margin: 0,
+    padding: 0,
+    listStyle: 'none'
+  },
+  insightItem: {
+    padding: '8px 0',
+    fontSize: '14px',
+    color: '#555',
+    borderBottom: '1px solid #f0f0f0'
+  },
+  developmentList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    marginBottom: '30px'
+  },
+  developmentItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '15px',
+    padding: '12px',
+    background: '#f8f9fa',
+    borderRadius: '8px'
+  },
+  developmentPriority: {
+    minWidth: '90px',
+    fontSize: '13px',
+    fontWeight: 600
+  },
+  developmentArea: {
+    fontSize: '14px',
+    color: '#333'
+  },
+  gradeInterpretation: {
+    background: '#e3f2fd',
+    padding: '20px',
+    borderRadius: '12px',
+    marginTop: '20px'
+  },
+  gradeTitle: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#1565c0',
+    margin: '0 0 10px 0'
+  },
+  gradeText: {
+    fontSize: '14px',
+    color: '#555',
+    lineHeight: '1.6',
+    margin: 0
   }
 };
