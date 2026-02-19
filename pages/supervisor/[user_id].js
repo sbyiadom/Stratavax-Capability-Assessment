@@ -14,10 +14,14 @@ export default function CandidateReport() {
   const [selectedAssessment, setSelectedAssessment] = useState(null);
   const [assessmentResult, setAssessmentResult] = useState(null);
   const [categoryScores, setCategoryScores] = useState({});
+  const [subsectionScores, setSubsectionScores] = useState({});
   const [strengths, setStrengths] = useState([]);
   const [weaknesses, setWeaknesses] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
-  const [developmentPlan, setDevelopmentPlan] = useState([]);
+  const [developmentPlan, setDevelopmentPlan] = useState({});
+  const [uniqueInsights, setUniqueInsights] = useState([]);
+  const [detailedAnalysis, setDetailedAnalysis] = useState({});
+  const [interpretations, setInterpretations] = useState({});
   const [executiveSummary, setExecutiveSummary] = useState('');
   const [overallProfile, setOverallProfile] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
@@ -70,114 +74,117 @@ export default function CandidateReport() {
     checkAuth();
   }, [router]);
 
- // Fetch candidate data
-useEffect(() => {
-  if (!isSupervisor || !user_id) return;
+  // Fetch candidate data
+  useEffect(() => {
+    if (!isSupervisor || !user_id) return;
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
+    const fetchData = async () => {
+      try {
+        setLoading(true);
 
-      // Try to get candidate info from candidate_profiles first
-      const { data: profileData, error: profileError } = await supabase
-        .from('candidate_profiles')
-        .select('*')
-        .eq('id', user_id)
-        .single();
+        // Try to get candidate info from candidate_profiles first
+        const { data: profileData, error: profileError } = await supabase
+          .from('candidate_profiles')
+          .select('*')
+          .eq('id', user_id)
+          .single();
 
-      if (!profileError && profileData) {
-        setCandidate({
-          id: user_id,
-          full_name: profileData.full_name || 'Candidate',
-          email: profileData.email || 'No email'
-        });
-      } else {
-        // Fallback: try to get from auth data via a custom function or view
-        // For now, use a placeholder
-        setCandidate({
-          id: user_id,
-          full_name: 'Candidate',
-          email: 'Email not available'
-        });
-      }
+        if (!profileError && profileData) {
+          setCandidate({
+            id: user_id,
+            full_name: profileData.full_name || 'Candidate',
+            email: profileData.email || 'No email'
+          });
+        } else {
+          // Fallback: use placeholder
+          setCandidate({
+            id: user_id,
+            full_name: 'Candidate',
+            email: 'Email not available'
+          });
+        }
 
-      // Get all completed assessments for this candidate from assessment_results
-      const { data: resultsData, error: resultsError } = await supabase
-        .from('assessment_results')
-        .select(`
-          *,
-          assessments (
-            id,
-            title,
-            assessment_type:assessment_types (
-              code,
-              name,
-              icon,
-              color
+        // Get all completed assessments for this candidate from assessment_results
+        const { data: resultsData, error: resultsError } = await supabase
+          .from('assessment_results')
+          .select(`
+            *,
+            assessments (
+              id,
+              title,
+              assessment_type:assessment_types (
+                code,
+                name,
+                icon,
+                color
+              )
             )
-          )
-        `)
-        .eq('user_id', user_id)
-        .order('completed_at', { ascending: false });
+          `)
+          .eq('user_id', user_id)
+          .order('completed_at', { ascending: false });
 
-      if (resultsError) {
-        console.error("Error fetching results:", resultsError);
+        if (resultsError) {
+          console.error("Error fetching results:", resultsError);
+        }
+
+        console.log("Results data:", resultsData);
+
+        if (resultsData && resultsData.length > 0) {
+          // Transform the data for the assessments list
+          const formattedAssessments = resultsData.map(result => ({
+            result_id: result.id,
+            assessment_id: result.assessment_id,
+            assessment_name: result.assessments?.title || 'Assessment',
+            assessment_type: result.assessments?.assessment_type?.code || 'general',
+            score: result.total_score,
+            max_score: result.max_score,
+            percentage: result.percentage_score,
+            completed_at: result.completed_at,
+            category_scores: result.category_scores || {},
+            subsection_scores: result.subsection_scores || {},
+            strengths: result.strengths || [],
+            weaknesses: result.weaknesses || [],
+            recommendations: result.recommendations || [],
+            development_plan: result.development_plan || {},
+            unique_insights: result.unique_insights || [],
+            detailed_analysis: result.detailed_analysis || {},
+            interpretations: result.interpretations || {},
+            executive_summary: result.interpretations?.executiveSummary || '',
+            overall_profile: result.interpretations?.overallProfile || ''
+          }));
+
+          setAssessments(formattedAssessments);
+          
+          // Select the most recent assessment
+          const mostRecent = formattedAssessments[0];
+          setSelectedAssessment(mostRecent);
+          
+          // Set the detailed data
+          setAssessmentResult(mostRecent);
+          setCategoryScores(mostRecent.category_scores || {});
+          setSubsectionScores(mostRecent.subsection_scores || {});
+          setStrengths(mostRecent.strengths || []);
+          setWeaknesses(mostRecent.weaknesses || []);
+          setRecommendations(mostRecent.recommendations || []);
+          setDevelopmentPlan(mostRecent.development_plan || {});
+          setUniqueInsights(mostRecent.unique_insights || []);
+          setDetailedAnalysis(mostRecent.detailed_analysis || {});
+          setInterpretations(mostRecent.interpretations || {});
+          setExecutiveSummary(mostRecent.executive_summary || '');
+          setOverallProfile(mostRecent.overall_profile || '');
+        } else {
+          console.log("No assessment results found for user:", user_id);
+        }
+
+      } catch (error) {
+        console.error("Error fetching candidate data:", error);
+      } finally {
+        setLoading(false);
       }
+    };
 
-      console.log("Results data:", resultsData);
-
-      if (resultsData && resultsData.length > 0) {
-        // Transform the data for the assessments list
-        const formattedAssessments = resultsData.map(result => ({
-          result_id: result.id,
-          assessment_id: result.assessment_id,
-          assessment_name: result.assessments?.title || 'Assessment',
-          assessment_type: result.assessments?.assessment_type?.code || 'general',
-          score: result.total_score,
-          max_score: result.max_score,
-          percentage: result.percentage_score,
-          completed_at: result.completed_at,
-          category_scores: result.category_scores || {},
-          subsection_scores: result.subsection_scores || {},
-          strengths: result.strengths || [],
-          weaknesses: result.weaknesses || [],
-          recommendations: result.recommendations || [],
-          development_plan: result.development_plan || {},
-          unique_insights: result.unique_insights || [],
-          detailed_analysis: result.detailed_analysis || {},
-          interpretations: result.interpretations || {}
-        }));
-
-        setAssessments(formattedAssessments);
-        
-        // Select the most recent assessment
-        const mostRecent = formattedAssessments[0];
-        setSelectedAssessment(mostRecent);
-        
-        // Set the detailed data
-        setAssessmentResult(mostRecent);
-        setCategoryScores(mostRecent.category_scores || {});
-        setSubsectionScores(mostRecent.subsection_scores || {});
-        setStrengths(mostRecent.strengths || []);
-        setWeaknesses(mostRecent.weaknesses || []);
-        setRecommendations(mostRecent.recommendations || []);
-        setDevelopmentPlan(mostRecent.development_plan || {});
-        setUniqueInsights(mostRecent.unique_insights || []);
-        setDetailedAnalysis(mostRecent.detailed_analysis || {});
-        setInterpretations(mostRecent.interpretations || {});
-      } else {
-        console.log("No assessment results found for user:", user_id);
-      }
-
-    } catch (error) {
-      console.error("Error fetching candidate data:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  fetchData();
-}, [isSupervisor, user_id]);
+    fetchData();
+  }, [isSupervisor, user_id]);
 
   // Handle assessment selection
   const handleAssessmentChange = async (assessment) => {
@@ -187,19 +194,27 @@ useEffect(() => {
     if (assessment) {
       setAssessmentResult(assessment);
       setCategoryScores(assessment.category_scores || {});
+      setSubsectionScores(assessment.subsection_scores || {});
       setStrengths(assessment.strengths || []);
       setWeaknesses(assessment.weaknesses || []);
       setRecommendations(assessment.recommendations || []);
-      setDevelopmentPlan(assessment.development_plan || []);
+      setDevelopmentPlan(assessment.development_plan || {});
+      setUniqueInsights(assessment.unique_insights || []);
+      setDetailedAnalysis(assessment.detailed_analysis || {});
+      setInterpretations(assessment.interpretations || {});
       setExecutiveSummary(assessment.executive_summary || '');
       setOverallProfile(assessment.overall_profile || '');
     } else {
       setAssessmentResult(null);
       setCategoryScores({});
+      setSubsectionScores({});
       setStrengths([]);
       setWeaknesses([]);
       setRecommendations([]);
-      setDevelopmentPlan([]);
+      setDevelopmentPlan({});
+      setUniqueInsights([]);
+      setDetailedAnalysis({});
+      setInterpretations({});
       setExecutiveSummary('');
       setOverallProfile('');
     }
@@ -395,6 +410,18 @@ useEffect(() => {
                         </span>
                       </div>
                     </div>
+                    
+                    {/* Unique Insights */}
+                    {uniqueInsights.length > 0 && (
+                      <div style={styles.insightsSection}>
+                        <h4 style={styles.insightsTitle}>Key Insights</h4>
+                        <ul style={styles.insightsList}>
+                          {uniqueInsights.map((insight, index) => (
+                            <li key={index} style={styles.insightListItem}>{insight}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
 
                   <div style={styles.overviewCard}>
@@ -577,38 +604,70 @@ useEffect(() => {
                 </div>
               )}
 
-              {/* Recommendations/Development Plan Tab */}
+              {/* Development Plan Tab */}
               {activeTab === 'recommendations' && (
                 <div style={styles.recommendationsContainer}>
-                  {developmentPlan.length > 0 ? (
-                    <div style={styles.planSteps}>
-                      {developmentPlan.map((step, index) => (
-                        <div key={index} style={styles.planStep}>
-                          <div style={styles.stepNumber}>{index + 1}</div>
-                          <div style={styles.stepContent}>
-                            <p style={styles.stepText}>{step}</p>
-                          </div>
+                  {developmentPlan && Object.keys(developmentPlan).length > 0 ? (
+                    <div style={styles.developmentPlan}>
+                      {/* Immediate Actions */}
+                      {developmentPlan.immediate && developmentPlan.immediate.length > 0 && (
+                        <div style={styles.planSection}>
+                          <h3 style={styles.planSectionTitle}>Immediate Actions (0-30 days)</h3>
+                          {developmentPlan.immediate.map((item, index) => (
+                            <div key={index} style={styles.planItem}>
+                              <div style={styles.planItemHeader}>
+                                <span style={styles.planItemArea}>{item.area}</span>
+                                <span style={styles.planItemPriority}>{item.priority}</span>
+                              </div>
+                              <p style={styles.planItemAction}>{item.action}</p>
+                              <p style={styles.planItemRecommendation}>{item.recommendation}</p>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
+
+                      {/* Short-term Actions */}
+                      {developmentPlan.shortTerm && developmentPlan.shortTerm.length > 0 && (
+                        <div style={styles.planSection}>
+                          <h3 style={styles.planSectionTitle}>Short-term Goals (30-60 days)</h3>
+                          {developmentPlan.shortTerm.map((item, index) => (
+                            <div key={index} style={styles.planItem}>
+                              <div style={styles.planItemHeader}>
+                                <span style={styles.planItemArea}>{item.area}</span>
+                                <span style={styles.planItemPriority}>{item.priority}</span>
+                              </div>
+                              <p style={styles.planItemAction}>{item.action}</p>
+                              <p style={styles.planItemRecommendation}>{item.recommendation}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Long-term Actions */}
+                      {developmentPlan.longTerm && developmentPlan.longTerm.length > 0 && (
+                        <div style={styles.planSection}>
+                          <h3 style={styles.planSectionTitle}>Long-term Development (60-90+ days)</h3>
+                          {developmentPlan.longTerm.map((item, index) => (
+                            <div key={index} style={styles.planItem}>
+                              <div style={styles.planItemHeader}>
+                                <span style={styles.planItemArea}>{item.area}</span>
+                                <span style={styles.planItemPriority}>{item.priority}</span>
+                              </div>
+                              <p style={styles.planItemAction}>{item.action}</p>
+                              <p style={styles.planItemRecommendation}>{item.recommendation}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  ) : recommendations.length > 0 ? (
+                  ) : recommendations && recommendations.length > 0 ? (
                     <div style={styles.recommendationsList}>
                       {recommendations.map((rec, index) => (
                         <div key={index} style={styles.recommendationCard}>
                           <div style={styles.recommendationHeader}>
                             <span style={styles.recommendationNumber}>{index + 1}</span>
-                            <span style={styles.recommendationPriority}>
-                              {rec.type === 'strength' ? 'Leverage' : 'Development'}
-                            </span>
                           </div>
-                          <p style={styles.recommendationText}>{rec.message || rec}</p>
-                          {rec.areas && rec.areas.length > 0 && (
-                            <div style={styles.recommendationAreas}>
-                              {rec.areas.map((area, idx) => (
-                                <span key={idx} style={styles.recommendationArea}>{area}</span>
-                              ))}
-                            </div>
-                          )}
+                          <p style={styles.recommendationText}>{typeof rec === 'string' ? rec : rec.message || JSON.stringify(rec)}</p>
                         </div>
                       ))}
                     </div>
@@ -863,6 +922,27 @@ const styles = {
     fontSize: '15px',
     fontWeight: 600
   },
+  insightsSection: {
+    marginTop: '20px',
+    padding: '15px',
+    background: '#f8f9fa',
+    borderRadius: '8px'
+  },
+  insightsTitle: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#333',
+    margin: '0 0 10px 0'
+  },
+  insightsList: {
+    margin: 0,
+    paddingLeft: '20px',
+    color: '#555'
+  },
+  insightListItem: {
+    fontSize: '13px',
+    marginBottom: '5px'
+  },
   profileText: {
     fontSize: '14px',
     color: '#555',
@@ -1092,6 +1172,60 @@ const styles = {
     borderRadius: '12px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
   },
+  developmentPlan: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '30px'
+  },
+  planSection: {
+    marginBottom: '20px'
+  },
+  planSectionTitle: {
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#333',
+    marginBottom: '15px',
+    paddingBottom: '5px',
+    borderBottom: '2px solid #f0f0f0'
+  },
+  planItem: {
+    padding: '15px',
+    background: '#f8f9fa',
+    borderRadius: '8px',
+    marginBottom: '10px',
+    border: '1px solid #e0e0e0'
+  },
+  planItemHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '8px'
+  },
+  planItemArea: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#1565c0'
+  },
+  planItemPriority: {
+    fontSize: '11px',
+    fontWeight: 600,
+    padding: '3px 8px',
+    background: '#e3f2fd',
+    color: '#1565c0',
+    borderRadius: '4px'
+  },
+  planItemAction: {
+    fontSize: '13px',
+    fontWeight: 500,
+    color: '#333',
+    marginBottom: '5px'
+  },
+  planItemRecommendation: {
+    fontSize: '12px',
+    color: '#666',
+    margin: 0,
+    fontStyle: 'italic'
+  },
   recommendationsList: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
@@ -1121,61 +1255,7 @@ const styles = {
     fontSize: '12px',
     fontWeight: 600
   },
-  recommendationPriority: {
-    fontSize: '11px',
-    fontWeight: 600,
-    padding: '3px 8px',
-    background: '#e3f2fd',
-    color: '#1565c0',
-    borderRadius: '4px'
-  },
   recommendationText: {
-    margin: '0 0 10px 0',
-    fontSize: '13px',
-    color: '#555',
-    lineHeight: '1.5'
-  },
-  recommendationAreas: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '5px'
-  },
-  recommendationArea: {
-    padding: '3px 8px',
-    background: '#e0e0e0',
-    borderRadius: '4px',
-    fontSize: '11px',
-    color: '#333'
-  },
-  planSteps: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '15px'
-  },
-  planStep: {
-    display: 'flex',
-    gap: '15px',
-    padding: '15px',
-    background: '#f8f9fa',
-    borderRadius: '8px'
-  },
-  stepNumber: {
-    width: '30px',
-    height: '30px',
-    background: '#1565c0',
-    color: 'white',
-    borderRadius: '50%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '14px',
-    fontWeight: 600,
-    flexShrink: 0
-  },
-  stepContent: {
-    flex: 1
-  },
-  stepText: {
     margin: 0,
     fontSize: '13px',
     color: '#555',
@@ -1211,4 +1291,3 @@ const styles = {
     marginTop: '20px'
   }
 };
-
