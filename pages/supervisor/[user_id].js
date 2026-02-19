@@ -113,6 +113,8 @@ export default function CandidateReport() {
           console.error("Error fetching assessment results:", resultsError);
         }
 
+        console.log("Raw results data:", resultsData);
+
         // Create a map of results by assessment_id
         const resultsMap = {};
         if (resultsData) {
@@ -128,6 +130,39 @@ export default function CandidateReport() {
             const percentage = assessment.score ? Math.round((assessment.score / 500) * 100) : 0;
             const type = assessment.assessments?.assessment_type?.code || 'general';
             
+            // Parse strengths and weaknesses from strings to objects if needed
+            let strengthsList = detailedResult?.strengths || [];
+            let weaknessesList = detailedResult?.weaknesses || [];
+            
+            // If strengths are strings, convert them to objects with area and percentage
+            if (strengthsList.length > 0 && typeof strengthsList[0] === 'string') {
+              strengthsList = strengthsList.map(s => {
+                const match = s.match(/(.+) \((\d+)%\)/);
+                if (match) {
+                  return {
+                    area: match[1],
+                    percentage: parseInt(match[2]),
+                    analysis: `Strong performance in ${match[1]} (${match[2]}%). This exceeds the 80% target.`
+                  };
+                }
+                return { area: s, analysis: `Strength identified in ${s}` };
+              });
+            }
+            
+            if (weaknessesList.length > 0 && typeof weaknessesList[0] === 'string') {
+              weaknessesList = weaknessesList.map(w => {
+                const match = w.match(/(.+) \((\d+)%\)/);
+                if (match) {
+                  return {
+                    area: match[1],
+                    percentage: parseInt(match[2]),
+                    analysis: `Needs improvement in ${match[1]} (${match[2]}%). Below target of 80%.`
+                  };
+                }
+                return { area: w, analysis: `Development area identified in ${w}` };
+              });
+            }
+            
             return {
               id: assessment.id,
               assessment_id: assessment.assessment_id,
@@ -138,8 +173,8 @@ export default function CandidateReport() {
               percentage,
               completed_at: assessment.completed_at,
               category_scores: detailedResult?.category_scores || {},
-              strengths: detailedResult?.strengths || [],
-              weaknesses: detailedResult?.weaknesses || [],
+              strengths: strengthsList,
+              weaknesses: weaknessesList,
               recommendations: detailedResult?.recommendations || [],
               development_plan: detailedResult?.development_plan || {},
               interpretations: detailedResult?.interpretations || {},
@@ -148,21 +183,23 @@ export default function CandidateReport() {
             };
           });
 
+          console.log("Formatted assessments:", formattedAssessments);
           setAssessments(formattedAssessments);
           
           // Select the most recent assessment
           if (formattedAssessments.length > 0) {
             const mostRecent = formattedAssessments[0];
+            console.log("Selected most recent:", mostRecent);
             setSelectedAssessment(mostRecent);
             
-            // Set the detailed data directly from the database
+            // Set the detailed data
             setCategoryScores(mostRecent.category_scores || {});
             setStrengths(mostRecent.strengths || []);
             setWeaknesses(mostRecent.weaknesses || []);
             setRecommendations(mostRecent.recommendations || []);
             setDevelopmentPlan(mostRecent.development_plan || {});
             setInterpretations(mostRecent.interpretations || {});
-            setExecutiveSummary(mostRecent.executive_summary || '');
+            setExecutiveSummary(mostRecent.executive_summary || mostRecent.interpretations?.summary || '');
             setAssessmentType(mostRecent.type);
           }
         } else {
@@ -284,7 +321,7 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* Executive Summary - Use data from database, not regenerated */}
+        {/* Executive Summary */}
         {executiveSummary && (
           <div style={styles.summaryCard}>
             <div style={styles.summaryHeader}>
@@ -314,7 +351,7 @@ export default function CandidateReport() {
                     <th style={styles.th}>Score</th>
                     <th style={styles.th}>Percentage</th>
                     <th style={styles.th}>Grade</th>
-                    <th style={styles.th}>Assessment</th>
+                    <th style={styles.th}>Analysis</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -323,21 +360,29 @@ export default function CandidateReport() {
                     
                     // Determine row background color based on percentage
                     let rowColor = '#ffffff';
+                    let analysisText = '';
+                    
                     if (data.percentage >= 80) {
                       rowColor = '#f0fff4'; // Light green
-                    } else if (data.percentage >= 60) {
+                      analysisText = `Strong performance (${data.percentage}%). Exceeds 80% target.`;
+                    } else if (data.percentage >= 70) {
                       rowColor = '#fff8e1'; // Light amber
-                    } else if (data.percentage >= 40) {
+                      analysisText = `Good performance (${data.percentage}%). Close to 80% target, minor improvements needed.`;
+                    } else if (data.percentage >= 60) {
                       rowColor = '#fff3e0'; // Light orange
+                      analysisText = `Developing (${data.percentage}%). Needs focused attention to reach 80% target.`;
+                    } else if (data.percentage >= 50) {
+                      rowColor = '#ffebee'; // Light red
+                      analysisText = `Below target (${data.percentage}%). Significant improvement required to reach 80%.`;
                     } else {
                       rowColor = '#ffebee'; // Light red
+                      analysisText = `Critical gap (${data.percentage}%). Intensive development needed to reach 80%.`;
                     }
                     
                     // Progress bar color
                     let progressColor = '';
                     if (data.percentage >= 80) progressColor = '#4caf50';
                     else if (data.percentage >= 60) progressColor = '#ff9800';
-                    else if (data.percentage >= 40) progressColor = '#ff5722';
                     else progressColor = '#f44336';
                     
                     return (
@@ -347,7 +392,7 @@ export default function CandidateReport() {
                         </td>
                         <td style={styles.td}>
                           <span style={{ fontWeight: 600, color: grade.color }}>
-                            {data.score}/{data.maxPossible}
+                            {data.score || data.total}/{data.maxPossible}
                           </span>
                         </td>
                         <td style={styles.td}>
@@ -395,7 +440,7 @@ export default function CandidateReport() {
                             fontSize: '13px',
                             fontWeight: 500
                           }}>
-                            {grade.description}
+                            {analysisText}
                           </span>
                         </td>
                       </tr>
@@ -407,20 +452,23 @@ export default function CandidateReport() {
           </div>
         )}
 
-        {/* Strengths & Weaknesses - Use data from database */}
+        {/* Strengths & Weaknesses */}
         <div style={styles.grid2}>
           {/* Strengths Card */}
           <div style={styles.strengthCard}>
             <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #2E7D32, #1B5E20)'}}>
               <span style={styles.cardIcon}>🌟</span>
-              <h3 style={styles.cardHeaderTitle}>Key Strengths</h3>
+              <h3 style={styles.cardHeaderTitle}>Key Strengths (Above 80%)</h3>
             </div>
             <div style={styles.cardContent}>
-              {current.strengths && current.strengths.length > 0 ? (
-                current.strengths.map((s, i) => {
-                  const area = typeof s === 'string' ? s : s.area || s;
-                  const percentage = typeof s === 'object' ? s.percentage : 
-                                    current.category_scores[area]?.percentage;
+              {strengths && strengths.length > 0 ? (
+                strengths.map((s, i) => {
+                  const area = s.area || s;
+                  const percentage = s.percentage || categoryScores[area]?.percentage;
+                  const score = s.score || categoryScores[area]?.score;
+                  const maxPossible = s.maxPossible || categoryScores[area]?.maxPossible;
+                  const analysis = s.analysis || `Strong performance in ${area} (${percentage}%). Exceeds 80% target.`;
+                  
                   return (
                     <div key={i} style={styles.strengthItem}>
                       <div style={styles.strengthTitle}>
@@ -428,16 +476,16 @@ export default function CandidateReport() {
                         <span style={styles.strengthName}>{area}</span>
                         {percentage && (
                           <span style={{...styles.percentageBadge, background: '#E8F5E9', color: '#2E7D32'}}>
-                            {percentage}%
+                            {score}/{maxPossible} ({percentage}%)
                           </span>
                         )}
                       </div>
-                      <p style={styles.strengthComment}>{getStrengthComment(area, percentage, current.strengths, current.type)}</p>
+                      <p style={styles.strengthComment}>{analysis}</p>
                     </div>
                   );
                 })
               ) : (
-                <p style={styles.emptyText}>No specific strengths identified in this assessment</p>
+                <p style={styles.emptyText}>No strengths above 80% identified in this assessment</p>
               )}
             </div>
           </div>
@@ -446,14 +494,18 @@ export default function CandidateReport() {
           <div style={styles.weaknessCard}>
             <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #C62828, #8B0000)'}}>
               <span style={styles.cardIcon}>🎯</span>
-              <h3 style={styles.cardHeaderTitle}>Development Areas</h3>
+              <h3 style={styles.cardHeaderTitle}>Development Areas (Below 80%)</h3>
             </div>
             <div style={styles.cardContent}>
-              {current.weaknesses && current.weaknesses.length > 0 ? (
-                current.weaknesses.map((w, i) => {
-                  const area = typeof w === 'string' ? w : w.area || w;
-                  const percentage = typeof w === 'object' ? w.percentage : 
-                                    current.category_scores[area]?.percentage;
+              {weaknesses && weaknesses.length > 0 ? (
+                weaknesses.map((w, i) => {
+                  const area = w.area || w;
+                  const percentage = w.percentage || categoryScores[area]?.percentage;
+                  const score = w.score || categoryScores[area]?.score;
+                  const maxPossible = w.maxPossible || categoryScores[area]?.maxPossible;
+                  const gap = maxPossible ? Math.round((maxPossible * 0.8) - score) : null;
+                  const analysis = w.analysis || `Needs improvement in ${area} (${percentage}%). Below 80% target.`;
+                  
                   return (
                     <div key={i} style={styles.weaknessItem}>
                       <div style={styles.weaknessTitle}>
@@ -461,23 +513,28 @@ export default function CandidateReport() {
                         <span style={styles.weaknessName}>{area}</span>
                         {percentage && (
                           <span style={{...styles.percentageBadge, background: '#FFEBEE', color: '#C62828'}}>
-                            {percentage}%
+                            {score}/{maxPossible} ({percentage}%)
                           </span>
                         )}
                       </div>
-                      <p style={styles.weaknessComment}>{getWeaknessComment(area, percentage, current.weaknesses, current.type)}</p>
+                      <p style={styles.weaknessComment}>{analysis}</p>
+                      {gap && (
+                        <div style={styles.improvementPlan}>
+                          <strong>Improvement target:</strong> Need {gap} more point{gap !== 1 ? 's' : ''} to reach 80% ({Math.round(maxPossible * 0.8)}/{maxPossible}).
+                        </div>
+                      )}
                     </div>
                   );
                 })
               ) : (
-                <p style={styles.emptyText}>No significant development areas identified</p>
+                <p style={styles.emptyText}>No areas below 80% identified - all categories are at or above target!</p>
               )}
             </div>
           </div>
         </div>
 
         {/* Recommendations Card */}
-        {current.recommendations && current.recommendations.length > 0 && (
+        {recommendations && recommendations.length > 0 && (
           <div style={styles.recommendationsCard}>
             <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #1565C0, #0D47A1)'}}>
               <span style={styles.cardIcon}>💡</span>
@@ -485,7 +542,7 @@ export default function CandidateReport() {
             </div>
             <div style={styles.cardContent}>
               <ul style={styles.recommendationsList}>
-                {current.recommendations.map((rec, i) => (
+                {recommendations.map((rec, i) => (
                   <li key={i} style={styles.recommendationItem}>
                     <span style={styles.recommendationBullet}>→</span>
                     <span>{rec}</span>
@@ -497,7 +554,7 @@ export default function CandidateReport() {
         )}
 
         {/* Development Plan */}
-        {current.development_plan && Object.keys(current.development_plan).length > 0 && (
+        {developmentPlan && Object.keys(developmentPlan).length > 0 && (
           <div style={styles.planCard}>
             <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #6A1B9A, #4A0072)'}}>
               <span style={styles.cardIcon}>📅</span>
@@ -505,11 +562,11 @@ export default function CandidateReport() {
             </div>
             <div style={styles.cardContent}>
               <div style={styles.planGrid}>
-                {current.development_plan.immediate && current.development_plan.immediate.length > 0 && (
+                {developmentPlan.immediate && developmentPlan.immediate.length > 0 && (
                   <div style={styles.planPhase}>
                     <h4 style={styles.phaseTitle}>⚡ Immediate (0-30 days)</h4>
                     <ul style={styles.planList}>
-                      {current.development_plan.immediate.map((item, i) => (
+                      {developmentPlan.immediate.map((item, i) => (
                         <li key={i} style={styles.planListItem}>
                           <strong>{item.area}:</strong> {item.recommendation}
                           {item.priority && <span style={styles.priorityTag}> {item.priority} Priority</span>}
@@ -518,11 +575,11 @@ export default function CandidateReport() {
                     </ul>
                   </div>
                 )}
-                {current.development_plan.shortTerm && current.development_plan.shortTerm.length > 0 && (
+                {developmentPlan.shortTerm && developmentPlan.shortTerm.length > 0 && (
                   <div style={styles.planPhase}>
                     <h4 style={styles.phaseTitle}>📈 Short-term (30-60 days)</h4>
                     <ul style={styles.planList}>
-                      {current.development_plan.shortTerm.map((item, i) => (
+                      {developmentPlan.shortTerm.map((item, i) => (
                         <li key={i} style={styles.planListItem}>
                           <strong>{item.area}:</strong> {item.recommendation}
                         </li>
@@ -530,11 +587,11 @@ export default function CandidateReport() {
                     </ul>
                   </div>
                 )}
-                {current.development_plan.longTerm && current.development_plan.longTerm.length > 0 && (
+                {developmentPlan.longTerm && developmentPlan.longTerm.length > 0 && (
                   <div style={styles.planPhase}>
                     <h4 style={styles.phaseTitle}>🚀 Long-term (60-90+ days)</h4>
                     <ul style={styles.planList}>
-                      {current.development_plan.longTerm.map((item, i) => (
+                      {developmentPlan.longTerm.map((item, i) => (
                         <li key={i} style={styles.planListItem}>
                           <strong>{item.area}:</strong> {item.recommendation}
                         </li>
@@ -942,6 +999,16 @@ const styles = {
     color: '#555',
     lineHeight: '1.6',
     fontStyle: 'italic'
+  },
+  improvementPlan: {
+    marginTop: '10px',
+    padding: '10px',
+    background: '#fff3e0',
+    borderRadius: '6px',
+    fontSize: '12px',
+    color: '#e65100',
+    lineHeight: '1.5',
+    borderLeft: '3px solid #ff9800'
   },
   emptyText: {
     color: '#999',
