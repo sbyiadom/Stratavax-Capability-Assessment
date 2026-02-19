@@ -340,3 +340,110 @@ export const generateDevelopmentPlan = (weaknesses, strengths, assessmentType = 
   
   return plan;
 };
+
+// ========== MAIN EXPORT FUNCTION ==========
+// This is the function that your API route is trying to import
+export const generatePersonalizedReport = (userId, assessmentType, responses, candidateName) => {
+  console.log(`📊 Generating personalized report for ${candidateName} (${userId}) on ${assessmentType} assessment`);
+  
+  // Create a simple report structure
+  // In a real implementation, you would process the responses and generate meaningful insights
+  
+  // Calculate category scores from responses
+  const categoryScores = {};
+  const strengths = [];
+  const weaknesses = [];
+  let totalScore = 0;
+  
+  responses.forEach(response => {
+    const section = response.unique_questions?.section || 'General';
+    const score = response.unique_answers?.score || 0;
+    totalScore += score;
+    
+    if (!categoryScores[section]) {
+      categoryScores[section] = {
+        total: 0,
+        count: 0,
+        maxPossible: 0,
+        percentage: 0
+      };
+    }
+    
+    categoryScores[section].total += score;
+    categoryScores[section].count += 1;
+    categoryScores[section].maxPossible += 5;
+  });
+  
+  // Calculate percentages
+  Object.keys(categoryScores).forEach(section => {
+    const data = categoryScores[section];
+    data.percentage = Math.round((data.total / data.maxPossible) * 100);
+    
+    if (data.percentage >= 70) {
+      strengths.push({
+        area: section,
+        percentage: data.percentage,
+        score: data.total,
+        maxPossible: data.maxPossible
+      });
+    } else if (data.percentage <= 40) {
+      weaknesses.push({
+        area: section,
+        percentage: data.percentage,
+        score: data.total,
+        maxPossible: data.maxPossible
+      });
+    }
+  });
+  
+  const maxScore = responses.length * 5;
+  const percentageScore = Math.round((totalScore / maxScore) * 100);
+  const grade = getGradeInfo(percentageScore);
+  const rating = getOverallRating(percentageScore, strengths, weaknesses, assessmentType);
+  
+  // Generate executive summary
+  const executiveSummary = generateExecutiveSummary(
+    candidateName,
+    totalScore,
+    maxScore,
+    percentageScore,
+    grade.grade,
+    rating,
+    strengths,
+    weaknesses,
+    Object.keys(categoryScores).length,
+    assessmentType
+  );
+  
+  // Generate recommendations
+  const recommendationsList = generateRecommendations(weaknesses, assessmentType);
+  
+  // Generate development plan
+  const developmentPlan = generateDevelopmentPlan(weaknesses, strengths, assessmentType);
+  
+  // Return the complete report
+  return {
+    userId,
+    assessmentType,
+    candidateName,
+    totalScore,
+    maxScore,
+    percentageScore,
+    grade: grade.grade,
+    gradeInfo: grade,
+    rating,
+    categoryScores,
+    strengths,
+    weaknesses,
+    executiveSummary,
+    recommendations: recommendationsList,
+    developmentPlan,
+    overallProfile: rating.message,
+    overallTraits: [grade.description, rating.title],
+    interpretations: {
+      classification: grade.description,
+      summary: executiveSummary,
+      overallProfile: rating.message
+    }
+  };
+};
