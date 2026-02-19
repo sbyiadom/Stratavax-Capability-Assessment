@@ -255,6 +255,67 @@ export default function CandidateReport() {
 
   const handleBack = () => router.push('/supervisor');
 
+  // Generate actionable recommendations based on low-scoring categories
+  const generateActionableRecommendations = () => {
+    const recommendations = [];
+    
+    if (categoryScores['Cognitive Ability']?.percentage < 60) {
+      recommendations.push({
+        area: 'Cognitive Ability',
+        score: categoryScores['Cognitive Ability'].percentage,
+        action: 'Provide structured problem-solving frameworks and analytical thinking exercises. Consider assigning a mentor for complex tasks.',
+        resources: 'Recommended: Critical thinking courses, case study analysis, puzzle-based learning platforms.'
+      });
+    }
+    
+    if (categoryScores['Cultural & Attitudinal Fit']?.percentage < 60) {
+      recommendations.push({
+        area: 'Cultural Fit',
+        score: categoryScores['Cultural & Attitudinal Fit'].percentage,
+        action: 'Schedule regular feedback sessions to discuss cultural alignment. Pair with a culture champion for guidance.',
+        resources: 'Recommended: Company values workshop, team-building activities, shadowing programs.'
+      });
+    }
+    
+    if (categoryScores['Emotional Intelligence']?.percentage < 60) {
+      recommendations.push({
+        area: 'Emotional Intelligence',
+        score: categoryScores['Emotional Intelligence'].percentage,
+        action: 'Provide EI training focusing on self-awareness and empathy. Encourage regular self-reflection and feedback seeking.',
+        resources: 'Recommended: EI workshops, mindfulness training, 360-degree feedback sessions.'
+      });
+    }
+    
+    if (categoryScores['Technical & Manufacturing']?.percentage < 60) {
+      recommendations.push({
+        area: 'Technical Skills',
+        score: categoryScores['Technical & Manufacturing'].percentage,
+        action: 'Enroll in technical training programs. Provide hands-on practice with supervision.',
+        resources: 'Recommended: Technical certification courses, on-the-job training, shadowing experienced technicians.'
+      });
+    }
+    
+    if (categoryScores['Communication']?.percentage < 60) {
+      recommendations.push({
+        area: 'Communication',
+        score: categoryScores['Communication'].percentage,
+        action: 'Provide communication skills training. Practice presentations and written communication with feedback.',
+        resources: 'Recommended: Business writing courses, presentation skills workshop, Toastmasters.'
+      });
+    }
+    
+    if (categoryScores['Problem-Solving']?.percentage < 60) {
+      recommendations.push({
+        area: 'Problem-Solving',
+        score: categoryScores['Problem-Solving'].percentage,
+        action: 'Provide structured problem-solving frameworks. Practice with real-world scenarios and case studies.',
+        resources: 'Recommended: Root cause analysis training, design thinking workshops, simulation exercises.'
+      });
+    }
+    
+    return recommendations;
+  };
+
   if (!isSupervisor || loading) {
     return (
       <div style={styles.loadingContainer}>
@@ -287,6 +348,7 @@ export default function CandidateReport() {
   const current = selectedAssessment || assessments[0];
   const overallGrade = getGradeInfo(current.percentage);
   const overallRating = getOverallRating(current.percentage, current.strengths, current.weaknesses, current.type);
+  const actionableRecommendations = generateActionableRecommendations();
 
   return (
     <AppLayout background="/images/preassessmentbg.jpg">
@@ -573,93 +635,45 @@ export default function CandidateReport() {
           </div>
         )}
 
-        {/* Strengths & Weaknesses */}
-        <div style={styles.grid2}>
-          {/* Strengths Card */}
-          <div style={styles.strengthCard}>
-            <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #2E7D32, #1B5E20)'}}>
-              <span style={styles.cardIcon}>🌟</span>
-              <h3 style={styles.cardHeaderTitle}>Key Strengths (Above 80%)</h3>
-            </div>
-            <div style={styles.cardContent}>
-              {strengths && strengths.length > 0 ? (
-                strengths.map((s, i) => {
-                  const area = s.area || s;
-                  const percentage = s.percentage || categoryScores[area]?.percentage;
-                  const score = s.score || categoryScores[area]?.score;
-                  const maxPossible = s.maxPossible || categoryScores[area]?.maxPossible;
-                  const analysis = s.analysis || `Strong performance in ${area} (${percentage}%). Exceeds 80% target.`;
-                  
-                  return (
-                    <div key={i} style={styles.strengthItem}>
-                      <div style={styles.strengthTitle}>
-                        <span style={styles.strengthIcon}>✓</span>
-                        <span style={styles.strengthName}>{area}</span>
-                        {percentage && (
-                          <span style={{...styles.percentageBadge, background: '#E8F5E9', color: '#2E7D32'}}>
-                            {score}/{maxPossible} ({percentage}%)
-                          </span>
-                        )}
-                      </div>
-                      <p style={styles.strengthComment}>{analysis}</p>
+        {/* Actionable Recommendations Section - REPLACES Strengths & Weaknesses Cards */}
+        {actionableRecommendations.length > 0 && (
+          <div style={styles.recommendationsSection}>
+            <h2 style={styles.recommendationsTitle}>📋 Recommendations for Improvement</h2>
+            <p style={styles.recommendationsSubtitle}>
+              Based on areas scoring below 60%, here are specific actions to help this candidate improve:
+            </p>
+            
+            <div style={styles.recommendationsGrid}>
+              {actionableRecommendations.map((rec, index) => (
+                <div key={index} style={styles.recommendationCard}>
+                  <div style={styles.recommendationHeader}>
+                    <span style={styles.recommendationArea}>{rec.area}</span>
+                    <span style={{
+                      ...styles.recommendationScore,
+                      background: rec.score < 50 ? '#ffebee' : '#fff3e0',
+                      color: rec.score < 50 ? '#c62828' : '#e65100'
+                    }}>
+                      {rec.score}%
+                    </span>
+                  </div>
+                  <div style={styles.recommendationContent}>
+                    <p style={styles.recommendationAction}>{rec.action}</p>
+                    <div style={styles.recommendationResources}>
+                      <strong>Resources:</strong> {rec.resources}
                     </div>
-                  );
-                })
-              ) : (
-                <p style={styles.emptyText}>No strengths above 80% identified in this assessment</p>
-              )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
+        )}
 
-          {/* Weaknesses Card */}
-          <div style={styles.weaknessCard}>
-            <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #C62828, #8B0000)'}}>
-              <span style={styles.cardIcon}>🎯</span>
-              <h3 style={styles.cardHeaderTitle}>Development Areas (Below 80%)</h3>
-            </div>
-            <div style={styles.cardContent}>
-              {weaknesses && weaknesses.length > 0 ? (
-                weaknesses.map((w, i) => {
-                  const area = w.area || w;
-                  const percentage = w.percentage || categoryScores[area]?.percentage;
-                  const score = w.score || categoryScores[area]?.score;
-                  const maxPossible = w.maxPossible || categoryScores[area]?.maxPossible;
-                  const gap = maxPossible ? Math.round((maxPossible * 0.8) - score) : null;
-                  const analysis = w.analysis || `Needs improvement in ${area} (${percentage}%). Below 80% target.`;
-                  
-                  return (
-                    <div key={i} style={styles.weaknessItem}>
-                      <div style={styles.weaknessTitle}>
-                        <span style={styles.weaknessIcon}>!</span>
-                        <span style={styles.weaknessName}>{area}</span>
-                        {percentage && (
-                          <span style={{...styles.percentageBadge, background: '#FFEBEE', color: '#C62828'}}>
-                            {score}/{maxPossible} ({percentage}%)
-                          </span>
-                        )}
-                      </div>
-                      <p style={styles.weaknessComment}>{analysis}</p>
-                      {gap && (
-                        <div style={styles.improvementPlan}>
-                          <strong>Improvement target:</strong> Need {gap} more point{gap !== 1 ? 's' : ''} to reach 80% ({Math.round(maxPossible * 0.8)}/{maxPossible}).
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              ) : (
-                <p style={styles.emptyText}>No areas below 80% identified - all categories are at or above target!</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Recommendations Card */}
+        {/* Recommendations Card - Keep existing if available */}
         {recommendations && recommendations.length > 0 && (
           <div style={styles.recommendationsCard}>
             <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #1565C0, #0D47A1)'}}>
               <span style={styles.cardIcon}>💡</span>
-              <h3 style={styles.cardHeaderTitle}>Recommendations</h3>
+              <h3 style={styles.cardHeaderTitle}>Additional Recommendations</h3>
             </div>
             <div style={styles.cardContent}>
               <ul style={styles.recommendationsList}>
@@ -998,25 +1012,79 @@ const styles = {
     borderBottom: '1px solid #e0e0e0',
     color: '#555'
   },
-  grid2: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '25px',
+  // New styles for recommendations section
+  recommendationsSection: {
+    background: 'white',
+    borderRadius: '16px',
+    padding: '30px',
+    marginTop: '30px',
+    marginBottom: '30px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    border: '1px solid #f0f0f0'
+  },
+  recommendationsTitle: {
+    fontSize: '24px',
+    fontWeight: 700,
+    color: '#333',
+    marginBottom: '10px'
+  },
+  recommendationsSubtitle: {
+    fontSize: '16px',
+    color: '#666',
     marginBottom: '30px'
   },
-  strengthCard: {
-    background: 'white',
-    borderRadius: '16px',
-    overflow: 'hidden',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    border: '1px solid #f0f0f0'
+  recommendationsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
+    gap: '20px'
   },
-  weaknessCard: {
-    background: 'white',
-    borderRadius: '16px',
+  recommendationCard: {
+    background: '#f8f9fa',
+    borderRadius: '12px',
     overflow: 'hidden',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    border: '1px solid #f0f0f0'
+    border: '1px solid #e0e0e0',
+    transition: 'transform 0.2s',
+    ':hover': {
+      transform: 'translateY(-2px)',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+    }
+  },
+  recommendationHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '15px 20px',
+    background: '#ffffff',
+    borderBottom: '2px solid #1565c0'
+  },
+  recommendationArea: {
+    fontSize: '18px',
+    fontWeight: 700,
+    color: '#1565c0'
+  },
+  recommendationScore: {
+    padding: '4px 12px',
+    borderRadius: '20px',
+    fontSize: '14px',
+    fontWeight: 600
+  },
+  recommendationContent: {
+    padding: '20px'
+  },
+  recommendationAction: {
+    fontSize: '14px',
+    color: '#333',
+    lineHeight: '1.6',
+    marginBottom: '15px'
+  },
+  recommendationResources: {
+    fontSize: '13px',
+    color: '#666',
+    lineHeight: '1.5',
+    padding: '10px',
+    background: '#ffffff',
+    borderRadius: '8px',
+    border: '1px solid #e0e0e0'
   },
   recommendationsCard: {
     background: 'white',
@@ -1025,118 +1093,6 @@ const styles = {
     marginBottom: '30px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
     border: '1px solid #f0f0f0'
-  },
-  planCard: {
-    background: 'white',
-    borderRadius: '16px',
-    overflow: 'hidden',
-    marginBottom: '30px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    border: '1px solid #f0f0f0'
-  },
-  cardHeader: {
-    padding: '20px',
-    color: 'white',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px'
-  },
-  cardIcon: {
-    fontSize: '28px'
-  },
-  cardHeaderTitle: {
-    margin: 0,
-    fontSize: '18px',
-    fontWeight: 600
-  },
-  cardContent: {
-    padding: '25px'
-  },
-  strengthItem: {
-    marginBottom: '20px',
-    padding: '15px',
-    background: '#f8f9fa',
-    borderRadius: '12px',
-    border: '1px solid #e0e0e0'
-  },
-  strengthTitle: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    marginBottom: '10px',
-    flexWrap: 'wrap'
-  },
-  strengthIcon: {
-    color: '#2E7D32',
-    fontSize: '16px',
-    fontWeight: 700
-  },
-  strengthName: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#333'
-  },
-  percentageBadge: {
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '12px',
-    fontWeight: 600,
-    marginLeft: 'auto'
-  },
-  strengthComment: {
-    margin: 0,
-    fontSize: '14px',
-    color: '#555',
-    lineHeight: '1.6',
-    fontStyle: 'italic'
-  },
-  weaknessItem: {
-    marginBottom: '20px',
-    padding: '15px',
-    background: '#f8f9fa',
-    borderRadius: '12px',
-    border: '1px solid #e0e0e0'
-  },
-  weaknessTitle: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    marginBottom: '10px',
-    flexWrap: 'wrap'
-  },
-  weaknessIcon: {
-    color: '#C62828',
-    fontSize: '16px',
-    fontWeight: 700
-  },
-  weaknessName: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#333'
-  },
-  weaknessComment: {
-    margin: 0,
-    fontSize: '14px',
-    color: '#555',
-    lineHeight: '1.6',
-    fontStyle: 'italic'
-  },
-  improvementPlan: {
-    marginTop: '10px',
-    padding: '10px',
-    background: '#fff3e0',
-    borderRadius: '6px',
-    fontSize: '12px',
-    color: '#e65100',
-    lineHeight: '1.5',
-    borderLeft: '3px solid #ff9800'
-  },
-  emptyText: {
-    color: '#999',
-    fontSize: '14px',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    padding: '20px'
   },
   recommendationsList: {
     margin: 0,
@@ -1222,7 +1178,7 @@ const styles = {
       boxShadow: '0 5px 15px rgba(21, 101, 192, 0.3)'
     }
   },
-  // New styles for interpretation section
+  // Keep all existing styles below...
   interpretationCard: {
     background: 'white',
     borderRadius: '16px',
@@ -1409,5 +1365,23 @@ const styles = {
     color: '#555',
     lineHeight: '1.6',
     margin: 0
+  },
+  cardHeader: {
+    padding: '20px',
+    color: 'white',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px'
+  },
+  cardIcon: {
+    fontSize: '28px'
+  },
+  cardHeaderTitle: {
+    margin: 0,
+    fontSize: '18px',
+    fontWeight: 600
+  },
+  cardContent: {
+    padding: '25px'
   }
 };
