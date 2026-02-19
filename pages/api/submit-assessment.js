@@ -256,7 +256,7 @@ export default async function handler(req, res) {
       summary: `Overall performance: ${percentageScore}% - ${classification}`
     };
 
-    // Prepare the data for assessment_results - matching your exact table structure
+    // Prepare the data for assessment_results - REMOVED percentage_score since it's a generated column
     const resultData = {
       user_id: userId,
       assessment_id: assessmentId,
@@ -264,7 +264,7 @@ export default async function handler(req, res) {
       assessment_type_id: assessment?.assessment_type_id || null,
       total_score: totalScore,
       max_score: maxScore,
-      percentage_score: percentageScore,
+      // percentage_score is REMOVED - it's a generated column
       category_scores: categoryScores,
       interpretations: interpretationsObj,
       strengths: strengthsArray,
@@ -275,7 +275,7 @@ export default async function handler(req, res) {
       completed_at: new Date().toISOString()
     };
 
-    console.log("📦 Inserting into assessment_results with data:", JSON.stringify(resultData, null, 2));
+    console.log("📦 Inserting into assessment_results...");
 
     // Save to assessment_results
     const { data: insertedData, error: resultsError } = await serviceClient
