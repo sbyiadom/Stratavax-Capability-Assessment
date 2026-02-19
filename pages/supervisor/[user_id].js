@@ -243,7 +243,7 @@ export default function CandidateReport() {
   const overallRating = getOverallRating(current.percentage, current.strengths, current.weaknesses, current.type);
 
   return (
-    <AppLayout>
+    <AppLayout background="/images/preassessmentbg.jpg">
       <div style={styles.container}>
         {/* Header */}
         <div style={styles.header}>
