@@ -18,6 +18,7 @@ export default function SupervisorDashboard() {
   });
   const [resetInProgress, setResetInProgress] = useState(null);
   const [expandedCandidate, setExpandedCandidate] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Check supervisor authentication
   useEffect(() => {
@@ -33,6 +34,10 @@ export default function SupervisorDashboard() {
           const session = JSON.parse(supervisorSession);
           if (session.loggedIn) {
             setIsSupervisor(true);
+            // Check if user is admin
+            if (session.role === 'admin') {
+              setIsAdmin(true);
+            }
           } else {
             router.push("/supervisor-login");
           }
@@ -286,8 +291,8 @@ export default function SupervisorDashboard() {
                     const isExpanded = expandedCandidate === candidate.user_id;
 
                     return (
-                      <>
-                        <tr key={candidate.user_id} style={styles.tableRow}>
+                      <React.Fragment key={candidate.user_id}>
+                        <tr style={styles.tableRow}>
                           <td style={styles.tableCell}>
                             <div style={styles.candidateName}>{candidate.full_name}</div>
                             <div style={styles.candidateId}>ID: {candidate.user_id.substring(0, 8)}...</div>
@@ -449,7 +454,7 @@ export default function SupervisorDashboard() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
@@ -458,12 +463,14 @@ export default function SupervisorDashboard() {
           )}
         </div>
 
-        {/* Admin Link */}
-        <div style={styles.adminLink}>
-          <Link href="/admin/manage-supervisors" legacyBehavior>
-            <a style={styles.adminLinkText}>👥 Manage Supervisors</a>
-          </Link>
-        </div>
+        {/* Admin Link - Only show if user is admin */}
+        {isAdmin && (
+          <div style={styles.adminLink}>
+            <Link href="/admin" legacyBehavior>
+              <a style={styles.adminLinkText}>👥 Admin Dashboard</a>
+            </Link>
+          </div>
+        )}
       </div>
 
       <style jsx>{`
