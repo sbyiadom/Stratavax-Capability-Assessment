@@ -17,61 +17,52 @@ export default function CandidateDashboard() {
   const [hoveredCard, setHoveredCard] = useState(null);
   const [assessmentTypes, setAssessmentTypes] = useState([]);
 
-  // ===== BACKGROUND IMAGES FOR EACH ASSESSMENT TYPE =====
-  const assessmentBackgrounds = {
+  // ===== PROFESSIONAL COLORS FOR EACH ASSESSMENT TYPE =====
+  const assessmentColors = {
     general: {
-      gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      image: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1920&q=80',
-      pattern: 'https://www.transparenttextures.com/patterns/cubes.png',
-      color: '#667eea'
+      gradient: 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)',
+      color: '#2563eb',
+      light: '#dbeafe'
     },
     behavioral: {
-      gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-      image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1920&q=80',
-      pattern: 'https://www.transparenttextures.com/patterns/always-grey.png',
-      color: '#f5576c'
+      gradient: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)',
+      color: '#7c3aed',
+      light: '#ede9fe'
     },
     cognitive: {
-      gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-      image: 'https://images.unsplash.com/photo-1456406644174-8ddd4cd52a06?auto=format&fit=crop&w=1920&q=80',
-      pattern: 'https://www.transparenttextures.com/patterns/stardust.png',
-      color: '#4facfe'
+      gradient: 'linear-gradient(135deg, #0891b2 0%, #0e7490 100%)',
+      color: '#0891b2',
+      light: '#cffafe'
     },
     cultural: {
-      gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-      image: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=1920&q=80',
-      pattern: 'https://www.transparenttextures.com/patterns/clean-gray-paper.png',
-      color: '#43e97b'
+      gradient: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+      color: '#059669',
+      light: '#d1fae5'
     },
     manufacturing: {
-      gradient: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
-      image: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
-      pattern: 'https://www.transparenttextures.com/patterns/industrial.png',
-      color: '#fa709a'
+      gradient: 'linear-gradient(135deg, #b45309 0%, #92400e 100%)',
+      color: '#b45309',
+      light: '#ffedd5'
     },
     leadership: {
-      gradient: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
-      image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1920&q=80',
-      pattern: 'https://www.transparenttextures.com/patterns/dark-mosaic.png',
-      color: '#ff9a9e'
+      gradient: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+      color: '#8b5cf6',
+      light: '#ede9fe'
     },
     personality: {
-      gradient: 'linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)',
-      image: 'https://images.unsplash.com/photo-1491438590914-bc09fcaaf77a?auto=format&fit=crop&w=1920&q=80',
-      pattern: 'https://www.transparenttextures.com/patterns/clean-gray-paper.png',
-      color: '#4CAF50'
+      gradient: 'linear-gradient(135deg, #0d9488 0%, #115e59 100%)',
+      color: '#0d9488',
+      light: '#ccfbf1'
     },
     performance: {
-      gradient: 'linear-gradient(135deg, #FF9800 0%, #F57C00 100%)',
-      image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1920&q=80',
-      pattern: 'https://www.transparenttextures.com/patterns/clean-gray-paper.png',
-      color: '#FF9800'
+      gradient: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+      color: '#ea580c',
+      light: '#ffedd5'
     },
     technical: {
-      gradient: 'linear-gradient(135deg, #F44336 0%, #C62828 100%)',
-      image: 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?auto=format&fit=crop&w=1920&q=80',
-      pattern: 'https://www.transparenttextures.com/patterns/industrial.png',
-      color: '#F44336'
+      gradient: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
+      color: '#dc2626',
+      light: '#fee2e2'
     }
   };
 
@@ -102,9 +93,9 @@ export default function CandidateDashboard() {
           description: type.description || `${type.name} assessment`,
           longDescription: type.description || `Comprehensive assessment of your ${type.name.toLowerCase()} capabilities.`,
           icon: type.icon || '📋',
-          iconBg: `linear-gradient(135deg, ${type.gradient_start || '#667eea'}, ${type.gradient_end || '#764ba2'})`,
-          color: type.color || '#667eea',
-          lightColor: `${type.color}20` || 'rgba(102, 126, 234, 0.1)',
+          iconBg: `linear-gradient(135deg, ${type.gradient_start || '#2563eb'}, ${type.gradient_end || '#1e40af'})`,
+          color: type.color || '#2563eb',
+          lightColor: `${type.color}20` || '#dbeafe',
           duration: type.time_limit_minutes || 60,
           questions: type.question_count || 100,
           passing: 80,
@@ -229,10 +220,15 @@ export default function CandidateDashboard() {
 
   return (
     <AppLayout>
-      {/* Simple Header */}
+      {/* Professional Header with Gradient Background */}
       <div style={styles.header}>
+        <div style={styles.headerOverlay} />
         <div style={styles.headerContent}>
-          <h1 style={styles.headerTitle}>Stratavax Assessment</h1>
+          <div style={styles.headerLeft}>
+            <h1 style={styles.headerTitle}>STRATAVAX</h1>
+            <span style={styles.headerDivider}>|</span>
+            <span style={styles.headerSubtitle}>Assessment Portal</span>
+          </div>
           <button
             onClick={async () => {
               await supabase.auth.signOut();
@@ -240,12 +236,12 @@ export default function CandidateDashboard() {
             }}
             style={styles.logoutButton}
           >
-            Logout
+            Sign Out
           </button>
         </div>
       </div>
 
-      {/* Compact Welcome Section */}
+      {/* Welcome Section */}
       <div style={styles.welcomeSection}>
         <div style={styles.welcomeContent}>
           <h2 style={styles.welcomeTitle}>
@@ -269,6 +265,7 @@ export default function CandidateDashboard() {
           {assessmentTypes.map(tab => {
             const isActive = activeTab === tab.id;
             const hasAssessment = !!getAssessmentByType(tab.id);
+            const colors = assessmentColors[tab.id] || assessmentColors.general;
             
             return (
               <button
@@ -277,12 +274,13 @@ export default function CandidateDashboard() {
                 disabled={!hasAssessment}
                 style={{
                   ...styles.tabButton,
-                  background: isActive ? assessmentBackgrounds[tab.id]?.gradient || tab.iconBg : '#f5f5f5',
-                  color: isActive ? 'white' : '#666',
-                  opacity: hasAssessment ? 1 : 0.4
+                  background: isActive ? colors.gradient : '#f8fafc',
+                  color: isActive ? 'white' : '#334155',
+                  border: isActive ? 'none' : '1px solid #e2e8f0',
+                  opacity: hasAssessment ? 1 : 0.4,
+                  boxShadow: isActive ? `0 4px 12px ${colors.color}40` : 'none'
                 }}
               >
-                <span style={styles.tabIcon}>{tab.icon}</span>
                 <span style={styles.tabLabel}>{tab.shortLabel}</span>
               </button>
             );
@@ -293,12 +291,18 @@ export default function CandidateDashboard() {
         {activeAssessment ? (
           <div style={styles.card}>
             <div style={styles.cardHeader}>
-              <span style={styles.cardIcon}>{activeTypeConfig?.icon}</span>
               <div style={styles.cardInfo}>
                 <h3 style={styles.cardTitle}>{activeAssessment.title}</h3>
                 <div style={styles.cardMeta}>
-                  <span>⏱️ {activeTypeConfig?.duration || 60} mins</span>
-                  <span>📝 {activeTypeConfig?.questions || 100} questions</span>
+                  <span style={styles.metaItem}>
+                    <span style={styles.metaIcon}>⏱️</span> {activeTypeConfig?.duration || 60} minutes
+                  </span>
+                  <span style={styles.metaItem}>
+                    <span style={styles.metaIcon}>📋</span> {activeTypeConfig?.questions || 100} questions
+                  </span>
+                  <span style={styles.metaItem}>
+                    <span style={styles.metaIcon}>🎯</span> 80% passing
+                  </span>
                 </div>
               </div>
               <div style={styles.cardStatus}>
@@ -311,22 +315,33 @@ export default function CandidateDashboard() {
                     return (
                       <span style={{
                         ...styles.statusBadge,
-                        background: score >= 80 ? '#4caf5020' : '#ff980020',
-                        color: score >= 80 ? '#2e7d32' : '#ed6c02'
+                        background: score >= 80 ? '#dcfce7' : '#fff3cd',
+                        color: score >= 80 ? '#166534' : '#856404',
+                        border: score >= 80 ? '1px solid #86efac' : '1px solid #ffe69c'
                       }}>
-                        {score >= 80 ? '✓ Passed' : '⚠️ Review'} • {score}%
+                        {score >= 80 ? '✓ Passed' : '⚠️ Review Required'} • {score}%
                       </span>
                     );
                   } else if (inProgress) {
                     return (
-                      <span style={{...styles.statusBadge, background: '#1565c020', color: '#1565c0'}}>
-                        🕐 In Progress
+                      <span style={{
+                        ...styles.statusBadge,
+                        background: '#dbeafe',
+                        color: '#1e40af',
+                        border: '1px solid #93c5fd'
+                      }}>
+                        In Progress
                       </span>
                     );
                   } else {
                     return (
-                      <span style={{...styles.statusBadge, background: '#f5f5f5', color: '#666'}}>
-                        📝 Ready
+                      <span style={{
+                        ...styles.statusBadge,
+                        background: '#f1f5f9',
+                        color: '#475569',
+                        border: '1px solid #cbd5e1'
+                      }}>
+                        Ready to Start
                       </span>
                     );
                   }
@@ -335,9 +350,12 @@ export default function CandidateDashboard() {
             </div>
             <button
               onClick={() => router.push(`/assessment/${activeAssessment.id}`)}
-              style={styles.startButton}
+              style={{
+                ...styles.startButton,
+                background: assessmentColors[activeTab]?.gradient || assessmentColors.general.gradient
+              }}
             >
-              {isAssessmentInProgress(activeAssessment.id) ? 'Continue →' : 'Start →'}
+              {isAssessmentInProgress(activeAssessment.id) ? 'Continue Assessment' : 'Start Assessment'}
             </button>
           </div>
         ) : (
@@ -354,42 +372,55 @@ export default function CandidateDashboard() {
               const typeAssessment = getAssessmentByType(type.id);
               const isCompleted = typeAssessment ? isAssessmentCompleted(typeAssessment.id) : false;
               const isInProgress = typeAssessment ? isAssessmentInProgress(typeAssessment.id) : false;
+              const colors = assessmentColors[type.id] || assessmentColors.general;
               
-              let statusColor = '#999';
+              let statusColor = '#94a3b8';
               let statusText = 'Not Started';
+              let statusBg = '#f1f5f9';
               
               if (isCompleted) {
-                statusColor = '#2e7d32';
+                statusColor = '#166534';
+                statusBg = '#dcfce7';
                 statusText = 'Completed';
               } else if (isInProgress) {
-                statusColor = '#1565c0';
+                statusColor = '#1e40af';
+                statusBg = '#dbeafe';
                 statusText = 'In Progress';
               }
               
               return (
                 <div key={type.id} style={styles.progressItem}>
-                  <span style={styles.progressIcon}>{type.icon}</span>
-                  <span style={styles.progressName}>{type.shortLabel}</span>
-                  <span style={{...styles.progressStatus, color: statusColor}}>{statusText}</span>
+                  <div style={styles.progressItemLeft}>
+                    <div style={{
+                      ...styles.progressColorDot,
+                      background: colors.gradient
+                    }} />
+                    <span style={styles.progressName}>{type.shortLabel}</span>
+                  </div>
+                  <span style={{
+                    ...styles.progressStatus,
+                    background: statusBg,
+                    color: statusColor
+                  }}>{statusText}</span>
                 </div>
               );
             })}
           </div>
         </div>
 
-        {/* Guidelines Section - Kept exactly as you like it */}
+        {/* Guidelines Section - Professional Version */}
         <div style={styles.guidelinesWrapper}>
           <div style={styles.guidelinesBackground} />
           <div style={styles.guidelinesContent}>
             <div style={styles.guidelinesHeader}>
-              <span style={styles.guidelinesIcon}>📌</span>
-              <h3 style={styles.guidelinesTitle}>Important Guidelines</h3>
+              <span style={styles.guidelinesIcon}>📋</span>
+              <h3 style={styles.guidelinesTitle}>Assessment Guidelines</h3>
             </div>
             
             <div style={styles.guidelinesGrid}>
               <div style={styles.guidelineCard}>
                 <div style={styles.guidelineIconWrapper}>
-                  <span style={styles.guidelineIcon}>⏰</span>
+                  <span style={styles.guidelineIcon}>⏱️</span>
                 </div>
                 <div style={styles.guidelineTextWrapper}>
                   <h4 style={styles.guidelineTitle}>Timed Assessments</h4>
@@ -406,7 +437,7 @@ export default function CandidateDashboard() {
                 <div style={styles.guidelineTextWrapper}>
                   <h4 style={styles.guidelineTitle}>One Attempt Only</h4>
                   <p style={styles.guidelineText}>
-                    Each assessment can only be taken once. Make sure you're in a quiet environment before starting.
+                    Each assessment can only be taken once. Ensure you're in a quiet environment before starting.
                   </p>
                 </div>
               </div>
@@ -428,9 +459,9 @@ export default function CandidateDashboard() {
                   <span style={styles.guidelineIcon}>🛡️</span>
                 </div>
                 <div style={styles.guidelineTextWrapper}>
-                  <h4 style={styles.guidelineTitle}>Anti-Cheat Protection</h4>
+                  <h4 style={styles.guidelineTitle}>Assessment Integrity</h4>
                   <p style={styles.guidelineText}>
-                    Right-click, copy/paste, and text selection are disabled during assessments to maintain integrity.
+                    Browser restrictions are in place during assessments to maintain integrity.
                   </p>
                 </div>
               </div>
@@ -439,10 +470,7 @@ export default function CandidateDashboard() {
             <div style={styles.tipCard}>
               <span style={styles.tipIcon}>💡</span>
               <div style={styles.tipContent}>
-                <strong style={styles.tipTitle}>Pro Tip:</strong>
-                <span style={styles.tipText}>
-                  Take assessments one at a time when you're ready. Your progress is automatically saved.
-                </span>
+                <strong>Pro Tip:</strong> Complete assessments one at a time when you're ready. Your progress is automatically saved.
               </div>
             </div>
           </div>
@@ -465,7 +493,7 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+    background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)'
   },
   loadingContent: {
     textAlign: 'center',
@@ -475,7 +503,8 @@ const styles = {
     fontSize: '32px',
     fontWeight: '700',
     marginBottom: '20px',
-    letterSpacing: '1px'
+    letterSpacing: '2px',
+    color: 'white'
   },
   loadingSpinner: {
     width: '50px',
@@ -491,39 +520,71 @@ const styles = {
     opacity: 0.9
   },
   header: {
-    background: 'white',
-    borderBottom: '1px solid #e0e0e0',
-    padding: '12px 24px',
+    background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+    padding: '16px 24px',
     position: 'sticky',
     top: 0,
-    zIndex: 100
+    zIndex: 100,
+    borderBottom: '1px solid #334155'
+  },
+  headerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundImage: 'url(https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1920&q=80)',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    opacity: 0.1,
+    pointerEvents: 'none'
   },
   headerContent: {
     maxWidth: '1200px',
     margin: '0 auto',
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center'
+    alignItems: 'center',
+    position: 'relative',
+    zIndex: 2
+  },
+  headerLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px'
   },
   headerTitle: {
     fontSize: '20px',
-    fontWeight: '600',
-    color: '#1565c0',
-    margin: 0
+    fontWeight: '700',
+    color: 'white',
+    margin: 0,
+    letterSpacing: '1px'
+  },
+  headerDivider: {
+    color: '#475569',
+    fontSize: '20px',
+    fontWeight: '300'
+  },
+  headerSubtitle: {
+    fontSize: '16px',
+    color: '#94a3b8',
+    fontWeight: '400'
   },
   logoutButton: {
-    padding: '6px 16px',
-    background: '#f5f5f5',
-    color: '#666',
-    border: '1px solid #ddd',
-    borderRadius: '20px',
+    padding: '8px 20px',
+    background: 'rgba(255,255,255,0.1)',
+    color: 'white',
+    border: '1px solid #475569',
+    borderRadius: '30px',
     cursor: 'pointer',
-    fontSize: '13px',
-    transition: 'all 0.2s'
+    fontSize: '14px',
+    fontWeight: '500',
+    transition: 'all 0.2s',
+    backdropFilter: 'blur(10px)'
   },
   welcomeSection: {
     maxWidth: '1200px',
-    margin: '24px auto 16px',
+    margin: '32px auto 24px',
     padding: '0 20px',
     display: 'flex',
     justifyContent: 'space-between',
@@ -536,36 +597,37 @@ const styles = {
     fontSize: '24px',
     fontWeight: '600',
     margin: '0 0 4px 0',
-    color: '#333'
+    color: '#0f172a'
   },
   welcomeName: {
-    color: '#1565c0'
+    color: '#2563eb'
   },
   welcomeText: {
     fontSize: '14px',
-    color: '#666',
+    color: '#475569',
     margin: 0
   },
   progressBadge: {
-    background: '#f5f5f5',
-    padding: '8px 16px',
+    background: '#f1f5f9',
+    padding: '8px 20px',
     borderRadius: '30px',
     display: 'flex',
     alignItems: 'baseline',
-    gap: '2px'
+    gap: '4px',
+    border: '1px solid #e2e8f0'
   },
   progressCount: {
     fontSize: '20px',
     fontWeight: '700',
-    color: '#1565c0'
+    color: '#2563eb'
   },
   progressTotal: {
     fontSize: '14px',
-    color: '#666'
+    color: '#64748b'
   },
   progressLabel: {
     fontSize: '13px',
-    color: '#666',
+    color: '#64748b',
     marginLeft: '8px'
   },
   mainContent: {
@@ -580,30 +642,24 @@ const styles = {
     flexWrap: 'wrap'
   },
   tabButton: {
-    padding: '8px 16px',
-    border: 'none',
+    padding: '8px 20px',
     borderRadius: '30px',
     cursor: 'pointer',
-    fontSize: '13px',
+    fontSize: '14px',
     fontWeight: '500',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    transition: 'all 0.2s'
-  },
-  tabIcon: {
-    fontSize: '16px'
+    transition: 'all 0.2s',
+    fontFamily: 'inherit'
   },
   tabLabel: {
     textTransform: 'capitalize'
   },
   card: {
     background: 'white',
-    borderRadius: '12px',
-    padding: '16px 20px',
-    marginBottom: '30px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    border: '1px solid #f0f0f0',
+    borderRadius: '16px',
+    padding: '20px 24px',
+    marginBottom: '32px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    border: '1px solid #e2e8f0',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between'
@@ -611,60 +667,62 @@ const styles = {
   cardHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '16px',
+    gap: '24px',
     flex: 1
-  },
-  cardIcon: {
-    fontSize: '32px',
-    width: '48px',
-    height: '48px',
-    background: '#f5f5f5',
-    borderRadius: '12px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center'
   },
   cardInfo: {
     flex: 1
   },
   cardTitle: {
-    fontSize: '16px',
+    fontSize: '18px',
     fontWeight: '600',
-    margin: '0 0 4px 0',
-    color: '#333'
+    margin: '0 0 6px 0',
+    color: '#0f172a'
   },
   cardMeta: {
     display: 'flex',
-    gap: '16px',
-    fontSize: '12px',
-    color: '#666'
+    gap: '20px',
+    fontSize: '13px',
+    color: '#475569'
+  },
+  metaItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px'
+  },
+  metaIcon: {
+    fontSize: '14px'
   },
   cardStatus: {
-    marginRight: '16px'
+    marginRight: '20px'
   },
   statusBadge: {
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '12px',
-    fontWeight: '500'
+    padding: '6px 16px',
+    borderRadius: '30px',
+    fontSize: '13px',
+    fontWeight: '500',
+    display: 'inline-block'
   },
   startButton: {
-    padding: '8px 20px',
-    background: '#1565c0',
+    padding: '10px 24px',
     color: 'white',
     border: 'none',
     borderRadius: '30px',
     fontSize: '14px',
     fontWeight: '500',
     cursor: 'pointer',
-    whiteSpace: 'nowrap'
+    whiteSpace: 'nowrap',
+    transition: 'all 0.2s',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
   },
   emptyState: {
     textAlign: 'center',
     padding: '40px',
     background: 'white',
     borderRadius: '12px',
-    marginBottom: '30px'
+    marginBottom: '30px',
+    border: '1px solid #e2e8f0',
+    color: '#64748b'
   },
   progressSection: {
     marginBottom: '40px'
@@ -672,41 +730,48 @@ const styles = {
   sectionTitle: {
     fontSize: '18px',
     fontWeight: '600',
-    color: '#333',
+    color: '#0f172a',
     margin: '0 0 16px 0'
   },
   progressGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-    gap: '10px'
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '12px'
   },
   progressItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    padding: '10px 12px',
-    background: '#f8f9fa',
-    borderRadius: '8px',
-    border: '1px solid #f0f0f0'
+    justifyContent: 'space-between',
+    padding: '12px 16px',
+    background: '#f8fafc',
+    borderRadius: '10px',
+    border: '1px solid #e2e8f0'
   },
-  progressIcon: {
-    fontSize: '18px'
+  progressItemLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px'
+  },
+  progressColorDot: {
+    width: '8px',
+    height: '8px',
+    borderRadius: '4px'
   },
   progressName: {
-    fontSize: '13px',
+    fontSize: '14px',
     fontWeight: '500',
-    color: '#333',
-    flex: 1,
+    color: '#0f172a',
     textTransform: 'capitalize'
   },
   progressStatus: {
-    fontSize: '11px',
-    fontWeight: '500'
+    fontSize: '12px',
+    fontWeight: '500',
+    padding: '4px 10px',
+    borderRadius: '20px'
   },
-  // Guidelines section - kept exactly as you had it
   guidelinesWrapper: {
     position: 'relative',
-    borderRadius: '32px',
+    borderRadius: '16px',
     overflow: 'hidden',
     marginTop: '20px'
   },
@@ -724,27 +789,27 @@ const styles = {
   guidelinesContent: {
     position: 'relative',
     padding: '40px',
-    background: 'linear-gradient(135deg, rgba(26,38,57,0.95) 0%, rgba(45,55,72,0.95) 100%)',
+    background: 'linear-gradient(135deg, rgba(30,41,59,0.98) 0%, rgba(15,23,42,0.98) 100%)',
     backdropFilter: 'blur(10px)'
   },
   guidelinesHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '15px',
+    gap: '12px',
     marginBottom: '30px'
   },
   guidelinesIcon: {
-    fontSize: '32px'
+    fontSize: '28px'
   },
   guidelinesTitle: {
-    fontSize: '24px',
-    fontWeight: '700',
+    fontSize: '22px',
+    fontWeight: '600',
     color: 'white',
     margin: 0
   },
   guidelinesGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
     gap: '20px',
     marginBottom: '30px'
   },
@@ -753,59 +818,52 @@ const styles = {
     alignItems: 'flex-start',
     gap: '15px',
     padding: '20px',
-    background: 'rgba(255,255,255,0.1)',
-    borderRadius: '16px',
+    background: 'rgba(255,255,255,0.05)',
+    borderRadius: '12px',
     backdropFilter: 'blur(5px)',
     border: '1px solid rgba(255,255,255,0.1)'
   },
   guidelineIconWrapper: {
-    width: '48px',
-    height: '48px',
-    background: 'rgba(255,255,255,0.2)',
-    borderRadius: '12px',
+    width: '44px',
+    height: '44px',
+    background: 'rgba(255,255,255,0.1)',
+    borderRadius: '10px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '24px',
+    fontSize: '22px',
     flexShrink: 0
   },
   guidelineTextWrapper: {
     flex: 1
   },
   guidelineTitle: {
-    fontSize: '16px',
+    fontSize: '15px',
     fontWeight: '600',
     color: 'white',
-    marginBottom: '5px'
+    margin: '0 0 6px 0'
   },
   guidelineText: {
     fontSize: '13px',
-    color: 'rgba(255,255,255,0.8)',
-    lineHeight: 1.5,
+    color: '#cbd5e1',
+    lineHeight: '1.5',
     margin: 0
   },
   tipCard: {
     display: 'flex',
     alignItems: 'center',
-    gap: '20px',
-    padding: '20px',
-    background: 'rgba(255,255,255,0.15)',
-    borderRadius: '16px',
-    border: '1px solid rgba(255,255,255,0.2)'
+    gap: '16px',
+    padding: '16px 20px',
+    background: 'rgba(37,99,235,0.15)',
+    borderRadius: '10px',
+    border: '1px solid rgba(37,99,235,0.3)'
   },
   tipIcon: {
-    fontSize: '32px',
-    flexShrink: 0
+    fontSize: '24px'
   },
   tipContent: {
     fontSize: '14px',
-    color: 'white',
-    lineHeight: 1.6
-  },
-  tipTitle: {
-    marginRight: '8px'
-  },
-  tipText: {
-    opacity: 0.9
+    color: '#e2e8f0',
+    lineHeight: '1.5'
   }
 };
