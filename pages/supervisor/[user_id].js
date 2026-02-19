@@ -2,6 +2,16 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
 import AppLayout from "../../components/AppLayout";
+import {
+  getGradeInfo,
+  getOverallRating,
+  getStrengthComment,
+  getWeaknessComment,
+  generateExecutiveSummary,
+  generateRecommendations,
+  generateDevelopmentPlan,
+  gradeScale
+} from "../../utils/dynamicReportGenerator";
 
 export default function CandidateReport() {
   const router = useRouter();
@@ -19,187 +29,7 @@ export default function CandidateReport() {
   const [developmentPlan, setDevelopmentPlan] = useState({});
   const [interpretations, setInterpretations] = useState({});
   const [executiveSummary, setExecutiveSummary] = useState('');
-
-  // Dynamic grade definitions with personality
-  const gradeScale = [
-    { 
-      grade: 'A+', min: 95, color: '#0A5C2E', bg: '#E6F7E6', 
-      description: 'Exceptional - Mastery level',
-      message: (name) => `${name} demonstrates extraordinary capability that sets them apart from peers.`
-    },
-    { 
-      grade: 'A', min: 90, color: '#1E7A44', bg: '#E6F7E6', 
-      description: 'Excellent',
-      message: (name) => `${name} shows deep understanding and consistent high-quality performance.`
-    },
-    { 
-      grade: 'A-', min: 85, color: '#2E7D32', bg: '#E8F5E9', 
-      description: 'Very Good',
-      message: (name) => `${name} has strong capabilities with only minor areas for refinement.`
-    },
-    { 
-      grade: 'B+', min: 80, color: '#2E7D32', bg: '#E8F5E9', 
-      description: 'Good',
-      message: (name) => `${name} delivers solid performance with clear strengths to build upon.`
-    },
-    { 
-      grade: 'B', min: 75, color: '#1565C0', bg: '#E3F2FD', 
-      description: 'Satisfactory',
-      message: (name) => `${name} meets expectations consistently and has room to grow.`
-    },
-    { 
-      grade: 'B-', min: 70, color: '#1565C0', bg: '#E3F2FD', 
-      description: 'Adequate',
-      message: (name) => `${name} has established a solid foundation for future development.`
-    },
-    { 
-      grade: 'C+', min: 65, color: '#E65100', bg: '#FFF3E0', 
-      description: 'Developing',
-      message: (name) => `${name} shows potential and would benefit from targeted guidance.`
-    },
-    { 
-      grade: 'C', min: 60, color: '#E65100', bg: '#FFF3E0', 
-      description: 'Basic Competency',
-      message: (name) => `${name} has core understanding but needs practical application.`
-    },
-    { 
-      grade: 'C-', min: 55, color: '#E65100', bg: '#FFF3E0', 
-      description: 'Minimum Competency',
-      message: (name) => `${name} has foundational knowledge that requires structured support.`
-    },
-    { 
-      grade: 'D+', min: 50, color: '#B71C1C', bg: '#FFEBEE', 
-      description: 'Below Expectations',
-      message: (name) => `${name} has significant opportunities for development in key areas.`
-    },
-    { 
-      grade: 'D', min: 40, color: '#B71C1C', bg: '#FFEBEE', 
-      description: 'Significant Gaps',
-      message: (name) => `${name} requires focused attention on critical skill areas.`
-    },
-    { 
-      grade: 'F', min: 0, color: '#8B0000', bg: '#FFEBEE', 
-      description: 'Unsatisfactory',
-      message: (name) => `${name} needs intensive intervention and structured coaching.`
-    }
-  ];
-
-  const getGradeInfo = (percentage) => {
-    return gradeScale.find(g => percentage >= g.min) || gradeScale[gradeScale.length - 1];
-  };
-
-  // Dynamic overall rating generator
-  const getOverallRating = (percentage, strengths, weaknesses) => {
-    const strengthCount = strengths.length;
-    const weaknessCount = weaknesses.length;
-    
-    if (percentage >= 80) {
-      return {
-        title: 'Strong Performer',
-        icon: '🌟',
-        message: `Demonstrates strong capabilities across multiple areas. Ready for increased responsibility and complex challenges.`
-      };
-    } else if (percentage >= 70) {
-      return {
-        title: 'Competent Performer',
-        icon: '📈',
-        message: `Shows solid performance with ${strengthCount} key ${strengthCount === 1 ? 'strength' : 'strengths'} identified. Focused development will accelerate growth.`
-      };
-    } else if (percentage >= 60) {
-      return {
-        title: 'Developing Performer',
-        icon: '🌱',
-        message: `Has foundational skills with ${weaknessCount} ${weaknessCount === 1 ? 'area' : 'areas'} needing attention. Structured support recommended.`
-      };
-    } else if (percentage >= 50) {
-      return {
-        title: 'Emerging Talent',
-        icon: '🌿',
-        message: `Building core competencies. Requires guidance in ${weaknesses.slice(0,2).map(w => w.area || w).join(' and ')}.`
-      };
-    } else if (percentage >= 40) {
-      return {
-        title: 'Needs Development',
-        icon: '🎯',
-        message: `Significant opportunities for growth identified. Intensive focus needed on critical skill areas.`
-      };
-    } else {
-      return {
-        title: 'Intensive Support Needed',
-        icon: '⚠️',
-        message: `Requires structured intervention and close mentoring to build foundational capabilities.`
-      };
-    }
-  };
-
-  // Dynamic comment generator based on score
-  const getStrengthComment = (area, percentage, allStrengths) => {
-    const rank = allStrengths.findIndex(s => (s.area || s) === area) + 1;
-    const isTopStrength = rank === 1;
-    
-    const comments = [
-      `Exceptional performer in ${area} - this is a standout strength that distinguishes ${area === 'Leadership' ? 'them' : 'their performance'}.`,
-      `Demonstrates natural aptitude for ${area}. This capability can be leveraged for team success.`,
-      `Strong grasp of ${area} concepts. Consistently applies knowledge effectively.`,
-      `Shows particular strength in ${area}. This is a reliable area of competence.`,
-      `Performance in ${area} is notably strong and contributes positively to overall results.`
-    ];
-    
-    if (isTopStrength && percentage >= 80) {
-      return `🎯 Top strength! ${comments[0]}`;
-    }
-    return comments[rank % comments.length];
-  };
-
-  const getWeaknessComment = (area, percentage, allWeaknesses) => {
-    const rank = allWeaknesses.findIndex(w => (w.area || w) === area) + 1;
-    const isPriority = rank <= 2;
-    
-    const comments = [
-      `Would benefit significantly from focused development in ${area}.`,
-      `${area} presents the greatest opportunity for growth and improvement.`,
-      `Developing stronger ${area} skills should be a priority in the coming months.`,
-      `Additional support in ${area} will help unlock greater potential.`,
-      `With structured guidance in ${area}, noticeable improvement is achievable.`,
-      `Building competence in ${area} will enhance overall effectiveness.`
-    ];
-    
-    if (isPriority) {
-      return `🔴 Priority area: ${comments[0]}`;
-    }
-    return comments[(rank + 2) % comments.length];
-  };
-
-  // Dynamic executive summary generator
-  const generateExecutiveSummary = (name, score, maxScore, percentage, grade, rating, strengths, weaknesses, categoryCount) => {
-    const strengthWords = ['impressive', 'notable', 'significant', 'remarkable', 'encouraging'];
-    const weaknessWords = ['development opportunities', 'growth areas', 'skill gaps', 'learning edges'];
-    
-    const randomStrengthWord = strengthWords[Math.floor(Math.random() * strengthWords.length)];
-    const randomWeaknessWord = weaknessWords[Math.floor(Math.random() * weaknessWords.length)];
-    
-    let summary = `${name} completed the assessment with a total score of ${score}/${maxScore} (${percentage}%), achieving a grade of ${grade}. `;
-    
-    if (strengths.length > 0) {
-      summary += `They demonstrated ${randomStrengthWord} strength in ${strengths[0].area || strengths[0]}`;
-      if (strengths.length > 1) {
-        summary += ` and ${strengths.length - 1} other ${strengths.length > 2 ? 'areas' : 'area'}`;
-      }
-      summary += '. ';
-    }
-    
-    if (weaknesses.length > 0) {
-      summary += `Key ${randomWeaknessWord} include ${weaknesses[0].area || weaknesses[0]}`;
-      if (weaknesses.length > 1) {
-        summary += ` and ${weaknesses.length - 1} other ${weaknesses.length > 2 ? 'areas' : 'area'}`;
-      }
-      summary += '. ';
-    }
-    
-    summary += rating.message;
-    
-    return summary;
-  };
+  const [assessmentType, setAssessmentType] = useState('general');
 
   // Check supervisor authentication
   useEffect(() => {
@@ -285,6 +115,7 @@ export default function CandidateReport() {
           const formatted = candidateAssessments.map(assessment => {
             const result = resultsMap[assessment.assessment_id];
             const percentage = Math.round((assessment.score / 500) * 100);
+            const type = assessment.assessments?.assessment_type?.code || 'general';
             
             // Format strengths and weaknesses with percentages
             const strengthsList = (result?.strengths || []).map(s => ({
@@ -303,7 +134,7 @@ export default function CandidateReport() {
               id: assessment.id,
               assessment_id: assessment.assessment_id,
               name: assessment.assessments?.title || 'Assessment',
-              type: assessment.assessments?.assessment_type?.code || 'general',
+              type,
               score: assessment.score,
               max_score: 500,
               percentage,
@@ -311,8 +142,6 @@ export default function CandidateReport() {
               category_scores: result?.category_scores || {},
               strengths: strengthsList,
               weaknesses: weaknessesList,
-              recommendations: result?.recommendations || [],
-              development_plan: result?.development_plan || {},
               interpretations: result?.interpretations || {}
             };
           });
@@ -323,9 +152,29 @@ export default function CandidateReport() {
             setCategoryScores(first.category_scores || {});
             setStrengths(first.strengths || []);
             setWeaknesses(first.weaknesses || []);
-            setRecommendations(first.recommendations || []);
-            setDevelopmentPlan(first.development_plan || {});
-            setInterpretations(first.interpretations || {});
+            setAssessmentType(first.type);
+            
+            // Generate dynamic content
+            const grade = getGradeInfo(first.percentage);
+            const rating = getOverallRating(first.percentage, first.strengths, first.weaknesses, first.type);
+            const execSummary = generateExecutiveSummary(
+              profileData?.full_name || 'Candidate',
+              first.score,
+              first.max_score,
+              first.percentage,
+              grade.grade,
+              rating,
+              first.strengths,
+              first.weaknesses,
+              Object.keys(first.category_scores).length,
+              first.type
+            );
+            const recs = generateRecommendations(first.weaknesses, first.type);
+            const plan = generateDevelopmentPlan(first.weaknesses, first.strengths, first.type);
+            
+            setExecutiveSummary(execSummary);
+            setRecommendations(recs);
+            setDevelopmentPlan(plan);
           }
         }
       } catch (error) {
@@ -343,9 +192,29 @@ export default function CandidateReport() {
     setCategoryScores(selected.category_scores);
     setStrengths(selected.strengths);
     setWeaknesses(selected.weaknesses);
-    setRecommendations(selected.recommendations);
-    setDevelopmentPlan(selected.development_plan);
-    setInterpretations(selected.interpretations);
+    setAssessmentType(selected.type);
+    
+    // Regenerate dynamic content
+    const grade = getGradeInfo(selected.percentage);
+    const rating = getOverallRating(selected.percentage, selected.strengths, selected.weaknesses, selected.type);
+    const execSummary = generateExecutiveSummary(
+      candidate.full_name,
+      selected.score,
+      selected.max_score,
+      selected.percentage,
+      grade.grade,
+      rating,
+      selected.strengths,
+      selected.weaknesses,
+      Object.keys(selected.category_scores).length,
+      selected.type
+    );
+    const recs = generateRecommendations(selected.weaknesses, selected.type);
+    const plan = generateDevelopmentPlan(selected.weaknesses, selected.strengths, selected.type);
+    
+    setExecutiveSummary(execSummary);
+    setRecommendations(recs);
+    setDevelopmentPlan(plan);
   };
 
   const handleBack = () => router.push('/supervisor');
@@ -371,20 +240,7 @@ export default function CandidateReport() {
 
   const current = selectedAssessment || assessments[0];
   const overallGrade = getGradeInfo(current.percentage);
-  const overallRating = getOverallRating(current.percentage, current.strengths, current.weaknesses);
-  
-  // Generate dynamic executive summary
-  const dynamicExecutiveSummary = generateExecutiveSummary(
-    candidate.full_name,
-    current.score,
-    current.max_score,
-    current.percentage,
-    overallGrade.grade,
-    overallRating,
-    current.strengths,
-    current.weaknesses,
-    Object.keys(current.category_scores).length
-  );
+  const overallRating = getOverallRating(current.percentage, current.strengths, current.weaknesses, current.type);
 
   return (
     <AppLayout>
@@ -444,13 +300,13 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* Executive Summary - Now Dynamic */}
+        {/* Executive Summary */}
         <div style={styles.summaryCard}>
           <div style={styles.summaryHeader}>
             <span style={styles.summaryIcon}>📋</span>
             <h2 style={styles.summaryTitle}>Executive Summary</h2>
           </div>
-          <p style={styles.summaryText}>{dynamicExecutiveSummary}</p>
+          <p style={styles.summaryText}>{executiveSummary}</p>
           <div style={{...styles.ratingBadge, background: overallGrade.bg, color: overallGrade.color}}>
             <span style={styles.ratingIcon}>{overallRating.icon}</span>
             <span><strong>Overall Assessment:</strong> {overallRating.title} • Grade {overallGrade.grade}</span>
@@ -492,7 +348,7 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* Strengths & Weaknesses with Unique Comments */}
+        {/* Strengths & Weaknesses */}
         <div style={styles.grid2}>
           {/* Strengths Card */}
           <div style={styles.strengthCard}>
@@ -513,7 +369,7 @@ export default function CandidateReport() {
                         </span>
                       )}
                     </div>
-                    <p style={styles.strengthComment}>{getStrengthComment(s.area, s.percentage, current.strengths)}</p>
+                    <p style={styles.strengthComment}>{getStrengthComment(s.area, s.percentage, current.strengths, current.type)}</p>
                   </div>
                 ))
               ) : (
@@ -541,7 +397,7 @@ export default function CandidateReport() {
                         </span>
                       )}
                     </div>
-                    <p style={styles.weaknessComment}>{getWeaknessComment(w.area, w.percentage, current.weaknesses)}</p>
+                    <p style={styles.weaknessComment}>{getWeaknessComment(w.area, w.percentage, current.weaknesses, current.type)}</p>
                   </div>
                 ))
               ) : (
@@ -552,7 +408,7 @@ export default function CandidateReport() {
         </div>
 
         {/* Recommendations Card */}
-        {current.recommendations.length > 0 && (
+        {recommendations.length > 0 && (
           <div style={styles.recommendationsCard}>
             <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #1565C0, #0D47A1)'}}>
               <span style={styles.cardIcon}>💡</span>
@@ -560,13 +416,64 @@ export default function CandidateReport() {
             </div>
             <div style={styles.cardContent}>
               <ul style={styles.recommendationsList}>
-                {current.recommendations.map((rec, i) => (
+                {recommendations.map((rec, i) => (
                   <li key={i} style={styles.recommendationItem}>
                     <span style={styles.recommendationBullet}>→</span>
-                    <span>{typeof rec === 'string' ? rec : rec.message || rec}</span>
+                    <span>{rec}</span>
                   </li>
                 ))}
               </ul>
+            </div>
+          </div>
+        )}
+
+        {/* Development Plan */}
+        {developmentPlan && Object.keys(developmentPlan).length > 0 && (
+          <div style={styles.planCard}>
+            <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #6A1B9A, #4A0072)'}}>
+              <span style={styles.cardIcon}>📅</span>
+              <h3 style={styles.cardHeaderTitle}>Development Action Plan</h3>
+            </div>
+            <div style={styles.cardContent}>
+              <div style={styles.planGrid}>
+                {developmentPlan.immediate && developmentPlan.immediate.length > 0 && (
+                  <div style={styles.planPhase}>
+                    <h4 style={styles.phaseTitle}>⚡ Immediate (0-30 days)</h4>
+                    <ul style={styles.planList}>
+                      {developmentPlan.immediate.map((item, i) => (
+                        <li key={i} style={styles.planListItem}>
+                          <strong>{item.area}:</strong> {item.recommendation}
+                          {item.priority && <span style={styles.priorityTag}> {item.priority} Priority</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {developmentPlan.shortTerm && developmentPlan.shortTerm.length > 0 && (
+                  <div style={styles.planPhase}>
+                    <h4 style={styles.phaseTitle}>📈 Short-term (30-60 days)</h4>
+                    <ul style={styles.planList}>
+                      {developmentPlan.shortTerm.map((item, i) => (
+                        <li key={i} style={styles.planListItem}>
+                          <strong>{item.area}:</strong> {item.recommendation}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {developmentPlan.longTerm && developmentPlan.longTerm.length > 0 && (
+                  <div style={styles.planPhase}>
+                    <h4 style={styles.phaseTitle}>🚀 Long-term (60-90+ days)</h4>
+                    <ul style={styles.planList}>
+                      {developmentPlan.longTerm.map((item, i) => (
+                        <li key={i} style={styles.planListItem}>
+                          <strong>{item.area}:</strong> {item.recommendation}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -870,6 +777,14 @@ const styles = {
     boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
     border: '1px solid #f0f0f0'
   },
+  planCard: {
+    background: 'white',
+    borderRadius: '16px',
+    overflow: 'hidden',
+    marginBottom: '30px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    border: '1px solid #f0f0f0'
+  },
   cardHeader: {
     padding: '20px',
     color: 'white',
@@ -983,6 +898,45 @@ const styles = {
     fontSize: '16px',
     fontWeight: 600,
     minWidth: '25px'
+  },
+  planGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+    gap: '20px'
+  },
+  planPhase: {
+    padding: '20px',
+    background: '#f8f9fa',
+    borderRadius: '12px',
+    border: '1px solid #e0e0e0'
+  },
+  phaseTitle: {
+    margin: '0 0 15px 0',
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#333'
+  },
+  planList: {
+    margin: 0,
+    padding: 0,
+    listStyle: 'none'
+  },
+  planListItem: {
+    marginBottom: '10px',
+    fontSize: '13px',
+    color: '#555',
+    lineHeight: '1.6',
+    paddingLeft: '15px',
+    borderLeft: '3px solid #1565c0'
+  },
+  priorityTag: {
+    background: '#FFEB3B',
+    color: '#333',
+    padding: '2px 8px',
+    borderRadius: '12px',
+    fontSize: '10px',
+    fontWeight: 600,
+    marginLeft: '8px'
   },
   footer: {
     marginTop: '40px',
