@@ -313,7 +313,7 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* Category Performance Table */}
+        {/* Category Performance Table - Colorful Version */}
         <div style={styles.tableCard}>
           <div style={styles.tableHeader}>
             <span style={styles.tableIcon}>📊</span>
@@ -333,13 +333,84 @@ export default function CandidateReport() {
               <tbody>
                 {Object.entries(current.category_scores).map(([category, data]) => {
                   const grade = getGradeInfo(data.percentage);
+                  
+                  // Determine row background color based on percentage
+                  let rowColor = '#ffffff';
+                  if (data.percentage >= 80) {
+                    rowColor = '#f0fff4'; // Light green
+                  } else if (data.percentage >= 60) {
+                    rowColor = '#fff8e1'; // Light amber
+                  } else if (data.percentage >= 40) {
+                    rowColor = '#fff3e0'; // Light orange
+                  } else {
+                    rowColor = '#ffebee'; // Light red
+                  }
+                  
+                  // Progress bar color
+                  let progressColor = '';
+                  if (data.percentage >= 80) progressColor = '#4caf50';
+                  else if (data.percentage >= 60) progressColor = '#ff9800';
+                  else if (data.percentage >= 40) progressColor = '#ff5722';
+                  else progressColor = '#f44336';
+                  
                   return (
-                    <tr key={category}>
-                      <td style={styles.td}><strong>{category}</strong></td>
-                      <td style={styles.td}>{data.score}/{data.maxPossible}</td>
-                      <td style={styles.td}>{data.percentage}%</td>
-                      <td style={{...styles.td, color: grade.color, fontWeight: 700}}>{grade.grade}</td>
-                      <td style={styles.td}>{grade.description}</td>
+                    <tr key={category} style={{ backgroundColor: rowColor, borderBottom: '1px solid #e0e0e0' }}>
+                      <td style={styles.td}>
+                        <strong style={{ color: grade.color }}>{category}</strong>
+                      </td>
+                      <td style={styles.td}>
+                        <span style={{ fontWeight: 600, color: grade.color }}>
+                          {data.score}/{data.maxPossible}
+                        </span>
+                      </td>
+                      <td style={styles.td}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{
+                            width: '80px',
+                            height: '8px',
+                            background: '#e0e0e0',
+                            borderRadius: '4px',
+                            overflow: 'hidden'
+                          }}>
+                            <div style={{
+                              width: `${data.percentage}%`,
+                              height: '100%',
+                              background: progressColor,
+                              borderRadius: '4px',
+                              transition: 'width 0.3s ease'
+                            }} />
+                          </div>
+                          <span style={{ fontWeight: 600, color: grade.color, minWidth: '45px' }}>
+                            {data.percentage}%
+                          </span>
+                        </div>
+                      </td>
+                      <td style={styles.td}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '4px 12px',
+                          borderRadius: '20px',
+                          background: grade.bg,
+                          color: grade.color,
+                          fontWeight: 700,
+                          fontSize: '13px'
+                        }}>
+                          {grade.grade}
+                        </span>
+                      </td>
+                      <td style={styles.td}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '4px 12px',
+                          borderRadius: '20px',
+                          background: `${grade.color}15`,
+                          color: grade.color,
+                          fontSize: '13px',
+                          fontWeight: 500
+                        }}>
+                          {grade.description}
+                        </span>
+                      </td>
                     </tr>
                   );
                 })}
@@ -734,19 +805,21 @@ const styles = {
   table: {
     width: '100%',
     borderCollapse: 'collapse',
-    fontSize: '14px'
+    fontSize: '14px',
+    borderRadius: '12px',
+    overflow: 'hidden'
   },
   th: {
     textAlign: 'left',
     padding: '15px 12px',
     background: '#f8f9fa',
-    borderBottom: '2px solid #e0e0e0',
+    borderBottom: '2px solid #1565c0',
     fontWeight: 600,
     color: '#333'
   },
   td: {
     padding: '12px',
-    borderBottom: '1px solid #f0f0f0',
+    borderBottom: '1px solid #e0e0e0',
     color: '#555'
   },
   grid2: {
