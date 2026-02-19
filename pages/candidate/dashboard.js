@@ -16,55 +16,145 @@ export default function CandidateDashboard() {
   const [userName, setUserName] = useState("");
   const [hoveredCard, setHoveredCard] = useState(null);
   const [assessmentTypes, setAssessmentTypes] = useState([]);
+  const [selectedAssessmentAreas, setSelectedAssessmentAreas] = useState(null);
+
+  // ===== ASSESSMENT KEY AREAS (only category names) =====
+  const assessmentAreas = {
+    'general': [
+      'Cognitive Ability',
+      'Communication',
+      'Cultural & Attitudinal Fit',
+      'Emotional Intelligence',
+      'Ethics & Integrity',
+      'Leadership & Management',
+      'Performance Metrics',
+      'Personality & Behavioral',
+      'Problem-Solving',
+      'Technical & Manufacturing'
+    ],
+    'leadership': [
+      'Change Leadership & Agility',
+      'Communication & Influence',
+      'Cultural Alignment',
+      'Cultural Competence & Inclusivity',
+      'Decision-Making & Problem-Solving',
+      'Derailer Identification',
+      'Empathy & Relationship Building',
+      'Execution & Results Orientation',
+      'Integrated Leadership Judgment',
+      'Learning Agility',
+      'People Management & Coaching',
+      'Resilience & Stress Management',
+      'Role Readiness',
+      'Self-Awareness & Self-Regulation',
+      'Values & Drivers',
+      'Vision & Strategic Thinking'
+    ],
+    'cognitive': [
+      'Logical / Abstract Reasoning',
+      'Mechanical Reasoning',
+      'Memory & Attention',
+      'Numerical Reasoning',
+      'Perceptual Speed & Accuracy',
+      'Spatial Reasoning',
+      'Verbal Reasoning'
+    ],
+    'technical': [
+      'CIP & Maintenance',
+      'Conveyors & Line Efficiency',
+      'Filling & Bottling',
+      'Packaging & Labeling',
+      'Safety & Efficiency',
+      'Water Treatment & Quality'
+    ],
+    'performance': [
+      'Employee Engagement and Behavior',
+      'Financial and Operational Performance',
+      'Goal Achievement and Strategic Alignment',
+      'Productivity and Efficiency',
+      'Work Quality and Effectiveness'
+    ],
+    'cultural': [
+      'Attitude',
+      'Core Values',
+      'Environmental Fit',
+      'Interpersonal',
+      'Leadership',
+      'Work Style'
+    ],
+    'personality': [
+      'Agreeableness',
+      'Behavioral Style',
+      'Cognitive Patterns',
+      'Conscientiousness',
+      'Emotional Intelligence',
+      'Extraversion',
+      'Integrity',
+      'Mixed Traits',
+      'Motivations',
+      'Neuroticism',
+      'Openness to Experience',
+      'Performance Risks',
+      'Stress Management',
+      'Work Pace'
+    ],
+    'behavioral': [
+      'Adaptability',
+      'Clinical',
+      'Collaboration',
+      'Communication Style',
+      'Decision-Making',
+      'FBA',
+      'Leadership'
+    ]
+  };
 
   // ===== PROFESSIONAL COLORS FOR EACH ASSESSMENT TYPE =====
   const assessmentColors = {
-    general: {
+    'general': {
       gradient: 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)',
       color: '#2563eb',
       light: '#dbeafe'
     },
-    behavioral: {
+    'leadership': {
       gradient: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)',
       color: '#7c3aed',
       light: '#ede9fe'
     },
-    cognitive: {
+    'cognitive': {
       gradient: 'linear-gradient(135deg, #0891b2 0%, #0e7490 100%)',
       color: '#0891b2',
       light: '#cffafe'
     },
-    cultural: {
+    'cultural': {
       gradient: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
       color: '#059669',
       light: '#d1fae5'
     },
-    manufacturing: {
-      gradient: 'linear-gradient(135deg, #b45309 0%, #92400e 100%)',
-      color: '#b45309',
-      light: '#ffedd5'
-    },
-    leadership: {
-      gradient: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
-      color: '#8b5cf6',
-      light: '#ede9fe'
-    },
-    personality: {
+    'personality': {
       gradient: 'linear-gradient(135deg, #0d9488 0%, #115e59 100%)',
       color: '#0d9488',
       light: '#ccfbf1'
     },
-    performance: {
+    'performance': {
       gradient: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
       color: '#ea580c',
       light: '#ffedd5'
     },
-    technical: {
+    'technical': {
       gradient: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
       color: '#dc2626',
       light: '#fee2e2'
+    },
+    'behavioral': {
+      gradient: 'linear-gradient(135deg, #9333ea 0%, #6b21a5 100%)',
+      color: '#9333ea',
+      light: '#f3e8ff'
     }
   };
+
+  // Assessment types to exclude (manufacturing removed)
+  const excludedTypes = ['manufacturing'];
 
   useEffect(() => {
     if (session?.user) {
@@ -86,7 +176,10 @@ export default function CandidateDashboard() {
       if (error) throw error;
       
       if (data) {
-        const transformedTypes = data.map(type => ({
+        // Filter out excluded types
+        const filteredData = data.filter(type => !excludedTypes.includes(type.code));
+        
+        const transformedTypes = filteredData.map(type => ({
           id: type.code,
           label: type.name,
           shortLabel: type.code.charAt(0).toUpperCase() + type.code.slice(1),
@@ -105,6 +198,8 @@ export default function CandidateDashboard() {
         setAssessmentTypes(transformedTypes);
         if (transformedTypes.length > 0) {
           setActiveTab(transformedTypes[0].id);
+          // Set initial assessment areas
+          setSelectedAssessmentAreas(assessmentAreas[transformedTypes[0].id] || []);
         }
       }
     } catch (error) {
@@ -125,7 +220,11 @@ export default function CandidateDashboard() {
       if (error) throw error;
       
       if (data) {
-        const uniqueAssessments = removeDuplicateAssessments(data);
+        // Filter out assessments with excluded types
+        const filteredData = data.filter(assessment => 
+          !excludedTypes.includes(assessment.assessment_type?.code)
+        );
+        const uniqueAssessments = removeDuplicateAssessments(filteredData);
         setAssessments(uniqueAssessments);
       }
     } catch (error) {
@@ -199,6 +298,11 @@ export default function CandidateDashboard() {
     return assessments.length;
   };
 
+  const handleTabChange = (tabId) => {
+    setActiveTab(tabId);
+    setSelectedAssessmentAreas(assessmentAreas[tabId] || []);
+  };
+
   if (authLoading || loading) {
     return (
       <div style={styles.loadingContainer}>
@@ -248,7 +352,7 @@ export default function CandidateDashboard() {
             Welcome back, <span style={styles.welcomeName}>{userName}</span>
           </h2>
           <p style={styles.welcomeText}>
-            Track your progress and continue your assessments.
+            Select an assessment to begin. Your progress is automatically saved.
           </p>
         </div>
         <div style={styles.progressBadge}>
@@ -270,7 +374,7 @@ export default function CandidateDashboard() {
             return (
               <button
                 key={tab.id}
-                onClick={() => hasAssessment && setActiveTab(tab.id)}
+                onClick={() => hasAssessment && handleTabChange(tab.id)}
                 disabled={!hasAssessment}
                 style={{
                   ...styles.tabButton,
@@ -287,76 +391,94 @@ export default function CandidateDashboard() {
           })}
         </div>
 
-        {/* Active Assessment Card */}
+        {/* Assessment Details Section */}
         {activeAssessment ? (
-          <div style={styles.card}>
-            <div style={styles.cardHeader}>
-              <div style={styles.cardInfo}>
-                <h3 style={styles.cardTitle}>{activeAssessment.title}</h3>
-                <div style={styles.cardMeta}>
-                  <span style={styles.metaItem}>
-                    <span style={styles.metaIcon}>⏱️</span> {activeTypeConfig?.duration || 60} minutes
-                  </span>
-                  <span style={styles.metaItem}>
-                    <span style={styles.metaIcon}>📋</span> {activeTypeConfig?.questions || 100} questions
-                  </span>
-                  <span style={styles.metaItem}>
-                    <span style={styles.metaIcon}>🎯</span> 80% passing
-                  </span>
+          <div style={styles.assessmentDetailsSection}>
+            {/* Assessment Card */}
+            <div style={styles.card}>
+              <div style={styles.cardHeader}>
+                <div style={styles.cardInfo}>
+                  <h3 style={styles.cardTitle}>{activeAssessment.title}</h3>
+                  <div style={styles.cardMeta}>
+                    <span style={styles.metaItem}>
+                      <span style={styles.metaIcon}>⏱️</span> {activeTypeConfig?.duration || 60} minutes
+                    </span>
+                    <span style={styles.metaItem}>
+                      <span style={styles.metaIcon}>📋</span> {activeTypeConfig?.questions || 100} questions
+                    </span>
+                    <span style={styles.metaItem}>
+                      <span style={styles.metaIcon}>🎯</span> 80% passing
+                    </span>
+                  </div>
+                </div>
+                <div style={styles.cardStatus}>
+                  {(() => {
+                    const completed = isAssessmentCompleted(activeAssessment.id);
+                    const inProgress = isAssessmentInProgress(activeAssessment.id);
+                    const score = getAssessmentScore(activeAssessment.id);
+                    
+                    if (completed) {
+                      return (
+                        <span style={{
+                          ...styles.statusBadge,
+                          background: score >= 80 ? '#dcfce7' : '#fff3cd',
+                          color: score >= 80 ? '#166534' : '#856404',
+                          border: score >= 80 ? '1px solid #86efac' : '1px solid #ffe69c'
+                        }}>
+                          {score >= 80 ? '✓ Passed' : '⚠️ Review Required'} • {score}%
+                        </span>
+                      );
+                    } else if (inProgress) {
+                      return (
+                        <span style={{
+                          ...styles.statusBadge,
+                          background: '#dbeafe',
+                          color: '#1e40af',
+                          border: '1px solid #93c5fd'
+                        }}>
+                          In Progress
+                        </span>
+                      );
+                    } else {
+                      return (
+                        <span style={{
+                          ...styles.statusBadge,
+                          background: '#f1f5f9',
+                          color: '#475569',
+                          border: '1px solid #cbd5e1'
+                        }}>
+                          Ready to Start
+                        </span>
+                      );
+                    }
+                  })()}
                 </div>
               </div>
-              <div style={styles.cardStatus}>
-                {(() => {
-                  const completed = isAssessmentCompleted(activeAssessment.id);
-                  const inProgress = isAssessmentInProgress(activeAssessment.id);
-                  const score = getAssessmentScore(activeAssessment.id);
-                  
-                  if (completed) {
-                    return (
-                      <span style={{
-                        ...styles.statusBadge,
-                        background: score >= 80 ? '#dcfce7' : '#fff3cd',
-                        color: score >= 80 ? '#166534' : '#856404',
-                        border: score >= 80 ? '1px solid #86efac' : '1px solid #ffe69c'
-                      }}>
-                        {score >= 80 ? '✓ Passed' : '⚠️ Review Required'} • {score}%
-                      </span>
-                    );
-                  } else if (inProgress) {
-                    return (
-                      <span style={{
-                        ...styles.statusBadge,
-                        background: '#dbeafe',
-                        color: '#1e40af',
-                        border: '1px solid #93c5fd'
-                      }}>
-                        In Progress
-                      </span>
-                    );
-                  } else {
-                    return (
-                      <span style={{
-                        ...styles.statusBadge,
-                        background: '#f1f5f9',
-                        color: '#475569',
-                        border: '1px solid #cbd5e1'
-                      }}>
-                        Ready to Start
-                      </span>
-                    );
-                  }
-                })()}
-              </div>
+              <button
+                onClick={() => router.push(`/assessment/${activeAssessment.id}`)}
+                style={{
+                  ...styles.startButton,
+                  background: assessmentColors[activeTab]?.gradient || assessmentColors.general.gradient
+                }}
+              >
+                {isAssessmentInProgress(activeAssessment.id) ? 'Continue Assessment' : 'Start Assessment'}
+              </button>
             </div>
-            <button
-              onClick={() => router.push(`/assessment/${activeAssessment.id}`)}
-              style={{
-                ...styles.startButton,
-                background: assessmentColors[activeTab]?.gradient || assessmentColors.general.gradient
-              }}
-            >
-              {isAssessmentInProgress(activeAssessment.id) ? 'Continue Assessment' : 'Start Assessment'}
-            </button>
+
+            {/* Key Assessment Areas - Only category names */}
+            {selectedAssessmentAreas && selectedAssessmentAreas.length > 0 && (
+              <div style={styles.areasSection}>
+                <h3 style={styles.areasTitle}>Key Assessment Areas</h3>
+                <div style={styles.areasGrid}>
+                  {selectedAssessmentAreas.map((area, index) => (
+                    <div key={index} style={styles.areaItem}>
+                      <span style={styles.areaBullet}>•</span>
+                      <span style={styles.areaText}>{area}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div style={styles.emptyState}>
@@ -408,7 +530,7 @@ export default function CandidateDashboard() {
           </div>
         </div>
 
-        {/* Guidelines Section - Professional Version */}
+        {/* Guidelines Section */}
         <div style={styles.guidelinesWrapper}>
           <div style={styles.guidelinesBackground} />
           <div style={styles.guidelinesContent}>
@@ -653,11 +775,14 @@ const styles = {
   tabLabel: {
     textTransform: 'capitalize'
   },
+  assessmentDetailsSection: {
+    marginBottom: '32px'
+  },
   card: {
     background: 'white',
     borderRadius: '16px',
     padding: '20px 24px',
-    marginBottom: '32px',
+    marginBottom: '20px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
     border: '1px solid #e2e8f0',
     display: 'flex',
@@ -714,6 +839,39 @@ const styles = {
     whiteSpace: 'nowrap',
     transition: 'all 0.2s',
     boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+  },
+  areasSection: {
+    background: 'white',
+    borderRadius: '16px',
+    padding: '24px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    border: '1px solid #e2e8f0'
+  },
+  areasTitle: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#0f172a',
+    margin: '0 0 '16px' 0'
+  },
+  areasGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '8px'
+  },
+  areaItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '6px 0'
+  },
+  areaBullet: {
+    color: '#2563eb',
+    fontSize: '16px',
+    fontWeight: 'bold'
+  },
+  areaText: {
+    fontSize: '14px',
+    color: '#334155'
   },
   emptyState: {
     textAlign: 'center',
