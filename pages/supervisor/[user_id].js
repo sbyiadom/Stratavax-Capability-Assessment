@@ -70,100 +70,114 @@ export default function CandidateReport() {
     checkAuth();
   }, [router]);
 
-  // Fetch candidate data
-  useEffect(() => {
-    if (!isSupervisor || !user_id) return;
+ // Fetch candidate data
+useEffect(() => {
+  if (!isSupervisor || !user_id) return;
 
-    const fetchData = async () => {
-      try {
-        setLoading(true);
+  const fetchData = async () => {
+    try {
+      setLoading(true);
 
-        // Get candidate info from auth.users or candidate_profiles
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('email, user_metadata')
-          .eq('id', user_id)
-          .single();
+      // Try to get candidate info from candidate_profiles first
+      const { data: profileData, error: profileError } = await supabase
+        .from('candidate_profiles')
+        .select('*')
+        .eq('id', user_id)
+        .single();
 
-        if (userError) {
-          console.error("Error fetching user:", userError);
-        }
-
+      if (!profileError && profileData) {
         setCandidate({
           id: user_id,
-          full_name: userData?.user_metadata?.full_name || 'Candidate',
-          email: userData?.email || 'No email'
+          full_name: profileData.full_name || 'Candidate',
+          email: profileData.email || 'No email'
         });
-
-        // Get all completed assessments for this candidate from assessment_results
-        const { data: resultsData, error: resultsError } = await supabase
-          .from('assessment_results')
-          .select(`
-            *,
-            assessments (
-              id,
-              title,
-              assessment_type:assessment_types (
-                code,
-                name,
-                icon,
-                color
-              )
-            )
-          `)
-          .eq('user_id', user_id)
-          .order('completed_at', { ascending: false });
-
-        if (resultsError) {
-          console.error("Error fetching results:", resultsError);
-        }
-
-        if (resultsData && resultsData.length > 0) {
-          // Transform the data for the assessments list
-          const formattedAssessments = resultsData.map(result => ({
-            result_id: result.id,
-            assessment_id: result.assessment_id,
-            assessment_name: result.assessments?.title || 'Assessment',
-            assessment_type: result.assessments?.assessment_type?.code || 'general',
-            score: result.total_score,
-            max_score: result.max_score,
-            percentage: result.percentage_score,
-            completed_at: result.completed_at,
-            category_scores: result.category_scores,
-            strengths: result.strengths || [],
-            weaknesses: result.weaknesses || [],
-            recommendations: result.recommendations || [],
-            development_plan: result.development_plan || [],
-            executive_summary: result.interpretations?.executiveSummary || '',
-            overall_profile: result.interpretations?.overallProfile || ''
-          }));
-
-          setAssessments(formattedAssessments);
-          
-          // Select the most recent assessment
-          const mostRecent = formattedAssessments[0];
-          setSelectedAssessment(mostRecent);
-          
-          // Set the detailed data
-          setAssessmentResult(mostRecent);
-          setCategoryScores(mostRecent.category_scores || {});
-          setStrengths(mostRecent.strengths || []);
-          setWeaknesses(mostRecent.weaknesses || []);
-          setRecommendations(mostRecent.recommendations || []);
-          setDevelopmentPlan(mostRecent.development_plan || []);
-          setExecutiveSummary(mostRecent.executive_summary || '');
-          setOverallProfile(mostRecent.overall_profile || '');
-        }
-
-      } catch (error) {
-        console.error("Error fetching candidate data:", error);
-      } finally {
-        setLoading(false);
+      } else {
+        // Fallback: try to get from auth data via a custom function or view
+        // For now, use a placeholder
+        setCandidate({
+          id: user_id,
+          full_name: 'Candidate',
+          email: 'Email not available'
+        });
       }
-    };
 
-    fetchData();
-  }, [isSupervisor, user_id]);
+      // Get all completed assessments for this candidate from assessment_results
+      const { data: resultsData, error: resultsError } = await supabase
+        .from('assessment_results')
+        .select(`
+          *,
+          assessments (
+            id,
+            title,
+            assessment_type:assessment_types (
+              code,
+              name,
+              icon,
+              color
+            )
+          )
+        `)
+        .eq('user_id', user_id)
+        .order('completed_at', { ascending: false });
+
+      if (resultsError) {
+        console.error("Error fetching results:", resultsError);
+      }
+
+      console.log("Results data:", resultsData);
+
+      if (resultsData && resultsData.length > 0) {
+        // Transform the data for the assessments list
+        const formattedAssessments = resultsData.map(result => ({
+          result_id: result.id,
+          assessment_id: result.assessment_id,
+          assessment_name: result.assessments?.title || 'Assessment',
+          assessment_type: result.assessments?.assessment_type?.code || 'general',
+          score: result.total_score,
+          max_score: result.max_score,
+          percentage: result.percentage_score,
+          completed_at: result.completed_at,
+          category_scores: result.category_scores || {},
+          subsection_scores: result.subsection_scores || {},
+          strengths: result.strengths || [],
+          weaknesses: result.weaknesses || [],
+          recommendations: result.recommendations || [],
+          development_plan: result.development_plan || {},
+          unique_insights: result.unique_insights || [],
+          detailed_analysis: result.detailed_analysis || {},
+          interpretations: result.interpretations || {}
+        }));
+
+        setAssessments(formattedAssessments);
+        
+        // Select the most recent assessment
+        const mostRecent = formattedAssessments[0];
+        setSelectedAssessment(mostRecent);
+        
+        // Set the detailed data
+        setAssessmentResult(mostRecent);
+        setCategoryScores(mostRecent.category_scores || {});
+        setSubsectionScores(mostRecent.subsection_scores || {});
+        setStrengths(mostRecent.strengths || []);
+        setWeaknesses(mostRecent.weaknesses || []);
+        setRecommendations(mostRecent.recommendations || []);
+        setDevelopmentPlan(mostRecent.development_plan || {});
+        setUniqueInsights(mostRecent.unique_insights || []);
+        setDetailedAnalysis(mostRecent.detailed_analysis || {});
+        setInterpretations(mostRecent.interpretations || {});
+      } else {
+        console.log("No assessment results found for user:", user_id);
+      }
+
+    } catch (error) {
+      console.error("Error fetching candidate data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  fetchData();
+}, [isSupervisor, user_id]);
 
   // Handle assessment selection
   const handleAssessmentChange = async (assessment) => {
@@ -1197,3 +1211,4 @@ const styles = {
     marginTop: '20px'
   }
 };
+
