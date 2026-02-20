@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "../../supabase/client";
+import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
+import { supabase } from "../../supabase/client";
 import {
   getGradeInfo,
   getOverallRating,
@@ -27,6 +28,12 @@ export default function CandidateReport() {
   const [executiveSummary, setExecutiveSummary] = useState('');
   const [assessmentType, setAssessmentType] = useState('general');
   const [professionalInterpretation, setProfessionalInterpretation] = useState(null);
+  const [expandedSections, setExpandedSections] = useState({
+    summary: true,
+    categories: true,
+    interpretation: true,
+    recommendations: true
+  });
 
   // Check supervisor authentication
   useEffect(() => {
@@ -62,45 +69,25 @@ export default function CandidateReport() {
         setLoading(true);
 
         // First, check if this user_id is a supervisor
-        const { data: supervisorData, error: supervisorError } = await supabase
+        const { data: supervisorData } = await supabase
           .from('supervisors')
           .select('*')
           .eq('user_id', user_id)
           .maybeSingle();
 
-        if (supervisorError) {
-          console.error("Error checking supervisor:", supervisorError);
-        }
-
-        console.log("Supervisor data:", supervisorData);
-
         if (!supervisorData) {
           // If not a supervisor, treat as candidate directly
-          console.log("Not a supervisor, treating as candidate");
           await fetchCandidateData(user_id);
         } else {
           // This is a supervisor - get all candidates under this supervisor
-          console.log("Fetching candidates for supervisor:", user_id);
-          
-          // Get all notifications for this supervisor to find candidates
-          const { data: notifications, error: notifError } = await supabase
+          const { data: notifications } = await supabase
             .from('supervisor_notifications')
             .select('user_id')
             .eq('supervisor_id', user_id)
             .order('created_at', { ascending: false });
 
-          if (notifError) {
-            console.error("Error fetching notifications:", notifError);
-          }
-
-          console.log("Notifications found:", notifications);
-
           if (notifications && notifications.length > 0) {
-            // Get unique candidate IDs
             const candidateIds = [...new Set(notifications.map(n => n.user_id))];
-            console.log("Candidate IDs under this supervisor:", candidateIds);
-            
-            // For now, show the first candidate's data
             if (candidateIds.length > 0) {
               await fetchCandidateData(candidateIds[0]);
             } else {
@@ -119,56 +106,44 @@ export default function CandidateReport() {
     // Helper function to fetch candidate data
     const fetchCandidateData = async (candidateId) => {
       try {
-        console.log("🔍 Fetching data for candidate ID:", candidateId);
-        
-        // FIRST: Try to get detailed data from assessment_results (this has the full interpretations)
-        const { data: resultsData, error: resultsError } = await supabase
+        // FIRST: Try to get detailed data from assessment_results
+        const { data: resultsData } = await supabase
           .from('assessment_results')
           .select('*')
           .eq('user_id', candidateId)
           .order('completed_at', { ascending: false });
 
-        console.log("Assessment results found:", resultsData);
-        console.log("Results error:", resultsError);
+        // Get candidate info
+        const { data: profileData } = await supabase
+          .from('candidate_profiles')
+          .select('*')
+          .eq('id', candidateId)
+          .maybeSingle();
+
+        setCandidate({
+          id: candidateId,
+          full_name: profileData?.full_name || 'Candidate',
+          email: profileData?.email || 'Email not available'
+        });
 
         if (resultsData && resultsData.length > 0) {
-          // We have detailed results with category scores and interpretations
-          console.log("Using detailed assessment results");
-          
-          // Get candidate info
-          const { data: profileData } = await supabase
-            .from('candidate_profiles')
-            .select('*')
-            .eq('id', candidateId)
-            .maybeSingle();
-
-          setCandidate({
-            id: candidateId,
-            full_name: profileData?.full_name || 'Candidate',
-            email: profileData?.email || 'Email not available'
-          });
-
-          // Format assessments from results data
+          // We have detailed results with category scores
           const formattedAssessments = resultsData.map(result => {
             const maxScore = result.max_score || 500;
             const percentage = result.total_score ? Math.round((result.total_score / maxScore) * 100) : 0;
             
-            // Parse strengths and weaknesses if they're strings
-            let strengthsList = result.strengths || [];
-            let weaknessesList = result.weaknesses || [];
-            
             return {
               id: result.id,
               assessment_id: result.assessment_id,
-              name: result.assessment_name || 'Assessment',
+              name: `Assessment ${result.assessment_id?.substring(0, 8) || ''}`,
               type: result.assessment_type || 'general',
               score: result.total_score || 0,
               max_score: maxScore,
               percentage,
               completed_at: result.completed_at,
               category_scores: result.category_scores || {},
-              strengths: strengthsList,
-              weaknesses: weaknessesList,
+              strengths: result.strengths || [],
+              weaknesses: result.weaknesses || [],
               recommendations: result.recommendations || [],
               development_plan: result.development_plan || {},
               interpretations: result.interpretations || {},
@@ -177,7 +152,6 @@ export default function CandidateReport() {
             };
           });
 
-          console.log("Formatted assessments from results:", formattedAssessments);
           setAssessments(formattedAssessments);
           
           if (formattedAssessments.length > 0) {
@@ -197,10 +171,8 @@ export default function CandidateReport() {
           return;
         }
 
-        // SECOND: Try to get from candidate_assessments with joined results
-        console.log("No detailed results, checking candidate_assessments");
-        
-        const { data: candidateAssessments, error: candidateError } = await supabase
+        // SECOND: Try to get from candidate_assessments
+        const { data: candidateAssessments } = await supabase
           .from('candidate_assessments')
           .select(`
             id,
@@ -221,26 +193,11 @@ export default function CandidateReport() {
           .order('completed_at', { ascending: false });
 
         if (candidateAssessments && candidateAssessments.length > 0) {
-          // Get candidate info
-          const { data: profileData } = await supabase
-            .from('candidate_profiles')
-            .select('*')
-            .eq('id', candidateId)
-            .maybeSingle();
-
-          setCandidate({
-            id: candidateId,
-            full_name: profileData?.full_name || 'Candidate',
-            email: profileData?.email || 'Email not available'
-          });
-
-          // Format assessments and generate interpretations using your functions
           const formattedAssessments = candidateAssessments.map(assessment => {
             const maxScore = 500;
             const percentage = assessment.score ? Math.round((assessment.score / maxScore) * 100) : 0;
             const type = assessment.assessments?.assessment_type?.code || 'general';
             
-            // Create category scores based on overall percentage
             const categoryScores = {
               'Overall Performance': {
                 score: assessment.score || 0,
@@ -250,18 +207,16 @@ export default function CandidateReport() {
               }
             };
             
-            // Generate interpretations using your functions
             const gradeInfo = getGradeInfo(percentage);
             const rating = getOverallRating(percentage, [], [], type);
             
-            // Create strengths/weaknesses based on percentage
             const strengths = percentage >= 70 ? ['Overall Performance'] : [];
             const weaknesses = percentage < 70 ? ['Overall Performance'] : [];
             
             const strengthsForDb = strengths.map(s => `${s} (${percentage}%)`);
             const weaknessesForDb = weaknesses.map(w => `${w} (${percentage}%)`);
             
-            const executiveSummary = `${profileData?.full_name || 'Candidate'} completed the ${assessment.assessments?.title || 'Assessment'} with a score of ${assessment.score}/${maxScore} (${percentage}%). ${rating.message}`;
+            const executiveSummary = `${profileData?.full_name || 'Candidate'} completed the assessment with a score of ${assessment.score}/${maxScore} (${percentage}%). ${rating.message}`;
             
             return {
               id: assessment.id,
@@ -289,7 +244,6 @@ export default function CandidateReport() {
             };
           });
 
-          console.log("Formatted assessments from candidate_assessments:", formattedAssessments);
           setAssessments(formattedAssessments);
           
           if (formattedAssessments.length > 0) {
@@ -307,95 +261,80 @@ export default function CandidateReport() {
         }
 
         // THIRD: Fallback to supervisor_dashboard
-        console.log("No data in results or assessments, checking supervisor_dashboard");
-        
-        const { data: dashboardData, error: dashboardError } = await supabase
+        const { data: dashboardData } = await supabase
           .from('supervisor_dashboard')
           .select('*')
           .eq('user_id', candidateId)
           .maybeSingle();
 
-        console.log("Dashboard data:", dashboardData);
-
-        if (dashboardData) {
-          setCandidate({
-            id: candidateId,
-            full_name: dashboardData.full_name || 'Candidate',
-            email: dashboardData.email || 'Email not available'
-          });
-
-          if (dashboardData.assessments && dashboardData.assessments.length > 0) {
-            const completedAssessments = dashboardData.assessments.filter(a => a.status === 'completed');
-            
-            if (completedAssessments.length > 0) {
-              const formattedAssessments = completedAssessments.map((assessment) => {
-                const percentage = assessment.score ? Math.round((assessment.score / assessment.max_score) * 100) : 0;
-                const gradeInfo = getGradeInfo(percentage);
-                const rating = getOverallRating(percentage, [], [], assessment.assessment_type);
-                
-                // Create category scores
-                const categoryName = assessment.assessment_type === 'general' ? 'General Knowledge' : 
-                                    assessment.assessment_type === 'technical' ? 'Technical Skills' : 
-                                    'Assessment';
-                const categoryScores = {
-                  [categoryName]: {
-                    score: assessment.score || 0,
-                    maxPossible: assessment.max_score || 500,
-                    percentage: percentage,
-                    total: assessment.score || 0
-                  }
-                };
-                
-                // Create strengths/weaknesses based on percentage
-                const strengths = percentage >= 70 ? [categoryName] : [];
-                const weaknesses = percentage < 70 ? [categoryName] : [];
-                
-                const strengthsForDb = strengths.map(s => `${s} (${percentage}%)`);
-                const weaknessesForDb = weaknesses.map(w => `${w} (${percentage}%)`);
-                
-                const executiveSummary = `${dashboardData.full_name || 'Candidate'} completed the ${assessment.assessment_name} with a score of ${assessment.score}/${assessment.max_score} (${percentage}%). ${rating.message}`;
-                
-                return {
-                  id: assessment.assessment_id,
-                  assessment_id: assessment.assessment_id,
-                  name: assessment.assessment_name,
-                  type: assessment.assessment_type,
-                  score: assessment.score || 0,
-                  max_score: assessment.max_score || 500,
-                  percentage,
-                  completed_at: assessment.completed_at,
-                  category_scores: categoryScores,
-                  strengths: strengthsForDb,
-                  weaknesses: weaknessesForDb,
-                  recommendations: [],
-                  development_plan: {},
-                  interpretations: {
-                    classification: gradeInfo.description,
-                    summary: executiveSummary,
-                    overallProfile: rating.message,
-                    strengths: strengthsForDb,
-                    weaknesses: weaknessesForDb
-                  },
-                  executive_summary: executiveSummary,
-                  overall_profile: rating.message
-                };
-              });
-
-              console.log("Formatted assessments from dashboard:", formattedAssessments);
-              setAssessments(formattedAssessments);
+        if (dashboardData && dashboardData.assessments) {
+          const completedAssessments = dashboardData.assessments.filter(a => a.status === 'completed');
+          
+          if (completedAssessments.length > 0) {
+            const formattedAssessments = completedAssessments.map((assessment) => {
+              const percentage = assessment.score ? Math.round((assessment.score / assessment.max_score) * 100) : 0;
+              const gradeInfo = getGradeInfo(percentage);
+              const rating = getOverallRating(percentage, [], [], assessment.assessment_type);
               
-              if (formattedAssessments.length > 0) {
-                const sorted = [...formattedAssessments].sort((a, b) => 
-                  new Date(b.completed_at) - new Date(a.completed_at)
-                );
-                const mostRecent = sorted[0];
-                setSelectedAssessment(mostRecent);
-                setCategoryScores(mostRecent.category_scores || {});
-                setStrengths(mostRecent.strengths || []);
-                setWeaknesses(mostRecent.weaknesses || []);
-                setExecutiveSummary(mostRecent.executive_summary || '');
-                setAssessmentType(mostRecent.type);
-              }
+              const categoryName = assessment.assessment_type === 'general' ? 'General Knowledge' : 
+                                  assessment.assessment_type === 'technical' ? 'Technical Skills' : 
+                                  'Assessment';
+              const categoryScores = {
+                [categoryName]: {
+                  score: assessment.score || 0,
+                  maxPossible: assessment.max_score || 500,
+                  percentage: percentage,
+                  total: assessment.score || 0
+                }
+              };
+              
+              const strengths = percentage >= 70 ? [categoryName] : [];
+              const weaknesses = percentage < 70 ? [categoryName] : [];
+              
+              const strengthsForDb = strengths.map(s => `${s} (${percentage}%)`);
+              const weaknessesForDb = weaknesses.map(w => `${w} (${percentage}%)`);
+              
+              const executiveSummary = `${dashboardData.full_name || 'Candidate'} completed the ${assessment.assessment_name} with a score of ${assessment.score}/${assessment.max_score} (${percentage}%). ${rating.message}`;
+              
+              return {
+                id: assessment.assessment_id,
+                assessment_id: assessment.assessment_id,
+                name: assessment.assessment_name,
+                type: assessment.assessment_type,
+                score: assessment.score || 0,
+                max_score: assessment.max_score || 500,
+                percentage,
+                completed_at: assessment.completed_at,
+                category_scores: categoryScores,
+                strengths: strengthsForDb,
+                weaknesses: weaknessesForDb,
+                recommendations: [],
+                development_plan: {},
+                interpretations: {
+                  classification: gradeInfo.description,
+                  summary: executiveSummary,
+                  overallProfile: rating.message,
+                  strengths: strengthsForDb,
+                  weaknesses: weaknessesForDb
+                },
+                executive_summary: executiveSummary,
+                overall_profile: rating.message
+              };
+            });
+
+            setAssessments(formattedAssessments);
+            
+            if (formattedAssessments.length > 0) {
+              const sorted = [...formattedAssessments].sort((a, b) => 
+                new Date(b.completed_at) - new Date(a.completed_at)
+              );
+              const mostRecent = sorted[0];
+              setSelectedAssessment(mostRecent);
+              setCategoryScores(mostRecent.category_scores || {});
+              setStrengths(mostRecent.strengths || []);
+              setWeaknesses(mostRecent.weaknesses || []);
+              setExecutiveSummary(mostRecent.executive_summary || '');
+              setAssessmentType(mostRecent.type);
             }
           }
         }
@@ -412,13 +351,11 @@ export default function CandidateReport() {
   // Generate professional interpretations when data changes
   useEffect(() => {
     if (selectedAssessment && Object.keys(categoryScores).length > 0 && candidate) {
-      // Convert category scores to simple percentage object
       const scoresObject = {};
       Object.entries(categoryScores).forEach(([cat, data]) => {
         scoresObject[cat] = data.percentage;
       });
       
-      // Generate universal interpretations
       const interpretation = generateUniversalInterpretation(
         assessmentType,
         candidate.full_name,
@@ -445,52 +382,35 @@ export default function CandidateReport() {
     setAssessmentType(selected.type);
   };
 
-  const handleBack = () => router.push('/supervisor');
+  const toggleSection = (section) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
 
-  // Generate actionable recommendations based on low-scoring categories
-  const generateActionableRecommendations = () => {
-    const recommendations = [];
-    
-    Object.entries(categoryScores).forEach(([category, data]) => {
-      if (data.percentage < 60) {
-        let action = '';
-        let resources = '';
-        
-        if (category.includes('Technical') || category.includes('Manufacturing')) {
-          action = 'Enroll in technical training programs. Provide hands-on practice with supervision.';
-          resources = 'Recommended: Technical certification courses, on-the-job training, shadowing experienced technicians.';
-        } else if (category.includes('Cognitive') || category.includes('Problem')) {
-          action = 'Provide structured problem-solving frameworks and analytical thinking exercises.';
-          resources = 'Recommended: Critical thinking courses, case study analysis, puzzle-based learning platforms.';
-        } else if (category.includes('Communication')) {
-          action = 'Provide communication skills training. Practice presentations and written communication.';
-          resources = 'Recommended: Business writing courses, presentation skills workshop, Toastmasters.';
-        } else if (category.includes('Cultural') || category.includes('Attitudinal')) {
-          action = 'Schedule regular feedback sessions to discuss cultural alignment.';
-          resources = 'Recommended: Company values workshop, team-building activities, shadowing programs.';
-        } else if (category.includes('Emotional')) {
-          action = 'Provide EI training focusing on self-awareness and empathy.';
-          resources = 'Recommended: EI workshops, mindfulness training, 360-degree feedback sessions.';
-        } else {
-          action = 'Provide targeted training and development in this area.';
-          resources = 'Recommended: Relevant courses, mentoring, and practical exercises.';
-        }
-        
-        recommendations.push({
-          area: category,
-          score: data.percentage,
-          action,
-          resources
-        });
-      }
-    });
-    
-    return recommendations;
+  const getClassification = (score, assessmentType = 'general') => {
+    if (assessmentType === 'general') {
+      if (score >= 450) return { label: "Elite Talent", color: "#2E7D32" };
+      if (score >= 400) return { label: "Top Talent", color: "#4CAF50" };
+      if (score >= 350) return { label: "High Potential", color: "#2196F3" };
+      if (score >= 300) return { label: "Solid Performer", color: "#FF9800" };
+      if (score >= 250) return { label: "Developing Talent", color: "#9C27B0" };
+      if (score >= 200) return { label: "Emerging Talent", color: "#795548" };
+      return { label: "Needs Improvement", color: "#F44336" };
+    } else {
+      if (score >= 90) return { label: "Exceptional", color: "#2E7D32" };
+      if (score >= 80) return { label: "Advanced", color: "#4CAF50" };
+      if (score >= 70) return { label: "Proficient", color: "#2196F3" };
+      if (score >= 60) return { label: "Developing", color: "#FF9800" };
+      if (score >= 50) return { label: "Basic", color: "#9C27B0" };
+      return { label: "Needs Improvement", color: "#F44336" };
+    }
   };
 
   if (!isSupervisor || loading) {
     return (
-      <div style={styles.loadingContainer}>
+      <div style={styles.checkingContainer}>
         <div style={styles.spinner} />
         <p>Loading candidate report...</p>
       </div>
@@ -499,20 +419,26 @@ export default function CandidateReport() {
 
   if (!candidate) {
     return (
-      <div style={styles.errorContainer}>
-        <h2>Candidate Not Found</h2>
+      <div style={styles.emptyState}>
+        <div style={styles.emptyIcon}>👤</div>
+        <h3>Candidate Not Found</h3>
         <p>The requested candidate could not be found.</p>
-        <button onClick={handleBack} style={styles.primaryButton}>← Back to Dashboard</button>
+        <Link href="/supervisor" legacyBehavior>
+          <a style={styles.primaryButton}>← Back to Dashboard</a>
+        </Link>
       </div>
     );
   }
 
   if (!assessments || assessments.length === 0) {
     return (
-      <div style={styles.errorContainer}>
-        <h2>No Assessment Data Available</h2>
+      <div style={styles.emptyState}>
+        <div style={styles.emptyIcon}>📊</div>
+        <h3>No Assessment Data Available</h3>
         <p>This candidate hasn't completed any assessments yet.</p>
-        <button onClick={handleBack} style={styles.primaryButton}>← Back to Dashboard</button>
+        <Link href="/supervisor" legacyBehavior>
+          <a style={styles.primaryButton}>← Back to Dashboard</a>
+        </Link>
       </div>
     );
   }
@@ -520,48 +446,57 @@ export default function CandidateReport() {
   const current = selectedAssessment || assessments[0];
   const overallGrade = getGradeInfo(current.percentage);
   const overallRating = getOverallRating(current.percentage, current.strengths, current.weaknesses, current.type);
-  const actionableRecommendations = generateActionableRecommendations();
+  const classification = getClassification(current.score, current.type);
 
   return (
     <AppLayout background="/images/preassessmentbg.jpg">
       <div style={styles.container}>
         {/* Header */}
         <div style={styles.header}>
-          <button onClick={handleBack} style={styles.backButton}>← Dashboard</button>
-          <div style={styles.headerContent}>
-            <div>
-              <h1 style={styles.candidateName}>{candidate.full_name}</h1>
-              <p style={styles.candidateEmail}>{candidate.email}</p>
-            </div>
-            {assessments.length > 1 && (
-              <select 
-                value={current.id} 
-                onChange={handleAssessmentChange}
-                style={styles.assessmentSelect}
-              >
-                {assessments.map(a => (
-                  <option key={a.id} value={a.id}>
-                    {a.name} - {new Date(a.completed_at).toLocaleDateString()} ({a.score}/{a.max_score})
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
+          <Link href="/supervisor" legacyBehavior>
+            <a style={styles.backButton}>← Dashboard</a>
+          </Link>
+          <button onClick={() => router.push("/supervisor")} style={styles.logoutButton}>
+            Back
+          </button>
         </div>
 
-        {/* Hero Score Section */}
+        {/* Candidate Info */}
+        <div style={styles.candidateHeader}>
+          <div>
+            <h1 style={styles.candidateName}>{candidate.full_name}</h1>
+            <p style={styles.candidateEmail}>{candidate.email}</p>
+          </div>
+          {assessments.length > 1 && (
+            <select 
+              value={current.id} 
+              onChange={handleAssessmentChange}
+              style={styles.assessmentSelect}
+            >
+              {assessments.map(a => (
+                <option key={a.id} value={a.id}>
+                  {a.name} - {new Date(a.completed_at).toLocaleDateString()} ({a.score}/{a.max_score})
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {/* Hero Score Card */}
         <div style={{
-          ...styles.heroSection,
+          ...styles.heroCard,
           background: `linear-gradient(135deg, ${overallGrade.color}, ${adjustColor(overallGrade.color, 30)})`
         }}>
           <div style={styles.heroContent}>
             <div>
               <div style={styles.heroTitle}>{current.name}</div>
-              <div style={styles.heroDate}>Completed: {new Date(current.completed_at).toLocaleString()}</div>
+              <div style={styles.heroDate}>
+                Completed: {new Date(current.completed_at).toLocaleString()}
+              </div>
             </div>
-            <div style={styles.heroScoreCard}>
-              <span style={styles.heroScore}>{current.score}</span>
-              <span style={styles.heroMax}>/{current.max_score}</span>
+            <div style={styles.heroScore}>
+              <span style={styles.heroScoreNumber}>{current.score}</span>
+              <span style={styles.heroMaxScore}>/{current.max_score}</span>
             </div>
           </div>
           <div style={styles.heroStats}>
@@ -574,269 +509,259 @@ export default function CandidateReport() {
               <div style={{...styles.heroStatValue, fontSize: '32px'}}>{overallGrade.grade}</div>
             </div>
             <div style={styles.heroStat}>
-              <div style={styles.heroStatLabel}>Rating</div>
-              <div style={styles.heroStatValue}>{overallRating.title}</div>
+              <div style={styles.heroStatLabel}>Classification</div>
+              <div style={{...styles.heroStatValue, color: classification.color}}>
+                {classification.label}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Executive Summary */}
+        {/* Executive Summary Section */}
         {executiveSummary && (
-          <div style={styles.summaryCard}>
-            <div style={styles.summaryHeader}>
-              <span style={styles.summaryIcon}>📋</span>
-              <h2 style={styles.summaryTitle}>Executive Summary</h2>
+          <div style={styles.card}>
+            <div 
+              style={styles.cardHeader}
+              onClick={() => toggleSection('summary')}
+            >
+              <span style={styles.cardIcon}>📋</span>
+              <h3 style={styles.cardTitle}>Executive Summary</h3>
+              <span style={styles.expandIcon}>
+                {expandedSections.summary ? '▼' : '▶'}
+              </span>
             </div>
-            <p style={styles.summaryText}>{executiveSummary}</p>
-            <div style={{...styles.ratingBadge, background: overallGrade.bg, color: overallGrade.color}}>
-              <span style={styles.ratingIcon}>{overallRating.icon}</span>
-              <span><strong>Overall Assessment:</strong> {overallRating.title} • Grade {overallGrade.grade}</span>
-            </div>
+            {expandedSections.summary && (
+              <div style={styles.cardContent}>
+                <p style={styles.summaryText}>{executiveSummary}</p>
+                <div style={{
+                  ...styles.ratingBadge,
+                  background: overallGrade.bg,
+                  color: overallGrade.color
+                }}>
+                  <span style={styles.ratingIcon}>{overallRating.icon}</span>
+                  <span>
+                    <strong>Overall Assessment:</strong> {overallRating.title} • Grade {overallGrade.grade}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Category Performance Table */}
+        {/* Category Performance Section */}
         {Object.keys(current.category_scores).length > 0 && (
-          <div style={styles.tableCard}>
-            <div style={styles.tableHeader}>
-              <span style={styles.tableIcon}>📊</span>
-              <h2 style={styles.tableTitle}>Performance by Category</h2>
+          <div style={styles.card}>
+            <div 
+              style={styles.cardHeader}
+              onClick={() => toggleSection('categories')}
+            >
+              <span style={styles.cardIcon}>📊</span>
+              <h3 style={styles.cardTitle}>Performance by Category</h3>
+              <span style={styles.expandIcon}>
+                {expandedSections.categories ? '▼' : '▶'}
+              </span>
             </div>
-            <div style={styles.tableWrapper}>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>Category</th>
-                    <th style={styles.th}>Score</th>
-                    <th style={styles.th}>Percentage</th>
-                    <th style={styles.th}>Grade</th>
-                    <th style={styles.th}>Assessment</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(current.category_scores).map(([category, data]) => {
-                    const grade = getGradeInfo(data.percentage);
-                    
-                    // Determine row background color based on percentage
-                    let rowColor = '#ffffff';
-                    let assessmentText = '';
-                    
-                    if (data.percentage >= 80) {
-                      rowColor = '#f0fff4';
-                      assessmentText = 'Excellent';
-                    } else if (data.percentage >= 70) {
-                      rowColor = '#fff8e1';
-                      assessmentText = 'Good';
-                    } else if (data.percentage >= 60) {
-                      rowColor = '#fff3e0';
-                      assessmentText = 'Average';
-                    } else {
-                      rowColor = '#ffebee';
-                      assessmentText = 'Below Average';
-                    }
-                    
-                    // Progress bar color
-                    let progressColor = '';
-                    if (data.percentage >= 80) progressColor = '#4caf50';
-                    else if (data.percentage >= 60) progressColor = '#ff9800';
-                    else progressColor = '#f44336';
-                    
-                    return (
-                      <tr key={category} style={{ backgroundColor: rowColor, borderBottom: '1px solid #e0e0e0' }}>
-                        <td style={styles.td}>
-                          <strong style={{ color: grade.color }}>{category}</strong>
-                        </td>
-                        <td style={styles.td}>
-                          <span style={{ fontWeight: 600, color: grade.color }}>
-                            {data.score || data.total}/{data.maxPossible}
-                          </span>
-                        </td>
-                        <td style={styles.td}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <div style={{
-                              width: '80px',
-                              height: '8px',
-                              background: '#e0e0e0',
-                              borderRadius: '4px',
-                              overflow: 'hidden'
-                            }}>
-                              <div style={{
-                                width: `${data.percentage}%`,
-                                height: '100%',
-                                background: progressColor,
-                                borderRadius: '4px',
-                                transition: 'width 0.3s ease'
-                              }} />
-                            </div>
-                            <span style={{ fontWeight: 600, color: grade.color, minWidth: '45px' }}>
-                              {data.percentage}%
-                            </span>
-                          </div>
-                        </td>
-                        <td style={styles.td}>
-                          <span style={{
-                            display: 'inline-block',
-                            padding: '4px 12px',
-                            borderRadius: '20px',
-                            background: grade.bg,
-                            color: grade.color,
-                            fontWeight: 700,
-                            fontSize: '13px'
-                          }}>
-                            {grade.grade}
-                          </span>
-                        </td>
-                        <td style={styles.td}>
-                          <span style={{
-                            display: 'inline-block',
-                            padding: '4px 12px',
-                            borderRadius: '20px',
-                            background: `${grade.color}15`,
-                            color: grade.color,
-                            fontSize: '13px',
-                            fontWeight: 500
-                          }}>
-                            {assessmentText}
-                          </span>
-                        </td>
+            {expandedSections.categories && (
+              <div style={styles.cardContent}>
+                <div style={styles.tableWrapper}>
+                  <table style={styles.table}>
+                    <thead>
+                      <tr style={styles.tableHeadRow}>
+                        <th style={styles.tableHead}>Category</th>
+                        <th style={styles.tableHead}>Score</th>
+                        <th style={styles.tableHead}>Percentage</th>
+                        <th style={styles.tableHead}>Grade</th>
+                        <th style={styles.tableHead}>Assessment</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody>
+                      {Object.entries(current.category_scores).map(([category, data]) => {
+                        const grade = getGradeInfo(data.percentage);
+                        
+                        let rowColor = '#ffffff';
+                        let assessmentText = '';
+                        
+                        if (data.percentage >= 80) {
+                          rowColor = '#f0fff4';
+                          assessmentText = 'Excellent';
+                        } else if (data.percentage >= 70) {
+                          rowColor = '#fff8e1';
+                          assessmentText = 'Good';
+                        } else if (data.percentage >= 60) {
+                          rowColor = '#fff3e0';
+                          assessmentText = 'Average';
+                        } else {
+                          rowColor = '#ffebee';
+                          assessmentText = 'Below Average';
+                        }
+                        
+                        let progressColor = '';
+                        if (data.percentage >= 80) progressColor = '#4caf50';
+                        else if (data.percentage >= 60) progressColor = '#ff9800';
+                        else progressColor = '#f44336';
+                        
+                        return (
+                          <tr key={category} style={{ ...styles.tableRow, backgroundColor: rowColor }}>
+                            <td style={styles.tableCell}>
+                              <strong style={{ color: grade.color }}>{category}</strong>
+                            </td>
+                            <td style={styles.tableCell}>
+                              <span style={{ fontWeight: 600, color: grade.color }}>
+                                {data.score || data.total}/{data.maxPossible}
+                              </span>
+                            </td>
+                            <td style={styles.tableCell}>
+                              <div style={styles.progressContainer}>
+                                <div style={styles.progressBar}>
+                                  <div style={{
+                                    width: `${data.percentage}%`,
+                                    height: '100%',
+                                    background: progressColor,
+                                    borderRadius: '4px'
+                                  }} />
+                                </div>
+                                <span style={{ fontWeight: 600, color: grade.color }}>
+                                  {data.percentage}%
+                                </span>
+                              </div>
+                            </td>
+                            <td style={styles.tableCell}>
+                              <span style={{
+                                ...styles.gradeBadge,
+                                background: grade.bg,
+                                color: grade.color
+                              }}>
+                                {grade.grade}
+                              </span>
+                            </td>
+                            <td style={styles.tableCell}>
+                              <span style={{
+                                ...styles.assessmentBadge,
+                                background: `${grade.color}15`,
+                                color: grade.color
+                              }}>
+                                {assessmentText}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* Professional Interpretation Section */}
         {professionalInterpretation && (
-          <div style={styles.interpretationCard}>
-            <h2 style={styles.interpretationTitle}>📋 Professional Assessment Interpretation</h2>
-            
-            {/* Profile Summary */}
-            <div style={styles.profileSummary}>
-              <span style={styles.profileBadge}>{professionalInterpretation.profileType}</span>
-              <p style={styles.profileDescription}>{professionalInterpretation.profileDescription}</p>
+          <div style={styles.card}>
+            <div 
+              style={styles.cardHeader}
+              onClick={() => toggleSection('interpretation')}
+            >
+              <span style={styles.cardIcon}>📋</span>
+              <h3 style={styles.cardTitle}>Professional Assessment Interpretation</h3>
+              <span style={styles.expandIcon}>
+                {expandedSections.interpretation ? '▼' : '▶'}
+              </span>
             </div>
-            
-            {/* Overall Summary */}
-            <div style={styles.overallSummaryCard}>
-              <p style={styles.overallSummaryText}>{professionalInterpretation.overallSummary}</p>
-            </div>
-            
-            {/* Category Breakdown */}
-            <h3 style={styles.sectionTitle}>📈 Category Breakdown & What It Means</h3>
-            <div style={styles.categoryGrid}>
-              {Object.entries(professionalInterpretation.categoryInterpretation || {}).map(([category, data]) => {
-                let levelColor = '';
-                if (data.level === 'excellent') levelColor = '#2E7D32';
-                else if (data.level === 'good') levelColor = '#4CAF50';
-                else if (data.level === 'average') levelColor = '#F57C00';
-                else levelColor = '#C62828';
-                
-                return (
-                  <div key={category} style={styles.categoryCard}>
-                    <div style={styles.categoryHeader}>
-                      <h4 style={styles.categoryName}>{category}</h4>
-                      <span style={{...styles.categoryScore, color: levelColor}}>{data.score}%</span>
-                    </div>
-                    <p style={styles.categoryInterpretation}>{data.interpretation}</p>
-                  </div>
-                );
-              })}
-            </div>
-            
-            {/* What This Profile Suggests */}
-            <h3 style={styles.sectionTitle}>🎯 What This Profile Suggests</h3>
-            <div style={styles.profileInsights}>
-              <div style={styles.insightColumn}>
-                <h4 style={styles.insightTitle}>Best Fit:</h4>
-                <ul style={styles.insightList}>
-                  {professionalInterpretation.suitability?.map((item, i) => (
-                    <li key={i} style={styles.insightItem}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-              <div style={styles.insightColumn}>
-                <h4 style={styles.insightTitle}>Risk Areas:</h4>
-                <ul style={styles.insightList}>
-                  {professionalInterpretation.risks?.map((item, i) => (
-                    <li key={i} style={styles.insightItem}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-            
-            {/* Development Focus */}
-            {professionalInterpretation.developmentFocus?.length > 0 && (
-              <>
-                <h3 style={styles.sectionTitle}>🎯 Development Focus</h3>
-                <div style={styles.developmentList}>
-                  {professionalInterpretation.developmentFocus.map((item, i) => (
-                    <div key={i} style={styles.developmentItem}>
-                      <span style={styles.developmentPriority}>
-                        {item.priority === 'High' ? '🔴 High' : 
-                         item.priority === 'Medium' ? '🟡 Medium' : '🟢 Low'}
-                      </span>
-                      <span style={styles.developmentArea}>{item.area}</span>
-                    </div>
-                  ))}
+            {expandedSections.interpretation && (
+              <div style={styles.cardContent}>
+                {/* Profile Summary */}
+                <div style={styles.profileSummary}>
+                  <span style={styles.profileBadge}>
+                    {professionalInterpretation.profileType}
+                  </span>
+                  <p style={styles.profileDescription}>
+                    {professionalInterpretation.profileDescription}
+                  </p>
                 </div>
-              </>
-            )}
-            
-            {/* Top Strengths */}
-            {professionalInterpretation.topStrengths?.length > 0 && (
-              <div style={styles.topStrengthsCard}>
-                <h4 style={styles.topStrengthsTitle}>✨ Top Strengths</h4>
-                <div style={styles.topStrengthsList}>
-                  {professionalInterpretation.topStrengths.map((strength, i) => (
-                    <span key={i} style={styles.topStrengthTag}>{strength}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            {/* Overall Grade Interpretation */}
-            <div style={styles.gradeInterpretation}>
-              <h4 style={styles.gradeTitle}>📌 Overall Assessment</h4>
-              <p style={styles.gradeText}>
-                {professionalInterpretation.overallScore}% overall. {professionalInterpretation.profileDescription}
-              </p>
-            </div>
-          </div>
-        )}
 
-        {/* Actionable Recommendations Section */}
-        {actionableRecommendations.length > 0 && (
-          <div style={styles.recommendationsSection}>
-            <h2 style={styles.recommendationsTitle}>📋 Recommendations for Improvement</h2>
-            <p style={styles.recommendationsSubtitle}>
-              Based on areas scoring below 60%, here are specific actions to help this candidate improve:
-            </p>
-            
-            <div style={styles.recommendationsGrid}>
-              {actionableRecommendations.map((rec, index) => (
-                <div key={index} style={styles.recommendationCard}>
-                  <div style={styles.recommendationHeader}>
-                    <span style={styles.recommendationArea}>{rec.area}</span>
-                    <span style={{
-                      ...styles.recommendationScore,
-                      background: rec.score < 50 ? '#ffebee' : '#fff3e0',
-                      color: rec.score < 50 ? '#c62828' : '#e65100'
-                    }}>
-                      {rec.score}%
-                    </span>
+                {/* Overall Summary */}
+                <div style={styles.overallSummary}>
+                  <p style={styles.overallSummaryText}>
+                    {professionalInterpretation.overallSummary}
+                  </p>
+                </div>
+
+                {/* Category Breakdown */}
+                <h4 style={styles.sectionSubtitle}>Category Breakdown & What It Means</h4>
+                <div style={styles.categoryGrid}>
+                  {Object.entries(professionalInterpretation.categoryInterpretation || {}).map(([category, data]) => {
+                    let levelColor = '';
+                    if (data.level === 'excellent') levelColor = '#2E7D32';
+                    else if (data.level === 'good') levelColor = '#4CAF50';
+                    else if (data.level === 'average') levelColor = '#F57C00';
+                    else levelColor = '#C62828';
+                    
+                    return (
+                      <div key={category} style={styles.categoryCard}>
+                        <div style={styles.categoryHeader}>
+                          <h5 style={styles.categoryName}>{category}</h5>
+                          <span style={{...styles.categoryScore, color: levelColor}}>
+                            {data.score}%
+                          </span>
+                        </div>
+                        <p style={styles.categoryInterpretation}>{data.interpretation}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Profile Insights */}
+                <h4 style={styles.sectionSubtitle}>What This Profile Suggests</h4>
+                <div style={styles.insightsGrid}>
+                  <div style={styles.insightColumn}>
+                    <h5 style={styles.insightTitle}>Best Fit:</h5>
+                    <ul style={styles.insightList}>
+                      {professionalInterpretation.suitability?.map((item, i) => (
+                        <li key={i} style={styles.insightItem}>{item}</li>
+                      ))}
+                    </ul>
                   </div>
-                  <div style={styles.recommendationContent}>
-                    <p style={styles.recommendationAction}>{rec.action}</p>
-                    <div style={styles.recommendationResources}>
-                      <strong>Resources:</strong> {rec.resources}
-                    </div>
+                  <div style={styles.insightColumn}>
+                    <h5 style={styles.insightTitle}>Risk Areas:</h5>
+                    <ul style={styles.insightList}>
+                      {professionalInterpretation.risks?.map((item, i) => (
+                        <li key={i} style={styles.insightItem}>{item}</li>
+                      ))}
+                    </ul>
                   </div>
                 </div>
-              ))}
-            </div>
+
+                {/* Development Focus */}
+                {professionalInterpretation.developmentFocus?.length > 0 && (
+                  <>
+                    <h4 style={styles.sectionSubtitle}>Development Focus</h4>
+                    <div style={styles.developmentList}>
+                      {professionalInterpretation.developmentFocus.map((item, i) => (
+                        <div key={i} style={styles.developmentItem}>
+                          <span style={styles.developmentPriority}>
+                            {item.priority === 'High' ? '🔴 High' : 
+                             item.priority === 'Medium' ? '🟡 Medium' : '🟢 Low'}
+                          </span>
+                          <span style={styles.developmentArea}>{item.area}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {/* Top Strengths */}
+                {professionalInterpretation.topStrengths?.length > 0 && (
+                  <div style={styles.topStrengthsCard}>
+                    <h5 style={styles.topStrengthsTitle}>✨ Top Strengths</h5>
+                    <div style={styles.topStrengthsList}>
+                      {professionalInterpretation.topStrengths.map((strength, i) => (
+                        <span key={i} style={styles.topStrengthTag}>{strength}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -850,10 +775,6 @@ export default function CandidateReport() {
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </AppLayout>
@@ -874,14 +795,7 @@ const adjustColor = (hex, percent) => {
 };
 
 const styles = {
-  container: {
-    maxWidth: '1200px',
-    margin: '0 auto',
-    padding: '30px 20px',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-    animation: 'fadeIn 0.5s ease'
-  },
-  loadingContainer: {
+  checkingContainer: {
     minHeight: '100vh',
     display: 'flex',
     flexDirection: 'column',
@@ -889,42 +803,91 @@ const styles = {
     justifyContent: 'center',
     gap: '20px'
   },
+  container: {
+    width: '90vw',
+    maxWidth: '1400px',
+    margin: '0 auto',
+    padding: '30px 20px'
+  },
   spinner: {
-    width: '50px',
-    height: '50px',
-    border: '5px solid #f3f3f3',
-    borderTop: '5px solid #1565c0',
+    width: '40px',
+    height: '40px',
+    border: '4px solid #f3f3f3',
+    borderTop: '4px solid #1565c0',
     borderRadius: '50%',
     animation: 'spin 1s linear infinite'
   },
-  errorContainer: {
+  emptyState: {
     textAlign: 'center',
-    padding: '60px 20px'
-  },
-  header: {
-    marginBottom: '30px',
+    padding: '60px 20px',
     background: 'white',
     borderRadius: '12px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    padding: '20px'
+    margin: '20px'
+  },
+  emptyIcon: {
+    fontSize: '48px',
+    marginBottom: '20px',
+    opacity: 0.5
+  },
+  primaryButton: {
+    display: 'inline-block',
+    background: '#1565c0',
+    color: 'white',
+    padding: '12px 30px',
+    borderRadius: '30px',
+    textDecoration: 'none',
+    fontSize: '16px',
+    fontWeight: 500,
+    marginTop: '20px',
+    transition: 'all 0.2s',
+    cursor: 'pointer',
+    ':hover': {
+      background: '#0d47a1',
+      transform: 'translateY(-2px)',
+      boxShadow: '0 5px 15px rgba(21, 101, 192, 0.3)'
+    }
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '30px'
   },
   backButton: {
-    padding: '8px 16px',
-    background: 'none',
-    border: '1px solid #1565c0',
     color: '#1565c0',
-    borderRadius: '20px',
-    cursor: 'pointer',
-    fontSize: '14px',
+    textDecoration: 'none',
+    fontSize: '16px',
     fontWeight: 500,
-    marginBottom: '15px',
+    padding: '8px 16px',
+    borderRadius: '20px',
+    border: '1px solid #1565c0',
     transition: 'all 0.2s',
     ':hover': {
       background: '#1565c0',
       color: 'white'
     }
   },
-  headerContent: {
+  logoutButton: {
+    background: '#d32f2f',
+    color: 'white',
+    border: 'none',
+    padding: '8px 20px',
+    borderRadius: '20px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 600,
+    transition: 'all 0.2s',
+    ':hover': {
+      background: '#b71c1c'
+    }
+  },
+  candidateHeader: {
+    background: 'white',
+    padding: '20px',
+    borderRadius: '12px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    marginBottom: '30px',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -934,11 +897,8 @@ const styles = {
   candidateName: {
     margin: '0 0 5px 0',
     fontSize: '28px',
-    fontWeight: 700,
-    color: '#1a2639',
-    background: 'linear-gradient(135deg, #1a2639, #2d3748)',
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent'
+    fontWeight: 600,
+    color: '#1565c0'
   },
   candidateEmail: {
     margin: 0,
@@ -958,22 +918,18 @@ const styles = {
       borderColor: '#1565c0'
     }
   },
-  heroSection: {
+  heroCard: {
     padding: '30px',
     borderRadius: '20px',
     color: 'white',
     marginBottom: '30px',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
-    position: 'relative',
-    overflow: 'hidden'
+    boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
   },
   heroContent: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '25px',
-    position: 'relative',
-    zIndex: 2
+    marginBottom: '25px'
   },
   heroTitle: {
     fontSize: '24px',
@@ -984,20 +940,18 @@ const styles = {
     fontSize: '14px',
     opacity: 0.9
   },
-  heroScoreCard: {
-    display: 'flex',
-    alignItems: 'baseline',
+  heroScore: {
     background: 'rgba(255,255,255,0.2)',
     padding: '15px 25px',
     borderRadius: '50px',
     backdropFilter: 'blur(10px)'
   },
-  heroScore: {
+  heroScoreNumber: {
     fontSize: '48px',
     fontWeight: 800,
     lineHeight: 1
   },
-  heroMax: {
+  heroMaxScore: {
     fontSize: '20px',
     opacity: 0.8,
     marginLeft: '5px'
@@ -1005,9 +959,7 @@ const styles = {
   heroStats: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '20px',
-    position: 'relative',
-    zIndex: 2
+    gap: '20px'
   },
   heroStat: {
     textAlign: 'center',
@@ -1027,28 +979,41 @@ const styles = {
     fontSize: '24px',
     fontWeight: 700
   },
-  summaryCard: {
+  card: {
     background: 'white',
-    borderRadius: '16px',
-    padding: '25px',
-    marginBottom: '30px',
+    borderRadius: '12px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    border: '1px solid #f0f0f0'
+    marginBottom: '20px',
+    overflow: 'hidden'
   },
-  summaryHeader: {
+  cardHeader: {
+    padding: '20px',
+    borderBottom: '1px solid #f0f0f0',
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
-    marginBottom: '20px'
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+    ':hover': {
+      background: '#f8f9fa'
+    }
   },
-  summaryIcon: {
-    fontSize: '28px'
+  cardIcon: {
+    fontSize: '24px'
   },
-  summaryTitle: {
+  cardTitle: {
     margin: 0,
-    fontSize: '20px',
-    fontWeight: 700,
-    color: '#333'
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#333',
+    flex: 1
+  },
+  expandIcon: {
+    fontSize: '14px',
+    color: '#1565c0'
+  },
+  cardContent: {
+    padding: '20px'
   },
   summaryText: {
     margin: '0 0 20px 0',
@@ -1067,172 +1032,62 @@ const styles = {
   ratingIcon: {
     fontSize: '24px'
   },
-  tableCard: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '25px',
-    marginBottom: '30px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    border: '1px solid #f0f0f0'
-  },
-  tableHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '20px'
-  },
-  tableIcon: {
-    fontSize: '28px'
-  },
-  tableTitle: {
-    margin: 0,
-    fontSize: '20px',
-    fontWeight: 700,
-    color: '#333'
-  },
   tableWrapper: {
     overflowX: 'auto'
   },
   table: {
     width: '100%',
     borderCollapse: 'collapse',
-    fontSize: '14px',
-    borderRadius: '12px',
+    fontSize: '14px'
+  },
+  tableHeadRow: {
+    borderBottom: '2px solid #1565c0',
+    backgroundColor: '#f5f5f5'
+  },
+  tableHead: {
+    padding: '12px',
+    fontWeight: 600,
+    color: '#333',
+    textAlign: 'left'
+  },
+  tableRow: {
+    borderBottom: '1px solid #e0e0e0',
+    transition: 'background 0.2s'
+  },
+  tableCell: {
+    padding: '12px'
+  },
+  progressContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px'
+  },
+  progressBar: {
+    width: '80px',
+    height: '8px',
+    background: '#e0e0e0',
+    borderRadius: '4px',
     overflow: 'hidden'
   },
-  th: {
-    textAlign: 'left',
-    padding: '15px 12px',
-    background: '#f8f9fa',
-    borderBottom: '2px solid #1565c0',
-    fontWeight: 600,
-    color: '#333'
-  },
-  td: {
-    padding: '12px',
-    borderBottom: '1px solid #e0e0e0',
-    color: '#555'
-  },
-  recommendationsSection: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '30px',
-    marginTop: '30px',
-    marginBottom: '30px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    border: '1px solid #f0f0f0'
-  },
-  recommendationsTitle: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#333',
-    marginBottom: '10px'
-  },
-  recommendationsSubtitle: {
-    fontSize: '16px',
-    color: '#666',
-    marginBottom: '30px'
-  },
-  recommendationsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
-    gap: '20px'
-  },
-  recommendationCard: {
-    background: '#f8f9fa',
-    borderRadius: '12px',
-    overflow: 'hidden',
-    border: '1px solid #e0e0e0',
-    transition: 'transform 0.2s',
-    ':hover': {
-      transform: 'translateY(-2px)',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-    }
-  },
-  recommendationHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '15px 20px',
-    background: '#ffffff',
-    borderBottom: '2px solid #1565c0'
-  },
-  recommendationArea: {
-    fontSize: '18px',
-    fontWeight: 700,
-    color: '#1565c0'
-  },
-  recommendationScore: {
+  gradeBadge: {
+    display: 'inline-block',
     padding: '4px 12px',
     borderRadius: '20px',
-    fontSize: '14px',
-    fontWeight: 600
-  },
-  recommendationContent: {
-    padding: '20px'
-  },
-  recommendationAction: {
-    fontSize: '14px',
-    color: '#333',
-    lineHeight: '1.6',
-    marginBottom: '15px'
-  },
-  recommendationResources: {
-    fontSize: '13px',
-    color: '#666',
-    lineHeight: '1.5',
-    padding: '10px',
-    background: '#ffffff',
-    borderRadius: '8px',
-    border: '1px solid #e0e0e0'
-  },
-  footer: {
-    marginTop: '40px',
-    paddingTop: '20px',
-    borderTop: '1px solid #e0e0e0',
-    textAlign: 'center',
-    color: '#999',
-    fontSize: '12px'
-  },
-  primaryButton: {
-    padding: '12px 30px',
-    background: '#1565c0',
-    color: 'white',
-    border: 'none',
-    borderRadius: '30px',
-    cursor: 'pointer',
-    fontSize: '16px',
-    fontWeight: 500,
-    marginTop: '20px',
-    transition: 'all 0.2s',
-    ':hover': {
-      background: '#0d47a1',
-      transform: 'translateY(-2px)',
-      boxShadow: '0 5px 15px rgba(21, 101, 192, 0.3)'
-    }
-  },
-  interpretationCard: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '30px',
-    marginTop: '30px',
-    marginBottom: '30px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    border: '1px solid #f0f0f0'
-  },
-  interpretationTitle: {
-    fontSize: '24px',
     fontWeight: 700,
-    color: '#333',
-    marginBottom: '25px',
-    paddingBottom: '15px',
-    borderBottom: '2px solid #1565c0'
+    fontSize: '13px'
+  },
+  assessmentBadge: {
+    display: 'inline-block',
+    padding: '4px 12px',
+    borderRadius: '20px',
+    fontSize: '13px',
+    fontWeight: 500
   },
   profileSummary: {
     background: '#f8f9fa',
     padding: '20px',
     borderRadius: '12px',
-    marginBottom: '30px'
+    marginBottom: '20px'
   },
   profileBadge: {
     display: 'inline-block',
@@ -1250,7 +1105,7 @@ const styles = {
     lineHeight: '1.6',
     margin: 0
   },
-  overallSummaryCard: {
+  overallSummary: {
     background: '#e3f2fd',
     padding: '20px',
     borderRadius: '12px',
@@ -1263,62 +1118,62 @@ const styles = {
     margin: 0,
     fontStyle: 'italic'
   },
-  sectionTitle: {
-    fontSize: '20px',
+  sectionSubtitle: {
+    fontSize: '16px',
     fontWeight: 600,
     color: '#333',
-    margin: '30px 0 20px 0'
+    margin: '20px 0 15px 0'
   },
   categoryGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
     gap: '15px',
-    marginBottom: '30px'
+    marginBottom: '20px'
   },
   categoryCard: {
     background: '#f8f9fa',
-    padding: '20px',
-    borderRadius: '12px',
+    padding: '15px',
+    borderRadius: '8px',
     border: '1px solid #e0e0e0'
   },
   categoryHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '10px'
+    marginBottom: '8px'
   },
   categoryName: {
-    fontSize: '16px',
+    fontSize: '14px',
     fontWeight: 600,
     color: '#333',
     margin: 0
   },
   categoryScore: {
-    fontSize: '18px',
+    fontSize: '16px',
     fontWeight: 700
   },
   categoryInterpretation: {
-    fontSize: '14px',
+    fontSize: '13px',
     color: '#555',
     lineHeight: '1.5',
     margin: 0
   },
-  profileInsights: {
+  insightsGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
     gap: '20px',
-    marginBottom: '30px'
+    marginBottom: '20px'
   },
   insightColumn: {
     background: '#f8f9fa',
-    padding: '20px',
-    borderRadius: '12px'
+    padding: '15px',
+    borderRadius: '8px'
   },
   insightTitle: {
-    fontSize: '16px',
+    fontSize: '14px',
     fontWeight: 600,
     color: '#333',
-    margin: '0 0 15px 0'
+    margin: '0 0 10px 0'
   },
   insightList: {
     margin: 0,
@@ -1326,76 +1181,66 @@ const styles = {
     listStyle: 'none'
   },
   insightItem: {
-    padding: '8px 0',
-    fontSize: '14px',
+    padding: '6px 0',
+    fontSize: '13px',
     color: '#555',
     borderBottom: '1px solid #f0f0f0'
   },
   developmentList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '10px',
-    marginBottom: '30px'
+    gap: '8px',
+    marginBottom: '20px'
   },
   developmentItem: {
     display: 'flex',
     alignItems: 'center',
     gap: '15px',
-    padding: '12px',
+    padding: '10px',
     background: '#f8f9fa',
-    borderRadius: '8px'
+    borderRadius: '6px'
   },
   developmentPriority: {
-    minWidth: '90px',
-    fontSize: '13px',
+    minWidth: '80px',
+    fontSize: '12px',
     fontWeight: 600
   },
   developmentArea: {
-    fontSize: '14px',
+    fontSize: '13px',
     color: '#333'
   },
   topStrengthsCard: {
     background: '#E8F5E9',
-    padding: '20px',
-    borderRadius: '12px',
-    marginBottom: '20px'
+    padding: '15px',
+    borderRadius: '8px',
+    marginTop: '15px'
   },
   topStrengthsTitle: {
-    fontSize: '16px',
+    fontSize: '14px',
     fontWeight: 600,
     color: '#2E7D32',
-    margin: '0 0 15px 0'
+    margin: '0 0 10px 0'
   },
   topStrengthsList: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: '10px'
+    gap: '8px'
   },
   topStrengthTag: {
-    padding: '6px 12px',
+    padding: '4px 10px',
     background: 'white',
     color: '#2E7D32',
-    borderRadius: '20px',
-    fontSize: '13px',
+    borderRadius: '16px',
+    fontSize: '12px',
     fontWeight: 500,
     border: '1px solid #2E7D32'
   },
-  gradeInterpretation: {
-    background: '#e3f2fd',
-    padding: '20px',
-    borderRadius: '12px',
-    marginTop: '20px'
-  },
-  gradeTitle: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#1565c0',
-    margin: '0 0 10px 0'
-  },
-  gradeText: {
-    fontSize: '14px',
-    color: '#555',
-    lineHeight: '1.6',
-    margin: 0
+  footer: {
+    marginTop: '40px',
+    paddingTop: '20px',
+    borderTop: '1px solid #e0e0e0',
+    textAlign: 'center',
+    color: '#999',
+    fontSize: '12px'
   }
 };
