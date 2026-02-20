@@ -134,6 +134,10 @@ export default function SupervisorLogin() {
           0% { transform: scale(1); }
           100% { transform: scale(1.1); }
         }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
     </div>
   );
@@ -168,38 +172,45 @@ const styles = {
     zIndex: 1
   },
   card: {
-    background: 'rgba(255, 255, 255, 0.95)',
-    backdropFilter: 'blur(10px)',
+    background: 'rgba(255, 255, 255, 0.1)', // Very transparent
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
     padding: '40px',
-    borderRadius: '16px',
+    borderRadius: '24px',
     width: '100%',
-    maxWidth: '400px',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-    border: '1px solid rgba(255,255,255,0.2)'
+    maxWidth: '420px',
+    boxShadow: '0 20px 50px rgba(0, 0, 0, 0.3)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    animation: 'fadeIn 0.6s ease'
   },
   logo: {
-    fontSize: '24px',
+    fontSize: '28px',
     fontWeight: '700',
     textAlign: 'center',
-    marginBottom: '20px',
-    color: '#1565c0'
+    marginBottom: '15px',
+    color: 'white',
+    textShadow: '2px 2px 4px rgba(0,0,0,0.3)',
+    letterSpacing: '1px'
   },
   title: {
     margin: '0 0 30px 0',
-    color: '#333',
+    color: 'white',
     textAlign: 'center',
-    fontSize: '24px',
-    fontWeight: 600
+    fontSize: '26px',
+    fontWeight: 600,
+    textShadow: '2px 2px 4px rgba(0,0,0,0.3)'
   },
   errorAlert: {
     padding: '12px',
-    background: '#ffebee',
-    color: '#c62828',
-    borderRadius: '6px',
+    background: 'rgba(211, 47, 47, 0.2)',
+    backdropFilter: 'blur(5px)',
+    color: 'white',
+    borderRadius: '8px',
     marginBottom: '20px',
     fontSize: '14px',
     textAlign: 'center',
-    border: '1px solid #ffcdd2'
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    textShadow: '1px 1px 2px rgba(0,0,0,0.3)'
   },
   formGroup: {
     marginBottom: '20px'
@@ -207,42 +218,54 @@ const styles = {
   label: {
     display: 'block',
     marginBottom: '8px',
-    color: '#333',
+    color: 'white',
     fontWeight: 500,
-    fontSize: '14px'
+    fontSize: '14px',
+    textShadow: '1px 1px 2px rgba(0,0,0,0.3)',
+    letterSpacing: '0.5px'
   },
   input: {
     width: '100%',
-    padding: '12px',
-    borderRadius: '8px',
-    border: '1px solid #ddd',
+    padding: '14px 16px',
+    borderRadius: '12px',
+    border: '1px solid rgba(255, 255, 255, 0.3)',
     fontSize: '16px',
     boxSizing: 'border-box',
-    transition: 'border 0.2s, box-shadow 0.2s',
-    background: 'rgba(255,255,255,0.9)',
+    transition: 'all 0.3s ease',
+    background: 'rgba(255, 255, 255, 0.15)',
+    backdropFilter: 'blur(5px)',
+    color: 'white',
+    outline: 'none',
+    '::placeholder': {
+      color: 'rgba(255, 255, 255, 0.6)'
+    },
     ':focus': {
-      borderColor: '#1565c0',
-      outline: 'none',
-      boxShadow: '0 0 0 3px rgba(21,101,192,0.1)'
+      borderColor: 'white',
+      background: 'rgba(255, 255, 255, 0.25)',
+      boxShadow: '0 0 20px rgba(255, 255, 255, 0.2)'
     }
   },
   submitButton: {
     width: '100%',
     padding: '14px',
-    background: '#1565c0',
+    background: 'rgba(21, 101, 192, 0.8)',
+    backdropFilter: 'blur(5px)',
     color: 'white',
-    border: 'none',
-    borderRadius: '8px',
+    border: '1px solid rgba(255, 255, 255, 0.3)',
+    borderRadius: '12px',
     fontSize: '16px',
     fontWeight: 600,
     cursor: 'pointer',
-    transition: 'background 0.2s, transform 0.2s, box-shadow 0.2s',
+    transition: 'all 0.3s ease',
     marginBottom: '20px',
-    boxShadow: '0 4px 12px rgba(21,101,192,0.3)',
+    boxShadow: '0 4px 15px rgba(0, 0, 0, 0.2)',
+    textShadow: '1px 1px 2px rgba(0,0,0,0.3)',
+    letterSpacing: '0.5px',
     ':hover': {
-      background: '#0d47a1',
+      background: 'rgba(21, 101, 192, 0.95)',
       transform: 'translateY(-2px)',
-      boxShadow: '0 6px 16px rgba(21,101,192,0.4)'
+      boxShadow: '0 8px 25px rgba(0, 0, 0, 0.3)',
+      borderColor: 'white'
     }
   },
   links: {
@@ -252,16 +275,18 @@ const styles = {
     fontSize: '14px'
   },
   link: {
-    color: '#1565c0',
+    color: 'white',
     textDecoration: 'none',
     fontWeight: '500',
-    transition: 'color 0.2s',
+    transition: 'all 0.2s',
+    textShadow: '1px 1px 2px rgba(0,0,0,0.3)',
+    opacity: 0.9,
     ':hover': {
-      color: '#0d47a1',
+      opacity: 1,
       textDecoration: 'underline'
     }
   },
   separator: {
-    color: '#999'
+    color: 'rgba(255, 255, 255, 0.6)'
   }
 };
