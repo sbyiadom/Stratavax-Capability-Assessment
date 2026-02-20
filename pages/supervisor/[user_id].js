@@ -15,7 +15,9 @@ import {
   interpretTechnical,
   interpretEmotional,
   interpretPerformance,
-  interpretCultural
+  interpretCultural,
+  interpretProblemSolving,
+  interpretPersonality
 } from "../../utils/categoryInterpreter";
 
 export default function CandidateReport() {
@@ -224,34 +226,45 @@ export default function CandidateReport() {
   };
 
   const getCategoryInterpretation = (category, data, candidateName) => {
-    if (category.includes('Leadership')) {
-      return interpretLeadership(data, candidateName);
-    } else if (category.includes('Cognitive')) {
-      return interpretCognitive(data, candidateName);
-    } else if (category.includes('Communication')) {
-      return interpretCommunication(data, candidateName);
-    } else if (category.includes('Ethics')) {
-      return interpretEthics(data, candidateName);
-    } else if (category.includes('Technical')) {
-      return interpretTechnical(data, candidateName);
-    } else if (category.includes('Emotional')) {
-      return interpretEmotional(data, candidateName);
-    } else if (category.includes('Performance')) {
-      return interpretPerformance(data, candidateName);
-    } else if (category.includes('Cultural')) {
-      return interpretCultural(data, candidateName);
+  if (!data) return `${category}: No detailed response data available.`;
+  
+  if (category.includes('Leadership')) {
+    return interpretLeadership(data, candidateName);
+  } else if (category.includes('Cognitive')) {
+    return interpretCognitive(data, candidateName);
+  } else if (category.includes('Communication')) {
+    return interpretCommunication(data, candidateName);
+  } else if (category.includes('Ethics')) {
+    return interpretEthics(data, candidateName);
+  } else if (category.includes('Technical')) {
+    return interpretTechnical(data, candidateName);
+  } else if (category.includes('Emotional')) {
+    return interpretEmotional(data, candidateName);
+  } else if (category.includes('Performance')) {
+    return interpretPerformance(data, candidateName);
+  } else if (category.includes('Cultural')) {
+    return interpretCultural(data, candidateName);
+  } else if (category.includes('Problem')) {
+    return interpretProblemSolving(data, candidateName);
+  } else if (category.includes('Personality')) {
+    return interpretPersonality(data, candidateName);
+  } else {
+    // Generic interpretation for other categories
+    let interpretation = `${category} – ${data.percentage || 'N/A'}%\n\n`;
+    if (data.insights && data.insights.length > 0) {
+      interpretation += `Response analysis:\n`;
+      data.insights.slice(0, 2).forEach(insight => {
+        interpretation += `• ${insight}\n`;
+      });
     } else {
-      // Generic interpretation
-      let interpretation = `${category} – ${data.percentage}% (${getGradeLetter(data.percentage)})\n\n`;
-      if (data.insights && data.insights.length > 0) {
-        interpretation += `Response analysis:\n`;
-        data.insights.slice(0, 2).forEach(insight => {
-          interpretation += `• ${insight}\n`;
-        });
-      }
-      return interpretation;
+      interpretation += `Based on the candidate's responses in this category, they show `;
+      interpretation += data.percentage >= 70 ? 'strong performance.' :
+                       data.percentage >= 60 ? 'developing competency.' :
+                       'significant gaps needing attention.';
     }
-  };
+    return interpretation;
+  }
+};
 
   const getGradeLetter = (percentage) => {
     if (percentage >= 90) return 'A';
@@ -1360,3 +1373,4 @@ const styles = {
     whiteSpace: 'pre-line'
   }
 };
+
