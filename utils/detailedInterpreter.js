@@ -5,7 +5,7 @@ import { assessmentTypes } from './assessmentConfigs';
  * Generates comprehensive narrative analysis based on actual assessment scores
  */
 
-export const generateDetailedInterpretation = (candidateName, categoryScores, assessmentType = 'general') => {
+export const generateDetailedInterpretation = (candidateName, categoryScores, assessmentType = 'general', responseInsights = {}) => {
   
   const config = assessmentTypes[assessmentType] || assessmentTypes.general;
   
@@ -25,7 +25,8 @@ export const generateDetailedInterpretation = (candidateName, categoryScores, as
       score,
       maxPossible,
       grade: getGradeLetter(percentage),
-      gradeDesc: getGradeDescription(percentage)
+      gradeDesc: getGradeDescription(percentage),
+      insights: responseInsights[category] || []
     };
     
     if (percentage >= 70) {
@@ -107,35 +108,19 @@ const generateOverallProfileSummary = (candidateName, strongAreas, moderateAreas
 
 // Format Strong Areas (≥70%)
 const formatStrongArea = (area, config) => {
-  const { category, percentage, grade, gradeDesc } = area;
+  const { category, percentage, grade, gradeDesc, insights } = area;
   
   let narrative = `🟢 ${category} – ${percentage}% (${grade} | ${gradeDesc})\n\n`;
   
-  // Assessment-specific interpretations
-  switch(config.id) {
-    case 'leadership':
-      narrative += getLeadershipInterpretation(category, percentage);
-      break;
-    case 'cognitive':
-      narrative += getCognitiveInterpretation(category, percentage);
-      break;
-    case 'technical':
-      narrative += getTechnicalInterpretation(category, percentage);
-      break;
-    case 'personality':
-      narrative += getPersonalityInterpretation(category, percentage);
-      break;
-    case 'performance':
-      narrative += getPerformanceInterpretation(category, percentage);
-      break;
-    case 'behavioral':
-      narrative += getBehavioralInterpretation(category, percentage);
-      break;
-    case 'cultural':
-      narrative += getCulturalInterpretation(category, percentage);
-      break;
-    default:
-      narrative += getGeneralInterpretation(category, percentage);
+  // Add specific insights from responses
+  if (insights && insights.length > 0) {
+    narrative += `Based on responses:\n`;
+    insights.slice(0, 2).forEach(insight => {
+      narrative += `• ${insight}\n`;
+    });
+  } else {
+    // Fallback to generic interpretation
+    narrative += getGenericStrengthInterpretation(category, config.id);
   }
   
   return narrative;
@@ -143,126 +128,66 @@ const formatStrongArea = (area, config) => {
 
 // Format Moderate Areas (60-69%)
 const formatModerateArea = (area, config) => {
-  const { category, percentage, grade, gradeDesc } = area;
+  const { category, percentage, grade, gradeDesc, insights } = area;
   
   let narrative = `🟡 ${category} – ${percentage}% (${grade} | ${gradeDesc})\n\n`;
   
-  narrative += getModerateInterpretation(category, config.id);
+  if (insights && insights.length > 0) {
+    narrative += `Response analysis:\n`;
+    insights.slice(0, 2).forEach(insight => {
+      narrative += `• ${insight}\n`;
+    });
+    narrative += `\n• Shows basic competency but needs development to reach proficiency.\n`;
+    narrative += `• Would benefit from targeted training in this area.`;
+  } else {
+    narrative += `• Shows basic competency in this area\n`;
+    narrative += `• Requires focused development to reach target levels\n`;
+    narrative += `• Would benefit from structured learning and practice`;
+  }
   
   return narrative;
 };
 
 // Format Concern Areas (<60%)
 const formatConcernArea = (area, config) => {
-  const { category, percentage, grade, gradeDesc } = area;
+  const { category, percentage, grade, gradeDesc, insights } = area;
   
   let narrative = `🔴 ${category} – ${percentage}% (${grade} | ${gradeDesc})\n\n`;
   
-  narrative += getConcernInterpretation(category, config.id);
+  if (insights && insights.length > 0) {
+    narrative += `Critical observations:\n`;
+    insights.slice(0, 3).forEach(insight => {
+      narrative += `• ${insight}\n`;
+    });
+    narrative += `\n• This is a significant gap requiring immediate attention.\n`;
+    narrative += `• May impact overall performance without intervention.`;
+  } else {
+    narrative += getGenericConcernInterpretation(category, config.id);
+  }
   
   return narrative;
 };
 
-// Assessment-specific interpretations
-const getGeneralInterpretation = (category, percentage) => {
-  const interpretations = {
+// Generic interpretations for when specific insights aren't available
+const getGenericStrengthInterpretation = (category, assessmentType) => {
+  const strengths = {
     'Cognitive Ability': '• Strong analytical thinking\n• Handles complex problems effectively\n• Quick learner',
-    'Communication': '• Articulates ideas clearly\n• Effective in stakeholder engagement\n• Persuasive communicator',
+    'Communication': '• Articulates ideas clearly\n• Effective communicator\n• Engages stakeholders well',
     'Ethics & Integrity': '• Trustworthy and principled\n• Strong moral compass\n• Low ethical risk',
-    'Leadership & Management': '• Natural leader\n• Inspires and motivates others\n• Effective delegator',
-    'Performance Metrics': '• Results-driven\n• Accountable for outcomes\n• Exceeds targets'
+    'Leadership & Management': '• Natural leader\n• Inspires others\n• Drives results',
+    'Performance Metrics': '• Results-oriented\n• Accountable\n• Meets or exceeds targets'
   };
-  return interpretations[category] || '• Strong performance in this area\n• Valuable organizational asset';
+  return strengths[category] || '• Strong performance in this area\n• Valuable organizational asset';
 };
 
-const getLeadershipInterpretation = (category, percentage) => {
-  const interpretations = {
-    'Vision & Strategic Thinking': '• Strategic mindset\n• Sees big picture\n• Plans effectively for future',
-    'Decision-Making': '• Makes sound judgments\n• Balances risks and opportunities\n• Decisive under pressure',
-    'People Management': '• Develops team members\n• Provides effective feedback\n• Builds high-performing teams',
-    'Change Leadership': '• Drives transformation\n• Adapts quickly\n• Manages resistance effectively'
+const getGenericConcernInterpretation = (category, assessmentType) => {
+  const concerns = {
+    'Cognitive Ability': '• Difficulty with complex problems\n• May struggle with analytical tasks\n• Requires structured guidance',
+    'Communication': '• Struggles to articulate ideas\n• May misunderstand instructions\n• Needs communication training',
+    'Cultural & Attitudinal Fit': '• Potential misalignment with values\n• May struggle with team integration\n• Risk of engagement issues',
+    'Leadership & Management': '• Not ready for leadership\n• Limited influence skills\n• Needs fundamental training'
   };
-  return interpretations[category] || '• Strong leadership capability\n• Inspires followership\n• Drives results';
-};
-
-const getCognitiveInterpretation = (category, percentage) => {
-  const interpretations = {
-    'Logical / Abstract Reasoning': '• Excellent pattern recognition\n• Handles abstract concepts\n• Strong analytical mind',
-    'Numerical Reasoning': '• Comfortable with data\n• Strong quantitative skills\n• Analytical thinker',
-    'Verbal Reasoning': '• Excellent comprehension\n• Processes information quickly\n• Strong language skills',
-    'Problem-Solving': '• Systematic approach\n• Creative solutions\n• Effective under pressure'
-  };
-  return interpretations[category] || '• Strong cognitive abilities\n• Quick learner\n• Analytical thinker';
-};
-
-const getTechnicalInterpretation = (category, percentage) => {
-  const interpretations = {
-    'Technical Knowledge': '• Deep domain expertise\n• Stays current with technology\n• Applies knowledge effectively',
-    'Troubleshooting': '• Systematic problem diagnosis\n• Quick to identify root causes\n• Effective problem solver',
-    'Quality Control': '• Meticulous attention to detail\n• Maintains high standards\n• Identifies issues proactively',
-    'Safety & Compliance': '• Strong safety mindset\n• Follows procedures diligently\n• Promotes safe practices'
-  };
-  return interpretations[category] || '• Strong technical aptitude\n• Applies knowledge effectively\n• Quick to learn new systems';
-};
-
-const getPersonalityInterpretation = (category, percentage) => {
-  const interpretations = {
-    'Openness': '• Creative and innovative\n• Embraces new ideas\n• Adaptable to change',
-    'Conscientiousness': '• Organized and dependable\n• Follows through on commitments\n• High attention to detail',
-    'Extraversion': '• Energized by social interaction\n• Builds relationships easily\n• Effective collaborator',
-    'Emotional Stability': '• Resilient under pressure\n• Maintains composure\n• Handles stress effectively'
-  };
-  return interpretations[category] || '• Strong personality fit\n• Self-aware\n• Adaptable';
-};
-
-const getPerformanceInterpretation = (category, percentage) => {
-  const interpretations = {
-    'Productivity': '• Highly efficient\n• Consistently meets targets\n• Manages time effectively',
-    'Quality': '• Produces excellent work\n• Attention to detail\n• Takes pride in output',
-    'Accountability': '• Takes ownership\n• Reliable and dependable\n• Follows through',
-    'Results Orientation': '• Driven to succeed\n• Sets and achieves goals\n• Focused on outcomes'
-  };
-  return interpretations[category] || '• Strong performer\n• Delivers results\n• Exceeds expectations';
-};
-
-const getBehavioralInterpretation = (category, percentage) => {
-  const interpretations = {
-    'Communication': '• Expresses ideas clearly\n• Listens actively\n• Adapts message to audience',
-    'Teamwork': '• Collaborates effectively\n• Supports team members\n• Builds consensus',
-    'Emotional Intelligence': '• Self-aware\n• Empathetic\n• Manages relationships well',
-    'Conflict Resolution': '• Handles disagreements constructively\n• Finds win-win solutions\n• Maintains relationships'
-  };
-  return interpretations[category] || '• Strong interpersonal skills\n• Builds positive relationships\n• Team player';
-};
-
-const getCulturalInterpretation = (category, percentage) => {
-  const interpretations = {
-    'Values Alignment': '• Embodies company values\n• Role model for others\n• Strengthens culture',
-    'Work Ethic': '• Dedicated and hardworking\n• Goes above and beyond\n• Takes initiative',
-    'Diversity Awareness': '• Values differences\n• Inclusive mindset\n• Respects all perspectives',
-    'Professional Conduct': '• Maintains professionalism\n• Ethical behavior\n• Positive representation'
-  };
-  return interpretations[category] || '• Strong cultural fit\n• Aligned with values\n• Contributes positively';
-};
-
-const getModerateInterpretation = (category, assessmentType) => {
-  return '• Basic competency established\n• Requires development to reach proficiency\n• Needs targeted training\n• Potential for growth with support';
-};
-
-const getConcernInterpretation = (category, assessmentType) => {
-  if (category.includes('Cognitive') || category.includes('Logical')) {
-    return '• Difficulty with complex problems\n• May struggle with analytical tasks\n• Requires structured guidance\n• Learning curve may be slow';
-  }
-  if (category.includes('Communication')) {
-    return '• Struggles to articulate ideas\n• May misunderstand instructions\n• Limited persuasive ability\n• Needs communication training';
-  }
-  if (category.includes('Cultural') || category.includes('Values')) {
-    return '• Potential misalignment with values\n• May struggle with team integration\n• Risk of engagement issues\n• Requires cultural mentoring';
-  }
-  if (category.includes('Leadership') || category.includes('Management')) {
-    return '• Not ready for leadership\n• Limited influence skills\n• Struggles with delegation\n• Needs fundamental training';
-  }
-  return '• Significant gap requiring attention\n• Immediate development needed\n• May impact performance\n• Requires structured support';
+  return concerns[category] || '• Significant gap requiring attention\n• Immediate development needed\n• Requires structured support';
 };
 
 // Generate Hiring Interpretation
