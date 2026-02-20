@@ -1,12 +1,10 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
 import AppLayout from "../../components/AppLayout";
 import {
   getGradeInfo,
   getOverallRating,
-  getStrengthComment,
-  getWeaknessComment,
   gradeScale
 } from "../../utils/dynamicReportGenerator";
 import { generateUniversalInterpretation } from "../../utils/categoryMapper";
@@ -123,7 +121,194 @@ export default function CandidateReport() {
       try {
         console.log("🔍 Fetching data for candidate ID:", candidateId);
         
-        // Get data from supervisor_dashboard (this is where the data actually lives)
+        // FIRST: Try to get detailed data from assessment_results (this has the full interpretations)
+        const { data: resultsData, error: resultsError } = await supabase
+          .from('assessment_results')
+          .select('*')
+          .eq('user_id', candidateId)
+          .order('completed_at', { ascending: false });
+
+        console.log("Assessment results found:", resultsData);
+        console.log("Results error:", resultsError);
+
+        if (resultsData && resultsData.length > 0) {
+          // We have detailed results with category scores and interpretations
+          console.log("Using detailed assessment results");
+          
+          // Get candidate info
+          const { data: profileData } = await supabase
+            .from('candidate_profiles')
+            .select('*')
+            .eq('id', candidateId)
+            .maybeSingle();
+
+          setCandidate({
+            id: candidateId,
+            full_name: profileData?.full_name || 'Candidate',
+            email: profileData?.email || 'Email not available'
+          });
+
+          // Format assessments from results data
+          const formattedAssessments = resultsData.map(result => {
+            const maxScore = result.max_score || 500;
+            const percentage = result.total_score ? Math.round((result.total_score / maxScore) * 100) : 0;
+            
+            // Parse strengths and weaknesses if they're strings
+            let strengthsList = result.strengths || [];
+            let weaknessesList = result.weaknesses || [];
+            
+            return {
+              id: result.id,
+              assessment_id: result.assessment_id,
+              name: result.assessment_name || 'Assessment',
+              type: result.assessment_type || 'general',
+              score: result.total_score || 0,
+              max_score: maxScore,
+              percentage,
+              completed_at: result.completed_at,
+              category_scores: result.category_scores || {},
+              strengths: strengthsList,
+              weaknesses: weaknessesList,
+              recommendations: result.recommendations || [],
+              development_plan: result.development_plan || {},
+              interpretations: result.interpretations || {},
+              executive_summary: result.interpretations?.summary || result.interpretations?.executiveSummary || '',
+              overall_profile: result.interpretations?.overallProfile || ''
+            };
+          });
+
+          console.log("Formatted assessments from results:", formattedAssessments);
+          setAssessments(formattedAssessments);
+          
+          if (formattedAssessments.length > 0) {
+            const mostRecent = formattedAssessments[0];
+            setSelectedAssessment(mostRecent);
+            setCategoryScores(mostRecent.category_scores || {});
+            setStrengths(mostRecent.strengths || []);
+            setWeaknesses(mostRecent.weaknesses || []);
+            setRecommendations(mostRecent.recommendations || []);
+            setDevelopmentPlan(mostRecent.development_plan || {});
+            setInterpretations(mostRecent.interpretations || {});
+            setExecutiveSummary(mostRecent.executive_summary || '');
+            setAssessmentType(mostRecent.type);
+          }
+          
+          setLoading(false);
+          return;
+        }
+
+        // SECOND: Try to get from candidate_assessments with joined results
+        console.log("No detailed results, checking candidate_assessments");
+        
+        const { data: candidateAssessments, error: candidateError } = await supabase
+          .from('candidate_assessments')
+          .select(`
+            id,
+            assessment_id,
+            score,
+            completed_at,
+            assessments (
+              id,
+              title,
+              assessment_type:assessment_types (
+                code,
+                name
+              )
+            )
+          `)
+          .eq('user_id', candidateId)
+          .eq('status', 'completed')
+          .order('completed_at', { ascending: false });
+
+        if (candidateAssessments && candidateAssessments.length > 0) {
+          // Get candidate info
+          const { data: profileData } = await supabase
+            .from('candidate_profiles')
+            .select('*')
+            .eq('id', candidateId)
+            .maybeSingle();
+
+          setCandidate({
+            id: candidateId,
+            full_name: profileData?.full_name || 'Candidate',
+            email: profileData?.email || 'Email not available'
+          });
+
+          // Format assessments and generate interpretations using your functions
+          const formattedAssessments = candidateAssessments.map(assessment => {
+            const maxScore = 500;
+            const percentage = assessment.score ? Math.round((assessment.score / maxScore) * 100) : 0;
+            const type = assessment.assessments?.assessment_type?.code || 'general';
+            
+            // Create category scores based on overall percentage
+            const categoryScores = {
+              'Overall Performance': {
+                score: assessment.score || 0,
+                maxPossible: maxScore,
+                percentage: percentage,
+                total: assessment.score || 0
+              }
+            };
+            
+            // Generate interpretations using your functions
+            const gradeInfo = getGradeInfo(percentage);
+            const rating = getOverallRating(percentage, [], [], type);
+            
+            // Create strengths/weaknesses based on percentage
+            const strengths = percentage >= 70 ? ['Overall Performance'] : [];
+            const weaknesses = percentage < 70 ? ['Overall Performance'] : [];
+            
+            const strengthsForDb = strengths.map(s => `${s} (${percentage}%)`);
+            const weaknessesForDb = weaknesses.map(w => `${w} (${percentage}%)`);
+            
+            const executiveSummary = `${profileData?.full_name || 'Candidate'} completed the ${assessment.assessments?.title || 'Assessment'} with a score of ${assessment.score}/${maxScore} (${percentage}%). ${rating.message}`;
+            
+            return {
+              id: assessment.id,
+              assessment_id: assessment.assessment_id,
+              name: assessment.assessments?.title || 'Assessment',
+              type,
+              score: assessment.score || 0,
+              max_score: maxScore,
+              percentage,
+              completed_at: assessment.completed_at,
+              category_scores: categoryScores,
+              strengths: strengthsForDb,
+              weaknesses: weaknessesForDb,
+              recommendations: [],
+              development_plan: {},
+              interpretations: {
+                classification: gradeInfo.description,
+                summary: executiveSummary,
+                overallProfile: rating.message,
+                strengths: strengthsForDb,
+                weaknesses: weaknessesForDb
+              },
+              executive_summary: executiveSummary,
+              overall_profile: rating.message
+            };
+          });
+
+          console.log("Formatted assessments from candidate_assessments:", formattedAssessments);
+          setAssessments(formattedAssessments);
+          
+          if (formattedAssessments.length > 0) {
+            const mostRecent = formattedAssessments[0];
+            setSelectedAssessment(mostRecent);
+            setCategoryScores(mostRecent.category_scores || {});
+            setStrengths(mostRecent.strengths || []);
+            setWeaknesses(mostRecent.weaknesses || []);
+            setExecutiveSummary(mostRecent.executive_summary || '');
+            setAssessmentType(mostRecent.type);
+          }
+          
+          setLoading(false);
+          return;
+        }
+
+        // THIRD: Fallback to supervisor_dashboard
+        console.log("No data in results or assessments, checking supervisor_dashboard");
+        
         const { data: dashboardData, error: dashboardError } = await supabase
           .from('supervisor_dashboard')
           .select('*')
@@ -131,41 +316,44 @@ export default function CandidateReport() {
           .maybeSingle();
 
         console.log("Dashboard data:", dashboardData);
-        console.log("Dashboard error:", dashboardError);
 
         if (dashboardData) {
-          // Set candidate info from dashboard data
           setCandidate({
             id: candidateId,
             full_name: dashboardData.full_name || 'Candidate',
             email: dashboardData.email || 'Email not available'
           });
 
-          // Format assessments from the dashboard data
           if (dashboardData.assessments && dashboardData.assessments.length > 0) {
-            // Filter to only completed assessments
             const completedAssessments = dashboardData.assessments.filter(a => a.status === 'completed');
             
             if (completedAssessments.length > 0) {
               const formattedAssessments = completedAssessments.map((assessment) => {
                 const percentage = assessment.score ? Math.round((assessment.score / assessment.max_score) * 100) : 0;
+                const gradeInfo = getGradeInfo(percentage);
+                const rating = getOverallRating(percentage, [], [], assessment.assessment_type);
                 
-                // Create category scores object if available
-                let categoryScores = {};
-                if (assessment.category_scores) {
-                  categoryScores = assessment.category_scores;
-                } else {
-                  // Create a default category score based on the assessment type
-                  const categoryName = assessment.assessment_type === 'general' ? 'General Knowledge' : 
-                                      assessment.assessment_type === 'technical' ? 'Technical Skills' : 
-                                      'Assessment';
-                  categoryScores[categoryName] = {
+                // Create category scores
+                const categoryName = assessment.assessment_type === 'general' ? 'General Knowledge' : 
+                                    assessment.assessment_type === 'technical' ? 'Technical Skills' : 
+                                    'Assessment';
+                const categoryScores = {
+                  [categoryName]: {
                     score: assessment.score || 0,
                     maxPossible: assessment.max_score || 500,
                     percentage: percentage,
                     total: assessment.score || 0
-                  };
-                }
+                  }
+                };
+                
+                // Create strengths/weaknesses based on percentage
+                const strengths = percentage >= 70 ? [categoryName] : [];
+                const weaknesses = percentage < 70 ? [categoryName] : [];
+                
+                const strengthsForDb = strengths.map(s => `${s} (${percentage}%)`);
+                const weaknessesForDb = weaknesses.map(w => `${w} (${percentage}%)`);
+                
+                const executiveSummary = `${dashboardData.full_name || 'Candidate'} completed the ${assessment.assessment_name} with a score of ${assessment.score}/${assessment.max_score} (${percentage}%). ${rating.message}`;
                 
                 return {
                   id: assessment.assessment_id,
@@ -177,200 +365,38 @@ export default function CandidateReport() {
                   percentage,
                   completed_at: assessment.completed_at,
                   category_scores: categoryScores,
-                  strengths: [],
-                  weaknesses: [],
+                  strengths: strengthsForDb,
+                  weaknesses: weaknessesForDb,
                   recommendations: [],
                   development_plan: {},
                   interpretations: {
-                    summary: `${dashboardData.full_name || 'Candidate'} completed the ${assessment.assessment_name} with a score of ${assessment.score}/${assessment.max_score} (${percentage}%).`,
-                    executiveSummary: `Overall performance: ${percentage}% - ${percentage >= 70 ? 'Meets expectations' : 'Development needed'}.`
+                    classification: gradeInfo.description,
+                    summary: executiveSummary,
+                    overallProfile: rating.message,
+                    strengths: strengthsForDb,
+                    weaknesses: weaknessesForDb
                   },
-                  executive_summary: `${dashboardData.full_name || 'Candidate'} completed the ${assessment.assessment_name} with a score of ${assessment.score}/${assessment.max_score} (${percentage}%).`,
-                  overall_profile: percentage >= 70 ? 'Solid performer' : 'Needs development'
+                  executive_summary: executiveSummary,
+                  overall_profile: rating.message
                 };
               });
 
               console.log("Formatted assessments from dashboard:", formattedAssessments);
               setAssessments(formattedAssessments);
               
-              // Select the most recent assessment
               if (formattedAssessments.length > 0) {
-                // Sort by completed_at date (most recent first)
                 const sorted = [...formattedAssessments].sort((a, b) => 
                   new Date(b.completed_at) - new Date(a.completed_at)
                 );
                 const mostRecent = sorted[0];
-                console.log("Selected most recent:", mostRecent);
                 setSelectedAssessment(mostRecent);
-                
-                // Set the detailed data
                 setCategoryScores(mostRecent.category_scores || {});
+                setStrengths(mostRecent.strengths || []);
+                setWeaknesses(mostRecent.weaknesses || []);
+                setExecutiveSummary(mostRecent.executive_summary || '');
                 setAssessmentType(mostRecent.type);
-                
-                // Generate executive summary if not present
-                if (!mostRecent.executive_summary) {
-                  const summary = `${dashboardData.full_name || 'Candidate'} completed the ${mostRecent.name} assessment with a score of ${mostRecent.score}/${mostRecent.max_score} (${mostRecent.percentage}%).`;
-                  setExecutiveSummary(summary);
-                } else {
-                  setExecutiveSummary(mostRecent.executive_summary);
-                }
               }
-            } else {
-              console.log("No completed assessments found in dashboard data");
-              setAssessments([]);
             }
-          } else {
-            console.log("No assessments array in dashboard data");
-            setAssessments([]);
-          }
-        } else {
-          // Fallback to original method if dashboard data not available
-          console.log("No dashboard data found, falling back to direct table queries");
-          
-          // Get candidate info from profiles
-          const { data: profileData, error: profileError } = await supabase
-            .from('candidate_profiles')
-            .select('*')
-            .eq('id', candidateId)
-            .maybeSingle();
-
-          console.log("Profile data:", profileData);
-          console.log("Profile error:", profileError);
-
-          setCandidate({
-            id: candidateId,
-            full_name: profileData?.full_name || 'Candidate',
-            email: profileData?.email || 'Email not available'
-          });
-
-          // Get assessments with scores
-          console.log("Fetching candidate assessments for:", candidateId);
-          
-          const { data: candidateAssessments, error: candidateError } = await supabase
-            .from('candidate_assessments')
-            .select(`
-              id,
-              assessment_id,
-              score,
-              completed_at,
-              assessments (
-                id,
-                title,
-                assessment_type:assessment_types (
-                  code,
-                  name
-                )
-              )
-            `)
-            .eq('user_id', candidateId)
-            .eq('status', 'completed')
-            .order('completed_at', { ascending: false });
-
-          console.log("Candidate assessments found:", candidateAssessments);
-          console.log("Candidate assessments error:", candidateError);
-
-          // Get detailed results from assessment_results
-          const { data: resultsData, error: resultsError } = await supabase
-            .from('assessment_results')
-            .select('*')
-            .eq('user_id', candidateId);
-
-          if (resultsError) {
-            console.error("Error fetching assessment results:", resultsError);
-          }
-
-          console.log("Raw results data:", resultsData);
-
-          // Create a map of results by assessment_id
-          const resultsMap = {};
-          if (resultsData) {
-            resultsData.forEach(result => {
-              resultsMap[result.assessment_id] = result;
-            });
-          }
-
-          // Combine the data
-          if (candidateAssessments && candidateAssessments.length > 0) {
-            const formattedAssessments = candidateAssessments.map(assessment => {
-              const detailedResult = resultsMap[assessment.assessment_id];
-              const maxPossibleScore = 500;
-              const percentage = assessment.score ? Math.round((assessment.score / maxPossibleScore) * 100) : 0;
-              const type = assessment.assessments?.assessment_type?.code || 'general';
-              
-              // Parse strengths and weaknesses from strings to objects if needed
-              let strengthsList = detailedResult?.strengths || [];
-              let weaknessesList = detailedResult?.weaknesses || [];
-              
-              // If strengths are strings, convert them to objects with area and percentage
-              if (strengthsList.length > 0 && typeof strengthsList[0] === 'string') {
-                strengthsList = strengthsList.map(s => {
-                  const match = s.match(/(.+) \((\d+)%\)/);
-                  if (match) {
-                    return {
-                      area: match[1],
-                      percentage: parseInt(match[2]),
-                      analysis: `Strong performance in ${match[1]} (${match[2]}%). This exceeds the 80% target.`
-                    };
-                  }
-                  return { area: s, analysis: `Strength identified in ${s}` };
-                });
-              }
-              
-              if (weaknessesList.length > 0 && typeof weaknessesList[0] === 'string') {
-                weaknessesList = weaknessesList.map(w => {
-                  const match = w.match(/(.+) \((\d+)%\)/);
-                  if (match) {
-                    return {
-                      area: match[1],
-                      percentage: parseInt(match[2]),
-                      analysis: `Needs improvement in ${match[1]} (${match[2]}%). Below target of 80%.`
-                    };
-                  }
-                  return { area: w, analysis: `Development area identified in ${w}` };
-                });
-              }
-              
-              return {
-                id: assessment.id,
-                assessment_id: assessment.assessment_id,
-                name: assessment.assessments?.title || 'Assessment',
-                type,
-                score: assessment.score || 0,
-                max_score: maxPossibleScore,
-                percentage,
-                completed_at: assessment.completed_at,
-                category_scores: detailedResult?.category_scores || {},
-                strengths: strengthsList,
-                weaknesses: weaknessesList,
-                recommendations: detailedResult?.recommendations || [],
-                development_plan: detailedResult?.development_plan || {},
-                interpretations: detailedResult?.interpretations || {},
-                executive_summary: detailedResult?.interpretations?.summary || detailedResult?.interpretations?.executiveSummary || '',
-                overall_profile: detailedResult?.interpretations?.overallProfile || ''
-              };
-            });
-
-            console.log("Formatted assessments from fallback:", formattedAssessments);
-            setAssessments(formattedAssessments);
-            
-            // Select the most recent assessment
-            if (formattedAssessments.length > 0) {
-              const mostRecent = formattedAssessments[0];
-              console.log("Selected most recent:", mostRecent);
-              setSelectedAssessment(mostRecent);
-              
-              // Set the detailed data
-              setCategoryScores(mostRecent.category_scores || {});
-              setStrengths(mostRecent.strengths || []);
-              setWeaknesses(mostRecent.weaknesses || []);
-              setRecommendations(mostRecent.recommendations || []);
-              setDevelopmentPlan(mostRecent.development_plan || {});
-              setInterpretations(mostRecent.interpretations || {});
-              setExecutiveSummary(mostRecent.executive_summary || mostRecent.interpretations?.summary || '');
-              setAssessmentType(mostRecent.type);
-            }
-          } else {
-            console.log("No completed assessments found in fallback for candidate:", candidateId);
           }
         }
       } catch (error) {
@@ -425,23 +451,39 @@ export default function CandidateReport() {
   const generateActionableRecommendations = () => {
     const recommendations = [];
     
-    if (categoryScores['General Knowledge']?.percentage < 60) {
-      recommendations.push({
-        area: 'General Knowledge',
-        score: categoryScores['General Knowledge'].percentage,
-        action: 'Provide structured learning materials and foundational training. Consider assigning a mentor for guidance.',
-        resources: 'Recommended: Basic skills courses, on-the-job training, shadowing opportunities.'
-      });
-    }
-    
-    if (categoryScores['Technical Skills']?.percentage < 60) {
-      recommendations.push({
-        area: 'Technical Skills',
-        score: categoryScores['Technical Skills'].percentage,
-        action: 'Enroll in technical training programs. Provide hands-on practice with supervision.',
-        resources: 'Recommended: Technical certification courses, on-the-job training, shadowing experienced technicians.'
-      });
-    }
+    Object.entries(categoryScores).forEach(([category, data]) => {
+      if (data.percentage < 60) {
+        let action = '';
+        let resources = '';
+        
+        if (category.includes('Technical') || category.includes('Manufacturing')) {
+          action = 'Enroll in technical training programs. Provide hands-on practice with supervision.';
+          resources = 'Recommended: Technical certification courses, on-the-job training, shadowing experienced technicians.';
+        } else if (category.includes('Cognitive') || category.includes('Problem')) {
+          action = 'Provide structured problem-solving frameworks and analytical thinking exercises.';
+          resources = 'Recommended: Critical thinking courses, case study analysis, puzzle-based learning platforms.';
+        } else if (category.includes('Communication')) {
+          action = 'Provide communication skills training. Practice presentations and written communication.';
+          resources = 'Recommended: Business writing courses, presentation skills workshop, Toastmasters.';
+        } else if (category.includes('Cultural') || category.includes('Attitudinal')) {
+          action = 'Schedule regular feedback sessions to discuss cultural alignment.';
+          resources = 'Recommended: Company values workshop, team-building activities, shadowing programs.';
+        } else if (category.includes('Emotional')) {
+          action = 'Provide EI training focusing on self-awareness and empathy.';
+          resources = 'Recommended: EI workshops, mindfulness training, 360-degree feedback sessions.';
+        } else {
+          action = 'Provide targeted training and development in this area.';
+          resources = 'Recommended: Relevant courses, mentoring, and practical exercises.';
+        }
+        
+        recommendations.push({
+          area: category,
+          score: data.percentage,
+          action,
+          resources
+        });
+      }
+    });
     
     return recommendations;
   };
