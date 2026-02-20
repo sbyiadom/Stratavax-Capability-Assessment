@@ -280,7 +280,7 @@ export const assessmentConfigs = {
   }
 };
 
-// Category interpretations database - this should be extensive and personalized
+// Category interpretations database
 export const categoryInterpretations = {
   // General Assessment Categories
   'Cognitive Ability': {
@@ -577,7 +577,6 @@ export const getPersonalizedStrengthDescription = (category, score, maxPossible)
 export const getPersonalizedRecommendations = (category, score, maxPossible, allScores = {}) => {
   const percentage = Math.round((score / maxPossible) * 100);
   const gapToTarget = Math.round((maxPossible * 0.8) - score);
-  const gapToExcellent = Math.round((maxPossible * 0.9) - score);
   
   const recommendations = {
     'Cognitive Ability': [
