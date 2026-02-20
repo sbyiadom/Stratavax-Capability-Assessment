@@ -68,81 +68,114 @@ export default function SupervisorLogin() {
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
-        <div style={styles.logo}>🏢 Stratavax</div>
-        <h1 style={styles.title}>Supervisor Login</h1>
-        
-        {error && (
-          <div style={styles.errorAlert}>
-            {error}
+    <div style={styles.pageContainer}>
+      {/* Full Page Background */}
+      <div style={styles.backgroundImage} />
+      
+      <div style={styles.container}>
+        <div style={styles.card}>
+          <div style={styles.logo}>🏢 Stratavax</div>
+          <h1 style={styles.title}>Supervisor Login</h1>
+          
+          {error && (
+            <div style={styles.errorAlert}>
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleLogin}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                style={styles.input}
+                placeholder="Enter your email"
+              />
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                style={styles.input}
+                placeholder="Enter your password"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                ...styles.submitButton,
+                opacity: loading ? 0.5 : 1,
+                cursor: loading ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {loading ? "Logging in..." : "Login"}
+            </button>
+          </form>
+
+          <div style={styles.links}>
+            <a href="/login" style={styles.link}>Candidate Login</a>
+            <span style={styles.separator}>|</span>
+            <a href="/supervisor-forgot-password" style={styles.link}>Forgot Password?</a>
           </div>
-        )}
-
-        <form onSubmit={handleLogin}>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              style={styles.input}
-              placeholder="Enter your email"
-            />
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              style={styles.input}
-              placeholder="Enter your password"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              ...styles.submitButton,
-              opacity: loading ? 0.5 : 1,
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
-          >
-            {loading ? "Logging in..." : "Login"}
-          </button>
-        </form>
-
-        <div style={styles.links}>
-          <a href="/login" style={styles.link}>Candidate Login</a>
-          <span style={styles.separator}>|</span>
-          <a href="/supervisor-forgot-password" style={styles.link}>Forgot Password?</a>
         </div>
       </div>
+
+      <style jsx>{`
+        @keyframes slowZoom {
+          0% { transform: scale(1); }
+          100% { transform: scale(1.1); }
+        }
+      `}</style>
     </div>
   );
 }
 
 const styles = {
-  container: {
+  pageContainer: {
+    position: 'relative',
     minHeight: '100vh',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    width: '100%',
+    overflow: 'hidden'
+  },
+  backgroundImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundImage: 'url(/images/supervisor-login-bg.jpg)',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    animation: 'slowZoom 20s infinite alternate',
+    zIndex: 0
+  },
+  container: {
+    position: 'relative',
+    minHeight: '100vh',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '20px'
+    padding: '20px',
+    zIndex: 1
   },
   card: {
-    background: 'white',
+    background: 'rgba(255, 255, 255, 0.95)',
+    backdropFilter: 'blur(10px)',
     padding: '40px',
-    borderRadius: '12px',
+    borderRadius: '16px',
     width: '100%',
     maxWidth: '400px',
-    boxShadow: '0 10px 40px rgba(0,0,0,0.2)'
+    boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+    border: '1px solid rgba(255,255,255,0.2)'
   },
   logo: {
     fontSize: '24px',
@@ -165,7 +198,8 @@ const styles = {
     borderRadius: '6px',
     marginBottom: '20px',
     fontSize: '14px',
-    textAlign: 'center'
+    textAlign: 'center',
+    border: '1px solid #ffcdd2'
   },
   formGroup: {
     marginBottom: '20px'
@@ -180,14 +214,16 @@ const styles = {
   input: {
     width: '100%',
     padding: '12px',
-    borderRadius: '6px',
+    borderRadius: '8px',
     border: '1px solid #ddd',
     fontSize: '16px',
     boxSizing: 'border-box',
-    transition: 'border 0.2s',
+    transition: 'border 0.2s, box-shadow 0.2s',
+    background: 'rgba(255,255,255,0.9)',
     ':focus': {
       borderColor: '#1565c0',
-      outline: 'none'
+      outline: 'none',
+      boxShadow: '0 0 0 3px rgba(21,101,192,0.1)'
     }
   },
   submitButton: {
@@ -196,14 +232,17 @@ const styles = {
     background: '#1565c0',
     color: 'white',
     border: 'none',
-    borderRadius: '6px',
+    borderRadius: '8px',
     fontSize: '16px',
     fontWeight: 600,
     cursor: 'pointer',
-    transition: 'background 0.2s',
+    transition: 'background 0.2s, transform 0.2s, box-shadow 0.2s',
     marginBottom: '20px',
+    boxShadow: '0 4px 12px rgba(21,101,192,0.3)',
     ':hover': {
-      background: '#0d47a1'
+      background: '#0d47a1',
+      transform: 'translateY(-2px)',
+      boxShadow: '0 6px 16px rgba(21,101,192,0.4)'
     }
   },
   links: {
@@ -215,11 +254,14 @@ const styles = {
   link: {
     color: '#1565c0',
     textDecoration: 'none',
+    fontWeight: '500',
+    transition: 'color 0.2s',
     ':hover': {
+      color: '#0d47a1',
       textDecoration: 'underline'
     }
   },
   separator: {
-    color: '#666'
+    color: '#999'
   }
 };
