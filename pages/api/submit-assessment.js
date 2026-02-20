@@ -99,7 +99,7 @@ export default async function handler(req, res) {
     // Get assessment type for the result
     const { data: assessment, error: assessmentError } = await serviceClient
       .from('assessments')
-      .select('assessment_type_id, assessment_type:assessment_types(code)')
+      .select('assessment_type_id, assessment_type:assessment_types(code), title')
       .eq('id', assessmentId)
       .single();
 
@@ -111,7 +111,7 @@ export default async function handler(req, res) {
     let candidateName = 'Candidate';
     const { data: profileData } = await serviceClient
       .from('candidate_profiles')
-      .select('full_name, email')
+      .select('full_name, email, created_by')
       .eq('id', userId)
       .single();
 
@@ -252,6 +252,34 @@ export default async function handler(req, res) {
     }
 
     console.log("✅ Results inserted successfully:", insertedData);
+
+    // ========== ADD NOTIFICATION CREATION HERE ==========
+    console.log("📋 Creating notification for supervisor...");
+
+    // Get the supervisor ID for this candidate (from created_by field)
+    if (profileData?.created_by) {
+      // Create notification for the supervisor
+      const { error: notifError } = await serviceClient
+        .from('supervisor_notifications')
+        .insert({
+          supervisor_id: profileData.created_by,
+          user_id: userId,
+          assessment_id: assessmentId,
+          result_id: insertedData?.[0]?.id,
+          message: `${profileData.full_name || profileData.email || 'Candidate'} completed ${assessment?.title || 'an assessment'}`,
+          status: 'unread',
+          created_at: new Date().toISOString()
+        });
+
+      if (notifError) {
+        console.error("❌ Failed to create notification:", notifError);
+      } else {
+        console.log("✅ Notification created for supervisor:", profileData.created_by);
+      }
+    } else {
+      console.log("⚠️ No created_by found for candidate, skipping notification");
+    }
+    // ========== END NOTIFICATION CREATION ==========
 
     return res.status(200).json({ 
       success: true,
