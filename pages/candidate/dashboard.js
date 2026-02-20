@@ -114,42 +114,50 @@ export default function CandidateDashboard() {
     'general': {
       gradient: 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)',
       color: '#2563eb',
-      light: '#dbeafe'
+      light: '#dbeafe',
+      border: '1px solid #2563eb20'
     },
     'leadership': {
       gradient: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)',
       color: '#7c3aed',
-      light: '#ede9fe'
+      light: '#ede9fe',
+      border: '1px solid #7c3aed20'
     },
     'cognitive': {
       gradient: 'linear-gradient(135deg, #0891b2 0%, #0e7490 100%)',
       color: '#0891b2',
-      light: '#cffafe'
+      light: '#cffafe',
+      border: '1px solid #0891b220'
     },
     'cultural': {
       gradient: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
       color: '#059669',
-      light: '#d1fae5'
+      light: '#d1fae5',
+      border: '1px solid #05966920'
     },
     'personality': {
       gradient: 'linear-gradient(135deg, #0d9488 0%, #115e59 100%)',
       color: '#0d9488',
-      light: '#ccfbf1'
+      light: '#ccfbf1',
+      border: '1px solid #0d948820'
     },
     'performance': {
       gradient: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
       color: '#ea580c',
-      light: '#ffedd5'
+      light: '#ffedd5',
+      border: '1px solid #ea580c20'
     },
     'technical': {
       gradient: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
       color: '#dc2626',
-      light: '#fee2e2'
+      light: '#fee2e2',
+      border: '1px solid #dc262620'
     },
     'behavioral': {
       gradient: 'linear-gradient(135deg, #9333ea 0%, #6b21a5 100%)',
       color: '#9333ea',
-      light: '#f3e8ff'
+      light: '#f3e8ff',
+      border: '1px solid #9333ea20'
     }
   };
 
@@ -189,8 +197,9 @@ export default function CandidateDashboard() {
           iconBg: `linear-gradient(135deg, ${type.gradient_start || '#2563eb'}, ${type.gradient_end || '#1e40af'})`,
           color: type.color || '#2563eb',
           lightColor: `${type.color}20` || '#dbeafe',
-          duration: type.time_limit_minutes || 60,
-          questions: type.question_count || 100,
+          // FORCE UNIFORM VALUES FOR ALL ASSESSMENTS
+          duration: 180, // 180 minutes for all
+          questions: 100, // 100 questions for all
           passing: 80,
           features: type.category_config || ['General Assessment']
         }));
@@ -286,7 +295,7 @@ export default function CandidateDashboard() {
   const getAssessmentScore = (assessmentId) => {
     const completed = completedAssessments.find(a => a.assessment_id === assessmentId);
     const assessment = assessments.find(a => a.id === assessmentId);
-    const maxScore = assessment?.assessment_type?.max_score || 100;
+    const maxScore = assessment?.assessment_type?.max_score || 500;
     return completed?.score ? Math.round((completed.score / maxScore) * 100) : null;
   };
 
@@ -364,7 +373,7 @@ export default function CandidateDashboard() {
 
       {/* Main Content */}
       <div style={styles.mainContent}>
-        {/* Assessment Tabs */}
+        {/* Assessment Tabs - Professional Colored Tabs */}
         <div style={styles.tabsContainer}>
           {assessmentTypes.map(tab => {
             const isActive = activeTab === tab.id;
@@ -378,9 +387,9 @@ export default function CandidateDashboard() {
                 disabled={!hasAssessment}
                 style={{
                   ...styles.tabButton,
-                  background: isActive ? colors.gradient : '#f8fafc',
-                  color: isActive ? 'white' : '#334155',
-                  border: isActive ? 'none' : '1px solid #e2e8f0',
+                  background: isActive ? colors.gradient : 'white',
+                  color: isActive ? 'white' : colors.color,
+                  border: isActive ? 'none' : `1px solid ${colors.color}40`,
                   opacity: hasAssessment ? 1 : 0.4,
                   boxShadow: isActive ? `0 4px 12px ${colors.color}40` : 'none'
                 }}
@@ -391,20 +400,30 @@ export default function CandidateDashboard() {
           })}
         </div>
 
-        {/* Assessment Details Section */}
+        {/* Assessment Details Section - Professional Card */}
         {activeAssessment ? (
           <div style={styles.assessmentDetailsSection}>
-            {/* Assessment Card */}
-            <div style={styles.card}>
+            {/* Assessment Card with Professional Colors */}
+            <div style={{
+              ...styles.card,
+              border: `1px solid ${assessmentColors[activeTab]?.color}30`,
+              boxShadow: `0 8px 20px ${assessmentColors[activeTab]?.color}10`
+            }}>
               <div style={styles.cardHeader}>
+                <div style={{
+                  ...styles.cardIconLarge,
+                  background: assessmentColors[activeTab]?.gradient || assessmentColors.general.gradient
+                }}>
+                  {activeTypeConfig?.icon || '📋'}
+                </div>
                 <div style={styles.cardInfo}>
                   <h3 style={styles.cardTitle}>{activeAssessment.title}</h3>
                   <div style={styles.cardMeta}>
                     <span style={styles.metaItem}>
-                      <span style={styles.metaIcon}>⏱️</span> {activeTypeConfig?.duration || 60} minutes
+                      <span style={styles.metaIcon}>⏱️</span> 180 minutes
                     </span>
                     <span style={styles.metaItem}>
-                      <span style={styles.metaIcon}>📋</span> {activeTypeConfig?.questions || 100} questions
+                      <span style={styles.metaIcon}>📋</span> 100 questions
                     </span>
                     <span style={styles.metaItem}>
                       <span style={styles.metaIcon}>🎯</span> 80% passing
@@ -423,9 +442,9 @@ export default function CandidateDashboard() {
                           ...styles.statusBadge,
                           background: score >= 80 ? '#dcfce7' : '#fff3cd',
                           color: score >= 80 ? '#166534' : '#856404',
-                          border: score >= 80 ? '1px solid #86efac' : '1px solid #ffe69c'
+                          border: `1px solid ${score >= 80 ? '#86efac' : '#ffe69c'}`
                         }}>
-                          {score >= 80 ? '✓ Passed' : '⚠️ Review Required'} • {score}%
+                          {score >= 80 ? '✓ Passed' : '⚠️ Review'} • {score}%
                         </span>
                       );
                     } else if (inProgress) {
@@ -443,9 +462,9 @@ export default function CandidateDashboard() {
                       return (
                         <span style={{
                           ...styles.statusBadge,
-                          background: '#f1f5f9',
-                          color: '#475569',
-                          border: '1px solid #cbd5e1'
+                          background: '#f8fafc',
+                          color: assessmentColors[activeTab]?.color || '#2563eb',
+                          border: `1px solid ${assessmentColors[activeTab]?.color}40`
                         }}>
                           Ready to Start
                         </span>
@@ -458,21 +477,25 @@ export default function CandidateDashboard() {
                 onClick={() => router.push(`/assessment/${activeAssessment.id}`)}
                 style={{
                   ...styles.startButton,
-                  background: assessmentColors[activeTab]?.gradient || assessmentColors.general.gradient
+                  background: assessmentColors[activeTab]?.gradient || assessmentColors.general.gradient,
+                  boxShadow: `0 4px 12px ${assessmentColors[activeTab]?.color}40`
                 }}
               >
-                {isAssessmentInProgress(activeAssessment.id) ? 'Continue Assessment' : 'Start Assessment'}
+                {isAssessmentInProgress(activeAssessment.id) ? 'Continue Assessment →' : 'Start Assessment →'}
               </button>
             </div>
 
-            {/* Key Assessment Areas - Only category names */}
+            {/* Key Assessment Areas - Professional Card */}
             {selectedAssessmentAreas && selectedAssessmentAreas.length > 0 && (
-              <div style={styles.areasSection}>
+              <div style={{
+                ...styles.areasSection,
+                borderTop: `4px solid ${assessmentColors[activeTab]?.color || '#2563eb'}`
+              }}>
                 <h3 style={styles.areasTitle}>Key Assessment Areas</h3>
                 <div style={styles.areasGrid}>
                   {selectedAssessmentAreas.map((area, index) => (
                     <div key={index} style={styles.areaItem}>
-                      <span style={styles.areaBullet}>•</span>
+                      <span style={{...styles.areaBullet, color: assessmentColors[activeTab]?.color || '#2563eb'}}>•</span>
                       <span style={styles.areaText}>{area}</span>
                     </div>
                   ))}
@@ -486,7 +509,7 @@ export default function CandidateDashboard() {
           </div>
         )}
 
-        {/* Progress Grid */}
+        {/* Progress Grid - Professional Colored Items */}
         <div style={styles.progressSection}>
           <h3 style={styles.sectionTitle}>Your Progress</h3>
           <div style={styles.progressGrid}>
@@ -496,28 +519,32 @@ export default function CandidateDashboard() {
               const isInProgress = typeAssessment ? isAssessmentInProgress(typeAssessment.id) : false;
               const colors = assessmentColors[type.id] || assessmentColors.general;
               
-              let statusColor = '#94a3b8';
+              let statusColor = colors.color;
               let statusText = 'Not Started';
-              let statusBg = '#f1f5f9';
+              let statusBg = '#f8fafc';
               
               if (isCompleted) {
                 statusColor = '#166534';
                 statusBg = '#dcfce7';
                 statusText = 'Completed';
               } else if (isInProgress) {
-                statusColor = '#1e40af';
-                statusBg = '#dbeafe';
+                statusColor = colors.color;
+                statusBg = colors.light;
                 statusText = 'In Progress';
               }
               
               return (
-                <div key={type.id} style={styles.progressItem}>
+                <div key={type.id} style={{
+                  ...styles.progressItem,
+                  border: `1px solid ${colors.color}30`,
+                  background: statusBg
+                }}>
                   <div style={styles.progressItemLeft}>
                     <div style={{
                       ...styles.progressColorDot,
                       background: colors.gradient
                     }} />
-                    <span style={styles.progressName}>{type.shortLabel}</span>
+                    <span style={{...styles.progressName, color: colors.color}}>{type.shortLabel}</span>
                   </div>
                   <span style={{
                     ...styles.progressStatus,
@@ -530,7 +557,13 @@ export default function CandidateDashboard() {
           </div>
         </div>
 
-        {/* Guidelines Section */}
+        {/* Info Note - Uniform Rules */}
+        <div style={styles.infoNote}>
+          <span style={styles.infoIcon}>ℹ️</span>
+          <span><strong>Note:</strong> All assessments have 100 questions and a 3-hour (180 minutes) time limit.</span>
+        </div>
+
+        {/* Guidelines Section - Keep as is */}
         <div style={styles.guidelinesWrapper}>
           <div style={styles.guidelinesBackground} />
           <div style={styles.guidelinesContent}>
@@ -545,9 +578,9 @@ export default function CandidateDashboard() {
                   <span style={styles.guidelineIcon}>⏱️</span>
                 </div>
                 <div style={styles.guidelineTextWrapper}>
-                  <h4 style={styles.guidelineTitle}>Timed Assessments</h4>
+                  <h4 style={styles.guidelineTitle}>3-Hour Time Limit</h4>
                   <p style={styles.guidelineText}>
-                    Each assessment has its own time limit. The timer starts when you begin and pauses if you log off.
+                    All assessments have a 3-hour (180 minutes) time limit. The timer starts when you begin.
                   </p>
                 </div>
               </div>
@@ -578,12 +611,12 @@ export default function CandidateDashboard() {
 
               <div style={styles.guidelineCard}>
                 <div style={styles.guidelineIconWrapper}>
-                  <span style={styles.guidelineIcon}>🛡️</span>
+                  <span style={styles.guidelineIcon}>📝</span>
                 </div>
                 <div style={styles.guidelineTextWrapper}>
-                  <h4 style={styles.guidelineTitle}>Assessment Integrity</h4>
+                  <h4 style={styles.guidelineTitle}>100 Questions</h4>
                   <p style={styles.guidelineText}>
-                    Browser restrictions are in place during assessments to maintain integrity.
+                    Each assessment contains 100 questions. Take your time and answer carefully.
                   </p>
                 </div>
               </div>
@@ -760,7 +793,7 @@ const styles = {
   tabsContainer: {
     display: 'flex',
     gap: '8px',
-    marginBottom: '20px',
+    marginBottom: '24px',
     flexWrap: 'wrap'
   },
   tabButton: {
@@ -781,34 +814,43 @@ const styles = {
   card: {
     background: 'white',
     borderRadius: '16px',
-    padding: '20px 24px',
+    padding: '24px',
     marginBottom: '20px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    border: '1px solid #e2e8f0',
     display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between'
+    flexDirection: 'column',
+    gap: '20px'
   },
   cardHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '24px',
-    flex: 1
+    gap: '24px'
+  },
+  cardIconLarge: {
+    width: '60px',
+    height: '60px',
+    borderRadius: '16px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '30px',
+    color: 'white',
+    flexShrink: 0
   },
   cardInfo: {
     flex: 1
   },
   cardTitle: {
-    fontSize: '18px',
+    fontSize: '20px',
     fontWeight: '600',
-    margin: '0 0 6px 0',
+    margin: '0 0 8px 0',
     color: '#0f172a'
   },
   cardMeta: {
     display: 'flex',
-    gap: '20px',
-    fontSize: '13px',
-    color: '#475569'
+    gap: '24px',
+    fontSize: '14px',
+    color: '#475569',
+    flexWrap: 'wrap'
   },
   metaItem: {
     display: 'flex',
@@ -816,10 +858,11 @@ const styles = {
     gap: '6px'
   },
   metaIcon: {
-    fontSize: '14px'
+    fontSize: '16px'
   },
   cardStatus: {
-    marginRight: '20px'
+    minWidth: '140px',
+    textAlign: 'right'
   },
   statusBadge: {
     padding: '6px 16px',
@@ -829,16 +872,16 @@ const styles = {
     display: 'inline-block'
   },
   startButton: {
-    padding: '10px 24px',
+    padding: '12px 24px',
     color: 'white',
     border: 'none',
-    borderRadius: '30px',
-    fontSize: '14px',
-    fontWeight: '500',
+    borderRadius: '12px',
+    fontSize: '15px',
+    fontWeight: '600',
     cursor: 'pointer',
-    whiteSpace: 'nowrap',
+    alignSelf: 'flex-end',
     transition: 'all 0.2s',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+    minWidth: '200px'
   },
   areasSection: {
     background: 'white',
@@ -865,8 +908,7 @@ const styles = {
     padding: '6px 0'
   },
   areaBullet: {
-    color: '#2563eb',
-    fontSize: '16px',
+    fontSize: '18px',
     fontWeight: 'bold'
   },
   areaText: {
@@ -883,7 +925,7 @@ const styles = {
     color: '#64748b'
   },
   progressSection: {
-    marginBottom: '40px'
+    marginBottom: '24px'
   },
   sectionTitle: {
     fontSize: '18px',
@@ -901,9 +943,7 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '12px 16px',
-    background: '#f8fafc',
-    borderRadius: '10px',
-    border: '1px solid #e2e8f0'
+    borderRadius: '10px'
   },
   progressItemLeft: {
     display: 'flex',
@@ -917,15 +957,28 @@ const styles = {
   },
   progressName: {
     fontSize: '14px',
-    fontWeight: '500',
-    color: '#0f172a',
-    textTransform: 'capitalize'
+    fontWeight: '500'
   },
   progressStatus: {
     fontSize: '12px',
     fontWeight: '500',
     padding: '4px 10px',
     borderRadius: '20px'
+  },
+  infoNote: {
+    marginBottom: '24px',
+    padding: '12px 20px',
+    background: '#e3f2fd',
+    borderRadius: '10px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    color: '#1565c0',
+    fontSize: '14px',
+    border: '1px solid #90caf9'
+  },
+  infoIcon: {
+    fontSize: '18px'
   },
   guidelinesWrapper: {
     position: 'relative',
