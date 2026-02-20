@@ -14,7 +14,6 @@ export default function CandidateReport() {
   const [candidate, setCandidate] = useState(null);
   const [assessmentData, setAssessmentData] = useState(null);
 
-  // Check supervisor authentication
   useEffect(() => {
     const checkAuth = () => {
       if (typeof window !== 'undefined') {
@@ -39,7 +38,6 @@ export default function CandidateReport() {
     checkAuth();
   }, [router]);
 
-  // Fetch candidate data
   useEffect(() => {
     if (!isSupervisor || !user_id) return;
 
@@ -47,9 +45,6 @@ export default function CandidateReport() {
       try {
         setLoading(true);
         
-        console.log("Fetching data for user:", user_id);
-
-        // Get candidate info
         const { data: profileData } = await supabase
           .from('candidate_profiles')
           .select('*')
@@ -62,26 +57,21 @@ export default function CandidateReport() {
           email: profileData?.email || 'Email not available'
         });
 
-        // Get assessment results
         const { data: resultsData } = await supabase
           .from('assessment_results')
           .select('*')
           .eq('user_id', user_id)
           .order('completed_at', { ascending: false });
 
-        console.log("Assessment results:", resultsData);
-
         if (resultsData && resultsData.length > 0) {
           const result = resultsData[0];
           const percentage = Math.round((result.total_score / result.max_score) * 100);
           
-          // Generate detailed narrative interpretation
           const detailedInterpretation = generateDetailedInterpretation(
             profileData?.full_name || 'Candidate',
             result.category_scores
           );
           
-          // Use the detailed results data
           setAssessmentData({
             source: 'results',
             total_score: result.total_score,
@@ -96,7 +86,6 @@ export default function CandidateReport() {
             detailedInterpretation: detailedInterpretation
           });
         } else {
-          // Fallback to candidate_assessments
           const { data: candidateData } = await supabase
             .from('candidate_assessments')
             .select(`
@@ -113,8 +102,6 @@ export default function CandidateReport() {
             .eq('user_id', user_id)
             .eq('status', 'completed')
             .order('completed_at', { ascending: false });
-
-          console.log("Candidate assessments:", candidateData);
 
           if (candidateData && candidateData.length > 0) {
             const assessment = candidateData[0];
@@ -146,7 +133,6 @@ export default function CandidateReport() {
             });
           }
         }
-
       } catch (error) {
         console.error("Error fetching data:", error);
       } finally {
@@ -157,7 +143,6 @@ export default function CandidateReport() {
     fetchData();
   }, [isSupervisor, user_id]);
 
-  // Helper function to get grade info
   const getGradeInfo = (percentage) => {
     if (percentage >= 90) return { grade: 'A', color: '#2E7D32', bg: '#E8F5E9', text: 'Exceptional' };
     if (percentage >= 80) return { grade: 'B', color: '#2E7D32', bg: '#E8F5E9', text: 'Very Good' };
@@ -207,14 +192,12 @@ export default function CandidateReport() {
   return (
     <AppLayout background="/images/preassessmentbg.jpg">
       <div style={styles.container}>
-        {/* Header */}
         <div style={styles.header}>
           <Link href="/supervisor" legacyBehavior>
             <a style={styles.backButton}>← Dashboard</a>
           </Link>
         </div>
 
-        {/* CARD 1: Candidate Summary */}
         <div style={styles.summaryCard}>
           <div style={styles.summaryHeader}>
             <div>
@@ -254,7 +237,6 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* CARD 2: Category Breakdown */}
         {assessmentData.category_scores && (
           <div style={styles.card}>
             <div style={styles.cardHeader}>
@@ -277,7 +259,6 @@ export default function CandidateReport() {
                     {Object.entries(assessmentData.category_scores).map(([category, data]) => {
                       const categoryGrade = getGradeInfo(data.percentage);
                       
-                      // Determine background color based on percentage
                       let rowColor = '#ffffff';
                       if (data.percentage >= 80) rowColor = '#f0fff4';
                       else if (data.percentage >= 70) rowColor = '#e8f5e9';
@@ -340,7 +321,6 @@ export default function CandidateReport() {
           </div>
         )}
 
-        {/* CARD 3: Detailed Analysis */}
         <div style={styles.card}>
           <div style={styles.cardHeader}>
             <span style={styles.cardIcon}>🔍</span>
@@ -348,7 +328,6 @@ export default function CandidateReport() {
           </div>
           <div style={styles.cardContent}>
             
-            {/* Strengths */}
             {assessmentData.strengths && assessmentData.strengths.length > 0 && (
               <div style={styles.analysisSection}>
                 <h4 style={styles.analysisTitle}>💪 Strengths</h4>
@@ -363,7 +342,6 @@ export default function CandidateReport() {
               </div>
             )}
 
-            {/* Areas for Improvement */}
             {assessmentData.weaknesses && assessmentData.weaknesses.length > 0 && (
               <div style={styles.analysisSection}>
                 <h4 style={styles.analysisTitle}>📈 Areas for Improvement</h4>
@@ -378,7 +356,6 @@ export default function CandidateReport() {
               </div>
             )}
 
-            {/* Recommendations */}
             {assessmentData.recommendations && assessmentData.recommendations.length > 0 && (
               <div style={styles.analysisSection}>
                 <h4 style={styles.analysisTitle}>🎯 Recommendations</h4>
@@ -396,25 +373,21 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* CARD 4: Detailed Narrative Analysis */}
         {assessmentData.detailedInterpretation && (
           <div style={styles.card}>
             <div style={styles.cardHeader}>
               <span style={styles.cardIcon}>📋</span>
-              <h3 style={styles.cardTitle}>Detailed Narrative Analysis</h3>
+              <h3 style={styles.cardTitle}>Professional Assessment</h3>
             </div>
             <div style={styles.cardContent}>
               
-              {/* Overall Profile Summary */}
               <div style={styles.analysisSection}>
                 <div style={styles.narrativeText}>{assessmentData.detailedInterpretation.overallProfileSummary}</div>
               </div>
 
-              {/* Category-by-Category Interpretation */}
               <div style={styles.analysisSection}>
-                <h4 style={styles.analysisTitle}>📊 Category-by-Category Interpretation</h4>
+                <h4 style={styles.analysisTitle}>Category Analysis</h4>
                 
-                {/* Strong Areas */}
                 {assessmentData.detailedInterpretation.categoryBreakdown.strong.length > 0 && (
                   <div style={styles.categoryGroup}>
                     {assessmentData.detailedInterpretation.categoryBreakdown.strong.map((narrative, index) => (
@@ -425,7 +398,6 @@ export default function CandidateReport() {
                   </div>
                 )}
 
-                {/* Moderate Areas */}
                 {assessmentData.detailedInterpretation.categoryBreakdown.moderate.length > 0 && (
                   <div style={styles.categoryGroup}>
                     {assessmentData.detailedInterpretation.categoryBreakdown.moderate.map((narrative, index) => (
@@ -436,7 +408,6 @@ export default function CandidateReport() {
                   </div>
                 )}
 
-                {/* Concern Areas */}
                 {assessmentData.detailedInterpretation.categoryBreakdown.concerns.length > 0 && (
                   <div style={styles.categoryGroup}>
                     {assessmentData.detailedInterpretation.categoryBreakdown.concerns.map((narrative, index) => (
@@ -448,22 +419,18 @@ export default function CandidateReport() {
                 )}
               </div>
 
-              {/* Hiring Interpretation */}
               <div style={styles.analysisSection}>
                 <div style={styles.narrativeText}>{assessmentData.detailedInterpretation.hiringInterpretation}</div>
               </div>
 
-              {/* Development Potential */}
               <div style={styles.analysisSection}>
                 <div style={styles.narrativeText}>{assessmentData.detailedInterpretation.developmentPotential}</div>
               </div>
 
-              {/* Strategic Observation */}
               <div style={styles.analysisSection}>
                 <div style={styles.narrativeText}>{assessmentData.detailedInterpretation.strategicObservation}</div>
               </div>
 
-              {/* Final Assessment */}
               <div style={styles.analysisSection}>
                 <div style={styles.narrativeText}>{assessmentData.detailedInterpretation.finalAssessment}</div>
               </div>
@@ -472,7 +439,6 @@ export default function CandidateReport() {
           </div>
         )}
 
-        {/* Footer */}
         <div style={styles.footer}>
           <p>Report generated on {new Date().toLocaleDateString()} • Confidential</p>
         </div>
