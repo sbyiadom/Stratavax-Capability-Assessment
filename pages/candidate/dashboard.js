@@ -333,8 +333,9 @@ export default function CandidateDashboard() {
 
   return (
     <AppLayout>
-      {/* Professional Header with Gradient Background */}
+      {/* Professional Header with Dashboard Background Image */}
       <div style={styles.header}>
+        <div style={styles.headerBackground} />
         <div style={styles.headerOverlay} />
         <div style={styles.headerContent}>
           <div style={styles.headerLeft}>
@@ -675,12 +676,26 @@ const styles = {
     opacity: 0.9
   },
   header: {
-    background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+    position: 'relative',
     padding: '16px 24px',
     position: 'sticky',
     top: 0,
     zIndex: 100,
-    borderBottom: '1px solid #334155'
+    borderBottom: '1px solid #334155',
+    overflow: 'hidden'
+  },
+  headerBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundImage: 'url(/images/dashboard-bg.jpg)',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    filter: 'brightness(0.7)',
+    transform: 'scale(1.1)',
+    animation: 'slowZoom 20s infinite alternate'
   },
   headerOverlay: {
     position: 'absolute',
@@ -688,11 +703,7 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundImage: 'url(https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1920&q=80)',
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-    opacity: 0.1,
-    pointerEvents: 'none'
+    background: 'linear-gradient(135deg, rgba(21,101,192,0.9) 0%, rgba(13,71,161,0.9) 100%)'
   },
   headerContent: {
     maxWidth: '1200px',
@@ -716,20 +727,20 @@ const styles = {
     letterSpacing: '1px'
   },
   headerDivider: {
-    color: '#475569',
+    color: 'rgba(255,255,255,0.5)',
     fontSize: '20px',
     fontWeight: '300'
   },
   headerSubtitle: {
     fontSize: '16px',
-    color: '#94a3b8',
+    color: 'rgba(255,255,255,0.8)',
     fontWeight: '400'
   },
   logoutButton: {
     padding: '8px 20px',
-    background: 'rgba(255,255,255,0.1)',
+    background: 'rgba(255,255,255,0.2)',
     color: 'white',
-    border: '1px solid #475569',
+    border: '1px solid rgba(255,255,255,0.3)',
     borderRadius: '30px',
     cursor: 'pointer',
     fontSize: '14px',
