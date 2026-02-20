@@ -21,96 +21,103 @@ export default function CandidateReport() {
   const [assessmentConfig, setAssessmentConfig] = useState(null);
 
   useEffect(() => {
-    const checkAuth = () => {
-      if (typeof window !== 'undefined') {
-        const supervisorSession = localStorage.getItem("supervisorSession");
-        if (!supervisorSession) {
-          router.push("/supervisor-login");
-          return;
-        }
+  if (!isSupervisor || !user_id) return;
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      
+      // Get candidate info
+      const { data: profileData } = await supabase
+        .from('candidate_profiles')
+        .select('*')
+        .eq('id', user_id)
+        .maybeSingle();
+
+      setCandidate({
+        id: user_id,
+        full_name: profileData?.full_name || profileData?.email?.split('@')[0] || 'Candidate',
+        email: profileData?.email || 'Email not available'
+      });
+
+      // Get assessment results
+      const { data: resultsData } = await supabase
+        .from('assessment_results')
+        .select('*')
+        .eq('user_id', user_id)
+        .order('completed_at', { ascending: false });
+
+      if (resultsData && resultsData.length > 0) {
+        const result = resultsData[0];
+        const percentage = Math.round((result.total_score / result.max_score) * 100);
         
-        try {
-          const session = JSON.parse(supervisorSession);
-          if (session.loggedIn) {
-            setIsSupervisor(true);
-          } else {
-            router.push("/supervisor-login");
-          }
-        } catch {
-          router.push("/supervisor-login");
-        }
-      }
-    };
-    checkAuth();
-  }, [router]);
+        // Get assessment type
+        const assessmentTypeId = result.assessment_type || 'general';
+        const config = getAssessmentType(assessmentTypeId);
+        setAssessmentConfig(config);
 
-  useEffect(() => {
-    if (!isSupervisor || !user_id) return;
-
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        
-        const { data: profileData } = await supabase
-          .from('candidate_profiles')
-          .select('*')
-          .eq('id', user_id)
-          .maybeSingle();
-
-        setCandidate({
-          id: user_id,
-          full_name: profileData?.full_name || profileData?.email?.split('@')[0] || 'Candidate',
-          email: profileData?.email || 'Email not available'
-        });
-
-        const { data: resultsData } = await supabase
-          .from('assessment_results')
+        // Fetch the actual responses for this assessment
+        const { data: responsesData } = await supabase
+          .from('responses')
           .select('*')
           .eq('user_id', user_id)
-          .order('completed_at', { ascending: false });
+          .eq('assessment_id', result.assessment_id);
 
-        if (resultsData && resultsData.length > 0) {
-          const result = resultsData[0];
-          const percentage = Math.round((result.total_score / result.max_score) * 100);
-          
-          // Get assessment type from result or default to general
-          const assessmentTypeId = result.assessment_type || 'general';
-          const config = getAssessmentType(assessmentTypeId);
-          setAssessmentConfig(config);
-          
-          const detailedInterpretation = generateDetailedInterpretation(
-            profileData?.full_name || 'Candidate',
-            result.category_scores,
-            assessmentTypeId
-          );
-          
-          setAssessmentData({
-            source: 'results',
-            assessment_id: result.assessment_id,
-            assessment_type: assessmentTypeId,
-            assessment_name: config.name,
-            total_score: result.total_score,
-            max_score: result.max_score,
-            percentage: percentage,
-            completed_at: result.completed_at,
-            category_scores: result.category_scores || {},
-            strengths: result.strengths || [],
-            weaknesses: result.weaknesses || [],
-            recommendations: result.recommendations || [],
-            interpretations: result.interpretations || {},
-            detailedInterpretation: detailedInterpretation
-          });
-        }
-      } catch (error) {
-        console.error("Error fetching data:", error);
-      } finally {
-        setLoading(false);
+        // Fetch all unique questions and answers
+        const questionIds = responsesData?.map(r => r.question_id) || [];
+        const answerIds = responsesData?.map(r => r.answer_id) || [];
+
+        const { data: questionsData } = await supabase
+          .from('unique_questions')
+          .select('*')
+          .in('id', questionIds);
+
+        const { data: answersData } = await supabase
+          .from('unique_answers')
+          .select('*')
+          .in('id', answerIds);
+
+        // Analyze responses to generate insights
+        const responseInsights = analyzeResponses(
+          responsesData || [], 
+          questionsData || [], 
+          answersData || []
+        );
+        
+        const detailedInterpretation = generateDetailedInterpretation(
+          profileData?.full_name || 'Candidate',
+          result.category_scores,
+          assessmentTypeId,
+          responseInsights
+        );
+        
+        setAssessmentData({
+          source: 'results',
+          assessment_id: result.assessment_id,
+          assessment_type: assessmentTypeId,
+          assessment_name: config.name,
+          total_score: result.total_score,
+          max_score: result.max_score,
+          percentage: percentage,
+          completed_at: result.completed_at,
+          category_scores: result.category_scores || {},
+          strengths: result.strengths || [],
+          weaknesses: result.weaknesses || [],
+          recommendations: result.recommendations || [],
+          interpretations: result.interpretations || {},
+          detailedInterpretation: detailedInterpretation,
+          responseInsights: responseInsights
+        });
       }
-    };
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    fetchData();
-  }, [isSupervisor, user_id]);
-
+  fetchData();
+}, [isSupervisor, user_id]);
   const handlePrint = () => {
     setShowPrintView(true);
     setTimeout(() => {
@@ -1030,3 +1037,4 @@ const styles = {
     whiteSpace: 'pre-line'
   }
 };
+
