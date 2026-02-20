@@ -93,6 +93,10 @@ export default function PreAssessment() {
     }
   };
 
+  const handleBack = () => {
+    router.push('/candidate/dashboard');
+  };
+
   const getIcon = (type) => {
     return type?.icon || '📋';
   };
@@ -134,6 +138,11 @@ export default function PreAssessment() {
 
   return (
     <div style={styles.container}>
+      {/* Back Button */}
+      <button onClick={handleBack} style={styles.backButton}>
+        ← Back to Dashboard
+      </button>
+
       <h1 style={styles.title}>Available Assessments</h1>
       <p style={styles.subtitle}>Welcome, {user?.email}. Select an assessment to begin.</p>
       
@@ -165,8 +174,9 @@ export default function PreAssessment() {
                 <div style={styles.cardBody}>
                   <div style={styles.stats}>
                     <div>📝 {type?.question_count || 100} Questions</div>
-                    <div>⏱️ {type?.time_limit_minutes || 60} Minutes</div>
-                    <div>🎯 Max Score: {type?.max_score || 100}</div>
+                    {/* FORCE 180 MINUTES FOR ALL ASSESSMENTS */}
+                    <div>⏱️ 180 Minutes (3 hours)</div>
+                    <div>🎯 Max Score: {type?.max_score || 500}</div>
                   </div>
                   
                   <button
@@ -187,6 +197,11 @@ export default function PreAssessment() {
         </div>
       )}
 
+      {/* Info Note */}
+      <div style={styles.infoNote}>
+        <p>⚠️ <strong>Important:</strong> Each assessment has a 3-hour time limit (180 minutes). Your progress is automatically saved.</p>
+      </div>
+
       <style jsx>{`
         @keyframes spin {
           0% { transform: rotate(0deg); }
@@ -203,6 +218,20 @@ const styles = {
     margin: '0 auto',
     padding: '40px 20px',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+  },
+  backButton: {
+    padding: '8px 20px',
+    background: '#f5f5f5',
+    border: '1px solid #ddd',
+    borderRadius: '30px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    marginBottom: '30px',
+    transition: 'all 0.2s',
+    color: '#333',
+    ':hover': {
+      background: '#e0e0e0'
+    }
   },
   loadingContainer: {
     display: 'flex',
@@ -322,5 +351,15 @@ const styles = {
     background: 'white',
     borderRadius: '10px',
     boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
+  },
+  infoNote: {
+    marginTop: '40px',
+    padding: '16px 20px',
+    background: '#f8f9fa',
+    borderRadius: '8px',
+    border: '1px solid #e0e0e0',
+    color: '#666',
+    fontSize: '14px',
+    textAlign: 'center'
   }
 };
