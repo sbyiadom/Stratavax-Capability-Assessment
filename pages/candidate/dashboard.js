@@ -333,7 +333,7 @@ export default function CandidateDashboard() {
 
   return (
     <div style={styles.pageContainer}>
-      {/* Full Page Background - USING DASHBOARD1-BG.JPG */}
+      {/* Full Page Background - CLEAR AND VISIBLE */}
       <div style={styles.pageBackground} />
       
       <div style={styles.content}>
@@ -664,9 +664,10 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundImage: 'url(/images/dashboard1-bg.jpg)', // CHANGED TO DASHBOARD1-BG.JPG
+    backgroundImage: 'url(/images/dashboard-bg.jpg)',
     backgroundSize: 'cover',
     backgroundPosition: 'center',
+    // REMOVED THE DARK OVERLAY - now the image is clear
     zIndex: -1
   },
   content: {
