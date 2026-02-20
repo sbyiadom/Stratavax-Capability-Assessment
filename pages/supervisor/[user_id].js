@@ -122,12 +122,17 @@ export default function CandidateReport() {
     // Helper function to fetch candidate data
     const fetchCandidateData = async (candidateId) => {
       try {
+        console.log("🔍 Fetching data for candidate ID:", candidateId);
+        
         // Get candidate info
         const { data: profileData, error: profileError } = await supabase
           .from('candidate_profiles')
           .select('*')
           .eq('id', candidateId)
           .maybeSingle();
+
+        console.log("Profile data:", profileData);
+        console.log("Profile error:", profileError);
 
         if (profileError) {
           console.error("Error fetching profile:", profileError);
@@ -140,6 +145,8 @@ export default function CandidateReport() {
         });
 
         // Get assessments with scores
+        console.log("Fetching candidate assessments for:", candidateId);
+        
         const { data: candidateAssessments, error: candidateError } = await supabase
           .from('candidate_assessments')
           .select(`
@@ -160,9 +167,8 @@ export default function CandidateReport() {
           .eq('status', 'completed')
           .order('completed_at', { ascending: false });
 
-        if (candidateError) {
-          console.error("Error fetching candidate assessments:", candidateError);
-        }
+        console.log("Candidate assessments found:", candidateAssessments);
+        console.log("Candidate assessments error:", candidateError);
 
         // Get detailed results from assessment_results
         const { data: resultsData, error: resultsError } = await supabase
@@ -188,7 +194,9 @@ export default function CandidateReport() {
         if (candidateAssessments && candidateAssessments.length > 0) {
           const formattedAssessments = candidateAssessments.map(assessment => {
             const detailedResult = resultsMap[assessment.assessment_id];
-            const percentage = assessment.score ? Math.round((assessment.score / 500) * 100) : 0;
+            // Calculate percentage - handle different max scores
+            const maxPossibleScore = 500; // Default, but could come from assessment
+            const percentage = assessment.score ? Math.round((assessment.score / maxPossibleScore) * 100) : 0;
             const type = assessment.assessments?.assessment_type?.code || 'general';
             
             // Parse strengths and weaknesses from strings to objects if needed
@@ -230,7 +238,7 @@ export default function CandidateReport() {
               name: assessment.assessments?.title || 'Assessment',
               type,
               score: assessment.score || 0,
-              max_score: 500,
+              max_score: maxPossibleScore,
               percentage,
               completed_at: assessment.completed_at,
               category_scores: detailedResult?.category_scores || {},
@@ -1071,7 +1079,6 @@ const styles = {
     borderBottom: '1px solid #e0e0e0',
     color: '#555'
   },
-  // New styles for recommendations section
   recommendationsSection: {
     background: 'white',
     borderRadius: '16px',
@@ -1237,7 +1244,6 @@ const styles = {
       boxShadow: '0 5px 15px rgba(21, 101, 192, 0.3)'
     }
   },
-  // Keep all existing styles below...
   interpretationCard: {
     background: 'white',
     borderRadius: '16px',
