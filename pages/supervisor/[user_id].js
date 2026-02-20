@@ -11,7 +11,7 @@ export default function CandidateReport() {
   const [loading, setLoading] = useState(true);
   const [isSupervisor, setIsSupervisor] = useState(false);
   const [candidate, setCandidate] = useState(null);
-  const [assessmentResult, setAssessmentResult] = useState(null);
+  const [assessmentData, setAssessmentData] = useState(null);
 
   // Check supervisor authentication
   useEffect(() => {
@@ -45,6 +45,8 @@ export default function CandidateReport() {
     const fetchData = async () => {
       try {
         setLoading(true);
+        
+        console.log("Fetching data for user:", user_id);
 
         // Get candidate info
         const { data: profileData } = await supabase
@@ -59,17 +61,83 @@ export default function CandidateReport() {
           email: profileData?.email || 'Email not available'
         });
 
-        // Get assessment results
+        // FIRST: Try to get from assessment_results (detailed data)
         const { data: resultsData } = await supabase
           .from('assessment_results')
           .select('*')
           .eq('user_id', user_id)
           .order('completed_at', { ascending: false });
 
-        console.log("Assessment Results:", resultsData);
+        console.log("Assessment results:", resultsData);
 
         if (resultsData && resultsData.length > 0) {
-          setAssessmentResult(resultsData[0]); // Get the most recent
+          // Use the detailed results data
+          setAssessmentData({
+            source: 'results',
+            total_score: resultsData[0].total_score,
+            max_score: resultsData[0].max_score,
+            percentage: Math.round((resultsData[0].total_score / resultsData[0].max_score) * 100),
+            completed_at: resultsData[0].completed_at,
+            category_scores: resultsData[0].category_scores,
+            strengths: resultsData[0].strengths || [],
+            weaknesses: resultsData[0].weaknesses || [],
+            recommendations: resultsData[0].recommendations || [],
+            interpretations: resultsData[0].interpretations || {}
+          });
+        } else {
+          // SECOND: Try candidate_assessments (basic data)
+          const { data: candidateData } = await supabase
+            .from('candidate_assessments')
+            .select(`
+              *,
+              assessments (
+                id,
+                title,
+                assessment_type:assessment_types (
+                  code,
+                  name
+                )
+              )
+            `)
+            .eq('user_id', user_id)
+            .eq('status', 'completed')
+            .order('completed_at', { ascending: false });
+
+          console.log("Candidate assessments:", candidateData);
+
+          if (candidateData && candidateData.length > 0) {
+            const assessment = candidateData[0];
+            const maxScore = 500; // Default max score
+            const percentage = Math.round((assessment.score / maxScore) * 100);
+            
+            // Get the assessment type
+            const assessmentType = assessment.assessments?.assessment_type?.code || 'general';
+            
+            setAssessmentData({
+              source: 'candidate',
+              total_score: assessment.score,
+              max_score: maxScore,
+              percentage: percentage,
+              completed_at: assessment.completed_at,
+              assessment_name: assessment.assessments?.title || 'Assessment',
+              assessment_type: assessmentType,
+              // We don't have category scores, so we'll create a simple one
+              category_scores: {
+                'Overall Performance': {
+                  score: assessment.score,
+                  maxPossible: maxScore,
+                  percentage: percentage
+                }
+              },
+              strengths: percentage >= 70 ? ['Overall Performance'] : [],
+              weaknesses: percentage < 70 ? ['Overall Performance'] : [],
+              recommendations: [
+                `Overall score: ${assessment.score}/${maxScore} (${percentage}%). Target is 80% for proficiency.`,
+                'Complete targeted training in all areas to improve overall performance.',
+                'Work with a mentor to identify specific development needs.'
+              ]
+            });
+          }
         }
 
       } catch (error) {
@@ -84,10 +152,11 @@ export default function CandidateReport() {
 
   // Helper function to get grade info
   const getGradeInfo = (percentage) => {
-    if (percentage >= 90) return { grade: 'A', color: '#2E7D32', bg: '#E8F5E9', text: 'Excellent' };
+    if (percentage >= 90) return { grade: 'A', color: '#2E7D32', bg: '#E8F5E9', text: 'Exceptional' };
     if (percentage >= 80) return { grade: 'B', color: '#2E7D32', bg: '#E8F5E9', text: 'Very Good' };
     if (percentage >= 70) return { grade: 'C', color: '#1565C0', bg: '#E3F2FD', text: 'Good' };
     if (percentage >= 60) return { grade: 'D', color: '#F57C00', bg: '#FFF3E0', text: 'Fair' };
+    if (percentage >= 50) return { grade: 'E', color: '#F57C00', bg: '#FFF3E0', text: 'Below Average' };
     return { grade: 'F', color: '#C62828', bg: '#FFEBEE', text: 'Needs Improvement' };
   };
 
@@ -113,7 +182,7 @@ export default function CandidateReport() {
     );
   }
 
-  if (!assessmentResult) {
+  if (!assessmentData) {
     return (
       <div style={styles.emptyState}>
         <div style={styles.emptyIcon}>📊</div>
@@ -126,8 +195,7 @@ export default function CandidateReport() {
     );
   }
 
-  const totalPercentage = Math.round((assessmentResult.total_score / assessmentResult.max_score) * 100);
-  const gradeInfo = getGradeInfo(totalPercentage);
+  const gradeInfo = getGradeInfo(assessmentData.percentage);
 
   return (
     <AppLayout background="/images/preassessmentbg.jpg">
@@ -147,18 +215,18 @@ export default function CandidateReport() {
               <p style={styles.candidateEmail}>{candidate.email}</p>
             </div>
             <div style={styles.completedDate}>
-              Completed: {new Date(assessmentResult.completed_at).toLocaleDateString()}
+              Completed: {new Date(assessmentData.completed_at).toLocaleDateString()}
             </div>
           </div>
           
           <div style={styles.scoreGrid}>
             <div style={styles.scoreItem}>
               <span style={styles.scoreLabel}>Total Score</span>
-              <span style={styles.scoreValue}>{assessmentResult.total_score}/{assessmentResult.max_score}</span>
+              <span style={styles.scoreValue}>{assessmentData.total_score}/{assessmentData.max_score}</span>
             </div>
             <div style={styles.scoreItem}>
               <span style={styles.scoreLabel}>Percentage</span>
-              <span style={{...styles.scoreValue, color: gradeInfo.color}}>{totalPercentage}%</span>
+              <span style={{...styles.scoreValue, color: gradeInfo.color}}>{assessmentData.percentage}%</span>
             </div>
             <div style={styles.scoreItem}>
               <span style={styles.scoreLabel}>Grade</span>
@@ -180,7 +248,7 @@ export default function CandidateReport() {
         </div>
 
         {/* CARD 2: Category Breakdown */}
-        {assessmentResult.category_scores && (
+        {assessmentData.category_scores && (
           <div style={styles.card}>
             <div style={styles.cardHeader}>
               <span style={styles.cardIcon}>📊</span>
@@ -199,15 +267,14 @@ export default function CandidateReport() {
                     </tr>
                   </thead>
                   <tbody>
-                    {Object.entries(assessmentResult.category_scores).map(([category, data]) => {
+                    {Object.entries(assessmentData.category_scores).map(([category, data]) => {
                       const categoryGrade = getGradeInfo(data.percentage);
-                      const percentage = data.percentage;
                       
                       // Determine background color based on percentage
                       let rowColor = '#ffffff';
-                      if (percentage >= 80) rowColor = '#f0fff4';
-                      else if (percentage >= 70) rowColor = '#e8f5e9';
-                      else if (percentage >= 60) rowColor = '#fff8e1';
+                      if (data.percentage >= 80) rowColor = '#f0fff4';
+                      else if (data.percentage >= 70) rowColor = '#e8f5e9';
+                      else if (data.percentage >= 60) rowColor = '#fff8e1';
                       else rowColor = '#ffebee';
                       
                       return (
@@ -224,14 +291,14 @@ export default function CandidateReport() {
                             <div style={styles.progressContainer}>
                               <div style={styles.progressBar}>
                                 <div style={{
-                                  width: `${percentage}%`,
+                                  width: `${data.percentage}%`,
                                   height: '100%',
                                   background: categoryGrade.color,
                                   borderRadius: '4px'
                                 }} />
                               </div>
                               <span style={{ fontWeight: 600, color: categoryGrade.color }}>
-                                {percentage}%
+                                {data.percentage}%
                               </span>
                             </div>
                           </td>
@@ -258,6 +325,9 @@ export default function CandidateReport() {
                     })}
                   </tbody>
                 </table>
+                {assessmentData.source === 'candidate' && (
+                  <p style={styles.note}>Note: Detailed category scores are not available. Showing overall performance.</p>
+                )}
               </div>
             </div>
           </div>
@@ -271,20 +341,12 @@ export default function CandidateReport() {
           </div>
           <div style={styles.cardContent}>
             
-            {/* Executive Summary */}
-            {assessmentResult.interpretations?.executiveSummary && (
-              <div style={styles.analysisSection}>
-                <h4 style={styles.analysisTitle}>📋 Executive Summary</h4>
-                <p style={styles.analysisText}>{assessmentResult.interpretations.executiveSummary}</p>
-              </div>
-            )}
-
             {/* Strengths */}
-            {assessmentResult.strengths && assessmentResult.strengths.length > 0 && (
+            {assessmentData.strengths && assessmentData.strengths.length > 0 && (
               <div style={styles.analysisSection}>
                 <h4 style={styles.analysisTitle}>💪 Strengths</h4>
                 <div style={styles.strengthList}>
-                  {assessmentResult.strengths.map((strength, index) => (
+                  {assessmentData.strengths.map((strength, index) => (
                     <div key={index} style={styles.strengthItem}>
                       <span style={styles.strengthBullet}>✅</span>
                       <span>{strength}</span>
@@ -295,11 +357,11 @@ export default function CandidateReport() {
             )}
 
             {/* Areas for Improvement */}
-            {assessmentResult.weaknesses && assessmentResult.weaknesses.length > 0 && (
+            {assessmentData.weaknesses && assessmentData.weaknesses.length > 0 && (
               <div style={styles.analysisSection}>
                 <h4 style={styles.analysisTitle}>📈 Areas for Improvement</h4>
                 <div style={styles.weaknessList}>
-                  {assessmentResult.weaknesses.map((weakness, index) => (
+                  {assessmentData.weaknesses.map((weakness, index) => (
                     <div key={index} style={styles.weaknessItem}>
                       <span style={styles.weaknessBullet}>📌</span>
                       <span>{weakness}</span>
@@ -310,25 +372,17 @@ export default function CandidateReport() {
             )}
 
             {/* Recommendations */}
-            {assessmentResult.recommendations && assessmentResult.recommendations.length > 0 && (
+            {assessmentData.recommendations && assessmentData.recommendations.length > 0 && (
               <div style={styles.analysisSection}>
                 <h4 style={styles.analysisTitle}>🎯 Recommendations</h4>
                 <div style={styles.recommendationsList}>
-                  {assessmentResult.recommendations.map((rec, index) => (
+                  {assessmentData.recommendations.map((rec, index) => (
                     <div key={index} style={styles.recommendationItem}>
                       <span style={styles.recommendationBullet}>•</span>
                       <span>{rec}</span>
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-
-            {/* Overall Profile */}
-            {assessmentResult.interpretations?.overallProfile && (
-              <div style={styles.analysisSection}>
-                <h4 style={styles.analysisTitle}>📌 Overall Profile</h4>
-                <p style={styles.analysisText}>{assessmentResult.interpretations.overallProfile}</p>
               </div>
             )}
 
@@ -515,6 +569,15 @@ const styles = {
   cardContent: {
     padding: '20px'
   },
+  note: {
+    marginTop: '15px',
+    padding: '10px',
+    background: '#fff3e0',
+    borderRadius: '6px',
+    color: '#e65100',
+    fontSize: '13px',
+    fontStyle: 'italic'
+  },
   tableWrapper: {
     overflowX: 'auto'
   },
@@ -576,12 +639,6 @@ const styles = {
     margin: '0 0 15px 0',
     paddingBottom: '8px',
     borderBottom: '2px solid #1565c0'
-  },
-  analysisText: {
-    fontSize: '15px',
-    color: '#555',
-    lineHeight: '1.8',
-    margin: 0
   },
   strengthList: {
     display: 'flex',
