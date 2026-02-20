@@ -63,11 +63,70 @@ export default function CandidateReport() {
       try {
         setLoading(true);
 
+        // First, check if this user_id is a supervisor
+        const { data: supervisorData, error: supervisorError } = await supabase
+          .from('supervisors')
+          .select('*')
+          .eq('user_id', user_id)
+          .maybeSingle();
+
+        if (supervisorError) {
+          console.error("Error checking supervisor:", supervisorError);
+        }
+
+        console.log("Supervisor data:", supervisorData);
+
+        if (!supervisorData) {
+          // If not a supervisor, treat as candidate directly (fallback)
+          console.log("Not a supervisor, treating as candidate");
+          await fetchCandidateData(user_id);
+        } else {
+          // This is a supervisor - get all candidates under this supervisor
+          console.log("Fetching candidates for supervisor:", user_id);
+          
+          // Get all notifications for this supervisor to find candidates
+          const { data: notifications, error: notifError } = await supabase
+            .from('supervisor_notifications')
+            .select('user_id')
+            .eq('supervisor_id', user_id)
+            .order('created_at', { ascending: false });
+
+          if (notifError) {
+            console.error("Error fetching notifications:", notifError);
+          }
+
+          console.log("Notifications found:", notifications);
+
+          if (notifications && notifications.length > 0) {
+            // Get unique candidate IDs
+            const candidateIds = [...new Set(notifications.map(n => n.user_id))];
+            console.log("Candidate IDs under this supervisor:", candidateIds);
+            
+            // For now, show the first candidate's data
+            // In a real app, you might want to show a list of candidates
+            if (candidateIds.length > 0) {
+              await fetchCandidateData(candidateIds[0]);
+            } else {
+              setLoading(false);
+            }
+          } else {
+            setLoading(false);
+          }
+        }
+      } catch (error) {
+        console.error("Error in fetchData:", error);
+        setLoading(false);
+      }
+    };
+    
+    // Helper function to fetch candidate data
+    const fetchCandidateData = async (candidateId) => {
+      try {
         // Get candidate info
         const { data: profileData, error: profileError } = await supabase
           .from('candidate_profiles')
           .select('*')
-          .eq('id', user_id)
+          .eq('id', candidateId)
           .maybeSingle();
 
         if (profileError) {
@@ -75,7 +134,7 @@ export default function CandidateReport() {
         }
 
         setCandidate({
-          id: user_id,
+          id: candidateId,
           full_name: profileData?.full_name || 'Candidate',
           email: profileData?.email || 'Email not available'
         });
@@ -97,7 +156,7 @@ export default function CandidateReport() {
               )
             )
           `)
-          .eq('user_id', user_id)
+          .eq('user_id', candidateId)
           .eq('status', 'completed')
           .order('completed_at', { ascending: false });
 
@@ -109,7 +168,7 @@ export default function CandidateReport() {
         const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
           .select('*')
-          .eq('user_id', user_id);
+          .eq('user_id', candidateId);
 
         if (resultsError) {
           console.error("Error fetching assessment results:", resultsError);
@@ -205,15 +264,15 @@ export default function CandidateReport() {
             setAssessmentType(mostRecent.type);
           }
         } else {
-          console.log("No completed assessments found for user:", user_id);
+          console.log("No completed assessments found for candidate:", candidateId);
         }
-
       } catch (error) {
         console.error("Error fetching candidate data:", error);
       } finally {
         setLoading(false);
       }
     };
+
     fetchData();
   }, [isSupervisor, user_id]);
 
