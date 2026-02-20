@@ -77,7 +77,7 @@ export default function CandidateReport() {
         console.log("Supervisor data:", supervisorData);
 
         if (!supervisorData) {
-          // If not a supervisor, treat as candidate directly (fallback)
+          // If not a supervisor, treat as candidate directly
           console.log("Not a supervisor, treating as candidate");
           await fetchCandidateData(user_id);
         } else {
@@ -103,7 +103,6 @@ export default function CandidateReport() {
             console.log("Candidate IDs under this supervisor:", candidateIds);
             
             // For now, show the first candidate's data
-            // In a real app, you might want to show a list of candidates
             if (candidateIds.length > 0) {
               await fetchCandidateData(candidateIds[0]);
             } else {
@@ -124,155 +123,255 @@ export default function CandidateReport() {
       try {
         console.log("🔍 Fetching data for candidate ID:", candidateId);
         
-        // Get candidate info
-        const { data: profileData, error: profileError } = await supabase
-          .from('candidate_profiles')
+        // Get data from supervisor_dashboard (this is where the data actually lives)
+        const { data: dashboardData, error: dashboardError } = await supabase
+          .from('supervisor_dashboard')
           .select('*')
-          .eq('id', candidateId)
+          .eq('user_id', candidateId)
           .maybeSingle();
 
-        console.log("Profile data:", profileData);
-        console.log("Profile error:", profileError);
+        console.log("Dashboard data:", dashboardData);
+        console.log("Dashboard error:", dashboardError);
 
-        if (profileError) {
-          console.error("Error fetching profile:", profileError);
-        }
-
-        setCandidate({
-          id: candidateId,
-          full_name: profileData?.full_name || 'Candidate',
-          email: profileData?.email || 'Email not available'
-        });
-
-        // Get assessments with scores
-        console.log("Fetching candidate assessments for:", candidateId);
-        
-        const { data: candidateAssessments, error: candidateError } = await supabase
-          .from('candidate_assessments')
-          .select(`
-            id,
-            assessment_id,
-            score,
-            completed_at,
-            assessments (
-              id,
-              title,
-              assessment_type:assessment_types (
-                code,
-                name
-              )
-            )
-          `)
-          .eq('user_id', candidateId)
-          .eq('status', 'completed')
-          .order('completed_at', { ascending: false });
-
-        console.log("Candidate assessments found:", candidateAssessments);
-        console.log("Candidate assessments error:", candidateError);
-
-        // Get detailed results from assessment_results
-        const { data: resultsData, error: resultsError } = await supabase
-          .from('assessment_results')
-          .select('*')
-          .eq('user_id', candidateId);
-
-        if (resultsError) {
-          console.error("Error fetching assessment results:", resultsError);
-        }
-
-        console.log("Raw results data:", resultsData);
-
-        // Create a map of results by assessment_id
-        const resultsMap = {};
-        if (resultsData) {
-          resultsData.forEach(result => {
-            resultsMap[result.assessment_id] = result;
-          });
-        }
-
-        // Combine the data
-        if (candidateAssessments && candidateAssessments.length > 0) {
-          const formattedAssessments = candidateAssessments.map(assessment => {
-            const detailedResult = resultsMap[assessment.assessment_id];
-            // Calculate percentage - handle different max scores
-            const maxPossibleScore = 500; // Default, but could come from assessment
-            const percentage = assessment.score ? Math.round((assessment.score / maxPossibleScore) * 100) : 0;
-            const type = assessment.assessments?.assessment_type?.code || 'general';
-            
-            // Parse strengths and weaknesses from strings to objects if needed
-            let strengthsList = detailedResult?.strengths || [];
-            let weaknessesList = detailedResult?.weaknesses || [];
-            
-            // If strengths are strings, convert them to objects with area and percentage
-            if (strengthsList.length > 0 && typeof strengthsList[0] === 'string') {
-              strengthsList = strengthsList.map(s => {
-                const match = s.match(/(.+) \((\d+)%\)/);
-                if (match) {
-                  return {
-                    area: match[1],
-                    percentage: parseInt(match[2]),
-                    analysis: `Strong performance in ${match[1]} (${match[2]}%). This exceeds the 80% target.`
-                  };
-                }
-                return { area: s, analysis: `Strength identified in ${s}` };
-              });
-            }
-            
-            if (weaknessesList.length > 0 && typeof weaknessesList[0] === 'string') {
-              weaknessesList = weaknessesList.map(w => {
-                const match = w.match(/(.+) \((\d+)%\)/);
-                if (match) {
-                  return {
-                    area: match[1],
-                    percentage: parseInt(match[2]),
-                    analysis: `Needs improvement in ${match[1]} (${match[2]}%). Below target of 80%.`
-                  };
-                }
-                return { area: w, analysis: `Development area identified in ${w}` };
-              });
-            }
-            
-            return {
-              id: assessment.id,
-              assessment_id: assessment.assessment_id,
-              name: assessment.assessments?.title || 'Assessment',
-              type,
-              score: assessment.score || 0,
-              max_score: maxPossibleScore,
-              percentage,
-              completed_at: assessment.completed_at,
-              category_scores: detailedResult?.category_scores || {},
-              strengths: strengthsList,
-              weaknesses: weaknessesList,
-              recommendations: detailedResult?.recommendations || [],
-              development_plan: detailedResult?.development_plan || {},
-              interpretations: detailedResult?.interpretations || {},
-              executive_summary: detailedResult?.interpretations?.summary || detailedResult?.interpretations?.executiveSummary || '',
-              overall_profile: detailedResult?.interpretations?.overallProfile || ''
-            };
+        if (dashboardData) {
+          // Set candidate info from dashboard data
+          setCandidate({
+            id: candidateId,
+            full_name: dashboardData.full_name || 'Candidate',
+            email: dashboardData.email || 'Email not available'
           });
 
-          console.log("Formatted assessments:", formattedAssessments);
-          setAssessments(formattedAssessments);
-          
-          // Select the most recent assessment
-          if (formattedAssessments.length > 0) {
-            const mostRecent = formattedAssessments[0];
-            console.log("Selected most recent:", mostRecent);
-            setSelectedAssessment(mostRecent);
+          // Format assessments from the dashboard data
+          if (dashboardData.assessments && dashboardData.assessments.length > 0) {
+            // Filter to only completed assessments
+            const completedAssessments = dashboardData.assessments.filter(a => a.status === 'completed');
             
-            // Set the detailed data
-            setCategoryScores(mostRecent.category_scores || {});
-            setStrengths(mostRecent.strengths || []);
-            setWeaknesses(mostRecent.weaknesses || []);
-            setRecommendations(mostRecent.recommendations || []);
-            setDevelopmentPlan(mostRecent.development_plan || {});
-            setInterpretations(mostRecent.interpretations || {});
-            setExecutiveSummary(mostRecent.executive_summary || mostRecent.interpretations?.summary || '');
-            setAssessmentType(mostRecent.type);
+            if (completedAssessments.length > 0) {
+              const formattedAssessments = completedAssessments.map((assessment) => {
+                const percentage = assessment.score ? Math.round((assessment.score / assessment.max_score) * 100) : 0;
+                
+                // Create category scores object if available
+                let categoryScores = {};
+                if (assessment.category_scores) {
+                  categoryScores = assessment.category_scores;
+                } else {
+                  // Create a default category score based on the assessment type
+                  const categoryName = assessment.assessment_type === 'general' ? 'General Knowledge' : 
+                                      assessment.assessment_type === 'technical' ? 'Technical Skills' : 
+                                      'Assessment';
+                  categoryScores[categoryName] = {
+                    score: assessment.score || 0,
+                    maxPossible: assessment.max_score || 500,
+                    percentage: percentage,
+                    total: assessment.score || 0
+                  };
+                }
+                
+                return {
+                  id: assessment.assessment_id,
+                  assessment_id: assessment.assessment_id,
+                  name: assessment.assessment_name,
+                  type: assessment.assessment_type,
+                  score: assessment.score || 0,
+                  max_score: assessment.max_score || 500,
+                  percentage,
+                  completed_at: assessment.completed_at,
+                  category_scores: categoryScores,
+                  strengths: [],
+                  weaknesses: [],
+                  recommendations: [],
+                  development_plan: {},
+                  interpretations: {
+                    summary: `${dashboardData.full_name || 'Candidate'} completed the ${assessment.assessment_name} with a score of ${assessment.score}/${assessment.max_score} (${percentage}%).`,
+                    executiveSummary: `Overall performance: ${percentage}% - ${percentage >= 70 ? 'Meets expectations' : 'Development needed'}.`
+                  },
+                  executive_summary: `${dashboardData.full_name || 'Candidate'} completed the ${assessment.assessment_name} with a score of ${assessment.score}/${assessment.max_score} (${percentage}%).`,
+                  overall_profile: percentage >= 70 ? 'Solid performer' : 'Needs development'
+                };
+              });
+
+              console.log("Formatted assessments from dashboard:", formattedAssessments);
+              setAssessments(formattedAssessments);
+              
+              // Select the most recent assessment
+              if (formattedAssessments.length > 0) {
+                // Sort by completed_at date (most recent first)
+                const sorted = [...formattedAssessments].sort((a, b) => 
+                  new Date(b.completed_at) - new Date(a.completed_at)
+                );
+                const mostRecent = sorted[0];
+                console.log("Selected most recent:", mostRecent);
+                setSelectedAssessment(mostRecent);
+                
+                // Set the detailed data
+                setCategoryScores(mostRecent.category_scores || {});
+                setAssessmentType(mostRecent.type);
+                
+                // Generate executive summary if not present
+                if (!mostRecent.executive_summary) {
+                  const summary = `${dashboardData.full_name || 'Candidate'} completed the ${mostRecent.name} assessment with a score of ${mostRecent.score}/${mostRecent.max_score} (${mostRecent.percentage}%).`;
+                  setExecutiveSummary(summary);
+                } else {
+                  setExecutiveSummary(mostRecent.executive_summary);
+                }
+              }
+            } else {
+              console.log("No completed assessments found in dashboard data");
+              setAssessments([]);
+            }
+          } else {
+            console.log("No assessments array in dashboard data");
+            setAssessments([]);
           }
         } else {
-          console.log("No completed assessments found for candidate:", candidateId);
+          // Fallback to original method if dashboard data not available
+          console.log("No dashboard data found, falling back to direct table queries");
+          
+          // Get candidate info from profiles
+          const { data: profileData, error: profileError } = await supabase
+            .from('candidate_profiles')
+            .select('*')
+            .eq('id', candidateId)
+            .maybeSingle();
+
+          console.log("Profile data:", profileData);
+          console.log("Profile error:", profileError);
+
+          setCandidate({
+            id: candidateId,
+            full_name: profileData?.full_name || 'Candidate',
+            email: profileData?.email || 'Email not available'
+          });
+
+          // Get assessments with scores
+          console.log("Fetching candidate assessments for:", candidateId);
+          
+          const { data: candidateAssessments, error: candidateError } = await supabase
+            .from('candidate_assessments')
+            .select(`
+              id,
+              assessment_id,
+              score,
+              completed_at,
+              assessments (
+                id,
+                title,
+                assessment_type:assessment_types (
+                  code,
+                  name
+                )
+              )
+            `)
+            .eq('user_id', candidateId)
+            .eq('status', 'completed')
+            .order('completed_at', { ascending: false });
+
+          console.log("Candidate assessments found:", candidateAssessments);
+          console.log("Candidate assessments error:", candidateError);
+
+          // Get detailed results from assessment_results
+          const { data: resultsData, error: resultsError } = await supabase
+            .from('assessment_results')
+            .select('*')
+            .eq('user_id', candidateId);
+
+          if (resultsError) {
+            console.error("Error fetching assessment results:", resultsError);
+          }
+
+          console.log("Raw results data:", resultsData);
+
+          // Create a map of results by assessment_id
+          const resultsMap = {};
+          if (resultsData) {
+            resultsData.forEach(result => {
+              resultsMap[result.assessment_id] = result;
+            });
+          }
+
+          // Combine the data
+          if (candidateAssessments && candidateAssessments.length > 0) {
+            const formattedAssessments = candidateAssessments.map(assessment => {
+              const detailedResult = resultsMap[assessment.assessment_id];
+              const maxPossibleScore = 500;
+              const percentage = assessment.score ? Math.round((assessment.score / maxPossibleScore) * 100) : 0;
+              const type = assessment.assessments?.assessment_type?.code || 'general';
+              
+              // Parse strengths and weaknesses from strings to objects if needed
+              let strengthsList = detailedResult?.strengths || [];
+              let weaknessesList = detailedResult?.weaknesses || [];
+              
+              // If strengths are strings, convert them to objects with area and percentage
+              if (strengthsList.length > 0 && typeof strengthsList[0] === 'string') {
+                strengthsList = strengthsList.map(s => {
+                  const match = s.match(/(.+) \((\d+)%\)/);
+                  if (match) {
+                    return {
+                      area: match[1],
+                      percentage: parseInt(match[2]),
+                      analysis: `Strong performance in ${match[1]} (${match[2]}%). This exceeds the 80% target.`
+                    };
+                  }
+                  return { area: s, analysis: `Strength identified in ${s}` };
+                });
+              }
+              
+              if (weaknessesList.length > 0 && typeof weaknessesList[0] === 'string') {
+                weaknessesList = weaknessesList.map(w => {
+                  const match = w.match(/(.+) \((\d+)%\)/);
+                  if (match) {
+                    return {
+                      area: match[1],
+                      percentage: parseInt(match[2]),
+                      analysis: `Needs improvement in ${match[1]} (${match[2]}%). Below target of 80%.`
+                    };
+                  }
+                  return { area: w, analysis: `Development area identified in ${w}` };
+                });
+              }
+              
+              return {
+                id: assessment.id,
+                assessment_id: assessment.assessment_id,
+                name: assessment.assessments?.title || 'Assessment',
+                type,
+                score: assessment.score || 0,
+                max_score: maxPossibleScore,
+                percentage,
+                completed_at: assessment.completed_at,
+                category_scores: detailedResult?.category_scores || {},
+                strengths: strengthsList,
+                weaknesses: weaknessesList,
+                recommendations: detailedResult?.recommendations || [],
+                development_plan: detailedResult?.development_plan || {},
+                interpretations: detailedResult?.interpretations || {},
+                executive_summary: detailedResult?.interpretations?.summary || detailedResult?.interpretations?.executiveSummary || '',
+                overall_profile: detailedResult?.interpretations?.overallProfile || ''
+              };
+            });
+
+            console.log("Formatted assessments from fallback:", formattedAssessments);
+            setAssessments(formattedAssessments);
+            
+            // Select the most recent assessment
+            if (formattedAssessments.length > 0) {
+              const mostRecent = formattedAssessments[0];
+              console.log("Selected most recent:", mostRecent);
+              setSelectedAssessment(mostRecent);
+              
+              // Set the detailed data
+              setCategoryScores(mostRecent.category_scores || {});
+              setStrengths(mostRecent.strengths || []);
+              setWeaknesses(mostRecent.weaknesses || []);
+              setRecommendations(mostRecent.recommendations || []);
+              setDevelopmentPlan(mostRecent.development_plan || {});
+              setInterpretations(mostRecent.interpretations || {});
+              setExecutiveSummary(mostRecent.executive_summary || mostRecent.interpretations?.summary || '');
+              setAssessmentType(mostRecent.type);
+            }
+          } else {
+            console.log("No completed assessments found in fallback for candidate:", candidateId);
+          }
         }
       } catch (error) {
         console.error("Error fetching candidate data:", error);
@@ -326,57 +425,21 @@ export default function CandidateReport() {
   const generateActionableRecommendations = () => {
     const recommendations = [];
     
-    if (categoryScores['Cognitive Ability']?.percentage < 60) {
+    if (categoryScores['General Knowledge']?.percentage < 60) {
       recommendations.push({
-        area: 'Cognitive Ability',
-        score: categoryScores['Cognitive Ability'].percentage,
-        action: 'Provide structured problem-solving frameworks and analytical thinking exercises. Consider assigning a mentor for complex tasks.',
-        resources: 'Recommended: Critical thinking courses, case study analysis, puzzle-based learning platforms.'
+        area: 'General Knowledge',
+        score: categoryScores['General Knowledge'].percentage,
+        action: 'Provide structured learning materials and foundational training. Consider assigning a mentor for guidance.',
+        resources: 'Recommended: Basic skills courses, on-the-job training, shadowing opportunities.'
       });
     }
     
-    if (categoryScores['Cultural & Attitudinal Fit']?.percentage < 60) {
-      recommendations.push({
-        area: 'Cultural Fit',
-        score: categoryScores['Cultural & Attitudinal Fit'].percentage,
-        action: 'Schedule regular feedback sessions to discuss cultural alignment. Pair with a culture champion for guidance.',
-        resources: 'Recommended: Company values workshop, team-building activities, shadowing programs.'
-      });
-    }
-    
-    if (categoryScores['Emotional Intelligence']?.percentage < 60) {
-      recommendations.push({
-        area: 'Emotional Intelligence',
-        score: categoryScores['Emotional Intelligence'].percentage,
-        action: 'Provide EI training focusing on self-awareness and empathy. Encourage regular self-reflection and feedback seeking.',
-        resources: 'Recommended: EI workshops, mindfulness training, 360-degree feedback sessions.'
-      });
-    }
-    
-    if (categoryScores['Technical & Manufacturing']?.percentage < 60) {
+    if (categoryScores['Technical Skills']?.percentage < 60) {
       recommendations.push({
         area: 'Technical Skills',
-        score: categoryScores['Technical & Manufacturing'].percentage,
+        score: categoryScores['Technical Skills'].percentage,
         action: 'Enroll in technical training programs. Provide hands-on practice with supervision.',
         resources: 'Recommended: Technical certification courses, on-the-job training, shadowing experienced technicians.'
-      });
-    }
-    
-    if (categoryScores['Communication']?.percentage < 60) {
-      recommendations.push({
-        area: 'Communication',
-        score: categoryScores['Communication'].percentage,
-        action: 'Provide communication skills training. Practice presentations and written communication with feedback.',
-        resources: 'Recommended: Business writing courses, presentation skills workshop, Toastmasters.'
-      });
-    }
-    
-    if (categoryScores['Problem-Solving']?.percentage < 60) {
-      recommendations.push({
-        area: 'Problem-Solving',
-        score: categoryScores['Problem-Solving'].percentage,
-        action: 'Provide structured problem-solving frameworks. Practice with real-world scenarios and case studies.',
-        resources: 'Recommended: Root cause analysis training, design thinking workshops, simulation exercises.'
       });
     }
     
@@ -490,7 +553,7 @@ export default function CandidateReport() {
           </div>
         )}
 
-        {/* Category Performance Table - SIMPLIFIED COMMENTS */}
+        {/* Category Performance Table */}
         {Object.keys(current.category_scores).length > 0 && (
           <div style={styles.tableCard}>
             <div style={styles.tableHeader}>
@@ -517,16 +580,16 @@ export default function CandidateReport() {
                     let assessmentText = '';
                     
                     if (data.percentage >= 80) {
-                      rowColor = '#f0fff4'; // Light green
+                      rowColor = '#f0fff4';
                       assessmentText = 'Excellent';
                     } else if (data.percentage >= 70) {
-                      rowColor = '#fff8e1'; // Light amber
+                      rowColor = '#fff8e1';
                       assessmentText = 'Good';
                     } else if (data.percentage >= 60) {
-                      rowColor = '#fff3e0'; // Light orange
+                      rowColor = '#fff3e0';
                       assessmentText = 'Average';
                     } else {
-                      rowColor = '#ffebee'; // Light red
+                      rowColor = '#ffebee';
                       assessmentText = 'Below Average';
                     }
                     
@@ -702,7 +765,7 @@ export default function CandidateReport() {
           </div>
         )}
 
-        {/* Actionable Recommendations Section - REPLACES Strengths & Weaknesses Cards */}
+        {/* Actionable Recommendations Section */}
         {actionableRecommendations.length > 0 && (
           <div style={styles.recommendationsSection}>
             <h2 style={styles.recommendationsTitle}>📋 Recommendations for Improvement</h2>
@@ -731,77 +794,6 @@ export default function CandidateReport() {
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
-        )}
-
-        {/* Recommendations Card - Keep existing if available */}
-        {recommendations && recommendations.length > 0 && (
-          <div style={styles.recommendationsCard}>
-            <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #1565C0, #0D47A1)'}}>
-              <span style={styles.cardIcon}>💡</span>
-              <h3 style={styles.cardHeaderTitle}>Additional Recommendations</h3>
-            </div>
-            <div style={styles.cardContent}>
-              <ul style={styles.recommendationsList}>
-                {recommendations.map((rec, i) => (
-                  <li key={i} style={styles.recommendationItem}>
-                    <span style={styles.recommendationBullet}>→</span>
-                    <span>{rec}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        )}
-
-        {/* Development Plan */}
-        {developmentPlan && Object.keys(developmentPlan).length > 0 && (
-          <div style={styles.planCard}>
-            <div style={{...styles.cardHeader, background: 'linear-gradient(135deg, #6A1B9A, #4A0072)'}}>
-              <span style={styles.cardIcon}>📅</span>
-              <h3 style={styles.cardHeaderTitle}>Development Action Plan</h3>
-            </div>
-            <div style={styles.cardContent}>
-              <div style={styles.planGrid}>
-                {developmentPlan.immediate && developmentPlan.immediate.length > 0 && (
-                  <div style={styles.planPhase}>
-                    <h4 style={styles.phaseTitle}>⚡ Immediate (0-30 days)</h4>
-                    <ul style={styles.planList}>
-                      {developmentPlan.immediate.map((item, i) => (
-                        <li key={i} style={styles.planListItem}>
-                          <strong>{item.area}:</strong> {item.recommendation}
-                          {item.priority && <span style={styles.priorityTag}> {item.priority} Priority</span>}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {developmentPlan.shortTerm && developmentPlan.shortTerm.length > 0 && (
-                  <div style={styles.planPhase}>
-                    <h4 style={styles.phaseTitle}>📈 Short-term (30-60 days)</h4>
-                    <ul style={styles.planList}>
-                      {developmentPlan.shortTerm.map((item, i) => (
-                        <li key={i} style={styles.planListItem}>
-                          <strong>{item.area}:</strong> {item.recommendation}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {developmentPlan.longTerm && developmentPlan.longTerm.length > 0 && (
-                  <div style={styles.planPhase}>
-                    <h4 style={styles.phaseTitle}>🚀 Long-term (60-90+ days)</h4>
-                    <ul style={styles.planList}>
-                      {developmentPlan.longTerm.map((item, i) => (
-                        <li key={i} style={styles.planListItem}>
-                          <strong>{item.area}:</strong> {item.recommendation}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         )}
@@ -1152,73 +1144,6 @@ const styles = {
     borderRadius: '8px',
     border: '1px solid #e0e0e0'
   },
-  recommendationsCard: {
-    background: 'white',
-    borderRadius: '16px',
-    overflow: 'hidden',
-    marginBottom: '30px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    border: '1px solid #f0f0f0'
-  },
-  recommendationsList: {
-    margin: 0,
-    padding: 0,
-    listStyle: 'none'
-  },
-  recommendationItem: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '12px',
-    padding: '12px 0',
-    borderBottom: '1px solid #f0f0f0',
-    fontSize: '15px',
-    color: '#555'
-  },
-  recommendationBullet: {
-    color: '#1565c0',
-    fontSize: '16px',
-    fontWeight: 600,
-    minWidth: '25px'
-  },
-  planGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-    gap: '20px'
-  },
-  planPhase: {
-    padding: '20px',
-    background: '#f8f9fa',
-    borderRadius: '12px',
-    border: '1px solid #e0e0e0'
-  },
-  phaseTitle: {
-    margin: '0 0 15px 0',
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#333'
-  },
-  planList: {
-    margin: 0,
-    padding: 0,
-    listStyle: 'none'
-  },
-  planListItem: {
-    marginBottom: '10px',
-    fontSize: '13px',
-    color: '#555',
-    lineHeight: '1.6',
-    paddingLeft: '15px',
-    borderLeft: '3px solid #1565c0'
-  },
-  priorityTag: {
-    background: '#FFEB3B',
-    color: '#333',
-    padding: '2px 8px',
-    borderRadius: '12px',
-    fontSize: '10px',
-    fontWeight: 600,
-    marginLeft: '8px'
-  },
   footer: {
     marginTop: '40px',
     paddingTop: '20px',
@@ -1430,23 +1355,5 @@ const styles = {
     color: '#555',
     lineHeight: '1.6',
     margin: 0
-  },
-  cardHeader: {
-    padding: '20px',
-    color: 'white',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px'
-  },
-  cardIcon: {
-    fontSize: '28px'
-  },
-  cardHeaderTitle: {
-    margin: 0,
-    fontSize: '18px',
-    fontWeight: 600
-  },
-  cardContent: {
-    padding: '25px'
   }
 };
