@@ -5,6 +5,7 @@ import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 import { generateDetailedInterpretation } from "../../utils/detailedInterpreter";
 import { getClassification, getGradeInfo, getHiringRecommendation } from "../../utils/reportGenerator";
+import { assessmentTypes, getAssessmentType } from "../../utils/assessmentConfigs";
 
 export default function CandidateReport() {
   const router = useRouter();
@@ -17,6 +18,7 @@ export default function CandidateReport() {
   const [assessmentData, setAssessmentData] = useState(null);
   const [activeSection, setActiveSection] = useState('cover');
   const [showPrintView, setShowPrintView] = useState(false);
+  const [assessmentConfig, setAssessmentConfig] = useState(null);
 
   useEffect(() => {
     const checkAuth = () => {
@@ -71,13 +73,22 @@ export default function CandidateReport() {
           const result = resultsData[0];
           const percentage = Math.round((result.total_score / result.max_score) * 100);
           
+          // Get assessment type from result or default to general
+          const assessmentTypeId = result.assessment_type || 'general';
+          const config = getAssessmentType(assessmentTypeId);
+          setAssessmentConfig(config);
+          
           const detailedInterpretation = generateDetailedInterpretation(
             profileData?.full_name || 'Candidate',
-            result.category_scores
+            result.category_scores,
+            assessmentTypeId
           );
           
           setAssessmentData({
             source: 'results',
+            assessment_id: result.assessment_id,
+            assessment_type: assessmentTypeId,
+            assessment_name: config.name,
             total_score: result.total_score,
             max_score: result.max_score,
             percentage: percentage,
@@ -135,11 +146,11 @@ export default function CandidateReport() {
   const hiringRec = getHiringRecommendation(assessmentData.percentage, assessmentData.strengths, assessmentData.weaknesses);
   const strengthsList = assessmentData.strengths || [];
   const weaknessesList = assessmentData.weaknesses || [];
+  const config = assessmentConfig || assessmentTypes.general;
 
   return (
     <AppLayout background="/images/preassessmentbg.jpg">
       <div style={styles.container}>
-        {/* Header with actions */}
         <div style={styles.header}>
           <Link href="/supervisor" legacyBehavior>
             <a style={styles.backButton}>← Dashboard</a>
@@ -151,7 +162,6 @@ export default function CandidateReport() {
           </div>
         </div>
 
-        {/* Report Navigation */}
         <div style={styles.navigation}>
           <button 
             style={{...styles.navItem, borderBottom: activeSection === 'cover' ? '3px solid #3b82f6' : '3px solid transparent'}}
@@ -185,18 +195,17 @@ export default function CandidateReport() {
           </button>
         </div>
 
-        {/* Report Content */}
         <div ref={reportRef} style={styles.reportContainer}>
           {/* 1️⃣ Cover Page */}
           <section style={{...styles.section, display: activeSection === 'cover' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.coverPage}>
               <div style={styles.coverHeader}>
                 <h1 style={styles.coverTitle}>Stratavax Assessment Platform</h1>
-                <p style={styles.coverSubtitle}>Professional Assessment Report</p>
+                <p style={styles.coverSubtitle}>{config.name}</p>
               </div>
               
               <div style={styles.coverContent}>
-                <div style={styles.coverLogo}>📊</div>
+                <div style={styles.coverLogo}>{config.icon}</div>
                 <h2 style={styles.coverCandidateName}>{candidate.full_name}</h2>
                 <p style={styles.coverDetail}>Assessment Date: {new Date(assessmentData.completed_at).toLocaleDateString()}</p>
                 <p style={styles.coverDetail}>Report Generated: {new Date().toLocaleDateString()}</p>
@@ -212,7 +221,7 @@ export default function CandidateReport() {
           {/* 2️⃣ Executive Summary */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'executive' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>2. Executive Summary</h2>
+              <h2 style={styles.sectionTitle}>2. Executive Summary - {config.name}</h2>
             </div>
             
             <div style={styles.executiveSummary}>
@@ -268,7 +277,7 @@ export default function CandidateReport() {
           {/* 3️⃣ Assessment Overview */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'overview' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>3. Assessment Overview</h2>
+              <h2 style={styles.sectionTitle}>3. Assessment Overview - {config.name}</h2>
             </div>
             
             <div style={styles.overviewCard}>
@@ -285,7 +294,7 @@ export default function CandidateReport() {
                 <div style={styles.overviewItem}>
                   <h4 style={styles.overviewItemTitle}>Scoring Methodology</h4>
                   <p style={styles.overviewItemValue}>Weighted Category Scoring</p>
-                  <p style={styles.overviewItemSub}>Each competency scored on a 5-point scale</p>
+                  <p style={styles.overviewItemSub}>{config.weightage}</p>
                 </div>
               </div>
             </div>
@@ -294,7 +303,7 @@ export default function CandidateReport() {
           {/* 4️⃣ Overall Score Summary Table */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'competencies' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>4. Overall Score Summary</h2>
+              <h2 style={styles.sectionTitle}>4. Overall Score Summary - {config.name}</h2>
             </div>
             
             <div style={styles.tableContainer}>
@@ -368,15 +377,17 @@ export default function CandidateReport() {
                         <div style={styles.indicatorColumn}>
                           <strong>Strength Indicators:</strong>
                           <ul style={styles.indicatorList}>
-                            <li>Logical reasoning</li>
-                            <li>Learning capacity</li>
+                            {data.percentage >= 60 ? 
+                              <li>Meets minimum requirements</li> : 
+                              <li>Requires development</li>}
                           </ul>
                         </div>
                         <div style={styles.indicatorColumn}>
                           <strong>Development Needs:</strong>
                           <ul style={styles.indicatorList}>
-                            <li>Strategic thinking</li>
-                            <li>Complex problem analysis</li>
+                            {data.percentage < 70 ? 
+                              <li>Targeted training recommended</li> : 
+                              <li>Maintain current level</li>}
                           </ul>
                         </div>
                       </div>
@@ -395,7 +406,7 @@ export default function CandidateReport() {
                     <span style={styles.strengthIcon}>💪</span>
                     <div>
                       <strong>{strength}</strong>
-                      <p style={styles.strengthDesc}>Adds significant value in role context</p>
+                      <p style={styles.strengthDesc}>Key strength in {config.name}</p>
                     </div>
                   </div>
                 ))}
@@ -411,7 +422,7 @@ export default function CandidateReport() {
                     <span style={styles.riskIcon}>⚠️</span>
                     <div>
                       <strong>{weakness}</strong>
-                      <p style={styles.riskDesc}>Critical development need - impacts {getImpactArea(weakness)}</p>
+                      <p style={styles.riskDesc}>Critical development need for {config.name}</p>
                     </div>
                   </div>
                 ))}
@@ -419,37 +430,46 @@ export default function CandidateReport() {
             </div>
           </section>
 
-          {/* 9️⃣ Development Recommendations */}
+          {/* 8️⃣ Role Fit Analysis */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'development' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>9. Development Recommendations</h2>
+              <h2 style={styles.sectionTitle}>8. Role Fit Analysis - {config.name}</h2>
             </div>
             
+            <div style={styles.roleFitCard}>
+              {assessmentData.detailedInterpretation?.roleFit && (
+                <div style={styles.analysisText}>{assessmentData.detailedInterpretation.roleFit}</div>
+              )}
+            </div>
+
+            {/* 9️⃣ Development Recommendations */}
             <div style={styles.timelineContainer}>
+              <h3 style={styles.subsectionTitle}>9. Development Recommendations</h3>
+              
               <div style={styles.timelinePhase}>
                 <h3 style={styles.phaseTitle}>Short-Term (0–3 Months)</h3>
                 <ul style={styles.phaseList}>
-                  <li>Communication skills training program</li>
-                  <li>Structured mentoring with senior team member</li>
-                  <li>Weekly feedback sessions on performance metrics</li>
+                  <li>Complete foundational training in weak areas</li>
+                  <li>Structured mentoring program</li>
+                  <li>Weekly feedback and progress reviews</li>
                 </ul>
               </div>
               
               <div style={styles.timelinePhase}>
                 <h3 style={styles.phaseTitle}>Medium-Term (3–6 Months)</h3>
                 <ul style={styles.phaseList}>
-                  <li>Leadership fundamentals workshop</li>
-                  <li>Cross-functional project participation</li>
-                  <li>Technical skills certification course</li>
+                  <li>Advanced training in core competencies</li>
+                  <li>Cross-functional project exposure</li>
+                  <li>Skill certification courses</li>
                 </ul>
               </div>
               
               <div style={styles.timelinePhase}>
                 <h3 style={styles.phaseTitle}>Long-Term (6–12 Months)</h3>
                 <ul style={styles.phaseList}>
-                  <li>Executive coaching sessions</li>
-                  <li>Stretch assignments in weak areas</li>
-                  <li>360-degree feedback assessment</li>
+                  <li>Leadership development program</li>
+                  <li>Stretch assignments</li>
+                  <li>Regular assessment of progress</li>
                 </ul>
               </div>
             </div>
@@ -462,44 +482,27 @@ export default function CandidateReport() {
               </div>
               <p style={styles.hiringJustification}>{hiringRec.summary}</p>
               <p style={styles.hiringDetail}>
-                Based on the comprehensive assessment of {Object.keys(assessmentData.category_scores).length} competencies,
-                this candidate demonstrates {assessmentData.percentage >= 65 ? 'strong potential' : 'significant development needs'}.
-                {assessmentData.percentage >= 65 ? ' With targeted development, they can grow into higher responsibility roles.' : ' Immediate placement requires structured support and clear supervision.'}
+                Based on the comprehensive {config.name}, this candidate demonstrates 
+                {assessmentData.percentage >= 65 ? ' strong potential' : ' significant development needs'} 
+                for roles requiring these competencies.
               </p>
             </div>
           </section>
         </div>
-
-        {/* Print Styles */}
-        <style jsx global>{`
-          @media print {
-            body {
-              background: white;
-            }
-            .no-print {
-              display: none !important;
-            }
-            @page {
-              size: A4;
-              margin: 2cm;
-            }
-          }
-        `}</style>
       </div>
+
+      <style jsx global>{`
+        @media print {
+          body { background: white; }
+          .no-print { display: none !important; }
+          @page { size: A4; margin: 2cm; }
+        }
+      `}</style>
     </AppLayout>
   );
 }
 
-// Helper function for impact area
-const getImpactArea = (weakness) => {
-  if (weakness.includes('Cognitive')) return 'problem-solving and learning';
-  if (weakness.includes('Communication')) return 'team collaboration and stakeholder management';
-  if (weakness.includes('Cultural')) return 'team cohesion and values alignment';
-  if (weakness.includes('Leadership')) return 'team management and direction';
-  if (weakness.includes('Technical')) return 'job performance and quality';
-  return 'overall performance';
-};
-
+// Styles object (same as before, but ensure all properties are properly closed)
 const styles = {
   checkingContainer: {
     minHeight: '100vh',
@@ -962,6 +965,13 @@ const styles = {
     fontSize: '12px',
     color: '#991b1b'
   },
+  roleFitCard: {
+    padding: '30px',
+    background: '#f9fafb',
+    borderRadius: '12px',
+    border: '1px solid #e5e7eb',
+    marginBottom: '40px'
+  },
   timelineContainer: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
@@ -1012,5 +1022,11 @@ const styles = {
     fontSize: '14px',
     color: '#6b7280',
     lineHeight: '1.6'
+  },
+  analysisText: {
+    fontSize: '14px',
+    color: '#4b5563',
+    lineHeight: '1.8',
+    whiteSpace: 'pre-line'
   }
 };
