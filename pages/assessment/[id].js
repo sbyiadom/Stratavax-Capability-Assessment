@@ -361,13 +361,16 @@ export default function AssessmentPage() {
 
   const currentQuestion = questions[currentIndex] || {};
 
+  // UPDATED LOADING SECTION WITH BEAUTIFUL BACKGROUND IMAGE
   if (loading) {
     return (
       <div style={styles.loadingContainer}>
+        <div style={styles.loadingBackground} />
+        <div style={styles.loadingOverlay} />
         <div style={styles.loadingContent}>
           <div style={styles.loadingSpinner} />
-          <h2 style={{ color: 'white', marginBottom: '10px' }}>Loading Assessment...</h2>
-          <p style={{ color: 'rgba(255,255,255,0.8)' }}>Preparing your personalized questions</p>
+          <h2 style={{ color: 'white', marginBottom: '10px', textShadow: '2px 2px 4px rgba(0,0,0,0.5)' }}>Loading Assessment...</h2>
+          <p style={{ color: 'rgba(255,255,255,0.9)', textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>Preparing your personalized questions</p>
         </div>
       </div>
     );
@@ -764,6 +767,10 @@ export default function AssessmentPage() {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
+        @keyframes slowZoom {
+          0% { transform: scale(1); }
+          100% { transform: scale(1.1); }
+        }
         
         * {
           box-sizing: border-box;
@@ -782,15 +789,41 @@ export default function AssessmentPage() {
 
 // Styles - COMPACT VERSION with reduced sizes
 const styles = {
+  // UPDATED LOADING CONTAINER WITH BACKGROUND IMAGE
   loadingContainer: {
     minHeight: '100vh',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+    position: 'relative',
+    overflow: 'hidden'
+  },
+  loadingBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundImage: 'url(/images/assessment-loading-bg.jpg)',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    animation: 'slowZoom 20s infinite alternate',
+    zIndex: 0
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'linear-gradient(135deg, rgba(102,126,234,0.7) 0%, rgba(118,75,162,0.7) 100%)',
+    zIndex: 1
   },
   loadingContent: {
-    textAlign: 'center'
+    position: 'relative',
+    textAlign: 'center',
+    zIndex: 2,
+    color: 'white'
   },
   loadingSpinner: {
     width: '60px',
