@@ -1,9 +1,13 @@
+import { assessmentTypes } from './assessmentConfigs';
+
 /**
  * Detailed Professional Interpreter
  * Generates comprehensive narrative analysis based on actual assessment scores
  */
 
-export const generateDetailedInterpretation = (candidateName, categoryScores) => {
+export const generateDetailedInterpretation = (candidateName, categoryScores, assessmentType = 'general') => {
+  
+  const config = assessmentTypes[assessmentType] || assessmentTypes.general;
   
   // Categorize areas by score
   const strongAreas = [];
@@ -34,16 +38,17 @@ export const generateDetailedInterpretation = (candidateName, categoryScores) =>
   });
 
   return {
-    overallProfileSummary: generateOverallProfileSummary(candidateName, strongAreas, moderateAreas, concernAreas),
+    overallProfileSummary: generateOverallProfileSummary(candidateName, strongAreas, moderateAreas, concernAreas, config),
     categoryBreakdown: {
-      strong: strongAreas.map(area => formatStrongArea(area)),
-      moderate: moderateAreas.map(area => formatModerateArea(area)),
-      concerns: concernAreas.map(area => formatConcernArea(area))
+      strong: strongAreas.map(area => formatStrongArea(area, config)),
+      moderate: moderateAreas.map(area => formatModerateArea(area, config)),
+      concerns: concernAreas.map(area => formatConcernArea(area, config))
     },
-    hiringInterpretation: generateHiringInterpretation(strongAreas, concernAreas),
-    developmentPotential: generateDevelopmentPotential(strongAreas, concernAreas),
-    strategicObservation: generateStrategicObservation(strongAreas, concernAreas),
-    finalAssessment: generateFinalAssessment(strongAreas, concernAreas)
+    hiringInterpretation: generateHiringInterpretation(strongAreas, concernAreas, config),
+    developmentPotential: generateDevelopmentPotential(strongAreas, concernAreas, config),
+    strategicObservation: generateStrategicObservation(strongAreas, concernAreas, config),
+    finalAssessment: generateFinalAssessment(strongAreas, concernAreas, config),
+    roleFit: generateRoleFitAnalysis(strongAreas, concernAreas, config)
   };
 };
 
@@ -80,346 +85,265 @@ const getGradeDescription = (percentage) => {
 };
 
 // Generate Overall Profile Summary
-const generateOverallProfileSummary = (candidateName, strongAreas, moderateAreas, concernAreas) => {
+const generateOverallProfileSummary = (candidateName, strongAreas, moderateAreas, concernAreas, config) => {
   const concernCount = concernAreas.length;
   const strongCount = strongAreas.length;
-  const hasCognitiveStrength = strongAreas.some(a => a.category === 'Cognitive Ability');
-  const hasIntegrityStrength = strongAreas.some(a => a.category === 'Ethics & Integrity');
   
   let summary = `Overall Profile Summary\n\n`;
-  summary += `This profile reflects:\n\n`;
+  summary += `${candidateName} completed the ${config.name} with a total score that reflects `;
   
-  if (hasCognitiveStrength && concernCount >= 5) {
-    summary += `Moderate intellectual capacity but broad behavioral, cultural, and leadership weaknesses.\n\n`;
-    summary += `Unlike candidates with strong integrity, this one shows ${strongCount === 0 ? 'no dominant strength area' : 'limited strengths'}. `;
-    summary += `The only relatively solid score is Cognitive Ability.\n\n`;
-    summary += `This is not currently a leadership-ready profile and carries several organizational risk indicators.`;
-  } else if (hasIntegrityStrength && concernCount >= 5) {
-    summary += `Strong ethical foundation but significant gaps in cognitive, leadership, and cultural areas.\n\n`;
-    summary += `This candidate has integrity as a foundation but lacks the cognitive and interpersonal capabilities for leadership roles.\n\n`;
-    summary += `May be suitable for compliance-focused roles with clear boundaries and supervision.`;
-  } else if (strongCount >= 3 && concernCount <= 3) {
-    summary += `Balanced profile with clear strengths in ${strongAreas.map(s => s.category).join(', ')} and manageable development areas.\n\n`;
-    summary += `This candidate has foundational strengths to build upon but needs targeted development in weaker areas.`;
-  } else if (concernCount >= 6) {
-    summary += `Significant development needs across multiple areas. This profile indicates several organizational risk factors.\n\n`;
-    summary += `Not currently suitable for leadership or autonomous roles without intensive support.`;
+  if (strongCount >= 3 && concernCount <= 2) {
+    summary += `a strong profile with clear strengths in multiple areas.`;
+  } else if (strongCount >= 1 && concernCount <= 3) {
+    summary += `a balanced profile with identifiable strengths and manageable development areas.`;
+  } else if (concernCount >= 5) {
+    summary += `significant development needs across multiple ${config.id} competencies.`;
   } else {
-    summary += `A mixed profile with both strengths and significant development areas.\n\n`;
-    summary += `Requires careful placement and structured support to succeed.`;
+    summary += `a mixed profile requiring careful placement and targeted support.`;
   }
   
   return summary;
 };
 
 // Format Strong Areas (≥70%)
-const formatStrongArea = (area) => {
+const formatStrongArea = (area, config) => {
   const { category, percentage, grade, gradeDesc } = area;
   
   let narrative = `🟢 ${category} – ${percentage}% (${grade} | ${gradeDesc})\n\n`;
   
-  switch(category) {
-    case 'Cognitive Ability':
-      narrative += `• Can process information reasonably well\n`;
-      narrative += `• Likely capable of learning new systems\n`;
-      narrative += `• May handle structured analysis\n\n`;
-      narrative += `This suggests potential capacity — but potential is not yet translating into performance or leadership readiness.`;
+  // Assessment-specific interpretations
+  switch(config.id) {
+    case 'leadership':
+      narrative += getLeadershipInterpretation(category, percentage);
       break;
-      
-    case 'Ethics & Integrity':
-      narrative += `• Very positive indicator\n`;
-      narrative += `• Trustworthy and principled\n`;
-      narrative += `• Low ethical risk\n`;
-      narrative += `• Likely dependable\n\n`;
-      narrative += `This is often a non-negotiable leadership foundation, so this is a strong asset.`;
+    case 'cognitive':
+      narrative += getCognitiveInterpretation(category, percentage);
       break;
-      
-    case 'Performance Metrics':
-      narrative += `• Can meet targets with guidance\n`;
-      narrative += `• Likely execution-focused\n`;
-      narrative += `• Reasonably accountable`;
+    case 'technical':
+      narrative += getTechnicalInterpretation(category, percentage);
       break;
-      
-    case 'Leadership & Management':
-      narrative += `• Shows emerging leadership capacity\n`;
-      narrative += `• Can manage tasks/people at a basic level\n`;
-      narrative += `• Not yet strategic or highly influential`;
+    case 'personality':
+      narrative += getPersonalityInterpretation(category, percentage);
       break;
-      
-    case 'Communication':
-      narrative += `• Articulates ideas clearly\n`;
-      narrative += `• Effective in most situations\n`;
-      narrative += `• Can adapt message to audience`;
+    case 'performance':
+      narrative += getPerformanceInterpretation(category, percentage);
       break;
-      
-    case 'Problem-Solving':
-      narrative += `• Strong analytical thinking\n`;
-      narrative += `• Handles complex problems effectively\n`;
-      narrative += `• Systematic approach to challenges`;
+    case 'behavioral':
+      narrative += getBehavioralInterpretation(category, percentage);
       break;
-      
+    case 'cultural':
+      narrative += getCulturalInterpretation(category, percentage);
+      break;
     default:
-      narrative += `Strong performance in this area. This is a valuable asset that can be leveraged for greater responsibility.`;
+      narrative += getGeneralInterpretation(category, percentage);
   }
   
   return narrative;
 };
 
 // Format Moderate Areas (60-69%)
-const formatModerateArea = (area) => {
+const formatModerateArea = (area, config) => {
   const { category, percentage, grade, gradeDesc } = area;
   
   let narrative = `🟡 ${category} – ${percentage}% (${grade} | ${gradeDesc})\n\n`;
   
-  switch(category) {
-    case 'Emotional Intelligence':
-      narrative += `• Basic awareness of people dynamics\n`;
-      narrative += `• Not highly influential\n`;
-      narrative += `• Likely average in conflict handling`;
-      break;
-      
-    case 'Ethics & Integrity':
-      narrative += `• This is concerning.\n`;
-      narrative += `• Not a red flag, but not reassuring either\n`;
-      narrative += `• May follow rules when monitored\n`;
-      narrative += `• Requires structured governance`;
-      break;
-      
-    case 'Problem-Solving':
-      narrative += `• Can manage routine issues\n`;
-      narrative += `• May struggle in complex or ambiguous situations`;
-      break;
-      
-    case 'Communication':
-      narrative += `• Can communicate, but not persuasive or highly clear\n`;
-      narrative += `• May struggle with executive communication`;
-      break;
-      
-    case 'Personality & Behavioral':
-      narrative += `• Likely stable but not high-impact\n`;
-      narrative += `• May lack drive, resilience, or adaptability`;
-      break;
-      
-    case 'Performance Metrics':
-      narrative += `• Can track progress but may miss targets\n`;
-      narrative += `• Needs guidance on goal setting`;
-      break;
-      
-    case 'Cultural & Attitudinal Fit':
-      narrative += `• Generally aligned but some concerns\n`;
-      narrative += `• May need support with cultural integration`;
-      break;
-      
-    default:
-      narrative += `Shows basic competency in this area that can be developed further with targeted training.`;
-  }
+  narrative += getModerateInterpretation(category, config.id);
   
   return narrative;
 };
 
 // Format Concern Areas (<60%)
-const formatConcernArea = (area) => {
+const formatConcernArea = (area, config) => {
   const { category, percentage, grade, gradeDesc } = area;
   
   let narrative = `🔴 ${category} – ${percentage}% (${grade} | ${gradeDesc})\n\n`;
   
-  switch(category) {
-    case 'Communication':
-      narrative += `• Difficulty articulating ideas clearly\n`;
-      narrative += `• Likely struggles in stakeholder engagement\n`;
-      narrative += `• Weak executive presence`;
-      break;
-      
-    case 'Cultural & Attitudinal Fit':
-      narrative += `• This is a major hiring risk:\n\n`;
-      narrative += `• Misalignment with company values\n`;
-      narrative += `• Possible attitude or engagement issues\n`;
-      narrative += `• May disrupt team cohesion`;
-      break;
-      
-    case 'Leadership & Management':
-      narrative += `• Not ready for supervisory responsibility\n`;
-      narrative += `• Weak influence and delegation capacity\n`;
-      narrative += `• Likely reactive rather than strategic`;
-      break;
-      
-    case 'Personality & Behavioral':
-      narrative += `• Possible low drive, resilience, or adaptability\n`;
-      narrative += `• May struggle under pressure`;
-      break;
-      
-    case 'Performance Metrics':
-      narrative += `• Inconsistent execution\n`;
-      narrative += `• May require close supervision`;
-      break;
-      
-    case 'Technical & Manufacturing':
-      narrative += `• Functional but not strong\n`;
-      narrative += `• Would require significant training`;
-      break;
-      
-    case 'Cognitive Ability':
-      narrative += `• This is a major flag. It may indicate:\n\n`;
-      narrative += `• Difficulty processing complex information\n`;
-      narrative += `• Slow learning curve\n`;
-      narrative += `• Limited analytical capacity\n\n`;
-      narrative += `For leadership or technical roles, this is a constraint.`;
-      break;
-      
-    case 'Emotional Intelligence':
-      narrative += `• May struggle with self-awareness\n`;
-      narrative += `• Limited conflict management skills\n`;
-      narrative += `• Risk of poor team dynamics`;
-      break;
-      
-    case 'Problem-Solving':
-      narrative += `• Struggles with complex problems\n`;
-      narrative += `• May rely on others for solutions\n`;
-      narrative += `• Needs structured approaches`;
-      break;
-      
-    default:
-      narrative += `Significant gaps in this area requiring immediate attention and structured development.`;
-  }
+  narrative += getConcernInterpretation(category, config.id);
   
   return narrative;
 };
 
-// Generate Hiring Interpretation
-const generateHiringInterpretation = (strongAreas, concernAreas) => {
-  const concernNames = concernAreas.map(c => c.category);
-  const strongNames = strongAreas.map(s => s.category);
-  
-  let interpretation = `🎯 Interpretation for Hiring Decisions\n\n`;
-  
-  // Check for leadership suitability
-  const hasLeadershipIssues = concernNames.includes('Leadership & Management');
-  const hasCulturalIssues = concernNames.includes('Cultural & Attitudinal Fit');
-  const hasCommunicationIssues = concernNames.includes('Communication');
-  const hasCognitiveIssues = concernNames.includes('Cognitive Ability');
-  const hasIntegrityIssues = concernNames.includes('Ethics & Integrity');
-  
-  // Leadership assessment
-  interpretation += `If This Is for a Leadership Role:\n\n`;
-  
-  if (hasLeadershipIssues || hasCulturalIssues || hasCommunicationIssues || hasCognitiveIssues) {
-    interpretation += `I would not recommend hire at this stage.\n\n`;
-    interpretation += `Reasons:\n\n`;
-    
-    if (hasLeadershipIssues) interpretation += `• Leadership & Management very low\n`;
-    if (hasCulturalIssues) interpretation += `• Cultural Fit very low\n`;
-    if (hasCommunicationIssues) interpretation += `• Communication weak\n`;
-    if (hasCognitiveIssues) interpretation += `• Cognitive ability limited\n`;
-    if (hasIntegrityIssues) interpretation += `• Integrity only minimum level\n\n`;
-    
-    interpretation += `That combination predicts:\n\n`;
-    interpretation += `• Team friction\n`;
-    interpretation += `• Poor performance sustainability\n`;
-    interpretation += `• High supervision dependency\n\n`;
-  } else {
-    interpretation += `Shows some leadership potential but requires significant development in key areas before taking on people management responsibilities.\n\n`;
+// Assessment-specific interpretations
+const getGeneralInterpretation = (category, percentage) => {
+  const interpretations = {
+    'Cognitive Ability': '• Strong analytical thinking\n• Handles complex problems effectively\n• Quick learner',
+    'Communication': '• Articulates ideas clearly\n• Effective in stakeholder engagement\n• Persuasive communicator',
+    'Ethics & Integrity': '• Trustworthy and principled\n• Strong moral compass\n• Low ethical risk',
+    'Leadership & Management': '• Natural leader\n• Inspires and motivates others\n• Effective delegator',
+    'Performance Metrics': '• Results-driven\n• Accountable for outcomes\n• Exceeds targets'
+  };
+  return interpretations[category] || '• Strong performance in this area\n• Valuable organizational asset';
+};
+
+const getLeadershipInterpretation = (category, percentage) => {
+  const interpretations = {
+    'Vision & Strategic Thinking': '• Strategic mindset\n• Sees big picture\n• Plans effectively for future',
+    'Decision-Making': '• Makes sound judgments\n• Balances risks and opportunities\n• Decisive under pressure',
+    'People Management': '• Develops team members\n• Provides effective feedback\n• Builds high-performing teams',
+    'Change Leadership': '• Drives transformation\n• Adapts quickly\n• Manages resistance effectively'
+  };
+  return interpretations[category] || '• Strong leadership capability\n• Inspires followership\n• Drives results';
+};
+
+const getCognitiveInterpretation = (category, percentage) => {
+  const interpretations = {
+    'Logical / Abstract Reasoning': '• Excellent pattern recognition\n• Handles abstract concepts\n• Strong analytical mind',
+    'Numerical Reasoning': '• Comfortable with data\n• Strong quantitative skills\n• Analytical thinker',
+    'Verbal Reasoning': '• Excellent comprehension\n• Processes information quickly\n• Strong language skills',
+    'Problem-Solving': '• Systematic approach\n• Creative solutions\n• Effective under pressure'
+  };
+  return interpretations[category] || '• Strong cognitive abilities\n• Quick learner\n• Analytical thinker';
+};
+
+const getTechnicalInterpretation = (category, percentage) => {
+  const interpretations = {
+    'Technical Knowledge': '• Deep domain expertise\n• Stays current with technology\n• Applies knowledge effectively',
+    'Troubleshooting': '• Systematic problem diagnosis\n• Quick to identify root causes\n• Effective problem solver',
+    'Quality Control': '• Meticulous attention to detail\n• Maintains high standards\n• Identifies issues proactively',
+    'Safety & Compliance': '• Strong safety mindset\n• Follows procedures diligently\n• Promotes safe practices'
+  };
+  return interpretations[category] || '• Strong technical aptitude\n• Applies knowledge effectively\n• Quick to learn new systems';
+};
+
+const getPersonalityInterpretation = (category, percentage) => {
+  const interpretations = {
+    'Openness': '• Creative and innovative\n• Embraces new ideas\n• Adaptable to change',
+    'Conscientiousness': '• Organized and dependable\n• Follows through on commitments\n• High attention to detail',
+    'Extraversion': '• Energized by social interaction\n• Builds relationships easily\n• Effective collaborator',
+    'Emotional Stability': '• Resilient under pressure\n• Maintains composure\n• Handles stress effectively'
+  };
+  return interpretations[category] || '• Strong personality fit\n• Self-aware\n• Adaptable';
+};
+
+const getPerformanceInterpretation = (category, percentage) => {
+  const interpretations = {
+    'Productivity': '• Highly efficient\n• Consistently meets targets\n• Manages time effectively',
+    'Quality': '• Produces excellent work\n• Attention to detail\n• Takes pride in output',
+    'Accountability': '• Takes ownership\n• Reliable and dependable\n• Follows through',
+    'Results Orientation': '• Driven to succeed\n• Sets and achieves goals\n• Focused on outcomes'
+  };
+  return interpretations[category] || '• Strong performer\n• Delivers results\n• Exceeds expectations';
+};
+
+const getBehavioralInterpretation = (category, percentage) => {
+  const interpretations = {
+    'Communication': '• Expresses ideas clearly\n• Listens actively\n• Adapts message to audience',
+    'Teamwork': '• Collaborates effectively\n• Supports team members\n• Builds consensus',
+    'Emotional Intelligence': '• Self-aware\n• Empathetic\n• Manages relationships well',
+    'Conflict Resolution': '• Handles disagreements constructively\n• Finds win-win solutions\n• Maintains relationships'
+  };
+  return interpretations[category] || '• Strong interpersonal skills\n• Builds positive relationships\n• Team player';
+};
+
+const getCulturalInterpretation = (category, percentage) => {
+  const interpretations = {
+    'Values Alignment': '• Embodies company values\n• Role model for others\n• Strengthens culture',
+    'Work Ethic': '• Dedicated and hardworking\n• Goes above and beyond\n• Takes initiative',
+    'Diversity Awareness': '• Values differences\n• Inclusive mindset\n• Respects all perspectives',
+    'Professional Conduct': '• Maintains professionalism\n• Ethical behavior\n• Positive representation'
+  };
+  return interpretations[category] || '• Strong cultural fit\n• Aligned with values\n• Contributes positively';
+};
+
+const getModerateInterpretation = (category, assessmentType) => {
+  return '• Basic competency established\n• Requires development to reach proficiency\n• Needs targeted training\n• Potential for growth with support';
+};
+
+const getConcernInterpretation = (category, assessmentType) => {
+  if (category.includes('Cognitive') || category.includes('Logical')) {
+    return '• Difficulty with complex problems\n• May struggle with analytical tasks\n• Requires structured guidance\n• Learning curve may be slow';
   }
+  if (category.includes('Communication')) {
+    return '• Struggles to articulate ideas\n• May misunderstand instructions\n• Limited persuasive ability\n• Needs communication training';
+  }
+  if (category.includes('Cultural') || category.includes('Values')) {
+    return '• Potential misalignment with values\n• May struggle with team integration\n• Risk of engagement issues\n• Requires cultural mentoring';
+  }
+  if (category.includes('Leadership') || category.includes('Management')) {
+    return '• Not ready for leadership\n• Limited influence skills\n• Struggles with delegation\n• Needs fundamental training';
+  }
+  return '• Significant gap requiring attention\n• Immediate development needed\n• May impact performance\n• Requires structured support';
+};
+
+// Generate Hiring Interpretation
+const generateHiringInterpretation = (strongAreas, concernAreas, config) => {
+  const concernNames = concernAreas.map(c => c.category);
   
-  // Entry-level assessment
-  interpretation += `If This Is for an Entry-Level / Structured Role:\n\n`;
-  interpretation += `Possible — but only if:\n\n`;
-  interpretation += `• Clear SOP environment\n`;
-  interpretation += `• Strong oversight\n`;
-  interpretation += `• Low autonomy\n`;
-  interpretation += `• Limited people-management responsibility\n`;
+  let interpretation = `🎯 Hiring Recommendations for ${config.name}\n\n`;
+  
+  const hasLeadershipIssues = concernNames.some(c => c.includes('Leadership') || c.includes('Management'));
+  const hasCulturalIssues = concernNames.some(c => c.includes('Cultural') || c.includes('Values'));
+  const hasCognitiveIssues = concernNames.some(c => c.includes('Cognitive') || c.includes('Reasoning'));
+  
+  if (hasLeadershipIssues || hasCulturalIssues || hasCognitiveIssues) {
+    interpretation += `Candidate requires careful consideration for roles requiring:\n\n`;
+    if (hasLeadershipIssues) interpretation += `• Team management responsibility\n`;
+    if (hasCulturalIssues) interpretation += `• High cultural alignment\n`;
+    if (hasCognitiveIssues) interpretation += `• Complex analytical tasks\n\n`;
+    interpretation += `Best suited for structured, supervised positions with clear guidance.`;
+  } else {
+    interpretation += `Candidate shows potential for roles matching their strengths.`;
+  }
   
   return interpretation;
 };
 
 // Generate Development Potential
-const generateDevelopmentPotential = (strongAreas, concernAreas) => {
-  const concernNames = concernAreas.map(c => c.category);
-  const strongNames = strongAreas.map(s => s.category);
-  
-  let potential = `📈 Development Potential?\n\n`;
-  
-  const hasCognitiveStrength = strongNames.includes('Cognitive Ability') || 
-                              (strongAreas.find(s => s.category === 'Cognitive Ability')?.percentage >= 65);
-  
-  const hasEIStrength = strongNames.includes('Emotional Intelligence') || 
-                       (strongAreas.find(s => s.category === 'Emotional Intelligence')?.percentage >= 60);
-  
-  const hasIntegrityStrength = strongNames.includes('Ethics & Integrity');
-  
-  if (hasCognitiveStrength) {
-    potential += `There is some upside because:\n\n`;
-    potential += `• Cognitive ability is decent\n`;
-    if (hasEIStrength) potential += `• Emotional intelligence is not severely low\n`;
-    if (hasIntegrityStrength) potential += `• Integrity is a strong foundation\n\n`;
-    
-    potential += `However, development would need to focus on:\n\n`;
-    
-    if (concernNames.includes('Communication')) potential += `• Communication skills\n`;
-    if (concernNames.includes('Cultural & Attitudinal Fit')) potential += `• Attitude & culture alignment\n`;
-    if (concernNames.includes('Performance Metrics')) potential += `• Accountability & execution discipline\n`;
-    if (concernNames.includes('Leadership & Management')) potential += `• Leadership fundamentals\n`;
-    if (concernNames.includes('Technical & Manufacturing')) potential += `• Technical skills development\n`;
-    if (concernNames.includes('Problem-Solving')) potential += `• Problem-solving capabilities\n`;
-  } else {
-    potential += `Limited development upside given the pattern of scores. Significant intervention would be required across multiple areas.`;
-  }
-  
-  return potential;
+const generateDevelopmentPotential = (strongAreas, concernAreas, config) => {
+  return `📈 Development Potential for ${config.name}\n\n` +
+    `Based on the assessment results, development should focus on:\n\n` +
+    `• Targeted training in weaker competencies\n` +
+    `• Structured mentoring program\n` +
+    `• Regular feedback and progress reviews\n` +
+    `• Practical application opportunities`;
 };
 
 // Generate Strategic Observation
-const generateStrategicObservation = (strongAreas, concernAreas) => {
-  const concernNames = concernAreas.map(c => c.category);
-  const strongNames = strongAreas.map(s => s.category);
-  
-  let observation = `🧠 Strategic Observation (Important)\n\n`;
-  
-  const hasCognitiveStrength = strongNames.includes('Cognitive Ability');
-  const hasIntegrityStrength = strongNames.includes('Ethics & Integrity');
-  const hasLeadershipStrength = strongNames.includes('Leadership & Management');
-  
-  observation += `Compared to other profiles:\n\n`;
-  observation += `This candidate has `;
-  
-  if (hasCognitiveStrength) observation += `stronger cognitive ability `;
-  else observation += `weaker cognitive ability `;
-  
-  if (hasIntegrityStrength) observation += `and stronger integrity, `;
-  else observation += `and weaker integrity, `;
-  
-  if (hasLeadershipStrength) observation += `and stronger leadership potential.\n\n`;
-  else observation += `and weaker leadership potential.\n\n`;
-  
-  observation += `Between candidates:\n\n`;
-  observation += `• Some candidates = Safer but limited\n`;
-  observation += `• This candidate = ${hasCognitiveStrength ? 'Higher mental capacity but higher risk' : 'Balanced risk profile'}\n`;
-  
-  return observation;
+const generateStrategicObservation = (strongAreas, concernAreas, config) => {
+  return `🧠 Strategic Observations for ${config.name}\n\n` +
+    `This profile suggests:\n\n` +
+    `• ${strongAreas.length} areas of strength to leverage\n` +
+    `• ${concernAreas.length} areas requiring development\n` +
+    `• Alignment with ${strongAreas.length >= 5 ? 'strategic' : 'operational'} roles`;
 };
 
 // Generate Final Assessment
-const generateFinalAssessment = (strongAreas, concernAreas) => {
-  const concernCount = concernAreas.length;
+const generateFinalAssessment = (strongAreas, concernAreas, config) => {
   const strongCount = strongAreas.length;
+  const concernCount = concernAreas.length;
   
-  const hasCognitiveStrength = strongAreas.some(a => a.category === 'Cognitive Ability');
-  const hasIntegrityStrength = strongAreas.some(a => a.category === 'Ethics & Integrity');
-  const hasCulturalIssues = concernAreas.some(a => a.category === 'Cultural & Attitudinal Fit');
-  const hasLeadershipIssues = concernAreas.some(a => a.category === 'Leadership & Management');
+  let assessment = `📌 Final Assessment for ${config.name}\n\n`;
   
-  let assessment = `📌 Final Assessment Summary\n\n`;
-  
-  if (hasCognitiveStrength && (hasCulturalIssues || hasLeadershipIssues)) {
-    assessment += `Intellectually capable but behaviorally and culturally underdeveloped. Not leadership-ready. Requires structured environment and development support.`;
-  } else if (hasIntegrityStrength && concernCount >= 5) {
-    assessment += `Ethically strong but needs significant development in cognitive and leadership areas. Best suited for compliance-focused roles with clear boundaries.`;
-  } else if (strongCount >= 2 && concernCount <= 3) {
-    assessment += `Balanced profile with identifiable strengths and clear development paths. Suitable for growth-oriented roles with proper support.`;
-  } else if (concernCount >= 6) {
-    assessment += `Significant development needed across multiple areas. Best suited for entry-level positions with close supervision and clear guidance.`;
+  if (strongCount >= 5 && concernCount <= 2) {
+    assessment += `Exceptional candidate with strong alignment to ${config.id} competencies. Ready for challenging roles.`;
+  } else if (strongCount >= 3 && concernCount <= 3) {
+    assessment += `Solid candidate with balanced profile. Requires targeted development in specific areas.`;
+  } else if (concernCount >= 5) {
+    assessment += `Candidate requires significant development across multiple ${config.id} competencies. Best suited for entry-level positions.`;
   } else {
-    assessment += `Mixed profile requiring careful placement and targeted development support.`;
+    assessment += `Mixed profile requiring careful placement and structured support.`;
   }
   
   return assessment;
+};
+
+// Generate Role Fit Analysis
+const generateRoleFitAnalysis = (strongAreas, concernAreas, config) => {
+  const strongNames = strongAreas.map(a => a.category);
+  
+  let analysis = `🎯 Role Fit Analysis\n\n`;
+  analysis += `Best suited for roles requiring:\n\n`;
+  
+  if (strongNames.includes('Communication')) analysis += `• Strong communication skills\n`;
+  if (strongNames.includes('Leadership')) analysis += `• Leadership capabilities\n`;
+  if (strongNames.includes('Technical')) analysis += `• Technical expertise\n`;
+  if (strongNames.includes('Problem-Solving')) analysis += `• Analytical thinking\n`;
+  
+  if (analysis === `🎯 Role Fit Analysis\n\nBest suited for roles requiring:\n\n`) {
+    analysis += `• Structured, supervised positions\n`;
+    analysis += `• Clear guidelines and procedures\n`;
+    analysis += `• Developmental opportunities\n`;
+  }
+  
+  return analysis;
 };
