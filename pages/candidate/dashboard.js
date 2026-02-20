@@ -333,12 +333,11 @@ export default function CandidateDashboard() {
 
   return (
     <div style={styles.pageContainer}>
-      {/* Full Page Background */}
+      {/* Full Page Background - CLEAR AND VISIBLE */}
       <div style={styles.pageBackground} />
-      <div style={styles.pageOverlay} />
       
       <div style={styles.content}>
-        {/* Header */}
+        {/* Header - Semi-transparent to show background */}
         <div style={styles.header}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
@@ -391,11 +390,11 @@ export default function CandidateDashboard() {
                   disabled={!hasAssessment}
                   style={{
                     ...styles.tabButton,
-                    background: isActive ? colors.gradient : 'white',
+                    background: isActive ? colors.gradient : 'rgba(255,255,255,0.9)',
                     color: isActive ? 'white' : colors.color,
                     border: isActive ? 'none' : `1px solid ${colors.color}40`,
                     opacity: hasAssessment ? 1 : 0.4,
-                    boxShadow: isActive ? `0 4px 12px ${colors.color}40` : 'none'
+                    boxShadow: isActive ? `0 4px 12px rgba(0,0,0,0.2)` : 'none'
                   }}
                 >
                   <span style={styles.tabLabel}>{tab.shortLabel}</span>
@@ -407,11 +406,11 @@ export default function CandidateDashboard() {
           {/* Assessment Details Section - Professional Card */}
           {activeAssessment ? (
             <div style={styles.assessmentDetailsSection}>
-              {/* Assessment Card with Professional Colors */}
+              {/* Assessment Card with Professional Colors - Now with white background to stand out */}
               <div style={{
                 ...styles.card,
-                border: `1px solid ${assessmentColors[activeTab]?.color}30`,
-                boxShadow: `0 8px 20px ${assessmentColors[activeTab]?.color}10`
+                border: `1px solid ${assessmentColors[activeTab]?.color}40`,
+                boxShadow: `0 8px 20px rgba(0,0,0,0.15)`
               }}>
                 <div style={styles.cardHeader}>
                   <div style={{
@@ -482,7 +481,7 @@ export default function CandidateDashboard() {
                   style={{
                     ...styles.startButton,
                     background: assessmentColors[activeTab]?.gradient || assessmentColors.general.gradient,
-                    boxShadow: `0 4px 12px ${assessmentColors[activeTab]?.color}40`
+                    boxShadow: `0 4px 12px rgba(0,0,0,0.2)`
                   }}
                 >
                   {isAssessmentInProgress(activeAssessment.id) ? 'Continue Assessment →' : 'Start Assessment →'}
@@ -525,7 +524,7 @@ export default function CandidateDashboard() {
                 
                 let statusColor = colors.color;
                 let statusText = 'Not Started';
-                let statusBg = 'white';
+                let statusBg = 'rgba(255,255,255,0.9)';
                 
                 if (isCompleted) {
                   statusColor = '#166534';
@@ -540,8 +539,9 @@ export default function CandidateDashboard() {
                 return (
                   <div key={type.id} style={{
                     ...styles.progressItem,
-                    border: `1px solid ${colors.color}30`,
-                    background: statusBg
+                    border: `1px solid ${colors.color}40`,
+                    background: statusBg,
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
                   }}>
                     <div style={styles.progressItemLeft}>
                       <div style={{
@@ -567,7 +567,7 @@ export default function CandidateDashboard() {
             <span><strong>Note:</strong> All assessments have 100 questions and a 3-hour (180 minutes) time limit.</span>
           </div>
 
-          {/* Guidelines Section - Keep as is */}
+          {/* Guidelines Section */}
           <div style={styles.guidelinesWrapper}>
             <div style={styles.guidelinesBackground} />
             <div style={styles.guidelinesContent}>
@@ -667,18 +667,7 @@ const styles = {
     backgroundImage: 'url(/images/dashboard-bg.jpg)',
     backgroundSize: 'cover',
     backgroundPosition: 'center',
-    filter: 'brightness(0.7)',
-    transform: 'scale(1.1)',
-    animation: 'slowZoom 20s infinite alternate',
-    zIndex: -2
-  },
-  pageOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'linear-gradient(135deg, rgba(21,101,192,0.85) 0%, rgba(13,71,161,0.85) 100%)',
+    // REMOVED THE DARK OVERLAY - now the image is clear
     zIndex: -1
   },
   content: {
@@ -720,6 +709,8 @@ const styles = {
   },
   header: {
     padding: '16px 24px',
+    background: 'rgba(255,255,255,0.1)',
+    backdropFilter: 'blur(10px)',
     borderBottom: '1px solid rgba(255,255,255,0.2)'
   },
   headerContent: {
@@ -739,17 +730,19 @@ const styles = {
     fontWeight: '700',
     color: 'white',
     margin: 0,
-    letterSpacing: '1px'
+    letterSpacing: '1px',
+    textShadow: '2px 2px 4px rgba(0,0,0,0.3)'
   },
   headerDivider: {
-    color: 'rgba(255,255,255,0.5)',
+    color: 'rgba(255,255,255,0.7)',
     fontSize: '20px',
     fontWeight: '300'
   },
   headerSubtitle: {
     fontSize: '16px',
-    color: 'rgba(255,255,255,0.8)',
-    fontWeight: '400'
+    color: 'rgba(255,255,255,0.9)',
+    fontWeight: '400',
+    textShadow: '1px 1px 2px rgba(0,0,0,0.3)'
   },
   logoutButton: {
     padding: '8px 20px',
@@ -778,18 +771,20 @@ const styles = {
     fontSize: '24px',
     fontWeight: '600',
     margin: '0 0 4px 0',
-    color: 'white'
+    color: 'white',
+    textShadow: '2px 2px 4px rgba(0,0,0,0.3)'
   },
   welcomeName: {
-    color: '#FFEAA7'
+    color: '#FFD700'
   },
   welcomeText: {
     fontSize: '14px',
     color: 'rgba(255,255,255,0.9)',
-    margin: 0
+    margin: 0,
+    textShadow: '1px 1px 2px rgba(0,0,0,0.3)'
   },
   progressBadge: {
-    background: 'rgba(255,255,255,0.2)',
+    background: 'rgba(255,255,255,0.15)',
     padding: '8px 20px',
     borderRadius: '30px',
     display: 'flex',
@@ -840,14 +835,14 @@ const styles = {
     marginBottom: '32px'
   },
   card: {
-    background: 'rgba(255,255,255,0.95)',
+    background: 'white',
     borderRadius: '16px',
     padding: '24px',
     marginBottom: '20px',
     display: 'flex',
     flexDirection: 'column',
     gap: '20px',
-    backdropFilter: 'blur(10px)'
+    boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
   },
   cardHeader: {
     display: 'flex',
@@ -863,7 +858,8 @@ const styles = {
     justifyContent: 'center',
     fontSize: '30px',
     color: 'white',
-    flexShrink: 0
+    flexShrink: 0,
+    boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
   },
   cardInfo: {
     flex: 1
@@ -913,12 +909,11 @@ const styles = {
     minWidth: '200px'
   },
   areasSection: {
-    background: 'rgba(255,255,255,0.95)',
+    background: 'white',
     borderRadius: '16px',
     padding: '24px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-    border: '1px solid rgba(255,255,255,0.3)',
-    backdropFilter: 'blur(10px)'
+    border: '1px solid #e2e8f0'
   },
   areasTitle: {
     fontSize: '16px',
@@ -948,12 +943,12 @@ const styles = {
   emptyState: {
     textAlign: 'center',
     padding: '40px',
-    background: 'rgba(255,255,255,0.95)',
+    background: 'white',
     borderRadius: '12px',
     marginBottom: '30px',
-    border: '1px solid rgba(255,255,255,0.3)',
+    border: '1px solid #e2e8f0',
     color: '#64748b',
-    backdropFilter: 'blur(10px)'
+    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
   },
   progressSection: {
     marginBottom: '24px'
@@ -962,7 +957,8 @@ const styles = {
     fontSize: '18px',
     fontWeight: '600',
     color: 'white',
-    margin: '0 0 16px 0'
+    margin: '0 0 16px 0',
+    textShadow: '2px 2px 4px rgba(0,0,0,0.3)'
   },
   progressGrid: {
     display: 'grid',
@@ -974,8 +970,7 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '12px 16px',
-    borderRadius: '10px',
-    backdropFilter: 'blur(10px)'
+    borderRadius: '10px'
   },
   progressItemLeft: {
     display: 'flex',
@@ -1008,7 +1003,7 @@ const styles = {
     color: '#1565c0',
     fontSize: '14px',
     border: '1px solid #90caf9',
-    backdropFilter: 'blur(10px)'
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
   },
   infoIcon: {
     fontSize: '18px'
