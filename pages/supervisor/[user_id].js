@@ -212,38 +212,77 @@ export default function CandidateReport() {
             style={{...styles.navItem, borderBottom: activeSection === 'competencies' ? '3px solid #3b82f6' : '3px solid transparent'}}
             onClick={() => setActiveSection('competencies')}
           >
-            Competency Breakdown
-          </button>
-          <button 
-            style={{...styles.navItem, borderBottom: activeSection === 'development' ? '3px solid #3b82f6' : '3px solid transparent'}}
-            onClick={() => setActiveSection('development')}
-          >
-            Development Plan
-          </button>
+            {/* 5️⃣ Competency Breakdown */}
+<div style={styles.competencyBreakdown}>
+  <h3 style={styles.subsectionTitle}>5. Competency Breakdown & Interpretation</h3>
+  
+  {Object.entries(assessmentData.category_scores).map(([category, data]) => {
+    const catGrade = getGradeInfo(data.percentage);
+    const insights = assessmentData.responseInsights?.[category] || [];
+    const categoryData = assessmentData.responseInsights?.[category];
+    
+    // Generate category-specific interpretation
+    let categoryInterpretation = '';
+    if (categoryData) {
+      if (category.includes('Leadership')) {
+        categoryInterpretation = interpretLeadership(categoryData, candidate.full_name);
+      } else if (category.includes('Cognitive')) {
+        categoryInterpretation = interpretCognitive(categoryData, candidate.full_name);
+      } else if (category.includes('Communication')) {
+        categoryInterpretation = interpretCommunication(categoryData, candidate.full_name);
+      } else if (category.includes('Ethics')) {
+        categoryInterpretation = interpretEthics(categoryData, candidate.full_name);
+      } else if (category.includes('Technical')) {
+        categoryInterpretation = interpretTechnical(categoryData, candidate.full_name);
+      } else {
+        // Generic interpretation for other categories
+        categoryInterpretation = `${category} – ${data.percentage}% (${catGrade.grade})\n\n`;
+        if (insights.length > 0) {
+          categoryInterpretation += `Response analysis:\n`;
+          insights.slice(0, 2).forEach(insight => {
+            categoryInterpretation += `• ${insight}\n`;
+          });
+        }
+      }
+    }
+    
+    return (
+      <div key={category} style={styles.competencyCard}>
+        <div style={styles.competencyHeader}>
+          <h4 style={styles.competencyName}>{category} – {data.percentage}% ({catGrade.grade})</h4>
         </div>
-
-        <div ref={reportRef} style={styles.reportContainer}>
-          {/* 1️⃣ Cover Page */}
-          <section style={{...styles.section, display: activeSection === 'cover' || showPrintView ? 'block' : 'none'}}>
-            <div style={styles.coverPage}>
-              <div style={styles.coverHeader}>
-                <h1 style={styles.coverTitle}>Stratavax Assessment Platform</h1>
-                <p style={styles.coverSubtitle}>{config.name}</p>
-              </div>
-              
-              <div style={styles.coverContent}>
-                <div style={styles.coverLogo}>{config.icon}</div>
-                <h2 style={styles.coverCandidateName}>{candidate.full_name}</h2>
-                <p style={styles.coverDetail}>Assessment Date: {new Date(assessmentData.completed_at).toLocaleDateString()}</p>
-                <p style={styles.coverDetail}>Report Generated: {new Date().toLocaleDateString()}</p>
-                <div style={styles.coverBadge}>CONFIDENTIAL</div>
-              </div>
-              
-              <div style={styles.coverFooter}>
-                <p>© Stratavax Assessment Platform • All Rights Reserved</p>
-              </div>
+        <div style={styles.competencyBody}>
+          {categoryInterpretation ? (
+            <pre style={styles.pre}>{categoryInterpretation}</pre>
+          ) : (
+            <>
+              <p><strong>Performance Summary:</strong></p>
+              <p>{data.percentage >= 70 ? 'Strong area' : 
+                    data.percentage >= 60 ? 'Developing area' : 
+                    'Area needing significant improvement'}</p>
+            </>
+          )}
+          
+          {/* Show specific question-answer insights */}
+          {categoryData?.questionDetails && categoryData.questionDetails.length > 0 && (
+            <div style={styles.questionDetails}>
+              <strong>Sample Responses:</strong>
+              {categoryData.questionDetails.slice(0, 2).map((detail, i) => (
+                <div key={i} style={styles.questionItem}>
+                  <div style={styles.questionText}>Q: {detail.question}</div>
+                  <div style={styles.answerText}>A: {detail.answer}</div>
+                  <div style={detail.score >= 4 ? styles.scoreHigh : styles.scoreLow}>
+                    Score: {detail.score}/5
+                  </div>
+                </div>
+              ))}
             </div>
-          </section>
+          )}
+        </div>
+      </div>
+    );
+  })}
+</div>
 
           {/* 2️⃣ Executive Summary */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'executive' || showPrintView ? 'block' : 'none'}}>
@@ -1171,3 +1210,4 @@ const styles = {
     wordBreak: 'break-word'
   }
 };
+
