@@ -1,19 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 import { generateDetailedInterpretation } from "../../utils/detailedInterpreter";
+import { getClassification, getGradeInfo, getHiringRecommendation } from "../../utils/reportGenerator";
 
 export default function CandidateReport() {
   const router = useRouter();
   const { user_id } = router.query;
+  const reportRef = useRef(null);
   
   const [loading, setLoading] = useState(true);
   const [isSupervisor, setIsSupervisor] = useState(false);
   const [candidate, setCandidate] = useState(null);
   const [assessmentData, setAssessmentData] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeSection, setActiveSection] = useState('cover');
+  const [showPrintView, setShowPrintView] = useState(false);
 
   useEffect(() => {
     const checkAuth = () => {
@@ -97,19 +100,12 @@ export default function CandidateReport() {
     fetchData();
   }, [isSupervisor, user_id]);
 
-  const getGradeInfo = (percentage) => {
-    if (percentage >= 90) return { grade: 'A', color: '#10b981', bg: '#d1fae5', text: 'Exceptional' };
-    if (percentage >= 80) return { grade: 'B', color: '#3b82f6', bg: '#dbeafe', text: 'Very Good' };
-    if (percentage >= 70) return { grade: 'C', color: '#8b5cf6', bg: '#ede9fe', text: 'Good' };
-    if (percentage >= 60) return { grade: 'D', color: '#f59e0b', bg: '#fef3c7', text: 'Fair' };
-    if (percentage >= 50) return { grade: 'E', color: '#f97316', bg: '#ffedd5', text: 'Below Average' };
-    return { grade: 'F', color: '#ef4444', bg: '#fee2e2', text: 'Needs Improvement' };
-  };
-
-  const getScoreCategory = (percentage) => {
-    if (percentage >= 70) return 'strength';
-    if (percentage >= 60) return 'moderate';
-    return 'concern';
+  const handlePrint = () => {
+    setShowPrintView(true);
+    setTimeout(() => {
+      window.print();
+      setShowPrintView(false);
+    }, 100);
   };
 
   if (!isSupervisor || loading) {
@@ -134,284 +130,375 @@ export default function CandidateReport() {
     );
   }
 
+  const classification = getClassification(assessmentData.percentage);
   const gradeInfo = getGradeInfo(assessmentData.percentage);
+  const hiringRec = getHiringRecommendation(assessmentData.percentage, assessmentData.strengths, assessmentData.weaknesses);
+  const strengthsList = assessmentData.strengths || [];
+  const weaknessesList = assessmentData.weaknesses || [];
 
   return (
     <AppLayout background="/images/preassessmentbg.jpg">
       <div style={styles.container}>
-        {/* Header with back button */}
+        {/* Header with actions */}
         <div style={styles.header}>
           <Link href="/supervisor" legacyBehavior>
             <a style={styles.backButton}>← Dashboard</a>
           </Link>
-        </div>
-
-        {/* Candidate Profile Header */}
-        <div style={styles.profileHeader}>
-          <div style={styles.profileInfo}>
-            <h1 style={styles.candidateName}>{candidate.full_name}</h1>
-            <p style={styles.candidateEmail}>{candidate.email}</p>
-            <p style={styles.completedDate}>Assessment completed on {new Date(assessmentData.completed_at).toLocaleDateString()}</p>
-          </div>
-          <div style={styles.scoreBadge}>
-            <span style={styles.scoreLarge}>{assessmentData.total_score}</span>
-            <span style={styles.scoreMax}>/{assessmentData.max_score}</span>
+          <div style={styles.headerActions}>
+            <button onClick={handlePrint} style={styles.printButton}>
+              🖨️ Print Report
+            </button>
           </div>
         </div>
 
-        {/* Key Metrics Grid */}
-        <div style={styles.metricsGrid}>
-          <div style={{...styles.metricCard, borderTop: `4px solid ${gradeInfo.color}`}}>
-            <span style={styles.metricLabel}>Percentage</span>
-            <span style={{...styles.metricValue, color: gradeInfo.color}}>{assessmentData.percentage}%</span>
-          </div>
-          <div style={{...styles.metricCard, borderTop: `4px solid ${gradeInfo.color}`}}>
-            <span style={styles.metricLabel}>Grade</span>
-            <span style={{...styles.metricValue, color: gradeInfo.color}}>{gradeInfo.grade}</span>
-          </div>
-          <div style={{...styles.metricCard, borderTop: `4px solid ${gradeInfo.color}`}}>
-            <span style={styles.metricLabel}>Classification</span>
-            <span style={{...styles.metricValue, color: gradeInfo.color}}>{gradeInfo.text}</span>
-          </div>
-        </div>
-
-        {/* Tab Navigation */}
-        <div style={styles.tabContainer}>
+        {/* Report Navigation */}
+        <div style={styles.navigation}>
           <button 
-            style={{...styles.tab, borderBottom: activeTab === 'overview' ? `3px solid #3b82f6` : '3px solid transparent'}}
-            onClick={() => setActiveTab('overview')}
+            style={{...styles.navItem, borderBottom: activeSection === 'cover' ? '3px solid #3b82f6' : '3px solid transparent'}}
+            onClick={() => setActiveSection('cover')}
           >
-            Overview
+            Cover
           </button>
           <button 
-            style={{...styles.tab, borderBottom: activeTab === 'categories' ? `3px solid #3b82f6` : '3px solid transparent'}}
-            onClick={() => setActiveTab('categories')}
+            style={{...styles.navItem, borderBottom: activeSection === 'executive' ? '3px solid #3b82f6' : '3px solid transparent'}}
+            onClick={() => setActiveSection('executive')}
           >
-            Category Performance
+            Executive Summary
           </button>
           <button 
-            style={{...styles.tab, borderBottom: activeTab === 'analysis' ? `3px solid #3b82f6` : '3px solid transparent'}}
-            onClick={() => setActiveTab('analysis')}
+            style={{...styles.navItem, borderBottom: activeSection === 'overview' ? '3px solid #3b82f6' : '3px solid transparent'}}
+            onClick={() => setActiveSection('overview')}
           >
-            Professional Analysis
+            Assessment Overview
+          </button>
+          <button 
+            style={{...styles.navItem, borderBottom: activeSection === 'competencies' ? '3px solid #3b82f6' : '3px solid transparent'}}
+            onClick={() => setActiveSection('competencies')}
+          >
+            Competency Breakdown
+          </button>
+          <button 
+            style={{...styles.navItem, borderBottom: activeSection === 'development' ? '3px solid #3b82f6' : '3px solid transparent'}}
+            onClick={() => setActiveSection('development')}
+          >
+            Development Plan
           </button>
         </div>
 
-        {/* Tab Content */}
-        <div style={styles.tabContent}>
-          {/* Overview Tab */}
-          {activeTab === 'overview' && (
-            <div>
-              {/* Strengths Section */}
-              {assessmentData.strengths && assessmentData.strengths.length > 0 && (
-                <div style={styles.sectionCard}>
-                  <h3 style={styles.sectionTitle}>
-                    <span style={styles.sectionIcon}>💪</span> 
-                    Strengths
-                  </h3>
-                  <div style={styles.tagContainer}>
-                    {assessmentData.strengths.map((strength, index) => (
-                      <span key={index} style={{...styles.tag, background: '#d1fae5', color: '#065f46'}}>
-                        {strength}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Areas for Improvement */}
-              {assessmentData.weaknesses && assessmentData.weaknesses.length > 0 && (
-                <div style={styles.sectionCard}>
-                  <h3 style={styles.sectionTitle}>
-                    <span style={styles.sectionIcon}>📈</span> 
-                    Areas for Improvement
-                  </h3>
-                  <div style={styles.tagContainer}>
-                    {assessmentData.weaknesses.map((weakness, index) => (
-                      <span key={index} style={{...styles.tag, background: '#fee2e2', color: '#991b1b'}}>
-                        {weakness}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Key Recommendations Preview */}
-              {assessmentData.recommendations && assessmentData.recommendations.length > 0 && (
-                <div style={styles.sectionCard}>
-                  <h3 style={styles.sectionTitle}>
-                    <span style={styles.sectionIcon}>🎯</span> 
-                    Key Recommendations
-                  </h3>
-                  <div style={styles.recommendationsPreview}>
-                    {assessmentData.recommendations.slice(0, 3).map((rec, index) => (
-                      <div key={index} style={styles.recommendationPreviewItem}>
-                        <span style={styles.bulletPoint}>•</span>
-                        <span style={styles.recommendationPreviewText}>{rec}</span>
-                      </div>
-                    ))}
-                    {assessmentData.recommendations.length > 3 && (
-                      <p style={styles.viewMoreHint}>View all {assessmentData.recommendations.length} recommendations in the Analysis tab</p>
-                    )}
-                  </div>
-                </div>
-              )}
+        {/* Report Content */}
+        <div ref={reportRef} style={styles.reportContainer}>
+          {/* 1️⃣ Cover Page */}
+          <section style={{...styles.section, display: activeSection === 'cover' || showPrintView ? 'block' : 'none'}}>
+            <div style={styles.coverPage}>
+              <div style={styles.coverHeader}>
+                <h1 style={styles.coverTitle}>Stratavax Assessment Platform</h1>
+                <p style={styles.coverSubtitle}>Professional Assessment Report</p>
+              </div>
+              
+              <div style={styles.coverContent}>
+                <div style={styles.coverLogo}>📊</div>
+                <h2 style={styles.coverCandidateName}>{candidate.full_name}</h2>
+                <p style={styles.coverDetail}>Assessment Date: {new Date(assessmentData.completed_at).toLocaleDateString()}</p>
+                <p style={styles.coverDetail}>Report Generated: {new Date().toLocaleDateString()}</p>
+                <div style={styles.coverBadge}>CONFIDENTIAL</div>
+              </div>
+              
+              <div style={styles.coverFooter}>
+                <p>© Stratavax Assessment Platform • All Rights Reserved</p>
+              </div>
             </div>
-          )}
+          </section>
 
-          {/* Categories Tab */}
-          {activeTab === 'categories' && (
-            <div style={styles.categoriesContainer}>
-              {Object.entries(assessmentData.category_scores).map(([category, data]) => {
-                const categoryGrade = getGradeInfo(data.percentage);
-                const categoryType = getScoreCategory(data.percentage);
+          {/* 2️⃣ Executive Summary */}
+          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'executive' || showPrintView ? 'block' : 'none'}}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>2. Executive Summary</h2>
+            </div>
+            
+            <div style={styles.executiveSummary}>
+              <div style={styles.scoreCard}>
+                <div style={styles.scoreCardHeader}>
+                  <span style={styles.scoreCardLabel}>Total Score</span>
+                  <span style={styles.scoreCardValue}>{assessmentData.total_score}/{assessmentData.max_score}</span>
+                </div>
+                <div style={styles.scoreCardBody}>
+                  <div style={styles.scoreMetric}>
+                    <span style={styles.scoreMetricLabel}>Percentage</span>
+                    <span style={{...styles.scoreMetricValue, color: classification.color}}>{assessmentData.percentage}%</span>
+                  </div>
+                  <div style={styles.scoreMetric}>
+                    <span style={styles.scoreMetricLabel}>Grade</span>
+                    <span style={styles.scoreMetricValue}>{gradeInfo.grade} ({gradeInfo.text})</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={styles.classificationCard}>
+                <div style={{...styles.classificationBadge, background: classification.bg, color: classification.color}}>
+                  {classification.label}
+                </div>
+                <p style={styles.classificationDescription}>{classification.description}</p>
+              </div>
+
+              <div style={styles.verdictCard}>
+                <h3 style={styles.verdictTitle}>Executive Verdict</h3>
+                <div style={{...styles.verdictBadge, background: hiringRec.color, color: 'white'}}>
+                  {hiringRec.recommendation}
+                </div>
+                <p style={styles.verdictSummary}>{hiringRec.summary}</p>
                 
-                let borderColor = '#e5e7eb';
-                let badgeColor = '#6b7280';
-                if (categoryType === 'strength') {
-                  borderColor = '#10b981';
-                  badgeColor = '#10b981';
-                } else if (categoryType === 'moderate') {
-                  borderColor = '#f59e0b';
-                  badgeColor = '#f59e0b';
-                } else {
-                  borderColor = '#ef4444';
-                  badgeColor = '#ef4444';
+                <div style={styles.keyPoints}>
+                  <div style={styles.keyPoint}>
+                    <span style={styles.keyPointIcon}>✅</span>
+                    <div>
+                      <strong>Key Strength:</strong> {strengthsList[0] || 'None identified'}
+                    </div>
+                  </div>
+                  <div style={styles.keyPoint}>
+                    <span style={styles.keyPointIcon}>⚠️</span>
+                    <div>
+                      <strong>Major Risk:</strong> {weaknessesList[0] || 'None identified'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* 3️⃣ Assessment Overview */}
+          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'overview' || showPrintView ? 'block' : 'none'}}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>3. Assessment Overview</h2>
+            </div>
+            
+            <div style={styles.overviewCard}>
+              <div style={styles.overviewGrid}>
+                <div style={styles.overviewItem}>
+                  <h4 style={styles.overviewItemTitle}>Total Competencies Assessed</h4>
+                  <p style={styles.overviewItemValue}>{Object.keys(assessmentData.category_scores).length}</p>
+                </div>
+                <div style={styles.overviewItem}>
+                  <h4 style={styles.overviewItemTitle}>Assessment Method</h4>
+                  <p style={styles.overviewItemValue}>Multi-dimensional Assessment</p>
+                  <p style={styles.overviewItemSub}>Psychometric • Behavioral • Cognitive • Technical</p>
+                </div>
+                <div style={styles.overviewItem}>
+                  <h4 style={styles.overviewItemTitle}>Scoring Methodology</h4>
+                  <p style={styles.overviewItemValue}>Weighted Category Scoring</p>
+                  <p style={styles.overviewItemSub}>Each competency scored on a 5-point scale</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* 4️⃣ Overall Score Summary Table */}
+          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'competencies' || showPrintView ? 'block' : 'none'}}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>4. Overall Score Summary</h2>
+            </div>
+            
+            <div style={styles.tableContainer}>
+              <table style={styles.table}>
+                <thead>
+                  <tr style={styles.tableHeadRow}>
+                    <th style={styles.tableHead}>Category</th>
+                    <th style={styles.tableHead}>Score</th>
+                    <th style={styles.tableHead}>Percentage</th>
+                    <th style={styles.tableHead}>Grade</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(assessmentData.category_scores).map(([category, data]) => {
+                    const catGrade = getGradeInfo(data.percentage);
+                    return (
+                      <tr key={category} style={styles.tableRow}>
+                        <td style={styles.tableCell}>{category}</td>
+                        <td style={styles.tableCell}>{data.score}/{data.maxPossible}</td>
+                        <td style={styles.tableCell}>{data.percentage}%</td>
+                        <td style={styles.tableCell}>{catGrade.grade}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr style={styles.tableFooterRow}>
+                    <td colSpan="4" style={styles.tableFooter}>
+                      <div style={styles.totalScoreRow}>
+                        <span><strong>Total Score:</strong> {assessmentData.total_score}/{assessmentData.max_score}</span>
+                        <span><strong>Average:</strong> {assessmentData.percentage}%</span>
+                        <span><strong>Overall Grade:</strong> {gradeInfo.grade}</span>
+                        <span><strong>Classification:</strong> {classification.label}</span>
+                      </div>
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* 5️⃣ Competency Breakdown */}
+            <div style={styles.competencyBreakdown}>
+              <h3 style={styles.subsectionTitle}>5. Competency Breakdown & Interpretation</h3>
+              
+              {Object.entries(assessmentData.category_scores).map(([category, data]) => {
+                const catGrade = getGradeInfo(data.percentage);
+                const interpretation = assessmentData.detailedInterpretation?.categoryBreakdown;
+                
+                let narrative = '';
+                if (interpretation) {
+                  const allNarratives = [
+                    ...interpretation.strong,
+                    ...interpretation.moderate,
+                    ...interpretation.concerns
+                  ];
+                  const match = allNarratives.find(n => n.includes(category));
+                  if (match) {
+                    const lines = match.split('\n');
+                    narrative = lines.slice(1).join('\n').trim();
+                  }
                 }
                 
                 return (
-                  <div key={category} style={{...styles.categoryCard, borderLeft: `4px solid ${borderColor}`}}>
-                    <div style={styles.categoryHeader}>
-                      <h4 style={styles.categoryName}>{category}</h4>
-                      <span style={{...styles.categoryBadge, background: categoryGrade.bg, color: categoryGrade.color}}>
-                        {categoryGrade.grade}
-                      </span>
+                  <div key={category} style={styles.competencyCard}>
+                    <div style={styles.competencyHeader}>
+                      <h4 style={styles.competencyName}>{category} – {data.percentage}% ({catGrade.grade})</h4>
                     </div>
-                    
-                    <div style={styles.categoryDetails}>
-                      <div style={styles.categoryScore}>
-                        <span style={styles.categoryScoreLabel}>Score</span>
-                        <span style={styles.categoryScoreValue}>{data.score}/{data.maxPossible}</span>
-                      </div>
-                      
-                      <div style={styles.categoryPercentage}>
-                        <span style={styles.categoryPercentageLabel}>Percentage</span>
-                        <div style={styles.progressContainer}>
-                          <div style={styles.progressBar}>
-                            <div style={{
-                              width: `${data.percentage}%`,
-                              height: '100%',
-                              background: categoryGrade.color,
-                              borderRadius: '4px'
-                            }} />
-                          </div>
-                          <span style={{...styles.categoryPercentageValue, color: categoryGrade.color}}>
-                            {data.percentage}%
-                          </span>
+                    <div style={styles.competencyBody}>
+                      <p style={styles.competencyInterpretation}>{narrative || catGrade.text}</p>
+                      <div style={styles.competencyIndicators}>
+                        <div style={styles.indicatorColumn}>
+                          <strong>Strength Indicators:</strong>
+                          <ul style={styles.indicatorList}>
+                            <li>Logical reasoning</li>
+                            <li>Learning capacity</li>
+                          </ul>
                         </div>
-                      </div>
-                      
-                      <div style={styles.categoryAssessment}>
-                        <span style={styles.categoryAssessmentLabel}>Assessment</span>
-                        <span style={{...styles.categoryAssessmentValue, color: badgeColor}}>
-                          {categoryGrade.text}
-                        </span>
+                        <div style={styles.indicatorColumn}>
+                          <strong>Development Needs:</strong>
+                          <ul style={styles.indicatorList}>
+                            <li>Strategic thinking</li>
+                            <li>Complex problem analysis</li>
+                          </ul>
+                        </div>
                       </div>
                     </div>
                   </div>
                 );
               })}
             </div>
-          )}
 
-          {/* Analysis Tab */}
-          {activeTab === 'analysis' && assessmentData.detailedInterpretation && (
-            <div style={styles.analysisContainer}>
-              {/* Overall Profile Summary */}
-              <div style={styles.analysisCard}>
-                <h3 style={styles.analysisCardTitle}>Executive Summary</h3>
-                <div style={styles.analysisText}>{assessmentData.detailedInterpretation.overallProfileSummary}</div>
-              </div>
-
-              {/* Category Analysis */}
-              <div style={styles.analysisCard}>
-                <h3 style={styles.analysisCardTitle}>Category Analysis</h3>
-                
-                {assessmentData.detailedInterpretation.categoryBreakdown.strong.map((narrative, index) => (
-                  <div key={index} style={styles.categoryAnalysisBlock}>
-                    <div style={styles.analysisText}>{narrative}</div>
-                  </div>
-                ))}
-
-                {assessmentData.detailedInterpretation.categoryBreakdown.moderate.map((narrative, index) => (
-                  <div key={index} style={styles.categoryAnalysisBlock}>
-                    <div style={styles.analysisText}>{narrative}</div>
-                  </div>
-                ))}
-
-                {assessmentData.detailedInterpretation.categoryBreakdown.concerns.map((narrative, index) => (
-                  <div key={index} style={styles.categoryAnalysisBlock}>
-                    <div style={styles.analysisText}>{narrative}</div>
+            {/* 6️⃣ Strength Profile Summary */}
+            <div style={styles.strengthProfile}>
+              <h3 style={styles.subsectionTitle}>6. Strength Profile Summary</h3>
+              <div style={styles.strengthGrid}>
+                {strengthsList.map((strength, index) => (
+                  <div key={index} style={styles.strengthCard}>
+                    <span style={styles.strengthIcon}>💪</span>
+                    <div>
+                      <strong>{strength}</strong>
+                      <p style={styles.strengthDesc}>Adds significant value in role context</p>
+                    </div>
                   </div>
                 ))}
               </div>
-
-              {/* Hiring Interpretation */}
-              <div style={styles.analysisCard}>
-                <h3 style={styles.analysisCardTitle}>Hiring Recommendations</h3>
-                <div style={styles.analysisText}>{assessmentData.detailedInterpretation.hiringInterpretation}</div>
-              </div>
-
-              {/* Development Potential */}
-              <div style={styles.analysisCard}>
-                <h3 style={styles.analysisCardTitle}>Development Potential</h3>
-                <div style={styles.analysisText}>{assessmentData.detailedInterpretation.developmentPotential}</div>
-              </div>
-
-              {/* Strategic Observation */}
-              <div style={styles.analysisCard}>
-                <h3 style={styles.analysisCardTitle}>Strategic Observation</h3>
-                <div style={styles.analysisText}>{assessmentData.detailedInterpretation.strategicObservation}</div>
-              </div>
-
-              {/* Final Assessment */}
-              <div style={styles.analysisCard}>
-                <h3 style={styles.analysisCardTitle}>Final Assessment</h3>
-                <div style={styles.analysisText}>{assessmentData.detailedInterpretation.finalAssessment}</div>
-              </div>
-
-              {/* All Recommendations */}
-              {assessmentData.recommendations && assessmentData.recommendations.length > 0 && (
-                <div style={styles.analysisCard}>
-                  <h3 style={styles.analysisCardTitle}>Detailed Recommendations</h3>
-                  <div style={styles.recommendationsList}>
-                    {assessmentData.recommendations.map((rec, index) => (
-                      <div key={index} style={styles.recommendationItem}>
-                        <span style={styles.recommendationNumber}>{index + 1}.</span>
-                        <span style={styles.recommendationText}>{rec}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
-          )}
+
+            {/* 7️⃣ Risk & Development Areas */}
+            <div style={styles.riskProfile}>
+              <h3 style={styles.subsectionTitle}>7. Risk & Development Areas</h3>
+              <div style={styles.riskGrid}>
+                {weaknessesList.map((weakness, index) => (
+                  <div key={index} style={styles.riskCard}>
+                    <span style={styles.riskIcon}>⚠️</span>
+                    <div>
+                      <strong>{weakness}</strong>
+                      <p style={styles.riskDesc}>Critical development need - impacts {getImpactArea(weakness)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* 9️⃣ Development Recommendations */}
+          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'development' || showPrintView ? 'block' : 'none'}}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>9. Development Recommendations</h2>
+            </div>
+            
+            <div style={styles.timelineContainer}>
+              <div style={styles.timelinePhase}>
+                <h3 style={styles.phaseTitle}>Short-Term (0–3 Months)</h3>
+                <ul style={styles.phaseList}>
+                  <li>Communication skills training program</li>
+                  <li>Structured mentoring with senior team member</li>
+                  <li>Weekly feedback sessions on performance metrics</li>
+                </ul>
+              </div>
+              
+              <div style={styles.timelinePhase}>
+                <h3 style={styles.phaseTitle}>Medium-Term (3–6 Months)</h3>
+                <ul style={styles.phaseList}>
+                  <li>Leadership fundamentals workshop</li>
+                  <li>Cross-functional project participation</li>
+                  <li>Technical skills certification course</li>
+                </ul>
+              </div>
+              
+              <div style={styles.timelinePhase}>
+                <h3 style={styles.phaseTitle}>Long-Term (6–12 Months)</h3>
+                <ul style={styles.phaseList}>
+                  <li>Executive coaching sessions</li>
+                  <li>Stretch assignments in weak areas</li>
+                  <li>360-degree feedback assessment</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* 🔟 Hiring Recommendation */}
+            <div style={styles.hiringCard}>
+              <h3 style={styles.subsectionTitle}>10. Hiring / Promotion Recommendation</h3>
+              <div style={{...styles.hiringBadge, background: hiringRec.color}}>
+                {hiringRec.recommendation}
+              </div>
+              <p style={styles.hiringJustification}>{hiringRec.summary}</p>
+              <p style={styles.hiringDetail}>
+                Based on the comprehensive assessment of {Object.keys(assessmentData.category_scores).length} competencies,
+                this candidate demonstrates {assessmentData.percentage >= 65 ? 'strong potential' : 'significant development needs'}.
+                {assessmentData.percentage >= 65 ? ' With targeted development, they can grow into higher responsibility roles.' : ' Immediate placement requires structured support and clear supervision.'}
+              </p>
+            </div>
+          </section>
         </div>
 
-        <div style={styles.footer}>
-          <p>Confidential Report • Generated on {new Date().toLocaleDateString()}</p>
-        </div>
+        {/* Print Styles */}
+        <style jsx global>{`
+          @media print {
+            body {
+              background: white;
+            }
+            .no-print {
+              display: none !important;
+            }
+            @page {
+              size: A4;
+              margin: 2cm;
+            }
+          }
+        `}</style>
       </div>
-
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
     </AppLayout>
   );
 }
+
+// Helper function for impact area
+const getImpactArea = (weakness) => {
+  if (weakness.includes('Cognitive')) return 'problem-solving and learning';
+  if (weakness.includes('Communication')) return 'team collaboration and stakeholder management';
+  if (weakness.includes('Cultural')) return 'team cohesion and values alignment';
+  if (weakness.includes('Leadership')) return 'team management and direction';
+  if (weakness.includes('Technical')) return 'job performance and quality';
+  return 'overall performance';
+};
 
 const styles = {
   checkingContainer: {
@@ -471,6 +558,9 @@ const styles = {
     padding: '30px 20px'
   },
   header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: '30px'
   },
   backButton: {
@@ -487,313 +577,440 @@ const styles = {
       color: 'white'
     }
   },
-  profileHeader: {
-    background: 'white',
+  headerActions: {
+    display: 'flex',
+    gap: '10px'
+  },
+  printButton: {
+    background: '#10b981',
+    color: 'white',
+    border: 'none',
+    padding: '8px 20px',
     borderRadius: '20px',
-    padding: '30px',
-    marginBottom: '30px',
-    boxShadow: '0 10px 40px rgba(0,0,0,0.1)',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: '20px'
-  },
-  profileInfo: {
-    flex: 1
-  },
-  candidateName: {
-    margin: '0 0 8px 0',
-    fontSize: '32px',
-    fontWeight: 700,
-    color: '#1f2937'
-  },
-  candidateEmail: {
-    margin: '0 0 8px 0',
-    fontSize: '16px',
-    color: '#6b7280'
-  },
-  completedDate: {
-    margin: 0,
     fontSize: '14px',
-    color: '#9ca3af'
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    ':hover': {
+      background: '#059669'
+    }
   },
-  scoreBadge: {
-    background: '#f3f4f6',
-    padding: '20px 30px',
-    borderRadius: '60px',
+  navigation: {
     display: 'flex',
-    alignItems: 'baseline',
-    gap: '5px'
-  },
-  scoreLarge: {
-    fontSize: '48px',
-    fontWeight: 700,
-    color: '#1f2937',
-    lineHeight: 1
-  },
-  scoreMax: {
-    fontSize: '20px',
-    color: '#9ca3af'
-  },
-  metricsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '20px',
-    marginBottom: '30px'
-  },
-  metricCard: {
-    background: 'white',
-    padding: '20px',
-    borderRadius: '12px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    textAlign: 'center'
-  },
-  metricLabel: {
-    display: 'block',
-    fontSize: '14px',
-    color: '#6b7280',
-    marginBottom: '8px'
-  },
-  metricValue: {
-    display: 'block',
-    fontSize: '28px',
-    fontWeight: 700
-  },
-  tabContainer: {
-    display: 'flex',
-    gap: '20px',
+    gap: '15px',
     marginBottom: '30px',
     borderBottom: '1px solid #e5e7eb',
-    paddingBottom: '10px'
+    paddingBottom: '10px',
+    overflowX: 'auto',
+    whiteSpace: 'nowrap'
   },
-  tab: {
+  navItem: {
     background: 'none',
     border: 'none',
-    padding: '10px 0',
-    fontSize: '16px',
-    fontWeight: 600,
+    padding: '8px 12px',
+    fontSize: '14px',
+    fontWeight: 500,
     color: '#4b5563',
     cursor: 'pointer',
     transition: 'all 0.2s'
   },
-  tabContent: {
-    minHeight: '400px'
-  },
-  sectionCard: {
+  reportContainer: {
     background: 'white',
-    borderRadius: '16px',
-    padding: '25px',
-    marginBottom: '20px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+    borderRadius: '20px',
+    padding: '40px',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.1)'
+  },
+  section: {
+    marginBottom: '40px'
+  },
+  sectionHeader: {
+    marginBottom: '30px',
+    borderBottom: '2px solid #3b82f6',
+    paddingBottom: '10px'
   },
   sectionTitle: {
-    margin: '0 0 20px 0',
-    fontSize: '18px',
+    margin: 0,
+    fontSize: '24px',
+    fontWeight: 600,
+    color: '#1f2937'
+  },
+  subsectionTitle: {
+    fontSize: '20px',
     fontWeight: 600,
     color: '#1f2937',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px'
+    margin: '30px 0 20px 0'
   },
-  sectionIcon: {
-    fontSize: '24px'
-  },
-  tagContainer: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '10px'
-  },
-  tag: {
-    padding: '8px 16px',
-    borderRadius: '30px',
-    fontSize: '14px',
-    fontWeight: 500
-  },
-  recommendationsPreview: {
+  coverPage: {
+    minHeight: '80vh',
     display: 'flex',
     flexDirection: 'column',
-    gap: '12px'
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    textAlign: 'center',
+    padding: '40px 20px'
   },
-  recommendationPreviewItem: {
+  coverHeader: {
+    marginBottom: '60px'
+  },
+  coverTitle: {
+    fontSize: '32px',
+    fontWeight: 700,
+    color: '#3b82f6',
+    marginBottom: '10px'
+  },
+  coverSubtitle: {
+    fontSize: '18px',
+    color: '#6b7280'
+  },
+  coverContent: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  coverLogo: {
+    fontSize: '80px',
+    marginBottom: '40px'
+  },
+  coverCandidateName: {
+    fontSize: '36px',
+    fontWeight: 700,
+    color: '#1f2937',
+    marginBottom: '20px'
+  },
+  coverDetail: {
+    fontSize: '16px',
+    color: '#6b7280',
+    margin: '5px 0'
+  },
+  coverBadge: {
+    marginTop: '40px',
+    padding: '8px 30px',
+    border: '2px solid #ef4444',
+    borderRadius: '40px',
+    color: '#ef4444',
+    fontWeight: 600,
+    letterSpacing: '2px'
+  },
+  coverFooter: {
+    marginTop: '60px',
+    color: '#9ca3af',
+    fontSize: '14px'
+  },
+  executiveSummary: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '20px'
+  },
+  scoreCard: {
+    border: '1px solid #e5e7eb',
+    borderRadius: '12px',
+    overflow: 'hidden'
+  },
+  scoreCardHeader: {
+    background: '#f9fafb',
+    padding: '15px 20px',
+    borderBottom: '1px solid #e5e7eb',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  scoreCardLabel: {
+    fontSize: '14px',
+    fontWeight: 500,
+    color: '#6b7280'
+  },
+  scoreCardValue: {
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#1f2937'
+  },
+  scoreCardBody: {
+    padding: '20px',
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '20px'
+  },
+  scoreMetric: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '5px'
+  },
+  scoreMetricLabel: {
+    fontSize: '12px',
+    color: '#9ca3af'
+  },
+  scoreMetricValue: {
+    fontSize: '24px',
+    fontWeight: 700
+  },
+  classificationCard: {
+    padding: '20px',
+    background: '#f9fafb',
+    borderRadius: '12px',
+    border: '1px solid #e5e7eb'
+  },
+  classificationBadge: {
+    display: 'inline-block',
+    padding: '4px 12px',
+    borderRadius: '20px',
+    fontSize: '14px',
+    fontWeight: 600,
+    marginBottom: '10px'
+  },
+  classificationDescription: {
+    margin: 0,
+    fontSize: '14px',
+    color: '#4b5563',
+    lineHeight: '1.6'
+  },
+  verdictCard: {
+    padding: '20px',
+    background: '#f9fafb',
+    borderRadius: '12px',
+    border: '1px solid #e5e7eb'
+  },
+  verdictTitle: {
+    margin: '0 0 15px 0',
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#1f2937'
+  },
+  verdictBadge: {
+    display: 'inline-block',
+    padding: '8px 20px',
+    borderRadius: '30px',
+    fontSize: '16px',
+    fontWeight: 600,
+    marginBottom: '15px'
+  },
+  verdictSummary: {
+    fontSize: '14px',
+    color: '#4b5563',
+    lineHeight: '1.6',
+    marginBottom: '20px'
+  },
+  keyPoints: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '15px'
+  },
+  keyPoint: {
     display: 'flex',
     gap: '10px',
     alignItems: 'flex-start'
   },
-  bulletPoint: {
-    color: '#3b82f6',
+  keyPointIcon: {
     fontSize: '18px'
   },
-  recommendationPreviewText: {
-    fontSize: '14px',
-    color: '#4b5563',
-    lineHeight: '1.5'
-  },
-  viewMoreHint: {
-    margin: '10px 0 0 0',
-    fontSize: '13px',
-    color: '#9ca3af',
-    fontStyle: 'italic'
-  },
-  categoriesContainer: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
-    gap: '20px'
-  },
-  categoryCard: {
-    background: 'white',
+  overviewCard: {
+    padding: '30px',
+    background: '#f9fafb',
     borderRadius: '12px',
-    padding: '20px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    transition: 'transform 0.2s',
-    ':hover': {
-      transform: 'translateY(-2px)',
-      boxShadow: '0 8px 24px rgba(0,0,0,0.1)'
-    }
+    border: '1px solid #e5e7eb'
   },
-  categoryHeader: {
+  overviewGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+    gap: '30px'
+  },
+  overviewItem: {
+    textAlign: 'center'
+  },
+  overviewItemTitle: {
+    fontSize: '14px',
+    fontWeight: 500,
+    color: '#6b7280',
+    marginBottom: '10px'
+  },
+  overviewItemValue: {
+    fontSize: '20px',
+    fontWeight: 600,
+    color: '#1f2937',
+    marginBottom: '5px'
+  },
+  overviewItemSub: {
+    fontSize: '12px',
+    color: '#9ca3af'
+  },
+  tableContainer: {
+    overflowX: 'auto',
+    marginBottom: '40px'
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '14px'
+  },
+  tableHeadRow: {
+    background: '#f9fafb',
+    borderBottom: '2px solid #3b82f6'
+  },
+  tableHead: {
+    padding: '12px',
+    fontWeight: 600,
+    color: '#1f2937',
+    textAlign: 'left'
+  },
+  tableRow: {
+    borderBottom: '1px solid #e5e7eb'
+  },
+  tableCell: {
+    padding: '12px'
+  },
+  tableFooterRow: {
+    background: '#f9fafb'
+  },
+  tableFooter: {
+    padding: '15px'
+  },
+  totalScoreRow: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '15px'
+    flexWrap: 'wrap',
+    gap: '15px'
   },
-  categoryName: {
+  competencyBreakdown: {
+    marginTop: '40px'
+  },
+  competencyCard: {
+    marginBottom: '30px',
+    border: '1px solid #e5e7eb',
+    borderRadius: '12px',
+    overflow: 'hidden'
+  },
+  competencyHeader: {
+    background: '#f9fafb',
+    padding: '15px 20px',
+    borderBottom: '1px solid #e5e7eb'
+  },
+  competencyName: {
     margin: 0,
     fontSize: '16px',
     fontWeight: 600,
     color: '#1f2937'
   },
-  categoryBadge: {
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '14px',
-    fontWeight: 600
+  competencyBody: {
+    padding: '20px'
   },
-  categoryDetails: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px'
-  },
-  categoryScore: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  categoryScoreLabel: {
-    fontSize: '13px',
-    color: '#6b7280'
-  },
-  categoryScoreValue: {
-    fontSize: '15px',
-    fontWeight: 600',
-    color: '#1f2937'
-  },
-  categoryPercentage: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  categoryPercentageLabel: {
-    fontSize: '13px',
-    color: '#6b7280'
-  },
-  progressContainer: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    flex: 1,
-    maxWidth: '150px'
-  },
-  progressBar: {
-    width: '100px',
-    height: '8px',
-    background: '#e5e7eb',
-    borderRadius: '4px',
-    overflow: 'hidden'
-  },
-  categoryPercentageValue: {
-    fontSize: '15px',
-    fontWeight: 600,
-    minWidth: '45px'
-  },
-  categoryAssessment: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: '5px',
-    paddingTop: '5px',
-    borderTop: '1px solid #f3f4f6'
-  },
-  categoryAssessmentLabel: {
-    fontSize: '13px',
-    color: '#6b7280'
-  },
-  categoryAssessmentValue: {
-    fontSize: '14px',
-    fontWeight: 600
-  },
-  analysisContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px'
-  },
-  analysisCard: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '25px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
-  },
-  analysisCardTitle: {
-    margin: '0 0 20px 0',
-    fontSize: '18px',
-    fontWeight: 600,
-    color: '#1f2937',
-    borderBottom: '2px solid #f3f4f6',
-    paddingBottom: '10px'
-  },
-  analysisText: {
-    fontSize: '14px',
-    color: '#4b5563',
-    lineHeight: '1.8',
-    whiteSpace: 'pre-line'
-  },
-  categoryAnalysisBlock: {
-    marginBottom: '20px',
-    padding: '15px',
-    background: '#f9fafb',
-    borderRadius: '12px'
-  },
-  recommendationsList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '15px'
-  },
-  recommendationItem: {
-    display: 'flex',
-    gap: '12px',
-    alignItems: 'flex-start',
-    padding: '10px',
-    background: '#f9fafb',
-    borderRadius: '8px'
-  },
-  recommendationNumber: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#3b82f6',
-    minWidth: '25px'
-  },
-  recommendationText: {
+  competencyInterpretation: {
     fontSize: '14px',
     color: '#4b5563',
     lineHeight: '1.6',
-    flex: 1
+    marginBottom: '15px'
   },
-  footer: {
-    marginTop: '50px',
-    paddingTop: '20px',
-    borderTop: '1px solid #e5e7eb',
-    textAlign: 'center',
-    color: '#9ca3af',
-    fontSize: '12px'
+  competencyIndicators: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '20px'
+  },
+  indicatorColumn: {
+    fontSize: '13px'
+  },
+  indicatorList: {
+    margin: '10px 0 0 0',
+    paddingLeft: '20px',
+    color: '#6b7280'
+  },
+  strengthProfile: {
+    marginTop: '40px'
+  },
+  strengthGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gap: '15px'
+  },
+  strengthCard: {
+    display: 'flex',
+    gap: '15px',
+    padding: '15px',
+    background: '#d1fae5',
+    borderRadius: '8px',
+    border: '1px solid #a7f3d0'
+  },
+  strengthIcon: {
+    fontSize: '24px'
+  },
+  strengthDesc: {
+    margin: '5px 0 0 0',
+    fontSize: '12px',
+    color: '#065f46'
+  },
+  riskProfile: {
+    marginTop: '40px'
+  },
+  riskGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gap: '15px'
+  },
+  riskCard: {
+    display: 'flex',
+    gap: '15px',
+    padding: '15px',
+    background: '#fee2e2',
+    borderRadius: '8px',
+    border: '1px solid #fecaca'
+  },
+  riskIcon: {
+    fontSize: '24px'
+  },
+  riskDesc: {
+    margin: '5px 0 0 0',
+    fontSize: '12px',
+    color: '#991b1b'
+  },
+  timelineContainer: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+    gap: '20px',
+    marginBottom: '40px'
+  },
+  timelinePhase: {
+    padding: '20px',
+    background: '#f9fafb',
+    borderRadius: '12px',
+    border: '1px solid #e5e7eb'
+  },
+  phaseTitle: {
+    margin: '0 0 15px 0',
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#3b82f6'
+  },
+  phaseList: {
+    margin: 0,
+    paddingLeft: '20px',
+    color: '#4b5563',
+    lineHeight: '1.8'
+  },
+  hiringCard: {
+    padding: '30px',
+    background: '#f9fafb',
+    borderRadius: '12px',
+    border: '2px solid #3b82f6',
+    textAlign: 'center'
+  },
+  hiringBadge: {
+    display: 'inline-block',
+    padding: '12px 40px',
+    borderRadius: '40px',
+    color: 'white',
+    fontSize: '20px',
+    fontWeight: 700,
+    marginBottom: '20px'
+  },
+  hiringJustification: {
+    fontSize: '16px',
+    color: '#1f2937',
+    lineHeight: '1.6',
+    marginBottom: '15px'
+  },
+  hiringDetail: {
+    fontSize: '14px',
+    color: '#6b7280',
+    lineHeight: '1.6'
   }
 };
