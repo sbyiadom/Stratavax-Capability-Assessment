@@ -29,7 +29,7 @@ export default function CandidateReport() {
     strengths: true,
     weaknesses: true,
     improvements: true,
-    analysis: true
+    analysis: true // Make sure this is true by default
   });
   const [personalizedData, setPersonalizedData] = useState({
     summary: '',
@@ -287,6 +287,8 @@ export default function CandidateReport() {
         weaknesses.push(item);
       }
     });
+    
+    console.log("Personalized Data Generated:", { summary, strengths, improvementAreas, weaknesses }); // Debug log
     
     setPersonalizedData({
       summary,
@@ -635,7 +637,7 @@ export default function CandidateReport() {
           </div>
         )}
 
-        {/* Real-Time Analysis Section */}
+        {/* Real-Time Analysis Section - Always Visible */}
         <div style={styles.card}>
           <div 
             style={styles.cardHeader}
@@ -650,10 +652,12 @@ export default function CandidateReport() {
           {expandedSections.analysis && (
             <div style={styles.cardContent}>
               {/* Overall Summary */}
-              <div style={styles.analysisSection}>
-                <h4 style={styles.analysisTitle}>🔎 Overall Summary</h4>
-                <p style={styles.analysisText}>{personalizedData.summary}</p>
-              </div>
+              {personalizedData.summary && (
+                <div style={styles.analysisSection}>
+                  <h4 style={styles.analysisTitle}>🔎 Overall Summary</h4>
+                  <p style={styles.analysisText}>{personalizedData.summary}</p>
+                </div>
+              )}
 
               {/* Category Breakdown with Meanings */}
               <div style={styles.analysisSection}>
@@ -721,17 +725,25 @@ export default function CandidateReport() {
                   <div style={styles.insightColumn}>
                     <h5 style={styles.insightTitle}>Best Fit:</h5>
                     <ul style={styles.insightList}>
-                      {personalizedData.bestFit.fits.map((item, i) => (
-                        <li key={i} style={styles.insightItem}>{item}</li>
-                      ))}
+                      {personalizedData.bestFit.fits.length > 0 ? (
+                        personalizedData.bestFit.fits.map((item, i) => (
+                          <li key={i} style={styles.insightItem}>{item}</li>
+                        ))
+                      ) : (
+                        <li style={styles.insightItem}>Standard roles with appropriate support</li>
+                      )}
                     </ul>
                   </div>
                   <div style={styles.insightColumn}>
                     <h5 style={styles.insightTitle}>Risk Areas:</h5>
                     <ul style={styles.insightList}>
-                      {personalizedData.bestFit.risks.map((item, i) => (
-                        <li key={i} style={styles.insightItem}>{item}</li>
-                      ))}
+                      {personalizedData.bestFit.risks.length > 0 ? (
+                        personalizedData.bestFit.risks.map((item, i) => (
+                          <li key={i} style={styles.insightItem}>{item}</li>
+                        ))
+                      ) : (
+                        <li style={styles.insightItem}>No significant risks identified</li>
+                      )}
                     </ul>
                   </div>
                 </div>
