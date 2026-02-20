@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
+import { generateDetailedInterpretation } from "../../utils/detailedInterpreter";
 
 export default function CandidateReport() {
   const router = useRouter();
@@ -61,7 +62,7 @@ export default function CandidateReport() {
           email: profileData?.email || 'Email not available'
         });
 
-        // FIRST: Try to get from assessment_results (detailed data)
+        // Get assessment results
         const { data: resultsData } = await supabase
           .from('assessment_results')
           .select('*')
@@ -71,21 +72,31 @@ export default function CandidateReport() {
         console.log("Assessment results:", resultsData);
 
         if (resultsData && resultsData.length > 0) {
+          const result = resultsData[0];
+          const percentage = Math.round((result.total_score / result.max_score) * 100);
+          
+          // Generate detailed narrative interpretation
+          const detailedInterpretation = generateDetailedInterpretation(
+            profileData?.full_name || 'Candidate',
+            result.category_scores
+          );
+          
           // Use the detailed results data
           setAssessmentData({
             source: 'results',
-            total_score: resultsData[0].total_score,
-            max_score: resultsData[0].max_score,
-            percentage: Math.round((resultsData[0].total_score / resultsData[0].max_score) * 100),
-            completed_at: resultsData[0].completed_at,
-            category_scores: resultsData[0].category_scores,
-            strengths: resultsData[0].strengths || [],
-            weaknesses: resultsData[0].weaknesses || [],
-            recommendations: resultsData[0].recommendations || [],
-            interpretations: resultsData[0].interpretations || {}
+            total_score: result.total_score,
+            max_score: result.max_score,
+            percentage: percentage,
+            completed_at: result.completed_at,
+            category_scores: result.category_scores || {},
+            strengths: result.strengths || [],
+            weaknesses: result.weaknesses || [],
+            recommendations: result.recommendations || [],
+            interpretations: result.interpretations || {},
+            detailedInterpretation: detailedInterpretation
           });
         } else {
-          // SECOND: Try candidate_assessments (basic data)
+          // Fallback to candidate_assessments
           const { data: candidateData } = await supabase
             .from('candidate_assessments')
             .select(`
@@ -107,11 +118,8 @@ export default function CandidateReport() {
 
           if (candidateData && candidateData.length > 0) {
             const assessment = candidateData[0];
-            const maxScore = 500; // Default max score
+            const maxScore = 500;
             const percentage = Math.round((assessment.score / maxScore) * 100);
-            
-            // Get the assessment type
-            const assessmentType = assessment.assessments?.assessment_type?.code || 'general';
             
             setAssessmentData({
               source: 'candidate',
@@ -120,8 +128,7 @@ export default function CandidateReport() {
               percentage: percentage,
               completed_at: assessment.completed_at,
               assessment_name: assessment.assessments?.title || 'Assessment',
-              assessment_type: assessmentType,
-              // We don't have category scores, so we'll create a simple one
+              assessment_type: assessment.assessments?.assessment_type?.code || 'general',
               category_scores: {
                 'Overall Performance': {
                   score: assessment.score,
@@ -388,6 +395,82 @@ export default function CandidateReport() {
 
           </div>
         </div>
+
+        {/* CARD 4: Detailed Narrative Analysis */}
+        {assessmentData.detailedInterpretation && (
+          <div style={styles.card}>
+            <div style={styles.cardHeader}>
+              <span style={styles.cardIcon}>📋</span>
+              <h3 style={styles.cardTitle}>Detailed Narrative Analysis</h3>
+            </div>
+            <div style={styles.cardContent}>
+              
+              {/* Overall Profile Summary */}
+              <div style={styles.analysisSection}>
+                <div style={styles.narrativeText}>{assessmentData.detailedInterpretation.overallProfileSummary}</div>
+              </div>
+
+              {/* Category-by-Category Interpretation */}
+              <div style={styles.analysisSection}>
+                <h4 style={styles.analysisTitle}>📊 Category-by-Category Interpretation</h4>
+                
+                {/* Strong Areas */}
+                {assessmentData.detailedInterpretation.categoryBreakdown.strong.length > 0 && (
+                  <div style={styles.categoryGroup}>
+                    {assessmentData.detailedInterpretation.categoryBreakdown.strong.map((narrative, index) => (
+                      <div key={index} style={styles.narrativeBlock}>
+                        <div style={styles.narrativeText}>{narrative}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Moderate Areas */}
+                {assessmentData.detailedInterpretation.categoryBreakdown.moderate.length > 0 && (
+                  <div style={styles.categoryGroup}>
+                    {assessmentData.detailedInterpretation.categoryBreakdown.moderate.map((narrative, index) => (
+                      <div key={index} style={styles.narrativeBlock}>
+                        <div style={styles.narrativeText}>{narrative}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Concern Areas */}
+                {assessmentData.detailedInterpretation.categoryBreakdown.concerns.length > 0 && (
+                  <div style={styles.categoryGroup}>
+                    {assessmentData.detailedInterpretation.categoryBreakdown.concerns.map((narrative, index) => (
+                      <div key={index} style={styles.narrativeBlock}>
+                        <div style={styles.narrativeText}>{narrative}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Hiring Interpretation */}
+              <div style={styles.analysisSection}>
+                <div style={styles.narrativeText}>{assessmentData.detailedInterpretation.hiringInterpretation}</div>
+              </div>
+
+              {/* Development Potential */}
+              <div style={styles.analysisSection}>
+                <div style={styles.narrativeText}>{assessmentData.detailedInterpretation.developmentPotential}</div>
+              </div>
+
+              {/* Strategic Observation */}
+              <div style={styles.analysisSection}>
+                <div style={styles.narrativeText}>{assessmentData.detailedInterpretation.strategicObservation}</div>
+              </div>
+
+              {/* Final Assessment */}
+              <div style={styles.analysisSection}>
+                <div style={styles.narrativeText}>{assessmentData.detailedInterpretation.finalAssessment}</div>
+              </div>
+
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div style={styles.footer}>
@@ -692,6 +775,23 @@ const styles = {
     fontSize: '16px',
     color: '#1565c0',
     fontWeight: 'bold'
+  },
+  narrativeBlock: {
+    marginBottom: '25px',
+    padding: '15px',
+    background: '#f8f9fa',
+    borderRadius: '8px',
+    border: '1px solid #e0e0e0'
+  },
+  narrativeText: {
+    fontSize: '14px',
+    color: '#333',
+    lineHeight: '1.8',
+    margin: 0,
+    whiteSpace: 'pre-line'
+  },
+  categoryGroup: {
+    marginBottom: '20px'
   },
   footer: {
     marginTop: '40px',
