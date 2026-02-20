@@ -226,45 +226,37 @@ export default function CandidateReport() {
   };
 
   const getCategoryInterpretation = (category, data, candidateName) => {
-  if (!data) return `${category}: No detailed response data available.`;
-  
-  if (category.includes('Leadership')) {
-    return interpretLeadership(data, candidateName);
-  } else if (category.includes('Cognitive')) {
-    return interpretCognitive(data, candidateName);
-  } else if (category.includes('Communication')) {
-    return interpretCommunication(data, candidateName);
-  } else if (category.includes('Ethics')) {
-    return interpretEthics(data, candidateName);
-  } else if (category.includes('Technical')) {
-    return interpretTechnical(data, candidateName);
-  } else if (category.includes('Emotional')) {
-    return interpretEmotional(data, candidateName);
-  } else if (category.includes('Performance')) {
-    return interpretPerformance(data, candidateName);
-  } else if (category.includes('Cultural')) {
-    return interpretCultural(data, candidateName);
-  } else if (category.includes('Problem')) {
-    return interpretProblemSolving(data, candidateName);
-  } else if (category.includes('Personality')) {
-    return interpretPersonality(data, candidateName);
-  } else {
-    // Generic interpretation for other categories
-    let interpretation = `${category} – ${data.percentage || 'N/A'}%\n\n`;
-    if (data.insights && data.insights.length > 0) {
-      interpretation += `Response analysis:\n`;
-      data.insights.slice(0, 2).forEach(insight => {
-        interpretation += `• ${insight}\n`;
-      });
+    if (!data) return `${category}: No detailed response data available.`;
+    
+    // Route to the appropriate interpreter based on category name
+    if (category.includes('Leadership')) {
+      return interpretLeadership(data, candidateName);
+    } else if (category.includes('Cognitive')) {
+      return interpretCognitive(data, candidateName);
+    } else if (category.includes('Communication')) {
+      return interpretCommunication(data, candidateName);
+    } else if (category.includes('Ethics')) {
+      return interpretEthics(data, candidateName);
+    } else if (category.includes('Technical')) {
+      return interpretTechnical(data, candidateName);
+    } else if (category.includes('Emotional')) {
+      return interpretEmotional(data, candidateName);
+    } else if (category.includes('Performance')) {
+      return interpretPerformance(data, candidateName);
+    } else if (category.includes('Cultural')) {
+      return interpretCultural(data, candidateName);
+    } else if (category.includes('Problem')) {
+      return interpretProblemSolving(data, candidateName);
+    } else if (category.includes('Personality')) {
+      return interpretPersonality(data, candidateName);
     } else {
-      interpretation += `Based on the candidate's responses in this category, they show `;
-      interpretation += data.percentage >= 70 ? 'strong performance.' :
-                       data.percentage >= 60 ? 'developing competency.' :
-                       'significant gaps needing attention.';
+      // Generic interpretation for other categories
+      return `${candidateName} scored ${data.percentage}% in ${category}. ` +
+        (data.percentage >= 70 ? 'This is a strength area.' :
+         data.percentage >= 60 ? 'Shows basic competency with room for development.' :
+         'Requires focused attention and development.');
     }
-    return interpretation;
-  }
-};
+  };
 
   const getGradeLetter = (percentage) => {
     if (percentage >= 90) return 'A';
@@ -501,7 +493,7 @@ export default function CandidateReport() {
 
             {/* 5️⃣ Competency Breakdown */}
             <div style={styles.competencyBreakdown}>
-              <h3 style={styles.subsectionTitle}>5. Competency Breakdown & Interpretation</h3>
+              <h3 style={styles.subsectionTitle}>5. Competency Analysis</h3>
               
               {Object.entries(assessmentData.category_scores).map(([category, data]) => {
                 const catGrade = getGradeInfo(data.percentage);
@@ -514,27 +506,9 @@ export default function CandidateReport() {
                     </div>
                     <div style={styles.competencyBody}>
                       {categoryData ? (
-                        <>
-                          <pre style={styles.pre}>
-                            {getCategoryInterpretation(category, categoryData, candidate.full_name)}
-                          </pre>
-                          
-                          {/* Show specific question-answer insights */}
-                          {categoryData.questionDetails && categoryData.questionDetails.length > 0 && (
-                            <div style={styles.questionDetails}>
-                              <strong>Response Details:</strong>
-                              {categoryData.questionDetails.slice(0, 2).map((detail, i) => (
-                                <div key={i} style={styles.questionItem}>
-                                  <div style={styles.questionText}>Q: {detail.question}</div>
-                                  <div style={styles.answerText}>A: {detail.answer}</div>
-                                  <div style={detail.score >= 4 ? styles.scoreHigh : styles.scoreLow}>
-                                    Score: {detail.score}/5
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </>
+                        <div style={styles.interpretationText}>
+                          {getCategoryInterpretation(category, categoryData, candidate.full_name)}
+                        </div>
                       ) : (
                         <p>No detailed response data available for this category.</p>
                       )}
@@ -589,7 +563,7 @@ export default function CandidateReport() {
 
             {/* 7️⃣ Risk & Development Areas */}
             <div style={styles.riskProfile}>
-              <h3 style={styles.subsectionTitle}>7. Risk & Development Areas</h3>
+              <h3 style={styles.subsectionTitle}>7. Development Priorities</h3>
               <div style={styles.riskGrid}>
                 {weaknessesList.map((weakness, index) => {
                   const match = weakness.match(/(.+) \((\d+)%\)/);
@@ -597,12 +571,22 @@ export default function CandidateReport() {
                   const percentage = match ? match[2] : '';
                   
                   const categoryData = assessmentData.responseInsights?.[category];
-                  const lowScoreCount = categoryData?.lowScoreCount || 0;
-                  const questionCount = categoryData?.questionCount || 0;
                   
-                  const weakResponses = categoryData?.questionDetails
-                    ?.filter(q => q.score <= 2)
-                    .slice(0, 2) || [];
+                  // Get a brief recommendation based on category
+                  let recommendation = '';
+                  if (category.includes('Cognitive')) {
+                    recommendation = 'Recommend structured problem-solving practice and analytical thinking exercises.';
+                  } else if (category.includes('Communication')) {
+                    recommendation = 'Recommend communication skills training and presentation practice.';
+                  } else if (category.includes('Leadership')) {
+                    recommendation = 'Recommend leadership fundamentals course and mentorship.';
+                  } else if (category.includes('Technical')) {
+                    recommendation = 'Recommend foundational technical training and hands-on practice.';
+                  } else if (category.includes('Emotional')) {
+                    recommendation = 'Recommend emotional intelligence workshops and feedback sessions.';
+                  } else {
+                    recommendation = 'Recommend targeted training and structured development plan.';
+                  }
                   
                   return (
                     <div key={index} style={styles.riskCard}>
@@ -612,126 +596,108 @@ export default function CandidateReport() {
                           <strong>{category}</strong>
                           <span style={styles.riskPercentage}>{percentage}%</span>
                         </div>
-                        
-                        {lowScoreCount > 0 && (
-                          <p style={styles.riskStat}>
-                            {lowScoreCount} of {questionCount} responses need attention
-                          </p>
-                        )}
-                        
-                        {weakResponses.map((resp, i) => (
-                          <div key={i} style={styles.weakResponse}>
-                            <div style={styles.weakQuestion}>"{resp.question}"</div>
-                            <div style={styles.weakAnswer}>Answered: {resp.answer}</div>
-                          </div>
-                        ))}
-                        
-                        <div style={styles.riskRecommendation}>
-                          <strong>Recommended:</strong> {
-                            category.includes('Cognitive') ? 'Practice logical reasoning exercises daily. Enroll in critical thinking courses.' :
-                            category.includes('Leadership') ? 'Seek mentorship in people management. Lead small projects to build experience.' :
-                            category.includes('Technical') ? 'Enroll in foundational technical training. Shadow experienced team members.' :
-                            category.includes('Communication') ? 'Join Toastmasters. Practice presentations with feedback.' :
-                            category.includes('Emotional') ? 'Participate in EI workshops. Practice active listening.' :
-                            'Complete targeted development program with regular check-ins.'
-                          }
-                        </div>
+                        <p style={styles.riskDescription}>
+                          {percentage < 50 ? 'Critical gap requiring immediate attention. ' :
+                           percentage < 60 ? 'Significant development needed. ' :
+                           'Development opportunity. '}
+                          {recommendation}
+                        </p>
                       </div>
                     </div>
                   );
                 })}
               </div>
             </div>
-          </section>
 
-          {/* 8️⃣ Role Fit Analysis & Development Plan */}
-          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'development' || showPrintView ? 'block' : 'none'}}>
-            <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>8. Role Fit Analysis - {config.name}</h2>
-            </div>
-            
-            <div style={styles.roleFitCard}>
-              {assessmentData.detailedInterpretation?.roleFit && (
-                <div style={styles.analysisText}>{assessmentData.detailedInterpretation.roleFit}</div>
-              )}
-              {!assessmentData.detailedInterpretation?.roleFit && (
-                <div style={styles.analysisText}>
-                  <p><strong>Best suited for roles requiring:</strong></p>
-                  <ul>
-                    {strengthsList.map((s, i) => {
-                      const [category] = s.split(' (');
-                      return <li key={i}>• Strong {category.toLowerCase()} capabilities</li>;
-                    })}
-                    {strengthsList.length === 0 && (
-                      <li>• Structured, supervised positions with clear guidelines</li>
-                    )}
-                  </ul>
-                </div>
-              )}
-            </div>
-
-            {/* 9️⃣ Development Recommendations */}
-            <div style={styles.timelineContainer}>
-              <h3 style={styles.subsectionTitle}>9. Development Recommendations</h3>
+            {/* 8️⃣ Role Fit Analysis & Development Plan */}
+            <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'development' || showPrintView ? 'block' : 'none'}}>
+              <div style={styles.sectionHeader}>
+                <h2 style={styles.sectionTitle}>8. Role Fit Analysis - {config.name}</h2>
+              </div>
               
-              <div style={styles.timelineGrid}>
-                <div style={styles.timelinePhase}>
-                  <h3 style={styles.phaseTitle}>Short-Term (0–3 Months)</h3>
-                  <ul style={styles.phaseList}>
-                    <li>Complete foundational training in weak areas</li>
-                    <li>Structured mentoring program</li>
-                    <li>Weekly feedback and progress reviews</li>
-                    {weaknessesList.length > 0 && (
-                      <li>Focus on {weaknessesList.slice(0, 2).map(w => w.split(' (')[0]).join(' and ')}</li>
-                    )}
-                  </ul>
-                </div>
-                
-                <div style={styles.timelinePhase}>
-                  <h3 style={styles.phaseTitle}>Medium-Term (3–6 Months)</h3>
-                  <ul style={styles.phaseList}>
-                    <li>Advanced training in core competencies</li>
-                    <li>Cross-functional project exposure</li>
-                    <li>Skill certification courses</li>
-                    <li>Apply learning to practical situations</li>
-                  </ul>
-                </div>
-                
-                <div style={styles.timelinePhase}>
-                  <h3 style={styles.phaseTitle}>Long-Term (6–12 Months)</h3>
-                  <ul style={styles.phaseList}>
-                    <li>Leadership development program</li>
-                    <li>Stretch assignments</li>
-                    <li>Regular reassessment of progress</li>
-                    {strengthsList.length > 0 && (
-                      <li>Build on {strengthsList.slice(0, 1).map(s => s.split(' (')[0]).join('')} strengths</li>
-                    )}
-                  </ul>
-                </div>
+              <div style={styles.roleFitCard}>
+                {assessmentData.detailedInterpretation?.roleFit && (
+                  <div style={styles.analysisText}>{assessmentData.detailedInterpretation.roleFit}</div>
+                )}
+                {!assessmentData.detailedInterpretation?.roleFit && (
+                  <div style={styles.analysisText}>
+                    <p><strong>Best suited for roles requiring:</strong></p>
+                    <ul>
+                      {strengthsList.map((s, i) => {
+                        const [category] = s.split(' (');
+                        return <li key={i}>• Strong {category.toLowerCase()} capabilities</li>;
+                      })}
+                      {strengthsList.length === 0 && (
+                        <li>• Structured, supervised positions with clear guidelines</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
               </div>
-            </div>
 
-            {/* 🔟 Hiring Recommendation */}
-            <div style={styles.hiringCard}>
-              <h3 style={styles.subsectionTitle}>10. Hiring / Promotion Recommendation</h3>
-              <div style={{...styles.hiringBadge, background: hiringRec.color}}>
-                {hiringRec.recommendation}
-              </div>
-              <p style={styles.hiringJustification}>{hiringRec.summary}</p>
-              <p style={styles.hiringDetail}>
-                Based on the comprehensive {config.name}, this candidate demonstrates 
-                {assessmentData.percentage >= 65 ? ' strong potential' : ' significant development needs'} 
-                for roles requiring these competencies.
-              </p>
-              <div style={styles.hiringFactors}>
-                <div style={styles.hiringFactor}>
-                  <strong>Supporting factors:</strong> {strengthsList.length} strength areas identified
+              {/* 9️⃣ Development Recommendations */}
+              <div style={styles.timelineContainer}>
+                <h3 style={styles.subsectionTitle}>9. Development Recommendations</h3>
+                
+                <div style={styles.timelineGrid}>
+                  <div style={styles.timelinePhase}>
+                    <h3 style={styles.phaseTitle}>Short-Term (0–3 Months)</h3>
+                    <ul style={styles.phaseList}>
+                      <li>Complete foundational training in weak areas</li>
+                      <li>Structured mentoring program</li>
+                      <li>Weekly feedback and progress reviews</li>
+                      {weaknessesList.length > 0 && (
+                        <li>Focus on {weaknessesList.slice(0, 2).map(w => w.split(' (')[0]).join(' and ')}</li>
+                      )}
+                    </ul>
+                  </div>
+                  
+                  <div style={styles.timelinePhase}>
+                    <h3 style={styles.phaseTitle}>Medium-Term (3–6 Months)</h3>
+                    <ul style={styles.phaseList}>
+                      <li>Advanced training in core competencies</li>
+                      <li>Cross-functional project exposure</li>
+                      <li>Skill certification courses</li>
+                      <li>Apply learning to practical situations</li>
+                    </ul>
+                  </div>
+                  
+                  <div style={styles.timelinePhase}>
+                    <h3 style={styles.phaseTitle}>Long-Term (6–12 Months)</h3>
+                    <ul style={styles.phaseList}>
+                      <li>Leadership development program</li>
+                      <li>Stretch assignments</li>
+                      <li>Regular reassessment of progress</li>
+                      {strengthsList.length > 0 && (
+                        <li>Build on {strengthsList.slice(0, 1).map(s => s.split(' (')[0]).join('')} strengths</li>
+                      )}
+                    </ul>
+                  </div>
                 </div>
-                <div style={styles.hiringFactor}>
-                  <strong>Risk factors:</strong> {weaknessesList.length} areas requiring development
+              </div>
+
+              {/* 🔟 Hiring Recommendation */}
+              <div style={styles.hiringCard}>
+                <h3 style={styles.subsectionTitle}>10. Hiring / Promotion Recommendation</h3>
+                <div style={{...styles.hiringBadge, background: hiringRec.color}}>
+                  {hiringRec.recommendation}
+                </div>
+                <p style={styles.hiringJustification}>{hiringRec.summary}</p>
+                <p style={styles.hiringDetail}>
+                  Based on the comprehensive {config.name}, this candidate demonstrates 
+                  {assessmentData.percentage >= 65 ? ' strong potential' : ' significant development needs'} 
+                  for roles requiring these competencies.
+                </p>
+                <div style={styles.hiringFactors}>
+                  <div style={styles.hiringFactor}>
+                    <strong>Supporting factors:</strong> {strengthsList.length} strength areas identified
+                  </div>
+                  <div style={styles.hiringFactor}>
+                    <strong>Risk factors:</strong> {weaknessesList.length} areas requiring development
+                  </div>
                 </div>
               </div>
-            </div>
+            </section>
           </section>
         </div>
       </div>
@@ -1142,6 +1108,12 @@ const styles = {
   competencyBody: {
     padding: '20px'
   },
+  interpretationText: {
+    fontSize: '14px',
+    lineHeight: '1.8',
+    color: '#4b5563',
+    whiteSpace: 'pre-wrap'
+  },
   pre: {
     fontFamily: 'inherit',
     fontSize: '14px',
@@ -1267,6 +1239,12 @@ const styles = {
     fontWeight: 600,
     color: '#991b1b'
   },
+  riskDescription: {
+    fontSize: '13px',
+    color: '#7f1d1d',
+    lineHeight: '1.5',
+    margin: 0
+  },
   riskStat: {
     fontSize: '12px',
     color: '#7f1d1d',
@@ -1373,4 +1351,3 @@ const styles = {
     whiteSpace: 'pre-line'
   }
 };
-
