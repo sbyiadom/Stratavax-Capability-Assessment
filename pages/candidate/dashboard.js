@@ -332,301 +332,305 @@ export default function CandidateDashboard() {
   const totalAssessments = getTotalAssessments();
 
   return (
-    <AppLayout>
-      {/* Professional Header with Dashboard Background Image */}
-      <div style={styles.header}>
-        <div style={styles.headerBackground} />
-        <div style={styles.headerOverlay} />
-        <div style={styles.headerContent}>
-          <div style={styles.headerLeft}>
-            <h1 style={styles.headerTitle}>STRATAVAX</h1>
-            <span style={styles.headerDivider}>|</span>
-            <span style={styles.headerSubtitle}>Assessment Portal</span>
-          </div>
-          <button
-            onClick={async () => {
-              await supabase.auth.signOut();
-              router.push("/login");
-            }}
-            style={styles.logoutButton}
-          >
-            Sign Out
-          </button>
-        </div>
-      </div>
-
-      {/* Welcome Section */}
-      <div style={styles.welcomeSection}>
-        <div style={styles.welcomeContent}>
-          <h2 style={styles.welcomeTitle}>
-            Welcome back, <span style={styles.welcomeName}>{userName}</span>
-          </h2>
-          <p style={styles.welcomeText}>
-            Select an assessment to begin. Your progress is automatically saved.
-          </p>
-        </div>
-        <div style={styles.progressBadge}>
-          <span style={styles.progressCount}>{completedCount}</span>
-          <span style={styles.progressTotal}>/{totalAssessments}</span>
-          <span style={styles.progressLabel}>Completed</span>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div style={styles.mainContent}>
-        {/* Assessment Tabs - Professional Colored Tabs */}
-        <div style={styles.tabsContainer}>
-          {assessmentTypes.map(tab => {
-            const isActive = activeTab === tab.id;
-            const hasAssessment = !!getAssessmentByType(tab.id);
-            const colors = assessmentColors[tab.id] || assessmentColors.general;
-            
-            return (
-              <button
-                key={tab.id}
-                onClick={() => hasAssessment && handleTabChange(tab.id)}
-                disabled={!hasAssessment}
-                style={{
-                  ...styles.tabButton,
-                  background: isActive ? colors.gradient : 'white',
-                  color: isActive ? 'white' : colors.color,
-                  border: isActive ? 'none' : `1px solid ${colors.color}40`,
-                  opacity: hasAssessment ? 1 : 0.4,
-                  boxShadow: isActive ? `0 4px 12px ${colors.color}40` : 'none'
-                }}
-              >
-                <span style={styles.tabLabel}>{tab.shortLabel}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Assessment Details Section - Professional Card */}
-        {activeAssessment ? (
-          <div style={styles.assessmentDetailsSection}>
-            {/* Assessment Card with Professional Colors */}
-            <div style={{
-              ...styles.card,
-              border: `1px solid ${assessmentColors[activeTab]?.color}30`,
-              boxShadow: `0 8px 20px ${assessmentColors[activeTab]?.color}10`
-            }}>
-              <div style={styles.cardHeader}>
-                <div style={{
-                  ...styles.cardIconLarge,
-                  background: assessmentColors[activeTab]?.gradient || assessmentColors.general.gradient
-                }}>
-                  {activeTypeConfig?.icon || '📋'}
-                </div>
-                <div style={styles.cardInfo}>
-                  <h3 style={styles.cardTitle}>{activeAssessment.title}</h3>
-                  <div style={styles.cardMeta}>
-                    <span style={styles.metaItem}>
-                      <span style={styles.metaIcon}>⏱️</span> 180 minutes
-                    </span>
-                    <span style={styles.metaItem}>
-                      <span style={styles.metaIcon}>📋</span> 100 questions
-                    </span>
-                    <span style={styles.metaItem}>
-                      <span style={styles.metaIcon}>🎯</span> 80% passing
-                    </span>
-                  </div>
-                </div>
-                <div style={styles.cardStatus}>
-                  {(() => {
-                    const completed = isAssessmentCompleted(activeAssessment.id);
-                    const inProgress = isAssessmentInProgress(activeAssessment.id);
-                    const score = getAssessmentScore(activeAssessment.id);
-                    
-                    if (completed) {
-                      return (
-                        <span style={{
-                          ...styles.statusBadge,
-                          background: score >= 80 ? '#dcfce7' : '#fff3cd',
-                          color: score >= 80 ? '#166534' : '#856404',
-                          border: `1px solid ${score >= 80 ? '#86efac' : '#ffe69c'}`
-                        }}>
-                          {score >= 80 ? '✓ Passed' : '⚠️ Review'} • {score}%
-                        </span>
-                      );
-                    } else if (inProgress) {
-                      return (
-                        <span style={{
-                          ...styles.statusBadge,
-                          background: '#dbeafe',
-                          color: '#1e40af',
-                          border: '1px solid #93c5fd'
-                        }}>
-                          In Progress
-                        </span>
-                      );
-                    } else {
-                      return (
-                        <span style={{
-                          ...styles.statusBadge,
-                          background: '#f8fafc',
-                          color: assessmentColors[activeTab]?.color || '#2563eb',
-                          border: `1px solid ${assessmentColors[activeTab]?.color}40`
-                        }}>
-                          Ready to Start
-                        </span>
-                      );
-                    }
-                  })()}
-                </div>
-              </div>
-              <button
-                onClick={() => router.push(`/assessment/${activeAssessment.id}`)}
-                style={{
-                  ...styles.startButton,
-                  background: assessmentColors[activeTab]?.gradient || assessmentColors.general.gradient,
-                  boxShadow: `0 4px 12px ${assessmentColors[activeTab]?.color}40`
-                }}
-              >
-                {isAssessmentInProgress(activeAssessment.id) ? 'Continue Assessment →' : 'Start Assessment →'}
-              </button>
+    <div style={styles.pageContainer}>
+      {/* Full Page Background */}
+      <div style={styles.pageBackground} />
+      <div style={styles.pageOverlay} />
+      
+      <div style={styles.content}>
+        {/* Header */}
+        <div style={styles.header}>
+          <div style={styles.headerContent}>
+            <div style={styles.headerLeft}>
+              <h1 style={styles.headerTitle}>STRATAVAX</h1>
+              <span style={styles.headerDivider}>|</span>
+              <span style={styles.headerSubtitle}>Assessment Portal</span>
             </div>
-
-            {/* Key Assessment Areas - Professional Card */}
-            {selectedAssessmentAreas && selectedAssessmentAreas.length > 0 && (
-              <div style={{
-                ...styles.areasSection,
-                borderTop: `4px solid ${assessmentColors[activeTab]?.color || '#2563eb'}`
-              }}>
-                <h3 style={styles.areasTitle}>Key Assessment Areas</h3>
-                <div style={styles.areasGrid}>
-                  {selectedAssessmentAreas.map((area, index) => (
-                    <div key={index} style={styles.areaItem}>
-                      <span style={{...styles.areaBullet, color: assessmentColors[activeTab]?.color || '#2563eb'}}>•</span>
-                      <span style={styles.areaText}>{area}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut();
+                router.push("/login");
+              }}
+              style={styles.logoutButton}
+            >
+              Sign Out
+            </button>
           </div>
-        ) : (
-          <div style={styles.emptyState}>
-            <p>No assessment available for this type.</p>
-          </div>
-        )}
+        </div>
 
-        {/* Progress Grid - Professional Colored Items */}
-        <div style={styles.progressSection}>
-          <h3 style={styles.sectionTitle}>Your Progress</h3>
-          <div style={styles.progressGrid}>
-            {assessmentTypes.map(type => {
-              const typeAssessment = getAssessmentByType(type.id);
-              const isCompleted = typeAssessment ? isAssessmentCompleted(typeAssessment.id) : false;
-              const isInProgress = typeAssessment ? isAssessmentInProgress(typeAssessment.id) : false;
-              const colors = assessmentColors[type.id] || assessmentColors.general;
-              
-              let statusColor = colors.color;
-              let statusText = 'Not Started';
-              let statusBg = '#f8fafc';
-              
-              if (isCompleted) {
-                statusColor = '#166534';
-                statusBg = '#dcfce7';
-                statusText = 'Completed';
-              } else if (isInProgress) {
-                statusColor = colors.color;
-                statusBg = colors.light;
-                statusText = 'In Progress';
-              }
+        {/* Welcome Section */}
+        <div style={styles.welcomeSection}>
+          <div style={styles.welcomeContent}>
+            <h2 style={styles.welcomeTitle}>
+              Welcome back, <span style={styles.welcomeName}>{userName}</span>
+            </h2>
+            <p style={styles.welcomeText}>
+              Select an assessment to begin. Your progress is automatically saved.
+            </p>
+          </div>
+          <div style={styles.progressBadge}>
+            <span style={styles.progressCount}>{completedCount}</span>
+            <span style={styles.progressTotal}>/{totalAssessments}</span>
+            <span style={styles.progressLabel}>Completed</span>
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div style={styles.mainContent}>
+          {/* Assessment Tabs - Professional Colored Tabs */}
+          <div style={styles.tabsContainer}>
+            {assessmentTypes.map(tab => {
+              const isActive = activeTab === tab.id;
+              const hasAssessment = !!getAssessmentByType(tab.id);
+              const colors = assessmentColors[tab.id] || assessmentColors.general;
               
               return (
-                <div key={type.id} style={{
-                  ...styles.progressItem,
-                  border: `1px solid ${colors.color}30`,
-                  background: statusBg
-                }}>
-                  <div style={styles.progressItemLeft}>
-                    <div style={{
-                      ...styles.progressColorDot,
-                      background: colors.gradient
-                    }} />
-                    <span style={{...styles.progressName, color: colors.color}}>{type.shortLabel}</span>
-                  </div>
-                  <span style={{
-                    ...styles.progressStatus,
-                    background: statusBg,
-                    color: statusColor
-                  }}>{statusText}</span>
-                </div>
+                <button
+                  key={tab.id}
+                  onClick={() => hasAssessment && handleTabChange(tab.id)}
+                  disabled={!hasAssessment}
+                  style={{
+                    ...styles.tabButton,
+                    background: isActive ? colors.gradient : 'white',
+                    color: isActive ? 'white' : colors.color,
+                    border: isActive ? 'none' : `1px solid ${colors.color}40`,
+                    opacity: hasAssessment ? 1 : 0.4,
+                    boxShadow: isActive ? `0 4px 12px ${colors.color}40` : 'none'
+                  }}
+                >
+                  <span style={styles.tabLabel}>{tab.shortLabel}</span>
+                </button>
               );
             })}
           </div>
-        </div>
 
-        {/* Info Note - Uniform Rules */}
-        <div style={styles.infoNote}>
-          <span style={styles.infoIcon}>ℹ️</span>
-          <span><strong>Note:</strong> All assessments have 100 questions and a 3-hour (180 minutes) time limit.</span>
-        </div>
+          {/* Assessment Details Section - Professional Card */}
+          {activeAssessment ? (
+            <div style={styles.assessmentDetailsSection}>
+              {/* Assessment Card with Professional Colors */}
+              <div style={{
+                ...styles.card,
+                border: `1px solid ${assessmentColors[activeTab]?.color}30`,
+                boxShadow: `0 8px 20px ${assessmentColors[activeTab]?.color}10`
+              }}>
+                <div style={styles.cardHeader}>
+                  <div style={{
+                    ...styles.cardIconLarge,
+                    background: assessmentColors[activeTab]?.gradient || assessmentColors.general.gradient
+                  }}>
+                    {activeTypeConfig?.icon || '📋'}
+                  </div>
+                  <div style={styles.cardInfo}>
+                    <h3 style={styles.cardTitle}>{activeAssessment.title}</h3>
+                    <div style={styles.cardMeta}>
+                      <span style={styles.metaItem}>
+                        <span style={styles.metaIcon}>⏱️</span> 180 minutes
+                      </span>
+                      <span style={styles.metaItem}>
+                        <span style={styles.metaIcon}>📋</span> 100 questions
+                      </span>
+                      <span style={styles.metaItem}>
+                        <span style={styles.metaIcon}>🎯</span> 80% passing
+                      </span>
+                    </div>
+                  </div>
+                  <div style={styles.cardStatus}>
+                    {(() => {
+                      const completed = isAssessmentCompleted(activeAssessment.id);
+                      const inProgress = isAssessmentInProgress(activeAssessment.id);
+                      const score = getAssessmentScore(activeAssessment.id);
+                      
+                      if (completed) {
+                        return (
+                          <span style={{
+                            ...styles.statusBadge,
+                            background: score >= 80 ? '#dcfce7' : '#fff3cd',
+                            color: score >= 80 ? '#166534' : '#856404',
+                            border: `1px solid ${score >= 80 ? '#86efac' : '#ffe69c'}`
+                          }}>
+                            {score >= 80 ? '✓ Passed' : '⚠️ Review'} • {score}%
+                          </span>
+                        );
+                      } else if (inProgress) {
+                        return (
+                          <span style={{
+                            ...styles.statusBadge,
+                            background: '#dbeafe',
+                            color: '#1e40af',
+                            border: '1px solid #93c5fd'
+                          }}>
+                            In Progress
+                          </span>
+                        );
+                      } else {
+                        return (
+                          <span style={{
+                            ...styles.statusBadge,
+                            background: '#f8fafc',
+                            color: assessmentColors[activeTab]?.color || '#2563eb',
+                            border: `1px solid ${assessmentColors[activeTab]?.color}40`
+                          }}>
+                            Ready to Start
+                          </span>
+                        );
+                      }
+                    })()}
+                  </div>
+                </div>
+                <button
+                  onClick={() => router.push(`/assessment/${activeAssessment.id}`)}
+                  style={{
+                    ...styles.startButton,
+                    background: assessmentColors[activeTab]?.gradient || assessmentColors.general.gradient,
+                    boxShadow: `0 4px 12px ${assessmentColors[activeTab]?.color}40`
+                  }}
+                >
+                  {isAssessmentInProgress(activeAssessment.id) ? 'Continue Assessment →' : 'Start Assessment →'}
+                </button>
+              </div>
 
-        {/* Guidelines Section - Keep as is */}
-        <div style={styles.guidelinesWrapper}>
-          <div style={styles.guidelinesBackground} />
-          <div style={styles.guidelinesContent}>
-            <div style={styles.guidelinesHeader}>
-              <span style={styles.guidelinesIcon}>📋</span>
-              <h3 style={styles.guidelinesTitle}>Assessment Guidelines</h3>
+              {/* Key Assessment Areas - Professional Card */}
+              {selectedAssessmentAreas && selectedAssessmentAreas.length > 0 && (
+                <div style={{
+                  ...styles.areasSection,
+                  borderTop: `4px solid ${assessmentColors[activeTab]?.color || '#2563eb'}`
+                }}>
+                  <h3 style={styles.areasTitle}>Key Assessment Areas</h3>
+                  <div style={styles.areasGrid}>
+                    {selectedAssessmentAreas.map((area, index) => (
+                      <div key={index} style={styles.areaItem}>
+                        <span style={{...styles.areaBullet, color: assessmentColors[activeTab]?.color || '#2563eb'}}>•</span>
+                        <span style={styles.areaText}>{area}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            
-            <div style={styles.guidelinesGrid}>
-              <div style={styles.guidelineCard}>
-                <div style={styles.guidelineIconWrapper}>
-                  <span style={styles.guidelineIcon}>⏱️</span>
-                </div>
-                <div style={styles.guidelineTextWrapper}>
-                  <h4 style={styles.guidelineTitle}>3-Hour Time Limit</h4>
-                  <p style={styles.guidelineText}>
-                    All assessments have a 3-hour (180 minutes) time limit. The timer starts when you begin.
-                  </p>
-                </div>
-              </div>
-
-              <div style={styles.guidelineCard}>
-                <div style={styles.guidelineIconWrapper}>
-                  <span style={styles.guidelineIcon}>🔄</span>
-                </div>
-                <div style={styles.guidelineTextWrapper}>
-                  <h4 style={styles.guidelineTitle}>One Attempt Only</h4>
-                  <p style={styles.guidelineText}>
-                    Each assessment can only be taken once. Ensure you're in a quiet environment before starting.
-                  </p>
-                </div>
-              </div>
-
-              <div style={styles.guidelineCard}>
-                <div style={styles.guidelineIconWrapper}>
-                  <span style={styles.guidelineIcon}>💾</span>
-                </div>
-                <div style={styles.guidelineTextWrapper}>
-                  <h4 style={styles.guidelineTitle}>Auto-Save Enabled</h4>
-                  <p style={styles.guidelineText}>
-                    Your answers are automatically saved. You can leave and return to resume where you left off.
-                  </p>
-                </div>
-              </div>
-
-              <div style={styles.guidelineCard}>
-                <div style={styles.guidelineIconWrapper}>
-                  <span style={styles.guidelineIcon}>📝</span>
-                </div>
-                <div style={styles.guidelineTextWrapper}>
-                  <h4 style={styles.guidelineTitle}>100 Questions</h4>
-                  <p style={styles.guidelineText}>
-                    Each assessment contains 100 questions. Take your time and answer carefully.
-                  </p>
-                </div>
-              </div>
+          ) : (
+            <div style={styles.emptyState}>
+              <p>No assessment available for this type.</p>
             </div>
+          )}
 
-            <div style={styles.tipCard}>
-              <span style={styles.tipIcon}>💡</span>
-              <div style={styles.tipContent}>
-                <strong>Pro Tip:</strong> Complete assessments one at a time when you're ready. Your progress is automatically saved.
+          {/* Progress Grid - Professional Colored Items */}
+          <div style={styles.progressSection}>
+            <h3 style={styles.sectionTitle}>Your Progress</h3>
+            <div style={styles.progressGrid}>
+              {assessmentTypes.map(type => {
+                const typeAssessment = getAssessmentByType(type.id);
+                const isCompleted = typeAssessment ? isAssessmentCompleted(typeAssessment.id) : false;
+                const isInProgress = typeAssessment ? isAssessmentInProgress(typeAssessment.id) : false;
+                const colors = assessmentColors[type.id] || assessmentColors.general;
+                
+                let statusColor = colors.color;
+                let statusText = 'Not Started';
+                let statusBg = 'white';
+                
+                if (isCompleted) {
+                  statusColor = '#166534';
+                  statusBg = '#dcfce7';
+                  statusText = 'Completed';
+                } else if (isInProgress) {
+                  statusColor = colors.color;
+                  statusBg = colors.light;
+                  statusText = 'In Progress';
+                }
+                
+                return (
+                  <div key={type.id} style={{
+                    ...styles.progressItem,
+                    border: `1px solid ${colors.color}30`,
+                    background: statusBg
+                  }}>
+                    <div style={styles.progressItemLeft}>
+                      <div style={{
+                        ...styles.progressColorDot,
+                        background: colors.gradient
+                      }} />
+                      <span style={{...styles.progressName, color: colors.color}}>{type.shortLabel}</span>
+                    </div>
+                    <span style={{
+                      ...styles.progressStatus,
+                      background: statusBg,
+                      color: statusColor
+                    }}>{statusText}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Info Note - Uniform Rules */}
+          <div style={styles.infoNote}>
+            <span style={styles.infoIcon}>ℹ️</span>
+            <span><strong>Note:</strong> All assessments have 100 questions and a 3-hour (180 minutes) time limit.</span>
+          </div>
+
+          {/* Guidelines Section - Keep as is */}
+          <div style={styles.guidelinesWrapper}>
+            <div style={styles.guidelinesBackground} />
+            <div style={styles.guidelinesContent}>
+              <div style={styles.guidelinesHeader}>
+                <span style={styles.guidelinesIcon}>📋</span>
+                <h3 style={styles.guidelinesTitle}>Assessment Guidelines</h3>
+              </div>
+              
+              <div style={styles.guidelinesGrid}>
+                <div style={styles.guidelineCard}>
+                  <div style={styles.guidelineIconWrapper}>
+                    <span style={styles.guidelineIcon}>⏱️</span>
+                  </div>
+                  <div style={styles.guidelineTextWrapper}>
+                    <h4 style={styles.guidelineTitle}>3-Hour Time Limit</h4>
+                    <p style={styles.guidelineText}>
+                      All assessments have a 3-hour (180 minutes) time limit. The timer starts when you begin.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={styles.guidelineCard}>
+                  <div style={styles.guidelineIconWrapper}>
+                    <span style={styles.guidelineIcon}>🔄</span>
+                  </div>
+                  <div style={styles.guidelineTextWrapper}>
+                    <h4 style={styles.guidelineTitle}>One Attempt Only</h4>
+                    <p style={styles.guidelineText}>
+                      Each assessment can only be taken once. Ensure you're in a quiet environment before starting.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={styles.guidelineCard}>
+                  <div style={styles.guidelineIconWrapper}>
+                    <span style={styles.guidelineIcon}>💾</span>
+                  </div>
+                  <div style={styles.guidelineTextWrapper}>
+                    <h4 style={styles.guidelineTitle}>Auto-Save Enabled</h4>
+                    <p style={styles.guidelineText}>
+                      Your answers are automatically saved. You can leave and return to resume where you left off.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={styles.guidelineCard}>
+                  <div style={styles.guidelineIconWrapper}>
+                    <span style={styles.guidelineIcon}>📝</span>
+                  </div>
+                  <div style={styles.guidelineTextWrapper}>
+                    <h4 style={styles.guidelineTitle}>100 Questions</h4>
+                    <p style={styles.guidelineText}>
+                      Each assessment contains 100 questions. Take your time and answer carefully.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div style={styles.tipCard}>
+                <span style={styles.tipIcon}>💡</span>
+                <div style={styles.tipContent}>
+                  <strong>Pro Tip:</strong> Complete assessments one at a time when you're ready. Your progress is automatically saved.
+                </div>
               </div>
             </div>
           </div>
@@ -638,12 +642,51 @@ export default function CandidateDashboard() {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
+        @keyframes slowZoom {
+          0% { transform: scale(1); }
+          100% { transform: scale(1.1); }
+        }
       `}</style>
-    </AppLayout>
+    </div>
   );
 }
 
 const styles = {
+  pageContainer: {
+    position: 'relative',
+    minHeight: '100vh',
+    width: '100%',
+    overflow: 'hidden'
+  },
+  pageBackground: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundImage: 'url(/images/dashboard-bg.jpg)',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    filter: 'brightness(0.7)',
+    transform: 'scale(1.1)',
+    animation: 'slowZoom 20s infinite alternate',
+    zIndex: -2
+  },
+  pageOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'linear-gradient(135deg, rgba(21,101,192,0.85) 0%, rgba(13,71,161,0.85) 100%)',
+    zIndex: -1
+  },
+  content: {
+    position: 'relative',
+    zIndex: 1,
+    minHeight: '100vh',
+    width: '100%'
+  },
   loadingContainer: {
     minHeight: '100vh',
     display: 'flex',
@@ -676,43 +719,15 @@ const styles = {
     opacity: 0.9
   },
   header: {
-    position: 'relative',
     padding: '16px 24px',
-    position: 'sticky',
-    top: 0,
-    zIndex: 100,
-    borderBottom: '1px solid #334155',
-    overflow: 'hidden'
-  },
-  headerBackground: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundImage: 'url(/images/dashboard-bg.jpg)',
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-    filter: 'brightness(0.7)',
-    transform: 'scale(1.1)',
-    animation: 'slowZoom 20s infinite alternate'
-  },
-  headerOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'linear-gradient(135deg, rgba(21,101,192,0.9) 0%, rgba(13,71,161,0.9) 100%)'
+    borderBottom: '1px solid rgba(255,255,255,0.2)'
   },
   headerContent: {
     maxWidth: '1200px',
     margin: '0 auto',
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    position: 'relative',
-    zIndex: 2
+    alignItems: 'center'
   },
   headerLeft: {
     display: 'flex',
@@ -763,37 +778,38 @@ const styles = {
     fontSize: '24px',
     fontWeight: '600',
     margin: '0 0 4px 0',
-    color: '#0f172a'
+    color: 'white'
   },
   welcomeName: {
-    color: '#2563eb'
+    color: '#FFEAA7'
   },
   welcomeText: {
     fontSize: '14px',
-    color: '#475569',
+    color: 'rgba(255,255,255,0.9)',
     margin: 0
   },
   progressBadge: {
-    background: '#f1f5f9',
+    background: 'rgba(255,255,255,0.2)',
     padding: '8px 20px',
     borderRadius: '30px',
     display: 'flex',
     alignItems: 'baseline',
     gap: '4px',
-    border: '1px solid #e2e8f0'
+    border: '1px solid rgba(255,255,255,0.3)',
+    backdropFilter: 'blur(10px)'
   },
   progressCount: {
     fontSize: '20px',
     fontWeight: '700',
-    color: '#2563eb'
+    color: 'white'
   },
   progressTotal: {
     fontSize: '14px',
-    color: '#64748b'
+    color: 'rgba(255,255,255,0.7)'
   },
   progressLabel: {
     fontSize: '13px',
-    color: '#64748b',
+    color: 'rgba(255,255,255,0.7)',
     marginLeft: '8px'
   },
   mainContent: {
@@ -814,7 +830,8 @@ const styles = {
     fontSize: '14px',
     fontWeight: '500',
     transition: 'all 0.2s',
-    fontFamily: 'inherit'
+    fontFamily: 'inherit',
+    backdropFilter: 'blur(10px)'
   },
   tabLabel: {
     textTransform: 'capitalize'
@@ -823,13 +840,14 @@ const styles = {
     marginBottom: '32px'
   },
   card: {
-    background: 'white',
+    background: 'rgba(255,255,255,0.95)',
     borderRadius: '16px',
     padding: '24px',
     marginBottom: '20px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '20px'
+    gap: '20px',
+    backdropFilter: 'blur(10px)'
   },
   cardHeader: {
     display: 'flex',
@@ -895,11 +913,12 @@ const styles = {
     minWidth: '200px'
   },
   areasSection: {
-    background: 'white',
+    background: 'rgba(255,255,255,0.95)',
     borderRadius: '16px',
     padding: '24px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    border: '1px solid #e2e8f0'
+    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+    border: '1px solid rgba(255,255,255,0.3)',
+    backdropFilter: 'blur(10px)'
   },
   areasTitle: {
     fontSize: '16px',
@@ -929,11 +948,12 @@ const styles = {
   emptyState: {
     textAlign: 'center',
     padding: '40px',
-    background: 'white',
+    background: 'rgba(255,255,255,0.95)',
     borderRadius: '12px',
     marginBottom: '30px',
-    border: '1px solid #e2e8f0',
-    color: '#64748b'
+    border: '1px solid rgba(255,255,255,0.3)',
+    color: '#64748b',
+    backdropFilter: 'blur(10px)'
   },
   progressSection: {
     marginBottom: '24px'
@@ -941,7 +961,7 @@ const styles = {
   sectionTitle: {
     fontSize: '18px',
     fontWeight: '600',
-    color: '#0f172a',
+    color: 'white',
     margin: '0 0 16px 0'
   },
   progressGrid: {
@@ -954,7 +974,8 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '12px 16px',
-    borderRadius: '10px'
+    borderRadius: '10px',
+    backdropFilter: 'blur(10px)'
   },
   progressItemLeft: {
     display: 'flex',
@@ -979,14 +1000,15 @@ const styles = {
   infoNote: {
     marginBottom: '24px',
     padding: '12px 20px',
-    background: '#e3f2fd',
+    background: 'rgba(227,242,253,0.95)',
     borderRadius: '10px',
     display: 'flex',
     alignItems: 'center',
     gap: '10px',
     color: '#1565c0',
     fontSize: '14px',
-    border: '1px solid #90caf9'
+    border: '1px solid #90caf9',
+    backdropFilter: 'blur(10px)'
   },
   infoIcon: {
     fontSize: '18px'
