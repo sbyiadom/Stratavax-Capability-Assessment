@@ -3,16 +3,6 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
-import {
-  assessmentConfigs,
-  getPersonalizedStrengthDescription,
-  getPersonalizedRecommendations,
-  generatePersonalizedProfileSummary,
-  getPersonalizedBestFit,
-  getGradeFromPercentage,
-  getClassification
-} from "../../utils/personalizedInterpretations";
-import { generateProfessionalInterpretation } from "../../utils/professionalInterpreter";
 
 export default function CandidateReport() {
   const router = useRouter();
@@ -21,25 +11,7 @@ export default function CandidateReport() {
   const [loading, setLoading] = useState(true);
   const [isSupervisor, setIsSupervisor] = useState(false);
   const [candidate, setCandidate] = useState(null);
-  const [assessments, setAssessments] = useState([]);
-  const [selectedAssessment, setSelectedAssessment] = useState(null);
-  const [assessmentType, setAssessmentType] = useState('general');
-  const [categoryScores, setCategoryScores] = useState({});
-  const [expandedSections, setExpandedSections] = useState({
-    categories: true,
-    strengths: true,
-    weaknesses: true,
-    improvements: true,
-    analysis: true
-  });
-  const [personalizedData, setPersonalizedData] = useState({
-    summary: '',
-    bestFit: { fits: [], risks: [] },
-    strengths: [],
-    weaknesses: [],
-    improvementAreas: [],
-    professionalInterpretation: null
-  });
+  const [assessmentResult, setAssessmentResult] = useState(null);
 
   // Check supervisor authentication
   useEffect(() => {
@@ -74,149 +46,34 @@ export default function CandidateReport() {
       try {
         setLoading(true);
 
-        // First, check if this user_id is a supervisor
-        const { data: supervisorData } = await supabase
-          .from('supervisors')
-          .select('*')
-          .eq('user_id', user_id)
-          .maybeSingle();
-
-        if (!supervisorData) {
-          // If not a supervisor, treat as candidate directly
-          await fetchCandidateData(user_id);
-        } else {
-          // This is a supervisor - get all candidates under this supervisor
-          const { data: notifications } = await supabase
-            .from('supervisor_notifications')
-            .select('user_id')
-            .eq('supervisor_id', user_id)
-            .order('created_at', { ascending: false });
-
-          if (notifications && notifications.length > 0) {
-            const candidateIds = [...new Set(notifications.map(n => n.user_id))];
-            if (candidateIds.length > 0) {
-              await fetchCandidateData(candidateIds[0]);
-            } else {
-              setLoading(false);
-            }
-          } else {
-            setLoading(false);
-          }
-        }
-      } catch (error) {
-        console.error("Error in fetchData:", error);
-        setLoading(false);
-      }
-    };
-    
-    // Helper function to fetch candidate data
-    const fetchCandidateData = async (candidateId) => {
-      try {
         // Get candidate info
         const { data: profileData } = await supabase
           .from('candidate_profiles')
           .select('*')
-          .eq('id', candidateId)
+          .eq('id', user_id)
           .maybeSingle();
 
-        console.log("Profile data:", profileData);
-
         setCandidate({
-          id: candidateId,
+          id: user_id,
           full_name: profileData?.full_name || profileData?.email?.split('@')[0] || 'Candidate',
           email: profileData?.email || 'Email not available'
         });
 
-        // Try to get from assessment_results first
+        // Get assessment results
         const { data: resultsData } = await supabase
           .from('assessment_results')
           .select('*')
-          .eq('user_id', candidateId)
+          .eq('user_id', user_id)
           .order('completed_at', { ascending: false });
 
+        console.log("Assessment Results:", resultsData);
+
         if (resultsData && resultsData.length > 0) {
-          // Process real results data
-          const formattedAssessments = resultsData.map(result => {
-            const type = result.assessment_type || 'general';
-            const config = assessmentConfigs[type] || assessmentConfigs.general;
-            
-            // Use actual category scores from the result
-            const scores = result.category_scores || generateSampleScores(type);
-            
-            return {
-              id: result.id,
-              assessment_id: result.assessment_id,
-              name: config.name,
-              type: type,
-              score: result.total_score || 0,
-              max_score: result.max_score || 500,
-              percentage: Math.round((result.total_score || 0) / (result.max_score || 500) * 100),
-              completed_at: result.completed_at,
-              category_scores: scores,
-              config: config
-            };
-          });
-
-          setAssessments(formattedAssessments);
-          
-          if (formattedAssessments.length > 0) {
-            const mostRecent = formattedAssessments[0];
-            setSelectedAssessment(mostRecent);
-            setAssessmentType(mostRecent.type);
-            setCategoryScores(mostRecent.category_scores || {});
-            
-            // Generate personalized data based on actual scores
-            generatePersonalizedContent(mostRecent, candidate);
-          }
-        } else {
-          // Fallback to supervisor_dashboard with sample data
-          const { data: dashboardData } = await supabase
-            .from('supervisor_dashboard')
-            .select('*')
-            .eq('user_id', candidateId)
-            .maybeSingle();
-
-          if (dashboardData && dashboardData.assessments) {
-            const completedAssessments = dashboardData.assessments.filter(a => a.status === 'completed');
-            
-            if (completedAssessments.length > 0) {
-              const type = 'general';
-              const config = assessmentConfigs[type];
-              const sampleScores = generateSampleScores(type);
-              
-              const formattedAssessments = completedAssessments.map((assessment) => {
-                const percentage = assessment.score ? Math.round((assessment.score / assessment.max_score) * 100) : 0;
-                
-                return {
-                  id: assessment.assessment_id,
-                  assessment_id: assessment.assessment_id,
-                  name: config.name,
-                  type: type,
-                  score: assessment.score || 400,
-                  max_score: assessment.max_score || 500,
-                  percentage,
-                  completed_at: assessment.completed_at,
-                  category_scores: sampleScores,
-                  config: config
-                };
-              });
-
-              setAssessments(formattedAssessments);
-              
-              if (formattedAssessments.length > 0) {
-                const mostRecent = formattedAssessments[0];
-                setSelectedAssessment(mostRecent);
-                setAssessmentType(mostRecent.type);
-                setCategoryScores(mostRecent.category_scores || {});
-                
-                // Generate personalized content
-                generatePersonalizedContent(mostRecent, candidate);
-              }
-            }
-          }
+          setAssessmentResult(resultsData[0]); // Get the most recent
         }
+
       } catch (error) {
-        console.error("Error fetching candidate data:", error);
+        console.error("Error fetching data:", error);
       } finally {
         setLoading(false);
       }
@@ -225,100 +82,13 @@ export default function CandidateReport() {
     fetchData();
   }, [isSupervisor, user_id]);
 
-  // Generate sample scores for demo
-  const generateSampleScores = (type) => {
-    const config = assessmentConfigs[type] || assessmentConfigs.general;
-    const scores = {};
-    
-    config.categories.forEach(category => {
-      const maxScore = config.maxScores[category] || 50;
-      const randomFactor = Math.random() * 0.3 + 0.4;
-      const score = Math.round(maxScore * randomFactor);
-      const percentage = Math.round((score / maxScore) * 100);
-      
-      scores[category] = {
-        score,
-        maxPossible: maxScore,
-        percentage
-      };
-    });
-    
-    return scores;
-  };
-
-  // Generate personalized content based on actual scores
-  const generatePersonalizedContent = (assessment, candidate) => {
-    if (!assessment || !candidate) return;
-    
-    const totalScore = assessment.score;
-    const maxScore = assessment.max_score;
-    const type = assessment.type;
-    
-    const summary = generatePersonalizedProfileSummary(
-      candidate.full_name,
-      type,
-      totalScore,
-      maxScore,
-      assessment.category_scores
-    );
-    
-    const bestFit = getPersonalizedBestFit(assessment.category_scores);
-    
-    const strengths = [];
-    const weaknesses = [];
-    const improvementAreas = [];
-    
-    Object.entries(assessment.category_scores).forEach(([category, data]) => {
-      const item = {
-        category,
-        score: data.score,
-        maxPossible: data.maxPossible,
-        percentage: data.percentage,
-        grade: getGradeFromPercentage(data.percentage),
-        description: getPersonalizedStrengthDescription(category, data.score, data.maxPossible),
-        recommendations: getPersonalizedRecommendations(category, data.score, data.maxPossible, assessment.category_scores)
-      };
-      
-      if (data.percentage >= 70) {
-        strengths.push(item);
-      } else if (data.percentage >= 60) {
-        improvementAreas.push(item);
-      } else {
-        weaknesses.push(item);
-      }
-    });
-    
-    // Generate professional narrative interpretation
-    const professionalInterpretation = generateProfessionalInterpretation(
-      candidate.full_name,
-      assessment.category_scores
-    );
-    
-    console.log("Professional Interpretation Generated");
-    
-    setPersonalizedData({
-      summary,
-      bestFit,
-      strengths,
-      weaknesses,
-      improvementAreas,
-      professionalInterpretation
-    });
-  };
-
-  const handleAssessmentChange = (e) => {
-    const selected = assessments.find(a => a.id === e.target.value);
-    setSelectedAssessment(selected);
-    setAssessmentType(selected.type);
-    setCategoryScores(selected.category_scores || {});
-    generatePersonalizedContent(selected, candidate);
-  };
-
-  const toggleSection = (section) => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [section]: !prev[section]
-    }));
+  // Helper function to get grade info
+  const getGradeInfo = (percentage) => {
+    if (percentage >= 90) return { grade: 'A', color: '#2E7D32', bg: '#E8F5E9', text: 'Excellent' };
+    if (percentage >= 80) return { grade: 'B', color: '#2E7D32', bg: '#E8F5E9', text: 'Very Good' };
+    if (percentage >= 70) return { grade: 'C', color: '#1565C0', bg: '#E3F2FD', text: 'Good' };
+    if (percentage >= 60) return { grade: 'D', color: '#F57C00', bg: '#FFF3E0', text: 'Fair' };
+    return { grade: 'F', color: '#C62828', bg: '#FFEBEE', text: 'Needs Improvement' };
   };
 
   if (!isSupervisor || loading) {
@@ -343,7 +113,7 @@ export default function CandidateReport() {
     );
   }
 
-  if (!assessments || assessments.length === 0) {
+  if (!assessmentResult) {
     return (
       <div style={styles.emptyState}>
         <div style={styles.emptyIcon}>📊</div>
@@ -356,10 +126,8 @@ export default function CandidateReport() {
     );
   }
 
-  const current = selectedAssessment || assessments[0];
-  const config = assessmentConfigs[current.type] || assessmentConfigs.general;
-  const overallGrade = getGradeFromPercentage(current.percentage);
-  const classification = getClassification(current.score, current.max_score, current.type);
+  const totalPercentage = Math.round((assessmentResult.total_score / assessmentResult.max_score) * 100);
+  const gradeInfo = getGradeInfo(totalPercentage);
 
   return (
     <AppLayout background="/images/preassessmentbg.jpg">
@@ -369,370 +137,207 @@ export default function CandidateReport() {
           <Link href="/supervisor" legacyBehavior>
             <a style={styles.backButton}>← Dashboard</a>
           </Link>
-          <button onClick={() => router.push("/supervisor")} style={styles.logoutButton}>
-            Back
-          </button>
         </div>
 
-        {/* Candidate Info */}
-        <div style={styles.candidateHeader}>
-          <div>
-            <h1 style={styles.candidateName}>{candidate.full_name}</h1>
-            <p style={styles.candidateEmail}>{candidate.email}</p>
-          </div>
-          {assessments.length > 1 && (
-            <select 
-              value={current.id} 
-              onChange={handleAssessmentChange}
-              style={styles.assessmentSelect}
-            >
-              {assessments.map(a => (
-                <option key={a.id} value={a.id}>
-                  {a.name} - {new Date(a.completed_at).toLocaleDateString()} ({a.score}/{a.max_score})
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        {/* Assessment Summary Card */}
+        {/* CARD 1: Candidate Summary */}
         <div style={styles.summaryCard}>
           <div style={styles.summaryHeader}>
-            <span style={styles.assessmentIcon}>{config.icon}</span>
             <div>
-              <h2 style={styles.assessmentName}>{config.name}</h2>
-              <p style={styles.assessmentDescription}>{config.description}</p>
+              <h1 style={styles.candidateName}>{candidate.full_name}</h1>
+              <p style={styles.candidateEmail}>{candidate.email}</p>
+            </div>
+            <div style={styles.completedDate}>
+              Completed: {new Date(assessmentResult.completed_at).toLocaleDateString()}
             </div>
           </div>
           
           <div style={styles.scoreGrid}>
             <div style={styles.scoreItem}>
               <span style={styles.scoreLabel}>Total Score</span>
-              <span style={styles.scoreValue}>{current.score}/{current.max_score}</span>
+              <span style={styles.scoreValue}>{assessmentResult.total_score}/{assessmentResult.max_score}</span>
             </div>
             <div style={styles.scoreItem}>
               <span style={styles.scoreLabel}>Percentage</span>
-              <span style={{...styles.scoreValue, color: overallGrade.color}}>{current.percentage}%</span>
+              <span style={{...styles.scoreValue, color: gradeInfo.color}}>{totalPercentage}%</span>
             </div>
             <div style={styles.scoreItem}>
               <span style={styles.scoreLabel}>Grade</span>
               <span style={{
                 ...styles.gradeBadge,
-                background: overallGrade.bg,
-                color: overallGrade.color
-              }}>{overallGrade.grade}</span>
+                background: gradeInfo.bg,
+                color: gradeInfo.color
+              }}>{gradeInfo.grade}</span>
             </div>
             <div style={styles.scoreItem}>
               <span style={styles.scoreLabel}>Classification</span>
               <span style={{
                 ...styles.classificationBadge,
-                background: `${classification.color}15`,
-                color: classification.color
-              }}>{classification.label}</span>
+                background: gradeInfo.bg,
+                color: gradeInfo.color
+              }}>{gradeInfo.text}</span>
             </div>
-          </div>
-          
-          <div style={styles.completedDate}>
-            Completed: {new Date(current.completed_at).toLocaleString()}
           </div>
         </div>
 
-        {/* Performance by Category Table */}
-        {Object.keys(categoryScores).length > 0 && (
+        {/* CARD 2: Category Breakdown */}
+        {assessmentResult.category_scores && (
           <div style={styles.card}>
-            <div 
-              style={styles.cardHeader}
-              onClick={() => toggleSection('categories')}
-            >
+            <div style={styles.cardHeader}>
               <span style={styles.cardIcon}>📊</span>
               <h3 style={styles.cardTitle}>Performance by Category</h3>
-              <span style={styles.expandIcon}>
-                {expandedSections.categories ? '▼' : '▶'}
-              </span>
             </div>
-            {expandedSections.categories && (
-              <div style={styles.cardContent}>
-                <div style={styles.tableWrapper}>
-                  <table style={styles.table}>
-                    <thead>
-                      <tr style={styles.tableHeadRow}>
-                        <th style={styles.tableHead}>Category</th>
-                        <th style={styles.tableHead}>Score</th>
-                        <th style={styles.tableHead}>Percentage</th>
-                        <th style={styles.tableHead}>Grade</th>
-                        <th style={styles.tableHead}>Assessment</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(categoryScores).map(([category, data]) => {
-                        const grade = getGradeFromPercentage(data.percentage);
-                        
-                        return (
-                          <tr key={category} style={styles.tableRow}>
-                            <td style={styles.tableCell}>
-                              <strong style={{ color: grade.color }}>{category}</strong>
-                            </td>
-                            <td style={styles.tableCell}>
-                              <span style={{ fontWeight: 600, color: grade.color }}>
-                                {data.score}/{data.maxPossible}
-                              </span>
-                            </td>
-                            <td style={styles.tableCell}>
-                              <div style={styles.progressContainer}>
-                                <div style={styles.progressBar}>
-                                  <div style={{
-                                    width: `${data.percentage}%`,
-                                    height: '100%',
-                                    background: grade.color,
-                                    borderRadius: '4px'
-                                  }} />
-                                </div>
-                                <span style={{ fontWeight: 600, color: grade.color }}>
-                                  {data.percentage}%
-                                </span>
-                              </div>
-                            </td>
-                            <td style={styles.tableCell}>
-                              <span style={{
-                                ...styles.gradeBadgeSmall,
-                                background: grade.bg,
-                                color: grade.color
-                              }}>
-                                {grade.grade}
-                              </span>
-                            </td>
-                            <td style={styles.tableCell}>
-                              <span style={{
-                                ...styles.assessmentBadge,
-                                background: `${grade.color}15`,
-                                color: grade.color
-                              }}>
-                                {grade.description}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Strengths Card */}
-        {personalizedData.strengths.length > 0 && (
-          <div style={styles.card}>
-            <div 
-              style={styles.cardHeader}
-              onClick={() => toggleSection('strengths')}
-            >
-              <span style={styles.cardIcon}>💪</span>
-              <h3 style={styles.cardTitle}>Strengths to Leverage</h3>
-              <span style={styles.expandIcon}>
-                {expandedSections.strengths ? '▼' : '▶'}
-              </span>
-            </div>
-            {expandedSections.strengths && (
-              <div style={styles.cardContent}>
-                <div style={styles.strengthGrid}>
-                  {personalizedData.strengths.map((item, index) => (
-                    <div key={index} style={styles.strengthCard}>
-                      <div style={styles.strengthHeader}>
-                        <span style={styles.strengthCategory}>{item.category}</span>
-                        <span style={{...styles.strengthScore, color: item.grade.color}}>
-                          {item.percentage}% ({item.grade.grade})
-                        </span>
-                      </div>
-                      <p style={styles.strengthDescription}>{item.description}</p>
-                      <div style={styles.strengthAction}>
-                        <span style={styles.strengthActionText}>✅ How to leverage:</span>
-                        <ul style={styles.strengthList}>
-                          <li style={styles.strengthListItem}>Assign tasks that utilize this strength</li>
-                          <li style={styles.strengthListItem}>Consider for mentoring others in this area</li>
-                          <li style={styles.strengthListItem}>Include in high-visibility projects</li>
-                        </ul>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Areas for Improvement Card */}
-        {personalizedData.improvementAreas.length > 0 && (
-          <div style={styles.card}>
-            <div 
-              style={styles.cardHeader}
-              onClick={() => toggleSection('improvements')}
-            >
-              <span style={styles.cardIcon}>📈</span>
-              <h3 style={styles.cardTitle}>Areas for Improvement</h3>
-              <span style={styles.expandIcon}>
-                {expandedSections.improvements ? '▼' : '▶'}
-              </span>
-            </div>
-            {expandedSections.improvements && (
-              <div style={styles.cardContent}>
-                <div style={styles.improvementGrid}>
-                  {personalizedData.improvementAreas.map((item, index) => (
-                    <div key={index} style={styles.improvementCard}>
-                      <div style={styles.improvementHeader}>
-                        <span style={styles.improvementCategory}>{item.category}</span>
-                        <span style={{...styles.improvementScore, color: item.grade.color}}>
-                          {item.percentage}% ({item.grade.grade})
-                        </span>
-                      </div>
-                      <p style={styles.improvementDescription}>{item.description}</p>
-                      <div style={styles.improvementActions}>
-                        <span style={styles.improvementActionTitle}>Recommended actions:</span>
-                        <ul style={styles.improvementList}>
-                          {item.recommendations.slice(0, 3).map((rec, i) => (
-                            <li key={i} style={styles.improvementListItem}>{rec}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Critical Development Areas Card */}
-        {personalizedData.weaknesses.length > 0 && (
-          <div style={styles.card}>
-            <div 
-              style={styles.cardHeader}
-              onClick={() => toggleSection('weaknesses')}
-            >
-              <span style={styles.cardIcon}>⚠️</span>
-              <h3 style={styles.cardTitle}>Critical Development Areas</h3>
-              <span style={styles.expandIcon}>
-                {expandedSections.weaknesses ? '▼' : '▶'}
-              </span>
-            </div>
-            {expandedSections.weaknesses && (
-              <div style={styles.cardContent}>
-                <div style={styles.weaknessGrid}>
-                  {personalizedData.weaknesses.map((item, index) => (
-                    <div key={index} style={styles.weaknessCard}>
-                      <div style={styles.weaknessHeader}>
-                        <span style={styles.weaknessCategory}>{item.category}</span>
-                        <span style={{...styles.weaknessScore, color: item.grade.color}}>
-                          {item.percentage}% ({item.grade.grade})
-                        </span>
-                      </div>
-                      <p style={styles.weaknessDescription}>{item.description}</p>
-                      <div style={styles.weaknessActions}>
-                        <span style={styles.weaknessActionTitle}>🔴 Critical recommendations:</span>
-                        <ul style={styles.weaknessList}>
-                          {item.recommendations.map((rec, i) => (
-                            <li key={i} style={styles.weaknessListItem}>{rec}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Real-Time Analysis Section */}
-        <div style={styles.card}>
-          <div 
-            style={styles.cardHeader}
-            onClick={() => toggleSection('analysis')}
-          >
-            <span style={styles.cardIcon}>🔍</span>
-            <h3 style={styles.cardTitle}>Real-Time Analysis</h3>
-            <span style={styles.expandIcon}>
-              {expandedSections.analysis ? '▼' : '▶'}
-            </span>
-          </div>
-          {expandedSections.analysis && personalizedData.professionalInterpretation && (
             <div style={styles.cardContent}>
-              {/* Overall Summary */}
-              <div style={styles.analysisSection}>
-                <div style={styles.analysisText}>{personalizedData.professionalInterpretation.overallSummary}</div>
+              <div style={styles.tableWrapper}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr style={styles.tableHeadRow}>
+                      <th style={styles.tableHead}>Category</th>
+                      <th style={styles.tableHead}>Score</th>
+                      <th style={styles.tableHead}>Percentage</th>
+                      <th style={styles.tableHead}>Grade</th>
+                      <th style={styles.tableHead}>Assessment</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(assessmentResult.category_scores).map(([category, data]) => {
+                      const categoryGrade = getGradeInfo(data.percentage);
+                      const percentage = data.percentage;
+                      
+                      // Determine background color based on percentage
+                      let rowColor = '#ffffff';
+                      if (percentage >= 80) rowColor = '#f0fff4';
+                      else if (percentage >= 70) rowColor = '#e8f5e9';
+                      else if (percentage >= 60) rowColor = '#fff8e1';
+                      else rowColor = '#ffebee';
+                      
+                      return (
+                        <tr key={category} style={{ ...styles.tableRow, backgroundColor: rowColor }}>
+                          <td style={styles.tableCell}>
+                            <strong>{category}</strong>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <span style={{ fontWeight: 600 }}>
+                              {data.score}/{data.maxPossible}
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <div style={styles.progressContainer}>
+                              <div style={styles.progressBar}>
+                                <div style={{
+                                  width: `${percentage}%`,
+                                  height: '100%',
+                                  background: categoryGrade.color,
+                                  borderRadius: '4px'
+                                }} />
+                              </div>
+                              <span style={{ fontWeight: 600, color: categoryGrade.color }}>
+                                {percentage}%
+                              </span>
+                            </div>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <span style={{
+                              ...styles.gradeBadgeSmall,
+                              background: categoryGrade.bg,
+                              color: categoryGrade.color
+                            }}>
+                              {categoryGrade.grade}
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <span style={{
+                              ...styles.assessmentBadge,
+                              background: categoryGrade.bg,
+                              color: categoryGrade.color
+                            }}>
+                              {categoryGrade.text}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-
-              {/* Category Breakdown */}
-              <div style={styles.analysisSection}>
-                <h4 style={styles.analysisTitle}>📊 Category Breakdown & What It Means</h4>
-                
-                {/* Strong Areas */}
-                {personalizedData.professionalInterpretation.categoryBreakdown.strong.length > 0 && (
-                  <div style={styles.categoryGroup}>
-                    <h5 style={styles.categoryGroupTitle}>🟢 Strong Areas</h5>
-                    {personalizedData.professionalInterpretation.categoryBreakdown.strong.map((narrative, index) => (
-                      <div key={index} style={styles.categoryAnalysis}>
-                        <div style={styles.categoryAnalysisText}>{narrative}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Moderate Areas */}
-                {personalizedData.professionalInterpretation.categoryBreakdown.moderate.length > 0 && (
-                  <div style={styles.categoryGroup}>
-                    <h5 style={styles.categoryGroupTitle}>🟡 Moderate / Basic Competency Areas</h5>
-                    {personalizedData.professionalInterpretation.categoryBreakdown.moderate.map((narrative, index) => (
-                      <div key={index} style={styles.categoryAnalysis}>
-                        <div style={styles.categoryAnalysisText}>{narrative}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Development Concerns */}
-                {personalizedData.professionalInterpretation.categoryBreakdown.concerns.length > 0 && (
-                  <div style={styles.categoryGroup}>
-                    <h5 style={styles.categoryGroupTitle}>🔴 Development Concerns</h5>
-                    {personalizedData.professionalInterpretation.categoryBreakdown.concerns.map((narrative, index) => (
-                      <div key={index} style={styles.categoryAnalysis}>
-                        <div style={styles.categoryAnalysisText}>{narrative}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Profile Suggestions */}
-              <div style={styles.analysisSection}>
-                <div style={styles.analysisText}>{personalizedData.professionalInterpretation.profileSuggestion}</div>
-              </div>
-
-              {/* Leadership Evaluation */}
-              <div style={styles.analysisSection}>
-                <div style={styles.analysisText}>{personalizedData.professionalInterpretation.leadershipEval}</div>
-              </div>
-
-              {/* Overall Grade */}
-              <div style={styles.analysisSection}>
-                <div style={styles.analysisText}>{personalizedData.professionalInterpretation.overallGrade}</div>
-              </div>
-
-              {/* Development Priorities */}
-              {personalizedData.professionalInterpretation.developmentPriorities && (
-                <div style={styles.analysisSection}>
-                  <div style={styles.analysisText}>{personalizedData.professionalInterpretation.developmentPriorities}</div>
-                </div>
-              )}
             </div>
-          )}
+          </div>
+        )}
+
+        {/* CARD 3: Detailed Analysis */}
+        <div style={styles.card}>
+          <div style={styles.cardHeader}>
+            <span style={styles.cardIcon}>🔍</span>
+            <h3 style={styles.cardTitle}>Detailed Analysis</h3>
+          </div>
+          <div style={styles.cardContent}>
+            
+            {/* Executive Summary */}
+            {assessmentResult.interpretations?.executiveSummary && (
+              <div style={styles.analysisSection}>
+                <h4 style={styles.analysisTitle}>📋 Executive Summary</h4>
+                <p style={styles.analysisText}>{assessmentResult.interpretations.executiveSummary}</p>
+              </div>
+            )}
+
+            {/* Strengths */}
+            {assessmentResult.strengths && assessmentResult.strengths.length > 0 && (
+              <div style={styles.analysisSection}>
+                <h4 style={styles.analysisTitle}>💪 Strengths</h4>
+                <div style={styles.strengthList}>
+                  {assessmentResult.strengths.map((strength, index) => (
+                    <div key={index} style={styles.strengthItem}>
+                      <span style={styles.strengthBullet}>✅</span>
+                      <span>{strength}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Areas for Improvement */}
+            {assessmentResult.weaknesses && assessmentResult.weaknesses.length > 0 && (
+              <div style={styles.analysisSection}>
+                <h4 style={styles.analysisTitle}>📈 Areas for Improvement</h4>
+                <div style={styles.weaknessList}>
+                  {assessmentResult.weaknesses.map((weakness, index) => (
+                    <div key={index} style={styles.weaknessItem}>
+                      <span style={styles.weaknessBullet}>📌</span>
+                      <span>{weakness}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Recommendations */}
+            {assessmentResult.recommendations && assessmentResult.recommendations.length > 0 && (
+              <div style={styles.analysisSection}>
+                <h4 style={styles.analysisTitle}>🎯 Recommendations</h4>
+                <div style={styles.recommendationsList}>
+                  {assessmentResult.recommendations.map((rec, index) => (
+                    <div key={index} style={styles.recommendationItem}>
+                      <span style={styles.recommendationBullet}>•</span>
+                      <span>{rec}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Overall Profile */}
+            {assessmentResult.interpretations?.overallProfile && (
+              <div style={styles.analysisSection}>
+                <h4 style={styles.analysisTitle}>📌 Overall Profile</h4>
+                <p style={styles.analysisText}>{assessmentResult.interpretations.overallProfile}</p>
+              </div>
+            )}
+
+          </div>
         </div>
 
         {/* Footer */}
         <div style={styles.footer}>
           <p>Report generated on {new Date().toLocaleDateString()} • Confidential</p>
-          <p style={styles.reportId}>Report ID: {Math.random().toString(36).substring(2, 15)}</p>
         </div>
       </div>
 
@@ -794,10 +399,13 @@ const styles = {
       boxShadow: '0 5px 15px rgba(21, 101, 192, 0.3)'
     }
   },
+  container: {
+    width: '90vw',
+    maxWidth: '1200px',
+    margin: '0 auto',
+    padding: '30px 20px'
+  },
   header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: '30px'
   },
   backButton: {
@@ -814,56 +422,6 @@ const styles = {
       color: 'white'
     }
   },
-  logoutButton: {
-    background: '#d32f2f',
-    color: 'white',
-    border: 'none',
-    padding: '8px 20px',
-    borderRadius: '20px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 600,
-    transition: 'all 0.2s',
-    ':hover': {
-      background: '#b71c1c'
-    }
-  },
-  candidateHeader: {
-    background: 'white',
-    padding: '20px',
-    borderRadius: '12px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    marginBottom: '20px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: '20px'
-  },
-  candidateName: {
-    margin: '0 0 5px 0',
-    fontSize: '28px',
-    fontWeight: 600,
-    color: '#1565c0'
-  },
-  candidateEmail: {
-    margin: 0,
-    color: '#666',
-    fontSize: '14px'
-  },
-  assessmentSelect: {
-    padding: '10px 16px',
-    border: '2px solid #e0e0e0',
-    borderRadius: '30px',
-    fontSize: '14px',
-    minWidth: '280px',
-    background: 'white',
-    cursor: 'pointer',
-    outline: 'none',
-    ':focus': {
-      borderColor: '#1565c0'
-    }
-  },
   summaryCard: {
     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     padding: '25px',
@@ -874,28 +432,30 @@ const styles = {
   },
   summaryHeader: {
     display: 'flex',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: '15px',
-    marginBottom: '20px'
+    marginBottom: '20px',
+    flexWrap: 'wrap',
+    gap: '15px'
   },
-  assessmentIcon: {
-    fontSize: '40px'
-  },
-  assessmentName: {
+  candidateName: {
     margin: '0 0 5px 0',
-    fontSize: '24px',
+    fontSize: '28px',
     fontWeight: 600
   },
-  assessmentDescription: {
+  candidateEmail: {
     margin: 0,
+    fontSize: '14px',
+    opacity: 0.9
+  },
+  completedDate: {
     fontSize: '14px',
     opacity: 0.9
   },
   scoreGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-    gap: '15px',
-    marginBottom: '15px'
+    gap: '15px'
   },
   scoreItem: {
     background: 'rgba(255,255,255,0.1)',
@@ -929,11 +489,6 @@ const styles = {
     fontWeight: 600,
     fontSize: '14px'
   },
-  completedDate: {
-    fontSize: '13px',
-    opacity: 0.8,
-    textAlign: 'right'
-  },
   card: {
     background: 'white',
     borderRadius: '12px',
@@ -946,12 +501,7 @@ const styles = {
     borderBottom: '1px solid #f0f0f0',
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    cursor: 'pointer',
-    transition: 'background 0.2s',
-    ':hover': {
-      background: '#f8f9fa'
-    }
+    gap: '12px'
   },
   cardIcon: {
     fontSize: '24px'
@@ -960,12 +510,7 @@ const styles = {
     margin: 0,
     fontSize: '18px',
     fontWeight: 600,
-    color: '#333',
-    flex: 1
-  },
-  expandIcon: {
-    fontSize: '14px',
-    color: '#1565c0'
+    color: '#333'
   },
   cardContent: {
     padding: '20px'
@@ -1021,165 +566,6 @@ const styles = {
     fontSize: '11px',
     fontWeight: 500
   },
-  strengthGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-    gap: '15px'
-  },
-  strengthCard: {
-    background: '#f0fff4',
-    padding: '15px',
-    borderRadius: '8px',
-    border: '1px solid #c8e6c9'
-  },
-  strengthHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '10px'
-  },
-  strengthCategory: {
-    fontSize: '15px',
-    fontWeight: 600,
-    color: '#2E7D32'
-  },
-  strengthScore: {
-    fontSize: '14px',
-    fontWeight: 600
-  },
-  strengthDescription: {
-    fontSize: '13px',
-    color: '#2E7D32',
-    lineHeight: '1.5',
-    margin: '0 0 10px 0'
-  },
-  strengthAction: {
-    background: 'white',
-    padding: '10px',
-    borderRadius: '6px'
-  },
-  strengthActionText: {
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#2E7D32',
-    display: 'block',
-    marginBottom: '8px'
-  },
-  strengthList: {
-    margin: 0,
-    padding: '0 0 0 15px'
-  },
-  strengthListItem: {
-    fontSize: '12px',
-    color: '#555',
-    marginBottom: '4px'
-  },
-  improvementGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-    gap: '15px'
-  },
-  improvementCard: {
-    background: '#fff8e1',
-    padding: '15px',
-    borderRadius: '8px',
-    border: '1px solid #ffe0b2'
-  },
-  improvementHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '10px'
-  },
-  improvementCategory: {
-    fontSize: '15px',
-    fontWeight: 600,
-    color: '#F57C00'
-  },
-  improvementScore: {
-    fontSize: '14px',
-    fontWeight: 600
-  },
-  improvementDescription: {
-    fontSize: '13px',
-    color: '#E65100',
-    lineHeight: '1.5',
-    margin: '0 0 10px 0'
-  },
-  improvementActions: {
-    background: 'white',
-    padding: '10px',
-    borderRadius: '6px'
-  },
-  improvementActionTitle: {
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#F57C00',
-    display: 'block',
-    marginBottom: '8px'
-  },
-  improvementList: {
-    margin: 0,
-    padding: '0 0 0 15px'
-  },
-  improvementListItem: {
-    fontSize: '12px',
-    color: '#666',
-    marginBottom: '5px'
-  },
-  weaknessGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-    gap: '15px'
-  },
-  weaknessCard: {
-    background: '#ffebee',
-    padding: '15px',
-    borderRadius: '8px',
-    border: '1px solid #ffcdd2'
-  },
-  weaknessHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '10px'
-  },
-  weaknessCategory: {
-    fontSize: '15px',
-    fontWeight: 600,
-    color: '#C62828'
-  },
-  weaknessScore: {
-    fontSize: '14px',
-    fontWeight: 600
-  },
-  weaknessDescription: {
-    fontSize: '13px',
-    color: '#B71C1C',
-    lineHeight: '1.5',
-    margin: '0 0 10px 0'
-  },
-  weaknessActions: {
-    background: 'white',
-    padding: '10px',
-    borderRadius: '6px'
-  },
-  weaknessActionTitle: {
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#C62828',
-    display: 'block',
-    marginBottom: '8px'
-  },
-  weaknessList: {
-    margin: 0,
-    padding: '0 0 0 15px'
-  },
-  weaknessListItem: {
-    fontSize: '12px',
-    color: '#666',
-    marginBottom: '5px'
-  },
   analysisSection: {
     marginBottom: '30px'
   },
@@ -1195,89 +581,60 @@ const styles = {
     fontSize: '15px',
     color: '#555',
     lineHeight: '1.8',
-    margin: 0,
-    whiteSpace: 'pre-line'
+    margin: 0
   },
-  categoryGroup: {
-    marginBottom: '25px'
-  },
-  categoryGroupTitle: {
-    fontSize: '15px',
-    fontWeight: 600,
-    color: '#333',
-    margin: '0 0 12px 0'
-  },
-  categoryAnalysis: {
-    background: '#f8f9fa',
-    padding: '15px',
-    borderRadius: '8px',
-    marginBottom: '10px',
-    border: '1px solid #e0e0e0'
-  },
-  categoryAnalysisText: {
-    fontSize: '13px',
-    color: '#555',
-    lineHeight: '1.6',
-    margin: 0,
-    whiteSpace: 'pre-line'
-  },
-  profileInsights: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '20px'
-  },
-  insightColumn: {
-    background: '#f8f9fa',
-    padding: '15px',
-    borderRadius: '8px'
-  },
-  insightTitle: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#333',
-    margin: '0 0 10px 0'
-  },
-  insightList: {
-    margin: 0,
-    padding: 0,
-    listStyle: 'none'
-  },
-  insightItem: {
-    padding: '6px 0',
-    fontSize: '13px',
-    color: '#555',
-    borderBottom: '1px solid #f0f0f0'
-  },
-  priorityList: {
+  strengthList: {
     display: 'flex',
     flexDirection: 'column',
     gap: '10px'
   },
-  priorityItem: {
+  strengthItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '10px',
+    background: '#f0fff4',
+    borderRadius: '8px',
+    border: '1px solid #c8e6c9'
+  },
+  strengthBullet: {
+    fontSize: '16px'
+  },
+  weaknessList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px'
+  },
+  weaknessItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '10px',
+    background: '#fff8e1',
+    borderRadius: '8px',
+    border: '1px solid #ffe0b2'
+  },
+  weaknessBullet: {
+    fontSize: '16px'
+  },
+  recommendationsList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px'
+  },
+  recommendationItem: {
     display: 'flex',
     alignItems: 'flex-start',
     gap: '10px',
-    padding: '12px',
-    background: '#f8f9fa',
-    borderRadius: '6px',
-    border: '1px solid #e0e0e0'
+    padding: '10px',
+    background: '#e3f2fd',
+    borderRadius: '8px',
+    border: '1px solid #bbdefb'
   },
-  priorityRank: {
-    fontSize: '13px',
-    fontWeight: 600,
+  recommendationBullet: {
+    fontSize: '16px',
     color: '#1565c0',
-    minWidth: '70px'
-  },
-  priorityCategory: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#333',
-    minWidth: '150px'
-  },
-  priorityAction: {
-    fontSize: '13px',
-    color: '#555',
-    flex: 1
+    fontWeight: 'bold'
   },
   footer: {
     marginTop: '40px',
@@ -1286,10 +643,5 @@ const styles = {
     textAlign: 'center',
     color: '#999',
     fontSize: '12px'
-  },
-  reportId: {
-    fontSize: '10px',
-    marginTop: '5px',
-    color: '#ccc'
   }
 };
