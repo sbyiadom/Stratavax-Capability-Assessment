@@ -6,7 +6,17 @@ import { supabase } from "../../supabase/client";
 import { generateDetailedInterpretation } from "../../utils/detailedInterpreter";
 import { getClassification, getGradeInfo, getHiringRecommendation } from "../../utils/reportGenerator";
 import { assessmentTypes, getAssessmentType } from "../../utils/assessmentConfigs";
-import { analyzeResponses } from "../../utils/responseAnalyzer";
+import { analyzeResponses, getCategorySpecificRecommendations } from "../../utils/responseAnalyzer";
+import {
+  interpretLeadership,
+  interpretCognitive,
+  interpretCommunication,
+  interpretEthics,
+  interpretTechnical,
+  interpretEmotional,
+  interpretPerformance,
+  interpretCultural
+} from "../../utils/categoryInterpreter";
 
 export default function CandidateReport() {
   const router = useRouter();
@@ -52,6 +62,7 @@ export default function CandidateReport() {
       try {
         setLoading(true);
         
+        // Get candidate info
         const { data: profileData } = await supabase
           .from('candidate_profiles')
           .select('*')
@@ -64,6 +75,7 @@ export default function CandidateReport() {
           email: profileData?.email || 'Email not available'
         });
 
+        // Get assessment results
         const { data: resultsData } = await supabase
           .from('assessment_results')
           .select('*')
@@ -78,30 +90,73 @@ export default function CandidateReport() {
           const config = getAssessmentType(assessmentTypeId);
           setAssessmentConfig(config);
 
+          // Fetch responses with questions and answers
           const { data: responsesData } = await supabase
             .from('responses')
-            .select('*')
+            .select(`
+              *,
+              unique_questions!inner (
+                id,
+                section,
+                subsection,
+                question_text
+              ),
+              unique_answers!inner (
+                id,
+                answer_text,
+                score
+              )
+            `)
             .eq('user_id', user_id)
             .eq('assessment_id', result.assessment_id);
 
-          const questionIds = responsesData?.map(r => r.question_id) || [];
-          const answerIds = responsesData?.map(r => r.answer_id) || [];
+          // Process responses into a format for analysis
+          const processedResponses = responsesData?.map(r => ({
+            question_id: r.question_id,
+            answer_id: r.answer_id,
+            category: r.unique_questions?.section || 'General',
+            question_text: r.unique_questions?.question_text,
+            answer_text: r.unique_answers?.answer_text,
+            score: r.unique_answers?.score
+          })) || [];
 
-          const { data: questionsData } = await supabase
-            .from('unique_questions')
-            .select('*')
-            .in('id', questionIds);
+          // Analyze responses to get insights
+          const responseInsights = {};
+          
+          processedResponses.forEach(r => {
+            if (!responseInsights[r.category]) {
+              responseInsights[r.category] = {
+                insights: [],
+                scores: [],
+                questionCount: 0,
+                highScoreCount: 0,
+                lowScoreCount: 0,
+                questionDetails: []
+              };
+            }
+            
+            const cat = responseInsights[r.category];
+            cat.insights.push(generateInsight(r.category, r.question_text, r.answer_text, r.score));
+            cat.scores.push(r.score);
+            cat.questionCount++;
+            cat.questionDetails.push({
+              question: r.question_text.substring(0, 60) + '...',
+              answer: r.answer_text,
+              score: r.score
+            });
+            
+            if (r.score >= 4) cat.highScoreCount++;
+            if (r.score <= 2) cat.lowScoreCount++;
+          });
 
-          const { data: answersData } = await supabase
-            .from('unique_answers')
-            .select('*')
-            .in('id', answerIds);
+          // Calculate percentages for each category
+          Object.keys(responseInsights).forEach(cat => {
+            const data = responseInsights[cat];
+            const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+            data.percentage = Math.round((avgScore / 5) * 100);
+          });
 
-          const responseInsights = analyzeResponses(
-            responsesData || [], 
-            questionsData || [], 
-            answersData || []
-          );
+          console.log("Response Insights:", responseInsights);
           
           const detailedInterpretation = generateDetailedInterpretation(
             profileData?.full_name || 'Candidate',
@@ -144,6 +199,66 @@ export default function CandidateReport() {
       window.print();
       setShowPrintView(false);
     }, 100);
+  };
+
+  const generateInsight = (category, questionText, answerText, score) => {
+    const questionShort = questionText.length > 60 
+      ? questionText.substring(0, 60) + '...' 
+      : questionText;
+    
+    const answerShort = answerText.length > 40 
+      ? answerText.substring(0, 40) + '...' 
+      : answerText;
+
+    if (score === 5) {
+      return `Strong understanding: "${answerShort}" – shows mastery of this concept.`;
+    } else if (score === 4) {
+      return `Good grasp: "${answerShort}" – slight room for deeper understanding.`;
+    } else if (score === 3) {
+      return `Basic awareness: "${answerShort}" – needs more depth in this area.`;
+    } else if (score === 2) {
+      return `Limited understanding: "${answerShort}" – requires focused development.`;
+    } else {
+      return `Significant gap: "${answerShort}" – needs immediate attention.`;
+    }
+  };
+
+  const getCategoryInterpretation = (category, data, candidateName) => {
+    if (category.includes('Leadership')) {
+      return interpretLeadership(data, candidateName);
+    } else if (category.includes('Cognitive')) {
+      return interpretCognitive(data, candidateName);
+    } else if (category.includes('Communication')) {
+      return interpretCommunication(data, candidateName);
+    } else if (category.includes('Ethics')) {
+      return interpretEthics(data, candidateName);
+    } else if (category.includes('Technical')) {
+      return interpretTechnical(data, candidateName);
+    } else if (category.includes('Emotional')) {
+      return interpretEmotional(data, candidateName);
+    } else if (category.includes('Performance')) {
+      return interpretPerformance(data, candidateName);
+    } else if (category.includes('Cultural')) {
+      return interpretCultural(data, candidateName);
+    } else {
+      // Generic interpretation
+      let interpretation = `${category} – ${data.percentage}% (${getGradeLetter(data.percentage)})\n\n`;
+      if (data.insights && data.insights.length > 0) {
+        interpretation += `Response analysis:\n`;
+        data.insights.slice(0, 2).forEach(insight => {
+          interpretation += `• ${insight}\n`;
+        });
+      }
+      return interpretation;
+    }
+  };
+
+  const getGradeLetter = (percentage) => {
+    if (percentage >= 90) return 'A';
+    if (percentage >= 80) return 'B';
+    if (percentage >= 70) return 'C';
+    if (percentage >= 60) return 'D';
+    return 'F';
   };
 
   if (!isSupervisor || loading) {
@@ -212,77 +327,38 @@ export default function CandidateReport() {
             style={{...styles.navItem, borderBottom: activeSection === 'competencies' ? '3px solid #3b82f6' : '3px solid transparent'}}
             onClick={() => setActiveSection('competencies')}
           >
-            {/* 5️⃣ Competency Breakdown */}
-<div style={styles.competencyBreakdown}>
-  <h3 style={styles.subsectionTitle}>5. Competency Breakdown & Interpretation</h3>
-  
-  {Object.entries(assessmentData.category_scores).map(([category, data]) => {
-    const catGrade = getGradeInfo(data.percentage);
-    const insights = assessmentData.responseInsights?.[category] || [];
-    const categoryData = assessmentData.responseInsights?.[category];
-    
-    // Generate category-specific interpretation
-    let categoryInterpretation = '';
-    if (categoryData) {
-      if (category.includes('Leadership')) {
-        categoryInterpretation = interpretLeadership(categoryData, candidate.full_name);
-      } else if (category.includes('Cognitive')) {
-        categoryInterpretation = interpretCognitive(categoryData, candidate.full_name);
-      } else if (category.includes('Communication')) {
-        categoryInterpretation = interpretCommunication(categoryData, candidate.full_name);
-      } else if (category.includes('Ethics')) {
-        categoryInterpretation = interpretEthics(categoryData, candidate.full_name);
-      } else if (category.includes('Technical')) {
-        categoryInterpretation = interpretTechnical(categoryData, candidate.full_name);
-      } else {
-        // Generic interpretation for other categories
-        categoryInterpretation = `${category} – ${data.percentage}% (${catGrade.grade})\n\n`;
-        if (insights.length > 0) {
-          categoryInterpretation += `Response analysis:\n`;
-          insights.slice(0, 2).forEach(insight => {
-            categoryInterpretation += `• ${insight}\n`;
-          });
-        }
-      }
-    }
-    
-    return (
-      <div key={category} style={styles.competencyCard}>
-        <div style={styles.competencyHeader}>
-          <h4 style={styles.competencyName}>{category} – {data.percentage}% ({catGrade.grade})</h4>
+            Competency Breakdown
+          </button>
+          <button 
+            style={{...styles.navItem, borderBottom: activeSection === 'development' ? '3px solid #3b82f6' : '3px solid transparent'}}
+            onClick={() => setActiveSection('development')}
+          >
+            Development Plan
+          </button>
         </div>
-        <div style={styles.competencyBody}>
-          {categoryInterpretation ? (
-            <pre style={styles.pre}>{categoryInterpretation}</pre>
-          ) : (
-            <>
-              <p><strong>Performance Summary:</strong></p>
-              <p>{data.percentage >= 70 ? 'Strong area' : 
-                    data.percentage >= 60 ? 'Developing area' : 
-                    'Area needing significant improvement'}</p>
-            </>
-          )}
-          
-          {/* Show specific question-answer insights */}
-          {categoryData?.questionDetails && categoryData.questionDetails.length > 0 && (
-            <div style={styles.questionDetails}>
-              <strong>Sample Responses:</strong>
-              {categoryData.questionDetails.slice(0, 2).map((detail, i) => (
-                <div key={i} style={styles.questionItem}>
-                  <div style={styles.questionText}>Q: {detail.question}</div>
-                  <div style={styles.answerText}>A: {detail.answer}</div>
-                  <div style={detail.score >= 4 ? styles.scoreHigh : styles.scoreLow}>
-                    Score: {detail.score}/5
-                  </div>
-                </div>
-              ))}
+
+        <div ref={reportRef} style={styles.reportContainer}>
+          {/* 1️⃣ Cover Page */}
+          <section style={{...styles.section, display: activeSection === 'cover' || showPrintView ? 'block' : 'none'}}>
+            <div style={styles.coverPage}>
+              <div style={styles.coverHeader}>
+                <h1 style={styles.coverTitle}>Stratavax Assessment Platform</h1>
+                <p style={styles.coverSubtitle}>{config.name}</p>
+              </div>
+              
+              <div style={styles.coverContent}>
+                <div style={styles.coverLogo}>{config.icon}</div>
+                <h2 style={styles.coverCandidateName}>{candidate.full_name}</h2>
+                <p style={styles.coverDetail}>Assessment Date: {new Date(assessmentData.completed_at).toLocaleDateString()}</p>
+                <p style={styles.coverDetail}>Report Generated: {new Date().toLocaleDateString()}</p>
+                <div style={styles.coverBadge}>CONFIDENTIAL</div>
+              </div>
+              
+              <div style={styles.coverFooter}>
+                <p>© Stratavax Assessment Platform • All Rights Reserved</p>
+              </div>
             </div>
-          )}
-        </div>
-      </div>
-    );
-  })}
-</div>
+          </section>
 
           {/* 2️⃣ Executive Summary */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'executive' || showPrintView ? 'block' : 'none'}}>
@@ -416,21 +492,7 @@ export default function CandidateReport() {
               
               {Object.entries(assessmentData.category_scores).map(([category, data]) => {
                 const catGrade = getGradeInfo(data.percentage);
-                const insights = assessmentData.responseInsights?.[category] || [];
-                const interpretation = assessmentData.detailedInterpretation?.categoryBreakdown;
-                
-                let narrative = '';
-                if (interpretation) {
-                  const allNarratives = [
-                    ...(interpretation.strong || []),
-                    ...(interpretation.moderate || []),
-                    ...(interpretation.concerns || [])
-                  ];
-                  const match = allNarratives.find(n => n && n.includes(category));
-                  if (match) {
-                    narrative = match;
-                  }
-                }
+                const categoryData = assessmentData.responseInsights?.[category];
                 
                 return (
                   <div key={category} style={styles.competencyCard}>
@@ -438,50 +500,31 @@ export default function CandidateReport() {
                       <h4 style={styles.competencyName}>{category} – {data.percentage}% ({catGrade.grade})</h4>
                     </div>
                     <div style={styles.competencyBody}>
-                      <div style={styles.competencyInterpretation}>
-                        {narrative ? (
-                          <pre style={styles.pre}>{narrative}</pre>
-                        ) : (
-                          <>
-                            <p><strong>Response Analysis:</strong></p>
-                            {insights.length > 0 ? (
-                              insights.map((insight, i) => (
-                                <p key={i} style={styles.insightItem}>• {insight}</p>
-                              ))
-                            ) : (
-                              <p>• Based on the candidate's responses in this category</p>
-                            )}
-                            <p style={styles.assessmentNote}>
-                              <strong>Assessment:</strong> {
-                                data.percentage >= 80 ? 'Exceptional capability demonstrated' :
-                                data.percentage >= 70 ? 'Strong performance with minor gaps' :
-                                data.percentage >= 60 ? 'Basic competency established, needs development' :
-                                'Significant gaps requiring immediate attention'
-                              }
-                            </p>
-                          </>
-                        )}
-                      </div>
-                      <div style={styles.competencyIndicators}>
-                        <div style={styles.indicatorColumn}>
-                          <strong>What this means:</strong>
-                          <ul style={styles.indicatorList}>
-                            {data.percentage >= 80 && <li>Mastery level - can excel independently</li>}
-                            {data.percentage >= 70 && data.percentage < 80 && <li>Proficient - performs well with minimal guidance</li>}
-                            {data.percentage >= 60 && data.percentage < 70 && <li>Developing - requires training and practice</li>}
-                            {data.percentage < 60 && <li>Beginning - needs foundational instruction</li>}
-                          </ul>
-                        </div>
-                        <div style={styles.indicatorColumn}>
-                          <strong>Recommended action:</strong>
-                          <ul style={styles.indicatorList}>
-                            {data.percentage >= 80 && <li>Leverage as strength, mentor others</li>}
-                            {data.percentage >= 70 && data.percentage < 80 && <li>Build upon through challenging assignments</li>}
-                            {data.percentage >= 60 && data.percentage < 70 && <li>Enroll in targeted training programs</li>}
-                            {data.percentage < 60 && <li>Provide structured coaching and support</li>}
-                          </ul>
-                        </div>
-                      </div>
+                      {categoryData ? (
+                        <>
+                          <pre style={styles.pre}>
+                            {getCategoryInterpretation(category, categoryData, candidate.full_name)}
+                          </pre>
+                          
+                          {/* Show specific question-answer insights */}
+                          {categoryData.questionDetails && categoryData.questionDetails.length > 0 && (
+                            <div style={styles.questionDetails}>
+                              <strong>Response Details:</strong>
+                              {categoryData.questionDetails.slice(0, 2).map((detail, i) => (
+                                <div key={i} style={styles.questionItem}>
+                                  <div style={styles.questionText}>Q: {detail.question}</div>
+                                  <div style={styles.answerText}>A: {detail.answer}</div>
+                                  <div style={detail.score >= 4 ? styles.scoreHigh : styles.scoreLow}>
+                                    Score: {detail.score}/5
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <p>No detailed response data available for this category.</p>
+                      )}
                     </div>
                   </div>
                 );
@@ -493,14 +536,28 @@ export default function CandidateReport() {
               <h3 style={styles.subsectionTitle}>6. Strength Profile Summary</h3>
               <div style={styles.strengthGrid}>
                 {strengthsList.map((strength, index) => {
-                  const [category, percentage] = strength.split(' (');
+                  const match = strength.match(/(.+) \((\d+)%\)/);
+                  const category = match ? match[1] : strength;
+                  const percentage = match ? match[2] : '';
+                  
+                  const categoryData = assessmentData.responseInsights?.[category];
+                  const insightText = categoryData?.insights?.[0] || 
+                    `Strong performance in this area.`;
+                  
                   return (
                     <div key={index} style={styles.strengthCard}>
                       <span style={styles.strengthIcon}>💪</span>
-                      <div>
-                        <strong>{category}</strong>
-                        <p style={styles.strengthDesc}>Performance: {percentage}</p>
-                        <p style={styles.strengthDetail}>Key strength in {config.name}</p>
+                      <div style={styles.strengthContent}>
+                        <div style={styles.strengthHeader}>
+                          <strong>{category}</strong>
+                          <span style={styles.strengthPercentage}>{percentage}%</span>
+                        </div>
+                        <p style={styles.strengthInsight}>{insightText}</p>
+                        {categoryData && (
+                          <span style={styles.strengthMetric}>
+                            {categoryData.highScoreCount} excellent responses
+                          </span>
+                        )}
                       </div>
                     </div>
                   );
@@ -510,7 +567,7 @@ export default function CandidateReport() {
                     <span style={styles.strengthIcon}>📝</span>
                     <div>
                       <strong>No dominant strengths identified</strong>
-                      <p style={styles.strengthDesc}>All areas require development</p>
+                      <p style={styles.strengthDesc}>All areas require development attention</p>
                     </div>
                   </div>
                 )}
@@ -522,14 +579,50 @@ export default function CandidateReport() {
               <h3 style={styles.subsectionTitle}>7. Risk & Development Areas</h3>
               <div style={styles.riskGrid}>
                 {weaknessesList.map((weakness, index) => {
-                  const [category, percentage] = weakness.split(' (');
+                  const match = weakness.match(/(.+) \((\d+)%\)/);
+                  const category = match ? match[1] : weakness;
+                  const percentage = match ? match[2] : '';
+                  
+                  const categoryData = assessmentData.responseInsights?.[category];
+                  const lowScoreCount = categoryData?.lowScoreCount || 0;
+                  const questionCount = categoryData?.questionCount || 0;
+                  
+                  const weakResponses = categoryData?.questionDetails
+                    ?.filter(q => q.score <= 2)
+                    .slice(0, 2) || [];
+                  
                   return (
                     <div key={index} style={styles.riskCard}>
                       <span style={styles.riskIcon}>⚠️</span>
-                      <div>
-                        <strong>{category}</strong>
-                        <p style={styles.riskDesc}>Current: {percentage}</p>
-                        <p style={styles.riskDetail}>Critical development need for {config.name}</p>
+                      <div style={styles.riskContent}>
+                        <div style={styles.riskHeader}>
+                          <strong>{category}</strong>
+                          <span style={styles.riskPercentage}>{percentage}%</span>
+                        </div>
+                        
+                        {lowScoreCount > 0 && (
+                          <p style={styles.riskStat}>
+                            {lowScoreCount} of {questionCount} responses need attention
+                          </p>
+                        )}
+                        
+                        {weakResponses.map((resp, i) => (
+                          <div key={i} style={styles.weakResponse}>
+                            <div style={styles.weakQuestion}>"{resp.question}"</div>
+                            <div style={styles.weakAnswer}>Answered: {resp.answer}</div>
+                          </div>
+                        ))}
+                        
+                        <div style={styles.riskRecommendation}>
+                          <strong>Recommended:</strong> {
+                            category.includes('Cognitive') ? 'Practice logical reasoning exercises daily. Enroll in critical thinking courses.' :
+                            category.includes('Leadership') ? 'Seek mentorship in people management. Lead small projects to build experience.' :
+                            category.includes('Technical') ? 'Enroll in foundational technical training. Shadow experienced team members.' :
+                            category.includes('Communication') ? 'Join Toastmasters. Practice presentations with feedback.' :
+                            category.includes('Emotional') ? 'Participate in EI workshops. Practice active listening.' :
+                            'Complete targeted development program with regular check-ins.'
+                          }
+                        </div>
                       </div>
                     </div>
                   );
@@ -575,7 +668,9 @@ export default function CandidateReport() {
                     <li>Complete foundational training in weak areas</li>
                     <li>Structured mentoring program</li>
                     <li>Weekly feedback and progress reviews</li>
-                    <li>Focus on {weaknessesList.slice(0, 2).map(w => w.split(' (')[0]).join(' and ')}</li>
+                    {weaknessesList.length > 0 && (
+                      <li>Focus on {weaknessesList.slice(0, 2).map(w => w.split(' (')[0]).join(' and ')}</li>
+                    )}
                   </ul>
                 </div>
                 
@@ -595,7 +690,9 @@ export default function CandidateReport() {
                     <li>Leadership development program</li>
                     <li>Stretch assignments</li>
                     <li>Regular reassessment of progress</li>
-                    <li>Build on {strengthsList.slice(0, 1).map(s => s.split(' (')[0]).join('')} strengths</li>
+                    {strengthsList.length > 0 && (
+                      <li>Build on {strengthsList.slice(0, 1).map(s => s.split(' (')[0]).join('')} strengths</li>
+                    )}
                   </ul>
                 </div>
               </div>
@@ -1032,38 +1129,49 @@ const styles = {
   competencyBody: {
     padding: '20px'
   },
-  competencyInterpretation: {
+  pre: {
+    fontFamily: 'inherit',
     fontSize: '14px',
-    color: '#4b5563',
     lineHeight: '1.6',
-    marginBottom: '15px'
+    color: '#4b5563',
+    margin: 0,
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word'
   },
-  insightItem: {
-    margin: '5px 0',
-    paddingLeft: '15px'
-  },
-  assessmentNote: {
-    marginTop: '10px',
+  questionDetails: {
+    marginTop: '15px',
     padding: '10px',
-    background: '#f3f4f6',
+    background: '#f8fafc',
+    borderRadius: '8px'
+  },
+  questionItem: {
+    marginBottom: '12px',
+    padding: '10px',
+    background: 'white',
     borderRadius: '6px',
+    border: '1px solid #e2e8f0'
+  },
+  questionText: {
+    fontSize: '13px',
+    fontWeight: 500,
+    color: '#1e293b',
+    marginBottom: '5px'
+  },
+  answerText: {
+    fontSize: '12px',
+    color: '#475569',
+    marginBottom: '5px',
     fontStyle: 'italic'
   },
-  competencyIndicators: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '20px',
-    marginTop: '15px',
-    paddingTop: '15px',
-    borderTop: '1px solid #e5e7eb'
+  scoreHigh: {
+    fontSize: '11px',
+    color: '#059669',
+    fontWeight: 600
   },
-  indicatorColumn: {
-    fontSize: '13px'
-  },
-  indicatorList: {
-    margin: '10px 0 0 0',
-    paddingLeft: '20px',
-    color: '#6b7280'
+  scoreLow: {
+    fontSize: '11px',
+    color: '#dc2626',
+    fontWeight: 600
   },
   strengthProfile: {
     marginTop: '40px'
@@ -1084,15 +1192,34 @@ const styles = {
   strengthIcon: {
     fontSize: '24px'
   },
+  strengthContent: {
+    flex: 1
+  },
+  strengthHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '8px'
+  },
+  strengthPercentage: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#065f46'
+  },
+  strengthInsight: {
+    fontSize: '13px',
+    color: '#064e3b',
+    lineHeight: '1.5',
+    margin: '0 0 8px 0'
+  },
+  strengthMetric: {
+    fontSize: '12px',
+    color: '#047857'
+  },
   strengthDesc: {
     margin: '5px 0 0 0',
     fontSize: '12px',
     color: '#065f46'
-  },
-  strengthDetail: {
-    margin: '5px 0 0 0',
-    fontSize: '11px',
-    color: '#047857'
   },
   riskProfile: {
     marginTop: '40px'
@@ -1113,15 +1240,47 @@ const styles = {
   riskIcon: {
     fontSize: '24px'
   },
-  riskDesc: {
-    margin: '5px 0 0 0',
-    fontSize: '12px',
+  riskContent: {
+    flex: 1
+  },
+  riskHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '8px'
+  },
+  riskPercentage: {
+    fontSize: '14px',
+    fontWeight: 600,
     color: '#991b1b'
   },
-  riskDetail: {
-    margin: '5px 0 0 0',
-    fontSize: '11px',
-    color: '#b91c1c'
+  riskStat: {
+    fontSize: '12px',
+    color: '#7f1d1d',
+    marginTop: '5px'
+  },
+  weakResponse: {
+    marginTop: '8px',
+    padding: '8px',
+    background: '#fef2f2',
+    borderRadius: '4px',
+    fontSize: '12px'
+  },
+  weakQuestion: {
+    color: '#991b1b',
+    marginBottom: '4px'
+  },
+  weakAnswer: {
+    color: '#b91c1c',
+    fontSize: '11px'
+  },
+  riskRecommendation: {
+    marginTop: '10px',
+    padding: '8px',
+    background: '#ffedd5',
+    borderRadius: '4px',
+    fontSize: '12px',
+    color: '#9a3412'
   },
   roleFitCard: {
     padding: '30px',
@@ -1199,15 +1358,5 @@ const styles = {
     color: '#4b5563',
     lineHeight: '1.8',
     whiteSpace: 'pre-line'
-  },
-  pre: {
-    fontFamily: 'inherit',
-    fontSize: '14px',
-    lineHeight: '1.6',
-    color: '#4b5563',
-    margin: 0,
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-word'
   }
 };
-
