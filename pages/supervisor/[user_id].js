@@ -12,6 +12,7 @@ import {
   getGradeFromPercentage,
   getClassification
 } from "../../utils/personalizedInterpretations";
+import { generateProfessionalInterpretation } from "../../utils/professionalInterpreter";
 
 export default function CandidateReport() {
   const router = useRouter();
@@ -36,7 +37,8 @@ export default function CandidateReport() {
     bestFit: { fits: [], risks: [] },
     strengths: [],
     weaknesses: [],
-    improvementAreas: []
+    improvementAreas: [],
+    professionalInterpretation: null
   });
 
   // Check supervisor authentication
@@ -286,19 +288,21 @@ export default function CandidateReport() {
       }
     });
     
-    console.log("Personalized Data Generated:", { 
-      summary, 
-      strengthsCount: strengths.length, 
-      improvementCount: improvementAreas.length, 
-      weaknessesCount: weaknesses.length 
-    });
+    // Generate professional narrative interpretation
+    const professionalInterpretation = generateProfessionalInterpretation(
+      candidate.full_name,
+      assessment.category_scores
+    );
+    
+    console.log("Professional Interpretation Generated");
     
     setPersonalizedData({
       summary,
       bestFit,
       strengths,
       weaknesses,
-      improvementAreas
+      improvementAreas,
+      professionalInterpretation
     });
   };
 
@@ -356,11 +360,6 @@ export default function CandidateReport() {
   const config = assessmentConfigs[current.type] || assessmentConfigs.general;
   const overallGrade = getGradeFromPercentage(current.percentage);
   const classification = getClassification(current.score, current.max_score, current.type);
-
-  // Debug logs
-  console.log("Current Assessment:", current);
-  console.log("Category Scores:", categoryScores);
-  console.log("Personalized Data State:", personalizedData);
 
   return (
     <AppLayout background="/images/preassessmentbg.jpg">
@@ -657,121 +656,73 @@ export default function CandidateReport() {
               {expandedSections.analysis ? '▼' : '▶'}
             </span>
           </div>
-          {expandedSections.analysis && (
+          {expandedSections.analysis && personalizedData.professionalInterpretation && (
             <div style={styles.cardContent}>
               {/* Overall Summary */}
-              {personalizedData.summary && (
-                <div style={styles.analysisSection}>
-                  <h4 style={styles.analysisTitle}>🔎 Overall Summary</h4>
-                  <p style={styles.analysisText}>{personalizedData.summary}</p>
-                </div>
-              )}
+              <div style={styles.analysisSection}>
+                <div style={styles.analysisText}>{personalizedData.professionalInterpretation.overallSummary}</div>
+              </div>
 
-              {/* Category Breakdown with Meanings */}
+              {/* Category Breakdown */}
               <div style={styles.analysisSection}>
                 <h4 style={styles.analysisTitle}>📊 Category Breakdown & What It Means</h4>
                 
                 {/* Strong Areas */}
-                {personalizedData.strengths.length > 0 && (
+                {personalizedData.professionalInterpretation.categoryBreakdown.strong.length > 0 && (
                   <div style={styles.categoryGroup}>
-                    <h5 style={styles.categoryGroupTitle}>🟢 Strong Areas (≥70%)</h5>
-                    {personalizedData.strengths.map((item) => (
-                      <div key={item.category} style={styles.categoryAnalysis}>
-                        <div style={styles.categoryAnalysisHeader}>
-                          <span style={styles.categoryAnalysisName}>{item.category}</span>
-                          <span style={{...styles.categoryAnalysisScore, color: '#2E7D32'}}>
-                            {item.percentage}% ({item.grade.grade})
-                          </span>
-                        </div>
-                        <p style={styles.categoryAnalysisText}>{item.description}</p>
+                    <h5 style={styles.categoryGroupTitle}>🟢 Strong Areas</h5>
+                    {personalizedData.professionalInterpretation.categoryBreakdown.strong.map((narrative, index) => (
+                      <div key={index} style={styles.categoryAnalysis}>
+                        <div style={styles.categoryAnalysisText}>{narrative}</div>
                       </div>
                     ))}
                   </div>
                 )}
 
                 {/* Moderate Areas */}
-                {personalizedData.improvementAreas.length > 0 && (
+                {personalizedData.professionalInterpretation.categoryBreakdown.moderate.length > 0 && (
                   <div style={styles.categoryGroup}>
-                    <h5 style={styles.categoryGroupTitle}>🟡 Moderate / Basic Competency Areas (60-69%)</h5>
-                    {personalizedData.improvementAreas.map((item) => (
-                      <div key={item.category} style={styles.categoryAnalysis}>
-                        <div style={styles.categoryAnalysisHeader}>
-                          <span style={styles.categoryAnalysisName}>{item.category}</span>
-                          <span style={{...styles.categoryAnalysisScore, color: '#F57C00'}}>
-                            {item.percentage}% ({item.grade.grade})
-                          </span>
-                        </div>
-                        <p style={styles.categoryAnalysisText}>{item.description}</p>
+                    <h5 style={styles.categoryGroupTitle}>🟡 Moderate / Basic Competency Areas</h5>
+                    {personalizedData.professionalInterpretation.categoryBreakdown.moderate.map((narrative, index) => (
+                      <div key={index} style={styles.categoryAnalysis}>
+                        <div style={styles.categoryAnalysisText}>{narrative}</div>
                       </div>
                     ))}
                   </div>
                 )}
 
                 {/* Development Concerns */}
-                {personalizedData.weaknesses.length > 0 && (
+                {personalizedData.professionalInterpretation.categoryBreakdown.concerns.length > 0 && (
                   <div style={styles.categoryGroup}>
-                    <h5 style={styles.categoryGroupTitle}>🔴 Development Concerns (&lt;60%)</h5>
-                    {personalizedData.weaknesses.map((item) => (
-                      <div key={item.category} style={styles.categoryAnalysis}>
-                        <div style={styles.categoryAnalysisHeader}>
-                          <span style={styles.categoryAnalysisName}>{item.category}</span>
-                          <span style={{...styles.categoryAnalysisScore, color: '#C62828'}}>
-                            {item.percentage}% ({item.grade.grade})
-                          </span>
-                        </div>
-                        <p style={styles.categoryAnalysisText}>{item.description}</p>
+                    <h5 style={styles.categoryGroupTitle}>🔴 Development Concerns</h5>
+                    {personalizedData.professionalInterpretation.categoryBreakdown.concerns.map((narrative, index) => (
+                      <div key={index} style={styles.categoryAnalysis}>
+                        <div style={styles.categoryAnalysisText}>{narrative}</div>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
 
-              {/* What This Profile Suggests */}
+              {/* Profile Suggestions */}
               <div style={styles.analysisSection}>
-                <h4 style={styles.analysisTitle}>🎯 What This Profile Suggests</h4>
-                <div style={styles.profileInsights}>
-                  <div style={styles.insightColumn}>
-                    <h5 style={styles.insightTitle}>Best Fit:</h5>
-                    <ul style={styles.insightList}>
-                      {personalizedData.bestFit.fits.length > 0 ? (
-                        personalizedData.bestFit.fits.map((item, i) => (
-                          <li key={i} style={styles.insightItem}>{item}</li>
-                        ))
-                      ) : (
-                        <li style={styles.insightItem}>Standard roles with appropriate support</li>
-                      )}
-                    </ul>
-                  </div>
-                  <div style={styles.insightColumn}>
-                    <h5 style={styles.insightTitle}>Risk Areas:</h5>
-                    <ul style={styles.insightList}>
-                      {personalizedData.bestFit.risks.length > 0 ? (
-                        personalizedData.bestFit.risks.map((item, i) => (
-                          <li key={i} style={styles.insightItem}>{item}</li>
-                        ))
-                      ) : (
-                        <li style={styles.insightItem}>No significant risks identified</li>
-                      )}
-                    </ul>
-                  </div>
-                </div>
+                <div style={styles.analysisText}>{personalizedData.professionalInterpretation.profileSuggestion}</div>
               </div>
 
-              {/* Development Priority Summary */}
-              {personalizedData.weaknesses.length > 0 && (
+              {/* Leadership Evaluation */}
+              <div style={styles.analysisSection}>
+                <div style={styles.analysisText}>{personalizedData.professionalInterpretation.leadershipEval}</div>
+              </div>
+
+              {/* Overall Grade */}
+              <div style={styles.analysisSection}>
+                <div style={styles.analysisText}>{personalizedData.professionalInterpretation.overallGrade}</div>
+              </div>
+
+              {/* Development Priorities */}
+              {personalizedData.professionalInterpretation.developmentPriorities && (
                 <div style={styles.analysisSection}>
-                  <h4 style={styles.analysisTitle}>📋 Development Priority Summary</h4>
-                  <div style={styles.priorityList}>
-                    {personalizedData.weaknesses.slice(0, 3).map((item, index) => (
-                      <div key={index} style={styles.priorityItem}>
-                        <span style={styles.priorityRank}>Priority {index + 1}:</span>
-                        <span style={styles.priorityCategory}>{item.category}</span>
-                        <span style={styles.priorityAction}>
-                          {item.recommendations[0]}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                  <div style={styles.analysisText}>{personalizedData.professionalInterpretation.developmentPriorities}</div>
                 </div>
               )}
             </div>
@@ -1244,7 +1195,8 @@ const styles = {
     fontSize: '15px',
     color: '#555',
     lineHeight: '1.8',
-    margin: 0
+    margin: 0,
+    whiteSpace: 'pre-line'
   },
   categoryGroup: {
     marginBottom: '25px'
@@ -1262,26 +1214,12 @@ const styles = {
     marginBottom: '10px',
     border: '1px solid #e0e0e0'
   },
-  categoryAnalysisHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '8px'
-  },
-  categoryAnalysisName: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#333'
-  },
-  categoryAnalysisScore: {
-    fontSize: '14px',
-    fontWeight: 600
-  },
   categoryAnalysisText: {
     fontSize: '13px',
     color: '#555',
     lineHeight: '1.6',
-    margin: 0
+    margin: 0,
+    whiteSpace: 'pre-line'
   },
   profileInsights: {
     display: 'grid',
