@@ -109,7 +109,7 @@ export default function CandidateReport() {
           email: profileData?.email || 'Email not available'
         });
 
-        // Try to get from supervisor_dashboard first (it has the structured data)
+        // Try to get from supervisor_dashboard first
         const { data: dashboardData } = await supabase
           .from('supervisor_dashboard')
           .select('*')
@@ -120,8 +120,7 @@ export default function CandidateReport() {
           const completedAssessments = dashboardData.assessments.filter(a => a.status === 'completed');
           
           if (completedAssessments.length > 0) {
-            // For now, we'll create category scores based on the example you provided
-            // In a real implementation, these would come from the database
+            // Sample category scores based on the example
             const sampleCategoryScores = {
               'Communication': { score: 32, maxPossible: 50, percentage: 64 },
               'Problem-Solving': { score: 34, maxPossible: 50, percentage: 68 },
@@ -199,23 +198,14 @@ export default function CandidateReport() {
     return { grade: 'F', color: '#8B0000', bg: '#FFEBEE', description: 'Unsatisfactory' };
   };
 
-  // Get category assessment text
-  const getCategoryAssessment = (percentage) => {
-    if (percentage >= 80) return 'Excellent';
-    if (percentage >= 70) return 'Good';
-    if (percentage >= 60) return 'Average';
-    if (percentage >= 50) return 'Below Average';
-    return 'Poor';
-  };
-
-  // Get performance category (Strong, Moderate, Development Concern)
+  // Get performance category
   const getPerformanceCategory = (percentage) => {
     if (percentage >= 70) return { label: '🟢 Strong', color: '#2E7D32' };
     if (percentage >= 60) return { label: '🟡 Moderate', color: '#F57C00' };
     return { label: '🔴 Development Concern', color: '#C62828' };
   };
 
-  // Generate overall summary based on category scores
+  // Generate overall summary
   const generateOverallSummary = () => {
     if (!categoryScores || Object.keys(categoryScores).length === 0) return '';
     
@@ -303,7 +293,7 @@ export default function CandidateReport() {
     };
     
     const categoryData = interpretations[category];
-    if (!categoryData) return `${category}: ${percentage}% - ${getCategoryAssessment(percentage)} performance.`;
+    if (!categoryData) return `${category}: ${percentage}% - ${percentage >= 70 ? 'Strong' : percentage >= 60 ? 'Moderate' : 'Development needed'} performance.`;
     
     if (percentage >= 70) return categoryData.high;
     if (percentage >= 60) return categoryData.medium;
@@ -431,8 +421,6 @@ export default function CandidateReport() {
                     <tbody>
                       {Object.entries(categoryScores).map(([category, data]) => {
                         const grade = getCategoryGrade(data.percentage);
-                        const assessment = getCategoryAssessment(data.percentage);
-                        const performance = getPerformanceCategory(data.percentage);
                         
                         return (
                           <tr key={category} style={styles.tableRow}>
@@ -518,19 +506,25 @@ export default function CandidateReport() {
                     <h5 style={styles.categoryGroupTitle}>🟢 Strong Areas (≥70%)</h5>
                     {Object.entries(categoryScores)
                       .filter(([_, data]) => data.percentage >= 70)
-                      .map(([category, data]) => (
-                        <div key={category} style={styles.categoryAnalysis}>
-                          <div style={styles.categoryAnalysisHeader}>
-                            <span style={styles.categoryAnalysisName}>{category}</span>
-                            <span style={{...styles.categoryAnalysisScore, color: '#2E7D32'}}>
-                              {data.percentage}% ({getCategoryGrade(data.percentage).grade})
-                            </span>
+                      .map(([category, data]) => {
+                        const grade = getCategoryGrade(data.percentage);
+                        return (
+                          <div key={category} style={styles.categoryAnalysis}>
+                            <div style={styles.categoryAnalysisHeader}>
+                              <span style={styles.categoryAnalysisName}>{category}</span>
+                              <span style={{...styles.categoryAnalysisScore, color: '#2E7D32'}}>
+                                {data.percentage}% ({grade.grade})
+                              </span>
+                            </div>
+                            <p style={styles.categoryAnalysisText}>
+                              {getCategoryInterpretation(category, data.percentage)}
+                            </p>
                           </div>
-                          <p style={styles.categoryAnalysisText}>
-                            {getCategoryInterpretation(category, data.percentage)}
-                          </p>
-                        </div>
-                      ))}
+                        );
+                      })}
+                    {Object.entries(categoryScores).filter(([_, data]) => data.percentage >= 70).length === 0 && (
+                      <p style={styles.noDataText}>No strong areas identified</p>
+                    )}
                   </div>
 
                   {/* Moderate Areas */}
@@ -538,19 +532,25 @@ export default function CandidateReport() {
                     <h5 style={styles.categoryGroupTitle}>🟡 Moderate / Basic Competency Areas (60-69%)</h5>
                     {Object.entries(categoryScores)
                       .filter(([_, data]) => data.percentage >= 60 && data.percentage < 70)
-                      .map(([category, data]) => (
-                        <div key={category} style={styles.categoryAnalysis}>
-                          <div style={styles.categoryAnalysisHeader}>
-                            <span style={styles.categoryAnalysisName}>{category}</span>
-                            <span style={{...styles.categoryAnalysisScore, color: '#F57C00'}}>
-                              {data.percentage}% ({getCategoryGrade(data.percentage).grade})
-                            </span>
+                      .map(([category, data]) => {
+                        const grade = getCategoryGrade(data.percentage);
+                        return (
+                          <div key={category} style={styles.categoryAnalysis}>
+                            <div style={styles.categoryAnalysisHeader}>
+                              <span style={styles.categoryAnalysisName}>{category}</span>
+                              <span style={{...styles.categoryAnalysisScore, color: '#F57C00'}}>
+                                {data.percentage}% ({grade.grade})
+                              </span>
+                            </div>
+                            <p style={styles.categoryAnalysisText}>
+                              {getCategoryInterpretation(category, data.percentage)}
+                            </p>
                           </div>
-                          <p style={styles.categoryAnalysisText}>
-                            {getCategoryInterpretation(category, data.percentage)}
-                          </p>
-                        </div>
-                      ))}
+                        );
+                      })}
+                    {Object.entries(categoryScores).filter(([_, data]) => data.percentage >= 60 && data.percentage < 70).length === 0 && (
+                      <p style={styles.noDataText}>No moderate areas identified</p>
+                    )}
                   </div>
 
                   {/* Development Concerns */}
@@ -558,19 +558,25 @@ export default function CandidateReport() {
                     <h5 style={styles.categoryGroupTitle}>🔴 Development Concerns (&lt;60%)</h5>
                     {Object.entries(categoryScores)
                       .filter(([_, data]) => data.percentage < 60)
-                      .map(([category, data]) => (
-                        <div key={category} style={styles.categoryAnalysis}>
-                          <div style={styles.categoryAnalysisHeader}>
-                            <span style={styles.categoryAnalysisName}>{category}</span>
-                            <span style={{...styles.categoryAnalysisScore, color: '#C62828'}}>
-                              {data.percentage}% ({getCategoryGrade(data.percentage).grade})
-                            </span>
+                      .map(([category, data]) => {
+                        const grade = getCategoryGrade(data.percentage);
+                        return (
+                          <div key={category} style={styles.categoryAnalysis}>
+                            <div style={styles.categoryAnalysisHeader}>
+                              <span style={styles.categoryAnalysisName}>{category}</span>
+                              <span style={{...styles.categoryAnalysisScore, color: '#C62828'}}>
+                                {data.percentage}% ({grade.grade})
+                              </span>
+                            </div>
+                            <p style={styles.categoryAnalysisText}>
+                              {getCategoryInterpretation(category, data.percentage)}
+                            </p>
                           </div>
-                          <p style={styles.categoryAnalysisText}>
-                            {getCategoryInterpretation(category, data.percentage)}
-                          </p>
-                        </div>
-                      ))}
+                        );
+                      })}
+                    {Object.entries(categoryScores).filter(([_, data]) => data.percentage < 60).length === 0 && (
+                      <p style={styles.noDataText}>No development concerns identified</p>
+                    )}
                   </div>
                 </div>
 
@@ -656,12 +662,6 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     gap: '20px'
-  },
-  container: {
-    width: '90vw',
-    maxWidth: '1400px',
-    margin: '0 auto',
-    padding: '30px 20px'
   },
   spinner: {
     width: '40px',
@@ -913,6 +913,12 @@ const styles = {
     lineHeight: '1.6',
     margin: 0
   },
+  noDataText: {
+    fontSize: '13px',
+    color: '#999',
+    fontStyle: 'italic',
+    margin: '10px 0'
+  },
   profileInsights: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
@@ -962,4 +968,20 @@ const styles = {
     fontSize: '15px',
     fontWeight: 600,
     color: '#333',
-    margin: '0 0
+    margin: '0 0 10px 0'
+  },
+  gradeText: {
+    fontSize: '14px',
+    color: '#555',
+    lineHeight: '1.6',
+    margin: 0
+  },
+  footer: {
+    marginTop: '40px',
+    paddingTop: '20px',
+    borderTop: '1px solid #e0e0e0',
+    textAlign: 'center',
+    color: '#999',
+    fontSize: '12px'
+  }
+};
