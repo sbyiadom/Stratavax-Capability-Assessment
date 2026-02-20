@@ -9,7 +9,6 @@ export const generateProfessionalInterpretation = (candidateName, categoryScores
   const strongAreas = [];
   const moderateAreas = [];
   const concernAreas = [];
-  const areaDetails = {};
   
   Object.entries(categoryScores).forEach(([category, data]) => {
     const percentage = data.percentage;
@@ -25,8 +24,6 @@ export const generateProfessionalInterpretation = (candidateName, categoryScores
       gradeDesc: getGradeDescription(percentage)
     };
     
-    areaDetails[category] = area;
-    
     if (percentage >= 70) {
       strongAreas.push(area);
     } else if (percentage >= 60) {
@@ -36,17 +33,24 @@ export const generateProfessionalInterpretation = (candidateName, categoryScores
     }
   });
 
+  // Generate all the narratives
+  const overallSummary = generateOverallSummary(candidateName, strongAreas, moderateAreas, concernAreas);
+  const profileSuggestion = generateProfileSuggestion(strongAreas, concernAreas);
+  const leadershipEval = generateLeadershipEvaluation(concernAreas);
+  const overallGrade = generateOverallGrade(strongAreas, concernAreas);
+  const developmentPriorities = generateDevelopmentPriorities(concernAreas);
+
   return {
-    overallProfileSummary: generateOverallProfileSummary(candidateName, strongAreas, moderateAreas, concernAreas),
+    overallSummary,
     categoryBreakdown: {
       strong: strongAreas.map(area => formatStrongArea(area)),
       moderate: moderateAreas.map(area => formatModerateArea(area)),
       concerns: concernAreas.map(area => formatConcernArea(area))
     },
-    hiringInterpretation: generateHiringInterpretation(strongAreas, concernAreas),
-    developmentPotential: generateDevelopmentPotential(strongAreas, concernAreas),
-    strategicObservation: generateStrategicObservation(concernAreas),
-    finalAssessment: generateFinalAssessment(strongAreas, concernAreas)
+    profileSuggestion,
+    leadershipEval,
+    overallGrade,
+    developmentPriorities
   };
 };
 
@@ -82,33 +86,46 @@ const getGradeDescription = (percentage) => {
   return 'Unsatisfactory';
 };
 
-// Generate overall profile summary
-const generateOverallProfileSummary = (candidateName, strongAreas, moderateAreas, concernAreas) => {
+// Generate overall summary
+const generateOverallSummary = (candidateName, strongAreas, moderateAreas, concernAreas) => {
   const concernCount = concernAreas.length;
   const strongCount = strongAreas.length;
+  const concernNames = concernAreas.map(c => c.category);
+  const strongNames = strongAreas.map(s => s.category);
   
-  let summary = `Overall Profile Summary\n\n`;
-  summary += `This profile reflects:\n\n`;
+  let summary = `🔎 Overall Summary\n\n`;
+  summary += `${candidateName} shows `;
   
-  if (strongCount === 0 && concernCount >= 5) {
-    summary += `Moderate intellectual capacity but broad behavioral, cultural, and leadership weaknesses.\n\n`;
-    summary += `Unlike candidates with clear integrity strengths, this one shows no dominant strength area. The only relatively solid score is Cognitive Ability.\n\n`;
-    summary += `This is not currently a leadership-ready profile and carries several organizational risk indicators.`;
-  } else if (strongCount >= 2 && concernCount <= 3) {
-    summary += `A balanced profile with clear strengths in ${strongAreas.map(s => s.category).join(', ')} and manageable development areas.\n\n`;
-    summary += `This candidate has foundational strengths to build upon but needs targeted development in weaker areas.`;
-  } else if (concernCount >= 6) {
-    summary += `Significant development needs across multiple areas. This profile indicates several organizational risk factors.\n\n`;
-    summary += `Not currently suitable for leadership or autonomous roles without intensive support.`;
+  if (strongCount > 0) {
+    summary += `clear strengths in ${formatList(strongNames)}`;
+    if (concernCount > 0) {
+      summary += `, but also notable gaps in ${formatList(concernNames)}`;
+    }
+  } else if (moderateAreas.length > 0) {
+    summary += `moderate capability with areas for development in ${formatList(concernNames)}`;
   } else {
-    summary += `A mixed profile with both strengths and significant development areas.\n\n`;
-    summary += `Requires careful placement and structured support to succeed.`;
+    summary += `significant development needs across most areas`;
+  }
+  
+  summary += `.\n\n`;
+  
+  // Add assessment based on pattern
+  if (concernNames.includes('Cognitive Ability') && 
+      concernNames.includes('Emotional Intelligence') && 
+      concernNames.includes('Cultural & Attitudinal Fit')) {
+    summary += `This is not a high-potential leadership profile yet, but may be suitable for a structured, supervised operational role with development support.`;
+  } else if (strongCount >= 3 && concernCount <= 2) {
+    summary += `This candidate has solid foundational strengths and manageable development areas. With targeted support, they could grow into more responsible roles.`;
+  } else if (concernCount >= 4) {
+    summary += `This profile indicates significant development needs. The candidate would benefit from structured training and close supervision in a clearly defined role.`;
+  } else {
+    summary += `This is a balanced profile with identified strengths and clear development paths.`;
   }
   
   return summary;
 };
 
-// Format strong area with bullet points
+// Format strong area
 const formatStrongArea = (area) => {
   const { category, percentage, grade, gradeDesc } = area;
   
@@ -152,12 +169,6 @@ const formatStrongArea = (area) => {
       narrative += `• Strong analytical thinking\n`;
       narrative += `• Handles complex problems effectively\n`;
       narrative += `• Systematic approach to challenges`;
-      break;
-      
-    case 'Emotional Intelligence':
-      narrative += `• Basic awareness of people dynamics\n`;
-      narrative += `• Not highly influential\n`;
-      narrative += `• Likely average in conflict handling`;
       break;
       
     default:
@@ -263,12 +274,6 @@ const formatConcernArea = (area) => {
       narrative += `• Risk of poor team dynamics`;
       break;
       
-    case 'Ethics & Integrity':
-      narrative += `• Significant ethical concerns\n`;
-      narrative += `• Requires clear boundaries and supervision\n`;
-      narrative += `• Risk area needing immediate attention`;
-      break;
-      
     default:
       narrative += `Significant gaps in this area requiring immediate attention and structured development.`;
   }
@@ -276,114 +281,149 @@ const formatConcernArea = (area) => {
   return narrative;
 };
 
-// Generate hiring interpretation
-const generateHiringInterpretation = (strongAreas, concernAreas) => {
+// Generate profile suggestion
+const generateProfileSuggestion = (strongAreas, concernAreas) => {
   const concernNames = concernAreas.map(c => c.category);
   const strongNames = strongAreas.map(s => s.category);
   
-  let interpretation = `🎯 Interpretation for Hiring Decisions\n\n`;
+  let suggestion = `🎯 What This Profile Suggests\n\n`;
+  suggestion += `**Best Fit:**\n\n`;
   
-  // Check for leadership suitability
-  const hasLeadershipIssues = concernNames.includes('Leadership & Management');
-  const hasCulturalIssues = concernNames.includes('Cultural & Attitudinal Fit');
-  const hasCommunicationIssues = concernNames.includes('Communication');
-  const hasIntegrityIssues = concernNames.includes('Ethics & Integrity');
-  
-  if (hasLeadershipIssues || hasCulturalIssues || hasCommunicationIssues || hasIntegrityIssues) {
-    interpretation += `If This Is for a Leadership Role:\n\n`;
-    interpretation += `I would not recommend hire at this stage.\n\n`;
-    interpretation += `Reasons:\n\n`;
-    
-    if (hasLeadershipIssues) interpretation += `• Leadership & Management very low\n`;
-    if (hasCulturalIssues) interpretation += `• Cultural Fit very low\n`;
-    if (hasCommunicationIssues) interpretation += `• Communication weak\n`;
-    if (hasIntegrityIssues) interpretation += `• Integrity only minimum level\n\n`;
-    
-    interpretation += `That combination predicts:\n\n`;
-    interpretation += `• Team friction\n`;
-    interpretation += `• Poor performance sustainability\n`;
-    interpretation += `• High supervision dependency\n\n`;
-  }
-  
-  interpretation += `If This Is for an Entry-Level / Structured Role:\n\n`;
-  interpretation += `Possible — but only if:\n\n`;
-  interpretation += `• Clear SOP environment\n`;
-  interpretation += `• Strong oversight\n`;
-  interpretation += `• Low autonomy\n`;
-  interpretation += `• Limited people-management responsibility`;
-  
-  return interpretation;
-};
-
-// Generate development potential
-const generateDevelopmentPotential = (strongAreas, concernAreas) => {
-  const concernNames = concernAreas.map(c => c.category);
-  const strongNames = strongAreas.map(s => s.category);
-  
-  let potential = `📈 Development Potential?\n\n`;
-  
-  const hasCognitiveStrength = strongNames.includes('Cognitive Ability') || 
-                              (strongAreas.find(s => s.category === 'Cognitive Ability')?.percentage >= 65);
-  
-  const hasEIStrength = strongNames.includes('Emotional Intelligence') || 
-                       (strongAreas.find(s => s.category === 'Emotional Intelligence')?.percentage >= 60);
-  
-  if (hasCognitiveStrength) {
-    potential += `There is some upside because:\n\n`;
-    potential += `• Cognitive ability is decent\n`;
-    if (hasEIStrength) potential += `• Emotional intelligence is not severely low\n\n`;
-    
-    potential += `However, development would need to focus on:\n\n`;
-    
-    if (concernNames.includes('Communication')) potential += `• Communication skills\n`;
-    if (concernNames.includes('Cultural & Attitudinal Fit')) potential += `• Attitude & culture alignment\n`;
-    if (concernNames.includes('Performance Metrics')) potential += `• Accountability & execution discipline\n`;
-    if (concernNames.includes('Leadership & Management')) potential += `• Leadership fundamentals\n`;
+  if (concernNames.includes('Cognitive Ability') || 
+      concernNames.includes('Emotional Intelligence') || 
+      concernNames.includes('Cultural & Attitudinal Fit')) {
+    suggestion += `• Structured operational roles\n`;
+    suggestion += `• Clear SOP-driven environments\n`;
+    suggestion += `• Roles with supervision\n`;
+    suggestion += `• Not high-autonomy or strategic roles\n\n`;
+  } else if (strongNames.includes('Leadership & Management')) {
+    suggestion += `• Supervisory positions\n`;
+    suggestion += `• Team lead roles\n`;
+    suggestion += `• Project coordination\n\n`;
+  } else if (strongNames.includes('Technical & Manufacturing')) {
+    suggestion += `• Technical specialist roles\n`;
+    suggestion += `• Skilled trade positions\n`;
+    suggestion += `• Quality assurance\n\n`;
   } else {
-    potential += `Limited development upside given the pattern of scores. Significant intervention would be required.`;
+    suggestion += `• Entry-level positions with training\n`;
+    suggestion += `• Structured environments with clear guidance\n`;
+    suggestion += `• Roles with close supervision\n\n`;
   }
   
-  return potential;
+  suggestion += `**Risk Areas:**\n\n`;
+  
+  if (concernNames.includes('Cognitive Ability')) {
+    suggestion += `• Complex analytical and strategic roles\n`;
+  }
+  if (concernNames.includes('Emotional Intelligence')) {
+    suggestion += `• High-stakes people management\n`;
+  }
+  if (concernNames.includes('Cultural & Attitudinal Fit')) {
+    suggestion += `• Culture-shaping positions\n`;
+  }
+  if (concernNames.includes('Leadership & Management')) {
+    suggestion += `• Senior leadership\n`;
+  }
+  if (concernNames.includes('Technical & Manufacturing')) {
+    suggestion += `• Technical expert roles\n`;
+  }
+  if (concernNames.includes('Communication')) {
+    suggestion += `• Client-facing positions\n`;
+  }
+  
+  if (!suggestion.includes('•')) {
+    suggestion += `• Innovation-heavy roles\n`;
+    suggestion += `• High-pressure strategic decision-making\n`;
+  }
+  
+  return suggestion;
 };
 
-// Generate strategic observation
-const generateStrategicObservation = (concernAreas) => {
+// Generate leadership evaluation
+const generateLeadershipEvaluation = (concernAreas) => {
   const concernNames = concernAreas.map(c => c.category);
   
-  let observation = `🧠 Strategic Observation (Important)\n\n`;
+  let evaluation = `🧠 Leadership Evaluation\n\n`;
   
-  const hasIntegrityIssues = concernNames.includes('Ethics & Integrity');
-  const hasLeadershipIssues = concernNames.includes('Leadership & Management');
-  const hasCulturalIssues = concernNames.includes('Cultural & Attitudinal Fit');
+  const hasCognitive = concernNames.includes('Cognitive Ability');
+  const hasEI = concernNames.includes('Emotional Intelligence');
+  const hasCultural = concernNames.includes('Cultural & Attitudinal Fit');
   
-  observation += `Compared to other profiles:\n\n`;
-  observation += `This candidate has ${!hasIntegrityIssues ? 'stronger' : 'weaker'} integrity, `;
-  observation += `${!hasLeadershipIssues ? 'stronger' : 'weaker'} leadership, and `;
-  observation += `${!hasCulturalIssues ? 'stronger' : 'weaker'} cultural fit.\n\n`;
+  if (hasCognitive && hasEI && hasCultural) {
+    evaluation += `For leadership hiring, I would flag:\n\n`;
+    evaluation += `• Low Cognitive Ability\n`;
+    evaluation += `• Low Emotional Intelligence\n`;
+    evaluation += `• Low Cultural Fit\n\n`;
+    evaluation += `Those three together often predict:\n\n`;
+    evaluation += `• Struggles in complexity\n`;
+    evaluation += `• Team friction\n`;
+    evaluation += `• Leadership ceiling\n\n`;
+    evaluation += `Ethics is strong — but integrity alone doesn't compensate for low cognitive and emotional capacity in leadership roles.`;
+  } else if (hasCognitive || hasEI || hasCultural) {
+    evaluation += `For leadership consideration, the ${hasCognitive ? 'cognitive ability' : hasEI ? 'emotional intelligence' : 'cultural fit'} concern needs to be addressed. This may limit effectiveness in leadership roles without significant development.`;
+  } else {
+    evaluation += `This candidate shows potential for leadership development, though current experience may be limited. With targeted growth in strategic areas, they could progress toward leadership roles.`;
+  }
   
-  observation += `Between candidates:\n\n`;
-  observation += `• Some candidates = Safer but limited\n`;
-  observation += `• This candidate = ${hasCognitiveStrength ? 'Higher mental capacity but higher risk' : 'Balanced risk profile'}`;
-  
-  return observation;
+  return evaluation;
 };
 
-// Generate final assessment
-const generateFinalAssessment = (strongAreas, concernAreas) => {
-  const concernCount = concernAreas.length;
+// Generate overall grade
+const generateOverallGrade = (strongAreas, concernAreas) => {
   const strongCount = strongAreas.length;
+  const concernCount = concernAreas.length;
   
-  let assessment = `📌 Final Assessment Summary\n\n`;
+  let grade = `📌 Overall Grade Interpretation\n\n`;
   
-  if (strongCount === 0 && concernCount >= 5) {
-    assessment += `Intellectually capable but behaviorally and culturally underdeveloped. Not leadership-ready. Requires structured environment and development support.`;
-  } else if (strongCount >= 2 && concernCount <= 3) {
-    assessment += `Balanced profile with identifiable strengths and clear development paths. Suitable for growth-oriented roles with proper support.`;
-  } else if (concernCount >= 6) {
-    assessment += `Significant development needed across multiple areas. Best suited for entry-level positions with close supervision and clear guidance.`;
+  if (strongCount >= 5 && concernCount <= 2) {
+    grade += `This profile reflects a strong candidate with multiple strengths and manageable development areas. Good potential for growth and increased responsibility.`;
+  } else if (strongCount >= 3 && concernCount <= 3) {
+    grade += `Average performer with integrity, but limited leadership upside without significant development. Not a poor candidate — but not high-potential.`;
+  } else if (concernCount >= 4) {
+    grade += `This candidate requires significant development across multiple areas. Best suited for structured roles with close supervision and clear guidance.`;
   } else {
-    assessment += `Mixed profile requiring careful placement and targeted development support.`;
+    grade += `Balanced profile with identified strengths and clear development paths. With targeted support, this candidate can grow into a solid contributor.`;
   }
   
-  return assessment;
+  return grade;
+};
+
+// Generate development priorities
+const generateDevelopmentPriorities = (concernAreas) => {
+  if (concernAreas.length === 0) return '';
+  
+  let priorities = `📋 Development Priority Summary\n\n`;
+  
+  concernAreas.slice(0, 3).forEach((area, index) => {
+    priorities += `Priority ${index + 1}: ${area.category}\n`;
+    priorities += `• Focus on improving from ${area.percentage}% to 70%+ target\n`;
+    priorities += `• ${getDevelopmentRecommendation(area.category)}\n\n`;
+  });
+  
+  return priorities;
+};
+
+// Get development recommendation
+const getDevelopmentRecommendation = (category) => {
+  const recommendations = {
+    'Cognitive Ability': 'Enroll in critical thinking and problem-solving courses. Practice with case studies and analytical exercises.',
+    'Emotional Intelligence': 'Participate in EI workshops. Practice active listening and seek feedback on interpersonal interactions.',
+    'Technical & Manufacturing': 'Complete foundational technical training. Shadow experienced technicians for hands-on learning.',
+    'Cultural & Attitudinal Fit': 'Participate in company culture workshops. Schedule regular feedback sessions on cultural alignment.',
+    'Communication': 'Take business writing and presentation skills courses. Join Toastmasters or similar groups.',
+    'Problem-Solving': 'Learn structured problem-solving frameworks. Practice with real-world case studies.',
+    'Leadership & Management': 'Take leadership development courses. Seek opportunities to lead small projects.',
+    'Performance Metrics': 'Set SMART goals and track progress weekly. Learn performance management frameworks.',
+    'Personality & Behavioral': 'Work with a coach on professional presence and adaptability.',
+    'Ethics & Integrity': 'Participate in ethics training and governance workshops.'
+  };
+  
+  return recommendations[category] || 'Complete targeted training and work with a mentor for guided development.';
+};
+
+// Helper to format list
+const formatList = (list) => {
+  if (list.length === 1) return list[0];
+  if (list.length === 2) return `${list[0]} and ${list[1]}`;
+  return `${list.slice(0, -1).join(', ')}, and ${list[list.length - 1]}`;
 };
