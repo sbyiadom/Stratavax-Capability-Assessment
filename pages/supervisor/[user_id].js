@@ -29,7 +29,7 @@ export default function CandidateReport() {
     strengths: true,
     weaknesses: true,
     improvements: true,
-    analysis: true // Make sure this is true by default
+    analysis: true
   });
   const [personalizedData, setPersonalizedData] = useState({
     summary: '',
@@ -125,7 +125,7 @@ export default function CandidateReport() {
           email: profileData?.email || 'Email not available'
         });
 
-        // Try to get from assessment_results first (this would have real response data)
+        // Try to get from assessment_results first
         const { data: resultsData } = await supabase
           .from('assessment_results')
           .select('*')
@@ -167,7 +167,7 @@ export default function CandidateReport() {
             generatePersonalizedContent(mostRecent, candidate);
           }
         } else {
-          // Fallback to supervisor_dashboard with sample data for demo
+          // Fallback to supervisor_dashboard with sample data
           const { data: dashboardData } = await supabase
             .from('supervisor_dashboard')
             .select('*')
@@ -178,7 +178,6 @@ export default function CandidateReport() {
             const completedAssessments = dashboardData.assessments.filter(a => a.status === 'completed');
             
             if (completedAssessments.length > 0) {
-              // For demo, use general assessment with sample scores
               const type = 'general';
               const config = assessmentConfigs[type];
               const sampleScores = generateSampleScores(type);
@@ -208,7 +207,7 @@ export default function CandidateReport() {
                 setAssessmentType(mostRecent.type);
                 setCategoryScores(mostRecent.category_scores || {});
                 
-                // Generate personalized content for demo
+                // Generate personalized content
                 generatePersonalizedContent(mostRecent, candidate);
               }
             }
@@ -224,15 +223,14 @@ export default function CandidateReport() {
     fetchData();
   }, [isSupervisor, user_id]);
 
-  // Generate sample scores for demo (in production, these come from the database)
+  // Generate sample scores for demo
   const generateSampleScores = (type) => {
     const config = assessmentConfigs[type] || assessmentConfigs.general;
     const scores = {};
     
     config.categories.forEach(category => {
       const maxScore = config.maxScores[category] || 50;
-      // Generate a unique score for each category to ensure no two reports are the same
-      const randomFactor = Math.random() * 0.3 + 0.4; // 0.4 to 0.7 range
+      const randomFactor = Math.random() * 0.3 + 0.4;
       const score = Math.round(maxScore * randomFactor);
       const percentage = Math.round((score / maxScore) * 100);
       
@@ -288,7 +286,12 @@ export default function CandidateReport() {
       }
     });
     
-    console.log("Personalized Data Generated:", { summary, strengths, improvementAreas, weaknesses }); // Debug log
+    console.log("Personalized Data Generated:", { 
+      summary, 
+      strengthsCount: strengths.length, 
+      improvementCount: improvementAreas.length, 
+      weaknessesCount: weaknesses.length 
+    });
     
     setPersonalizedData({
       summary,
@@ -353,6 +356,11 @@ export default function CandidateReport() {
   const config = assessmentConfigs[current.type] || assessmentConfigs.general;
   const overallGrade = getGradeFromPercentage(current.percentage);
   const classification = getClassification(current.score, current.max_score, current.type);
+
+  // Debug logs
+  console.log("Current Assessment:", current);
+  console.log("Category Scores:", categoryScores);
+  console.log("Personalized Data State:", personalizedData);
 
   return (
     <AppLayout background="/images/preassessmentbg.jpg">
@@ -637,7 +645,7 @@ export default function CandidateReport() {
           </div>
         )}
 
-        {/* Real-Time Analysis Section - Always Visible */}
+        {/* Real-Time Analysis Section */}
         <div style={styles.card}>
           <div 
             style={styles.cardHeader}
