@@ -346,11 +346,8 @@ export default function AssessmentPage() {
     }
   };
 
-  // Calculate progress
+  // Calculate progress (kept for internal use, but not displayed)
   const totalAnswered = Object.keys(answers || {}).length;
-  const progressPercentage = questions.length > 0 
-    ? Math.round((totalAnswered / questions.length) * 100) 
-    : 0;
   
   const isLastQuestion = currentIndex === questions.length - 1;
   const timeRemainingSeconds = Math.max(0, timeLimit - elapsedSeconds);
@@ -436,7 +433,7 @@ export default function AssessmentPage() {
                 </div>
                 <div style={styles.modalStat}>
                   <span>Completion Rate</span>
-                  <span style={{ color: '#2196f3', fontWeight: 700 }}>{progressPercentage}%</span>
+                  <span style={{ color: '#2196f3', fontWeight: 700 }}>{Math.round((totalAnswered / questions.length) * 100)}%</span>
                 </div>
                 <div style={styles.modalStat}>
                   <span>Assessment</span>
@@ -522,24 +519,9 @@ export default function AssessmentPage() {
 
         {/* Main Content - Two Column Layout */}
         <div style={styles.mainContent}>
-          {/* Left Column - Questions */}
+          {/* Left Column - Questions (PROGRESS TRACKER REMOVED) */}
           <div style={styles.questionColumn}>
-            {/* Progress Bar */}
-            <div style={styles.progressContainer}>
-              <div style={styles.progressTrack}>
-                <div style={{
-                  ...styles.progressFill,
-                  width: `${progressPercentage}%`,
-                  background: `linear-gradient(135deg, ${assessmentType?.gradient_start || '#667eea'}, ${assessmentType?.gradient_end || '#764ba2'})`
-                }} />
-              </div>
-              <div style={styles.progressStats}>
-                <span>{totalAnswered} answered</span>
-                <span>{questions.length - totalAnswered} remaining</span>
-              </div>
-            </div>
-
-            {/* Question Card */}
+            {/* Question Card - Now moved up */}
             <div style={styles.questionCard}>
               {/* Section Badge */}
               <div style={styles.sectionBadge}>
@@ -690,7 +672,7 @@ export default function AssessmentPage() {
                   <div style={styles.statLabel}>Remaining</div>
                 </div>
                 <div style={styles.statCard}>
-                  <div style={{ ...styles.statValue, color: assessmentType?.gradient_start || '#667eea' }}>{progressPercentage}%</div>
+                  <div style={{ ...styles.statValue, color: assessmentType?.gradient_start || '#667eea' }}>{Math.round((totalAnswered / questions.length) * 100)}%</div>
                   <div style={styles.statLabel}>Complete</div>
                 </div>
               </div>
@@ -942,31 +924,7 @@ const styles = {
     flexDirection: 'column',
     gap: '20px'
   },
-  progressContainer: {
-    background: 'white',
-    padding: '20px',
-    borderRadius: '16px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
-  },
-  progressTrack: {
-    height: '8px',
-    background: '#e2e8f0',
-    borderRadius: '4px',
-    overflow: 'hidden',
-    marginBottom: '10px'
-  },
-  progressFill: {
-    height: '100%',
-    transition: 'width 0.3s ease',
-    borderRadius: '4px'
-  },
-  progressStats: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: '13px',
-    color: '#64748b',
-    fontWeight: 500
-  },
+  // PROGRESS CONTAINER REMOVED - question card moves up
   questionCard: {
     background: 'white',
     borderRadius: '16px',
