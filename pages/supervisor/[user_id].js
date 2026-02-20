@@ -6,6 +6,7 @@ import { supabase } from "../../supabase/client";
 import { generateDetailedInterpretation } from "../../utils/detailedInterpreter";
 import { getClassification, getGradeInfo, getHiringRecommendation } from "../../utils/reportGenerator";
 import { assessmentTypes, getAssessmentType } from "../../utils/assessmentConfigs";
+import { analyzeResponses } from "../../utils/responseAnalyzer";
 
 export default function CandidateReport() {
   const router = useRouter();
@@ -21,103 +22,122 @@ export default function CandidateReport() {
   const [assessmentConfig, setAssessmentConfig] = useState(null);
 
   useEffect(() => {
-  if (!isSupervisor || !user_id) return;
-
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      
-      // Get candidate info
-      const { data: profileData } = await supabase
-        .from('candidate_profiles')
-        .select('*')
-        .eq('id', user_id)
-        .maybeSingle();
-
-      setCandidate({
-        id: user_id,
-        full_name: profileData?.full_name || profileData?.email?.split('@')[0] || 'Candidate',
-        email: profileData?.email || 'Email not available'
-      });
-
-      // Get assessment results
-      const { data: resultsData } = await supabase
-        .from('assessment_results')
-        .select('*')
-        .eq('user_id', user_id)
-        .order('completed_at', { ascending: false });
-
-      if (resultsData && resultsData.length > 0) {
-        const result = resultsData[0];
-        const percentage = Math.round((result.total_score / result.max_score) * 100);
+    const checkAuth = () => {
+      if (typeof window !== 'undefined') {
+        const supervisorSession = localStorage.getItem("supervisorSession");
+        if (!supervisorSession) {
+          router.push("/supervisor-login");
+          return;
+        }
         
-        // Get assessment type
-        const assessmentTypeId = result.assessment_type || 'general';
-        const config = getAssessmentType(assessmentTypeId);
-        setAssessmentConfig(config);
+        try {
+          const session = JSON.parse(supervisorSession);
+          if (session.loggedIn) {
+            setIsSupervisor(true);
+          } else {
+            router.push("/supervisor-login");
+          }
+        } catch {
+          router.push("/supervisor-login");
+        }
+      }
+    };
+    checkAuth();
+  }, [router]);
 
-        // Fetch the actual responses for this assessment
-        const { data: responsesData } = await supabase
-          .from('responses')
+  useEffect(() => {
+    if (!isSupervisor || !user_id) return;
+
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        
+        const { data: profileData } = await supabase
+          .from('candidate_profiles')
+          .select('*')
+          .eq('id', user_id)
+          .maybeSingle();
+
+        setCandidate({
+          id: user_id,
+          full_name: profileData?.full_name || profileData?.email?.split('@')[0] || 'Candidate',
+          email: profileData?.email || 'Email not available'
+        });
+
+        const { data: resultsData } = await supabase
+          .from('assessment_results')
           .select('*')
           .eq('user_id', user_id)
-          .eq('assessment_id', result.assessment_id);
+          .order('completed_at', { ascending: false });
 
-        // Fetch all unique questions and answers
-        const questionIds = responsesData?.map(r => r.question_id) || [];
-        const answerIds = responsesData?.map(r => r.answer_id) || [];
+        if (resultsData && resultsData.length > 0) {
+          const result = resultsData[0];
+          const percentage = Math.round((result.total_score / result.max_score) * 100);
+          
+          const assessmentTypeId = result.assessment_type || 'general';
+          const config = getAssessmentType(assessmentTypeId);
+          setAssessmentConfig(config);
 
-        const { data: questionsData } = await supabase
-          .from('unique_questions')
-          .select('*')
-          .in('id', questionIds);
+          const { data: responsesData } = await supabase
+            .from('responses')
+            .select('*')
+            .eq('user_id', user_id)
+            .eq('assessment_id', result.assessment_id);
 
-        const { data: answersData } = await supabase
-          .from('unique_answers')
-          .select('*')
-          .in('id', answerIds);
+          const questionIds = responsesData?.map(r => r.question_id) || [];
+          const answerIds = responsesData?.map(r => r.answer_id) || [];
 
-        // Analyze responses to generate insights
-        const responseInsights = analyzeResponses(
-          responsesData || [], 
-          questionsData || [], 
-          answersData || []
-        );
-        
-        const detailedInterpretation = generateDetailedInterpretation(
-          profileData?.full_name || 'Candidate',
-          result.category_scores,
-          assessmentTypeId,
-          responseInsights
-        );
-        
-        setAssessmentData({
-          source: 'results',
-          assessment_id: result.assessment_id,
-          assessment_type: assessmentTypeId,
-          assessment_name: config.name,
-          total_score: result.total_score,
-          max_score: result.max_score,
-          percentage: percentage,
-          completed_at: result.completed_at,
-          category_scores: result.category_scores || {},
-          strengths: result.strengths || [],
-          weaknesses: result.weaknesses || [],
-          recommendations: result.recommendations || [],
-          interpretations: result.interpretations || {},
-          detailedInterpretation: detailedInterpretation,
-          responseInsights: responseInsights
-        });
+          const { data: questionsData } = await supabase
+            .from('unique_questions')
+            .select('*')
+            .in('id', questionIds);
+
+          const { data: answersData } = await supabase
+            .from('unique_answers')
+            .select('*')
+            .in('id', answerIds);
+
+          const responseInsights = analyzeResponses(
+            responsesData || [], 
+            questionsData || [], 
+            answersData || []
+          );
+          
+          const detailedInterpretation = generateDetailedInterpretation(
+            profileData?.full_name || 'Candidate',
+            result.category_scores,
+            assessmentTypeId,
+            responseInsights
+          );
+          
+          setAssessmentData({
+            source: 'results',
+            assessment_id: result.assessment_id,
+            assessment_type: assessmentTypeId,
+            assessment_name: config.name,
+            total_score: result.total_score,
+            max_score: result.max_score,
+            percentage: percentage,
+            completed_at: result.completed_at,
+            category_scores: result.category_scores || {},
+            strengths: result.strengths || [],
+            weaknesses: result.weaknesses || [],
+            recommendations: result.recommendations || [],
+            interpretations: result.interpretations || {},
+            detailedInterpretation: detailedInterpretation,
+            responseInsights: responseInsights
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error("Error fetching data:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
-  fetchData();
-}, [isSupervisor, user_id]);
+    fetchData();
+  }, [isSupervisor, user_id]);
+
   const handlePrint = () => {
     setShowPrintView(true);
     setTimeout(() => {
@@ -357,19 +377,19 @@ export default function CandidateReport() {
               
               {Object.entries(assessmentData.category_scores).map(([category, data]) => {
                 const catGrade = getGradeInfo(data.percentage);
+                const insights = assessmentData.responseInsights?.[category] || [];
                 const interpretation = assessmentData.detailedInterpretation?.categoryBreakdown;
                 
                 let narrative = '';
                 if (interpretation) {
                   const allNarratives = [
-                    ...interpretation.strong,
-                    ...interpretation.moderate,
-                    ...interpretation.concerns
+                    ...(interpretation.strong || []),
+                    ...(interpretation.moderate || []),
+                    ...(interpretation.concerns || [])
                   ];
-                  const match = allNarratives.find(n => n.includes(category));
+                  const match = allNarratives.find(n => n && n.includes(category));
                   if (match) {
-                    const lines = match.split('\n');
-                    narrative = lines.slice(1).join('\n').trim();
+                    narrative = match;
                   }
                 }
                 
@@ -379,22 +399,47 @@ export default function CandidateReport() {
                       <h4 style={styles.competencyName}>{category} – {data.percentage}% ({catGrade.grade})</h4>
                     </div>
                     <div style={styles.competencyBody}>
-                      <p style={styles.competencyInterpretation}>{narrative || catGrade.text}</p>
+                      <div style={styles.competencyInterpretation}>
+                        {narrative ? (
+                          <pre style={styles.pre}>{narrative}</pre>
+                        ) : (
+                          <>
+                            <p><strong>Response Analysis:</strong></p>
+                            {insights.length > 0 ? (
+                              insights.map((insight, i) => (
+                                <p key={i} style={styles.insightItem}>• {insight}</p>
+                              ))
+                            ) : (
+                              <p>• Based on the candidate's responses in this category</p>
+                            )}
+                            <p style={styles.assessmentNote}>
+                              <strong>Assessment:</strong> {
+                                data.percentage >= 80 ? 'Exceptional capability demonstrated' :
+                                data.percentage >= 70 ? 'Strong performance with minor gaps' :
+                                data.percentage >= 60 ? 'Basic competency established, needs development' :
+                                'Significant gaps requiring immediate attention'
+                              }
+                            </p>
+                          </>
+                        )}
+                      </div>
                       <div style={styles.competencyIndicators}>
                         <div style={styles.indicatorColumn}>
-                          <strong>Strength Indicators:</strong>
+                          <strong>What this means:</strong>
                           <ul style={styles.indicatorList}>
-                            {data.percentage >= 60 ? 
-                              <li>Meets minimum requirements</li> : 
-                              <li>Requires development</li>}
+                            {data.percentage >= 80 && <li>Mastery level - can excel independently</li>}
+                            {data.percentage >= 70 && data.percentage < 80 && <li>Proficient - performs well with minimal guidance</li>}
+                            {data.percentage >= 60 && data.percentage < 70 && <li>Developing - requires training and practice</li>}
+                            {data.percentage < 60 && <li>Beginning - needs foundational instruction</li>}
                           </ul>
                         </div>
                         <div style={styles.indicatorColumn}>
-                          <strong>Development Needs:</strong>
+                          <strong>Recommended action:</strong>
                           <ul style={styles.indicatorList}>
-                            {data.percentage < 70 ? 
-                              <li>Targeted training recommended</li> : 
-                              <li>Maintain current level</li>}
+                            {data.percentage >= 80 && <li>Leverage as strength, mentor others</li>}
+                            {data.percentage >= 70 && data.percentage < 80 && <li>Build upon through challenging assignments</li>}
+                            {data.percentage >= 60 && data.percentage < 70 && <li>Enroll in targeted training programs</li>}
+                            {data.percentage < 60 && <li>Provide structured coaching and support</li>}
                           </ul>
                         </div>
                       </div>
@@ -408,15 +453,28 @@ export default function CandidateReport() {
             <div style={styles.strengthProfile}>
               <h3 style={styles.subsectionTitle}>6. Strength Profile Summary</h3>
               <div style={styles.strengthGrid}>
-                {strengthsList.map((strength, index) => (
-                  <div key={index} style={styles.strengthCard}>
-                    <span style={styles.strengthIcon}>💪</span>
+                {strengthsList.map((strength, index) => {
+                  const [category, percentage] = strength.split(' (');
+                  return (
+                    <div key={index} style={styles.strengthCard}>
+                      <span style={styles.strengthIcon}>💪</span>
+                      <div>
+                        <strong>{category}</strong>
+                        <p style={styles.strengthDesc}>Performance: {percentage}</p>
+                        <p style={styles.strengthDetail}>Key strength in {config.name}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+                {strengthsList.length === 0 && (
+                  <div style={styles.strengthCard}>
+                    <span style={styles.strengthIcon}>📝</span>
                     <div>
-                      <strong>{strength}</strong>
-                      <p style={styles.strengthDesc}>Key strength in {config.name}</p>
+                      <strong>No dominant strengths identified</strong>
+                      <p style={styles.strengthDesc}>All areas require development</p>
                     </div>
                   </div>
-                ))}
+                )}
               </div>
             </div>
 
@@ -424,20 +482,24 @@ export default function CandidateReport() {
             <div style={styles.riskProfile}>
               <h3 style={styles.subsectionTitle}>7. Risk & Development Areas</h3>
               <div style={styles.riskGrid}>
-                {weaknessesList.map((weakness, index) => (
-                  <div key={index} style={styles.riskCard}>
-                    <span style={styles.riskIcon}>⚠️</span>
-                    <div>
-                      <strong>{weakness}</strong>
-                      <p style={styles.riskDesc}>Critical development need for {config.name}</p>
+                {weaknessesList.map((weakness, index) => {
+                  const [category, percentage] = weakness.split(' (');
+                  return (
+                    <div key={index} style={styles.riskCard}>
+                      <span style={styles.riskIcon}>⚠️</span>
+                      <div>
+                        <strong>{category}</strong>
+                        <p style={styles.riskDesc}>Current: {percentage}</p>
+                        <p style={styles.riskDetail}>Critical development need for {config.name}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </section>
 
-          {/* 8️⃣ Role Fit Analysis */}
+          {/* 8️⃣ Role Fit Analysis & Development Plan */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'development' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>8. Role Fit Analysis - {config.name}</h2>
@@ -447,37 +509,56 @@ export default function CandidateReport() {
               {assessmentData.detailedInterpretation?.roleFit && (
                 <div style={styles.analysisText}>{assessmentData.detailedInterpretation.roleFit}</div>
               )}
+              {!assessmentData.detailedInterpretation?.roleFit && (
+                <div style={styles.analysisText}>
+                  <p><strong>Best suited for roles requiring:</strong></p>
+                  <ul>
+                    {strengthsList.map((s, i) => {
+                      const [category] = s.split(' (');
+                      return <li key={i}>• Strong {category.toLowerCase()} capabilities</li>;
+                    })}
+                    {strengthsList.length === 0 && (
+                      <li>• Structured, supervised positions with clear guidelines</li>
+                    )}
+                  </ul>
+                </div>
+              )}
             </div>
 
             {/* 9️⃣ Development Recommendations */}
             <div style={styles.timelineContainer}>
               <h3 style={styles.subsectionTitle}>9. Development Recommendations</h3>
               
-              <div style={styles.timelinePhase}>
-                <h3 style={styles.phaseTitle}>Short-Term (0–3 Months)</h3>
-                <ul style={styles.phaseList}>
-                  <li>Complete foundational training in weak areas</li>
-                  <li>Structured mentoring program</li>
-                  <li>Weekly feedback and progress reviews</li>
-                </ul>
-              </div>
-              
-              <div style={styles.timelinePhase}>
-                <h3 style={styles.phaseTitle}>Medium-Term (3–6 Months)</h3>
-                <ul style={styles.phaseList}>
-                  <li>Advanced training in core competencies</li>
-                  <li>Cross-functional project exposure</li>
-                  <li>Skill certification courses</li>
-                </ul>
-              </div>
-              
-              <div style={styles.timelinePhase}>
-                <h3 style={styles.phaseTitle}>Long-Term (6–12 Months)</h3>
-                <ul style={styles.phaseList}>
-                  <li>Leadership development program</li>
-                  <li>Stretch assignments</li>
-                  <li>Regular assessment of progress</li>
-                </ul>
+              <div style={styles.timelineGrid}>
+                <div style={styles.timelinePhase}>
+                  <h3 style={styles.phaseTitle}>Short-Term (0–3 Months)</h3>
+                  <ul style={styles.phaseList}>
+                    <li>Complete foundational training in weak areas</li>
+                    <li>Structured mentoring program</li>
+                    <li>Weekly feedback and progress reviews</li>
+                    <li>Focus on {weaknessesList.slice(0, 2).map(w => w.split(' (')[0]).join(' and ')}</li>
+                  </ul>
+                </div>
+                
+                <div style={styles.timelinePhase}>
+                  <h3 style={styles.phaseTitle}>Medium-Term (3–6 Months)</h3>
+                  <ul style={styles.phaseList}>
+                    <li>Advanced training in core competencies</li>
+                    <li>Cross-functional project exposure</li>
+                    <li>Skill certification courses</li>
+                    <li>Apply learning to practical situations</li>
+                  </ul>
+                </div>
+                
+                <div style={styles.timelinePhase}>
+                  <h3 style={styles.phaseTitle}>Long-Term (6–12 Months)</h3>
+                  <ul style={styles.phaseList}>
+                    <li>Leadership development program</li>
+                    <li>Stretch assignments</li>
+                    <li>Regular reassessment of progress</li>
+                    <li>Build on {strengthsList.slice(0, 1).map(s => s.split(' (')[0]).join('')} strengths</li>
+                  </ul>
+                </div>
               </div>
             </div>
 
@@ -493,6 +574,14 @@ export default function CandidateReport() {
                 {assessmentData.percentage >= 65 ? ' strong potential' : ' significant development needs'} 
                 for roles requiring these competencies.
               </p>
+              <div style={styles.hiringFactors}>
+                <div style={styles.hiringFactor}>
+                  <strong>Supporting factors:</strong> {strengthsList.length} strength areas identified
+                </div>
+                <div style={styles.hiringFactor}>
+                  <strong>Risk factors:</strong> {weaknessesList.length} areas requiring development
+                </div>
+              </div>
             </div>
           </section>
         </div>
@@ -509,7 +598,6 @@ export default function CandidateReport() {
   );
 }
 
-// Styles object (same as before, but ensure all properties are properly closed)
 const styles = {
   checkingContainer: {
     minHeight: '100vh',
@@ -911,10 +999,24 @@ const styles = {
     lineHeight: '1.6',
     marginBottom: '15px'
   },
+  insightItem: {
+    margin: '5px 0',
+    paddingLeft: '15px'
+  },
+  assessmentNote: {
+    marginTop: '10px',
+    padding: '10px',
+    background: '#f3f4f6',
+    borderRadius: '6px',
+    fontStyle: 'italic'
+  },
   competencyIndicators: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
-    gap: '20px'
+    gap: '20px',
+    marginTop: '15px',
+    paddingTop: '15px',
+    borderTop: '1px solid #e5e7eb'
   },
   indicatorColumn: {
     fontSize: '13px'
@@ -948,6 +1050,11 @@ const styles = {
     fontSize: '12px',
     color: '#065f46'
   },
+  strengthDetail: {
+    margin: '5px 0 0 0',
+    fontSize: '11px',
+    color: '#047857'
+  },
   riskProfile: {
     marginTop: '40px'
   },
@@ -972,6 +1079,11 @@ const styles = {
     fontSize: '12px',
     color: '#991b1b'
   },
+  riskDetail: {
+    margin: '5px 0 0 0',
+    fontSize: '11px',
+    color: '#b91c1c'
+  },
   roleFitCard: {
     padding: '30px',
     background: '#f9fafb',
@@ -980,10 +1092,12 @@ const styles = {
     marginBottom: '40px'
   },
   timelineContainer: {
+    marginBottom: '40px'
+  },
+  timelineGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '20px',
-    marginBottom: '40px'
+    gap: '20px'
   },
   timelinePhase: {
     padding: '20px',
@@ -1028,13 +1142,32 @@ const styles = {
   hiringDetail: {
     fontSize: '14px',
     color: '#6b7280',
-    lineHeight: '1.6'
+    lineHeight: '1.6',
+    marginBottom: '20px'
+  },
+  hiringFactors: {
+    display: 'flex',
+    justifyContent: 'center',
+    gap: '30px',
+    flexWrap: 'wrap'
+  },
+  hiringFactor: {
+    fontSize: '14px',
+    color: '#4b5563'
   },
   analysisText: {
     fontSize: '14px',
     color: '#4b5563',
     lineHeight: '1.8',
     whiteSpace: 'pre-line'
+  },
+  pre: {
+    fontFamily: 'inherit',
+    fontSize: '14px',
+    lineHeight: '1.6',
+    color: '#4b5563',
+    margin: 0,
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word'
   }
 };
-
