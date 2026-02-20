@@ -9,6 +9,9 @@ export default function PreAssessment() {
   const [user, setUser] = useState(null);
   const [error, setError] = useState(null);
 
+  // List of assessment types to exclude
+  const excludedTypes = ['manufacturing'];
+
   useEffect(() => {
     checkUser();
   }, []);
@@ -52,9 +55,14 @@ export default function PreAssessment() {
         return;
       }
 
+      // Filter out excluded assessment types (like manufacturing)
+      const filteredAssessments = assessmentsData.filter(
+        assessment => !excludedTypes.includes(assessment.assessment_type?.code)
+      );
+
       // For each assessment, check if the user has completed it
       const assessmentsWithStatus = await Promise.all(
-        assessmentsData.map(async (assessment) => {
+        filteredAssessments.map(async (assessment) => {
           try {
             // Check in candidate_assessments first
             const { data: completed, error: completedError } = await supabase
