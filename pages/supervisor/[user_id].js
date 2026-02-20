@@ -3,6 +3,15 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
+import {
+  assessmentConfigs,
+  getPersonalizedStrengthDescription,
+  getPersonalizedRecommendations,
+  generatePersonalizedProfileSummary,
+  getPersonalizedBestFit,
+  getGradeFromPercentage,
+  getClassification
+} from "../../utils/personalizedInterpretations";
 
 export default function CandidateReport() {
   const router = useRouter();
@@ -13,6 +22,7 @@ export default function CandidateReport() {
   const [candidate, setCandidate] = useState(null);
   const [assessments, setAssessments] = useState([]);
   const [selectedAssessment, setSelectedAssessment] = useState(null);
+  const [assessmentType, setAssessmentType] = useState('general');
   const [categoryScores, setCategoryScores] = useState({});
   const [expandedSections, setExpandedSections] = useState({
     categories: true,
@@ -20,6 +30,13 @@ export default function CandidateReport() {
     weaknesses: true,
     improvements: true,
     analysis: true
+  });
+  const [personalizedData, setPersonalizedData] = useState({
+    summary: '',
+    bestFit: { fits: [], risks: [] },
+    strengths: [],
+    weaknesses: [],
+    improvementAreas: []
   });
 
   // Check supervisor authentication
@@ -93,14 +110,14 @@ export default function CandidateReport() {
     // Helper function to fetch candidate data
     const fetchCandidateData = async (candidateId) => {
       try {
-        // Get candidate info - FIXED: Get the actual name
+        // Get candidate info
         const { data: profileData } = await supabase
           .from('candidate_profiles')
           .select('*')
           .eq('id', candidateId)
           .maybeSingle();
 
-        console.log("Profile data:", profileData); // Debug log
+        console.log("Profile data:", profileData);
 
         setCandidate({
           id: candidateId,
@@ -108,53 +125,92 @@ export default function CandidateReport() {
           email: profileData?.email || 'Email not available'
         });
 
-        // Try to get from supervisor_dashboard first
-        const { data: dashboardData } = await supabase
-          .from('supervisor_dashboard')
+        // Try to get from assessment_results first (this would have real response data)
+        const { data: resultsData } = await supabase
+          .from('assessment_results')
           .select('*')
           .eq('user_id', candidateId)
-          .maybeSingle();
+          .order('completed_at', { ascending: false });
 
-        if (dashboardData && dashboardData.assessments) {
-          const completedAssessments = dashboardData.assessments.filter(a => a.status === 'completed');
-          
-          if (completedAssessments.length > 0) {
-            // Sample category scores based on the example
-            const sampleCategoryScores = {
-              'Communication': { score: 32, maxPossible: 50, percentage: 64 },
-              'Problem-Solving': { score: 34, maxPossible: 50, percentage: 68 },
-              'Cognitive Ability': { score: 22, maxPossible: 50, percentage: 44 },
-              'Ethics & Integrity': { score: 21, maxPossible: 25, percentage: 84 },
-              'Performance Metrics': { score: 36, maxPossible: 50, percentage: 72 },
-              'Emotional Intelligence': { score: 26, maxPossible: 50, percentage: 52 },
-              'Leadership & Management': { score: 53, maxPossible: 75, percentage: 71 },
-              'Personality & Behavioral': { score: 32, maxPossible: 50, percentage: 64 },
-              'Technical & Manufacturing': { score: 26, maxPossible: 50, percentage: 52 },
-              'Cultural & Attitudinal Fit': { score: 24, maxPossible: 50, percentage: 48 }
-            };
-
-            const formattedAssessments = completedAssessments.map((assessment) => {
-              const percentage = assessment.score ? Math.round((assessment.score / assessment.max_score) * 100) : 0;
-              
-              return {
-                id: assessment.assessment_id,
-                assessment_id: assessment.assessment_id,
-                name: assessment.assessment_name,
-                type: assessment.assessment_type,
-                score: assessment.score || 0,
-                max_score: assessment.max_score || 500,
-                percentage,
-                completed_at: assessment.completed_at,
-                category_scores: sampleCategoryScores
-              };
-            });
-
-            setAssessments(formattedAssessments);
+        if (resultsData && resultsData.length > 0) {
+          // Process real results data
+          const formattedAssessments = resultsData.map(result => {
+            const type = result.assessment_type || 'general';
+            const config = assessmentConfigs[type] || assessmentConfigs.general;
             
-            if (formattedAssessments.length > 0) {
-              const mostRecent = formattedAssessments[0];
-              setSelectedAssessment(mostRecent);
-              setCategoryScores(mostRecent.category_scores || {});
+            // Use actual category scores from the result
+            const scores = result.category_scores || generateSampleScores(type);
+            
+            return {
+              id: result.id,
+              assessment_id: result.assessment_id,
+              name: config.name,
+              type: type,
+              score: result.total_score || 0,
+              max_score: result.max_score || 500,
+              percentage: Math.round((result.total_score || 0) / (result.max_score || 500) * 100),
+              completed_at: result.completed_at,
+              category_scores: scores,
+              config: config
+            };
+          });
+
+          setAssessments(formattedAssessments);
+          
+          if (formattedAssessments.length > 0) {
+            const mostRecent = formattedAssessments[0];
+            setSelectedAssessment(mostRecent);
+            setAssessmentType(mostRecent.type);
+            setCategoryScores(mostRecent.category_scores || {});
+            
+            // Generate personalized data based on actual scores
+            generatePersonalizedContent(mostRecent, candidate);
+          }
+        } else {
+          // Fallback to supervisor_dashboard with sample data for demo
+          const { data: dashboardData } = await supabase
+            .from('supervisor_dashboard')
+            .select('*')
+            .eq('user_id', candidateId)
+            .maybeSingle();
+
+          if (dashboardData && dashboardData.assessments) {
+            const completedAssessments = dashboardData.assessments.filter(a => a.status === 'completed');
+            
+            if (completedAssessments.length > 0) {
+              // For demo, use general assessment with sample scores
+              const type = 'general';
+              const config = assessmentConfigs[type];
+              const sampleScores = generateSampleScores(type);
+              
+              const formattedAssessments = completedAssessments.map((assessment) => {
+                const percentage = assessment.score ? Math.round((assessment.score / assessment.max_score) * 100) : 0;
+                
+                return {
+                  id: assessment.assessment_id,
+                  assessment_id: assessment.assessment_id,
+                  name: config.name,
+                  type: type,
+                  score: assessment.score || 400,
+                  max_score: assessment.max_score || 500,
+                  percentage,
+                  completed_at: assessment.completed_at,
+                  category_scores: sampleScores,
+                  config: config
+                };
+              });
+
+              setAssessments(formattedAssessments);
+              
+              if (formattedAssessments.length > 0) {
+                const mostRecent = formattedAssessments[0];
+                setSelectedAssessment(mostRecent);
+                setAssessmentType(mostRecent.type);
+                setCategoryScores(mostRecent.category_scores || {});
+                
+                // Generate personalized content for demo
+                generatePersonalizedContent(mostRecent, candidate);
+              }
             }
           }
         }
@@ -168,10 +224,85 @@ export default function CandidateReport() {
     fetchData();
   }, [isSupervisor, user_id]);
 
+  // Generate sample scores for demo (in production, these come from the database)
+  const generateSampleScores = (type) => {
+    const config = assessmentConfigs[type] || assessmentConfigs.general;
+    const scores = {};
+    
+    config.categories.forEach(category => {
+      const maxScore = config.maxScores[category] || 50;
+      // Generate a unique score for each category to ensure no two reports are the same
+      const randomFactor = Math.random() * 0.3 + 0.4; // 0.4 to 0.7 range
+      const score = Math.round(maxScore * randomFactor);
+      const percentage = Math.round((score / maxScore) * 100);
+      
+      scores[category] = {
+        score,
+        maxPossible: maxScore,
+        percentage
+      };
+    });
+    
+    return scores;
+  };
+
+  // Generate personalized content based on actual scores
+  const generatePersonalizedContent = (assessment, candidate) => {
+    if (!assessment || !candidate) return;
+    
+    const totalScore = assessment.score;
+    const maxScore = assessment.max_score;
+    const type = assessment.type;
+    
+    const summary = generatePersonalizedProfileSummary(
+      candidate.full_name,
+      type,
+      totalScore,
+      maxScore,
+      assessment.category_scores
+    );
+    
+    const bestFit = getPersonalizedBestFit(assessment.category_scores);
+    
+    const strengths = [];
+    const weaknesses = [];
+    const improvementAreas = [];
+    
+    Object.entries(assessment.category_scores).forEach(([category, data]) => {
+      const item = {
+        category,
+        score: data.score,
+        maxPossible: data.maxPossible,
+        percentage: data.percentage,
+        grade: getGradeFromPercentage(data.percentage),
+        description: getPersonalizedStrengthDescription(category, data.score, data.maxPossible),
+        recommendations: getPersonalizedRecommendations(category, data.score, data.maxPossible, assessment.category_scores)
+      };
+      
+      if (data.percentage >= 70) {
+        strengths.push(item);
+      } else if (data.percentage >= 60) {
+        improvementAreas.push(item);
+      } else {
+        weaknesses.push(item);
+      }
+    });
+    
+    setPersonalizedData({
+      summary,
+      bestFit,
+      strengths,
+      weaknesses,
+      improvementAreas
+    });
+  };
+
   const handleAssessmentChange = (e) => {
     const selected = assessments.find(a => a.id === e.target.value);
     setSelectedAssessment(selected);
+    setAssessmentType(selected.type);
     setCategoryScores(selected.category_scores || {});
+    generatePersonalizedContent(selected, candidate);
   };
 
   const toggleSection = (section) => {
@@ -179,167 +310,6 @@ export default function CandidateReport() {
       ...prev,
       [section]: !prev[section]
     }));
-  };
-
-  // Get grade info for a category
-  const getCategoryGrade = (percentage) => {
-    if (percentage >= 95) return { grade: 'A+', color: '#0A5C2E', bg: '#E6F7E6', description: 'Exceptional' };
-    if (percentage >= 90) return { grade: 'A', color: '#1E7A44', bg: '#E6F7E6', description: 'Excellent' };
-    if (percentage >= 85) return { grade: 'A-', color: '#2E7D32', bg: '#E8F5E9', description: 'Very Good' };
-    if (percentage >= 80) return { grade: 'B+', color: '#2E7D32', bg: '#E8F5E9', description: 'Good' };
-    if (percentage >= 75) return { grade: 'B', color: '#1565C0', bg: '#E3F2FD', description: 'Satisfactory' };
-    if (percentage >= 70) return { grade: 'B-', color: '#1565C0', bg: '#E3F2FD', description: 'Adequate' };
-    if (percentage >= 65) return { grade: 'C+', color: '#E65100', bg: '#FFF3E0', description: 'Developing' };
-    if (percentage >= 60) return { grade: 'C', color: '#E65100', bg: '#FFF3E0', description: 'Basic Competency' };
-    if (percentage >= 55) return { grade: 'C-', color: '#E65100', bg: '#FFF3E0', description: 'Minimum Competency' };
-    if (percentage >= 50) return { grade: 'D+', color: '#B71C1C', bg: '#FFEBEE', description: 'Below Expectations' };
-    if (percentage >= 40) return { grade: 'D', color: '#B71C1C', bg: '#FFEBEE', description: 'Significant Gaps' };
-    return { grade: 'F', color: '#8B0000', bg: '#FFEBEE', description: 'Unsatisfactory' };
-  };
-
-  // Generate overall summary
-  const generateOverallSummary = () => {
-    if (!categoryScores || Object.keys(categoryScores).length === 0) return '';
-    
-    const strongAreas = [];
-    const moderateAreas = [];
-    const concernAreas = [];
-    
-    Object.entries(categoryScores).forEach(([category, data]) => {
-      if (data.percentage >= 70) strongAreas.push(category);
-      else if (data.percentage >= 60) moderateAreas.push(category);
-      else concernAreas.push(category);
-    });
-    
-    let summary = `This candidate shows `;
-    
-    if (strongAreas.length > 0) {
-      summary += `clear strengths in ${strongAreas.join(', ')}`;
-      if (concernAreas.length > 0) {
-        summary += `, but also notable gaps in ${concernAreas.join(', ')}`;
-      }
-    } else if (moderateAreas.length > 0) {
-      summary += `moderate capability with areas for development in ${concernAreas.join(', ')}`;
-    } else {
-      summary += `significant development needs across most areas`;
-    }
-    
-    summary += `. This is ${concernAreas.length <= 2 ? 'a solid profile' : 'not a high-potential leadership profile yet'}, but may be suitable for a structured, supervised operational role with development support.`;
-    
-    return summary;
-  };
-
-  // Get strengths (≥70%)
-  const getStrengths = () => {
-    return Object.entries(categoryScores)
-      .filter(([_, data]) => data.percentage >= 70)
-      .map(([category, data]) => ({
-        category,
-        score: data.score,
-        maxPossible: data.maxPossible,
-        percentage: data.percentage,
-        grade: getCategoryGrade(data.percentage)
-      }));
-  };
-
-  // Get weaknesses (<60%)
-  const getWeaknesses = () => {
-    return Object.entries(categoryScores)
-      .filter(([_, data]) => data.percentage < 60)
-      .map(([category, data]) => ({
-        category,
-        score: data.score,
-        maxPossible: data.maxPossible,
-        percentage: data.percentage,
-        grade: getCategoryGrade(data.percentage)
-      }));
-  };
-
-  // Get areas for improvement (60-69%)
-  const getImprovementAreas = () => {
-    return Object.entries(categoryScores)
-      .filter(([_, data]) => data.percentage >= 60 && data.percentage < 70)
-      .map(([category, data]) => ({
-        category,
-        score: data.score,
-        maxPossible: data.maxPossible,
-        percentage: data.percentage,
-        grade: getCategoryGrade(data.percentage)
-      }));
-  };
-
-  // Generate improvement recommendations
-  const getRecommendations = (category, percentage) => {
-    const recommendations = {
-      'Cognitive Ability': [
-        'Provide structured problem-solving frameworks and analytical thinking exercises',
-        'Assign a mentor for complex tasks and decision-making scenarios',
-        'Enroll in critical thinking and logical reasoning courses',
-        'Practice with case studies and puzzle-based learning platforms'
-      ],
-      'Emotional Intelligence': [
-        'Provide EI training focusing on self-awareness and empathy',
-        'Encourage regular self-reflection and feedback seeking',
-        'Schedule 360-degree feedback sessions',
-        'Pair with a mentor who demonstrates strong emotional intelligence'
-      ],
-      'Technical & Manufacturing': [
-        'Enroll in technical training programs and certification courses',
-        'Provide hands-on practice with supervision',
-        'Shadow experienced technicians for on-the-job learning',
-        'Create a structured skill development plan with clear milestones'
-      ],
-      'Cultural & Attitudinal Fit': [
-        'Schedule regular feedback sessions to discuss cultural alignment',
-        'Pair with a culture champion for guidance and mentoring',
-        'Participate in team-building activities and company events',
-        'Review company values and discuss practical applications'
-      ],
-      'Communication': [
-        'Provide communication skills training and workshops',
-        'Practice presentations with constructive feedback',
-        'Join Toastmasters or similar public speaking groups',
-        'Work on written communication through regular reports'
-      ],
-      'Problem-Solving': [
-        'Provide structured problem-solving frameworks (e.g., root cause analysis)',
-        'Practice with real-world scenarios and case studies',
-        'Participate in design thinking workshops',
-        'Work on cross-functional projects to gain different perspectives'
-      ],
-      'Personality & Behavioral': [
-        'Provide behavioral coaching and feedback sessions',
-        'Encourage participation in team activities',
-        'Work with a mentor on professional presence',
-        'Practice adaptability through varied assignments'
-      ]
-    };
-
-    const defaultRecs = [
-      'Provide targeted training and development in this area',
-      'Set specific improvement goals with regular check-ins',
-      'Pair with a mentor who excels in this area',
-      'Create a personalized development plan with clear milestones'
-    ];
-
-    return recommendations[category] || defaultRecs;
-  };
-
-  // Generate best fit recommendations
-  const getBestFit = () => {
-    const weaknesses = getWeaknesses().map(w => w.category);
-    
-    if (weaknesses.includes('Cognitive Ability') || weaknesses.includes('Emotional Intelligence') || weaknesses.includes('Cultural & Attitudinal Fit')) {
-      return {
-        fits: ['Structured operational roles', 'Clear SOP-driven environments', 'Roles with close supervision'],
-        risks: ['Senior leadership positions', 'Innovation-heavy roles', 'High-pressure strategic decision-making', 'Culture-shaping positions']
-      };
-    }
-    
-    return {
-      fits: ['Standard roles with appropriate support', 'Team-based environments'],
-      risks: ['No significant risks identified']
-    };
   };
 
   if (!isSupervisor || loading) {
@@ -378,11 +348,9 @@ export default function CandidateReport() {
   }
 
   const current = selectedAssessment || assessments[0];
-  const overallSummary = generateOverallSummary();
-  const bestFit = getBestFit();
-  const strengths = getStrengths();
-  const weaknesses = getWeaknesses();
-  const improvementAreas = getImprovementAreas();
+  const config = assessmentConfigs[current.type] || assessmentConfigs.general;
+  const overallGrade = getGradeFromPercentage(current.percentage);
+  const classification = getClassification(current.score, current.max_score, current.type);
 
   return (
     <AppLayout background="/images/preassessmentbg.jpg">
@@ -397,7 +365,7 @@ export default function CandidateReport() {
           </button>
         </div>
 
-        {/* Candidate Info - FIXED: Now shows the actual name */}
+        {/* Candidate Info */}
         <div style={styles.candidateHeader}>
           <div>
             <h1 style={styles.candidateName}>{candidate.full_name}</h1>
@@ -416,6 +384,48 @@ export default function CandidateReport() {
               ))}
             </select>
           )}
+        </div>
+
+        {/* Assessment Summary Card */}
+        <div style={styles.summaryCard}>
+          <div style={styles.summaryHeader}>
+            <span style={styles.assessmentIcon}>{config.icon}</span>
+            <div>
+              <h2 style={styles.assessmentName}>{config.name}</h2>
+              <p style={styles.assessmentDescription}>{config.description}</p>
+            </div>
+          </div>
+          
+          <div style={styles.scoreGrid}>
+            <div style={styles.scoreItem}>
+              <span style={styles.scoreLabel}>Total Score</span>
+              <span style={styles.scoreValue}>{current.score}/{current.max_score}</span>
+            </div>
+            <div style={styles.scoreItem}>
+              <span style={styles.scoreLabel}>Percentage</span>
+              <span style={{...styles.scoreValue, color: overallGrade.color}}>{current.percentage}%</span>
+            </div>
+            <div style={styles.scoreItem}>
+              <span style={styles.scoreLabel}>Grade</span>
+              <span style={{
+                ...styles.gradeBadge,
+                background: overallGrade.bg,
+                color: overallGrade.color
+              }}>{overallGrade.grade}</span>
+            </div>
+            <div style={styles.scoreItem}>
+              <span style={styles.scoreLabel}>Classification</span>
+              <span style={{
+                ...styles.classificationBadge,
+                background: `${classification.color}15`,
+                color: classification.color
+              }}>{classification.label}</span>
+            </div>
+          </div>
+          
+          <div style={styles.completedDate}>
+            Completed: {new Date(current.completed_at).toLocaleString()}
+          </div>
         </div>
 
         {/* Performance by Category Table */}
@@ -446,7 +456,7 @@ export default function CandidateReport() {
                     </thead>
                     <tbody>
                       {Object.entries(categoryScores).map(([category, data]) => {
-                        const grade = getCategoryGrade(data.percentage);
+                        const grade = getGradeFromPercentage(data.percentage);
                         
                         return (
                           <tr key={category} style={styles.tableRow}>
@@ -475,7 +485,7 @@ export default function CandidateReport() {
                             </td>
                             <td style={styles.tableCell}>
                               <span style={{
-                                ...styles.gradeBadge,
+                                ...styles.gradeBadgeSmall,
                                 background: grade.bg,
                                 color: grade.color
                               }}>
@@ -502,8 +512,8 @@ export default function CandidateReport() {
           </div>
         )}
 
-        {/* Strengths Card - NEW */}
-        {strengths.length > 0 && (
+        {/* Strengths Card */}
+        {personalizedData.strengths.length > 0 && (
           <div style={styles.card}>
             <div 
               style={styles.cardHeader}
@@ -518,7 +528,7 @@ export default function CandidateReport() {
             {expandedSections.strengths && (
               <div style={styles.cardContent}>
                 <div style={styles.strengthGrid}>
-                  {strengths.map((item, index) => (
+                  {personalizedData.strengths.map((item, index) => (
                     <div key={index} style={styles.strengthCard}>
                       <div style={styles.strengthHeader}>
                         <span style={styles.strengthCategory}>{item.category}</span>
@@ -526,46 +536,14 @@ export default function CandidateReport() {
                           {item.percentage}% ({item.grade.grade})
                         </span>
                       </div>
-                      <p style={styles.strengthDescription}>
-                        {item.category === 'Ethics & Integrity' && 'Strong ethical foundation. Trustworthy and principled decision-maker.'}
-                        {item.category === 'Performance Metrics' && 'Results-driven with good accountability. Can meet targets effectively.'}
-                        {item.category === 'Leadership & Management' && 'Shows leadership potential. Can manage teams and drive results.'}
-                        {item.category === 'Problem-Solving' && 'Excellent problem-solver. Handles challenges effectively.'}
-                        {item.category === 'Communication' && 'Strong communicator. Articulates ideas clearly.'}
-                        {!['Ethics & Integrity', 'Performance Metrics', 'Leadership & Management', 'Problem-Solving', 'Communication'].includes(item.category) && 
-                          `Strong performance in ${item.category}. This is a valuable asset.`}
-                      </p>
+                      <p style={styles.strengthDescription}>{item.description}</p>
                       <div style={styles.strengthAction}>
-                        <span style={styles.strengthActionText}>✅ Leverage this strength in:</span>
-                        <div style={styles.strengthTags}>
-                          {item.category === 'Ethics & Integrity' && (
-                            <>
-                              <span style={styles.strengthTag}>Compliance roles</span>
-                              <span style={styles.strengthTag}>Quality assurance</span>
-                              <span style={styles.strengthTag}>Supervisory positions</span>
-                            </>
-                          )}
-                          {item.category === 'Performance Metrics' && (
-                            <>
-                              <span style={styles.strengthTag}>Project management</span>
-                              <span style={styles.strengthTag}>Operations</span>
-                              <span style={styles.strengthTag}>Target-driven roles</span>
-                            </>
-                          )}
-                          {item.category === 'Leadership & Management' && (
-                            <>
-                              <span style={styles.strengthTag}>Team lead roles</span>
-                              <span style={styles.strengthTag}>Mentoring others</span>
-                              <span style={styles.strengthTag}>Project coordination</span>
-                            </>
-                          )}
-                          {![ 'Ethics & Integrity', 'Performance Metrics', 'Leadership & Management'].includes(item.category) && (
-                            <>
-                              <span style={styles.strengthTag}>Roles requiring {item.category}</span>
-                              <span style={styles.strengthTag}>Specialized tasks</span>
-                            </>
-                          )}
-                        </div>
+                        <span style={styles.strengthActionText}>✅ How to leverage:</span>
+                        <ul style={styles.strengthList}>
+                          <li style={styles.strengthListItem}>Assign tasks that utilize this strength</li>
+                          <li style={styles.strengthListItem}>Consider for mentoring others in this area</li>
+                          <li style={styles.strengthListItem}>Include in high-visibility projects</li>
+                        </ul>
                       </div>
                     </div>
                   ))}
@@ -575,8 +553,8 @@ export default function CandidateReport() {
           </div>
         )}
 
-        {/* Areas for Improvement Card - NEW */}
-        {improvementAreas.length > 0 && (
+        {/* Areas for Improvement Card */}
+        {personalizedData.improvementAreas.length > 0 && (
           <div style={styles.card}>
             <div 
               style={styles.cardHeader}
@@ -591,7 +569,7 @@ export default function CandidateReport() {
             {expandedSections.improvements && (
               <div style={styles.cardContent}>
                 <div style={styles.improvementGrid}>
-                  {improvementAreas.map((item, index) => (
+                  {personalizedData.improvementAreas.map((item, index) => (
                     <div key={index} style={styles.improvementCard}>
                       <div style={styles.improvementHeader}>
                         <span style={styles.improvementCategory}>{item.category}</span>
@@ -599,17 +577,11 @@ export default function CandidateReport() {
                           {item.percentage}% ({item.grade.grade})
                         </span>
                       </div>
-                      <p style={styles.improvementDescription}>
-                        {item.category === 'Communication' && 'Can communicate, but needs to develop persuasiveness and executive presence.'}
-                        {item.category === 'Problem-Solving' && 'Can solve routine problems but may struggle with complex, ambiguous situations.'}
-                        {item.category === 'Personality & Behavioral' && 'Stable but not high-impact. Could develop greater drive and adaptability.'}
-                        {!['Communication', 'Problem-Solving', 'Personality & Behavioral'].includes(item.category) && 
-                          `Shows basic competency in ${item.category} but needs development to reach target levels.`}
-                      </p>
+                      <p style={styles.improvementDescription}>{item.description}</p>
                       <div style={styles.improvementActions}>
                         <span style={styles.improvementActionTitle}>Recommended actions:</span>
                         <ul style={styles.improvementList}>
-                          {getRecommendations(item.category, item.percentage).slice(0, 2).map((rec, i) => (
+                          {item.recommendations.slice(0, 3).map((rec, i) => (
                             <li key={i} style={styles.improvementListItem}>{rec}</li>
                           ))}
                         </ul>
@@ -622,8 +594,8 @@ export default function CandidateReport() {
           </div>
         )}
 
-        {/* Development Concerns / Weaknesses Card - NEW */}
-        {weaknesses.length > 0 && (
+        {/* Critical Development Areas Card */}
+        {personalizedData.weaknesses.length > 0 && (
           <div style={styles.card}>
             <div 
               style={styles.cardHeader}
@@ -638,7 +610,7 @@ export default function CandidateReport() {
             {expandedSections.weaknesses && (
               <div style={styles.cardContent}>
                 <div style={styles.weaknessGrid}>
-                  {weaknesses.map((item, index) => (
+                  {personalizedData.weaknesses.map((item, index) => (
                     <div key={index} style={styles.weaknessCard}>
                       <div style={styles.weaknessHeader}>
                         <span style={styles.weaknessCategory}>{item.category}</span>
@@ -646,18 +618,11 @@ export default function CandidateReport() {
                           {item.percentage}% ({item.grade.grade})
                         </span>
                       </div>
-                      <p style={styles.weaknessDescription}>
-                        {item.category === 'Cognitive Ability' && 'This is a major concern. May struggle with complex problem-solving and have a slow learning curve.'}
-                        {item.category === 'Emotional Intelligence' && 'May struggle with self-awareness and conflict management. Risk of poor team dynamics.'}
-                        {item.category === 'Technical & Manufacturing' && 'Weak domain expertise. Will require significant training and supervision.'}
-                        {item.category === 'Cultural & Attitudinal Fit' && 'May not align with company values. Risk of engagement issues and resistance to norms.'}
-                        {!['Cognitive Ability', 'Emotional Intelligence', 'Technical & Manufacturing', 'Cultural & Attitudinal Fit'].includes(item.category) && 
-                          `Significant gaps in ${item.category} that need immediate attention.`}
-                      </p>
+                      <p style={styles.weaknessDescription}>{item.description}</p>
                       <div style={styles.weaknessActions}>
                         <span style={styles.weaknessActionTitle}>🔴 Critical recommendations:</span>
                         <ul style={styles.weaknessList}>
-                          {getRecommendations(item.category, item.percentage).map((rec, i) => (
+                          {item.recommendations.map((rec, i) => (
                             <li key={i} style={styles.weaknessListItem}>{rec}</li>
                           ))}
                         </ul>
@@ -671,172 +636,132 @@ export default function CandidateReport() {
         )}
 
         {/* Real-Time Analysis Section */}
-        {Object.keys(categoryScores).length > 0 && (
-          <div style={styles.card}>
-            <div 
-              style={styles.cardHeader}
-              onClick={() => toggleSection('analysis')}
-            >
-              <span style={styles.cardIcon}>🔍</span>
-              <h3 style={styles.cardTitle}>Real-Time Analysis</h3>
-              <span style={styles.expandIcon}>
-                {expandedSections.analysis ? '▼' : '▶'}
-              </span>
-            </div>
-            {expandedSections.analysis && (
-              <div style={styles.cardContent}>
-                {/* Overall Summary */}
-                <div style={styles.analysisSection}>
-                  <h4 style={styles.analysisTitle}>🔎 Overall Summary</h4>
-                  <p style={styles.analysisText}>{overallSummary}</p>
-                </div>
+        <div style={styles.card}>
+          <div 
+            style={styles.cardHeader}
+            onClick={() => toggleSection('analysis')}
+          >
+            <span style={styles.cardIcon}>🔍</span>
+            <h3 style={styles.cardTitle}>Real-Time Analysis</h3>
+            <span style={styles.expandIcon}>
+              {expandedSections.analysis ? '▼' : '▶'}
+            </span>
+          </div>
+          {expandedSections.analysis && (
+            <div style={styles.cardContent}>
+              {/* Overall Summary */}
+              <div style={styles.analysisSection}>
+                <h4 style={styles.analysisTitle}>🔎 Overall Summary</h4>
+                <p style={styles.analysisText}>{personalizedData.summary}</p>
+              </div>
 
-                {/* Category Breakdown with Meanings */}
-                <div style={styles.analysisSection}>
-                  <h4 style={styles.analysisTitle}>📊 Category Breakdown & What It Means</h4>
-                  
-                  {/* Strong Areas */}
-                  {strengths.length > 0 && (
-                    <div style={styles.categoryGroup}>
-                      <h5 style={styles.categoryGroupTitle}>🟢 Strong Areas (≥70%)</h5>
-                      {strengths.map((item) => (
-                        <div key={item.category} style={styles.categoryAnalysis}>
-                          <div style={styles.categoryAnalysisHeader}>
-                            <span style={styles.categoryAnalysisName}>{item.category}</span>
-                            <span style={{...styles.categoryAnalysisScore, color: '#2E7D32'}}>
-                              {item.percentage}% ({item.grade.grade})
-                            </span>
-                          </div>
-                          <p style={styles.categoryAnalysisText}>
-                            {item.category === 'Ethics & Integrity' && 'Very positive indicator. This suggests trustworthiness, compliance with rules, low ethical risk. This is often a non-negotiable foundation.'}
-                            {item.category === 'Performance Metrics' && 'Can meet targets with guidance. Likely execution-focused and reasonably accountable.'}
-                            {item.category === 'Leadership & Management' && 'Shows strong leadership capacity. Can manage teams and drive results.'}
-                            {![ 'Ethics & Integrity', 'Performance Metrics', 'Leadership & Management'].includes(item.category) && 
-                              `Strong performance in ${item.category}. This is a valuable asset.`}
-                          </p>
+              {/* Category Breakdown with Meanings */}
+              <div style={styles.analysisSection}>
+                <h4 style={styles.analysisTitle}>📊 Category Breakdown & What It Means</h4>
+                
+                {/* Strong Areas */}
+                {personalizedData.strengths.length > 0 && (
+                  <div style={styles.categoryGroup}>
+                    <h5 style={styles.categoryGroupTitle}>🟢 Strong Areas (≥70%)</h5>
+                    {personalizedData.strengths.map((item) => (
+                      <div key={item.category} style={styles.categoryAnalysis}>
+                        <div style={styles.categoryAnalysisHeader}>
+                          <span style={styles.categoryAnalysisName}>{item.category}</span>
+                          <span style={{...styles.categoryAnalysisScore, color: '#2E7D32'}}>
+                            {item.percentage}% ({item.grade.grade})
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        <p style={styles.categoryAnalysisText}>{item.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-                  {/* Moderate Areas */}
-                  {improvementAreas.length > 0 && (
-                    <div style={styles.categoryGroup}>
-                      <h5 style={styles.categoryGroupTitle}>🟡 Moderate / Basic Competency Areas (60-69%)</h5>
-                      {improvementAreas.map((item) => (
-                        <div key={item.category} style={styles.categoryAnalysis}>
-                          <div style={styles.categoryAnalysisHeader}>
-                            <span style={styles.categoryAnalysisName}>{item.category}</span>
-                            <span style={{...styles.categoryAnalysisScore, color: '#F57C00'}}>
-                              {item.percentage}% ({item.grade.grade})
-                            </span>
-                          </div>
-                          <p style={styles.categoryAnalysisText}>
-                            {item.category === 'Communication' && 'Can communicate, but not persuasive or highly clear. May struggle with executive communication.'}
-                            {item.category === 'Problem-Solving' && 'Can solve routine problems. May struggle with complex, ambiguous situations.'}
-                            {item.category === 'Personality & Behavioral' && 'Likely stable but not high-impact. May lack drive, resilience, or adaptability.'}
-                            {![ 'Communication', 'Problem-Solving', 'Personality & Behavioral'].includes(item.category) && 
-                              `Moderate performance in ${item.category}. Needs development to reach target levels.`}
-                          </p>
+                {/* Moderate Areas */}
+                {personalizedData.improvementAreas.length > 0 && (
+                  <div style={styles.categoryGroup}>
+                    <h5 style={styles.categoryGroupTitle}>🟡 Moderate / Basic Competency Areas (60-69%)</h5>
+                    {personalizedData.improvementAreas.map((item) => (
+                      <div key={item.category} style={styles.categoryAnalysis}>
+                        <div style={styles.categoryAnalysisHeader}>
+                          <span style={styles.categoryAnalysisName}>{item.category}</span>
+                          <span style={{...styles.categoryAnalysisScore, color: '#F57C00'}}>
+                            {item.percentage}% ({item.grade.grade})
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        <p style={styles.categoryAnalysisText}>{item.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-                  {/* Development Concerns */}
-                  {weaknesses.length > 0 && (
-                    <div style={styles.categoryGroup}>
-                      <h5 style={styles.categoryGroupTitle}>🔴 Development Concerns (&lt;60%)</h5>
-                      {weaknesses.map((item) => (
-                        <div key={item.category} style={styles.categoryAnalysis}>
-                          <div style={styles.categoryAnalysisHeader}>
-                            <span style={styles.categoryAnalysisName}>{item.category}</span>
-                            <span style={{...styles.categoryAnalysisScore, color: '#C62828'}}>
-                              {item.percentage}% ({item.grade.grade})
-                            </span>
-                          </div>
-                          <p style={styles.categoryAnalysisText}>
-                            {item.category === 'Cognitive Ability' && 'This is a major flag. May indicate difficulty processing complex information, slow learning curve, limited analytical capacity. For leadership or technical roles, this is a constraint.'}
-                            {item.category === 'Emotional Intelligence' && 'May struggle with self-awareness. Limited conflict management skills. Risk of poor team dynamics.'}
-                            {item.category === 'Technical & Manufacturing' && 'Weak domain expertise. Will require significant training.'}
-                            {item.category === 'Cultural & Attitudinal Fit' && 'Another red flag. May not align with company values. Potential resistance to norms. Risk of engagement issues.'}
-                            {![ 'Cognitive Ability', 'Emotional Intelligence', 'Technical & Manufacturing', 'Cultural & Attitudinal Fit'].includes(item.category) && 
-                              `Significant gaps in ${item.category} that need immediate attention.`}
-                          </p>
+                {/* Development Concerns */}
+                {personalizedData.weaknesses.length > 0 && (
+                  <div style={styles.categoryGroup}>
+                    <h5 style={styles.categoryGroupTitle}>🔴 Development Concerns (&lt;60%)</h5>
+                    {personalizedData.weaknesses.map((item) => (
+                      <div key={item.category} style={styles.categoryAnalysis}>
+                        <div style={styles.categoryAnalysisHeader}>
+                          <span style={styles.categoryAnalysisName}>{item.category}</span>
+                          <span style={{...styles.categoryAnalysisScore, color: '#C62828'}}>
+                            {item.percentage}% ({item.grade.grade})
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                        <p style={styles.categoryAnalysisText}>{item.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-                {/* What This Profile Suggests */}
-                <div style={styles.analysisSection}>
-                  <h4 style={styles.analysisTitle}>🎯 What This Profile Suggests</h4>
-                  <div style={styles.profileInsights}>
-                    <div style={styles.insightColumn}>
-                      <h5 style={styles.insightTitle}>Best Fit:</h5>
-                      <ul style={styles.insightList}>
-                        {bestFit.fits.map((item, i) => (
-                          <li key={i} style={styles.insightItem}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div style={styles.insightColumn}>
-                      <h5 style={styles.insightTitle}>Risk Areas:</h5>
-                      <ul style={styles.insightList}>
-                        {bestFit.risks.map((item, i) => (
-                          <li key={i} style={styles.insightItem}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
+              {/* What This Profile Suggests */}
+              <div style={styles.analysisSection}>
+                <h4 style={styles.analysisTitle}>🎯 What This Profile Suggests</h4>
+                <div style={styles.profileInsights}>
+                  <div style={styles.insightColumn}>
+                    <h5 style={styles.insightTitle}>Best Fit:</h5>
+                    <ul style={styles.insightList}>
+                      {personalizedData.bestFit.fits.map((item, i) => (
+                        <li key={i} style={styles.insightItem}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div style={styles.insightColumn}>
+                    <h5 style={styles.insightTitle}>Risk Areas:</h5>
+                    <ul style={styles.insightList}>
+                      {personalizedData.bestFit.risks.map((item, i) => (
+                        <li key={i} style={styles.insightItem}>{item}</li>
+                      ))}
+                    </ul>
                   </div>
                 </div>
+              </div>
 
-                {/* Leadership Evaluation Note */}
-                <div style={styles.analysisSection}>
-                  <h4 style={styles.analysisTitle}>🧠 Leadership Evaluation</h4>
-                  <div style={styles.leadershipNote}>
-                    {categoryScores['Cognitive Ability']?.percentage < 60 && 
-                     categoryScores['Emotional Intelligence']?.percentage < 60 && 
-                     categoryScores['Cultural & Attitudinal Fit']?.percentage < 60 ? (
-                      <p style={styles.leadershipText}>
-                        For leadership hiring, I would flag: <strong>Low Cognitive Ability, Low Emotional Intelligence, 
-                        Low Cultural Fit</strong>. Those three together often predict struggles in complexity, team friction, 
-                        and leadership ceiling. Ethics is strong — but integrity alone doesn't compensate for low cognitive 
-                        and emotional capacity in leadership roles.
-                      </p>
-                    ) : (
-                      <p style={styles.leadershipText}>
-                        This profile reflects an average performer with integrity, but limited leadership upside without 
-                        significant development. Not a poor candidate — but not high-potential.
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Development Plan Summary */}
+              {/* Development Priority Summary */}
+              {personalizedData.weaknesses.length > 0 && (
                 <div style={styles.analysisSection}>
                   <h4 style={styles.analysisTitle}>📋 Development Priority Summary</h4>
                   <div style={styles.priorityList}>
-                    {weaknesses.slice(0, 3).map((item, index) => (
+                    {personalizedData.weaknesses.slice(0, 3).map((item, index) => (
                       <div key={index} style={styles.priorityItem}>
                         <span style={styles.priorityRank}>Priority {index + 1}:</span>
                         <span style={styles.priorityCategory}>{item.category}</span>
                         <span style={styles.priorityAction}>
-                          {getRecommendations(item.category, item.percentage)[0]}
+                          {item.recommendations[0]}
                         </span>
                       </div>
                     ))}
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Footer */}
         <div style={styles.footer}>
           <p>Report generated on {new Date().toLocaleDateString()} • Confidential</p>
+          <p style={styles.reportId}>Report ID: {Math.random().toString(36).substring(2, 15)}</p>
         </div>
       </div>
 
@@ -937,7 +862,7 @@ const styles = {
     padding: '20px',
     borderRadius: '12px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    marginBottom: '30px',
+    marginBottom: '20px',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -967,6 +892,76 @@ const styles = {
     ':focus': {
       borderColor: '#1565c0'
     }
+  },
+  summaryCard: {
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    padding: '25px',
+    borderRadius: '12px',
+    color: 'white',
+    marginBottom: '20px',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+  },
+  summaryHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '15px',
+    marginBottom: '20px'
+  },
+  assessmentIcon: {
+    fontSize: '40px'
+  },
+  assessmentName: {
+    margin: '0 0 5px 0',
+    fontSize: '24px',
+    fontWeight: 600
+  },
+  assessmentDescription: {
+    margin: 0,
+    fontSize: '14px',
+    opacity: 0.9
+  },
+  scoreGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+    gap: '15px',
+    marginBottom: '15px'
+  },
+  scoreItem: {
+    background: 'rgba(255,255,255,0.1)',
+    padding: '15px',
+    borderRadius: '8px',
+    textAlign: 'center',
+    backdropFilter: 'blur(10px)'
+  },
+  scoreLabel: {
+    fontSize: '12px',
+    opacity: 0.9,
+    marginBottom: '5px',
+    display: 'block'
+  },
+  scoreValue: {
+    fontSize: '24px',
+    fontWeight: 700,
+    display: 'block'
+  },
+  gradeBadge: {
+    display: 'inline-block',
+    padding: '8px 16px',
+    borderRadius: '30px',
+    fontWeight: 700,
+    fontSize: '18px'
+  },
+  classificationBadge: {
+    display: 'inline-block',
+    padding: '8px 16px',
+    borderRadius: '30px',
+    fontWeight: 600,
+    fontSize: '14px'
+  },
+  completedDate: {
+    fontSize: '13px',
+    opacity: 0.8,
+    textAlign: 'right'
   },
   card: {
     background: 'white',
@@ -1041,21 +1036,20 @@ const styles = {
     borderRadius: '4px',
     overflow: 'hidden'
   },
-  gradeBadge: {
+  gradeBadgeSmall: {
     display: 'inline-block',
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontWeight: 700,
-    fontSize: '13px'
+    padding: '4px 8px',
+    borderRadius: '12px',
+    fontWeight: 600,
+    fontSize: '12px'
   },
   assessmentBadge: {
     display: 'inline-block',
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '13px',
+    padding: '4px 8px',
+    borderRadius: '12px',
+    fontSize: '11px',
     fontWeight: 500
   },
-  // New styles for strength cards
   strengthGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
@@ -1100,20 +1094,15 @@ const styles = {
     display: 'block',
     marginBottom: '8px'
   },
-  strengthTags: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '5px'
+  strengthList: {
+    margin: 0,
+    padding: '0 0 0 15px'
   },
-  strengthTag: {
-    background: '#E8F5E9',
-    color: '#2E7D32',
-    padding: '4px 8px',
-    borderRadius: '4px',
-    fontSize: '11px',
-    fontWeight: 500
+  strengthListItem: {
+    fontSize: '12px',
+    color: '#555',
+    marginBottom: '4px'
   },
-  // New styles for improvement cards
   improvementGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
@@ -1167,7 +1156,6 @@ const styles = {
     color: '#666',
     marginBottom: '5px'
   },
-  // New styles for weakness cards
   weaknessGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
@@ -1278,8 +1266,7 @@ const styles = {
   profileInsights: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
-    gap: '20px',
-    marginBottom: '20px'
+    gap: '20px'
   },
   insightColumn: {
     background: '#f8f9fa',
@@ -1302,17 +1289,6 @@ const styles = {
     fontSize: '13px',
     color: '#555',
     borderBottom: '1px solid #f0f0f0'
-  },
-  leadershipNote: {
-    background: '#e3f2fd',
-    padding: '15px',
-    borderRadius: '8px'
-  },
-  leadershipText: {
-    fontSize: '14px',
-    color: '#1565c0',
-    lineHeight: '1.6',
-    margin: 0
   },
   priorityList: {
     display: 'flex',
@@ -1352,5 +1328,10 @@ const styles = {
     textAlign: 'center',
     color: '#999',
     fontSize: '12px'
+  },
+  reportId: {
+    fontSize: '10px',
+    marginTop: '5px',
+    color: '#ccc'
   }
 };
