@@ -8,7 +8,7 @@ import { generateDetailedInterpretation } from "../../utils/detailedInterpreter"
 import { getClassification, getGradeInfo, getHiringRecommendation } from "../../utils/reportGenerator";
 import { assessmentTypes, getAssessmentType } from "../../utils/assessmentConfigs";
 import { getDevelopmentRecommendation } from "../../utils/developmentRecommendations";
-import { generatePsychometricAnalysis } from "../../utils/psychometricAnalyzer";
+import { generateSimpleAnalysis } from "../../utils/simpleAnalyzer";
 import {
   interpretIntegrity,
   interpretWorkPace,
@@ -103,7 +103,7 @@ function CandidateReportComponent() {
   const [activeSection, setActiveSection] = useState('cover');
   const [showPrintView, setShowPrintView] = useState(false);
   const [assessmentConfig, setAssessmentConfig] = useState(null);
-  const [psychometricAnalysis, setPsychometricAnalysis] = useState(null);
+  const [simpleAnalysis, setSimpleAnalysis] = useState(null);
 
   // Authentication check - runs only once on client
   useEffect(() => {
@@ -334,14 +334,12 @@ function CandidateReportComponent() {
         responseInsights
       );
 
-      // Generate psychometric analysis
-      const analysis = generatePsychometricAnalysis(
+      // Generate simple analysis
+      const analysis = generateSimpleAnalysis(
         result.category_scores,
-        assessmentTypeId,
-        profileData?.full_name || 'Candidate',
-        responseInsights
+        profileData?.full_name || 'Candidate'
       );
-      setPsychometricAnalysis(analysis);
+      setSimpleAnalysis(analysis);
       
       setSelectedAssessment({
         id: result.id,
@@ -679,70 +677,74 @@ function CandidateReportComponent() {
               </table>
             </div>
 
-            {/* 5️⃣ Psychometric Analysis */}
-            {psychometricAnalysis && (
-              <div style={styles.psychometricSection}>
-                <h3 style={styles.subsectionTitle}>5. Psychometric Analysis</h3>
+            {/* 5️⃣ Performance Analysis */}
+            {simpleAnalysis && (
+              <div style={styles.analysisSection}>
+                <h3 style={styles.subsectionTitle}>5. Performance Analysis</h3>
                 
-                {/* Overall Profile Pattern */}
-                <div style={styles.psychometricCard}>
-                  <h4 style={styles.psychometricCardTitle}>Overall Profile Pattern</h4>
-                  <div style={styles.psychometricText}>{psychometricAnalysis.overallPattern}</div>
+                {/* Overall Performance Interpretation */}
+                <div style={styles.analysisCard}>
+                  <h4 style={styles.analysisCardTitle}>Overall Performance Interpretation</h4>
+                  <div style={styles.analysisText}>
+                    Total Score: {simpleAnalysis.overallPerformance.totalScore} / {simpleAnalysis.overallPerformance.maxPossible}
+                    {'\n'}Average: {simpleAnalysis.overallPerformance.avgScore}%
+                    {'\n'}Overall Grade: {simpleAnalysis.overallPerformance.overallGrade}
+                    {'\n'}Classification: {simpleAnalysis.overallPerformance.classification}
+                  </div>
                 </div>
 
-                {/* Cognitive Processing Style */}
-                <div style={styles.psychometricCard}>
-                  <h4 style={styles.psychometricCardTitle}>Cognitive Processing Style</h4>
-                  <div style={styles.psychometricText}>{psychometricAnalysis.cognitiveStyle}</div>
+                {/* Executive Summary */}
+                <div style={styles.analysisCard}>
+                  <h4 style={styles.analysisCardTitle}>Executive Summary</h4>
+                  <div style={styles.analysisText}>{simpleAnalysis.executiveSummary}</div>
                 </div>
 
-                {/* Behavioral Tendencies */}
-                <div style={styles.psychometricCard}>
-                  <h4 style={styles.psychometricCardTitle}>Behavioral Tendencies</h4>
-                  <div style={styles.psychometricText}>{psychometricAnalysis.behavioralTendencies}</div>
-                </div>
+                {/* Category-by-Category Analysis */}
+                {simpleAnalysis.strengths && (
+                  <div style={styles.analysisCard}>
+                    <div style={styles.analysisText}>{simpleAnalysis.strengths}</div>
+                  </div>
+                )}
+                
+                {simpleAnalysis.moderate && (
+                  <div style={styles.analysisCard}>
+                    <div style={styles.analysisText}>{simpleAnalysis.moderate}</div>
+                  </div>
+                )}
+                
+                {simpleAnalysis.risks && (
+                  <div style={styles.analysisCard}>
+                    <div style={styles.analysisText}>{simpleAnalysis.risks}</div>
+                  </div>
+                )}
 
-                {/* Interpersonal Dynamics */}
-                <div style={styles.psychometricCard}>
-                  <h4 style={styles.psychometricCardTitle}>Interpersonal Dynamics</h4>
-                  <div style={styles.psychometricText}>{psychometricAnalysis.interpersonalDynamics}</div>
-                </div>
+                {/* Personality Structure */}
+                {simpleAnalysis.personalityStructure && (
+                  <div style={styles.analysisCard}>
+                    <div style={styles.analysisText}>{simpleAnalysis.personalityStructure}</div>
+                  </div>
+                )}
 
-                {/* Work Style Preferences */}
-                <div style={styles.psychometricCard}>
-                  <h4 style={styles.psychometricCardTitle}>Work Style Preferences</h4>
-                  <div style={styles.psychometricText}>{psychometricAnalysis.workStyle}</div>
-                </div>
+                {/* Role Suitability */}
+                {simpleAnalysis.roleSuitability && (
+                  <div style={styles.analysisCard}>
+                    <div style={styles.analysisText}>{simpleAnalysis.roleSuitability}</div>
+                  </div>
+                )}
 
-                {/* Potential Derailers */}
-                <div style={styles.psychometricCard}>
-                  <h4 style={styles.psychometricCardTitle}>Potential Derailers</h4>
-                  <div style={styles.psychometricText}>{psychometricAnalysis.derailers}</div>
-                </div>
+                {/* Development Priorities */}
+                {simpleAnalysis.developmentPriorities && (
+                  <div style={styles.analysisCard}>
+                    <div style={styles.analysisText}>{simpleAnalysis.developmentPriorities}</div>
+                  </div>
+                )}
 
-                {/* Developmental Focus Areas */}
-                <div style={styles.psychometricCard}>
-                  <h4 style={styles.psychometricCardTitle}>Developmental Focus Areas</h4>
-                  <div style={styles.psychometricText}>{psychometricAnalysis.developmentalFocus}</div>
-                </div>
-
-                {/* Strengths to Leverage */}
-                <div style={styles.psychometricCard}>
-                  <h4 style={styles.psychometricCardTitle}>Strengths to Leverage</h4>
-                  <div style={styles.psychometricText}>{psychometricAnalysis.strengthsToLeverage}</div>
-                </div>
-
-                {/* Risk Factors */}
-                <div style={styles.psychometricCard}>
-                  <h4 style={styles.psychometricCardTitle}>Risk Factors</h4>
-                  <div style={styles.psychometricText}>{psychometricAnalysis.riskFactors}</div>
-                </div>
-
-                {/* Summary Interpretation */}
-                <div style={{...styles.psychometricCard, background: '#f0f9ff', borderLeft: '4px solid #0c4a6e'}}>
-                  <h4 style={styles.psychometricCardTitle}>Summary Interpretation</h4>
-                  <div style={styles.psychometricText}>{psychometricAnalysis.summary}</div>
-                </div>
+                {/* Overall Interpretation */}
+                {simpleAnalysis.overallInterpretation && (
+                  <div style={styles.analysisCard}>
+                    <div style={styles.analysisText}>{simpleAnalysis.overallInterpretation}</div>
+                  </div>
+                )}
               </div>
             )}
           </section>
@@ -1274,17 +1276,17 @@ const styles = {
     flexWrap: 'wrap',
     gap: '15px'
   },
-  psychometricSection: {
+  analysisSection: {
     marginTop: '40px'
   },
-  psychometricCard: {
+  analysisCard: {
     marginBottom: '25px',
     padding: '20px',
     background: '#f9fafb',
     borderRadius: '12px',
     border: '1px solid #e5e7eb'
   },
-  psychometricCardTitle: {
+  analysisCardTitle: {
     fontSize: '16px',
     fontWeight: 600,
     color: '#1f2937',
@@ -1292,7 +1294,7 @@ const styles = {
     borderBottom: '1px solid #e5e7eb',
     paddingBottom: '8px'
   },
-  psychometricText: {
+  analysisText: {
     fontSize: '14px',
     lineHeight: '1.8',
     color: '#4b5563',
@@ -1368,11 +1370,5 @@ const styles = {
   hiringFactor: {
     fontSize: '14px',
     color: '#4b5563'
-  },
-  analysisText: {
-    fontSize: '14px',
-    color: '#4b5563',
-    lineHeight: '1.8',
-    whiteSpace: 'pre-line'
   }
 };
