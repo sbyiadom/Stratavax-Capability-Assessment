@@ -7,8 +7,8 @@ import { generateDetailedInterpretation } from "../../utils/detailedInterpreter"
 import { getClassification, getGradeInfo, getHiringRecommendation } from "../../utils/reportGenerator";
 import { assessmentTypes, getAssessmentType } from "../../utils/assessmentConfigs";
 import { getDevelopmentRecommendation } from "../../utils/developmentRecommendations";
+import { generatePsychometricAnalysis } from "../../utils/psychometricAnalyzer";
 import {
-  // General Assessment
   interpretIntegrity,
   interpretWorkPace,
   interpretMotivations,
@@ -23,8 +23,6 @@ import {
   interpretCognitivePatterns,
   interpretEmotionalIntelligence,
   interpretOpenness,
-  
-  // Leadership Assessment
   interpretVision,
   interpretDecisionMaking,
   interpretInfluence,
@@ -33,8 +31,6 @@ import {
   interpretExecution,
   interpretResilience,
   interpretSelfAwareness,
-  
-  // Cognitive Assessment
   interpretLogicalReasoning,
   interpretNumericalReasoning,
   interpretVerbalReasoning,
@@ -44,8 +40,6 @@ import {
   interpretCriticalThinking,
   interpretLearningAgility,
   interpretMentalFlexibility,
-  
-  // Technical Assessment
   interpretTechnicalKnowledge,
   interpretSystemUnderstanding,
   interpretTroubleshooting,
@@ -56,8 +50,6 @@ import {
   interpretEquipmentOperation,
   interpretMaintenanceProcedures,
   interpretTechnicalDocumentation,
-  
-  // Performance Assessment
   interpretProductivity,
   interpretWorkQuality,
   interpretGoalAchievement,
@@ -66,8 +58,6 @@ import {
   interpretCollaboration,
   interpretTimeManagement,
   interpretResultsOrientation,
-  
-  // Behavioral Assessment
   interpretTeamwork,
   interpretConflictResolution,
   interpretEmpathy,
@@ -75,8 +65,6 @@ import {
   interpretFeedbackReception,
   interpretInterpersonalSkills,
   interpretProfessionalism,
-  
-  // Cultural Assessment
   interpretValuesAlignment,
   interpretWorkEthic,
   interpretDiversityAwareness,
@@ -97,6 +85,7 @@ export default function CandidateReport() {
   const [activeSection, setActiveSection] = useState('cover');
   const [showPrintView, setShowPrintView] = useState(false);
   const [assessmentConfig, setAssessmentConfig] = useState(null);
+  const [psychometricAnalysis, setPsychometricAnalysis] = useState(null);
 
   useEffect(() => {
     const checkAuth = () => {
@@ -141,7 +130,6 @@ export default function CandidateReport() {
           email: profileData?.email || 'Email not available'
         });
 
-        // Get all assessment results for this candidate
         const { data: resultsData } = await supabase
           .from('assessment_results')
           .select('*')
@@ -151,19 +139,6 @@ export default function CandidateReport() {
         if (resultsData && resultsData.length > 0) {
           setAllAssessments(resultsData);
           
-          // Debug: Log each assessment to see what's in it
-          console.log("All assessments for candidate:");
-          resultsData.forEach((a, index) => {
-            console.log(`Assessment ${index + 1}:`, {
-              id: a.id,
-              assessment_type: a.assessment_type,
-              total_score: a.total_score,
-              max_score: a.max_score,
-              completed_at: a.completed_at
-            });
-          });
-          
-          // Use the most recent assessment as default
           const defaultAssessment = resultsData[0];
           await loadAssessmentData(defaultAssessment, profileData);
         }
@@ -246,14 +221,21 @@ export default function CandidateReport() {
       data.percentage = Math.round((avgScore / 5) * 100);
     });
 
-    console.log("Response Insights:", responseInsights);
-    
     const detailedInterpretation = generateDetailedInterpretation(
       profileData?.full_name || 'Candidate',
       result.category_scores,
       assessmentTypeId,
       responseInsights
     );
+
+    // Generate psychometric analysis
+    const analysis = generatePsychometricAnalysis(
+      result.category_scores,
+      assessmentTypeId,
+      profileData?.full_name || 'Candidate',
+      responseInsights
+    );
+    setPsychometricAnalysis(analysis);
     
     setSelectedAssessment({
       id: result.id,
@@ -292,115 +274,17 @@ export default function CandidateReport() {
   };
 
   const generateInsight = (category, questionText, answerText, score) => {
-    const answerPreview = answerText.length > 60 
-      ? answerText.substring(0, 60) + '...' 
-      : answerText;
-
     if (score === 5) {
-      return `Strong understanding demonstrated in responses`;
+      return `Strong understanding demonstrated`;
     } else if (score === 4) {
-      return `Good grasp shown with room for deeper understanding`;
+      return `Good grasp shown`;
     } else if (score === 3) {
       return `Basic awareness demonstrated`;
     } else if (score === 2) {
-      return `Limited understanding shown - needs development`;
+      return `Limited understanding shown`;
     } else {
-      return `Significant gap identified - requires attention`;
+      return `Significant gap identified`;
     }
-  };
-
-  const getCategoryInterpretation = (category, data, candidateName) => {
-    if (!data) return `${category}: No detailed response data available.`;
-    
-    const categoryMap = {
-      // General Assessment
-      'Integrity': interpretIntegrity,
-      'Work Pace': interpretWorkPace,
-      'Motivations': interpretMotivations,
-      'Neuroticism': interpretNeuroticism,
-      'Extraversion': interpretExtraversion,
-      'Mixed Traits': interpretMixedTraits,
-      'Agreeableness': interpretAgreeableness,
-      'Behavioral Style': interpretBehavioralStyle,
-      'Conscientiousness': interpretConscientiousness,
-      'Performance Risks': interpretPerformanceRisks,
-      'Stress Management': interpretStressManagement,
-      'Cognitive Patterns': interpretCognitivePatterns,
-      'Emotional Intelligence': interpretEmotionalIntelligence,
-      'Openness to Experience': interpretOpenness,
-      
-      // Leadership Assessment
-      'Vision & Strategic Thinking': interpretVision,
-      'Decision-Making & Problem-Solving': interpretDecisionMaking,
-      'Communication & Influence': interpretInfluence,
-      'People Management & Coaching': interpretPeopleManagement,
-      'Change Leadership & Agility': interpretChangeLeadership,
-      'Execution & Results Orientation': interpretExecution,
-      'Resilience & Stress Management': interpretResilience,
-      'Self-Awareness & Self-Regulation': interpretSelfAwareness,
-      
-      // Cognitive Assessment
-      'Logical / Abstract Reasoning': interpretLogicalReasoning,
-      'Numerical Reasoning': interpretNumericalReasoning,
-      'Verbal Reasoning': interpretVerbalReasoning,
-      'Spatial Reasoning': interpretSpatialReasoning,
-      'Memory & Attention': interpretMemoryAttention,
-      'Perceptual Speed & Accuracy': interpretPerceptualSpeed,
-      'Critical Thinking': interpretCriticalThinking,
-      'Learning Agility': interpretLearningAgility,
-      'Mental Flexibility': interpretMentalFlexibility,
-      
-      // Technical Assessment
-      'Technical Knowledge': interpretTechnicalKnowledge,
-      'System Understanding': interpretSystemUnderstanding,
-      'Troubleshooting': interpretTroubleshooting,
-      'Practical Application': interpretPracticalApplication,
-      'Safety & Compliance': interpretSafetyCompliance,
-      'Quality Control': interpretQualityControl,
-      'Process Optimization': interpretProcessOptimization,
-      'Equipment Operation': interpretEquipmentOperation,
-      'Maintenance Procedures': interpretMaintenanceProcedures,
-      'Technical Documentation': interpretTechnicalDocumentation,
-      
-      // Performance Assessment
-      'Productivity & Efficiency': interpretProductivity,
-      'Work Quality & Effectiveness': interpretWorkQuality,
-      'Goal Achievement': interpretGoalAchievement,
-      'Accountability': interpretAccountability,
-      'Initiative': interpretInitiative,
-      'Collaboration': interpretCollaboration,
-      'Time Management': interpretTimeManagement,
-      'Results Orientation': interpretResultsOrientation,
-      
-      // Behavioral Assessment
-      'Teamwork': interpretTeamwork,
-      'Conflict Resolution': interpretConflictResolution,
-      'Empathy': interpretEmpathy,
-      'Active Listening': interpretActiveListening,
-      'Feedback Reception': interpretFeedbackReception,
-      'Interpersonal Skills': interpretInterpersonalSkills,
-      'Professionalism': interpretProfessionalism,
-      
-      // Cultural Assessment
-      'Values Alignment': interpretValuesAlignment,
-      'Work Ethic': interpretWorkEthic,
-      'Diversity Awareness': interpretDiversityAwareness,
-      'Inclusivity': interpretInclusivity,
-      'Respect': interpretRespect
-    };
-
-    const interpreter = Object.entries(categoryMap).find(([key]) => 
-      category.includes(key) || key.includes(category)
-    )?.[1];
-
-    if (interpreter) {
-      return interpreter(data, candidateName);
-    }
-
-    return `${candidateName} scored ${data.percentage}% in ${category}. ` +
-      (data.percentage >= 70 ? 'This is a strength area.' :
-       data.percentage >= 60 ? 'Shows basic competency with room for development.' :
-       'Requires focused attention and development.');
   };
 
   if (!isSupervisor || loading) {
@@ -432,7 +316,6 @@ export default function CandidateReport() {
   const weaknessesList = selectedAssessment.weaknesses || [];
   const config = selectedAssessment.config || assessmentTypes.general;
 
-  // Calculate combined score for all assessments
   const totalCombinedScore = allAssessments.reduce((sum, a) => sum + a.total_score, 0);
   const totalMaxScore = allAssessments.reduce((sum, a) => sum + a.max_score, 0);
   const combinedPercentage = Math.round((totalCombinedScore / totalMaxScore) * 100);
@@ -452,17 +335,15 @@ export default function CandidateReport() {
                 style={styles.assessmentSelect}
               >
                 <option value="">-- Select Assessment --</option>
-                {allAssessments.map(a => {
-                  // Get the assessment type and config
+                {allAssessments.map((a, index) => {
                   const type = a.assessment_type || 'general';
                   const config = getAssessmentType(type);
-                  
-                  // Format the date
                   const assessmentDate = new Date(a.completed_at).toLocaleDateString();
+                  const scoreLabel = `${a.total_score}/${a.max_score}`;
                   
                   return (
                     <option key={a.id} value={a.id}>
-                      {config.name} - {assessmentDate} ({a.total_score}/{a.max_score})
+                      {config.name} #{index + 1} - {assessmentDate} ({scoreLabel})
                     </option>
                   );
                 })}
@@ -517,7 +398,7 @@ export default function CandidateReport() {
               </div>
               
               <div style={styles.coverContent}>
-                <div style={styles.coverLogo}>{config.icon}</div>
+                <div style={styles.coverLogo}>📊</div>
                 <h2 style={styles.coverCandidateName}>{candidate.full_name}</h2>
                 <p style={styles.coverDetail}>Assessment Date: {new Date(selectedAssessment.completed_at).toLocaleDateString()}</p>
                 <p style={styles.coverDetail}>Report Generated: {new Date().toLocaleDateString()}</p>
@@ -533,7 +414,7 @@ export default function CandidateReport() {
           {/* 2️⃣ Executive Summary */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'executive' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>2. Executive Summary - {config.name}</h2>
+              <h2 style={styles.sectionTitle}>2. Executive Summary</h2>
             </div>
             
             <div style={styles.executiveSummary}>
@@ -605,14 +486,15 @@ export default function CandidateReport() {
           {/* 3️⃣ Assessment Overview */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'overview' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>3. Assessment Overview - {config.name}</h2>
+              <h2 style={styles.sectionTitle}>3. Assessment Overview</h2>
             </div>
             
             <div style={styles.overviewCard}>
               <div style={styles.overviewGrid}>
                 <div style={styles.overviewItem}>
-                  <h4 style={styles.overviewItemTitle}>Total Competencies Assessed</h4>
-                  <p style={styles.overviewItemValue}>{Object.keys(selectedAssessment.category_scores).length}</p>
+                  <h4 style={styles.overviewItemTitle}>Assessment Type</h4>
+                  <p style={styles.overviewItemValue}>{config.name}</p>
+                  <p style={styles.overviewItemSub}>{config.description}</p>
                 </div>
                 <div style={styles.overviewItem}>
                   <h4 style={styles.overviewItemTitle}>Assessment Method</h4>
@@ -624,6 +506,11 @@ export default function CandidateReport() {
                   <p style={styles.overviewItemValue}>Weighted Category Scoring</p>
                   <p style={styles.overviewItemSub}>{config.weightage}</p>
                 </div>
+                <div style={styles.overviewItem}>
+                  <h4 style={styles.overviewItemTitle}>Competencies Assessed</h4>
+                  <p style={styles.overviewItemValue}>{Object.keys(selectedAssessment.category_scores).length}</p>
+                  <p style={styles.overviewItemSub}>Key behavioral and cognitive dimensions</p>
+                </div>
               </div>
             </div>
           </section>
@@ -631,7 +518,7 @@ export default function CandidateReport() {
           {/* 4️⃣ Overall Score Summary Table */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'competencies' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>4. Overall Score Summary - {config.name}</h2>
+              <h2 style={styles.sectionTitle}>4. Overall Score Summary</h2>
             </div>
             
             <div style={styles.tableContainer}>
@@ -672,201 +559,163 @@ export default function CandidateReport() {
               </table>
             </div>
 
-            {/* 5️⃣ Competency Breakdown */}
-            <div style={styles.competencyBreakdown}>
-              <h3 style={styles.subsectionTitle}>5. Competency Analysis</h3>
-              
-              {Object.entries(selectedAssessment.category_scores).map(([category, data]) => {
-                const catGrade = getGradeInfo(data.percentage);
-                const categoryData = selectedAssessment.responseInsights?.[category];
+            {/* 5️⃣ Psychometric Analysis */}
+            {psychometricAnalysis && (
+              <div style={styles.psychometricSection}>
+                <h3 style={styles.subsectionTitle}>5. Psychometric Analysis</h3>
                 
-                return (
-                  <div key={category} style={styles.competencyCard}>
-                    <div style={styles.competencyHeader}>
-                      <h4 style={styles.competencyName}>{category} – {data.percentage}% ({catGrade.grade})</h4>
-                    </div>
-                    <div style={styles.competencyBody}>
-                      {categoryData ? (
-                        <div style={styles.interpretationText}>
-                          {getCategoryInterpretation(category, { ...categoryData, percentage: data.percentage }, candidate.full_name)}
-                        </div>
-                      ) : (
-                        <p>No detailed response data available for this category.</p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                {/* Overall Profile Pattern */}
+                <div style={styles.psychometricCard}>
+                  <h4 style={styles.psychometricCardTitle}>Overall Profile Pattern</h4>
+                  <div style={styles.psychometricText}>{psychometricAnalysis.overallPattern}</div>
+                </div>
+
+                {/* Cognitive Processing Style */}
+                <div style={styles.psychometricCard}>
+                  <h4 style={styles.psychometricCardTitle}>Cognitive Processing Style</h4>
+                  <div style={styles.psychometricText}>{psychometricAnalysis.cognitiveStyle}</div>
+                </div>
+
+                {/* Behavioral Tendencies */}
+                <div style={styles.psychometricCard}>
+                  <h4 style={styles.psychometricCardTitle}>Behavioral Tendencies</h4>
+                  <div style={styles.psychometricText}>{psychometricAnalysis.behavioralTendencies}</div>
+                </div>
+
+                {/* Interpersonal Dynamics */}
+                <div style={styles.psychometricCard}>
+                  <h4 style={styles.psychometricCardTitle}>Interpersonal Dynamics</h4>
+                  <div style={styles.psychometricText}>{psychometricAnalysis.interpersonalDynamics}</div>
+                </div>
+
+                {/* Work Style Preferences */}
+                <div style={styles.psychometricCard}>
+                  <h4 style={styles.psychometricCardTitle}>Work Style Preferences</h4>
+                  <div style={styles.psychometricText}>{psychometricAnalysis.workStyle}</div>
+                </div>
+
+                {/* Potential Derailers */}
+                <div style={styles.psychometricCard}>
+                  <h4 style={styles.psychometricCardTitle}>Potential Derailers</h4>
+                  <div style={styles.psychometricText}>{psychometricAnalysis.derailers}</div>
+                </div>
+
+                {/* Developmental Focus Areas */}
+                <div style={styles.psychometricCard}>
+                  <h4 style={styles.psychometricCardTitle}>Developmental Focus Areas</h4>
+                  <div style={styles.psychometricText}>{psychometricAnalysis.developmentalFocus}</div>
+                </div>
+
+                {/* Strengths to Leverage */}
+                <div style={styles.psychometricCard}>
+                  <h4 style={styles.psychometricCardTitle}>Strengths to Leverage</h4>
+                  <div style={styles.psychometricText}>{psychometricAnalysis.strengthsToLeverage}</div>
+                </div>
+
+                {/* Risk Factors */}
+                <div style={styles.psychometricCard}>
+                  <h4 style={styles.psychometricCardTitle}>Risk Factors</h4>
+                  <div style={styles.psychometricText}>{psychometricAnalysis.riskFactors}</div>
+                </div>
+
+                {/* Summary Interpretation */}
+                <div style={{...styles.psychometricCard, background: '#f0f9ff', borderLeft: '4px solid #0c4a6e'}}>
+                  <h4 style={styles.psychometricCardTitle}>Summary Interpretation</h4>
+                  <div style={styles.psychometricText}>{psychometricAnalysis.summary}</div>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* 8️⃣ Role Fit Analysis & Development Plan */}
+          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'development' || showPrintView ? 'block' : 'none'}}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>6. Development & Recommendations</h2>
+            </div>
+            
+            <div style={styles.roleFitCard}>
+              <h3 style={styles.subsectionTitle}>Role Fit Analysis</h3>
+              {selectedAssessment.detailedInterpretation?.roleFit && (
+                <div style={styles.analysisText}>{selectedAssessment.detailedInterpretation.roleFit}</div>
+              )}
+              {!selectedAssessment.detailedInterpretation?.roleFit && (
+                <div style={styles.analysisText}>
+                  <p><strong>Best suited for roles requiring:</strong></p>
+                  <ul>
+                    {strengthsList.map((s, i) => {
+                      const [category] = s.split(' (');
+                      return <li key={i}>• Strong {category.toLowerCase()} capabilities</li>;
+                    })}
+                    {strengthsList.length === 0 && (
+                      <li>• Structured, supervised positions with clear guidelines</li>
+                    )}
+                  </ul>
+                </div>
+              )}
             </div>
 
-            {/* 6️⃣ Strength Profile Summary */}
-            <div style={styles.strengthProfile}>
-              <h3 style={styles.subsectionTitle}>6. Strength Profile Summary</h3>
-              <div style={styles.strengthGrid}>
-                {strengthsList.map((strength, index) => {
-                  const match = strength.match(/(.+) \((\d+)%\)/);
-                  const category = match ? match[1] : strength;
-                  const percentage = match ? match[2] : '';
-                  
-                  return (
-                    <div key={index} style={styles.strengthCard}>
-                      <span style={styles.strengthIcon}>💪</span>
-                      <div style={styles.strengthContent}>
-                        <div style={styles.strengthHeader}>
-                          <strong>{category}</strong>
-                          <span style={styles.strengthPercentage}>{percentage}%</span>
-                        </div>
-                        <p style={styles.strengthInsight}>Strong performance in this area</p>
-                      </div>
-                    </div>
-                  );
-                })}
-                {strengthsList.length === 0 && (
-                  <div style={styles.strengthCard}>
-                    <span style={styles.strengthIcon}>📝</span>
-                    <div>
-                      <strong>No dominant strengths identified</strong>
-                      <p style={styles.strengthDesc}>All areas require development attention</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* 7️⃣ Development Priorities */}
-            <div style={styles.riskProfile}>
-              <h3 style={styles.subsectionTitle}>7. Development Priorities</h3>
-              <div style={styles.riskGrid}>
-                {weaknessesList.map((weakness, index) => {
-                  const match = weakness.match(/(.+) \((\d+)%\)/);
-                  const category = match ? match[1] : weakness;
-                  const percentage = parseInt(match ? match[2] : '0');
-                  
-                  const recommendation = getDevelopmentRecommendation(category, percentage);
-                  
-                  let urgencyLevel = '';
-                  let urgencyColor = '';
-                  if (percentage < 50) {
-                    urgencyLevel = 'Critical Gap';
-                    urgencyColor = '#991b1b';
-                  } else if (percentage < 60) {
-                    urgencyLevel = 'Significant Need';
-                    urgencyColor = '#b45309';
-                  } else if (percentage < 70) {
-                    urgencyLevel = 'Development Opportunity';
-                    urgencyColor = '#1e40af';
-                  } else {
-                    urgencyLevel = 'Strength to Leverage';
-                    urgencyColor = '#047857';
-                  }
-                  
-                  return (
-                    <div key={index} style={styles.riskCard}>
-                      <span style={styles.riskIcon}>⚠️</span>
-                      <div style={styles.riskContent}>
-                        <div style={styles.riskHeader}>
-                          <strong>{category}</strong>
-                          <span style={{...styles.riskPercentage, color: urgencyColor}}>{percentage}% - {urgencyLevel}</span>
-                        </div>
-                        <p style={styles.riskDescription}>
-                          {recommendation}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 8️⃣ Role Fit Analysis & Development Plan */}
-            <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'development' || showPrintView ? 'block' : 'none'}}>
-              <div style={styles.sectionHeader}>
-                <h2 style={styles.sectionTitle}>8. Role Fit Analysis - {config.name}</h2>
-              </div>
+            {/* Development Recommendations */}
+            <div style={styles.timelineContainer}>
+              <h3 style={styles.subsectionTitle}>Development Recommendations</h3>
               
-              <div style={styles.roleFitCard}>
-                {selectedAssessment.detailedInterpretation?.roleFit && (
-                  <div style={styles.analysisText}>{selectedAssessment.detailedInterpretation.roleFit}</div>
-                )}
-                {!selectedAssessment.detailedInterpretation?.roleFit && (
-                  <div style={styles.analysisText}>
-                    <p><strong>Best suited for roles requiring:</strong></p>
-                    <ul>
-                      {strengthsList.map((s, i) => {
-                        const [category] = s.split(' (');
-                        return <li key={i}>• Strong {category.toLowerCase()} capabilities</li>;
-                      })}
-                      {strengthsList.length === 0 && (
-                        <li>• Structured, supervised positions with clear guidelines</li>
-                      )}
-                    </ul>
-                  </div>
-                )}
-              </div>
-
-              {/* 9️⃣ Development Recommendations */}
-              <div style={styles.timelineContainer}>
-                <h3 style={styles.subsectionTitle}>9. Development Recommendations</h3>
+              <div style={styles.timelineGrid}>
+                <div style={styles.timelinePhase}>
+                  <h4 style={styles.phaseTitle}>Short-Term (0–3 Months)</h4>
+                  <ul style={styles.phaseList}>
+                    <li>Complete foundational training in weak areas</li>
+                    <li>Structured mentoring program</li>
+                    <li>Weekly feedback and progress reviews</li>
+                    {weaknessesList.length > 0 && (
+                      <li>Focus on {weaknessesList.slice(0, 2).map(w => w.split(' (')[0]).join(' and ')}</li>
+                    )}
+                  </ul>
+                </div>
                 
-                <div style={styles.timelineGrid}>
-                  <div style={styles.timelinePhase}>
-                    <h3 style={styles.phaseTitle}>Short-Term (0–3 Months)</h3>
-                    <ul style={styles.phaseList}>
-                      <li>Complete foundational training in weak areas</li>
-                      <li>Structured mentoring program</li>
-                      <li>Weekly feedback and progress reviews</li>
-                      {weaknessesList.length > 0 && (
-                        <li>Focus on {weaknessesList.slice(0, 2).map(w => w.split(' (')[0]).join(' and ')}</li>
-                      )}
-                    </ul>
-                  </div>
-                  
-                  <div style={styles.timelinePhase}>
-                    <h3 style={styles.phaseTitle}>Medium-Term (3–6 Months)</h3>
-                    <ul style={styles.phaseList}>
-                      <li>Advanced training in core competencies</li>
-                      <li>Cross-functional project exposure</li>
-                      <li>Skill certification courses</li>
-                      <li>Apply learning to practical situations</li>
-                    </ul>
-                  </div>
-                  
-                  <div style={styles.timelinePhase}>
-                    <h3 style={styles.phaseTitle}>Long-Term (6–12 Months)</h3>
-                    <ul style={styles.phaseList}>
-                      <li>Leadership development program</li>
-                      <li>Stretch assignments</li>
-                      <li>Regular reassessment of progress</li>
-                      {strengthsList.length > 0 && (
-                        <li>Build on {strengthsList.slice(0, 1).map(s => s.split(' (')[0]).join('')} strengths</li>
-                      )}
-                    </ul>
-                  </div>
+                <div style={styles.timelinePhase}>
+                  <h4 style={styles.phaseTitle}>Medium-Term (3–6 Months)</h4>
+                  <ul style={styles.phaseList}>
+                    <li>Advanced training in core competencies</li>
+                    <li>Cross-functional project exposure</li>
+                    <li>Skill certification courses</li>
+                    <li>Apply learning to practical situations</li>
+                  </ul>
+                </div>
+                
+                <div style={styles.timelinePhase}>
+                  <h4 style={styles.phaseTitle}>Long-Term (6–12 Months)</h4>
+                  <ul style={styles.phaseList}>
+                    <li>Leadership development program</li>
+                    <li>Stretch assignments</li>
+                    <li>Regular reassessment of progress</li>
+                    {strengthsList.length > 0 && (
+                      <li>Build on {strengthsList.slice(0, 1).map(s => s.split(' (')[0]).join('')} strengths</li>
+                    )}
+                  </ul>
                 </div>
               </div>
+            </div>
 
-              {/* 🔟 Hiring Recommendation */}
-              <div style={styles.hiringCard}>
-                <h3 style={styles.subsectionTitle}>10. Hiring / Promotion Recommendation</h3>
-                <div style={{...styles.hiringBadge, background: hiringRec.color}}>
-                  {hiringRec.recommendation}
+            {/* Hiring Recommendation */}
+            <div style={styles.hiringCard}>
+              <h3 style={styles.subsectionTitle}>Hiring Recommendation</h3>
+              <div style={{...styles.hiringBadge, background: hiringRec.color}}>
+                {hiringRec.recommendation}
+              </div>
+              <p style={styles.hiringJustification}>{hiringRec.summary}</p>
+              <p style={styles.hiringDetail}>
+                Based on the comprehensive {config.name}, this candidate demonstrates 
+                {selectedAssessment.percentage >= 65 ? ' strong potential' : ' significant development needs'} 
+                for roles requiring these competencies.
+              </p>
+              <div style={styles.hiringFactors}>
+                <div style={styles.hiringFactor}>
+                  <strong>Supporting factors:</strong> {strengthsList.length} strength areas identified
                 </div>
-                <p style={styles.hiringJustification}>{hiringRec.summary}</p>
-                <p style={styles.hiringDetail}>
-                  Based on the comprehensive {config.name}, this candidate demonstrates 
-                  {selectedAssessment.percentage >= 65 ? ' strong potential' : ' significant development needs'} 
-                  for roles requiring these competencies.
-                </p>
-                <div style={styles.hiringFactors}>
-                  <div style={styles.hiringFactor}>
-                    <strong>Supporting factors:</strong> {strengthsList.length} strength areas identified
-                  </div>
-                  <div style={styles.hiringFactor}>
-                    <strong>Risk factors:</strong> {weaknessesList.length} areas requiring development
-                  </div>
+                <div style={styles.hiringFactor}>
+                  <strong>Risk factors:</strong> {weaknessesList.length} areas requiring development
                 </div>
               </div>
-            </section>
+            </div>
           </section>
         </div>
       </div>
@@ -1036,7 +885,7 @@ const styles = {
     fontSize: '20px',
     fontWeight: 600,
     color: '#1f2937',
-    margin: '30px 0 20px 0'
+    margin: '0 0 20px 0'
   },
   coverPage: {
     minHeight: '80vh',
@@ -1305,116 +1154,29 @@ const styles = {
     flexWrap: 'wrap',
     gap: '15px'
   },
-  competencyBreakdown: {
+  psychometricSection: {
     marginTop: '40px'
   },
-  competencyCard: {
-    marginBottom: '30px',
-    border: '1px solid #e5e7eb',
-    borderRadius: '12px',
-    overflow: 'hidden'
-  },
-  competencyHeader: {
+  psychometricCard: {
+    marginBottom: '25px',
+    padding: '20px',
     background: '#f9fafb',
-    padding: '15px 20px',
-    borderBottom: '1px solid #e5e7eb'
+    borderRadius: '12px',
+    border: '1px solid #e5e7eb'
   },
-  competencyName: {
-    margin: 0,
+  psychometricCardTitle: {
     fontSize: '16px',
     fontWeight: 600,
-    color: '#1f2937'
+    color: '#1f2937',
+    margin: '0 0 12px 0',
+    borderBottom: '1px solid #e5e7eb',
+    paddingBottom: '8px'
   },
-  competencyBody: {
-    padding: '20px'
-  },
-  interpretationText: {
+  psychometricText: {
     fontSize: '14px',
     lineHeight: '1.8',
     color: '#4b5563',
-    whiteSpace: 'pre-wrap'
-  },
-  strengthProfile: {
-    marginTop: '40px'
-  },
-  strengthGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-    gap: '15px'
-  },
-  strengthCard: {
-    display: 'flex',
-    gap: '15px',
-    padding: '15px',
-    background: '#d1fae5',
-    borderRadius: '8px',
-    border: '1px solid #a7f3d0'
-  },
-  strengthIcon: {
-    fontSize: '24px'
-  },
-  strengthContent: {
-    flex: 1
-  },
-  strengthHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '8px'
-  },
-  strengthPercentage: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#065f46'
-  },
-  strengthInsight: {
-    fontSize: '13px',
-    color: '#064e3b',
-    lineHeight: '1.5',
-    margin: 0
-  },
-  strengthDesc: {
-    margin: '5px 0 0 0',
-    fontSize: '12px',
-    color: '#065f46'
-  },
-  riskProfile: {
-    marginTop: '40px'
-  },
-  riskGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-    gap: '15px'
-  },
-  riskCard: {
-    display: 'flex',
-    gap: '15px',
-    padding: '15px',
-    background: '#fee2e2',
-    borderRadius: '8px',
-    border: '1px solid #fecaca'
-  },
-  riskIcon: {
-    fontSize: '24px'
-  },
-  riskContent: {
-    flex: 1
-  },
-  riskHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '8px'
-  },
-  riskPercentage: {
-    fontSize: '14px',
-    fontWeight: 600
-  },
-  riskDescription: {
-    fontSize: '13px',
-    color: '#7f1d1d',
-    lineHeight: '1.5',
-    margin: 0
+    whiteSpace: 'pre-line'
   },
   roleFitCard: {
     padding: '30px',
