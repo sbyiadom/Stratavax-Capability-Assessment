@@ -6,6 +6,7 @@ import { supabase } from "../../supabase/client";
 import { generateDetailedInterpretation } from "../../utils/detailedInterpreter";
 import { getClassification, getGradeInfo, getHiringRecommendation } from "../../utils/reportGenerator";
 import { assessmentTypes, getAssessmentType } from "../../utils/assessmentConfigs";
+import { analyzeResponses, getCategorySpecificRecommendations } from "../../utils/responseAnalyzer";
 import { getDevelopmentRecommendation } from "../../utils/developmentRecommendations";
 import {
   // General Assessment
@@ -467,7 +468,7 @@ export default function CandidateReport() {
               </div>
               
               <div style={styles.coverContent}>
-                <div style={styles.coverLogo}>📊</div>
+                <div style={styles.coverLogo}>{config.icon}</div>
                 <h2 style={styles.coverCandidateName}>{candidate.full_name}</h2>
                 <p style={styles.coverDetail}>Assessment Date: {new Date(assessmentData.completed_at).toLocaleDateString()}</p>
                 <p style={styles.coverDetail}>Report Generated: {new Date().toLocaleDateString()}</p>
@@ -574,6 +575,7 @@ export default function CandidateReport() {
                   <tr style={styles.tableHeadRow}>
                     <th style={styles.tableHead}>Category</th>
                     <th style={styles.tableHead}>Score</th>
+                    <th style={styles.tableHead}>Percentage</th>
                     <th style={styles.tableHead}>Grade</th>
                   </tr>
                 </thead>
@@ -584,6 +586,7 @@ export default function CandidateReport() {
                       <tr key={category} style={styles.tableRow}>
                         <td style={styles.tableCell}>{category}</td>
                         <td style={styles.tableCell}>{data.score}/{data.maxPossible}</td>
+                        <td style={styles.tableCell}>{data.percentage}%</td>
                         <td style={styles.tableCell}>{catGrade.grade}</td>
                       </tr>
                     );
@@ -591,9 +594,10 @@ export default function CandidateReport() {
                 </tbody>
                 <tfoot>
                   <tr style={styles.tableFooterRow}>
-                    <td colSpan="3" style={styles.tableFooter}>
+                    <td colSpan="4" style={styles.tableFooter}>
                       <div style={styles.totalScoreRow}>
                         <span><strong>Total Score:</strong> {assessmentData.total_score}/{assessmentData.max_score}</span>
+                        <span><strong>Average:</strong> {assessmentData.percentage}%</span>
                         <span><strong>Overall Grade:</strong> {gradeInfo.grade}</span>
                         <span><strong>Classification:</strong> {classification.label}</span>
                       </div>
