@@ -10,508 +10,380 @@ export const generatePsychometricAnalysis = (categoryScores, assessmentType, can
     percentage: data.percentage
   }));
 
-  // Sort categories by percentage (lowest first for development focus)
-  const sortedByPercentage = [...categories].sort((a, b) => a.percentage - b.percentage);
+  // Sort categories by percentage (highest first for strengths, lowest for risks)
+  const byPercentage = [...categories].sort((a, b) => b.percentage - a.percentage);
   
-  // Identify strengths (≥70%) and weaknesses (<50%)
+  // Identify strengths (≥70%), moderate (50-69%), and risks (<50%)
   const strengths = categories.filter(c => c.percentage >= 70);
-  const weaknesses = categories.filter(c => c.percentage < 50);
-  const developing = categories.filter(c => c.percentage >= 50 && c.percentage < 70);
+  const moderate = categories.filter(c => c.percentage >= 50 && c.percentage < 70);
+  const risks = categories.filter(c => c.percentage < 50);
 
   // Calculate overall statistics
-  const avgScore = categories.reduce((sum, c) => sum + c.percentage, 0) / categories.length;
-
-  // Generate analysis based on assessment type
-  return generateAssessmentAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage, assessmentType);
-};
-
-const generateAssessmentAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage, assessmentType) => {
-  
-  // Get assessment type display name
-  const assessmentTypeNames = {
-    'cognitive': 'Cognitive Ability',
-    'general': 'General',
-    'leadership': 'Leadership',
-    'technical': 'Technical',
-    'personality': 'Personality',
-    'performance': 'Performance',
-    'behavioral': 'Behavioral',
-    'cultural': 'Cultural Fit'
-  };
-
-  const typeName = assessmentTypeNames[assessmentType] || 'Assessment';
+  const totalScore = categories.reduce((sum, c) => sum + c.score, 0);
+  const maxPossible = categories.reduce((sum, c) => sum + c.maxPossible, 0);
+  const avgScore = Math.round((totalScore / maxPossible) * 100);
 
   return {
-    // Overall Performance Summary
-    overallSummary: `**📊 Overall Performance Summary**
-
-${candidateName} completed the ${typeName} assessment with an overall score of ${Math.round(avgScore)}%. ` + 
-getOverallPerformanceDescription(avgScore, strengths.length, weaknesses.length),
-
-    // Category-by-Category Analysis
-    categoryAnalysis: generateCategoryAnalysis(categories, candidateName),
-
-    // Key Strengths
-    keyStrengths: strengths.length > 0 
-      ? `**💪 Key Strengths**
-
-${strengths.map(s => `• **${s.name}** (${s.percentage}%): ${getStrengthDescription(s.name, s.percentage, assessmentType)}`).join('\n\n')}`
-      : `**💪 Key Strengths**
-
-No significant strengths were identified in this assessment. Focus should be on foundational development in all areas.`,
-
-    // Priority Development Areas
-    priorityDevelopment: `**📈 Priority Development Areas**
-
-Based on performance, the following areas require immediate attention:
-
-${sortedByPercentage.slice(0, 3).map((c, i) => 
-  `**Priority ${i+1}: ${c.name}** (${c.percentage}%)\n${getDevelopmentPriorityDescription(c.name, c.percentage, assessmentType)}`
-).join('\n\n')}`,
-
-    // Detailed Development Plan
-    developmentPlan: generateDevelopmentPlan(categories, weaknesses, developing, strengths, candidateName, assessmentType),
-
-    // Risk Factors
-    riskFactors: weaknesses.length > 0
-      ? `**⚠️ Risk Factors**
-
-The following areas present significant challenges that need attention:
-
-${weaknesses.slice(0, 3).map(w => `• **${w.name}** (${w.percentage}%): ${getRiskDescription(w.name, w.percentage, assessmentType)}`).join('\n')}`
-      : `**⚠️ Risk Factors**
-
-No significant risk factors identified.`
+    executiveSummary: generateExecutiveSummary(candidateName, avgScore, strengths, moderate, risks, categories),
+    categoryAnalysis: {
+      strengths: generateStrengthsAnalysis(strengths),
+      moderate: generateModerateAnalysis(moderate),
+      risks: generateRisksAnalysis(risks)
+    },
+    personalityStructure: generatePersonalityStructure(categories, strengths, risks),
+    roleSuitability: generateRoleSuitability(strengths, risks),
+    developmentPriorities: generateDevelopmentPriorities(risks, moderate),
+    overallInterpretation: generateOverallInterpretation(candidateName, avgScore, strengths, risks)
   };
 };
 
-const generateCategoryAnalysis = (categories, candidateName) => {
-  return `**📋 Category-by-Category Analysis**
+const generateExecutiveSummary = (candidateName, avgScore, strengths, moderate, risks, categories) => {
+  const riskCount = risks.length;
+  const strengthCount = strengths.length;
+  const hasCognitiveIssue = risks.some(r => r.name.includes('Cognitive'));
+  const hasStressIssue = risks.some(r => r.name.includes('Stress'));
+  const hasOpennessStrength = strengths.some(s => s.name.includes('Openness'));
+  const hasConscientiousness = strengths.some(s => s.name.includes('Conscientiousness')) || 
+                               moderate.some(m => m.name.includes('Conscientiousness'));
 
-${candidateName} was assessed on the following ${categories.length} competencies:
+  let summary = `**Overall Performance Interpretation**\n\n`;
+  summary += `Total Score: ${totalScore} / ${maxPossible}\n`;
+  summary += `Average: ${avgScore}%\n`;
+  summary += `Overall Grade: ${getOverallGrade(avgScore)}\n`;
+  summary += `Classification: ${getClassification(avgScore)}\n\n`;
+  summary += `**Executive Summary**\n\n`;
 
-${categories.map(c => `**${c.name}** – ${c.percentage}% (${getPerformanceLevel(c.percentage)})
+  if (strengthCount >= 3 && riskCount <= 2) {
+    summary += `This profile reflects a strong performer with clear strengths in ${strengths.map(s => s.name.toLowerCase()).join(', ')}. `;
+    if (hasOpennessStrength && hasConscientiousness) {
+      summary += `The combination of high openness and conscientiousness suggests someone who can both generate ideas and execute them effectively. `;
+    }
+  } else if (strengthCount >= 2 && riskCount >= 3) {
+    summary += `This profile reflects a moderate but uneven performer. `;
+    if (hasOpennessStrength) summary += `The candidate shows high openness `;
+    if (hasConscientiousness) summary += `and decent work discipline, `;
+    summary += `but significant weaknesses in ${risks.slice(0,3).map(r => r.name.toLowerCase()).join(', ')}. `;
+  } else if (riskCount >= 4) {
+    summary += `This profile reflects significant development needs across multiple areas. `;
+  } else {
+    summary += `This profile reflects a developing performer with room for growth. `;
+  }
 
-${getCategorySpecificFeedback(c.name, c.percentage)}
+  summary += `\n\nThere is development potential, but performance consistency and decision-making reliability are current concerns.`;
 
-• **Score**: ${c.score}/${c.maxPossible}
-• **Target**: 80% (${Math.round((80 - c.percentage) / 10) * 10}% gap)
-• **Priority**: ${getPriorityLevel(c.percentage)}`).join('\n\n')}`;
+  return summary;
 };
 
-const generateDevelopmentPlan = (categories, weaknesses, developing, strengths, candidateName, assessmentType) => {
-  const priorityAreas = [...weaknesses, ...developing].slice(0, 3);
+const generateStrengthsAnalysis = (strengths) => {
+  if (strengths.length === 0) return '';
+
+  let analysis = `🟢 **Key Strengths**\n\n`;
   
-  return `**📅 Personalized Development Plan for ${candidateName}**
+  strengths.forEach(s => {
+    analysis += `**${s.name}** – ${s.percentage}% (${getGrade(s.percentage)})\n\n`;
+    analysis += `${getStrengthNarrative(s.name, s.percentage)}\n\n`;
+    
+    // Add bullet points for key indicators
+    const indicators = getStrengthIndicators(s.name, s.percentage);
+    if (indicators.length > 0) {
+      analysis += `${indicators.map(i => `• ${i}`).join('\n')}\n\n`;
+    }
+    
+    analysis += `This is a major growth asset, especially in evolving environments.\n\n`;
+  });
 
-Based on the assessment results, here is a tailored development plan:
+  return analysis;
+};
 
-${priorityAreas.map((area, index) => `
-**Goal ${index + 1}: Improve ${area.name}**
-• **Current Level**: ${area.percentage}% (${getPerformanceLevel(area.percentage)})
-• **Target Level**: 80% (Proficient)
-• **Timeline**: ${index === 0 ? '3 months' : index === 1 ? '6 months' : '9 months'}
+const generateModerateAnalysis = (moderate) => {
+  if (moderate.length === 0) return '';
 
-**Recommended Actions:**
-${getDevelopmentActions(area.name, area.percentage, assessmentType).map(action => `  • ${action}`).join('\n')}
+  let analysis = `🟡 **Moderate / Stable Areas**\n\n`;
+  
+  moderate.forEach(m => {
+    analysis += `**${m.name}** – ${m.percentage}% (${getGrade(m.percentage)})\n\n`;
+    analysis += `${getModerateNarrative(m.name, m.percentage)}\n\n`;
+  });
 
-**Success Metrics:**
-  • Complete all recommended training modules
-  • Practice exercises 3-4 times per week
-  • Achieve 70%+ on progress checks
-  • Demonstrate improvement in practical applications
-`).join('\n')}
+  return analysis;
+};
 
-${strengths.length > 0 ? `
-**Strengths to Leverage:**
-${strengths.slice(0, 2).map(s => `• Your strength in **${s.name}** (${s.percentage}%) can be leveraged to build confidence while working on development areas.`).join('\n')}` : ''}
+const generateRisksAnalysis = (risks) => {
+  if (risks.length === 0) return '';
 
-**Recommended Support:**
-• Schedule monthly progress reviews with supervisor
-• Work with a mentor for guided practice
-• Use online resources and practice materials
-• Join study groups or peer learning sessions
-`;
+  let analysis = `🔴 **Development & Risk Areas**\n\n`;
+  
+  risks.forEach(r => {
+    analysis += `**${r.name}** – ${r.percentage}% (${getGrade(r.percentage)})\n\n`;
+    analysis += `${getRiskNarrative(r.name, r.percentage)}\n\n`;
+    
+    // Add bullet points for what this may indicate
+    const implications = getRiskImplications(r.name, r.percentage);
+    if (implications.length > 0) {
+      analysis += `${implications.map(i => `• ${i}`).join('\n')}\n\n`;
+    }
+    
+    // Add risk description for critical areas
+    if (r.percentage < 40) {
+      analysis += `For roles requiring complex judgment, this is a significant limitation.\n\n`;
+    }
+  });
+
+  return analysis;
+};
+
+const generatePersonalityStructure = (categories, strengths, risks) => {
+  const openness = categories.find(c => c.name.includes('Openness'))?.percentage || 0;
+  const conscientiousness = categories.find(c => c.name.includes('Conscientiousness'))?.percentage || 0;
+  const cognitive = categories.find(c => c.name.includes('Cognitive'))?.percentage || 0;
+  const stress = categories.find(c => c.name.includes('Stress'))?.percentage || 0;
+  
+  let analysis = `🧠 **Personality Structure Interpretation**\n\n`;
+  analysis += `This is an interesting contrast profile:\n\n`;
+  analysis += `• Very high Openness (${openness}%)\n`;
+  analysis += `• ${conscientiousness >= 70 ? 'High' : conscientiousness >= 50 ? 'Moderate' : 'Low'} Conscientiousness (${conscientiousness}%)\n`;
+  analysis += `• ${cognitive >= 70 ? 'High' : cognitive >= 50 ? 'Moderate' : 'Very low'} Cognitive Pattern score (${cognitive}%)\n`;
+  analysis += `• ${stress >= 70 ? 'High' : stress >= 50 ? 'Moderate' : 'Low'} Stress Management (${stress}%)\n\n`;
+
+  if (openness >= 80 && cognitive < 50 && stress < 60) {
+    analysis += `This can describe someone who:\n\n`;
+    analysis += `• Has ideas\n`;
+    analysis += `• Enjoys new concepts\n`;
+    analysis += `• But struggles to structure thinking\n`;
+    analysis += `• May not convert ideas into structured execution\n\n`;
+    analysis += `High curiosity + weak cognitive structure = scattered potential.\n`;
+  } else if (openness >= 70 && conscientiousness >= 70) {
+    analysis += `This combination of high openness and conscientiousness suggests someone who can both generate ideas and execute them effectively.\n`;
+  } else if (cognitive < 50 && stress < 50) {
+    analysis += `The combination of low cognitive structure and poor stress management suggests someone who may struggle with complex, high-pressure situations.\n`;
+  } else {
+    analysis += `This profile shows a mix of strengths and development areas that need to be considered in context.\n`;
+  }
+
+  return analysis;
+};
+
+const generateRoleSuitability = (strengths, risks) => {
+  const strengthNames = strengths.map(s => s.name);
+  const riskNames = risks.map(r => r.name);
+  
+  let analysis = `🎯 **Role Suitability**\n\n`;
+  
+  // Suitable for
+  analysis += `**Suitable For:**\n\n`;
+  
+  if (strengthNames.some(s => s.includes('Openness'))) {
+    analysis += `• Creative or exploratory roles\n`;
+    analysis += `• Research support roles\n`;
+    analysis += `• Innovation brainstorming teams\n`;
+  }
+  if (strengthNames.some(s => s.includes('Conscientiousness'))) {
+    analysis += `• Structured operational roles\n`;
+    analysis += `• Project coordination\n`;
+  }
+  if (strengthNames.some(s => s.includes('Extraversion'))) {
+    analysis += `• Collaborative team environments\n`;
+  }
+  if (strengths.length === 0 || (strengthNames.includes('Openness') && risks.length > 2)) {
+    analysis += `• Environments with structured supervision\n`;
+  }
+  
+  analysis += `\n**Risky For:**\n\n`;
+  
+  if (riskNames.some(r => r.includes('Cognitive'))) {
+    analysis += `• Senior leadership\n`;
+    analysis += `• Strategic decision-making roles\n`;
+  }
+  if (riskNames.some(r => r.includes('Stress'))) {
+    analysis += `• High-pressure operational roles\n`;
+    analysis += `• Crisis management positions\n`;
+  }
+  if (riskNames.some(r => r.includes('Agreeableness'))) {
+    analysis += `• Client-facing positions\n`;
+    analysis += `• Team leadership roles\n`;
+  }
+  if (riskNames.some(r => r.includes('Motivations'))) {
+    analysis += `• Roles requiring high initiative\n`;
+  }
+  
+  if (analysis.endsWith('**Risky For:**\n\n')) {
+    analysis += `• No significant role risks identified\n`;
+  }
+
+  return analysis;
+};
+
+const generateDevelopmentPriorities = (risks, moderate) => {
+  const priorities = [...risks, ...moderate].sort((a, b) => a.percentage - b.percentage).slice(0, 4);
+  
+  if (priorities.length === 0) return '';
+
+  let analysis = `📈 **Development Priorities**\n\n`;
+  
+  priorities.forEach((item, index) => {
+    analysis += `${index + 1}️⃣ **${getPriorityEmoji(index)} ${item.name}**\n\n`;
+    analysis += `${getDevelopmentRecommendation(item.name, item.percentage)}\n\n`;
+  });
+
+  return analysis;
+};
+
+const generateOverallInterpretation = (candidateName, avgScore, strengths, risks) => {
+  const strengthCount = strengths.length;
+  const riskCount = risks.length;
+  const hasCognitiveRisk = risks.some(r => r.name.includes('Cognitive'));
+  const hasStressRisk = risks.some(r => r.name.includes('Stress'));
+  
+  let analysis = `📌 **Overall Interpretation**\n\n`;
+  
+  if (strengthCount >= 2 && riskCount <= 2) {
+    analysis += `This is a capable individual with clear strengths and manageable development areas. `;
+  } else if (strengthCount >= 1 && riskCount >= 3) {
+    analysis += `This is a curious, adaptable individual with moderate discipline but weak cognitive structure and stress resilience. `;
+    if (hasCognitiveRisk && hasStressRisk) {
+      analysis += `The candidate has growth potential but requires structured development before handling high-responsibility or high-pressure roles. `;
+    }
+  } else if (riskCount >= 4) {
+    analysis += `This candidate requires significant development across multiple areas before being ready for increased responsibility. `;
+  } else {
+    analysis += `This candidate has growth potential with targeted development in key areas. `;
+  }
+  
+  return analysis;
 };
 
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
 
-const getPerformanceLevel = (percentage) => {
-  if (percentage >= 80) return 'Exceptional';
-  if (percentage >= 70) return 'Strong';
-  if (percentage >= 60) return 'Developing';
-  if (percentage >= 50) return 'Basic';
-  if (percentage >= 40) return 'Below Average';
-  return 'Critical';
+const getGrade = (percentage) => {
+  if (percentage >= 95) return 'A+';
+  if (percentage >= 90) return 'A';
+  if (percentage >= 85) return 'A-';
+  if (percentage >= 80) return 'B+';
+  if (percentage >= 75) return 'B';
+  if (percentage >= 70) return 'B-';
+  if (percentage >= 65) return 'C+';
+  if (percentage >= 60) return 'C';
+  if (percentage >= 55) return 'C-';
+  if (percentage >= 50) return 'D+';
+  if (percentage >= 40) return 'D';
+  return 'F';
 };
 
-const getPriorityLevel = (percentage) => {
-  if (percentage < 40) return 'Critical - Immediate action required';
-  if (percentage < 50) return 'High - Needs urgent attention';
-  if (percentage < 60) return 'Medium - Should be prioritized';
-  if (percentage < 70) return 'Low - Monitor progress';
-  return 'Strength - Maintain and leverage';
+const getOverallGrade = (percentage) => {
+  if (percentage >= 90) return 'A';
+  if (percentage >= 80) return 'B';
+  if (percentage >= 70) return 'C';
+  if (percentage >= 60) return 'D';
+  return 'F';
 };
 
-const getOverallPerformanceDescription = (avgScore, strengthsCount, weaknessesCount) => {
-  if (avgScore >= 70) return `This is a strong performance with ${strengthsCount} identified strengths and ${weaknessesCount} areas for development.`;
-  if (avgScore >= 50) return `This is a developing performance with room for improvement in ${weaknessesCount} key areas.`;
-  return `This performance indicates significant development needs across ${weaknessesCount} areas requiring immediate attention.`;
+const getClassification = (percentage) => {
+  if (percentage >= 80) return 'High Potential';
+  if (percentage >= 65) return 'Strong Performer';
+  if (percentage >= 50) return 'Developing';
+  if (percentage >= 40) return 'At Risk';
+  return 'High Risk';
 };
 
-const getCategorySpecificFeedback = (categoryName, percentage) => {
-  const baseFeedback = {
-    'Verbal Reasoning': {
-      high: 'Demonstrates strong ability to understand and analyze written information.',
-      medium: 'Shows basic competency in verbal tasks but needs practice with complex passages.',
-      low: 'Struggles significantly with verbal comprehension and expression.'
-    },
-    'Numerical Reasoning': {
-      high: 'Excellent at working with numbers and interpreting quantitative data.',
-      medium: 'Can handle basic calculations but needs support with complex numerical problems.',
-      low: 'Significant difficulty with numerical concepts and data interpretation.'
-    },
-    'Logical / Abstract Reasoning': {
-      high: 'Exceptional at identifying patterns and solving abstract problems.',
-      medium: 'Can solve routine logic problems but struggles with novel situations.',
-      low: 'Major challenges with logical thinking and pattern recognition.'
-    },
-    'Spatial Reasoning': {
-      high: 'Strong ability to visualize and manipulate objects in space.',
-      medium: 'Adequate spatial skills but needs practice with complex visual tasks.',
-      low: 'Difficulty with spatial relationships and visual processing.'
-    },
-    'Memory & Attention': {
-      high: 'Excellent recall and sustained attention to detail.',
-      medium: 'Generally attentive but may miss some details or forget information.',
-      low: 'Significant challenges with memory retention and maintaining focus.'
-    },
-    'Mechanical Reasoning': {
-      high: 'Strong understanding of mechanical principles and physical systems.',
-      medium: 'Basic grasp of mechanical concepts but needs practical experience.',
-      low: 'Limited understanding of how mechanical systems work.'
-    },
-    'Perceptual Speed & Accuracy': {
-      high: 'Exceptionally fast and accurate at visual processing tasks.',
-      medium: 'Average speed and accuracy, may need extra time for detail work.',
-      low: 'Slow processing speed with frequent errors on detail-oriented tasks.'
-    },
-    'Cognitive Ability': {
-      high: 'Strong analytical and strategic thinking capabilities.',
-      medium: 'Moderate cognitive abilities. Benefits from structured approaches.',
-      low: 'Struggles with complex problem-solving and analytical tasks.'
-    },
-    'Communication': {
-      high: 'Articulates ideas clearly and persuasively.',
-      medium: 'Adequate communication. Needs development in clarity.',
-      low: 'Difficulty expressing ideas clearly.'
-    },
-    'Problem-Solving': {
-      high: 'Excellent problem-solver. Systematic and effective.',
-      medium: 'Can solve routine problems but struggles with novel situations.',
-      low: 'Poor problem-solving skills. Needs structured approaches.'
-    },
-    'Leadership & Management': {
-      high: 'Strong leadership potential. Inspires and develops others.',
-      medium: 'Emerging leadership skills. Needs development in people management.',
-      low: 'Limited leadership capability. Not ready for management roles.'
-    },
-    'Emotional Intelligence': {
-      high: 'High emotional intelligence. Self-aware and empathetic.',
-      medium: 'Moderate emotional awareness. May struggle with complex dynamics.',
-      low: 'Poor emotional intelligence. Challenges with interpersonal relationships.'
-    },
-    'Ethics & Integrity': {
-      high: 'Strong ethical foundation. Trustworthy and principled.',
-      medium: 'Adequate ethical awareness. May need guidance in complex situations.',
-      low: 'Ethical concerns. Requires clear boundaries and supervision.'
-    },
-    'Cultural & Attitudinal Fit': {
-      high: 'Strong cultural alignment. Embodies company values.',
-      medium: 'Moderate cultural fit. Some areas need attention.',
-      low: 'Poor cultural fit. Significant misalignment.'
-    },
-    'Personality & Behavioral': {
-      high: 'Stable, resilient, and adaptable. Positive work patterns.',
-      medium: 'Moderate behavioral patterns. May have some inconsistencies.',
-      low: 'Behavioral concerns. May struggle under pressure.'
-    },
-    'Technical & Manufacturing': {
-      high: 'Strong technical expertise. Deep understanding of systems.',
-      medium: 'Moderate technical skills. Needs training in advanced areas.',
-      low: 'Weak domain expertise. Requires significant training.'
-    },
-    'Performance Metrics': {
-      high: 'Results-driven with strong accountability.',
-      medium: 'Adequate performance focus. Needs guidance on goal setting.',
-      low: 'Performance concerns. Inconsistent delivery.'
-    },
-    'Work Pace': {
-      high: 'Highly productive and efficient.',
-      medium: 'Moderate productivity. May need support during peak periods.',
-      low: 'Slow work pace. Struggles with deadlines.'
-    },
-    'Integrity': {
-      high: 'Strong ethical foundation. Trustworthy and principled.',
-      medium: 'Adequate integrity. Follows rules when clear.',
-      low: 'Integrity concerns. Requires boundaries.'
-    },
-    'Motivations': {
-      high: 'Highly motivated and driven. Seeks challenges.',
-      medium: 'Moderate motivation. May need external motivation.',
-      low: 'Poor motivation. Shows little initiative.'
-    },
-    'Neuroticism': {
-      high: 'High emotional stability. Remains calm under pressure.',
-      medium: 'Moderate emotional stability. May show signs of stress.',
-      low: 'Poor emotional stability. Struggles with pressure.'
-    },
-    'Extraversion': {
-      high: 'Highly extraverted. Energized by social interaction.',
-      medium: 'Moderate extraversion. Comfortable in most social situations.',
-      low: 'Prefers independent work. May find social interaction draining.'
-    },
-    'Mixed Traits': {
-      high: 'Well-integrated personality traits.',
-      medium: 'Moderately integrated traits.',
-      low: 'Some inconsistency in personality expression.'
-    },
-    'Agreeableness': {
-      high: 'Highly agreeable. Cooperative and compassionate.',
-      medium: 'Moderately agreeable. Generally cooperative.',
-      low: 'Low agreeableness. May be perceived as challenging.'
-    },
-    'Behavioral Style': {
-      high: 'Highly effective behavioral patterns.',
-      medium: 'Moderately effective behavioral patterns.',
-      low: 'Ineffective behavioral patterns needing attention.'
-    },
-    'Conscientiousness': {
-      high: 'Highly conscientious. Organized and dependable.',
-      medium: 'Moderately conscientious. Generally reliable.',
-      low: 'Low conscientiousness. Inconsistent reliability.'
-    },
-    'Stress Management': {
-      high: 'Excellent stress management. Thrives under pressure.',
-      medium: 'Moderate stress management. May struggle under intense pressure.',
-      low: 'Poor stress management. Easily overwhelmed.'
-    },
-    'Openness to Experience': {
-      high: 'Highly open to new experiences. Creative and curious.',
-      medium: 'Moderately open. Receptive to new ideas.',
-      low: 'Low openness. Prefers familiar approaches.'
-    }
+const getPriorityEmoji = (index) => {
+  const emojis = ['Cognitive Structuring', 'Stress Resilience', 'Motivation Clarification', 'Interpersonal Development'];
+  return emojis[index] || 'Development';
+};
+
+const getStrengthNarrative = (name, percentage) => {
+  const narratives = {
+    'Openness to Experience': 'Exceptional strength. Strong curiosity and learning agility. Adaptability to new ideas. Innovation-friendly mindset. Willingness to experiment and explore.',
+    'Conscientiousness': 'Reasonably organized. Moderately disciplined. Can follow through on tasks. Some reliability in execution.',
+    'Integrity': 'Generally ethical. Likely trustworthy. Low probability of deliberate misconduct.',
+    'Work Pace': 'Maintains steady output. Neither overly slow nor overly impulsive.',
+    'Neuroticism': 'Emotionally stable. Handles pressure reasonably well.',
+    'Extraversion': 'Balanced social engagement. Comfortable in team settings.',
+    'Emotional Intelligence': 'Basic interpersonal awareness. Functional but not highly influential.',
+    'Cognitive Patterns': 'Strong analytical thinking. Handles complex problems effectively.'
   };
-
-  const categoryFeedback = baseFeedback[categoryName];
-  if (!categoryFeedback) {
-    if (percentage >= 70) return 'Strong performance in this area.';
-    if (percentage >= 50) return 'Shows basic competency with room for improvement.';
-    return 'Significant development needed in this area.';
-  }
-
-  if (percentage >= 70) return categoryFeedback.high;
-  if (percentage >= 50) return categoryFeedback.medium;
-  return categoryFeedback.low;
+  return narratives[name] || `Strong performance at ${percentage}%. This is a valuable asset.`;
 };
 
-const getStrengthDescription = (categoryName, percentage, assessmentType) => {
-  return `Strong performance at ${percentage}%. This is a valuable asset that can be leveraged while working on development areas.`;
-};
-
-const getDevelopmentPriorityDescription = (categoryName, percentage, assessmentType) => {
-  const gap = Math.round((80 - percentage) / 10) * 10;
-  return `Current score is ${percentage}%. Need to improve by ${gap}% to reach target proficiency of 80%. ${getCategorySpecificFeedback(categoryName, percentage)}`;
-};
-
-const getRiskDescription = (categoryName, percentage, assessmentType) => {
-  if (percentage < 40) return `Critical deficiency that will significantly impact performance. Requires immediate intervention.`;
-  if (percentage < 50) return `Significant gap that needs urgent attention in this area.`;
-  return `Below expected levels. Should be prioritized for development.`;
-};
-
-const getDevelopmentActions = (categoryName, percentage, assessmentType) => {
-  const actions = {
-    'Verbal Reasoning': [
-      'Complete daily reading comprehension exercises',
-      'Practice summarizing complex texts',
-      'Use vocabulary building apps',
-      'Join a book club or discussion group'
-    ],
-    'Numerical Reasoning': [
-      'Practice basic math operations daily',
-      'Work through numerical reasoning workbooks',
-      'Use online math tutorial platforms',
-      'Apply math to real-world scenarios'
-    ],
-    'Logical / Abstract Reasoning': [
-      'Solve logic puzzles and brain teasers daily',
-      'Practice pattern recognition exercises',
-      'Work through case studies with a mentor',
-      'Use structured problem-solving frameworks'
-    ],
-    'Spatial Reasoning': [
-      'Practice with spatial puzzles (tangrams, jigsaw)',
-      'Work with 3D modeling software',
-      'Practice reading and creating diagrams',
-      'Engage in activities like origami or building'
-    ],
-    'Memory & Attention': [
-      'Use memory techniques (chunking, association)',
-      'Practice mindfulness and focus exercises',
-      'Take notes and review regularly',
-      'Use checklists for detailed tasks'
-    ],
-    'Mechanical Reasoning': [
-      'Study basic mechanical principles',
-      'Work on hands-on projects',
-      'Shadow experienced technicians',
-      'Watch educational videos on mechanical systems'
-    ],
-    'Perceptual Speed & Accuracy': [
-      'Practice speed-accuracy drills',
-      'Use visual scanning exercises',
-      'Work on detail-oriented tasks with timers',
-      'Double-check work systematically'
-    ],
-    'Cognitive Ability': [
-      'Engage in critical thinking exercises',
-      'Practice analytical problem-solving',
-      'Work through case studies',
-      'Take online courses in logical thinking'
-    ],
-    'Communication': [
-      'Join Toastmasters or similar groups',
-      'Practice presentations with feedback',
-      'Take business writing courses',
-      'Seek opportunities to lead meetings'
-    ],
-    'Problem-Solving': [
-      'Learn structured problem-solving frameworks',
-      'Practice with real-world case studies',
-      'Participate in brainstorming sessions',
-      'Work on cross-functional projects'
-    ],
-    'Leadership & Management': [
-      'Take leadership fundamentals courses',
-      'Seek mentorship from experienced leaders',
-      'Volunteer for team lead roles',
-      'Practice delegation and feedback'
-    ],
-    'Emotional Intelligence': [
-      'Participate in EI workshops',
-      'Practice active listening daily',
-      'Seek feedback on interpersonal interactions',
-      'Reflect on emotional responses'
-    ],
-    'Ethics & Integrity': [
-      'Review company values and ethics policies',
-      'Discuss ethical dilemmas with supervisor',
-      'Participate in ethics training',
-      'Practice transparent communication'
-    ],
-    'Cultural & Attitudinal Fit': [
-      'Participate in company culture events',
-      'Seek feedback on cultural alignment',
-      'Learn about organizational values',
-      'Engage with diverse team members'
-    ],
-    'Personality & Behavioral': [
-      'Work with a coach on professional presence',
-      'Practice adaptability in different situations',
-      'Seek regular feedback on behavior',
-      'Develop stress management techniques'
-    ],
-    'Technical & Manufacturing': [
-      'Complete foundational technical training',
-      'Shadow experienced technicians',
-      'Practice hands-on skills',
-      'Create a skill development plan'
-    ],
-    'Performance Metrics': [
-      'Set SMART goals and track progress',
-      'Learn performance management frameworks',
-      'Practice self-assessment',
-      'Review performance data regularly'
-    ],
-    'Work Pace': [
-      'Use time management tools',
-      'Practice prioritization techniques',
-      'Break large tasks into smaller chunks',
-      'Set daily productivity goals'
-    ],
-    'Integrity': [
-      'Review ethical guidelines',
-      'Discuss values with mentor',
-      'Practice transparent communication',
-      'Reflect on decision-making process'
-    ],
-    'Motivations': [
-      'Connect tasks to larger goals',
-      'Set personal achievement targets',
-      'Find a mentor for guidance',
-      'Identify intrinsic motivators'
-    ],
-    'Neuroticism': [
-      'Practice stress-reduction techniques',
-      'Develop predictable routines',
-      'Build a support network',
-      'Learn cognitive reframing'
-    ],
-    'Extraversion': [
-      'Practice one-on-one interactions',
-      'Prepare for social situations',
-      'Join team activities gradually',
-      'Find balance between social and solo work'
-    ],
-    'Mixed Traits': [
-      'Work with a coach on behavioral flexibility',
-      'Observe and learn from different styles',
-      'Practice adapting to situations',
-      'Seek feedback on interactions'
-    ],
-    'Agreeableness': [
-      'Practice assertiveness techniques',
-      'Learn to set healthy boundaries',
-      'Role-play difficult conversations',
-      'Balance cooperation with self-advocacy'
-    ],
-    'Behavioral Style': [
-      'Identify behavioral triggers',
-      'Practice self-monitoring',
-      'Seek regular feedback',
-      'Develop alternative responses'
-    ],
-    'Conscientiousness': [
-      'Use organizational tools',
-      'Create detailed checklists',
-      'Set up accountability partnerships',
-      'Break commitments into smaller steps'
-    ],
-    'Stress Management': [
-      'Learn stress reduction techniques',
-      'Establish work-life boundaries',
-      'Practice mindfulness daily',
-      'Develop a stress management plan'
-    ],
+const getStrengthIndicators = (name, percentage) => {
+  const indicators = {
     'Openness to Experience': [
-      'Try new approaches to tasks',
-      'Learn about one new topic weekly',
-      'Volunteer for innovative projects',
-      'Embrace small changes gradually'
+      'Strong curiosity and learning agility',
+      'Adaptability to new ideas',
+      'Innovation-friendly mindset',
+      'Willingness to experiment and explore'
     ]
   };
+  return indicators[name] || [];
+};
 
-  const defaultActions = [
-    'Complete targeted training in this area',
-    'Work with a mentor for guided development',
-    'Practice skills through practical applications',
-    'Set specific improvement goals with weekly check-ins',
-    'Use online resources and learning platforms',
-    'Track progress and adjust approach as needed'
-  ];
+const getModerateNarrative = (name, percentage) => {
+  const narratives = {
+    'Emotional Intelligence': 'Basic interpersonal awareness. Functional but not highly influential.',
+    'Extraversion': 'Balanced social engagement. Neither highly dominant nor withdrawn.',
+    'Mixed Traits': 'Inconsistent behavioral tendencies. May behave differently under varying pressures.',
+    'Behavioral Style': 'Moderately adaptable. Not strongly defined leadership presence.',
+    'Neuroticism': 'Generally stable but may show stress in challenging situations.',
+    'Work Pace': 'Maintains steady output. Neither overly slow nor overly impulsive.',
+    'Conscientiousness': 'Reasonably organized. Moderately disciplined. Can follow through on tasks.'
+  };
+  return narratives[name] || `Shows moderate competency in this area with room for growth.`;
+};
 
-  return actions[categoryName] || defaultActions.slice(0, 4);
+const getRiskNarrative = (name, percentage) => {
+  const narratives = {
+    'Cognitive Patterns': 'This is the most serious concern. Weak analytical structure. Poor strategic thinking. Difficulty organizing thoughts. Inconsistent reasoning patterns.',
+    'Stress Management': 'Likely struggles under pressure. May experience performance dips in high-demand situations. Risk of emotional reactivity.',
+    'Agreeableness': 'May appear blunt or less collaborative. Possible interpersonal friction. Not naturally cooperative.',
+    'Motivations': 'Unclear internal drive. May lack strong achievement orientation. Needs external structure or incentives.',
+    'Performance Risks': 'Inconsistency. Possible burnout vulnerability. Decision instability under pressure.',
+    'Mixed Traits': 'Inconsistent behavioral tendencies. May behave differently under varying pressures.'
+  };
+  return narratives[name] || `Significant development needed in this area.`;
+};
+
+const getRiskImplications = (name, percentage) => {
+  const implications = {
+    'Cognitive Patterns': [
+      'Weak analytical structure',
+      'Poor strategic thinking',
+      'Difficulty organizing thoughts',
+      'Inconsistent reasoning patterns'
+    ],
+    'Stress Management': [
+      'Likely struggles under pressure',
+      'May experience performance dips in high-demand situations',
+      'Risk of emotional reactivity'
+    ],
+    'Agreeableness': [
+      'May appear blunt or less collaborative',
+      'Possible interpersonal friction',
+      'Not naturally cooperative'
+    ],
+    'Motivations': [
+      'Unclear internal drive',
+      'May lack strong achievement orientation',
+      'Needs external structure or incentives'
+    ],
+    'Performance Risks': [
+      'Inconsistency',
+      'Possible burnout vulnerability',
+      'Decision instability under pressure'
+    ]
+  };
+  return implications[name] || [];
+};
+
+const getDevelopmentRecommendation = (name, percentage) => {
+  const recommendations = {
+    'Cognitive Patterns': 'Critical thinking training. Structured decision-making frameworks. Analytical writing exercises.',
+    'Stress Management': 'Stress management coaching. Pressure simulation exercises. Mindfulness and emotional regulation training.',
+    'Agreeableness': 'Conflict management training. Collaboration workshops. Assertiveness training.',
+    'Motivations': 'Goal-setting alignment. KPI-based accountability. Performance coaching.',
+    'Performance Risks': 'Performance monitoring. Regular feedback sessions. Stress management techniques.',
+    'Mixed Traits': 'Behavioral coaching. Self-awareness exercises. Feedback sessions.',
+    'Emotional Intelligence': 'EI workshops. Active listening practice. Empathy exercises.'
+  };
+  return recommendations[name] || 'Targeted training and structured development in this area.';
 };
