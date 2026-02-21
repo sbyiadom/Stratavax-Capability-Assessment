@@ -79,6 +79,7 @@ export default function CandidateReport() {
   
   const [loading, setLoading] = useState(true);
   const [isSupervisor, setIsSupervisor] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [candidate, setCandidate] = useState(null);
   const [allAssessments, setAllAssessments] = useState([]);
   const [selectedAssessment, setSelectedAssessment] = useState(null);
@@ -87,42 +88,68 @@ export default function CandidateReport() {
   const [assessmentConfig, setAssessmentConfig] = useState(null);
   const [psychometricAnalysis, setPsychometricAnalysis] = useState(null);
 
+  // Authentication check - runs only once on client
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
     const checkAuth = () => {
-      if (typeof window !== 'undefined') {
+      try {
         const supervisorSession = localStorage.getItem("supervisorSession");
         if (!supervisorSession) {
           router.push("/supervisor-login");
           return;
         }
         
-        try {
-          const session = JSON.parse(supervisorSession);
-          if (session.loggedIn) {
-            setIsSupervisor(true);
-          } else {
-            router.push("/supervisor-login");
-          }
-        } catch {
+        const session = JSON.parse(supervisorSession);
+        if (session.loggedIn) {
+          setIsSupervisor(true);
+        } else {
           router.push("/supervisor-login");
         }
+      } catch {
+        router.push("/supervisor-login");
+      } finally {
+        setAuthChecked(true);
       }
     };
+    
     checkAuth();
   }, [router]);
 
+  // Fetch data only after auth is confirmed and we have a user_id
   useEffect(() => {
-    if (!isSupervisor || !user_id) return;
+    // Don't do anything until auth is checked
+    if (!authChecked) return;
+    
+    // If not a supervisor, don't fetch data
+    if (!isSupervisor) return;
+    
+    // If no user_id in URL, can't fetch
+    if (!user_id) return;
 
     const fetchData = async () => {
       try {
         setLoading(true);
         
-        const { data: profileData } = await supabase
+        // Get current session to ensure token is fresh
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        
+        if (!currentSession) {
+          console.error("No active session");
+          router.push("/supervisor-login");
+          return;
+        }
+
+        // Fetch candidate profile
+        const { data: profileData, error: profileError } = await supabase
           .from('candidate_profiles')
           .select('*')
           .eq('id', user_id)
           .maybeSingle();
+
+        if (profileError) {
+          console.error("Error fetching profile:", profileError);
+        }
 
         setCandidate({
           id: user_id,
@@ -130,11 +157,16 @@ export default function CandidateReport() {
           email: profileData?.email || 'Email not available'
         });
 
-        const { data: resultsData } = await supabase
+        // Fetch assessment results
+        const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
           .select('*')
           .eq('user_id', user_id)
           .order('completed_at', { ascending: false });
+
+        if (resultsError) {
+          console.error("Error fetching results:", resultsError);
+        }
 
         if (resultsData && resultsData.length > 0) {
           setAllAssessments(resultsData);
@@ -150,118 +182,129 @@ export default function CandidateReport() {
     };
 
     fetchData();
-  }, [isSupervisor, user_id]);
+  }, [authChecked, isSupervisor, user_id, router]);
 
   const loadAssessmentData = async (result, profileData) => {
-    const percentage = Math.round((result.total_score / result.max_score) * 100);
-    
-    const assessmentTypeId = result.assessment_type || 'general';
-    const config = getAssessmentType(assessmentTypeId);
-    setAssessmentConfig(config);
+    try {
+      const percentage = Math.round((result.total_score / result.max_score) * 100);
+      
+      const assessmentTypeId = result.assessment_type || 'general';
+      const config = getAssessmentType(assessmentTypeId);
+      setAssessmentConfig(config);
 
-    const { data: responsesData } = await supabase
-      .from('responses')
-      .select(`
-        *,
-        unique_questions!inner (
-          id,
-          section,
-          subsection,
-          question_text
-        ),
-        unique_answers!inner (
-          id,
-          answer_text,
-          score
-        )
-      `)
-      .eq('user_id', user_id)
-      .eq('assessment_id', result.assessment_id);
+      // Fetch responses with questions and answers
+      const { data: responsesData, error: responsesError } = await supabase
+        .from('responses')
+        .select(`
+          *,
+          unique_questions!inner (
+            id,
+            section,
+            subsection,
+            question_text
+          ),
+          unique_answers!inner (
+            id,
+            answer_text,
+            score
+          )
+        `)
+        .eq('user_id', user_id)
+        .eq('assessment_id', result.assessment_id);
 
-    const processedResponses = responsesData?.map(r => ({
-      question_id: r.question_id,
-      answer_id: r.answer_id,
-      category: r.unique_questions?.section || 'General',
-      question_text: r.unique_questions?.question_text,
-      answer_text: r.unique_answers?.answer_text,
-      score: r.unique_answers?.score
-    })) || [];
-
-    const responseInsights = {};
-    
-    processedResponses.forEach(r => {
-      if (!responseInsights[r.category]) {
-        responseInsights[r.category] = {
-          insights: [],
-          scores: [],
-          questionCount: 0,
-          highScoreCount: 0,
-          lowScoreCount: 0,
-          questionDetails: []
-        };
+      if (responsesError) {
+        console.error("Error fetching responses:", responsesError);
       }
+
+      const processedResponses = responsesData?.map(r => ({
+        question_id: r.question_id,
+        answer_id: r.answer_id,
+        category: r.unique_questions?.section || 'General',
+        question_text: r.unique_questions?.question_text,
+        answer_text: r.unique_answers?.answer_text,
+        score: r.unique_answers?.score
+      })) || [];
+
+      const responseInsights = {};
       
-      const cat = responseInsights[r.category];
-      cat.insights.push(generateInsight(r.category, r.question_text, r.answer_text, r.score));
-      cat.scores.push(r.score);
-      cat.questionCount++;
-      cat.questionDetails.push({
-        question: r.question_text,
-        answer: r.answer_text,
-        score: r.score
+      processedResponses.forEach(r => {
+        if (!responseInsights[r.category]) {
+          responseInsights[r.category] = {
+            insights: [],
+            scores: [],
+            questionCount: 0,
+            highScoreCount: 0,
+            lowScoreCount: 0,
+            questionDetails: []
+          };
+        }
+        
+        const cat = responseInsights[r.category];
+        cat.insights.push(generateInsight(r.category, r.question_text, r.answer_text, r.score));
+        cat.scores.push(r.score);
+        cat.questionCount++;
+        cat.questionDetails.push({
+          question: r.question_text,
+          answer: r.answer_text,
+          score: r.score
+        });
+        
+        if (r.score >= 4) cat.highScoreCount++;
+        if (r.score <= 2) cat.lowScoreCount++;
       });
+
+      Object.keys(responseInsights).forEach(cat => {
+        const data = responseInsights[cat];
+        const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+        data.percentage = Math.round((avgScore / 5) * 100);
+      });
+
+      const detailedInterpretation = generateDetailedInterpretation(
+        profileData?.full_name || 'Candidate',
+        result.category_scores,
+        assessmentTypeId,
+        responseInsights
+      );
+
+      // Generate psychometric analysis
+      const analysis = generatePsychometricAnalysis(
+        result.category_scores,
+        assessmentTypeId,
+        profileData?.full_name || 'Candidate',
+        responseInsights
+      );
+      setPsychometricAnalysis(analysis);
       
-      if (r.score >= 4) cat.highScoreCount++;
-      if (r.score <= 2) cat.lowScoreCount++;
-    });
-
-    Object.keys(responseInsights).forEach(cat => {
-      const data = responseInsights[cat];
-      const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
-      data.percentage = Math.round((avgScore / 5) * 100);
-    });
-
-    const detailedInterpretation = generateDetailedInterpretation(
-      profileData?.full_name || 'Candidate',
-      result.category_scores,
-      assessmentTypeId,
-      responseInsights
-    );
-
-    // Generate psychometric analysis
-    const analysis = generatePsychometricAnalysis(
-      result.category_scores,
-      assessmentTypeId,
-      profileData?.full_name || 'Candidate',
-      responseInsights
-    );
-    setPsychometricAnalysis(analysis);
-    
-    setSelectedAssessment({
-      id: result.id,
-      assessment_id: result.assessment_id,
-      assessment_type: assessmentTypeId,
-      assessment_name: config.name,
-      total_score: result.total_score,
-      max_score: result.max_score,
-      percentage: percentage,
-      completed_at: result.completed_at,
-      category_scores: result.category_scores || {},
-      strengths: result.strengths || [],
-      weaknesses: result.weaknesses || [],
-      recommendations: result.recommendations || [],
-      interpretations: result.interpretations || {},
-      detailedInterpretation: detailedInterpretation,
-      responseInsights: responseInsights,
-      config: config
-    });
+      setSelectedAssessment({
+        id: result.id,
+        assessment_id: result.assessment_id,
+        assessment_type: assessmentTypeId,
+        assessment_name: config.name,
+        total_score: result.total_score,
+        max_score: result.max_score,
+        percentage: percentage,
+        completed_at: result.completed_at,
+        category_scores: result.category_scores || {},
+        strengths: result.strengths || [],
+        weaknesses: result.weaknesses || [],
+        recommendations: result.recommendations || [],
+        interpretations: result.interpretations || {},
+        detailedInterpretation: detailedInterpretation,
+        responseInsights: responseInsights,
+        config: config
+      });
+    } catch (error) {
+      console.error("Error loading assessment data:", error);
+    }
   };
 
   const handleAssessmentChange = async (e) => {
     const assessmentId = e.target.value;
     const selected = allAssessments.find(a => a.id === assessmentId);
     if (selected) {
+      setLoading(true);
       await loadAssessmentData(selected, candidate);
+      setLoading(false);
     }
   };
 
@@ -287,13 +330,19 @@ export default function CandidateReport() {
     }
   };
 
-  if (!isSupervisor || loading) {
+  // Show loading while checking auth or fetching data
+  if (!authChecked || loading) {
     return (
       <div style={styles.checkingContainer}>
         <div style={styles.spinner} />
-        <p>Loading candidate report...</p>
+        <p>{!authChecked ? "Checking authentication..." : "Loading candidate report..."}</p>
       </div>
     );
+  }
+
+  // If not a supervisor after auth check, redirect (though useEffect should handle this)
+  if (!isSupervisor) {
+    return null;
   }
 
   if (!candidate || !selectedAssessment) {
