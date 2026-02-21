@@ -8,16 +8,80 @@ import { getClassification, getGradeInfo, getHiringRecommendation } from "../../
 import { assessmentTypes, getAssessmentType } from "../../utils/assessmentConfigs";
 import { analyzeResponses, getCategorySpecificRecommendations } from "../../utils/responseAnalyzer";
 import {
-  interpretLeadership,
-  interpretCognitive,
-  interpretCommunication,
-  interpretEthics,
-  interpretTechnical,
-  interpretEmotional,
-  interpretPerformance,
-  interpretCultural,
-  interpretProblemSolving,
-  interpretPersonality
+  // General Assessment
+  interpretIntegrity,
+  interpretWorkPace,
+  interpretMotivations,
+  interpretNeuroticism,
+  interpretExtraversion,
+  interpretMixedTraits,
+  interpretAgreeableness,
+  interpretBehavioralStyle,
+  interpretConscientiousness,
+  interpretPerformanceRisks,
+  interpretStressManagement,
+  interpretCognitivePatterns,
+  interpretEmotionalIntelligence,
+  interpretOpenness,
+  
+  // Leadership Assessment
+  interpretVision,
+  interpretDecisionMaking,
+  interpretInfluence,
+  interpretPeopleManagement,
+  interpretChangeLeadership,
+  interpretExecution,
+  interpretResilience,
+  interpretSelfAwareness,
+  
+  // Cognitive Assessment
+  interpretLogicalReasoning,
+  interpretNumericalReasoning,
+  interpretVerbalReasoning,
+  interpretSpatialReasoning,
+  interpretMemoryAttention,
+  interpretPerceptualSpeed,
+  interpretCriticalThinking,
+  interpretLearningAgility,
+  interpretMentalFlexibility,
+  
+  // Technical Assessment
+  interpretTechnicalKnowledge,
+  interpretSystemUnderstanding,
+  interpretTroubleshooting,
+  interpretPracticalApplication,
+  interpretSafetyCompliance,
+  interpretQualityControl,
+  interpretProcessOptimization,
+  interpretEquipmentOperation,
+  interpretMaintenanceProcedures,
+  interpretTechnicalDocumentation,
+  
+  // Performance Assessment
+  interpretProductivity,
+  interpretWorkQuality,
+  interpretGoalAchievement,
+  interpretAccountability,
+  interpretInitiative,
+  interpretCollaboration,
+  interpretTimeManagement,
+  interpretResultsOrientation,
+  
+  // Behavioral Assessment
+  interpretTeamwork,
+  interpretConflictResolution,
+  interpretEmpathy,
+  interpretActiveListening,
+  interpretFeedbackReception,
+  interpretInterpersonalSkills,
+  interpretProfessionalism,
+  
+  // Cultural Assessment
+  interpretValuesAlignment,
+  interpretWorkEthic,
+  interpretDiversityAwareness,
+  interpretInclusivity,
+  interpretRespect
 } from "../../utils/categoryInterpreter";
 
 export default function CandidateReport() {
@@ -64,7 +128,6 @@ export default function CandidateReport() {
       try {
         setLoading(true);
         
-        // Get candidate info
         const { data: profileData } = await supabase
           .from('candidate_profiles')
           .select('*')
@@ -77,7 +140,6 @@ export default function CandidateReport() {
           email: profileData?.email || 'Email not available'
         });
 
-        // Get assessment results
         const { data: resultsData } = await supabase
           .from('assessment_results')
           .select('*')
@@ -92,7 +154,6 @@ export default function CandidateReport() {
           const config = getAssessmentType(assessmentTypeId);
           setAssessmentConfig(config);
 
-          // Fetch responses with questions and answers
           const { data: responsesData } = await supabase
             .from('responses')
             .select(`
@@ -112,7 +173,6 @@ export default function CandidateReport() {
             .eq('user_id', user_id)
             .eq('assessment_id', result.assessment_id);
 
-          // Process responses into a format for analysis
           const processedResponses = responsesData?.map(r => ({
             question_id: r.question_id,
             answer_id: r.answer_id,
@@ -122,7 +182,6 @@ export default function CandidateReport() {
             score: r.unique_answers?.score
           })) || [];
 
-          // Analyze responses to get insights
           const responseInsights = {};
           
           processedResponses.forEach(r => {
@@ -142,7 +201,7 @@ export default function CandidateReport() {
             cat.scores.push(r.score);
             cat.questionCount++;
             cat.questionDetails.push({
-              question: r.question_text.substring(0, 60) + '...',
+              question: r.question_text,
               answer: r.answer_text,
               score: r.score
             });
@@ -151,7 +210,6 @@ export default function CandidateReport() {
             if (r.score <= 2) cat.lowScoreCount++;
           });
 
-          // Calculate percentages for each category
           Object.keys(responseInsights).forEach(cat => {
             const data = responseInsights[cat];
             const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
@@ -204,123 +262,279 @@ export default function CandidateReport() {
   };
 
   const generateInsight = (category, questionText, answerText, score) => {
-    const questionShort = questionText.length > 60 
-      ? questionText.substring(0, 60) + '...' 
-      : questionText;
-    
-    const answerShort = answerText.length > 40 
-      ? answerText.substring(0, 40) + '...' 
+    const answerPreview = answerText.length > 60 
+      ? answerText.substring(0, 60) + '...' 
       : answerText;
 
     if (score === 5) {
-      return `Strong understanding: "${answerShort}" – shows mastery of this concept.`;
+      return `Strong understanding demonstrated in responses`;
     } else if (score === 4) {
-      return `Good grasp: "${answerShort}" – slight room for deeper understanding.`;
+      return `Good grasp shown with room for deeper understanding`;
     } else if (score === 3) {
-      return `Basic awareness: "${answerShort}" – needs more depth in this area.`;
+      return `Basic awareness demonstrated`;
     } else if (score === 2) {
-      return `Limited understanding: "${answerShort}" – requires focused development.`;
+      return `Limited understanding shown - needs development`;
     } else {
-      return `Significant gap: "${answerShort}" – needs immediate attention.`;
+      return `Significant gap identified - requires attention`;
     }
   };
 
-const getCategoryInterpretation = (category, data, candidateName) => {
-  if (!data) return `${category}: No detailed response data available.`;
-  
-  // Map categories to interpreter functions
-  const categoryMap = {
-    // General Assessment
-    'Integrity': interpretIntegrity,
-    'Work Pace': interpretWorkPace,
-    'Motivations': interpretMotivations,
-    'Neuroticism': interpretNeuroticism,
-    'Extraversion': interpretExtraversion,
-    'Mixed Traits': interpretMixedTraits,
-    'Agreeableness': interpretAgreeableness,
-    'Behavioral Style': interpretBehavioralStyle,
-    'Conscientiousness': interpretConscientiousness,
-    'Performance Risks': interpretPerformanceRisks,
-    'Stress Management': interpretStressManagement,
-    'Cognitive Patterns': interpretCognitivePatterns,
-    'Emotional Intelligence': interpretEmotionalIntelligence,
-    'Openness to Experience': interpretOpenness,
+  const getCategoryInterpretation = (category, data, candidateName) => {
+    if (!data) return `${category}: No detailed response data available.`;
     
-    // Leadership Assessment
-    'Vision & Strategic Thinking': interpretVision,
-    'Decision-Making & Problem-Solving': interpretDecisionMaking,
-    'Communication & Influence': interpretInfluence,
-    'People Management & Coaching': interpretPeopleManagement,
-    'Change Leadership & Agility': interpretChangeLeadership,
-    'Execution & Results Orientation': interpretExecution,
-    'Resilience & Stress Management': interpretResilience,
-    'Self-Awareness & Self-Regulation': interpretSelfAwareness,
-    
-    // Cognitive Assessment
-    'Logical / Abstract Reasoning': interpretLogicalReasoning,
-    'Numerical Reasoning': interpretNumericalReasoning,
-    'Verbal Reasoning': interpretVerbalReasoning,
-    'Spatial Reasoning': interpretSpatialReasoning,
-    'Memory & Attention': interpretMemoryAttention,
-    'Perceptual Speed & Accuracy': interpretPerceptualSpeed,
-    'Critical Thinking': interpretCriticalThinking,
-    'Learning Agility': interpretLearningAgility,
-    'Mental Flexibility': interpretMentalFlexibility,
-    
-    // Technical Assessment
-    'Technical Knowledge': interpretTechnicalKnowledge,
-    'System Understanding': interpretSystemUnderstanding,
-    'Troubleshooting': interpretTroubleshooting,
-    'Practical Application': interpretPracticalApplication,
-    'Safety & Compliance': interpretSafetyCompliance,
-    'Quality Control': interpretQualityControl,
-    'Process Optimization': interpretProcessOptimization,
-    'Equipment Operation': interpretEquipmentOperation,
-    'Maintenance Procedures': interpretMaintenanceProcedures,
-    'Technical Documentation': interpretTechnicalDocumentation,
-    
-    // Performance Assessment
-    'Productivity & Efficiency': interpretProductivity,
-    'Work Quality & Effectiveness': interpretWorkQuality,
-    'Goal Achievement': interpretGoalAchievement,
-    'Accountability': interpretAccountability,
-    'Initiative': interpretInitiative,
-    'Collaboration': interpretCollaboration,
-    'Time Management': interpretTimeManagement,
-    'Results Orientation': interpretResultsOrientation,
-    
-    // Behavioral Assessment
-    'Teamwork': interpretTeamwork,
-    'Conflict Resolution': interpretConflictResolution,
-    'Empathy': interpretEmpathy,
-    'Active Listening': interpretActiveListening,
-    'Feedback Reception': interpretFeedbackReception,
-    'Interpersonal Skills': interpretInterpersonalSkills,
-    'Professionalism': interpretProfessionalism,
-    
-    // Cultural Assessment
-    'Values Alignment': interpretValuesAlignment,
-    'Work Ethic': interpretWorkEthic,
-    'Diversity Awareness': interpretDiversityAwareness,
-    'Inclusivity': interpretInclusivity,
-    'Respect': interpretRespect
+    const categoryMap = {
+      // General Assessment
+      'Integrity': interpretIntegrity,
+      'Work Pace': interpretWorkPace,
+      'Motivations': interpretMotivations,
+      'Neuroticism': interpretNeuroticism,
+      'Extraversion': interpretExtraversion,
+      'Mixed Traits': interpretMixedTraits,
+      'Agreeableness': interpretAgreeableness,
+      'Behavioral Style': interpretBehavioralStyle,
+      'Conscientiousness': interpretConscientiousness,
+      'Performance Risks': interpretPerformanceRisks,
+      'Stress Management': interpretStressManagement,
+      'Cognitive Patterns': interpretCognitivePatterns,
+      'Emotional Intelligence': interpretEmotionalIntelligence,
+      'Openness to Experience': interpretOpenness,
+      
+      // Leadership Assessment
+      'Vision & Strategic Thinking': interpretVision,
+      'Decision-Making & Problem-Solving': interpretDecisionMaking,
+      'Communication & Influence': interpretInfluence,
+      'People Management & Coaching': interpretPeopleManagement,
+      'Change Leadership & Agility': interpretChangeLeadership,
+      'Execution & Results Orientation': interpretExecution,
+      'Resilience & Stress Management': interpretResilience,
+      'Self-Awareness & Self-Regulation': interpretSelfAwareness,
+      
+      // Cognitive Assessment
+      'Logical / Abstract Reasoning': interpretLogicalReasoning,
+      'Numerical Reasoning': interpretNumericalReasoning,
+      'Verbal Reasoning': interpretVerbalReasoning,
+      'Spatial Reasoning': interpretSpatialReasoning,
+      'Memory & Attention': interpretMemoryAttention,
+      'Perceptual Speed & Accuracy': interpretPerceptualSpeed,
+      'Critical Thinking': interpretCriticalThinking,
+      'Learning Agility': interpretLearningAgility,
+      'Mental Flexibility': interpretMentalFlexibility,
+      
+      // Technical Assessment
+      'Technical Knowledge': interpretTechnicalKnowledge,
+      'System Understanding': interpretSystemUnderstanding,
+      'Troubleshooting': interpretTroubleshooting,
+      'Practical Application': interpretPracticalApplication,
+      'Safety & Compliance': interpretSafetyCompliance,
+      'Quality Control': interpretQualityControl,
+      'Process Optimization': interpretProcessOptimization,
+      'Equipment Operation': interpretEquipmentOperation,
+      'Maintenance Procedures': interpretMaintenanceProcedures,
+      'Technical Documentation': interpretTechnicalDocumentation,
+      
+      // Performance Assessment
+      'Productivity & Efficiency': interpretProductivity,
+      'Work Quality & Effectiveness': interpretWorkQuality,
+      'Goal Achievement': interpretGoalAchievement,
+      'Accountability': interpretAccountability,
+      'Initiative': interpretInitiative,
+      'Collaboration': interpretCollaboration,
+      'Time Management': interpretTimeManagement,
+      'Results Orientation': interpretResultsOrientation,
+      
+      // Behavioral Assessment
+      'Teamwork': interpretTeamwork,
+      'Conflict Resolution': interpretConflictResolution,
+      'Empathy': interpretEmpathy,
+      'Active Listening': interpretActiveListening,
+      'Feedback Reception': interpretFeedbackReception,
+      'Interpersonal Skills': interpretInterpersonalSkills,
+      'Professionalism': interpretProfessionalism,
+      
+      // Cultural Assessment
+      'Values Alignment': interpretValuesAlignment,
+      'Work Ethic': interpretWorkEthic,
+      'Diversity Awareness': interpretDiversityAwareness,
+      'Inclusivity': interpretInclusivity,
+      'Respect': interpretRespect
+    };
+
+    const interpreter = Object.entries(categoryMap).find(([key]) => 
+      category.includes(key) || key.includes(category)
+    )?.[1];
+
+    if (interpreter) {
+      return interpreter(data, candidateName);
+    }
+
+    return `${candidateName} scored ${data.percentage}% in ${category}. ` +
+      (data.percentage >= 70 ? 'This is a strength area.' :
+       data.percentage >= 60 ? 'Shows basic competency with room for development.' :
+       'Requires focused attention and development.');
   };
 
-  // Find the matching interpreter
-  const interpreter = Object.entries(categoryMap).find(([key]) => 
-    category.includes(key) || key.includes(category)
-  )?.[1];
+  const getGradeLetter = (percentage) => {
+    if (percentage >= 90) return 'A';
+    if (percentage >= 80) return 'B';
+    if (percentage >= 70) return 'C';
+    if (percentage >= 60) return 'D';
+    return 'F';
+  };
 
-  if (interpreter) {
-    return interpreter(data, candidateName);
+  if (!isSupervisor || loading) {
+    return (
+      <div style={styles.checkingContainer}>
+        <div style={styles.spinner} />
+        <p>Loading candidate report...</p>
+      </div>
+    );
   }
 
-  // Fallback for unmapped categories
-  return `${candidateName} scored ${data.percentage}% in ${category}. ` +
-    (data.percentage >= 70 ? 'This is a strength area.' :
-     data.percentage >= 60 ? 'Shows basic competency with room for development.' :
-     'Requires focused attention and development.');
-};
+  if (!candidate || !assessmentData) {
+    return (
+      <div style={styles.emptyState}>
+        <div style={styles.emptyIcon}>📊</div>
+        <h3>No Assessment Data Available</h3>
+        <p>This candidate hasn't completed any assessments yet.</p>
+        <Link href="/supervisor" legacyBehavior>
+          <a style={styles.primaryButton}>← Back to Dashboard</a>
+        </Link>
+      </div>
+    );
+  }
+
+  const classification = getClassification(assessmentData.percentage);
+  const gradeInfo = getGradeInfo(assessmentData.percentage);
+  const hiringRec = getHiringRecommendation(assessmentData.percentage, assessmentData.strengths, assessmentData.weaknesses);
+  const strengthsList = assessmentData.strengths || [];
+  const weaknessesList = assessmentData.weaknesses || [];
+  const config = assessmentConfig || assessmentTypes.general;
+
+  return (
+    <AppLayout background="/images/preassessmentbg.jpg">
+      <div style={styles.container}>
+        <div style={styles.header}>
+          <Link href="/supervisor" legacyBehavior>
+            <a style={styles.backButton}>← Dashboard</a>
+          </Link>
+          <div style={styles.headerActions}>
+            <button onClick={handlePrint} style={styles.printButton}>
+              🖨️ Print Report
+            </button>
+          </div>
+        </div>
+
+        <div style={styles.navigation}>
+          <button 
+            style={{...styles.navItem, borderBottom: activeSection === 'cover' ? '3px solid #3b82f6' : '3px solid transparent'}}
+            onClick={() => setActiveSection('cover')}
+          >
+            Cover
+          </button>
+          <button 
+            style={{...styles.navItem, borderBottom: activeSection === 'executive' ? '3px solid #3b82f6' : '3px solid transparent'}}
+            onClick={() => setActiveSection('executive')}
+          >
+            Executive Summary
+          </button>
+          <button 
+            style={{...styles.navItem, borderBottom: activeSection === 'overview' ? '3px solid #3b82f6' : '3px solid transparent'}}
+            onClick={() => setActiveSection('overview')}
+          >
+            Assessment Overview
+          </button>
+          <button 
+            style={{...styles.navItem, borderBottom: activeSection === 'competencies' ? '3px solid #3b82f6' : '3px solid transparent'}}
+            onClick={() => setActiveSection('competencies')}
+          >
+            Competency Breakdown
+          </button>
+          <button 
+            style={{...styles.navItem, borderBottom: activeSection === 'development' ? '3px solid #3b82f6' : '3px solid transparent'}}
+            onClick={() => setActiveSection('development')}
+          >
+            Development Plan
+          </button>
+        </div>
+
+        <div ref={reportRef} style={styles.reportContainer}>
+          {/* 1️⃣ Cover Page */}
+          <section style={{...styles.section, display: activeSection === 'cover' || showPrintView ? 'block' : 'none'}}>
+            <div style={styles.coverPage}>
+              <div style={styles.coverHeader}>
+                <h1 style={styles.coverTitle}>Stratavax Assessment Platform</h1>
+                <p style={styles.coverSubtitle}>{config.name}</p>
+              </div>
+              
+              <div style={styles.coverContent}>
+                <div style={styles.coverLogo}>{config.icon}</div>
+                <h2 style={styles.coverCandidateName}>{candidate.full_name}</h2>
+                <p style={styles.coverDetail}>Assessment Date: {new Date(assessmentData.completed_at).toLocaleDateString()}</p>
+                <p style={styles.coverDetail}>Report Generated: {new Date().toLocaleDateString()}</p>
+                <div style={styles.coverBadge}>CONFIDENTIAL</div>
+              </div>
+              
+              <div style={styles.coverFooter}>
+                <p>© Stratavax Assessment Platform • All Rights Reserved</p>
+              </div>
+            </div>
+          </section>
+
+          {/* 2️⃣ Executive Summary */}
+          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'executive' || showPrintView ? 'block' : 'none'}}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>2. Executive Summary - {config.name}</h2>
+            </div>
+            
+            <div style={styles.executiveSummary}>
+              <div style={styles.scoreCard}>
+                <div style={styles.scoreCardHeader}>
+                  <span style={styles.scoreCardLabel}>Total Score</span>
+                  <span style={styles.scoreCardValue}>{assessmentData.total_score}/{assessmentData.max_score}</span>
+                </div>
+                <div style={styles.scoreCardBody}>
+                  <div style={styles.scoreMetric}>
+                    <span style={styles.scoreMetricLabel}>Percentage</span>
+                    <span style={{...styles.scoreMetricValue, color: classification.color}}>{assessmentData.percentage}%</span>
+                  </div>
+                  <div style={styles.scoreMetric}>
+                    <span style={styles.scoreMetricLabel}>Grade</span>
+                    <span style={styles.scoreMetricValue}>{gradeInfo.grade} ({gradeInfo.text})</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={styles.classificationCard}>
+                <div style={{...styles.classificationBadge, background: classification.bg, color: classification.color}}>
+                  {classification.label}
+                </div>
+                <p style={styles.classificationDescription}>{classification.description}</p>
+              </div>
+
+              <div style={styles.verdictCard}>
+                <h3 style={styles.verdictTitle}>Executive Verdict</h3>
+                <div style={{...styles.verdictBadge, background: hiringRec.color, color: 'white'}}>
+                  {hiringRec.recommendation}
+                </div>
+                <p style={styles.verdictSummary}>{hiringRec.summary}</p>
+                
+                <div style={styles.keyPoints}>
+                  <div style={styles.keyPoint}>
+                    <span style={styles.keyPointIcon}>✅</span>
+                    <div>
+                      <strong>Key Strength:</strong> {strengthsList[0] || 'None identified'}
+                    </div>
+                  </div>
+                  <div style={styles.keyPoint}>
+                    <span style={styles.keyPointIcon}>⚠️</span>
+                    <div>
+                      <strong>Major Risk:</strong> {weaknessesList[0] || 'None identified'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
 
           {/* 3️⃣ Assessment Overview */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'overview' || showPrintView ? 'block' : 'none'}}>
@@ -408,7 +622,7 @@ const getCategoryInterpretation = (category, data, candidateName) => {
                     <div style={styles.competencyBody}>
                       {categoryData ? (
                         <div style={styles.interpretationText}>
-                          {getCategoryInterpretation(category, categoryData, candidate.full_name)}
+                          {getCategoryInterpretation(category, { ...categoryData, percentage: data.percentage }, candidate.full_name)}
                         </div>
                       ) : (
                         <p>No detailed response data available for this category.</p>
@@ -429,8 +643,6 @@ const getCategoryInterpretation = (category, data, candidateName) => {
                   const percentage = match ? match[2] : '';
                   
                   const categoryData = assessmentData.responseInsights?.[category];
-                  const insightText = categoryData?.insights?.[0] || 
-                    `Strong performance in this area.`;
                   
                   return (
                     <div key={index} style={styles.strengthCard}>
@@ -440,12 +652,7 @@ const getCategoryInterpretation = (category, data, candidateName) => {
                           <strong>{category}</strong>
                           <span style={styles.strengthPercentage}>{percentage}%</span>
                         </div>
-                        <p style={styles.strengthInsight}>{insightText}</p>
-                        {categoryData && (
-                          <span style={styles.strengthMetric}>
-                            {categoryData.highScoreCount} excellent responses
-                          </span>
-                        )}
+                        <p style={styles.strengthInsight}>Strong performance in this area</p>
                       </div>
                     </div>
                   );
@@ -462,7 +669,7 @@ const getCategoryInterpretation = (category, data, candidateName) => {
               </div>
             </div>
 
-            {/* 7️⃣ Risk & Development Areas */}
+            {/* 7️⃣ Development Priorities */}
             <div style={styles.riskProfile}>
               <h3 style={styles.subsectionTitle}>7. Development Priorities</h3>
               <div style={styles.riskGrid}>
@@ -471,9 +678,6 @@ const getCategoryInterpretation = (category, data, candidateName) => {
                   const category = match ? match[1] : weakness;
                   const percentage = match ? match[2] : '';
                   
-                  const categoryData = assessmentData.responseInsights?.[category];
-                  
-                  // Get a brief recommendation based on category
                   let recommendation = '';
                   if (category.includes('Cognitive')) {
                     recommendation = 'Recommend structured problem-solving practice and analytical thinking exercises.';
@@ -498,8 +702,8 @@ const getCategoryInterpretation = (category, data, candidateName) => {
                           <span style={styles.riskPercentage}>{percentage}%</span>
                         </div>
                         <p style={styles.riskDescription}>
-                          {percentage < 50 ? 'Critical gap requiring immediate attention. ' :
-                           percentage < 60 ? 'Significant development needed. ' :
+                          {parseInt(percentage) < 50 ? 'Critical gap requiring immediate attention. ' :
+                           parseInt(percentage) < 60 ? 'Significant development needed. ' :
                            'Development opportunity. '}
                           {recommendation}
                         </p>
@@ -603,11 +807,10 @@ const getCategoryInterpretation = (category, data, candidateName) => {
         </div>
       </div>
 
-      <style jsx global>{`
-        @media print {
-          body { background: white; }
-          .no-print { display: none !important; }
-          @page { size: A4; margin: 2cm; }
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
         }
       `}</style>
     </AppLayout>
@@ -1015,50 +1218,6 @@ const styles = {
     color: '#4b5563',
     whiteSpace: 'pre-wrap'
   },
-  pre: {
-    fontFamily: 'inherit',
-    fontSize: '14px',
-    lineHeight: '1.6',
-    color: '#4b5563',
-    margin: 0,
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-word'
-  },
-  questionDetails: {
-    marginTop: '15px',
-    padding: '10px',
-    background: '#f8fafc',
-    borderRadius: '8px'
-  },
-  questionItem: {
-    marginBottom: '12px',
-    padding: '10px',
-    background: 'white',
-    borderRadius: '6px',
-    border: '1px solid #e2e8f0'
-  },
-  questionText: {
-    fontSize: '13px',
-    fontWeight: 500,
-    color: '#1e293b',
-    marginBottom: '5px'
-  },
-  answerText: {
-    fontSize: '12px',
-    color: '#475569',
-    marginBottom: '5px',
-    fontStyle: 'italic'
-  },
-  scoreHigh: {
-    fontSize: '11px',
-    color: '#059669',
-    fontWeight: 600
-  },
-  scoreLow: {
-    fontSize: '11px',
-    color: '#dc2626',
-    fontWeight: 600
-  },
   strengthProfile: {
     marginTop: '40px'
   },
@@ -1096,11 +1255,7 @@ const styles = {
     fontSize: '13px',
     color: '#064e3b',
     lineHeight: '1.5',
-    margin: '0 0 8px 0'
-  },
-  strengthMetric: {
-    fontSize: '12px',
-    color: '#047857'
+    margin: 0
   },
   strengthDesc: {
     margin: '5px 0 0 0',
@@ -1145,34 +1300,6 @@ const styles = {
     color: '#7f1d1d',
     lineHeight: '1.5',
     margin: 0
-  },
-  riskStat: {
-    fontSize: '12px',
-    color: '#7f1d1d',
-    marginTop: '5px'
-  },
-  weakResponse: {
-    marginTop: '8px',
-    padding: '8px',
-    background: '#fef2f2',
-    borderRadius: '4px',
-    fontSize: '12px'
-  },
-  weakQuestion: {
-    color: '#991b1b',
-    marginBottom: '4px'
-  },
-  weakAnswer: {
-    color: '#b91c1c',
-    fontSize: '11px'
-  },
-  riskRecommendation: {
-    marginTop: '10px',
-    padding: '8px',
-    background: '#ffedd5',
-    borderRadius: '4px',
-    fontSize: '12px',
-    color: '#9a3412'
   },
   roleFitCard: {
     padding: '30px',
@@ -1252,4 +1379,3 @@ const styles = {
     whiteSpace: 'pre-line'
   }
 };
-
