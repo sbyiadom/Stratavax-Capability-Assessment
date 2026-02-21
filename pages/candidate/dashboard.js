@@ -14,7 +14,6 @@ export default function CandidateDashboard() {
   const [completedAssessments, setCompletedAssessments] = useState([]);
   const [inProgressAssessments, setInProgressAssessments] = useState([]);
   const [userName, setUserName] = useState("");
-  const [userFullName, setUserFullName] = useState("");
   const [hoveredCard, setHoveredCard] = useState(null);
   const [assessmentTypes, setAssessmentTypes] = useState([]);
   const [selectedAssessmentAreas, setSelectedAssessmentAreas] = useState(null);
@@ -167,12 +166,6 @@ export default function CandidateDashboard() {
 
   useEffect(() => {
     if (session?.user) {
-      // Set username from session metadata first
-      const metadataName = session.user.user_metadata?.full_name;
-      const emailName = session.user.email?.split('@')[0] || 'Candidate';
-      
-      setUserName(metadataName || emailName);
-      
       // Fetch the full profile from candidate_profiles to get the stored name
       fetchCandidateProfile(session.user.id);
       fetchAssessments();
@@ -191,23 +184,28 @@ export default function CandidateDashboard() {
 
       if (error) {
         console.error("Error fetching candidate profile:", error);
+        // Fallback to email username
+        const emailName = session?.user?.email?.split('@')[0] || 'Candidate';
+        setUserName(emailName);
         return;
       }
 
       if (data) {
         // Use the full_name from the profile if available
         if (data.full_name) {
-          setUserFullName(data.full_name);
-          setUserName(data.full_name); // Override with the stored full name
+          setUserName(data.full_name);
         } else {
           // Fallback to email username
           const emailName = data.email?.split('@')[0] || 'Candidate';
-          setUserFullName(emailName);
           setUserName(emailName);
         }
       }
     } catch (error) {
       console.error("Error in fetchCandidateProfile:", error);
+      // Fallback to session metadata or email
+      const metadataName = session?.user?.user_metadata?.full_name;
+      const emailName = session?.user?.email?.split('@')[0] || 'Candidate';
+      setUserName(metadataName || emailName);
     }
   };
 
@@ -702,7 +700,7 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundImage: 'url(/images/dashboard1-bg.jpg)', // CHANGED TO DASHBOARD1-BG.JPG
+    backgroundImage: 'url(/images/dashboard1-bg.jpg)',
     backgroundSize: 'cover',
     backgroundPosition: 'center',
     zIndex: -1
