@@ -148,9 +148,9 @@ const generatePersonalityStructure = (categories) => {
   
   let section = `🧠 **Personality Structure Interpretation**\n\n`;
   
-  if (openess > 0 || conscientiousness > 0 || cognitive > 0 || stress > 0) {
+  if (openness > 0 || conscientiousness > 0 || cognitive > 0 || stress > 0) {
     section += `This is an interesting contrast profile:\n\n`;
-    if (openess > 0) section += `• ${openess >= 70 ? 'Very high' : openess >= 50 ? 'Moderate' : 'Low'} Openness (${openess}%)\n`;
+    if (openness > 0) section += `• ${openness >= 70 ? 'Very high' : openness >= 50 ? 'Moderate' : 'Low'} Openness (${openness}%)\n`;
     if (conscientiousness > 0) section += `• ${conscientiousness >= 70 ? 'High' : conscientiousness >= 50 ? 'Moderate' : 'Low'} Conscientiousness (${conscientiousness}%)\n`;
     if (cognitive > 0) section += `• ${cognitive >= 70 ? 'High' : cognitive >= 50 ? 'Moderate' : 'Very low'} Cognitive Pattern score (${cognitive}%)\n`;
     if (stress > 0) section += `• ${stress >= 70 ? 'High' : stress >= 50 ? 'Moderate' : 'Low'} Stress Management (${stress}%)\n`;
@@ -159,14 +159,14 @@ const generatePersonalityStructure = (categories) => {
     
     section += `\n`;
     
-    if (openess >= 70 && cognitive < 50 && stress < 60) {
+    if (openness >= 70 && cognitive < 50 && stress < 60) {
       section += `This can describe someone who:\n\n`;
       section += `• Has ideas\n`;
       section += `• Enjoys new concepts\n`;
       section += `• But struggles to structure thinking\n`;
       section += `• May not convert ideas into structured execution\n\n`;
       section += `High curiosity + weak cognitive structure = scattered potential.\n`;
-    } else if (openess >= 70 && conscientiousness >= 70) {
+    } else if (openness >= 70 && conscientiousness >= 70) {
       section += `This combination of high openness and conscientiousness suggests someone who can both generate ideas and execute them effectively.\n`;
     } else if (cognitive < 50 && stress < 50) {
       section += `The combination of low cognitive structure and poor stress management suggests someone who may struggle with complex, high-pressure situations.\n`;
