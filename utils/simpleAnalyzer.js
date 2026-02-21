@@ -1484,6 +1484,9 @@ const getPerformanceDevelopmentSteps = (name) => {
   ];
 };
 
+// Find this section in the getBehavioralDevelopmentSteps function (around line 1519-1522)
+// and replace the line with the apostrophe issue:
+
 const getBehavioralDevelopmentSteps = (name) => {
   const steps = {
     'Teamwork': [
@@ -1519,7 +1522,7 @@ const getBehavioralDevelopmentSteps = (name) => {
       'Practice curiosity about new approaches',
       'Volunteer for projects involving change',
       'Learn to see situations from multiple perspectives',
-      'Adapt when initial approach doesn't work'
+      'Adapt when initial approach does not work'  // Fixed: changed "doesn't" to "does not"
     ],
     'Professionalism': [
       'Review professional conduct guidelines',
