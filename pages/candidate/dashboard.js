@@ -14,6 +14,7 @@ export default function CandidateDashboard() {
   const [completedAssessments, setCompletedAssessments] = useState([]);
   const [inProgressAssessments, setInProgressAssessments] = useState([]);
   const [userName, setUserName] = useState("");
+  const [userFullName, setUserFullName] = useState("");
   const [hoveredCard, setHoveredCard] = useState(null);
   const [assessmentTypes, setAssessmentTypes] = useState([]);
   const [selectedAssessmentAreas, setSelectedAssessmentAreas] = useState(null);
@@ -166,12 +167,49 @@ export default function CandidateDashboard() {
 
   useEffect(() => {
     if (session?.user) {
-      setUserName(session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Candidate');
+      // Set username from session metadata first
+      const metadataName = session.user.user_metadata?.full_name;
+      const emailName = session.user.email?.split('@')[0] || 'Candidate';
+      
+      setUserName(metadataName || emailName);
+      
+      // Fetch the full profile from candidate_profiles to get the stored name
+      fetchCandidateProfile(session.user.id);
       fetchAssessments();
       fetchUserProgress();
       fetchAssessmentTypes();
     }
   }, [session]);
+
+  const fetchCandidateProfile = async (userId) => {
+    try {
+      const { data, error } = await supabase
+        .from('candidate_profiles')
+        .select('full_name, email')
+        .eq('id', userId)
+        .single();
+
+      if (error) {
+        console.error("Error fetching candidate profile:", error);
+        return;
+      }
+
+      if (data) {
+        // Use the full_name from the profile if available
+        if (data.full_name) {
+          setUserFullName(data.full_name);
+          setUserName(data.full_name); // Override with the stored full name
+        } else {
+          // Fallback to email username
+          const emailName = data.email?.split('@')[0] || 'Candidate';
+          setUserFullName(emailName);
+          setUserName(emailName);
+        }
+      }
+    } catch (error) {
+      console.error("Error in fetchCandidateProfile:", error);
+    }
+  };
 
   const fetchAssessmentTypes = async () => {
     try {
