@@ -27,7 +27,7 @@ export default function SupervisorLogin() {
       });
 
       const data = await response.json();
-      console.log('Login response:', { status: response.status, data });
+      console.log('Login response:', { status: response.status, success: data.success });
 
       if (!response.ok) {
         throw new Error(data.error || `Login failed (${response.status})`);
@@ -37,16 +37,22 @@ export default function SupervisorLogin() {
         throw new Error(data.error || 'Login failed');
       }
 
-      // Store session
-      localStorage.setItem("supervisorSession", JSON.stringify({
+      // Store COMPLETE session data in localStorage
+      const sessionData = {
         loggedIn: true,
         user_id: data.user.id,
         email: data.user.email,
         full_name: data.user.full_name,
-        role: data.user.role
-      }));
-
-      console.log('Login successful, redirecting...');
+        role: data.user.role,
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        expires_at: data.session.expires_at,
+        timestamp: Date.now()
+      };
+      
+      localStorage.setItem("supervisorSession", JSON.stringify(sessionData));
+      
+      console.log('Session stored successfully');
 
       // Redirect based on role
       if (data.user.role === 'admin') {
@@ -63,7 +69,7 @@ export default function SupervisorLogin() {
     }
   };
 
-  // ... rest of your component (styles, JSX) - keep your existing styles
+  // Styles object (keep your existing styles)
   const styles = {
     pageContainer: {
       position: 'relative',
@@ -144,10 +150,7 @@ export default function SupervisorLogin() {
       fontSize: '16px',
       background: 'rgba(255, 255, 255, 0.15)',
       color: 'white',
-      outline: 'none',
-      '::placeholder': {
-        color: 'rgba(255, 255, 255, 0.6)'
-      }
+      outline: 'none'
     },
     submitButton: {
       width: '100%',
@@ -159,8 +162,7 @@ export default function SupervisorLogin() {
       fontSize: '16px',
       fontWeight: 600,
       cursor: 'pointer',
-      marginBottom: '20px',
-      transition: 'all 0.3s ease'
+      marginBottom: '20px'
     },
     links: {
       display: 'flex',
