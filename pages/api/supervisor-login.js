@@ -47,7 +47,6 @@ export default async function handler(req, res) {
     if (authError) {
       console.error('Auth error:', authError);
       
-      // Handle specific auth errors
       if (authError.message.includes('Invalid login credentials')) {
         return res.status(401).json({ 
           success: false,
@@ -61,7 +60,7 @@ export default async function handler(req, res) {
       });
     }
 
-    if (!authData?.user) {
+    if (!authData?.user || !authData?.session) {
       return res.status(401).json({ 
         success: false,
         error: 'Authentication failed' 
@@ -76,14 +75,11 @@ export default async function handler(req, res) {
       .select('*')
       .eq('user_id', authData.user.id)
       .eq('is_active', true)
-      .maybeSingle(); // Use maybeSingle instead of single to avoid errors
+      .maybeSingle();
 
     if (supervisorError) {
       console.error('Supervisor query error:', supervisorError);
-      
-      // Sign out the user since they're not a valid supervisor
       await supabase.auth.signOut();
-      
       return res.status(403).json({ 
         success: false,
         error: 'Database error checking supervisor status' 
@@ -92,10 +88,7 @@ export default async function handler(req, res) {
 
     if (!supervisor) {
       console.log('User not found in supervisors table:', authData.user.id);
-      
-      // Sign out the user
       await supabase.auth.signOut();
-      
       return res.status(403).json({ 
         success: false,
         error: 'You do not have supervisor access' 
@@ -111,11 +104,10 @@ export default async function handler(req, res) {
         .update({ last_login: new Date().toISOString() })
         .eq('id', supervisor.id);
     } catch (updateError) {
-      // Non-critical, log but don't fail
       console.warn('Failed to update last login:', updateError);
     }
 
-    // Step 4: Return success with user data
+    // Step 4: Return success with COMPLETE session data
     return res.status(200).json({
       success: true,
       user: {
@@ -123,6 +115,11 @@ export default async function handler(req, res) {
         email: supervisor.email,
         full_name: supervisor.full_name,
         role: supervisor.role || 'supervisor'
+      },
+      session: {
+        access_token: authData.session.access_token,
+        refresh_token: authData.session.refresh_token,
+        expires_at: authData.session.expires_at
       }
     });
 
