@@ -55,6 +55,7 @@ export default function AddSupervisor() {
     setLoading(true);
 
     try {
+      // Call the API we created
       const response = await fetch('/api/admin/add-supervisor', {
         method: 'POST',
         headers: {
