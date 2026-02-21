@@ -1,7 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
-  // Only allow POST requests
+  // Enable CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -11,48 +13,50 @@ export default async function handler(req, res) {
 
     // Validate input
     if (!email || !password || !full_name) {
-      return res.status(400).json({ error: 'Email, password, and full name are required' });
+      return res.status(400).json({ error: 'All fields are required' });
     }
 
-    console.log('Creating supervisor with email:', email);
+    console.log('Creating supervisor:', { email, full_name });
 
-    // Create service role client (this bypasses RLS)
+    // Create service role client
     const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
-      {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false
-        }
-      }
+      process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    // 1. Create the user in auth.users
+    // 1. Create auth user
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
-      user_metadata: {
-        full_name,
-        role: 'supervisor'
-      }
+      user_metadata: { full_name, role: 'supervisor' }
     });
 
     if (authError) {
       console.error('Auth error:', authError);
       
-      // Check if user already exists
-      if (authError.message.includes('already exists') || authError.message.includes('already registered')) {
-        // Try to get the existing user
-        const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
-        const existingUser = existingUsers.users.find(u => u.email === email);
+      // If user exists, try to get them
+      if (authError.message.includes('already exists')) {
+        const { data: users } = await supabaseAdmin.auth.admin.listUsers();
+        const existingUser = users.users.find(u => u.email === email);
         
         if (existingUser) {
-          console.log('User already exists with ID:', existingUser.id);
-          
-          // Insert into supervisors table with existing user_id
-          const { data: existingInsert, error: existingInsertError } = await supabaseAdmin
+          // Check if already in supervisors table
+          const { data: existing } = await supabaseAdmin
+            .from('supervisors')
+            .select('*')
+            .eq('user_id', existingUser.id);
+
+          if (existing && existing.length > 0) {
+            return res.status(200).json({
+              success: true,
+              message: 'Supervisor already exists',
+              supervisor: existing[0]
+            });
+          }
+
+          // Add to supervisors table
+          const { data: insertData, error: insertError } = await supabaseAdmin
             .from('supervisors')
             .insert({
               user_id: existingUser.id,
@@ -66,30 +70,20 @@ export default async function handler(req, res) {
             .select()
             .single();
 
-          if (existingInsertError) {
-            // If duplicate, just return success (already exists)
-            if (existingInsertError.code === '23505') { // Unique violation
-              return res.status(200).json({
-                success: true,
-                message: 'Supervisor already exists and is active',
-                user_id: existingUser.id
-              });
-            }
-            throw existingInsertError;
+          if (insertError) {
+            throw insertError;
           }
 
           return res.status(200).json({
             success: true,
-            message: 'Supervisor added successfully (existing user)',
-            supervisor: existingInsert
+            message: 'Supervisor added successfully',
+            supervisor: insertData
           });
         }
       }
       
       return res.status(400).json({ error: authError.message });
     }
-
-    console.log('Auth user created with ID:', authData.user.id);
 
     // 2. Add to supervisors table
     const { data: supervisorData, error: supervisorError } = await supabaseAdmin
@@ -107,18 +101,16 @@ export default async function handler(req, res) {
       .single();
 
     if (supervisorError) {
-      console.error('Supervisor insert error:', supervisorError);
+      console.error('Insert error:', supervisorError);
       
-      // If insert fails, try to clean up the auth user
+      // Clean up auth user
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
       
       return res.status(500).json({ 
-        error: 'Failed to add supervisor to database',
+        error: 'Failed to add to database',
         details: supervisorError.message
       });
     }
-
-    console.log('Supervisor added successfully:', supervisorData);
 
     return res.status(200).json({
       success: true,
@@ -127,9 +119,10 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('Unexpected error:', error);
+    console.error('Server error:', error);
     return res.status(500).json({ 
-      error: error.message || 'An unexpected error occurred'
+      error: 'Internal server error',
+      message: error.message 
     });
   }
 }
