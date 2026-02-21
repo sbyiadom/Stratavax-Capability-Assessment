@@ -24,7 +24,7 @@ export const generatePsychometricAnalysis = (categoryScores, assessmentType, can
   const avgScore = Math.round((totalScore / maxPossible) * 100);
 
   return {
-    executiveSummary: generateExecutiveSummary(candidateName, avgScore, strengths, moderate, risks, categories),
+    executiveSummary: generateExecutiveSummary(candidateName, avgScore, strengths, moderate, risks, categories, totalScore, maxPossible),
     categoryAnalysis: {
       strengths: generateStrengthsAnalysis(strengths),
       moderate: generateModerateAnalysis(moderate),
@@ -37,7 +37,7 @@ export const generatePsychometricAnalysis = (categoryScores, assessmentType, can
   };
 };
 
-const generateExecutiveSummary = (candidateName, avgScore, strengths, moderate, risks, categories) => {
+const generateExecutiveSummary = (candidateName, avgScore, strengths, moderate, risks, categories, totalScore, maxPossible) => {
   const riskCount = risks.length;
   const strengthCount = strengths.length;
   const hasCognitiveIssue = risks.some(r => r.name.includes('Cognitive'));
@@ -221,7 +221,7 @@ const generateDevelopmentPriorities = (risks, moderate) => {
   let analysis = `📈 **Development Priorities**\n\n`;
   
   priorities.forEach((item, index) => {
-    analysis += `${index + 1}️⃣ **${getPriorityEmoji(index)} ${item.name}**\n\n`;
+    analysis += `${index + 1}️⃣ **${getPriorityTitle(item.name, index)}**\n\n`;
     analysis += `${getDevelopmentRecommendation(item.name, item.percentage)}\n\n`;
   });
 
@@ -287,9 +287,16 @@ const getClassification = (percentage) => {
   return 'High Risk';
 };
 
-const getPriorityEmoji = (index) => {
-  const emojis = ['Cognitive Structuring', 'Stress Resilience', 'Motivation Clarification', 'Interpersonal Development'];
-  return emojis[index] || 'Development';
+const getPriorityTitle = (name, index) => {
+  if (name.includes('Cognitive')) return 'Cognitive Structuring';
+  if (name.includes('Stress')) return 'Stress Resilience';
+  if (name.includes('Motivations')) return 'Motivation Clarification';
+  if (name.includes('Agreeableness')) return 'Interpersonal Development';
+  if (name.includes('Performance')) return 'Performance Consistency';
+  if (name.includes('Emotional')) return 'Emotional Intelligence Development';
+  
+  const defaults = ['Primary Development Area', 'Secondary Development Area', 'Tertiary Development Area', 'Additional Development Area'];
+  return defaults[index] || 'Development Area';
 };
 
 const getStrengthNarrative = (name, percentage) => {
