@@ -61,7 +61,7 @@ const generateCognitiveAnalysis = (categories, strengths, weaknesses, developing
   const mentalFlexibility = categories.find(c => c.name.includes('Mental') || c.name.includes('Flexibility')) || { percentage: 0, name: 'Mental Flexibility' };
 
   return {
-    overallPattern: generateCognitiveOverallPattern(avgScore, strengths.length, weaknesses.length, categories),
+    overallPattern: getCognitiveOverallPattern(avgScore, strengths.length, weaknesses.length, categories),
     
     cognitiveStyle: `**🧠 Cognitive Processing Style Analysis**
 
@@ -159,7 +159,7 @@ const generateGeneralAnalysis = (categories, strengths, weaknesses, developing, 
   const technical = categories.find(c => c.name.includes('Technical') || c.name.includes('Manufacturing')) || { percentage: 0, name: 'Technical & Manufacturing' };
 
   return {
-    overallPattern: generateGeneralOverallPattern(avgScore, strengths.length, weaknesses.length, categories),
+    overallPattern: getGeneralOverallPattern(avgScore, strengths.length, weaknesses.length, categories),
     
     cognitiveStyle: `**🧠 Cognitive & Analytical Profile**
 
@@ -251,7 +251,7 @@ const generateLeadershipAnalysis = (categories, strengths, weaknesses, developin
   const emotional = categories.find(c => c.name.includes('Emotional')) || { percentage: 0, name: 'Emotional Intelligence' };
 
   return {
-    overallPattern: generateLeadershipOverallPattern(avgScore, strengths.length, weaknesses.length, categories),
+    overallPattern: getLeadershipOverallPattern(avgScore, strengths.length, weaknesses.length, categories),
     
     cognitiveStyle: `**🧠 Strategic Thinking Profile**
 
@@ -343,7 +343,7 @@ const generateTechnicalAnalysis = (categories, strengths, weaknesses, developing
   const documentation = categories.find(c => c.name.includes('Documentation')) || { percentage: 0, name: 'Technical Documentation' };
 
   return {
-    overallPattern: generateTechnicalOverallPattern(avgScore, strengths.length, weaknesses.length, categories),
+    overallPattern: getTechnicalOverallPattern(avgScore, strengths.length, weaknesses.length, categories),
     
     cognitiveStyle: `**🧠 Technical Knowledge Profile**
 
@@ -428,7 +428,7 @@ const generatePersonalityAnalysis = (categories, strengths, weaknesses, developi
   const motivations = categories.find(c => c.name.includes('Motivations')) || { percentage: 0, name: 'Motivations' };
 
   return {
-    overallPattern: generatePersonalityOverallPattern(avgScore, strengths.length, weaknesses.length, categories),
+    overallPattern: getPersonalityOverallPattern(avgScore, strengths.length, weaknesses.length, categories),
     
     cognitiveStyle: `**🧠 Personality Structure**
 
@@ -514,7 +514,7 @@ const generatePerformanceAnalysis = (categories, strengths, weaknesses, developi
   const results = categories.find(c => c.name.includes('Results')) || { percentage: 0, name: 'Results Orientation' };
 
   return {
-    overallPattern: generatePerformanceOverallPattern(avgScore, strengths.length, weaknesses.length, categories),
+    overallPattern: getPerformanceOverallPattern(avgScore, strengths.length, weaknesses.length, categories),
     
     workStyle: `**💼 Performance Profile**
 
@@ -583,7 +583,7 @@ const generateBehavioralAnalysis = (categories, strengths, weaknesses, developin
   const decision = categories.find(c => c.name.includes('Decision')) || { percentage: 0, name: 'Decision-Making' };
 
   return {
-    overallPattern: generateBehavioralOverallPattern(avgScore, strengths.length, weaknesses.length, categories),
+    overallPattern: getBehavioralOverallPattern(avgScore, strengths.length, weaknesses.length, categories),
     
     interpersonalDynamics: `**👥 Interpersonal Skills Profile**
 
@@ -659,7 +659,7 @@ const generateCulturalAnalysis = (categories, strengths, weaknesses, developing,
   const culture = categories.find(c => c.name.includes('Culture') || c.name.includes('Fit')) || { percentage: 0, name: 'Company Culture Fit' };
 
   return {
-    overallPattern: generateCulturalOverallPattern(avgScore, strengths.length, weaknesses.length, categories),
+    overallPattern: getCulturalOverallPattern(avgScore, strengths.length, weaknesses.length, categories),
     
     valuesAlignment: `**🎯 Values & Ethics Profile**
 
