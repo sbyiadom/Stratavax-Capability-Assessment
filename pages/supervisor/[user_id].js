@@ -225,201 +225,102 @@ export default function CandidateReport() {
     }
   };
 
-  const getCategoryInterpretation = (category, data, candidateName) => {
-    if (!data) return `${category}: No detailed response data available.`;
+const getCategoryInterpretation = (category, data, candidateName) => {
+  if (!data) return `${category}: No detailed response data available.`;
+  
+  // Map categories to interpreter functions
+  const categoryMap = {
+    // General Assessment
+    'Integrity': interpretIntegrity,
+    'Work Pace': interpretWorkPace,
+    'Motivations': interpretMotivations,
+    'Neuroticism': interpretNeuroticism,
+    'Extraversion': interpretExtraversion,
+    'Mixed Traits': interpretMixedTraits,
+    'Agreeableness': interpretAgreeableness,
+    'Behavioral Style': interpretBehavioralStyle,
+    'Conscientiousness': interpretConscientiousness,
+    'Performance Risks': interpretPerformanceRisks,
+    'Stress Management': interpretStressManagement,
+    'Cognitive Patterns': interpretCognitivePatterns,
+    'Emotional Intelligence': interpretEmotionalIntelligence,
+    'Openness to Experience': interpretOpenness,
     
-    // Route to the appropriate interpreter based on category name
-    if (category.includes('Leadership')) {
-      return interpretLeadership(data, candidateName);
-    } else if (category.includes('Cognitive')) {
-      return interpretCognitive(data, candidateName);
-    } else if (category.includes('Communication')) {
-      return interpretCommunication(data, candidateName);
-    } else if (category.includes('Ethics')) {
-      return interpretEthics(data, candidateName);
-    } else if (category.includes('Technical')) {
-      return interpretTechnical(data, candidateName);
-    } else if (category.includes('Emotional')) {
-      return interpretEmotional(data, candidateName);
-    } else if (category.includes('Performance')) {
-      return interpretPerformance(data, candidateName);
-    } else if (category.includes('Cultural')) {
-      return interpretCultural(data, candidateName);
-    } else if (category.includes('Problem')) {
-      return interpretProblemSolving(data, candidateName);
-    } else if (category.includes('Personality')) {
-      return interpretPersonality(data, candidateName);
-    } else {
-      // Generic interpretation for other categories
-      return `${candidateName} scored ${data.percentage}% in ${category}. ` +
-        (data.percentage >= 70 ? 'This is a strength area.' :
-         data.percentage >= 60 ? 'Shows basic competency with room for development.' :
-         'Requires focused attention and development.');
-    }
+    // Leadership Assessment
+    'Vision & Strategic Thinking': interpretVision,
+    'Decision-Making & Problem-Solving': interpretDecisionMaking,
+    'Communication & Influence': interpretInfluence,
+    'People Management & Coaching': interpretPeopleManagement,
+    'Change Leadership & Agility': interpretChangeLeadership,
+    'Execution & Results Orientation': interpretExecution,
+    'Resilience & Stress Management': interpretResilience,
+    'Self-Awareness & Self-Regulation': interpretSelfAwareness,
+    
+    // Cognitive Assessment
+    'Logical / Abstract Reasoning': interpretLogicalReasoning,
+    'Numerical Reasoning': interpretNumericalReasoning,
+    'Verbal Reasoning': interpretVerbalReasoning,
+    'Spatial Reasoning': interpretSpatialReasoning,
+    'Memory & Attention': interpretMemoryAttention,
+    'Perceptual Speed & Accuracy': interpretPerceptualSpeed,
+    'Critical Thinking': interpretCriticalThinking,
+    'Learning Agility': interpretLearningAgility,
+    'Mental Flexibility': interpretMentalFlexibility,
+    
+    // Technical Assessment
+    'Technical Knowledge': interpretTechnicalKnowledge,
+    'System Understanding': interpretSystemUnderstanding,
+    'Troubleshooting': interpretTroubleshooting,
+    'Practical Application': interpretPracticalApplication,
+    'Safety & Compliance': interpretSafetyCompliance,
+    'Quality Control': interpretQualityControl,
+    'Process Optimization': interpretProcessOptimization,
+    'Equipment Operation': interpretEquipmentOperation,
+    'Maintenance Procedures': interpretMaintenanceProcedures,
+    'Technical Documentation': interpretTechnicalDocumentation,
+    
+    // Performance Assessment
+    'Productivity & Efficiency': interpretProductivity,
+    'Work Quality & Effectiveness': interpretWorkQuality,
+    'Goal Achievement': interpretGoalAchievement,
+    'Accountability': interpretAccountability,
+    'Initiative': interpretInitiative,
+    'Collaboration': interpretCollaboration,
+    'Time Management': interpretTimeManagement,
+    'Results Orientation': interpretResultsOrientation,
+    
+    // Behavioral Assessment
+    'Teamwork': interpretTeamwork,
+    'Conflict Resolution': interpretConflictResolution,
+    'Empathy': interpretEmpathy,
+    'Active Listening': interpretActiveListening,
+    'Feedback Reception': interpretFeedbackReception,
+    'Interpersonal Skills': interpretInterpersonalSkills,
+    'Professionalism': interpretProfessionalism,
+    
+    // Cultural Assessment
+    'Values Alignment': interpretValuesAlignment,
+    'Work Ethic': interpretWorkEthic,
+    'Diversity Awareness': interpretDiversityAwareness,
+    'Inclusivity': interpretInclusivity,
+    'Respect': interpretRespect
   };
 
-  const getGradeLetter = (percentage) => {
-    if (percentage >= 90) return 'A';
-    if (percentage >= 80) return 'B';
-    if (percentage >= 70) return 'C';
-    if (percentage >= 60) return 'D';
-    return 'F';
-  };
+  // Find the matching interpreter
+  const interpreter = Object.entries(categoryMap).find(([key]) => 
+    category.includes(key) || key.includes(category)
+  )?.[1];
 
-  if (!isSupervisor || loading) {
-    return (
-      <div style={styles.checkingContainer}>
-        <div style={styles.spinner} />
-        <p>Loading candidate report...</p>
-      </div>
-    );
+  if (interpreter) {
+    return interpreter(data, candidateName);
   }
 
-  if (!candidate || !assessmentData) {
-    return (
-      <div style={styles.emptyState}>
-        <div style={styles.emptyIcon}>📊</div>
-        <h3>No Assessment Data Available</h3>
-        <p>This candidate hasn't completed any assessments yet.</p>
-        <Link href="/supervisor" legacyBehavior>
-          <a style={styles.primaryButton}>← Back to Dashboard</a>
-        </Link>
-      </div>
-    );
-  }
-
-  const classification = getClassification(assessmentData.percentage);
-  const gradeInfo = getGradeInfo(assessmentData.percentage);
-  const hiringRec = getHiringRecommendation(assessmentData.percentage, assessmentData.strengths, assessmentData.weaknesses);
-  const strengthsList = assessmentData.strengths || [];
-  const weaknessesList = assessmentData.weaknesses || [];
-  const config = assessmentConfig || assessmentTypes.general;
-
-  return (
-    <AppLayout background="/images/preassessmentbg.jpg">
-      <div style={styles.container}>
-        <div style={styles.header}>
-          <Link href="/supervisor" legacyBehavior>
-            <a style={styles.backButton}>← Dashboard</a>
-          </Link>
-          <div style={styles.headerActions}>
-            <button onClick={handlePrint} style={styles.printButton}>
-              🖨️ Print Report
-            </button>
-          </div>
-        </div>
-
-        <div style={styles.navigation}>
-          <button 
-            style={{...styles.navItem, borderBottom: activeSection === 'cover' ? '3px solid #3b82f6' : '3px solid transparent'}}
-            onClick={() => setActiveSection('cover')}
-          >
-            Cover
-          </button>
-          <button 
-            style={{...styles.navItem, borderBottom: activeSection === 'executive' ? '3px solid #3b82f6' : '3px solid transparent'}}
-            onClick={() => setActiveSection('executive')}
-          >
-            Executive Summary
-          </button>
-          <button 
-            style={{...styles.navItem, borderBottom: activeSection === 'overview' ? '3px solid #3b82f6' : '3px solid transparent'}}
-            onClick={() => setActiveSection('overview')}
-          >
-            Assessment Overview
-          </button>
-          <button 
-            style={{...styles.navItem, borderBottom: activeSection === 'competencies' ? '3px solid #3b82f6' : '3px solid transparent'}}
-            onClick={() => setActiveSection('competencies')}
-          >
-            Competency Breakdown
-          </button>
-          <button 
-            style={{...styles.navItem, borderBottom: activeSection === 'development' ? '3px solid #3b82f6' : '3px solid transparent'}}
-            onClick={() => setActiveSection('development')}
-          >
-            Development Plan
-          </button>
-        </div>
-
-        <div ref={reportRef} style={styles.reportContainer}>
-          {/* 1️⃣ Cover Page */}
-          <section style={{...styles.section, display: activeSection === 'cover' || showPrintView ? 'block' : 'none'}}>
-            <div style={styles.coverPage}>
-              <div style={styles.coverHeader}>
-                <h1 style={styles.coverTitle}>Stratavax Assessment Platform</h1>
-                <p style={styles.coverSubtitle}>{config.name}</p>
-              </div>
-              
-              <div style={styles.coverContent}>
-                <div style={styles.coverLogo}>{config.icon}</div>
-                <h2 style={styles.coverCandidateName}>{candidate.full_name}</h2>
-                <p style={styles.coverDetail}>Assessment Date: {new Date(assessmentData.completed_at).toLocaleDateString()}</p>
-                <p style={styles.coverDetail}>Report Generated: {new Date().toLocaleDateString()}</p>
-                <div style={styles.coverBadge}>CONFIDENTIAL</div>
-              </div>
-              
-              <div style={styles.coverFooter}>
-                <p>© Stratavax Assessment Platform • All Rights Reserved</p>
-              </div>
-            </div>
-          </section>
-
-          {/* 2️⃣ Executive Summary */}
-          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'executive' || showPrintView ? 'block' : 'none'}}>
-            <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>2. Executive Summary - {config.name}</h2>
-            </div>
-            
-            <div style={styles.executiveSummary}>
-              <div style={styles.scoreCard}>
-                <div style={styles.scoreCardHeader}>
-                  <span style={styles.scoreCardLabel}>Total Score</span>
-                  <span style={styles.scoreCardValue}>{assessmentData.total_score}/{assessmentData.max_score}</span>
-                </div>
-                <div style={styles.scoreCardBody}>
-                  <div style={styles.scoreMetric}>
-                    <span style={styles.scoreMetricLabel}>Percentage</span>
-                    <span style={{...styles.scoreMetricValue, color: classification.color}}>{assessmentData.percentage}%</span>
-                  </div>
-                  <div style={styles.scoreMetric}>
-                    <span style={styles.scoreMetricLabel}>Grade</span>
-                    <span style={styles.scoreMetricValue}>{gradeInfo.grade} ({gradeInfo.text})</span>
-                  </div>
-                </div>
-              </div>
-
-              <div style={styles.classificationCard}>
-                <div style={{...styles.classificationBadge, background: classification.bg, color: classification.color}}>
-                  {classification.label}
-                </div>
-                <p style={styles.classificationDescription}>{classification.description}</p>
-              </div>
-
-              <div style={styles.verdictCard}>
-                <h3 style={styles.verdictTitle}>Executive Verdict</h3>
-                <div style={{...styles.verdictBadge, background: hiringRec.color, color: 'white'}}>
-                  {hiringRec.recommendation}
-                </div>
-                <p style={styles.verdictSummary}>{hiringRec.summary}</p>
-                
-                <div style={styles.keyPoints}>
-                  <div style={styles.keyPoint}>
-                    <span style={styles.keyPointIcon}>✅</span>
-                    <div>
-                      <strong>Key Strength:</strong> {strengthsList[0] || 'None identified'}
-                    </div>
-                  </div>
-                  <div style={styles.keyPoint}>
-                    <span style={styles.keyPointIcon}>⚠️</span>
-                    <div>
-                      <strong>Major Risk:</strong> {weaknessesList[0] || 'None identified'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
+  // Fallback for unmapped categories
+  return `${candidateName} scored ${data.percentage}% in ${category}. ` +
+    (data.percentage >= 70 ? 'This is a strength area.' :
+     data.percentage >= 60 ? 'Shows basic competency with room for development.' :
+     'Requires focused attention and development.');
+};
 
           {/* 3️⃣ Assessment Overview */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'overview' || showPrintView ? 'block' : 'none'}}>
@@ -1351,3 +1252,4 @@ const styles = {
     whiteSpace: 'pre-line'
   }
 };
+
