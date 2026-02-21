@@ -6,10 +6,8 @@ import { supabase } from "../../supabase/client";
 import { generateDetailedInterpretation } from "../../utils/detailedInterpreter";
 import { getClassification, getGradeInfo, getHiringRecommendation } from "../../utils/reportGenerator";
 import { assessmentTypes, getAssessmentType } from "../../utils/assessmentConfigs";
-import { analyzeResponses, getCategorySpecificRecommendations } from "../../utils/responseAnalyzer";
 import { getDevelopmentRecommendation } from "../../utils/developmentRecommendations";
 import {
-  // General Assessment
   interpretIntegrity,
   interpretWorkPace,
   interpretMotivations,
@@ -24,8 +22,6 @@ import {
   interpretCognitivePatterns,
   interpretEmotionalIntelligence,
   interpretOpenness,
-  
-  // Leadership Assessment
   interpretVision,
   interpretDecisionMaking,
   interpretInfluence,
@@ -34,8 +30,6 @@ import {
   interpretExecution,
   interpretResilience,
   interpretSelfAwareness,
-  
-  // Cognitive Assessment
   interpretLogicalReasoning,
   interpretNumericalReasoning,
   interpretVerbalReasoning,
@@ -45,8 +39,6 @@ import {
   interpretCriticalThinking,
   interpretLearningAgility,
   interpretMentalFlexibility,
-  
-  // Technical Assessment
   interpretTechnicalKnowledge,
   interpretSystemUnderstanding,
   interpretTroubleshooting,
@@ -57,8 +49,6 @@ import {
   interpretEquipmentOperation,
   interpretMaintenanceProcedures,
   interpretTechnicalDocumentation,
-  
-  // Performance Assessment
   interpretProductivity,
   interpretWorkQuality,
   interpretGoalAchievement,
@@ -67,8 +57,6 @@ import {
   interpretCollaboration,
   interpretTimeManagement,
   interpretResultsOrientation,
-  
-  // Behavioral Assessment
   interpretTeamwork,
   interpretConflictResolution,
   interpretEmpathy,
@@ -76,8 +64,6 @@ import {
   interpretFeedbackReception,
   interpretInterpersonalSkills,
   interpretProfessionalism,
-  
-  // Cultural Assessment
   interpretValuesAlignment,
   interpretWorkEthic,
   interpretDiversityAwareness,
@@ -87,12 +73,14 @@ import {
 
 export default function CandidateReport() {
   const router = useRouter();
-  const { user_id } = router.query;
+  const { user_id, assessment } = router.query;
   const reportRef = useRef(null);
   
   const [loading, setLoading] = useState(true);
   const [isSupervisor, setIsSupervisor] = useState(false);
   const [candidate, setCandidate] = useState(null);
+  const [allAssessments, setAllAssessments] = useState([]);
+  const [selectedAssessment, setSelectedAssessment] = useState(null);
   const [assessmentData, setAssessmentData] = useState(null);
   const [activeSection, setActiveSection] = useState('cover');
   const [showPrintView, setShowPrintView] = useState(false);
@@ -141,6 +129,7 @@ export default function CandidateReport() {
           email: profileData?.email || 'Email not available'
         });
 
+        // Get all assessment results for this candidate
         const { data: resultsData } = await supabase
           .from('assessment_results')
           .select('*')
@@ -148,101 +137,21 @@ export default function CandidateReport() {
           .order('completed_at', { ascending: false });
 
         if (resultsData && resultsData.length > 0) {
-          const result = resultsData[0];
-          const percentage = Math.round((result.total_score / result.max_score) * 100);
+          setAllAssessments(resultsData);
           
-          const assessmentTypeId = result.assessment_type || 'general';
-          const config = getAssessmentType(assessmentTypeId);
-          setAssessmentConfig(config);
-
-          const { data: responsesData } = await supabase
-            .from('responses')
-            .select(`
-              *,
-              unique_questions!inner (
-                id,
-                section,
-                subsection,
-                question_text
-              ),
-              unique_answers!inner (
-                id,
-                answer_text,
-                score
-              )
-            `)
-            .eq('user_id', user_id)
-            .eq('assessment_id', result.assessment_id);
-
-          const processedResponses = responsesData?.map(r => ({
-            question_id: r.question_id,
-            answer_id: r.answer_id,
-            category: r.unique_questions?.section || 'General',
-            question_text: r.unique_questions?.question_text,
-            answer_text: r.unique_answers?.answer_text,
-            score: r.unique_answers?.score
-          })) || [];
-
-          const responseInsights = {};
+          // Determine which assessment to show
+          let selectedResult;
+          if (assessment && assessment !== 'all') {
+            // Find the assessment of the selected type
+            selectedResult = resultsData.find(r => r.assessment_type === assessment);
+          }
           
-          processedResponses.forEach(r => {
-            if (!responseInsights[r.category]) {
-              responseInsights[r.category] = {
-                insights: [],
-                scores: [],
-                questionCount: 0,
-                highScoreCount: 0,
-                lowScoreCount: 0,
-                questionDetails: []
-              };
-            }
-            
-            const cat = responseInsights[r.category];
-            cat.insights.push(generateInsight(r.category, r.question_text, r.answer_text, r.score));
-            cat.scores.push(r.score);
-            cat.questionCount++;
-            cat.questionDetails.push({
-              question: r.question_text,
-              answer: r.answer_text,
-              score: r.score
-            });
-            
-            if (r.score >= 4) cat.highScoreCount++;
-            if (r.score <= 2) cat.lowScoreCount++;
-          });
+          // If no matching assessment found or 'all' selected, use the most recent
+          if (!selectedResult) {
+            selectedResult = resultsData[0];
+          }
 
-          Object.keys(responseInsights).forEach(cat => {
-            const data = responseInsights[cat];
-            const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
-            data.percentage = Math.round((avgScore / 5) * 100);
-          });
-
-          console.log("Response Insights:", responseInsights);
-          
-          const detailedInterpretation = generateDetailedInterpretation(
-            profileData?.full_name || 'Candidate',
-            result.category_scores,
-            assessmentTypeId,
-            responseInsights
-          );
-          
-          setAssessmentData({
-            source: 'results',
-            assessment_id: result.assessment_id,
-            assessment_type: assessmentTypeId,
-            assessment_name: config.name,
-            total_score: result.total_score,
-            max_score: result.max_score,
-            percentage: percentage,
-            completed_at: result.completed_at,
-            category_scores: result.category_scores || {},
-            strengths: result.strengths || [],
-            weaknesses: result.weaknesses || [],
-            recommendations: result.recommendations || [],
-            interpretations: result.interpretations || {},
-            detailedInterpretation: detailedInterpretation,
-            responseInsights: responseInsights
-          });
+          await loadAssessmentData(selectedResult, profileData);
         }
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -252,7 +161,112 @@ export default function CandidateReport() {
     };
 
     fetchData();
-  }, [isSupervisor, user_id]);
+  }, [isSupervisor, user_id, assessment]);
+
+  const loadAssessmentData = async (result, profileData) => {
+    const percentage = Math.round((result.total_score / result.max_score) * 100);
+    
+    const assessmentTypeId = result.assessment_type || 'general';
+    const config = getAssessmentType(assessmentTypeId);
+    setAssessmentConfig(config);
+
+    const { data: responsesData } = await supabase
+      .from('responses')
+      .select(`
+        *,
+        unique_questions!inner (
+          id,
+          section,
+          subsection,
+          question_text
+        ),
+        unique_answers!inner (
+          id,
+          answer_text,
+          score
+        )
+      `)
+      .eq('user_id', user_id)
+      .eq('assessment_id', result.assessment_id);
+
+    const processedResponses = responsesData?.map(r => ({
+      question_id: r.question_id,
+      answer_id: r.answer_id,
+      category: r.unique_questions?.section || 'General',
+      question_text: r.unique_questions?.question_text,
+      answer_text: r.unique_answers?.answer_text,
+      score: r.unique_answers?.score
+    })) || [];
+
+    const responseInsights = {};
+    
+    processedResponses.forEach(r => {
+      if (!responseInsights[r.category]) {
+        responseInsights[r.category] = {
+          insights: [],
+          scores: [],
+          questionCount: 0,
+          highScoreCount: 0,
+          lowScoreCount: 0,
+          questionDetails: []
+        };
+      }
+      
+      const cat = responseInsights[r.category];
+      cat.insights.push(generateInsight(r.category, r.question_text, r.answer_text, r.score));
+      cat.scores.push(r.score);
+      cat.questionCount++;
+      cat.questionDetails.push({
+        question: r.question_text,
+        answer: r.answer_text,
+        score: r.score
+      });
+      
+      if (r.score >= 4) cat.highScoreCount++;
+      if (r.score <= 2) cat.lowScoreCount++;
+    });
+
+    Object.keys(responseInsights).forEach(cat => {
+      const data = responseInsights[cat];
+      const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+      data.percentage = Math.round((avgScore / 5) * 100);
+    });
+
+    const detailedInterpretation = generateDetailedInterpretation(
+      profileData?.full_name || 'Candidate',
+      result.category_scores,
+      assessmentTypeId,
+      responseInsights
+    );
+    
+    setSelectedAssessment({
+      id: result.id,
+      assessment_id: result.assessment_id,
+      assessment_type: assessmentTypeId,
+      assessment_name: config.name,
+      total_score: result.total_score,
+      max_score: result.max_score,
+      percentage: percentage,
+      completed_at: result.completed_at,
+      category_scores: result.category_scores || {},
+      strengths: result.strengths || [],
+      weaknesses: result.weaknesses || [],
+      recommendations: result.recommendations || [],
+      interpretations: result.interpretations || {},
+      detailedInterpretation: detailedInterpretation,
+      responseInsights: responseInsights,
+      config: config
+    });
+  };
+
+  const handleAssessmentChange = async (e) => {
+    const assessmentId = e.target.value;
+    const selected = allAssessments.find(a => a.id === assessmentId);
+    if (selected) {
+      router.push(`/supervisor/${user_id}?assessment=${selected.assessment_type}`, undefined, { shallow: true });
+      await loadAssessmentData(selected, candidate);
+    }
+  };
 
   const handlePrint = () => {
     setShowPrintView(true);
@@ -263,10 +277,6 @@ export default function CandidateReport() {
   };
 
   const generateInsight = (category, questionText, answerText, score) => {
-    const answerPreview = answerText.length > 60 
-      ? answerText.substring(0, 60) + '...' 
-      : answerText;
-
     if (score === 5) {
       return `Strong understanding demonstrated in responses`;
     } else if (score === 4) {
@@ -284,7 +294,6 @@ export default function CandidateReport() {
     if (!data) return `${category}: No detailed response data available.`;
     
     const categoryMap = {
-      // General Assessment
       'Integrity': interpretIntegrity,
       'Work Pace': interpretWorkPace,
       'Motivations': interpretMotivations,
@@ -299,8 +308,6 @@ export default function CandidateReport() {
       'Cognitive Patterns': interpretCognitivePatterns,
       'Emotional Intelligence': interpretEmotionalIntelligence,
       'Openness to Experience': interpretOpenness,
-      
-      // Leadership Assessment
       'Vision & Strategic Thinking': interpretVision,
       'Decision-Making & Problem-Solving': interpretDecisionMaking,
       'Communication & Influence': interpretInfluence,
@@ -309,8 +316,6 @@ export default function CandidateReport() {
       'Execution & Results Orientation': interpretExecution,
       'Resilience & Stress Management': interpretResilience,
       'Self-Awareness & Self-Regulation': interpretSelfAwareness,
-      
-      // Cognitive Assessment
       'Logical / Abstract Reasoning': interpretLogicalReasoning,
       'Numerical Reasoning': interpretNumericalReasoning,
       'Verbal Reasoning': interpretVerbalReasoning,
@@ -320,8 +325,6 @@ export default function CandidateReport() {
       'Critical Thinking': interpretCriticalThinking,
       'Learning Agility': interpretLearningAgility,
       'Mental Flexibility': interpretMentalFlexibility,
-      
-      // Technical Assessment
       'Technical Knowledge': interpretTechnicalKnowledge,
       'System Understanding': interpretSystemUnderstanding,
       'Troubleshooting': interpretTroubleshooting,
@@ -332,8 +335,6 @@ export default function CandidateReport() {
       'Equipment Operation': interpretEquipmentOperation,
       'Maintenance Procedures': interpretMaintenanceProcedures,
       'Technical Documentation': interpretTechnicalDocumentation,
-      
-      // Performance Assessment
       'Productivity & Efficiency': interpretProductivity,
       'Work Quality & Effectiveness': interpretWorkQuality,
       'Goal Achievement': interpretGoalAchievement,
@@ -342,8 +343,6 @@ export default function CandidateReport() {
       'Collaboration': interpretCollaboration,
       'Time Management': interpretTimeManagement,
       'Results Orientation': interpretResultsOrientation,
-      
-      // Behavioral Assessment
       'Teamwork': interpretTeamwork,
       'Conflict Resolution': interpretConflictResolution,
       'Empathy': interpretEmpathy,
@@ -351,8 +350,6 @@ export default function CandidateReport() {
       'Feedback Reception': interpretFeedbackReception,
       'Interpersonal Skills': interpretInterpersonalSkills,
       'Professionalism': interpretProfessionalism,
-      
-      // Cultural Assessment
       'Values Alignment': interpretValuesAlignment,
       'Work Ethic': interpretWorkEthic,
       'Diversity Awareness': interpretDiversityAwareness,
@@ -374,14 +371,6 @@ export default function CandidateReport() {
        'Requires focused attention and development.');
   };
 
-  const getGradeLetter = (percentage) => {
-    if (percentage >= 90) return 'A';
-    if (percentage >= 80) return 'B';
-    if (percentage >= 70) return 'C';
-    if (percentage >= 60) return 'D';
-    return 'F';
-  };
-
   if (!isSupervisor || loading) {
     return (
       <div style={styles.checkingContainer}>
@@ -391,7 +380,7 @@ export default function CandidateReport() {
     );
   }
 
-  if (!candidate || !assessmentData) {
+  if (!candidate || !selectedAssessment) {
     return (
       <div style={styles.emptyState}>
         <div style={styles.emptyIcon}>📊</div>
@@ -404,12 +393,17 @@ export default function CandidateReport() {
     );
   }
 
-  const classification = getClassification(assessmentData.percentage);
-  const gradeInfo = getGradeInfo(assessmentData.percentage);
-  const hiringRec = getHiringRecommendation(assessmentData.percentage, assessmentData.strengths, assessmentData.weaknesses);
-  const strengthsList = assessmentData.strengths || [];
-  const weaknessesList = assessmentData.weaknesses || [];
-  const config = assessmentConfig || assessmentTypes.general;
+  const classification = getClassification(selectedAssessment.percentage);
+  const gradeInfo = getGradeInfo(selectedAssessment.percentage);
+  const hiringRec = getHiringRecommendation(selectedAssessment.percentage, selectedAssessment.strengths, selectedAssessment.weaknesses);
+  const strengthsList = selectedAssessment.strengths || [];
+  const weaknessesList = selectedAssessment.weaknesses || [];
+  const config = selectedAssessment.config || assessmentTypes.general;
+
+  // Calculate combined score for all assessments
+  const totalCombinedScore = allAssessments.reduce((sum, a) => sum + a.total_score, 0);
+  const totalMaxScore = allAssessments.reduce((sum, a) => sum + a.max_score, 0);
+  const combinedPercentage = Math.round((totalCombinedScore / totalMaxScore) * 100);
 
   return (
     <AppLayout background="/images/preassessmentbg.jpg">
@@ -419,6 +413,24 @@ export default function CandidateReport() {
             <a style={styles.backButton}>← Dashboard</a>
           </Link>
           <div style={styles.headerActions}>
+            {allAssessments.length > 1 && (
+              <select 
+                value={selectedAssessment.id} 
+                onChange={handleAssessmentChange}
+                style={styles.assessmentSelect}
+              >
+                <option value="">-- Select Assessment --</option>
+                {allAssessments.map(a => {
+                  const type = a.assessment_type || 'general';
+                  const config = getAssessmentType(type);
+                  return (
+                    <option key={a.id} value={a.id}>
+                      {config.name} - {new Date(a.completed_at).toLocaleDateString()} ({a.total_score}/{a.max_score})
+                    </option>
+                  );
+                })}
+              </select>
+            )}
             <button onClick={handlePrint} style={styles.printButton}>
               🖨️ Print Report
             </button>
@@ -468,9 +480,9 @@ export default function CandidateReport() {
               </div>
               
               <div style={styles.coverContent}>
-                <div style={styles.coverLogo}>{config.icon}</div>
+                <div style={styles.coverLogo}>📊</div>
                 <h2 style={styles.coverCandidateName}>{candidate.full_name}</h2>
-                <p style={styles.coverDetail}>Assessment Date: {new Date(assessmentData.completed_at).toLocaleDateString()}</p>
+                <p style={styles.coverDetail}>Assessment Date: {new Date(selectedAssessment.completed_at).toLocaleDateString()}</p>
                 <p style={styles.coverDetail}>Report Generated: {new Date().toLocaleDateString()}</p>
                 <div style={styles.coverBadge}>CONFIDENTIAL</div>
               </div>
@@ -491,12 +503,12 @@ export default function CandidateReport() {
               <div style={styles.scoreCard}>
                 <div style={styles.scoreCardHeader}>
                   <span style={styles.scoreCardLabel}>Total Score</span>
-                  <span style={styles.scoreCardValue}>{assessmentData.total_score}/{assessmentData.max_score}</span>
+                  <span style={styles.scoreCardValue}>{selectedAssessment.total_score}/{selectedAssessment.max_score}</span>
                 </div>
                 <div style={styles.scoreCardBody}>
                   <div style={styles.scoreMetric}>
                     <span style={styles.scoreMetricLabel}>Percentage</span>
-                    <span style={{...styles.scoreMetricValue, color: classification.color}}>{assessmentData.percentage}%</span>
+                    <span style={{...styles.scoreMetricValue, color: classification.color}}>{selectedAssessment.percentage}%</span>
                   </div>
                   <div style={styles.scoreMetric}>
                     <span style={styles.scoreMetricLabel}>Grade</span>
@@ -534,6 +546,22 @@ export default function CandidateReport() {
                   </div>
                 </div>
               </div>
+
+              {allAssessments.length > 1 && (
+                <div style={styles.combinedScoreCard}>
+                  <h3 style={styles.combinedScoreTitle}>Combined Performance (All Assessments)</h3>
+                  <div style={styles.combinedScoreContent}>
+                    <div style={styles.combinedScoreItem}>
+                      <span style={styles.combinedScoreLabel}>Total Combined Score</span>
+                      <span style={styles.combinedScoreValue}>{totalCombinedScore}/{totalMaxScore}</span>
+                    </div>
+                    <div style={styles.combinedScoreItem}>
+                      <span style={styles.combinedScoreLabel}>Overall Percentage</span>
+                      <span style={styles.combinedScoreValue}>{combinedPercentage}%</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 
@@ -547,7 +575,7 @@ export default function CandidateReport() {
               <div style={styles.overviewGrid}>
                 <div style={styles.overviewItem}>
                   <h4 style={styles.overviewItemTitle}>Total Competencies Assessed</h4>
-                  <p style={styles.overviewItemValue}>{Object.keys(assessmentData.category_scores).length}</p>
+                  <p style={styles.overviewItemValue}>{Object.keys(selectedAssessment.category_scores).length}</p>
                 </div>
                 <div style={styles.overviewItem}>
                   <h4 style={styles.overviewItemTitle}>Assessment Method</h4>
@@ -575,18 +603,16 @@ export default function CandidateReport() {
                   <tr style={styles.tableHeadRow}>
                     <th style={styles.tableHead}>Category</th>
                     <th style={styles.tableHead}>Score</th>
-                    <th style={styles.tableHead}>Percentage</th>
                     <th style={styles.tableHead}>Grade</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(assessmentData.category_scores).map(([category, data]) => {
+                  {Object.entries(selectedAssessment.category_scores).map(([category, data]) => {
                     const catGrade = getGradeInfo(data.percentage);
                     return (
                       <tr key={category} style={styles.tableRow}>
                         <td style={styles.tableCell}>{category}</td>
                         <td style={styles.tableCell}>{data.score}/{data.maxPossible}</td>
-                        <td style={styles.tableCell}>{data.percentage}%</td>
                         <td style={styles.tableCell}>{catGrade.grade}</td>
                       </tr>
                     );
@@ -594,10 +620,9 @@ export default function CandidateReport() {
                 </tbody>
                 <tfoot>
                   <tr style={styles.tableFooterRow}>
-                    <td colSpan="4" style={styles.tableFooter}>
+                    <td colSpan="3" style={styles.tableFooter}>
                       <div style={styles.totalScoreRow}>
-                        <span><strong>Total Score:</strong> {assessmentData.total_score}/{assessmentData.max_score}</span>
-                        <span><strong>Average:</strong> {assessmentData.percentage}%</span>
+                        <span><strong>Total Score:</strong> {selectedAssessment.total_score}/{selectedAssessment.max_score}</span>
                         <span><strong>Overall Grade:</strong> {gradeInfo.grade}</span>
                         <span><strong>Classification:</strong> {classification.label}</span>
                       </div>
@@ -611,9 +636,9 @@ export default function CandidateReport() {
             <div style={styles.competencyBreakdown}>
               <h3 style={styles.subsectionTitle}>5. Competency Analysis</h3>
               
-              {Object.entries(assessmentData.category_scores).map(([category, data]) => {
+              {Object.entries(selectedAssessment.category_scores).map(([category, data]) => {
                 const catGrade = getGradeInfo(data.percentage);
-                const categoryData = assessmentData.responseInsights?.[category];
+                const categoryData = selectedAssessment.responseInsights?.[category];
                 
                 return (
                   <div key={category} style={styles.competencyCard}>
@@ -642,8 +667,6 @@ export default function CandidateReport() {
                   const match = strength.match(/(.+) \((\d+)%\)/);
                   const category = match ? match[1] : strength;
                   const percentage = match ? match[2] : '';
-                  
-                  const categoryData = assessmentData.responseInsights?.[category];
                   
                   return (
                     <div key={index} style={styles.strengthCard}>
@@ -722,10 +745,10 @@ export default function CandidateReport() {
               </div>
               
               <div style={styles.roleFitCard}>
-                {assessmentData.detailedInterpretation?.roleFit && (
-                  <div style={styles.analysisText}>{assessmentData.detailedInterpretation.roleFit}</div>
+                {selectedAssessment.detailedInterpretation?.roleFit && (
+                  <div style={styles.analysisText}>{selectedAssessment.detailedInterpretation.roleFit}</div>
                 )}
-                {!assessmentData.detailedInterpretation?.roleFit && (
+                {!selectedAssessment.detailedInterpretation?.roleFit && (
                   <div style={styles.analysisText}>
                     <p><strong>Best suited for roles requiring:</strong></p>
                     <ul>
@@ -791,7 +814,7 @@ export default function CandidateReport() {
                 <p style={styles.hiringJustification}>{hiringRec.summary}</p>
                 <p style={styles.hiringDetail}>
                   Based on the comprehensive {config.name}, this candidate demonstrates 
-                  {assessmentData.percentage >= 65 ? ' strong potential' : ' significant development needs'} 
+                  {selectedAssessment.percentage >= 65 ? ' strong potential' : ' significant development needs'} 
                   for roles requiring these competencies.
                 </p>
                 <div style={styles.hiringFactors}>
@@ -879,7 +902,9 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '30px'
+    marginBottom: '30px',
+    flexWrap: 'wrap',
+    gap: '20px'
   },
   backButton: {
     color: '#3b82f6',
@@ -897,14 +922,29 @@ const styles = {
   },
   headerActions: {
     display: 'flex',
-    gap: '10px'
+    gap: '10px',
+    alignItems: 'center',
+    flexWrap: 'wrap'
+  },
+  assessmentSelect: {
+    padding: '10px 16px',
+    border: '2px solid #e0e0e0',
+    borderRadius: '8px',
+    fontSize: '14px',
+    minWidth: '250px',
+    background: 'white',
+    cursor: 'pointer',
+    outline: 'none',
+    ':focus': {
+      borderColor: '#3b82f6'
+    }
   },
   printButton: {
     background: '#10b981',
     color: 'white',
     border: 'none',
-    padding: '8px 20px',
-    borderRadius: '20px',
+    padding: '10px 20px',
+    borderRadius: '8px',
     fontSize: '14px',
     fontWeight: 600,
     cursor: 'pointer',
@@ -1062,6 +1102,41 @@ const styles = {
   scoreMetricValue: {
     fontSize: '24px',
     fontWeight: 700
+  },
+  combinedScoreCard: {
+    marginTop: '20px',
+    padding: '20px',
+    background: '#f0f9ff',
+    borderRadius: '12px',
+    border: '1px solid #bae6fd'
+  },
+  combinedScoreTitle: {
+    margin: '0 0 15px 0',
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#0369a1'
+  },
+  combinedScoreContent: {
+    display: 'flex',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '20px'
+  },
+  combinedScoreItem: {
+    textAlign: 'center'
+  },
+  combinedScoreLabel: {
+    display: 'block',
+    fontSize: '13px',
+    color: '#64748b',
+    marginBottom: '5px'
+  },
+  combinedScoreValue: {
+    display: 'block',
+    fontSize: '24px',
+    fontWeight: 700,
+    color: '#0c4a6e'
   },
   classificationCard: {
     padding: '20px',
