@@ -6,7 +6,6 @@ import { supabase } from "../../supabase/client";
 import { generateDetailedInterpretation } from "../../utils/detailedInterpreter";
 import { getClassification, getGradeInfo, getHiringRecommendation } from "../../utils/reportGenerator";
 import { assessmentTypes, getAssessmentType } from "../../utils/assessmentConfigs";
-import { analyzeResponses, getCategorySpecificRecommendations } from "../../utils/responseAnalyzer";
 import { getDevelopmentRecommendation } from "../../utils/developmentRecommendations";
 import {
   // General Assessment
@@ -93,7 +92,8 @@ export default function CandidateReport() {
   const [loading, setLoading] = useState(true);
   const [isSupervisor, setIsSupervisor] = useState(false);
   const [candidate, setCandidate] = useState(null);
-  const [assessmentData, setAssessmentData] = useState(null);
+  const [allAssessments, setAllAssessments] = useState([]);
+  const [selectedAssessment, setSelectedAssessment] = useState(null);
   const [activeSection, setActiveSection] = useState('cover');
   const [showPrintView, setShowPrintView] = useState(false);
   const [assessmentConfig, setAssessmentConfig] = useState(null);
@@ -141,6 +141,7 @@ export default function CandidateReport() {
           email: profileData?.email || 'Email not available'
         });
 
+        // Get all assessment results for this candidate
         const { data: resultsData } = await supabase
           .from('assessment_results')
           .select('*')
@@ -148,101 +149,23 @@ export default function CandidateReport() {
           .order('completed_at', { ascending: false });
 
         if (resultsData && resultsData.length > 0) {
-          const result = resultsData[0];
-          const percentage = Math.round((result.total_score / result.max_score) * 100);
+          setAllAssessments(resultsData);
           
-          const assessmentTypeId = result.assessment_type || 'general';
-          const config = getAssessmentType(assessmentTypeId);
-          setAssessmentConfig(config);
-
-          const { data: responsesData } = await supabase
-            .from('responses')
-            .select(`
-              *,
-              unique_questions!inner (
-                id,
-                section,
-                subsection,
-                question_text
-              ),
-              unique_answers!inner (
-                id,
-                answer_text,
-                score
-              )
-            `)
-            .eq('user_id', user_id)
-            .eq('assessment_id', result.assessment_id);
-
-          const processedResponses = responsesData?.map(r => ({
-            question_id: r.question_id,
-            answer_id: r.answer_id,
-            category: r.unique_questions?.section || 'General',
-            question_text: r.unique_questions?.question_text,
-            answer_text: r.unique_answers?.answer_text,
-            score: r.unique_answers?.score
-          })) || [];
-
-          const responseInsights = {};
-          
-          processedResponses.forEach(r => {
-            if (!responseInsights[r.category]) {
-              responseInsights[r.category] = {
-                insights: [],
-                scores: [],
-                questionCount: 0,
-                highScoreCount: 0,
-                lowScoreCount: 0,
-                questionDetails: []
-              };
-            }
-            
-            const cat = responseInsights[r.category];
-            cat.insights.push(generateInsight(r.category, r.question_text, r.answer_text, r.score));
-            cat.scores.push(r.score);
-            cat.questionCount++;
-            cat.questionDetails.push({
-              question: r.question_text,
-              answer: r.answer_text,
-              score: r.score
+          // Debug: Log each assessment to see what's in it
+          console.log("All assessments for candidate:");
+          resultsData.forEach((a, index) => {
+            console.log(`Assessment ${index + 1}:`, {
+              id: a.id,
+              assessment_type: a.assessment_type,
+              total_score: a.total_score,
+              max_score: a.max_score,
+              completed_at: a.completed_at
             });
-            
-            if (r.score >= 4) cat.highScoreCount++;
-            if (r.score <= 2) cat.lowScoreCount++;
           });
-
-          Object.keys(responseInsights).forEach(cat => {
-            const data = responseInsights[cat];
-            const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
-            data.percentage = Math.round((avgScore / 5) * 100);
-          });
-
-          console.log("Response Insights:", responseInsights);
           
-          const detailedInterpretation = generateDetailedInterpretation(
-            profileData?.full_name || 'Candidate',
-            result.category_scores,
-            assessmentTypeId,
-            responseInsights
-          );
-          
-          setAssessmentData({
-            source: 'results',
-            assessment_id: result.assessment_id,
-            assessment_type: assessmentTypeId,
-            assessment_name: config.name,
-            total_score: result.total_score,
-            max_score: result.max_score,
-            percentage: percentage,
-            completed_at: result.completed_at,
-            category_scores: result.category_scores || {},
-            strengths: result.strengths || [],
-            weaknesses: result.weaknesses || [],
-            recommendations: result.recommendations || [],
-            interpretations: result.interpretations || {},
-            detailedInterpretation: detailedInterpretation,
-            responseInsights: responseInsights
-          });
+          // Use the most recent assessment as default
+          const defaultAssessment = resultsData[0];
+          await loadAssessmentData(defaultAssessment, profileData);
         }
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -253,6 +176,112 @@ export default function CandidateReport() {
 
     fetchData();
   }, [isSupervisor, user_id]);
+
+  const loadAssessmentData = async (result, profileData) => {
+    const percentage = Math.round((result.total_score / result.max_score) * 100);
+    
+    const assessmentTypeId = result.assessment_type || 'general';
+    const config = getAssessmentType(assessmentTypeId);
+    setAssessmentConfig(config);
+
+    const { data: responsesData } = await supabase
+      .from('responses')
+      .select(`
+        *,
+        unique_questions!inner (
+          id,
+          section,
+          subsection,
+          question_text
+        ),
+        unique_answers!inner (
+          id,
+          answer_text,
+          score
+        )
+      `)
+      .eq('user_id', user_id)
+      .eq('assessment_id', result.assessment_id);
+
+    const processedResponses = responsesData?.map(r => ({
+      question_id: r.question_id,
+      answer_id: r.answer_id,
+      category: r.unique_questions?.section || 'General',
+      question_text: r.unique_questions?.question_text,
+      answer_text: r.unique_answers?.answer_text,
+      score: r.unique_answers?.score
+    })) || [];
+
+    const responseInsights = {};
+    
+    processedResponses.forEach(r => {
+      if (!responseInsights[r.category]) {
+        responseInsights[r.category] = {
+          insights: [],
+          scores: [],
+          questionCount: 0,
+          highScoreCount: 0,
+          lowScoreCount: 0,
+          questionDetails: []
+        };
+      }
+      
+      const cat = responseInsights[r.category];
+      cat.insights.push(generateInsight(r.category, r.question_text, r.answer_text, r.score));
+      cat.scores.push(r.score);
+      cat.questionCount++;
+      cat.questionDetails.push({
+        question: r.question_text,
+        answer: r.answer_text,
+        score: r.score
+      });
+      
+      if (r.score >= 4) cat.highScoreCount++;
+      if (r.score <= 2) cat.lowScoreCount++;
+    });
+
+    Object.keys(responseInsights).forEach(cat => {
+      const data = responseInsights[cat];
+      const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+      data.percentage = Math.round((avgScore / 5) * 100);
+    });
+
+    console.log("Response Insights:", responseInsights);
+    
+    const detailedInterpretation = generateDetailedInterpretation(
+      profileData?.full_name || 'Candidate',
+      result.category_scores,
+      assessmentTypeId,
+      responseInsights
+    );
+    
+    setSelectedAssessment({
+      id: result.id,
+      assessment_id: result.assessment_id,
+      assessment_type: assessmentTypeId,
+      assessment_name: config.name,
+      total_score: result.total_score,
+      max_score: result.max_score,
+      percentage: percentage,
+      completed_at: result.completed_at,
+      category_scores: result.category_scores || {},
+      strengths: result.strengths || [],
+      weaknesses: result.weaknesses || [],
+      recommendations: result.recommendations || [],
+      interpretations: result.interpretations || {},
+      detailedInterpretation: detailedInterpretation,
+      responseInsights: responseInsights,
+      config: config
+    });
+  };
+
+  const handleAssessmentChange = async (e) => {
+    const assessmentId = e.target.value;
+    const selected = allAssessments.find(a => a.id === assessmentId);
+    if (selected) {
+      await loadAssessmentData(selected, candidate);
+    }
+  };
 
   const handlePrint = () => {
     setShowPrintView(true);
@@ -374,14 +403,6 @@ export default function CandidateReport() {
        'Requires focused attention and development.');
   };
 
-  const getGradeLetter = (percentage) => {
-    if (percentage >= 90) return 'A';
-    if (percentage >= 80) return 'B';
-    if (percentage >= 70) return 'C';
-    if (percentage >= 60) return 'D';
-    return 'F';
-  };
-
   if (!isSupervisor || loading) {
     return (
       <div style={styles.checkingContainer}>
@@ -391,7 +412,7 @@ export default function CandidateReport() {
     );
   }
 
-  if (!candidate || !assessmentData) {
+  if (!candidate || !selectedAssessment) {
     return (
       <div style={styles.emptyState}>
         <div style={styles.emptyIcon}>📊</div>
@@ -404,12 +425,17 @@ export default function CandidateReport() {
     );
   }
 
-  const classification = getClassification(assessmentData.percentage);
-  const gradeInfo = getGradeInfo(assessmentData.percentage);
-  const hiringRec = getHiringRecommendation(assessmentData.percentage, assessmentData.strengths, assessmentData.weaknesses);
-  const strengthsList = assessmentData.strengths || [];
-  const weaknessesList = assessmentData.weaknesses || [];
-  const config = assessmentConfig || assessmentTypes.general;
+  const classification = getClassification(selectedAssessment.percentage);
+  const gradeInfo = getGradeInfo(selectedAssessment.percentage);
+  const hiringRec = getHiringRecommendation(selectedAssessment.percentage, selectedAssessment.strengths, selectedAssessment.weaknesses);
+  const strengthsList = selectedAssessment.strengths || [];
+  const weaknessesList = selectedAssessment.weaknesses || [];
+  const config = selectedAssessment.config || assessmentTypes.general;
+
+  // Calculate combined score for all assessments
+  const totalCombinedScore = allAssessments.reduce((sum, a) => sum + a.total_score, 0);
+  const totalMaxScore = allAssessments.reduce((sum, a) => sum + a.max_score, 0);
+  const combinedPercentage = Math.round((totalCombinedScore / totalMaxScore) * 100);
 
   return (
     <AppLayout background="/images/preassessmentbg.jpg">
@@ -419,6 +445,29 @@ export default function CandidateReport() {
             <a style={styles.backButton}>← Dashboard</a>
           </Link>
           <div style={styles.headerActions}>
+            {allAssessments.length > 1 && (
+              <select 
+                value={selectedAssessment.id} 
+                onChange={handleAssessmentChange}
+                style={styles.assessmentSelect}
+              >
+                <option value="">-- Select Assessment --</option>
+                {allAssessments.map(a => {
+                  // Get the assessment type and config
+                  const type = a.assessment_type || 'general';
+                  const config = getAssessmentType(type);
+                  
+                  // Format the date
+                  const assessmentDate = new Date(a.completed_at).toLocaleDateString();
+                  
+                  return (
+                    <option key={a.id} value={a.id}>
+                      {config.name} - {assessmentDate} ({a.total_score}/{a.max_score})
+                    </option>
+                  );
+                })}
+              </select>
+            )}
             <button onClick={handlePrint} style={styles.printButton}>
               🖨️ Print Report
             </button>
@@ -470,7 +519,7 @@ export default function CandidateReport() {
               <div style={styles.coverContent}>
                 <div style={styles.coverLogo}>{config.icon}</div>
                 <h2 style={styles.coverCandidateName}>{candidate.full_name}</h2>
-                <p style={styles.coverDetail}>Assessment Date: {new Date(assessmentData.completed_at).toLocaleDateString()}</p>
+                <p style={styles.coverDetail}>Assessment Date: {new Date(selectedAssessment.completed_at).toLocaleDateString()}</p>
                 <p style={styles.coverDetail}>Report Generated: {new Date().toLocaleDateString()}</p>
                 <div style={styles.coverBadge}>CONFIDENTIAL</div>
               </div>
@@ -491,12 +540,12 @@ export default function CandidateReport() {
               <div style={styles.scoreCard}>
                 <div style={styles.scoreCardHeader}>
                   <span style={styles.scoreCardLabel}>Total Score</span>
-                  <span style={styles.scoreCardValue}>{assessmentData.total_score}/{assessmentData.max_score}</span>
+                  <span style={styles.scoreCardValue}>{selectedAssessment.total_score}/{selectedAssessment.max_score}</span>
                 </div>
                 <div style={styles.scoreCardBody}>
                   <div style={styles.scoreMetric}>
                     <span style={styles.scoreMetricLabel}>Percentage</span>
-                    <span style={{...styles.scoreMetricValue, color: classification.color}}>{assessmentData.percentage}%</span>
+                    <span style={{...styles.scoreMetricValue, color: classification.color}}>{selectedAssessment.percentage}%</span>
                   </div>
                   <div style={styles.scoreMetric}>
                     <span style={styles.scoreMetricLabel}>Grade</span>
@@ -534,6 +583,22 @@ export default function CandidateReport() {
                   </div>
                 </div>
               </div>
+
+              {allAssessments.length > 1 && (
+                <div style={styles.combinedScoreCard}>
+                  <h3 style={styles.combinedScoreTitle}>Combined Performance (All Assessments)</h3>
+                  <div style={styles.combinedScoreContent}>
+                    <div style={styles.combinedScoreItem}>
+                      <span style={styles.combinedScoreLabel}>Total Combined Score</span>
+                      <span style={styles.combinedScoreValue}>{totalCombinedScore}/{totalMaxScore}</span>
+                    </div>
+                    <div style={styles.combinedScoreItem}>
+                      <span style={styles.combinedScoreLabel}>Overall Percentage</span>
+                      <span style={styles.combinedScoreValue}>{combinedPercentage}%</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 
@@ -547,7 +612,7 @@ export default function CandidateReport() {
               <div style={styles.overviewGrid}>
                 <div style={styles.overviewItem}>
                   <h4 style={styles.overviewItemTitle}>Total Competencies Assessed</h4>
-                  <p style={styles.overviewItemValue}>{Object.keys(assessmentData.category_scores).length}</p>
+                  <p style={styles.overviewItemValue}>{Object.keys(selectedAssessment.category_scores).length}</p>
                 </div>
                 <div style={styles.overviewItem}>
                   <h4 style={styles.overviewItemTitle}>Assessment Method</h4>
@@ -580,7 +645,7 @@ export default function CandidateReport() {
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(assessmentData.category_scores).map(([category, data]) => {
+                  {Object.entries(selectedAssessment.category_scores).map(([category, data]) => {
                     const catGrade = getGradeInfo(data.percentage);
                     return (
                       <tr key={category} style={styles.tableRow}>
@@ -596,8 +661,8 @@ export default function CandidateReport() {
                   <tr style={styles.tableFooterRow}>
                     <td colSpan="4" style={styles.tableFooter}>
                       <div style={styles.totalScoreRow}>
-                        <span><strong>Total Score:</strong> {assessmentData.total_score}/{assessmentData.max_score}</span>
-                        <span><strong>Average:</strong> {assessmentData.percentage}%</span>
+                        <span><strong>Total Score:</strong> {selectedAssessment.total_score}/{selectedAssessment.max_score}</span>
+                        <span><strong>Average:</strong> {selectedAssessment.percentage}%</span>
                         <span><strong>Overall Grade:</strong> {gradeInfo.grade}</span>
                         <span><strong>Classification:</strong> {classification.label}</span>
                       </div>
@@ -611,9 +676,9 @@ export default function CandidateReport() {
             <div style={styles.competencyBreakdown}>
               <h3 style={styles.subsectionTitle}>5. Competency Analysis</h3>
               
-              {Object.entries(assessmentData.category_scores).map(([category, data]) => {
+              {Object.entries(selectedAssessment.category_scores).map(([category, data]) => {
                 const catGrade = getGradeInfo(data.percentage);
-                const categoryData = assessmentData.responseInsights?.[category];
+                const categoryData = selectedAssessment.responseInsights?.[category];
                 
                 return (
                   <div key={category} style={styles.competencyCard}>
@@ -642,8 +707,6 @@ export default function CandidateReport() {
                   const match = strength.match(/(.+) \((\d+)%\)/);
                   const category = match ? match[1] : strength;
                   const percentage = match ? match[2] : '';
-                  
-                  const categoryData = assessmentData.responseInsights?.[category];
                   
                   return (
                     <div key={index} style={styles.strengthCard}>
@@ -722,10 +785,10 @@ export default function CandidateReport() {
               </div>
               
               <div style={styles.roleFitCard}>
-                {assessmentData.detailedInterpretation?.roleFit && (
-                  <div style={styles.analysisText}>{assessmentData.detailedInterpretation.roleFit}</div>
+                {selectedAssessment.detailedInterpretation?.roleFit && (
+                  <div style={styles.analysisText}>{selectedAssessment.detailedInterpretation.roleFit}</div>
                 )}
-                {!assessmentData.detailedInterpretation?.roleFit && (
+                {!selectedAssessment.detailedInterpretation?.roleFit && (
                   <div style={styles.analysisText}>
                     <p><strong>Best suited for roles requiring:</strong></p>
                     <ul>
@@ -791,7 +854,7 @@ export default function CandidateReport() {
                 <p style={styles.hiringJustification}>{hiringRec.summary}</p>
                 <p style={styles.hiringDetail}>
                   Based on the comprehensive {config.name}, this candidate demonstrates 
-                  {assessmentData.percentage >= 65 ? ' strong potential' : ' significant development needs'} 
+                  {selectedAssessment.percentage >= 65 ? ' strong potential' : ' significant development needs'} 
                   for roles requiring these competencies.
                 </p>
                 <div style={styles.hiringFactors}>
@@ -879,7 +942,9 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '30px'
+    marginBottom: '30px',
+    flexWrap: 'wrap',
+    gap: '20px'
   },
   backButton: {
     color: '#3b82f6',
@@ -897,14 +962,29 @@ const styles = {
   },
   headerActions: {
     display: 'flex',
-    gap: '10px'
+    gap: '10px',
+    alignItems: 'center',
+    flexWrap: 'wrap'
+  },
+  assessmentSelect: {
+    padding: '10px 16px',
+    border: '2px solid #e0e0e0',
+    borderRadius: '8px',
+    fontSize: '14px',
+    minWidth: '300px',
+    background: 'white',
+    cursor: 'pointer',
+    outline: 'none',
+    ':focus': {
+      borderColor: '#3b82f6'
+    }
   },
   printButton: {
     background: '#10b981',
     color: 'white',
     border: 'none',
-    padding: '8px 20px',
-    borderRadius: '20px',
+    padding: '10px 20px',
+    borderRadius: '8px',
     fontSize: '14px',
     fontWeight: 600,
     cursor: 'pointer',
@@ -1062,6 +1142,41 @@ const styles = {
   scoreMetricValue: {
     fontSize: '24px',
     fontWeight: 700
+  },
+  combinedScoreCard: {
+    marginTop: '20px',
+    padding: '20px',
+    background: '#f0f9ff',
+    borderRadius: '12px',
+    border: '1px solid #bae6fd'
+  },
+  combinedScoreTitle: {
+    margin: '0 0 15px 0',
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#0369a1'
+  },
+  combinedScoreContent: {
+    display: 'flex',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '20px'
+  },
+  combinedScoreItem: {
+    textAlign: 'center'
+  },
+  combinedScoreLabel: {
+    display: 'block',
+    fontSize: '13px',
+    color: '#64748b',
+    marginBottom: '5px'
+  },
+  combinedScoreValue: {
+    display: 'block',
+    fontSize: '24px',
+    fontWeight: 700,
+    color: '#0c4a6e'
   },
   classificationCard: {
     padding: '20px',
