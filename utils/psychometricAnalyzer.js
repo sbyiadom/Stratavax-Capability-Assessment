@@ -24,30 +24,30 @@ export const generatePsychometricAnalysis = (categoryScores, assessmentType, can
   // Route to the appropriate assessment type analyzer
   switch(assessmentType) {
     case 'cognitive':
-      return generateCognitiveAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName);
+      return generateCognitiveAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage);
     case 'general':
-      return generateGeneralAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName);
+      return generateGeneralAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage);
     case 'leadership':
-      return generateLeadershipAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName);
+      return generateLeadershipAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage);
     case 'technical':
-      return generateTechnicalAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName);
+      return generateTechnicalAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage);
     case 'personality':
-      return generatePersonalityAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName);
+      return generatePersonalityAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage);
     case 'performance':
-      return generatePerformanceAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName);
+      return generatePerformanceAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage);
     case 'behavioral':
-      return generateBehavioralAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName);
+      return generateBehavioralAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage);
     case 'cultural':
-      return generateCulturalAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName);
+      return generateCulturalAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage);
     default:
-      return generateGeneralAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName);
+      return generateGeneralAnalysis(categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage);
   }
 };
 
 // ============================================
 // COGNITIVE ASSESSMENT ANALYZER
 // ============================================
-const generateCognitiveAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName) => {
+const generateCognitiveAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage) => {
   // Find specific cognitive categories
   const verbalReasoning = categories.find(c => c.name.includes('Verbal')) || { percentage: 0, name: 'Verbal Reasoning' };
   const spatialReasoning = categories.find(c => c.name.includes('Spatial')) || { percentage: 0, name: 'Spatial Reasoning' };
@@ -145,7 +145,7 @@ This individual would benefit most from ${getCognitiveOverallRecommendation(cate
 // ============================================
 // GENERAL ASSESSMENT ANALYZER
 // ============================================
-const generateGeneralAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName) => {
+const generateGeneralAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage) => {
   // Find specific general assessment categories
   const cognitiveAbility = categories.find(c => c.name.includes('Cognitive')) || { percentage: 0, name: 'Cognitive Ability' };
   const communication = categories.find(c => c.name.includes('Communication')) || { percentage: 0, name: 'Communication' };
@@ -237,7 +237,7 @@ This individual would benefit most from ${getGeneralOverallRecommendation(catego
 // ============================================
 // LEADERSHIP ASSESSMENT ANALYZER
 // ============================================
-const generateLeadershipAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName) => {
+const generateLeadershipAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage) => {
   // Find specific leadership categories
   const vision = categories.find(c => c.name.includes('Vision') || c.name.includes('Strategic')) || { percentage: 0, name: 'Vision & Strategic Thinking' };
   const decisionMaking = categories.find(c => c.name.includes('Decision') || c.name.includes('Problem')) || { percentage: 0, name: 'Decision-Making' };
@@ -329,7 +329,7 @@ This leader would benefit most from ${getLeadershipOverallRecommendation(categor
 // ============================================
 // TECHNICAL ASSESSMENT ANALYZER
 // ============================================
-const generateTechnicalAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName) => {
+const generateTechnicalAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage) => {
   // Find specific technical categories
   const technicalKnowledge = categories.find(c => c.name.includes('Technical') || c.name.includes('Knowledge')) || { percentage: 0, name: 'Technical Knowledge' };
   const systemUnderstanding = categories.find(c => c.name.includes('System') || c.name.includes('Understanding')) || { percentage: 0, name: 'System Understanding' };
@@ -414,7 +414,7 @@ This individual would benefit most from ${getTechnicalOverallRecommendation(cate
 // ============================================
 // PERSONALITY ASSESSMENT ANALYZER
 // ============================================
-const generatePersonalityAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName) => {
+const generatePersonalityAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage) => {
   // Find specific personality categories
   const openness = categories.find(c => c.name.includes('Openness')) || { percentage: 0, name: 'Openness to Experience' };
   const conscientiousness = categories.find(c => c.name.includes('Conscientiousness')) || { percentage: 0, name: 'Conscientiousness' };
@@ -502,7 +502,7 @@ This individual would thrive in environments that ${getPersonalityEnvironmentMat
 // ============================================
 // PERFORMANCE ASSESSMENT ANALYZER
 // ============================================
-const generatePerformanceAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName) => {
+const generatePerformanceAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage) => {
   // Find specific performance categories
   const productivity = categories.find(c => c.name.includes('Productivity')) || { percentage: 0, name: 'Productivity & Efficiency' };
   const quality = categories.find(c => c.name.includes('Quality')) || { percentage: 0, name: 'Work Quality' };
@@ -569,7 +569,7 @@ Primary development needs are in ${weaknesses.slice(0, 3).map(w => w.name.toLowe
 // ============================================
 // BEHAVIORAL ASSESSMENT ANALYZER
 // ============================================
-const generateBehavioralAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName) => {
+const generateBehavioralAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage) => {
   // Find specific behavioral categories
   const teamwork = categories.find(c => c.name.includes('Teamwork') || c.name.includes('Team')) || { percentage: 0, name: 'Teamwork' };
   const conflict = categories.find(c => c.name.includes('Conflict')) || { percentage: 0, name: 'Conflict Resolution' };
@@ -645,7 +645,7 @@ Primary development needs are in ${weaknesses.slice(0, 3).map(w => w.name.toLowe
 // ============================================
 // CULTURAL ASSESSMENT ANALYZER
 // ============================================
-const generateCulturalAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName) => {
+const generateCulturalAnalysis = (categories, strengths, weaknesses, developing, avgScore, candidateName, sortedByPercentage) => {
   // Find specific cultural categories
   const values = categories.find(c => c.name.includes('Values')) || { percentage: 0, name: 'Values Alignment' };
   const workEthic = categories.find(c => c.name.includes('Work Ethic')) || { percentage: 0, name: 'Work Ethic' };
