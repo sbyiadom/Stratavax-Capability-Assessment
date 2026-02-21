@@ -1,86 +1,77 @@
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
-  console.log("🔍 Testing service role access");
-  
   const results = {
-    env_check: {
-      has_url: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-      has_service_key: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-      url: process.env.NEXT_PUBLIC_SUPABASE_URL ? 'present' : 'missing',
-      service_key: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'present' : 'missing',
-      service_key_length: process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0
+    env: {
+      hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+      hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      url: process.env.NEXT_PUBLIC_SUPABASE_URL ? 'ok' : 'missing',
+      keyPrefix: process.env.SUPABASE_SERVICE_ROLE_KEY ? 
+        process.env.SUPABASE_SERVICE_ROLE_KEY.substring(0, 10) + '...' : 'missing'
     }
   };
 
+  // Test with service role client
   try {
-    // Create service role client
-    const supabase = createClient(
+    const serviceClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    // Test 1: Try to count responses
-    const { count: responseCount, error: responseError } = await supabase
-      .from('responses')
-      .select('*', { count: 'exact', head: true });
-
-    results.responses_test = {
-      success: !responseError,
-      error: responseError?.message,
-      count: responseCount
-    };
-
-    // Test 2: Try to read one response
-    const { data: responseData, error: readError } = await supabase
-      .from('responses')
-      .select('*')
-      .limit(1);
-
-    results.responses_read = {
-      success: !readError,
-      error: readError?.message,
-      has_data: responseData && responseData.length > 0
-    };
-
-    // Test 3: Try to join with unique_answers
-    const { data: joinData, error: joinError } = await supabase
-      .from('responses')
-      .select(`
-        id,
-        unique_answers!inner (
-          score
-        )
-      `)
-      .limit(1);
-
-    results.join_test = {
-      success: !joinError,
-      error: joinError?.message,
-      has_data: joinData && joinData.length > 0
-    };
-
-    // Test 4: Test with specific user from logs
-    const testUserId = '22754b0a-a68f-462c-ab80-0af41fff70f1';
-    const { data: userResponses, error: userError } = await supabase
-      .from('responses')
+    // Test 1: Simple query
+    const { data: queryData, error: queryError } = await serviceClient
+      .from('supervisors')
       .select('count')
-      .eq('user_id', testUserId)
       .limit(1);
 
-    results.user_test = {
-      success: !userError,
-      error: userError?.message,
-      user_id: testUserId
+    results.test1 = {
+      success: !queryError,
+      error: queryError?.message,
+      data: queryData
     };
 
-    return res.status(200).json(results);
+    // Test 2: Try to get a specific supervisor
+    const { data: specificData, error: specificError } = await serviceClient
+      .from('supervisors')
+      .select('*')
+      .eq('id', '12f19660-d58a-4519-8862-4e22fdf3f6ba');
+
+    results.test2 = {
+      success: !specificError,
+      error: specificError?.message,
+      data: specificData
+    };
+
+    // Test 3: Try to insert a test record
+    const testId = 'test-' + Date.now();
+    const { data: insertData, error: insertError } = await serviceClient
+      .from('supervisors')
+      .insert({
+        user_id: testId,
+        email: `test-${Date.now()}@example.com`,
+        full_name: 'Test User',
+        role: 'test',
+        is_active: false,
+        created_at: new Date().toISOString()
+      })
+      .select();
+
+    results.test3 = {
+      success: !insertError,
+      error: insertError?.message
+    };
+
+    // Clean up if insert succeeded
+    if (!insertError && insertData) {
+      await serviceClient
+        .from('supervisors')
+        .delete()
+        .eq('user_id', testId);
+    }
 
   } catch (error) {
-    return res.status(500).json({
-      error: 'Debug endpoint failed',
-      message: error.message,
-      results
-    });
+    results.error = error.message;
   }
+
+  res.status(200).json(results);
 }
