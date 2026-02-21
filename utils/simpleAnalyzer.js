@@ -331,7 +331,7 @@ const generateCognitiveExecutiveSummary = (candidateName, avgScore, risks, memor
   return summary;
 };
 
-const generateCognitiveRisksSection = (risks) => {
+const generateCognitiveRisksSection = (risks, categories) => {
   if (risks.length === 0) return '';
 
   let section = `🔴 **Critical Development Areas**\n\n`;
@@ -1456,7 +1456,7 @@ const getPerformanceDevelopmentSteps = (name) => {
     'Collaboration': [
       'Practice active listening in meetings',
       'Seek input from others before deciding',
-      'Acknowledge others' contributions publicly',
+      'Acknowledge others contributions publicly',
       'Volunteer for cross-functional projects',
       'Share credit generously with team members'
     ],
@@ -1509,9 +1509,9 @@ const getBehavioralDevelopmentSteps = (name) => {
     ],
     'Empathy': [
       'Practice perspective-taking daily',
-      'Ask about others' feelings and experiences',
+      'Ask about others feelings and experiences',
       'Listen without judgment',
-      'Consider others' needs when making decisions',
+      'Consider others needs when making decisions',
       'Show genuine concern for colleagues'
     ],
     'Adaptability': [
@@ -1571,7 +1571,7 @@ const getCulturalDevelopmentSteps = (name) => {
     'Respect': [
       'Treat everyone with courtesy regardless of role',
       'Avoid gossip and negative talk',
-      'Show appreciation for others' contributions',
+      'Show appreciation for others contributions',
       'Respect boundaries and differences',
       'Address disrespectful behavior when observed'
     ],
@@ -1700,4 +1700,136 @@ const getStrengthIndicators = (name) => {
     ]
   };
   return indicators[name] || [];
+};
+
+// Additional helper functions for missing functions
+const generateGeneralRoleSuitability = (avgScore, strengths, risks, leadership, cognitive) => {
+  return "**Role Suitability**\n\nGeneral assessment role suitability analysis.";
+};
+
+const generateGeneralDevelopmentPriorities = (risks, moderate) => {
+  return "**Development Priorities**\n\nGeneral assessment development priorities.";
+};
+
+const generateGeneralOverallInterpretation = (candidateName, avgScore, strengths, risks, leadership, cognitive) => {
+  return "**Overall Interpretation**\n\nGeneral assessment overall interpretation.";
+};
+
+const generateLeadershipRoleSuitability = (avgScore, strengths, risks, vision, people, execution) => {
+  return "**Role Suitability**\n\nLeadership assessment role suitability analysis.";
+};
+
+const generateLeadershipDevelopmentPriorities = (risks, moderate) => {
+  return "**Development Priorities**\n\nLeadership assessment development priorities.";
+};
+
+const generateLeadershipOverallInterpretation = (candidateName, avgScore, strengths, risks, vision, people) => {
+  return "**Overall Interpretation**\n\nLeadership assessment overall interpretation.";
+};
+
+const generateTechnicalRoleSuitability = (avgScore, strengths, risks, knowledge, troubleshooting, safety) => {
+  return "**Role Suitability**\n\nTechnical assessment role suitability analysis.";
+};
+
+const generateTechnicalDevelopmentPriorities = (risks, moderate) => {
+  return "**Development Priorities**\n\nTechnical assessment development priorities.";
+};
+
+const generateTechnicalOverallInterpretation = (candidateName, avgScore, strengths, risks, knowledge, troubleshooting) => {
+  return "**Overall Interpretation**\n\nTechnical assessment overall interpretation.";
+};
+
+const generatePersonalityRoleSuitability = (avgScore, strengths, risks, openness, conscientiousness, extraversion, emotional) => {
+  return "**Role Suitability**\n\nPersonality assessment role suitability analysis.";
+};
+
+const generatePersonalityDevelopmentPriorities = (risks, moderate) => {
+  return "**Development Priorities**\n\nPersonality assessment development priorities.";
+};
+
+const generatePersonalityOverallInterpretation = (candidateName, avgScore, strengths, risks, openness, conscientiousness, emotional, stress) => {
+  return "**Overall Interpretation**\n\nPersonality assessment overall interpretation.";
+};
+
+const generatePerformanceRoleSuitability = (avgScore, strengths, risks, productivity, quality, accountability) => {
+  return "**Role Suitability**\n\nPerformance assessment role suitability analysis.";
+};
+
+const generatePerformanceDevelopmentPriorities = (risks, moderate) => {
+  return "**Development Priorities**\n\nPerformance assessment development priorities.";
+};
+
+const generatePerformanceOverallInterpretation = (candidateName, avgScore, strengths, risks, productivity, accountability) => {
+  return "**Overall Interpretation**\n\nPerformance assessment overall interpretation.";
+};
+
+const generateBehavioralRoleSuitability = (avgScore, strengths, risks, teamwork, communication, conflict) => {
+  return "**Role Suitability**\n\nBehavioral assessment role suitability analysis.";
+};
+
+const generateBehavioralDevelopmentPriorities = (risks, moderate) => {
+  return "**Development Priorities**\n\nBehavioral assessment development priorities.";
+};
+
+const generateBehavioralOverallInterpretation = (candidateName, avgScore, strengths, risks, teamwork, communication) => {
+  return "**Overall Interpretation**\n\nBehavioral assessment overall interpretation.";
+};
+
+const generateCulturalRoleSuitability = (avgScore, strengths, risks, values, diversity, collaboration) => {
+  return "**Role Suitability**\n\nCultural assessment role suitability analysis.";
+};
+
+const generateCulturalDevelopmentPriorities = (risks, moderate) => {
+  return "**Development Priorities**\n\nCultural assessment development priorities.";
+};
+
+const generateCulturalOverallInterpretation = (candidateName, avgScore, strengths, risks, values, diversity) => {
+  return "**Overall Interpretation**\n\nCultural assessment overall interpretation.";
+};
+
+const getCognitivePriorityTitle = (name) => {
+  const titles = {
+    'Memory & Attention': 'Memory and Attention Development',
+    'Verbal Reasoning': 'Verbal Comprehension and Expression',
+    'Logical / Abstract Reasoning': 'Logical Thinking and Problem-Solving',
+    'Numerical Reasoning': 'Numerical Literacy and Calculation',
+    'Mechanical Reasoning': 'Mechanical Understanding and Application',
+    'Spatial Reasoning': 'Spatial Awareness and Visualization',
+    'Perceptual Speed & Accuracy': 'Visual Processing and Attention to Detail'
+  };
+  return titles[name] || 'Cognitive Skill Development';
+};
+
+const getCognitiveRiskImplications = (name) => {
+  const implications = {
+    'Memory & Attention': [
+      'Difficulty remembering instructions and procedures',
+      'Frequent distractions and loss of focus',
+      'Forgets important details and deadlines',
+      'Requires constant reminders and written instructions'
+    ],
+    'Verbal Reasoning': [
+      'Struggles to understand written and verbal instructions',
+      'Difficulty expressing ideas and asking questions',
+      'May misunderstand communication from others',
+      'Limited vocabulary and reading comprehension'
+    ],
+    'Logical / Abstract Reasoning': [
+      'Difficulty understanding cause and effect',
+      'Struggles with problem-solving',
+      'Cannot grasp abstract concepts',
+      'Needs concrete, step-by-step instructions'
+    ]
+  };
+  return implications[name] || [];
+};
+
+const getGeneralDevelopmentSteps = (name) => {
+  return [
+    'Identify specific skill gaps with supervisor',
+    'Create structured learning plan with clear objectives',
+    'Practice skills in real-world scenarios',
+    'Seek regular feedback and adjust approach',
+    'Track progress monthly'
+  ];
 };
