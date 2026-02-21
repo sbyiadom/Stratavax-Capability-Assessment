@@ -15,15 +15,25 @@ export default function SupervisorLogin() {
     setError("");
 
     try {
+      console.log('Attempting login for:', email);
+
       const response = await fetch('/api/supervisor-login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify({ email, password })
       });
 
       const data = await response.json();
+      console.log('Login response:', { status: response.status, data });
 
       if (!response.ok) {
+        throw new Error(data.error || `Login failed (${response.status})`);
+      }
+
+      if (!data.success) {
         throw new Error(data.error || 'Login failed');
       }
 
@@ -36,16 +46,24 @@ export default function SupervisorLogin() {
         role: data.user.role
       }));
 
-      // Redirect
-      router.push(data.user.role === 'admin' ? '/admin' : '/supervisor');
+      console.log('Login successful, redirecting...');
+
+      // Redirect based on role
+      if (data.user.role === 'admin') {
+        router.push('/admin');
+      } else {
+        router.push('/supervisor');
+      }
 
     } catch (err) {
+      console.error('Login error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
+  // ... rest of your component (styles, JSX) - keep your existing styles
   const styles = {
     pageContainer: {
       position: 'relative',
@@ -126,7 +144,10 @@ export default function SupervisorLogin() {
       fontSize: '16px',
       background: 'rgba(255, 255, 255, 0.15)',
       color: 'white',
-      outline: 'none'
+      outline: 'none',
+      '::placeholder': {
+        color: 'rgba(255, 255, 255, 0.6)'
+      }
     },
     submitButton: {
       width: '100%',
@@ -138,7 +159,8 @@ export default function SupervisorLogin() {
       fontSize: '16px',
       fontWeight: 600,
       cursor: 'pointer',
-      marginBottom: '20px'
+      marginBottom: '20px',
+      transition: 'all 0.3s ease'
     },
     links: {
       display: 'flex',
@@ -148,7 +170,8 @@ export default function SupervisorLogin() {
     },
     link: {
       color: 'white',
-      textDecoration: 'none'
+      textDecoration: 'none',
+      cursor: 'pointer'
     },
     separator: {
       color: 'rgba(255, 255, 255, 0.6)'
@@ -204,9 +227,13 @@ export default function SupervisorLogin() {
           </form>
 
           <div style={styles.links}>
-            <Link href="/login" style={styles.link}>Candidate Login</Link>
+            <Link href="/login" passHref legacyBehavior>
+              <a style={styles.link}>Candidate Login</a>
+            </Link>
             <span style={styles.separator}>|</span>
-            <Link href="/supervisor-forgot-password" style={styles.link}>Forgot Password?</Link>
+            <Link href="/supervisor-forgot-password" passHref legacyBehavior>
+              <a style={styles.link}>Forgot Password?</a>
+            </Link>
           </div>
         </div>
       </div>
