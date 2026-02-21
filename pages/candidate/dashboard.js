@@ -176,6 +176,7 @@ export default function CandidateDashboard() {
 
   const fetchCandidateProfile = async (userId) => {
     try {
+      // First, try to get from candidate_profiles (most reliable)
       const { data, error } = await supabase
         .from('candidate_profiles')
         .select('full_name, email')
@@ -184,21 +185,31 @@ export default function CandidateDashboard() {
 
       if (error) {
         console.error("Error fetching candidate profile:", error);
-        // Fallback to email username
+        // Fallback to user metadata
+        const metadataName = session?.user?.user_metadata?.full_name;
+        if (metadataName) {
+          setUserName(metadataName);
+          return;
+        }
+        // Final fallback to email
         const emailName = session?.user?.email?.split('@')[0] || 'Candidate';
         setUserName(emailName);
         return;
       }
 
-      if (data) {
-        // Use the full_name from the profile if available
-        if (data.full_name) {
-          setUserName(data.full_name);
-        } else {
-          // Fallback to email username
-          const emailName = data.email?.split('@')[0] || 'Candidate';
-          setUserName(emailName);
+      if (data?.full_name) {
+        // Use the full_name from the profile
+        setUserName(data.full_name);
+      } else {
+        // Fallback to user metadata
+        const metadataName = session?.user?.user_metadata?.full_name;
+        if (metadataName) {
+          setUserName(metadataName);
+          return;
         }
+        // Final fallback to email
+        const emailName = session?.user?.email?.split('@')[0] || 'Candidate';
+        setUserName(emailName);
       }
     } catch (error) {
       console.error("Error in fetchCandidateProfile:", error);
@@ -233,9 +244,8 @@ export default function CandidateDashboard() {
           iconBg: `linear-gradient(135deg, ${type.gradient_start || '#2563eb'}, ${type.gradient_end || '#1e40af'})`,
           color: type.color || '#2563eb',
           lightColor: `${type.color}20` || '#dbeafe',
-          // FORCE UNIFORM VALUES FOR ALL ASSESSMENTS
-          duration: 180, // 180 minutes for all
-          questions: 100, // 100 questions for all
+          duration: 180,
+          questions: 100,
           passing: 80,
           features: type.category_config || ['General Assessment']
         }));
@@ -243,7 +253,6 @@ export default function CandidateDashboard() {
         setAssessmentTypes(transformedTypes);
         if (transformedTypes.length > 0) {
           setActiveTab(transformedTypes[0].id);
-          // Set initial assessment areas
           setSelectedAssessmentAreas(assessmentAreas[transformedTypes[0].id] || []);
         }
       }
@@ -265,7 +274,6 @@ export default function CandidateDashboard() {
       if (error) throw error;
       
       if (data) {
-        // Filter out assessments with excluded types
         const filteredData = data.filter(assessment => 
           !excludedTypes.includes(assessment.assessment_type?.code)
         );
@@ -369,11 +377,9 @@ export default function CandidateDashboard() {
 
   return (
     <div style={styles.pageContainer}>
-      {/* Full Page Background - USING DASHBOARD1-BG.JPG */}
       <div style={styles.pageBackground} />
       
       <div style={styles.content}>
-        {/* Header - Semi-transparent to show background */}
         <div style={styles.header}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
@@ -393,7 +399,6 @@ export default function CandidateDashboard() {
           </div>
         </div>
 
-        {/* Welcome Section */}
         <div style={styles.welcomeSection}>
           <div style={styles.welcomeContent}>
             <h2 style={styles.welcomeTitle}>
@@ -410,9 +415,7 @@ export default function CandidateDashboard() {
           </div>
         </div>
 
-        {/* Main Content */}
         <div style={styles.mainContent}>
-          {/* Assessment Tabs - Professional Colored Tabs */}
           <div style={styles.tabsContainer}>
             {assessmentTypes.map(tab => {
               const isActive = activeTab === tab.id;
@@ -439,10 +442,8 @@ export default function CandidateDashboard() {
             })}
           </div>
 
-          {/* Assessment Details Section - Professional Card */}
           {activeAssessment ? (
             <div style={styles.assessmentDetailsSection}>
-              {/* Assessment Card with Professional Colors - Now with white background to stand out */}
               <div style={{
                 ...styles.card,
                 border: `1px solid ${assessmentColors[activeTab]?.color}40`,
@@ -524,7 +525,6 @@ export default function CandidateDashboard() {
                 </button>
               </div>
 
-              {/* Key Assessment Areas - Professional Card */}
               {selectedAssessmentAreas && selectedAssessmentAreas.length > 0 && (
                 <div style={{
                   ...styles.areasSection,
@@ -548,7 +548,6 @@ export default function CandidateDashboard() {
             </div>
           )}
 
-          {/* Progress Grid - Professional Colored Items */}
           <div style={styles.progressSection}>
             <h3 style={styles.sectionTitle}>Your Progress</h3>
             <div style={styles.progressGrid}>
@@ -597,13 +596,11 @@ export default function CandidateDashboard() {
             </div>
           </div>
 
-          {/* Info Note - Uniform Rules */}
           <div style={styles.infoNote}>
             <span style={styles.infoIcon}>ℹ️</span>
             <span><strong>Note:</strong> All assessments have 100 questions and a 3-hour (180 minutes) time limit.</span>
           </div>
 
-          {/* Guidelines Section */}
           <div style={styles.guidelinesWrapper}>
             <div style={styles.guidelinesBackground} />
             <div style={styles.guidelinesContent}>
