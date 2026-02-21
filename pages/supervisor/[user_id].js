@@ -7,6 +7,7 @@ import { generateDetailedInterpretation } from "../../utils/detailedInterpreter"
 import { getClassification, getGradeInfo, getHiringRecommendation } from "../../utils/reportGenerator";
 import { assessmentTypes, getAssessmentType } from "../../utils/assessmentConfigs";
 import { analyzeResponses, getCategorySpecificRecommendations } from "../../utils/responseAnalyzer";
+import { getDevelopmentRecommendation } from "../../utils/developmentRecommendations";
 import {
   // General Assessment
   interpretIntegrity,
@@ -676,21 +677,24 @@ export default function CandidateReport() {
                 {weaknessesList.map((weakness, index) => {
                   const match = weakness.match(/(.+) \((\d+)%\)/);
                   const category = match ? match[1] : weakness;
-                  const percentage = match ? match[2] : '';
+                  const percentage = parseInt(match ? match[2] : '0');
                   
-                  let recommendation = '';
-                  if (category.includes('Cognitive')) {
-                    recommendation = 'Recommend structured problem-solving practice and analytical thinking exercises.';
-                  } else if (category.includes('Communication')) {
-                    recommendation = 'Recommend communication skills training and presentation practice.';
-                  } else if (category.includes('Leadership')) {
-                    recommendation = 'Recommend leadership fundamentals course and mentorship.';
-                  } else if (category.includes('Technical')) {
-                    recommendation = 'Recommend foundational technical training and hands-on practice.';
-                  } else if (category.includes('Emotional')) {
-                    recommendation = 'Recommend emotional intelligence workshops and feedback sessions.';
+                  const recommendation = getDevelopmentRecommendation(category, percentage);
+                  
+                  let urgencyLevel = '';
+                  let urgencyColor = '';
+                  if (percentage < 50) {
+                    urgencyLevel = 'Critical Gap';
+                    urgencyColor = '#991b1b';
+                  } else if (percentage < 60) {
+                    urgencyLevel = 'Significant Need';
+                    urgencyColor = '#b45309';
+                  } else if (percentage < 70) {
+                    urgencyLevel = 'Development Opportunity';
+                    urgencyColor = '#1e40af';
                   } else {
-                    recommendation = 'Recommend targeted training and structured development plan.';
+                    urgencyLevel = 'Strength to Leverage';
+                    urgencyColor = '#047857';
                   }
                   
                   return (
@@ -699,12 +703,9 @@ export default function CandidateReport() {
                       <div style={styles.riskContent}>
                         <div style={styles.riskHeader}>
                           <strong>{category}</strong>
-                          <span style={styles.riskPercentage}>{percentage}%</span>
+                          <span style={{...styles.riskPercentage, color: urgencyColor}}>{percentage}% - {urgencyLevel}</span>
                         </div>
                         <p style={styles.riskDescription}>
-                          {parseInt(percentage) < 50 ? 'Critical gap requiring immediate attention. ' :
-                           parseInt(percentage) < 60 ? 'Significant development needed. ' :
-                           'Development opportunity. '}
                           {recommendation}
                         </p>
                       </div>
@@ -1292,8 +1293,7 @@ const styles = {
   },
   riskPercentage: {
     fontSize: '14px',
-    fontWeight: 600,
-    color: '#991b1b'
+    fontWeight: 600
   },
   riskDescription: {
     fontSize: '13px',
