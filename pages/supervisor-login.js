@@ -1,61 +1,215 @@
-import { createClient } from '@supabase/supabase-js';
+import { useState } from "react";
+import { useRouter } from "next/router";
+import Link from "next/link";
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+export default function SupervisorLogin() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  try {
-    const { email, password } = req.body;
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
 
-    // Create Supabase client
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    );
+    try {
+      const response = await fetch('/api/supervisor-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
 
-    // Authenticate with Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
+      const data = await response.json();
 
-    if (authError) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    // Check if user is a supervisor
-    const { data: supervisor, error: supervisorError } = await supabase
-      .from('supervisors')
-      .select('*')
-      .eq('user_id', authData.user.id)
-      .eq('is_active', true)
-      .single();
-
-    if (supervisorError || !supervisor) {
-      // Sign them out if not a supervisor
-      await supabase.auth.signOut();
-      return res.status(403).json({ error: 'Not authorized as supervisor' });
-    }
-
-    // Update last login
-    await supabase
-      .from('supervisors')
-      .update({ last_login: new Date().toISOString() })
-      .eq('id', supervisor.id);
-
-    return res.status(200).json({
-      success: true,
-      user: {
-        id: authData.user.id,
-        email: supervisor.email,
-        full_name: supervisor.full_name,
-        role: supervisor.role
+      if (!response.ok) {
+        throw new Error(data.error || 'Login failed');
       }
-    });
 
-  } catch (error) {
-    console.error('Login error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
+      // Store session
+      localStorage.setItem("supervisorSession", JSON.stringify({
+        loggedIn: true,
+        user_id: data.user.id,
+        email: data.user.email,
+        full_name: data.user.full_name,
+        role: data.user.role
+      }));
+
+      // Redirect
+      router.push(data.user.role === 'admin' ? '/admin' : '/supervisor');
+
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const styles = {
+    pageContainer: {
+      position: 'relative',
+      minHeight: '100vh',
+      width: '100%',
+      overflow: 'hidden'
+    },
+    backgroundImage: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundImage: 'url(/images/supervisor-login-bg.jpg)',
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      zIndex: 0
+    },
+    container: {
+      position: 'relative',
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '20px',
+      zIndex: 1
+    },
+    card: {
+      background: 'rgba(255, 255, 255, 0.1)',
+      backdropFilter: 'blur(12px)',
+      WebkitBackdropFilter: 'blur(12px)',
+      padding: '40px',
+      borderRadius: '24px',
+      width: '100%',
+      maxWidth: '420px',
+      boxShadow: '0 20px 50px rgba(0, 0, 0, 0.3)',
+      border: '1px solid rgba(255, 255, 255, 0.2)'
+    },
+    logo: {
+      fontSize: '28px',
+      fontWeight: '700',
+      textAlign: 'center',
+      marginBottom: '15px',
+      color: 'white',
+      textShadow: '2px 2px 4px rgba(0,0,0,0.3)'
+    },
+    title: {
+      margin: '0 0 30px 0',
+      color: 'white',
+      textAlign: 'center',
+      fontSize: '26px',
+      fontWeight: 600
+    },
+    errorAlert: {
+      padding: '12px',
+      background: 'rgba(211, 47, 47, 0.2)',
+      color: 'white',
+      borderRadius: '8px',
+      marginBottom: '20px',
+      fontSize: '14px',
+      textAlign: 'center'
+    },
+    formGroup: {
+      marginBottom: '20px'
+    },
+    label: {
+      display: 'block',
+      marginBottom: '8px',
+      color: 'white',
+      fontWeight: 500,
+      fontSize: '14px'
+    },
+    input: {
+      width: '100%',
+      padding: '14px 16px',
+      borderRadius: '12px',
+      border: '1px solid rgba(255, 255, 255, 0.3)',
+      fontSize: '16px',
+      background: 'rgba(255, 255, 255, 0.15)',
+      color: 'white',
+      outline: 'none'
+    },
+    submitButton: {
+      width: '100%',
+      padding: '14px',
+      background: 'rgba(21, 101, 192, 0.8)',
+      color: 'white',
+      border: 'none',
+      borderRadius: '12px',
+      fontSize: '16px',
+      fontWeight: 600,
+      cursor: 'pointer',
+      marginBottom: '20px'
+    },
+    links: {
+      display: 'flex',
+      justifyContent: 'center',
+      gap: '10px',
+      fontSize: '14px'
+    },
+    link: {
+      color: 'white',
+      textDecoration: 'none'
+    },
+    separator: {
+      color: 'rgba(255, 255, 255, 0.6)'
+    }
+  };
+
+  return (
+    <div style={styles.pageContainer}>
+      <div style={styles.backgroundImage} />
+      <div style={styles.container}>
+        <div style={styles.card}>
+          <div style={styles.logo}>🏢 Stratavax</div>
+          <h1 style={styles.title}>Supervisor Login</h1>
+          
+          {error && <div style={styles.errorAlert}>{error}</div>}
+
+          <form onSubmit={handleLogin}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                style={styles.input}
+                placeholder="Enter your email"
+              />
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                style={styles.input}
+                placeholder="Enter your password"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                ...styles.submitButton,
+                opacity: loading ? 0.5 : 1,
+                cursor: loading ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {loading ? "Logging in..." : "Login"}
+            </button>
+          </form>
+
+          <div style={styles.links}>
+            <Link href="/login" style={styles.link}>Candidate Login</Link>
+            <span style={styles.separator}>|</span>
+            <Link href="/supervisor-forgot-password" style={styles.link}>Forgot Password?</Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
