@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
+import dynamic from 'next/dynamic';
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 import { generateDetailedInterpretation } from "../../utils/detailedInterpreter";
@@ -72,7 +73,23 @@ import {
   interpretRespect
 } from "../../utils/categoryInterpreter";
 
-export default function CandidateReport() {
+// Disable SSR for the entire component to prevent hydration issues
+const CandidateReport = dynamic(
+  () => Promise.resolve(CandidateReportComponent),
+  { 
+    ssr: false,
+    loading: () => (
+      <div style={styles.checkingContainer}>
+        <div style={styles.spinner} />
+        <p>Loading report...</p>
+      </div>
+    )
+  }
+);
+
+export default CandidateReport;
+
+function CandidateReportComponent() {
   const router = useRouter();
   const { user_id } = router.query;
   const reportRef = useRef(null);
@@ -90,23 +107,36 @@ export default function CandidateReport() {
 
   // Authentication check - runs only once on client
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    
     const checkAuth = () => {
       try {
+        if (typeof window === 'undefined') return;
+        
+        console.log("1. Checking auth...");
         const supervisorSession = localStorage.getItem("supervisorSession");
+        console.log("2. Session from localStorage:", supervisorSession ? "Found" : "Not found");
+        
         if (!supervisorSession) {
+          console.log("3. No session found, redirecting to login");
           router.push("/supervisor-login");
           return;
         }
         
         const session = JSON.parse(supervisorSession);
+        console.log("4. Parsed session:", { 
+          loggedIn: session.loggedIn, 
+          user_id: session.user_id,
+          hasTokens: !!(session.access_token || session.refresh_token)
+        });
+        
         if (session.loggedIn) {
+          console.log("5. User is logged in, setting isSupervisor=true");
           setIsSupervisor(true);
         } else {
+          console.log("5. User not logged in, redirecting");
           router.push("/supervisor-login");
         }
-      } catch {
+      } catch (error) {
+        console.error("Auth check error:", error);
         router.push("/supervisor-login");
       } finally {
         setAuthChecked(true);
@@ -131,13 +161,48 @@ export default function CandidateReport() {
       try {
         setLoading(true);
         
+        console.log("Fetching data for user:", user_id);
+        
         // Get current session to ensure token is fresh
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.error("Session error:", sessionError);
+        }
         
         if (!currentSession) {
-          console.error("No active session");
-          router.push("/supervisor-login");
-          return;
+          console.log("No active session, attempting to restore from localStorage...");
+          
+          // Manual fallback: try to get session from custom storage
+          const supervisorSession = localStorage.getItem("supervisorSession");
+          
+          if (!supervisorSession) {
+            console.error("No supervisor session in localStorage either");
+            router.push("/supervisor-login");
+            return;
+          }
+          
+          try {
+            // Try to restore the session using the stored data
+            const sessionData = JSON.parse(supervisorSession);
+            
+            // If we have tokens, try to set the session
+            if (sessionData.access_token) {
+              await supabase.auth.setSession({
+                access_token: sessionData.access_token,
+                refresh_token: sessionData.refresh_token || ''
+              });
+              console.log("Session restored manually");
+            } else {
+              console.error("No tokens in stored session");
+              router.push("/supervisor-login");
+              return;
+            }
+          } catch (e) {
+            console.error("Failed to restore session:", e);
+            router.push("/supervisor-login");
+            return;
+          }
         }
 
         // Fetch candidate profile
@@ -169,14 +234,17 @@ export default function CandidateReport() {
         }
 
         if (resultsData && resultsData.length > 0) {
+          console.log(`Found ${resultsData.length} assessments`);
           setAllAssessments(resultsData);
           
           const defaultAssessment = resultsData[0];
           await loadAssessmentData(defaultAssessment, profileData);
+        } else {
+          console.log("No assessment results found");
+          setLoading(false);
         }
       } catch (error) {
         console.error("Error fetching data:", error);
-      } finally {
         setLoading(false);
       }
     };
@@ -293,8 +361,11 @@ export default function CandidateReport() {
         responseInsights: responseInsights,
         config: config
       });
+      
+      setLoading(false);
     } catch (error) {
       console.error("Error loading assessment data:", error);
+      setLoading(false);
     }
   };
 
@@ -676,7 +747,7 @@ export default function CandidateReport() {
             )}
           </section>
 
-          {/* 8️⃣ Role Fit Analysis & Development Plan */}
+          {/* 6️⃣ Development & Recommendations */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'development' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>6. Development & Recommendations</h2>
