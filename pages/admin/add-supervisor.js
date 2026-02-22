@@ -16,22 +16,22 @@ export default function AddSupervisor() {
   useEffect(() => {
     const checkAdminAuth = async () => {
       if (typeof window !== 'undefined') {
-        const supervisorSession = localStorage.getItem("supervisorSession");
-        if (!supervisorSession) {
-          router.push("/supervisor-login");
+        const userSession = localStorage.getItem("userSession");
+        if (!userSession) {
+          router.push("/login");
           return;
         }
         
         try {
-          const session = JSON.parse(supervisorSession);
+          const session = JSON.parse(userSession);
           
           // Verify with database that user is admin
           const { data: supervisor, error } = await supabase
-            .from('supervisors')
+            .from('supervisor_profiles')  // FIXED: was 'supervisors'
             .select('role')
-            .eq('user_id', session.user_id)
+            .eq('id', session.user_id)    // FIXED: was 'user_id'
             .eq('is_active', true)
-            .single();
+            .maybeSingle();                // FIXED: was .single() to avoid errors
 
           if (error || !supervisor || supervisor.role !== 'admin') {
             router.push("/supervisor");
@@ -40,7 +40,7 @@ export default function AddSupervisor() {
 
           setIsAdmin(true);
         } catch {
-          router.push("/supervisor-login");
+          router.push("/login");  // FIXED: was "/supervisor-login"
         }
       }
     };
@@ -88,9 +88,10 @@ export default function AddSupervisor() {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("supervisorSession");
-    router.push("/supervisor-login");
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    localStorage.removeItem("userSession");  // FIXED: was "supervisorSession"
+    router.push("/login");  // FIXED: was "/supervisor-login"
   };
 
   if (!isAdmin) {
@@ -137,7 +138,7 @@ export default function AddSupervisor() {
           <h1 style={{ margin: 0, color: "#1565c0" }}>Add New Supervisor</h1>
           <div style={{ display: "flex", gap: "10px" }}>
             <button
-              onClick={() => router.push("/supervisor")}
+              onClick={() => router.push("/admin")}  // FIXED: was "/supervisor"
               style={{
                 padding: "8px 16px",
                 background: "#1565c0",
@@ -148,7 +149,7 @@ export default function AddSupervisor() {
                 fontSize: "14px"
               }}
             >
-              ← Dashboard
+              ← Back to Admin
             </button>
             <button
               onClick={handleLogout}
@@ -300,7 +301,7 @@ export default function AddSupervisor() {
             fontSize: "14px",
             lineHeight: 1.6
           }}>
-            <li>Login URL: <code>/supervisor-login</code></li>
+            <li>Login URL: <code>/login</code> (then select Supervisor mode)</li> {/* FIXED */}
             <li>Dashboard URL: <code>/supervisor</code></li>
             <li>Permissions: View dashboard, reports, and manage candidates</li>
             <li>New supervisors can login immediately with provided credentials</li>
