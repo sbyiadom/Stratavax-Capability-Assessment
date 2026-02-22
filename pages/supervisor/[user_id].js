@@ -1,1318 +1,1120 @@
-import { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/router";
-import Link from "next/link";
-import dynamic from 'next/dynamic';
-import AppLayout from "../../components/AppLayout";
-import { supabase } from "../../supabase/client";
-import { generateStratavaxReport } from "../../utils/stratavaxReportGenerator";
-import { assessmentTypes, getAssessmentType } from "../../utils/assessmentConfigs";
+/**
+ * STRATAVAX PROFESSIONAL REPORT GENERATOR
+ * Enhanced version with phrase library for unique, varied narratives
+ * Every report is guaranteed to be different
+ */
 
-// Disable SSR for the entire component to prevent hydration issues
-const CandidateReport = dynamic(
-  () => Promise.resolve(CandidateReportComponent),
-  { 
-    ssr: false,
-    loading: () => (
-      <div style={styles.checkingContainer}>
-        <div style={styles.spinner} />
-        <p>Loading Stratavax professional report...</p>
-      </div>
-    )
-  }
-);
+import { gradeScale as baseGradeScale } from './dynamicReportGenerator';
+import { 
+  getStrengthPhrase, 
+  getWeaknessPhrase, 
+  getImpactPhrase,
+  getClassificationPhrase,
+  strengthPhrases,
+  weaknessPhrases,
+  impactPhrases,
+  classificationPhrases,
+  areaDescriptors
+} from './phraseLibrary';
 
-export default CandidateReport;
+// ========== SECTION 1: CONFIGURATION & CONSTANTS ==========
 
-function CandidateReportComponent() {
-  const router = useRouter();
-  const { user_id } = router.query;
-  const reportRef = useRef(null);
-  
-  const [loading, setLoading] = useState(true);
-  const [isSupervisor, setIsSupervisor] = useState(false);
-  const [authChecked, setAuthChecked] = useState(false);
-  const [candidate, setCandidate] = useState(null);
-  const [allAssessments, setAllAssessments] = useState([]);
-  const [selectedAssessment, setSelectedAssessment] = useState(null);
-  const [activeSection, setActiveSection] = useState('cover');
-  const [showPrintView, setShowPrintView] = useState(false);
-  const [stratavaxReport, setStratavaxReport] = useState(null);
+// Enhanced grade scale with Stratavax format
+export const stratavaxGradeScale = [
+  { grade: 'A+', min: 95, color: '#0A5C2E', bg: '#E6F7E6', 
+    description: 'Exceptional - Mastery level',
+    professional: 'Exceptional',
+    classification: 'High Potential' },
+  { grade: 'A', min: 90, color: '#1E7A44', bg: '#E6F7E6', 
+    description: 'Excellent',
+    professional: 'Excellent',
+    classification: 'High Potential' },
+  { grade: 'A-', min: 85, color: '#2E7D32', bg: '#E8F5E9', 
+    description: 'Very Good',
+    professional: 'Very Good',
+    classification: 'High Potential' },
+  { grade: 'B+', min: 80, color: '#2E7D32', bg: '#E8F5E9', 
+    description: 'Good',
+    professional: 'Good',
+    classification: 'Strong Performer' },
+  { grade: 'B', min: 75, color: '#1565C0', bg: '#E3F2FD', 
+    description: 'Satisfactory',
+    professional: 'Satisfactory',
+    classification: 'Strong Performer' },
+  { grade: 'B-', min: 70, color: '#1565C0', bg: '#E3F2FD', 
+    description: 'Adequate',
+    professional: 'Adequate',
+    classification: 'Strong Performer' },
+  { grade: 'C+', min: 65, color: '#E65100', bg: '#FFF3E0', 
+    description: 'Developing',
+    professional: 'Developing',
+    classification: 'Developing' },
+  { grade: 'C', min: 60, color: '#E65100', bg: '#FFF3E0', 
+    description: 'Basic Competency',
+    professional: 'Basic',
+    classification: 'Developing' },
+  { grade: 'C-', min: 55, color: '#E65100', bg: '#FFF3E0', 
+    description: 'Minimum Competency',
+    professional: 'Minimum',
+    classification: 'Developing' },
+  { grade: 'D+', min: 50, color: '#B71C1C', bg: '#FFEBEE', 
+    description: 'Below Expectations',
+    professional: 'Below Expectations',
+    classification: 'At Risk' },
+  { grade: 'D', min: 40, color: '#B71C1C', bg: '#FFEBEE', 
+    description: 'Significant Gaps',
+    professional: 'Significant Gaps',
+    classification: 'At Risk' },
+  { grade: 'F', min: 0, color: '#8B0000', bg: '#FFEBEE', 
+    description: 'Unsatisfactory',
+    professional: 'Unsatisfactory',
+    classification: 'High Risk' }
+];
 
-  // Authentication check - runs only once on client
-  useEffect(() => {
-    const checkAuth = () => {
-      try {
-        if (typeof window === 'undefined') return;
-        
-        const supervisorSession = localStorage.getItem("supervisorSession");
-        
-        if (!supervisorSession) {
-          router.push("/supervisor-login");
-          return;
-        }
-        
-        const session = JSON.parse(supervisorSession);
-        
-        if (session.loggedIn) {
-          setIsSupervisor(true);
-        } else {
-          router.push("/supervisor-login");
-        }
-      } catch (error) {
-        console.error("Auth check error:", error);
-        router.push("/supervisor-login");
-      } finally {
-        setAuthChecked(true);
-      }
-    };
-    
-    checkAuth();
-  }, [router]);
-
-  // Fetch data only after auth is confirmed and we have a user_id
-  useEffect(() => {
-    if (!authChecked || !isSupervisor || !user_id) return;
-
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        
-        console.log("📊 Fetching Stratavax report data for user:", user_id);
-
-        // Fetch candidate profile
-        const { data: profileData, error: profileError } = await supabase
-          .from('candidate_profiles')
-          .select('*')
-          .eq('id', user_id)
-          .maybeSingle();
-
-        if (profileError) {
-          console.error("Error fetching profile:", profileError);
-        }
-
-        const candidateInfo = {
-          id: user_id,
-          full_name: profileData?.full_name || profileData?.email?.split('@')[0] || 'Candidate',
-          email: profileData?.email || 'Email not available'
-        };
-        setCandidate(candidateInfo);
-
-        // Fetch assessment results
-        const { data: resultsData, error: resultsError } = await supabase
-          .from('assessment_results')
-          .select('*')
-          .eq('user_id', user_id)
-          .order('completed_at', { ascending: false });
-
-        if (resultsError) {
-          console.error("Error fetching results:", resultsError);
-        }
-
-        if (resultsData && resultsData.length > 0) {
-          console.log(`✅ Found ${resultsData.length} assessments`);
-          setAllAssessments(resultsData);
-          
-          const defaultAssessment = resultsData[0];
-          await loadAssessmentData(defaultAssessment, candidateInfo);
-        } else {
-          console.log("❌ No assessment results found");
-          setLoading(false);
-        }
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [authChecked, isSupervisor, user_id]);
-
-  const loadAssessmentData = async (result, candidateInfo) => {
-    try {
-      // Fetch responses with questions and answers
-      const { data: responsesData, error: responsesError } = await supabase
-        .from('responses')
-        .select(`
-          *,
-          unique_questions!inner (
-            id,
-            section,
-            subsection,
-            question_text
-          ),
-          unique_answers!inner (
-            id,
-            answer_text,
-            score
-          )
-        `)
-        .eq('user_id', user_id)
-        .eq('assessment_id', result.assessment_id);
-
-      if (responsesError) {
-        console.error("Error fetching responses:", responsesError);
-      }
-
-      const assessmentTypeId = result.assessment_type || 'general';
-      const config = getAssessmentType(assessmentTypeId);
-
-      // Generate Stratavax professional report
-      const report = generateStratavaxReport(
-        user_id,
-        assessmentTypeId,
-        responsesData || [],
-        candidateInfo.full_name,
-        result.completed_at
-      );
-
-      setStratavaxReport(report);
-      
-      setSelectedAssessment({
-        id: result.id,
-        assessment_id: result.assessment_id,
-        assessment_type: assessmentTypeId,
-        assessment_name: config.name,
-        total_score: result.total_score,
-        max_score: result.max_score,
-        percentage: report.percentageScore,
-        completed_at: result.completed_at,
-        category_scores: result.category_scores || {},
-        config: config,
-        report: report
-      });
-      
-      setLoading(false);
-    } catch (error) {
-      console.error("Error loading assessment data:", error);
-      setLoading(false);
-    }
+// Stratavax classification logic (matches requirement doc)
+export const stratavaxClassification = (percentage) => {
+  if (percentage >= 85) return { 
+    label: 'High Potential',
+    level: 5,
+    color: '#2E7D32',
+    description: getClassificationPhrase('High Potential'),
+    tone: 'positive'
   };
-
-  const handleAssessmentChange = async (e) => {
-    const assessmentId = e.target.value;
-    const selected = allAssessments.find(a => a.id === assessmentId);
-    if (selected && candidate) {
-      setLoading(true);
-      await loadAssessmentData(selected, candidate);
-      setLoading(false);
-    }
+  if (percentage >= 70) return { 
+    label: 'Strong Performer',
+    level: 4,
+    color: '#4CAF50',
+    description: getClassificationPhrase('Strong Performer'),
+    tone: 'positive'
   };
-
-  const handlePrint = () => {
-    setShowPrintView(true);
-    setTimeout(() => {
-      window.print();
-      setShowPrintView(false);
-    }, 100);
+  if (percentage >= 55) return { 
+    label: 'Developing',
+    level: 3,
+    color: '#FF9800',
+    description: getClassificationPhrase('Developing'),
+    tone: 'neutral'
   };
-
-  const handleDownloadPDF = async () => {
-    try {
-      const response = await fetch('/api/generate-pdf-report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user_id,
-          assessmentId: selectedAssessment?.assessment_id
-        })
-      });
-
-      if (!response.ok) throw new Error('PDF generation failed');
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${candidate?.full_name || 'candidate'}_report.pdf`;
-      a.click();
-    } catch (error) {
-      console.error('PDF download error:', error);
-      alert('Failed to generate PDF. Please try again.');
-    }
-  };
-
-  // Show loading while checking auth or fetching data
-  if (!authChecked || loading) {
-    return (
-      <div style={styles.checkingContainer}>
-        <div style={styles.spinner} />
-        <p>{!authChecked ? "Checking authentication..." : "Generating professional report..."}</p>
-      </div>
-    );
-  }
-
-  // If not a supervisor after auth check, redirect
-  if (!isSupervisor) {
-    return null;
-  }
-
-  if (!candidate || !selectedAssessment || !stratavaxReport) {
-    return (
-      <div style={styles.emptyState}>
-        <div style={styles.emptyIcon}>📊</div>
-        <h3>No Assessment Data Available</h3>
-        <p>This candidate hasn't completed any assessments yet.</p>
-        <Link href="/supervisor" legacyBehavior>
-          <a style={styles.primaryButton}>← Back to Dashboard</a>
-        </Link>
-      </div>
-    );
-  }
-
-  const report = selectedAssessment.report.stratavaxReport;
-  const config = selectedAssessment.config || assessmentTypes.general;
-
-  return (
-    <AppLayout background="/images/preassessmentbg.jpg">
-      <div style={styles.container}>
-        <div style={styles.header}>
-          <Link href="/supervisor" legacyBehavior>
-            <a style={styles.backButton}>← Dashboard</a>
-          </Link>
-          <div style={styles.headerActions}>
-            {allAssessments.length > 1 && (
-              <select 
-                value={selectedAssessment.id} 
-                onChange={handleAssessmentChange}
-                style={styles.assessmentSelect}
-              >
-                <option value="">-- Select Assessment --</option>
-                {allAssessments.map((a, index) => {
-                  const type = a.assessment_type || 'general';
-                  const config = getAssessmentType(type);
-                  const assessmentDate = new Date(a.completed_at).toLocaleDateString();
-                  
-                  return (
-                    <option key={a.id} value={a.id}>
-                      {config.name} #{index + 1} - {assessmentDate}
-                    </option>
-                  );
-                })}
-              </select>
-            )}
-            <button onClick={handlePrint} style={styles.printButton}>
-              🖨️ Print
-            </button>
-            <button onClick={handleDownloadPDF} style={styles.pdfButton}>
-              📥 Download PDF
-            </button>
-          </div>
-        </div>
-
-        <div style={styles.navigation}>
-          <button 
-            style={{...styles.navItem, borderBottom: activeSection === 'cover' ? '3px solid #0A1929' : '3px solid transparent'}}
-            onClick={() => setActiveSection('cover')}
-          >
-            Cover
-          </button>
-          <button 
-            style={{...styles.navItem, borderBottom: activeSection === 'executive' ? '3px solid #0A1929' : '3px solid transparent'}}
-            onClick={() => setActiveSection('executive')}
-          >
-            Executive Summary
-          </button>
-          <button 
-            style={{...styles.navItem, borderBottom: activeSection === 'breakdown' ? '3px solid #0A1929' : '3px solid transparent'}}
-            onClick={() => setActiveSection('breakdown')}
-          >
-            Score Breakdown
-          </button>
-          <button 
-            style={{...styles.navItem, borderBottom: activeSection === 'strengths' ? '3px solid #0A1929' : '3px solid transparent'}}
-            onClick={() => setActiveSection('strengths')}
-          >
-            Strengths & Weaknesses
-          </button>
-          <button 
-            style={{...styles.navItem, borderBottom: activeSection === 'recommendations' ? '3px solid #0A1929' : '3px solid transparent'}}
-            onClick={() => setActiveSection('recommendations')}
-          >
-            Recommendations
-          </button>
-        </div>
-
-        <div ref={reportRef} style={styles.reportContainer}>
-          {/* SECTION 1: COVER PAGE */}
-          <section style={{...styles.section, display: activeSection === 'cover' || showPrintView ? 'block' : 'none'}}>
-            <div style={styles.coverPage}>
-              <div style={styles.coverHeader}>
-                <h1 style={styles.coverTitle}>STRATAVAX</h1>
-                <p style={styles.coverSubtitle}>Professional Assessment Report</p>
-              </div>
-              
-              <div style={styles.coverContent}>
-                <div style={styles.coverLogo}>📊</div>
-                <h2 style={styles.coverCandidateName}>{candidate.full_name}</h2>
-                <p style={styles.coverDetail}>Assessment: {config.name}</p>
-                <p style={styles.coverDetail}>Date Taken: {new Date(selectedAssessment.completed_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                <p style={styles.coverDetail}>Report Generated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                <div style={styles.coverBadge}>CONFIDENTIAL</div>
-              </div>
-              
-              <div style={styles.coverFooter}>
-                <p>© Stratavax • All Rights Reserved</p>
-              </div>
-            </div>
-          </section>
-
-          {/* SECTION 2: EXECUTIVE SUMMARY */}
-          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'executive' || showPrintView ? 'block' : 'none'}}>
-            <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>Executive Summary</h2>
-            </div>
-            
-            <div style={styles.executiveSummary}>
-              <div style={styles.scoreGrid}>
-                <div style={styles.scoreItem}>
-                  <span style={styles.scoreLabel}>Total Score</span>
-                  <span style={styles.scoreValue}>{report.executiveSummary.totalScore}</span>
-                </div>
-                <div style={styles.scoreItem}>
-                  <span style={styles.scoreLabel}>Percentage</span>
-                  <span style={{...styles.scoreValue, color: report.executiveSummary.percentage >= 80 ? '#4CAF50' : report.executiveSummary.percentage >= 55 ? '#FF9800' : '#F44336'}}>
-                    {report.executiveSummary.percentage}%
-                  </span>
-                </div>
-                <div style={styles.scoreItem}>
-                  <span style={styles.scoreLabel}>Grade</span>
-                  <span style={styles.scoreValue}>{report.executiveSummary.grade}</span>
-                </div>
-                <div style={styles.scoreItem}>
-                  <span style={styles.scoreLabel}>Classification</span>
-                  <span style={{
-                    ...styles.classificationPill,
-                    background: report.executiveSummary.classification === 'High Potential' ? '#4CAF50' :
-                               report.executiveSummary.classification === 'Strong Performer' ? '#2196F3' :
-                               report.executiveSummary.classification === 'Developing' ? '#FF9800' : '#F44336',
-                    color: 'white'
-                  }}>
-                    {report.executiveSummary.classification}
-                  </span>
-                </div>
-              </div>
-
-              <div style={styles.narrativeBox}>
-                <p style={styles.narrativeText}>{report.executiveSummary.narrative}</p>
-                <p style={styles.narrativeDescription}>{report.executiveSummary.classificationDescription}</p>
-              </div>
-            </div>
-          </section>
-
-          {/* SECTION 3: SCORE BREAKDOWN */}
-          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'breakdown' || showPrintView ? 'block' : 'none'}}>
-            <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>Score Breakdown</h2>
-            </div>
-            
-            <div style={styles.tableContainer}>
-              <table style={styles.table}>
-                <thead>
-                  <tr style={styles.tableHeadRow}>
-                    <th style={styles.tableHead}>Category</th>
-                    <th style={styles.tableHead}>Score</th>
-                    <th style={styles.tableHead}>Percentage</th>
-                    <th style={styles.tableHead}>Grade</th>
-                    <th style={styles.tableHead}>Performance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.scoreBreakdown.map((item, index) => (
-                    <tr key={index} style={styles.tableRow}>
-                      <td style={styles.tableCell}>{item.category}</td>
-                      <td style={styles.tableCell}>{item.score}</td>
-                      <td style={styles.tableCell}>
-                        <div style={styles.percentageContainer}>
-                          <span style={styles.percentageText}>{item.percentage}%</span>
-                          <div style={styles.progressBarContainer}>
-                            <div style={{
-                              ...styles.progressBar,
-                              width: `${item.percentage}%`,
-                              background: item.percentage >= 80 ? 'linear-gradient(90deg, #0A5C2E, #4CAF50)' :
-                                         item.percentage >= 60 ? 'linear-gradient(90deg, #1565C0, #2196F3)' :
-                                         item.percentage >= 40 ? 'linear-gradient(90deg, #E65100, #FF9800)' : 'linear-gradient(90deg, #B71C1C, #F44336)'
-                            }} />
-                          </div>
-                        </div>
-                      </td>
-                      <td style={styles.tableCell}>
-                        <span style={styles.gradeBadge}>{item.grade}</span>
-                      </td>
-                      <td style={styles.tableCell}>{item.comment}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          {/* SECTION 4: STRENGTHS & WEAKNESSES */}
-          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'strengths' || showPrintView ? 'block' : 'none'}}>
-            <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>Strengths & Development Areas</h2>
-            </div>
-            
-            {/* STRENGTHS SECTION */}
-            <div style={styles.strengthsSection}>
-              <div style={styles.sectionBadge}>
-                <span style={styles.badgeIcon}>🔷</span>
-                <h3 style={styles.subsectionTitle}>Key Strengths</h3>
-              </div>
-              
-              <div style={styles.narrativeBox}>
-                <p style={styles.narrativeText}>{report.strengths.narrative}</p>
-              </div>
-              
-              <div style={styles.cardsGrid}>
-                {report.strengths.items.slice(0, 4).map((strength, index) => (
-                  <div key={index} style={styles.strengthCard}>
-                    <div style={styles.cardHeader}>
-                      <div style={styles.cardTitleSection}>
-                        <span style={styles.cardIcon}>⭐</span>
-                        <span style={styles.cardTitle}>{strength.area}</span>
-                      </div>
-                      <div style={styles.cardScore}>
-                        <span style={{...styles.cardPercentage, color: '#0A5C2E'}}>{strength.percentage}%</span>
-                        <span style={styles.cardGrade}>{strength.grade}</span>
-                      </div>
-                    </div>
-                    <div style={styles.cardBody}>
-                      <div style={styles.metricBar}>
-                        <div style={styles.metricBarLabel}>
-                          <span>Proficiency</span>
-                          <span>{strength.percentage}%</span>
-                        </div>
-                        <div style={styles.progressBarContainer}>
-                          <div style={{...styles.progressBar, width: `${strength.percentage}%`, background: 'linear-gradient(90deg, #0A5C2E, #4CAF50)'}} />
-                        </div>
-                      </div>
-                      <div style={styles.cardFooter}>
-                        <span style={styles.cardFooterText}>Top {index + 1} strength</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* DEVELOPMENT AREAS SECTION - WITH BULLET POINTS */}
-            <div style={{...styles.strengthsSection, marginTop: '50px'}}>
-              <div style={styles.sectionBadge}>
-                <span style={styles.badgeIcon}>⚠️</span>
-                <h3 style={{...styles.subsectionTitle, color: '#B71C1C'}}>Development Areas</h3>
-              </div>
-              
-              <div style={{...styles.narrativeBox, background: '#FEF2F2', borderLeftColor: '#F44336'}}>
-                <p style={styles.narrativeText}>{report.weaknesses.narrative}</p>
-              </div>
-              
-              {/* BULLET POINT FORMAT FOR DEVELOPMENT AREAS */}
-              <div style={styles.developmentList}>
-                {report.weaknesses.items.slice(0, 5).map((weakness, index) => {
-                  const priority = weakness.percentage < 40 ? 'Critical' : weakness.percentage < 55 ? 'High' : 'Medium';
-                  const priorityColor = priority === 'Critical' ? '#B71C1C' : priority === 'High' ? '#F57C00' : '#F9A825';
-                  
-                  return (
-                    <div key={index} style={styles.developmentItem}>
-                      <div style={styles.developmentItemHeader}>
-                        <div style={styles.bulletContainer}>
-                          <span style={{...styles.bulletPoint, backgroundColor: priorityColor}}></span>
-                          <span style={styles.developmentArea}>{weakness.area}</span>
-                        </div>
-                        <div style={styles.developmentMetrics}>
-                          <span style={{...styles.priorityBadge, backgroundColor: priorityColor, color: 'white'}}>
-                            {priority} Priority
-                          </span>
-                          <span style={styles.developmentScore}>{weakness.percentage}%</span>
-                          <span style={styles.developmentGrade}>{weakness.grade}</span>
-                        </div>
-                      </div>
-                      
-                      <div style={styles.developmentItemBody}>
-                        <div style={styles.developmentBar}>
-                          <div style={styles.developmentBarLabel}>
-                            <span>Current: {weakness.percentage}%</span>
-                            <span>Target: 80%</span>
-                          </div>
-                          <div style={styles.developmentBarContainer}>
-                            <div style={{...styles.developmentBarFill, width: `${weakness.percentage}%`, backgroundColor: priorityColor}} />
-                            <div style={{...styles.developmentBarTarget, left: '80%'}}>
-                              <span style={styles.targetMarker}>●</span>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {weakness.gap > 0 && (
-                          <div style={styles.gapIndicator}>
-                            <span style={styles.gapIcon}>📈</span>
-                            <span style={styles.gapText}>Needs +{weakness.gap} points to reach target</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* ADDITIONAL DEVELOPMENT AREAS (COLLAPSIBLE IF MORE THAN 5) */}
-              {report.weaknesses.items.length > 5 && (
-                <details style={styles.moreDetails}>
-                  <summary style={styles.moreSummary}>View {report.weaknesses.items.length - 5} additional development areas</summary>
-                  <div style={styles.moreList}>
-                    {report.weaknesses.items.slice(5).map((weakness, index) => (
-                      <div key={index} style={styles.moreItem}>
-                        <span style={styles.moreBullet}>•</span>
-                        <span style={styles.moreArea}>{weakness.area}</span>
-                        <span style={styles.morePercentage}>{weakness.percentage}%</span>
-                        <span style={styles.moreGrade}>{weakness.grade}</span>
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              )}
-            </div>
-          </section>
-
-          {/* SECTION 5: DEVELOPMENT RECOMMENDATIONS */}
-          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'recommendations' || showPrintView ? 'block' : 'none'}}>
-            <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>Development Recommendations</h2>
-            </div>
-            
-            <div style={styles.recommendationsList}>
-              {report.recommendations.map((rec, index) => (
-                <div key={index} style={{
-                  ...styles.recommendationCard,
-                  borderLeftColor: rec.priority === 'High' ? '#F44336' :
-                                  rec.priority === 'Medium' ? '#FF9800' : '#4CAF50'
-                }}>
-                  <div style={styles.recHeader}>
-                    <span style={{
-                      ...styles.priorityBadge,
-                      background: rec.priority === 'High' ? '#F44336' :
-                                 rec.priority === 'Medium' ? '#FF9800' : '#4CAF50'
-                    }}>
-                      {rec.priority} PRIORITY
-                    </span>
-                    <span style={styles.recCategory}>{rec.category}</span>
-                  </div>
-                  <p style={styles.recText}>{rec.recommendation}</p>
-                  <div style={styles.recAction}><strong>Action:</strong> {rec.action}</div>
-                  <div style={styles.recImpact}><strong>Impact:</strong> {rec.impact}</div>
-                </div>
-              ))}
-            </div>
-
-            {report.strengths.topStrengths.length > 0 && (
-              <div style={styles.tipBox}>
-                <h4 style={styles.tipTitle}>🎯 Leverage Your Strengths</h4>
-                <p>Your strongest areas are <strong>{report.strengths.topStrengths.join(', ')}</strong>. Consider mentoring others and taking on projects that utilize these capabilities.</p>
-              </div>
-            )}
-
-            {report.weaknesses.topWeaknesses.length > 0 && (
-              <div style={{...styles.tipBox, background: '#FFEBEE', borderLeftColor: '#F44336'}}>
-                <h4 style={{...styles.tipTitle, color: '#F44336'}}>⚠️ Priority Focus Areas</h4>
-                <p>Focus immediate development on <strong>{report.weaknesses.topWeaknesses.join(', ')}</strong>. Create a 30-day plan with specific learning objectives.</p>
-              </div>
-            )}
-          </section>
-        </div>
-      </div>
-
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        
-        @media print {
-          body { background: white; }
-          button { display: none; }
-        }
-      `}</style>
-    </AppLayout>
-  );
-}
-
-const styles = {
-  checkingContainer: {
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '20px',
-    background: 'linear-gradient(135deg, #0A1929 0%, #1A2A3A 100%)',
-    color: 'white'
-  },
-  spinner: {
-    width: '50px',
-    height: '50px',
-    border: '4px solid rgba(255,255,255,0.3)',
-    borderTop: '4px solid white',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite'
-  },
-  emptyState: {
-    textAlign: 'center',
-    padding: '60px 20px',
-    background: 'white',
-    borderRadius: '16px',
-    boxShadow: '0 10px 40px rgba(0,0,0,0.1)',
-    margin: '20px auto',
-    maxWidth: '500px'
-  },
-  emptyIcon: {
-    fontSize: '64px',
-    marginBottom: '20px',
-    opacity: 0.5
-  },
-  primaryButton: {
-    display: 'inline-block',
-    background: '#0A1929',
-    color: 'white',
-    padding: '12px 30px',
-    borderRadius: '30px',
-    textDecoration: 'none',
-    fontSize: '16px',
-    fontWeight: 500,
-    marginTop: '20px',
-    cursor: 'pointer'
-  },
-  container: {
-    width: '90vw',
-    maxWidth: '1200px',
-    margin: '0 auto',
-    padding: '30px 20px'
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '30px',
-    flexWrap: 'wrap',
-    gap: '20px'
-  },
-  backButton: {
-    color: '#0A1929',
-    textDecoration: 'none',
-    fontSize: '16px',
-    fontWeight: 500,
-    padding: '8px 16px',
-    borderRadius: '20px',
-    border: '1px solid #0A1929',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#0A1929',
-      color: 'white'
-    }
-  },
-  headerActions: {
-    display: 'flex',
-    gap: '10px',
-    alignItems: 'center',
-    flexWrap: 'wrap'
-  },
-  assessmentSelect: {
-    padding: '10px 16px',
-    border: '2px solid #e0e0e0',
-    borderRadius: '8px',
-    fontSize: '14px',
-    minWidth: '300px',
-    background: 'white',
-    cursor: 'pointer',
-    outline: 'none',
-    ':focus': {
-      borderColor: '#0A1929'
-    }
-  },
-  printButton: {
-    background: '#0A1929',
-    color: 'white',
-    border: 'none',
-    padding: '10px 20px',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#1A2A3A',
-      transform: 'translateY(-1px)',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-    }
-  },
-  pdfButton: {
-    background: '#4CAF50',
-    color: 'white',
-    border: 'none',
-    padding: '10px 20px',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#45a049',
-      transform: 'translateY(-1px)',
-      boxShadow: '0 4px 12px rgba(76, 175, 80, 0.3)'
-    }
-  },
-  navigation: {
-    display: 'flex',
-    gap: '15px',
-    marginBottom: '30px',
-    borderBottom: '1px solid #e5e7eb',
-    paddingBottom: '10px',
-    overflowX: 'auto',
-    whiteSpace: 'nowrap'
-  },
-  navItem: {
-    background: 'none',
-    border: 'none',
-    padding: '8px 12px',
-    fontSize: '14px',
-    fontWeight: 500,
-    color: '#4b5563',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      color: '#0A1929'
-    }
-  },
-  reportContainer: {
-    background: 'white',
-    borderRadius: '20px',
-    padding: '50px',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.1)'
-  },
-  section: {
-    marginBottom: '40px'
-  },
-  sectionHeader: {
-    marginBottom: '30px',
-    borderBottom: '3px solid #0A1929',
-    paddingBottom: '10px'
-  },
-  sectionTitle: {
-    margin: 0,
-    fontSize: '28px',
-    fontWeight: 700,
-    color: '#0A1929',
-    letterSpacing: '-0.5px'
-  },
-  subsectionTitle: {
-    fontSize: '22px',
-    fontWeight: 600,
-    color: '#0A1929',
-    margin: '0'
-  },
-  coverPage: {
-    minHeight: '80vh',
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    textAlign: 'center',
-    padding: '40px 20px'
-  },
-  coverHeader: {
-    marginBottom: '60px'
-  },
-  coverTitle: {
-    fontSize: '48px',
-    fontWeight: 800,
-    color: '#0A1929',
-    marginBottom: '10px',
-    letterSpacing: '2px'
-  },
-  coverSubtitle: {
-    fontSize: '24px',
-    color: '#666',
-    fontWeight: 300
-  },
-  coverContent: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  coverLogo: {
-    fontSize: '100px',
-    marginBottom: '40px'
-  },
-  coverCandidateName: {
-    fontSize: '42px',
-    fontWeight: 700,
-    color: '#0A1929',
-    marginBottom: '30px'
-  },
-  coverDetail: {
-    fontSize: '18px',
-    color: '#666',
-    margin: '5px 0'
-  },
-  coverBadge: {
-    marginTop: '50px',
-    padding: '10px 40px',
-    border: '2px solid #F44336',
-    borderRadius: '40px',
+  if (percentage >= 40) return { 
+    label: 'At Risk',
+    level: 2,
     color: '#F44336',
-    fontWeight: 600,
-    letterSpacing: '2px'
-  },
-  coverFooter: {
-    marginTop: '60px',
-    color: '#999',
-    fontSize: '14px'
-  },
-  executiveSummary: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '30px'
-  },
-  scoreGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: '20px'
-  },
-  scoreItem: {
-    background: '#F7FAFC',
-    padding: '20px',
-    borderRadius: '12px',
-    textAlign: 'center',
-    border: '1px solid #E2E8F0'
-  },
-  scoreLabel: {
-    display: 'block',
-    fontSize: '14px',
-    color: '#718096',
-    marginBottom: '8px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px'
-  },
-  scoreValue: {
-    display: 'block',
-    fontSize: '28px',
-    fontWeight: 700,
-    color: '#0A1929'
-  },
-  classificationPill: {
-    display: 'inline-block',
-    padding: '8px 20px',
-    borderRadius: '30px',
-    fontSize: '16px',
-    fontWeight: 600
-  },
-  narrativeBox: {
-    background: '#F7FAFC',
-    padding: '30px',
-    borderRadius: '12px',
-    borderLeft: '6px solid #0A1929'
-  },
-  narrativeText: {
-    fontSize: '16px',
-    lineHeight: '1.8',
-    color: '#2D3748',
-    margin: 0
-  },
-  narrativeDescription: {
-    fontSize: '15px',
-    color: '#718096',
-    marginTop: '15px',
-    fontStyle: 'italic'
-  },
-  tableContainer: {
-    overflowX: 'auto',
-    borderRadius: '12px',
-    border: '1px solid #E2E8F0'
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '14px'
-  },
-  tableHeadRow: {
-    background: '#0A1929',
-    color: 'white'
-  },
-  tableHead: {
-    padding: '15px',
-    fontWeight: 600,
-    textAlign: 'left',
-    fontSize: '14px'
-  },
-  tableRow: {
-    borderBottom: '1px solid #E2E8F0',
-    transition: 'background 0.2s ease',
-    ':hover': {
-      background: '#F7FAFC'
+    description: getClassificationPhrase('At Risk'),
+    tone: 'cautious'
+  };
+  return { 
+    label: 'High Risk',
+    level: 1,
+    color: '#8B0000',
+    description: getClassificationPhrase('High Risk'),
+    tone: 'cautious'
+  };
+};
+
+// ========== SECTION 2: ASSESSMENT-SPECIFIC TEMPLATES ==========
+
+export const assessmentTemplates = {
+  'leadership': {
+    name: 'Leadership Assessment',
+    icon: '👑',
+    strengths: {
+      'Vision & Strategic Thinking': 'strategic foresight and ability to chart long-term direction',
+      'Decision-Making & Problem-Solving': 'decisive analytical capabilities',
+      'Communication & Influence': 'persuasive communication and stakeholder influence',
+      'People Management & Coaching': 'talent development and team building',
+      'Change Leadership & Agility': 'adaptability and change management',
+      'Emotional Intelligence': 'self-awareness and relationship management',
+      'Cultural Competence & Inclusivity': 'inclusive leadership and cultural awareness',
+      'Execution & Results Orientation': 'drive for results and accountability',
+      'Resilience & Stress Management': 'composure under pressure',
+      'Self-Awareness & Self-Regulation': 'personal insight and emotional control'
+    },
+    weaknesses: {
+      'Vision & Strategic Thinking': 'limited strategic perspective',
+      'Decision-Making & Problem-Solving': 'indecisiveness or analysis gaps',
+      'Communication & Influence': 'difficulty articulating vision or persuading others',
+      'People Management & Coaching': 'underdeveloped coaching capabilities',
+      'Change Leadership & Agility': 'resistance to change or slow adaptation',
+      'Emotional Intelligence': 'challenges with self-awareness or empathy',
+      'Cultural Competence & Inclusivity': 'limited cultural awareness',
+      'Execution & Results Orientation': 'inconsistent follow-through',
+      'Resilience & Stress Management': 'strain under pressure',
+      'Self-Awareness & Self-Regulation': 'limited self-insight'
+    },
+    narrativeTemplates: {
+      executiveIntro: (name, classification) => {
+        const intros = [
+          `${name} completed the Leadership Assessment with the following results:`,
+          `The leadership profile for ${name} reveals:`,
+          `Analysis of ${name}'s leadership capabilities indicates:`,
+          `${name}'s leadership assessment yields the following insights:`,
+          `Evaluation of ${name}'s leadership potential shows:`
+        ];
+        return intros[Math.floor(Math.random() * intros.length)];
+      }
     }
   },
-  tableCell: {
-    padding: '12px 15px',
-    color: '#2D3748'
-  },
-  percentageContainer: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px'
-  },
-  percentageText: {
-    minWidth: '40px',
-    fontWeight: 500
-  },
-  progressBarContainer: {
-    flex: 1,
-    height: '8px',
-    background: '#EDF2F7',
-    borderRadius: '4px',
-    overflow: 'hidden'
-  },
-  progressBar: {
-    height: '100%',
-    borderRadius: '4px'
-  },
-  gradeBadge: {
-    display: 'inline-block',
-    padding: '4px 8px',
-    background: '#0A1929',
-    color: 'white',
-    borderRadius: '4px',
-    fontWeight: 700,
-    fontSize: '12px'
-  },
-  strengthsSection: {
-    marginTop: '20px'
-  },
-  sectionBadge: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '20px'
-  },
-  badgeIcon: {
-    fontSize: '28px'
-  },
-  cardsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '20px',
-    marginTop: '25px'
-  },
-  strengthCard: {
-    background: '#F0F9F0',
-    borderRadius: '16px',
-    padding: '20px',
-    border: '1px solid #C6F6D5',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      transform: 'translateY(-2px)',
-      boxShadow: '0 8px 24px rgba(0,100,0,0.1)'
+  
+  'cognitive': {
+    name: 'Cognitive Ability Assessment',
+    icon: '🧠',
+    strengths: {
+      'Logical / Abstract Reasoning': 'strong pattern recognition and logical thinking',
+      'Numerical Reasoning': 'comfort with data and quantitative analysis',
+      'Verbal Reasoning': 'strong language comprehension and expression',
+      'Spatial Reasoning': 'excellent visual-spatial processing',
+      'Memory & Attention': 'strong recall and attention to detail',
+      'Perceptual Speed & Accuracy': 'quick and accurate information processing',
+      'Problem-Solving': 'effective analytical problem-solving',
+      'Critical Thinking': 'sound judgment and reasoning',
+      'Learning Agility': 'rapid acquisition of new concepts',
+      'Mental Flexibility': 'adaptable thinking and perspective-taking'
+    },
+    weaknesses: {
+      'Logical / Abstract Reasoning': 'difficulty with complex logical problems',
+      'Numerical Reasoning': 'discomfort with quantitative analysis',
+      'Verbal Reasoning': 'challenges with complex language',
+      'Spatial Reasoning': 'difficulty with visual-spatial tasks',
+      'Memory & Attention': 'inconsistent recall or attention',
+      'Perceptual Speed & Accuracy': 'slower information processing',
+      'Problem-Solving': 'needs structured problem-solving approaches',
+      'Critical Thinking': 'underdeveloped analytical reasoning',
+      'Learning Agility': 'requires more time to master new concepts',
+      'Mental Flexibility': 'tendency toward rigid thinking'
+    },
+    narrativeTemplates: {
+      executiveIntro: (name, classification) => {
+        const intros = [
+          `${name} completed the Cognitive Ability Assessment with the following results:`,
+          `The cognitive profile for ${name} demonstrates:`,
+          `Analysis of ${name}'s cognitive capabilities indicates:`,
+          `${name}'s cognitive assessment yields the following insights:`,
+          `Evaluation of ${name}'s analytical abilities shows:`
+        ];
+        return intros[Math.floor(Math.random() * intros.length)];
+      }
     }
   },
-  cardHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '15px'
-  },
-  cardTitleSection: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px'
-  },
-  cardIcon: {
-    fontSize: '16px',
-    color: '#FBBF24'
-  },
-  cardTitle: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#0A5C2E'
-  },
-  cardScore: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px'
-  },
-  cardPercentage: {
-    fontSize: '20px',
-    fontWeight: 700
-  },
-  cardGrade: {
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#718096',
-    background: 'white',
-    padding: '2px 6px',
-    borderRadius: '4px'
-  },
-  cardBody: {
-    marginTop: '10px'
-  },
-  metricBar: {
-    marginBottom: '12px'
-  },
-  metricBarLabel: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: '12px',
-    color: '#4A5568',
-    marginBottom: '4px'
-  },
-  cardFooter: {
-    borderTop: '1px solid #C6F6D5',
-    paddingTop: '12px',
-    marginTop: '4px'
-  },
-  cardFooterText: {
-    fontSize: '12px',
-    color: '#2F855A',
-    fontStyle: 'italic'
-  },
-  developmentList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-    marginTop: '25px'
-  },
-  developmentItem: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '20px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
-    border: '1px solid #FEE2E2',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      boxShadow: '0 8px 24px rgba(0,0,0,0.04)',
-      borderColor: '#FECACA'
+  
+  'technical': {
+    name: 'Technical Competence Assessment',
+    icon: '⚙️',
+    strengths: {
+      'Technical Knowledge': 'deep technical understanding',
+      'System Understanding': 'comprehensive system knowledge',
+      'Troubleshooting': 'effective diagnostic abilities',
+      'Practical Application': 'strong hands-on implementation',
+      'Safety & Compliance': 'excellent safety awareness',
+      'Quality Control': 'strong quality orientation',
+      'Process Optimization': 'ability to improve processes',
+      'Equipment Operation': 'proficient equipment handling',
+      'Maintenance Procedures': 'thorough maintenance knowledge',
+      'Technical Documentation': 'clear technical communication'
+    },
+    weaknesses: {
+      'Technical Knowledge': 'gaps in technical understanding',
+      'System Understanding': 'limited system knowledge',
+      'Troubleshooting': 'underdeveloped diagnostic skills',
+      'Practical Application': 'difficulty with hands-on implementation',
+      'Safety & Compliance': 'needs safety reinforcement',
+      'Quality Control': 'inconsistent quality attention',
+      'Process Optimization': 'limited process improvement skills',
+      'Equipment Operation': 'needs equipment training',
+      'Maintenance Procedures': 'gaps in maintenance knowledge',
+      'Technical Documentation': 'difficulty with technical writing'
+    },
+    narrativeTemplates: {
+      executiveIntro: (name, classification) => {
+        const intros = [
+          `${name} completed the Technical Competence Assessment with the following results:`,
+          `The technical profile for ${name} reveals:`,
+          `Analysis of ${name}'s technical capabilities indicates:`,
+          `${name}'s technical assessment yields the following insights:`,
+          `Evaluation of ${name}'s technical competence shows:`
+        ];
+        return intros[Math.floor(Math.random() * intros.length)];
+      }
     }
   },
-  developmentItemHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '15px',
-    flexWrap: 'wrap',
-    gap: '12px'
-  },
-  bulletContainer: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px'
-  },
-  bulletPoint: {
-    width: '10px',
-    height: '10px',
-    borderRadius: '50%',
-    display: 'inline-block'
-  },
-  developmentArea: {
-    fontSize: '18px',
-    fontWeight: 600,
-    color: '#1A2A3A'
-  },
-  developmentMetrics: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px'
-  },
-  priorityBadge: {
-    padding: '4px 12px',
-    borderRadius: '30px',
-    fontSize: '12px',
-    fontWeight: 600,
-    letterSpacing: '0.3px'
-  },
-  developmentScore: {
-    fontSize: '18px',
-    fontWeight: 700,
-    color: '#1A2A3A',
-    minWidth: '50px',
-    textAlign: 'right'
-  },
-  developmentGrade: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#718096',
-    background: '#F7FAFC',
-    padding: '4px 8px',
-    borderRadius: '6px',
-    minWidth: '40px',
-    textAlign: 'center'
-  },
-  developmentItemBody: {
-    marginTop: '10px'
-  },
-  developmentBar: {
-    marginBottom: '10px'
-  },
-  developmentBarLabel: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: '13px',
-    color: '#4A5568',
-    marginBottom: '6px'
-  },
-  developmentBarContainer: {
-    height: '8px',
-    background: '#EDF2F7',
-    borderRadius: '4px',
-    position: 'relative',
-    overflow: 'visible'
-  },
-  developmentBarFill: {
-    height: '100%',
-    borderRadius: '4px',
-    transition: 'width 0.3s ease'
-  },
-  developmentBarTarget: {
-    position: 'absolute',
-    top: '-2px',
-    width: '2px',
-    height: '12px',
-    backgroundColor: '#718096',
-    transform: 'translateX(-50%)'
-  },
-  targetMarker: {
-    position: 'absolute',
-    top: '-8px',
-    left: '-4px',
-    fontSize: '12px',
-    color: '#4A5568'
-  },
-  gapIndicator: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginTop: '12px',
-    padding: '8px 12px',
-    background: '#FEF2F2',
-    borderRadius: '8px',
-    fontSize: '13px',
-    color: '#B91C1C'
-  },
-  gapIcon: {
-    fontSize: '14px'
-  },
-  gapText: {
-    fontWeight: 500
-  },
-  moreDetails: {
-    marginTop: '20px',
-    border: '1px solid #FEE2E2',
-    borderRadius: '12px',
-    padding: '12px'
-  },
-  moreSummary: {
-    color: '#B91C1C',
-    fontWeight: 500,
-    cursor: 'pointer',
-    fontSize: '14px',
-    padding: '4px 8px',
-    ':hover': {
-      color: '#991B1B'
+  
+  'general': {
+    name: 'General Assessment',
+    icon: '📊',
+    strengths: {
+      'Cognitive Ability': 'strong analytical and strategic thinking',
+      'Communication': 'clear and effective communication',
+      'Cultural & Attitudinal Fit': 'strong values alignment',
+      'Emotional Intelligence': 'self-awareness and empathy',
+      'Ethics & Integrity': 'principled decision-making',
+      'Leadership & Management': 'leadership potential',
+      'Performance Metrics': 'results orientation',
+      'Personality & Behavioral': 'stable and adaptable',
+      'Problem-Solving': 'effective problem-solving',
+      'Technical & Manufacturing': 'technical competence'
+    },
+    weaknesses: {
+      'Cognitive Ability': 'needs cognitive skill development',
+      'Communication': 'communication gaps to address',
+      'Cultural & Attitudinal Fit': 'cultural alignment concerns',
+      'Emotional Intelligence': 'EI development needed',
+      'Ethics & Integrity': 'ethics guidance required',
+      'Leadership & Management': 'leadership skill gaps',
+      'Performance Metrics': 'performance focus to develop',
+      'Personality & Behavioral': 'behavioral patterns to address',
+      'Problem-Solving': 'problem-solving skill gaps',
+      'Technical & Manufacturing': 'technical training needed'
+    },
+    narrativeTemplates: {
+      executiveIntro: (name, classification) => {
+        const intros = [
+          `${name} completed the General Assessment with the following results:`,
+          `The overall profile for ${name} demonstrates:`,
+          `Analysis of ${name}'s comprehensive assessment indicates:`,
+          `${name}'s assessment yields the following insights:`,
+          `Evaluation of ${name}'s capabilities shows:`
+        ];
+        return intros[Math.floor(Math.random() * intros.length)];
+      }
     }
-  },
-  moreList: {
-    marginTop: '15px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px'
-  },
-  moreItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '8px 12px',
-    background: '#FEF2F2',
-    borderRadius: '8px',
-    fontSize: '14px'
-  },
-  moreBullet: {
-    color: '#FCA5A5',
-    fontSize: '16px'
-  },
-  moreArea: {
-    flex: 1,
-    color: '#2D3748'
-  },
-  morePercentage: {
-    fontWeight: 600,
-    color: '#B91C1C',
-    minWidth: '50px'
-  },
-  moreGrade: {
-    background: '#FEE2E2',
-    padding: '2px 6px',
-    borderRadius: '4px',
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#B91C1C',
-    minWidth: '35px',
-    textAlign: 'center'
-  },
-  recommendationsList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '15px',
-    marginBottom: '30px'
-  },
-  recommendationCard: {
-    padding: '20px',
-    background: 'white',
-    borderRadius: '12px',
-    border: '1px solid #E2E8F0',
-    borderLeftWidth: '6px',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
-    }
-  },
-  recHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '15px',
-    marginBottom: '10px'
-  },
-  recCategory: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#2D3748'
-  },
-  recText: {
-    fontSize: '15px',
-    color: '#4A5568',
-    marginBottom: '10px',
-    lineHeight: '1.6'
-  },
-  recAction: {
-    fontSize: '14px',
-    background: '#F7FAFC',
-    padding: '10px',
-    borderRadius: '8px',
-    marginBottom: '8px',
-    color: '#2D3748'
-  },
-  recImpact: {
-    fontSize: '13px',
-    color: '#718096',
-    fontStyle: 'italic'
-  },
-  tipBox: {
-    padding: '20px',
-    background: '#F0F9F0',
-    borderRadius: '12px',
-    borderLeft: '6px solid #4CAF50',
-    marginTop: '20px'
-  },
-  tipTitle: {
-    margin: '0 0 10px 0',
-    color: '#2F855A',
-    fontSize: '16px',
-    fontWeight: 600
   }
+};
+
+// Add personality, performance, behavioral, cultural templates
+assessmentTemplates['personality'] = {
+  name: 'Personality Assessment',
+  icon: '🌟',
+  strengths: {
+    'Openness': 'intellectual curiosity and creativity',
+    'Conscientiousness': 'organization and reliability',
+    'Extraversion': 'energy and sociability',
+    'Agreeableness': 'cooperation and empathy',
+    'Neuroticism': 'emotional stability',
+    'Resilience': 'ability to bounce back',
+    'Adaptability': 'flexibility in new situations',
+    'Optimism': 'positive outlook',
+    'Self-Efficacy': 'confidence in abilities',
+    'Work Style': 'productive work patterns'
+  },
+  weaknesses: {
+    'Openness': 'resistance to new ideas',
+    'Conscientiousness': 'organization challenges',
+    'Extraversion': 'reserved or withdrawn',
+    'Agreeableness': 'interpersonal friction',
+    'Neuroticism': 'emotional reactivity',
+    'Resilience': 'difficulty recovering from setbacks',
+    'Adaptability': 'struggles with change',
+    'Optimism': 'negative outlook',
+    'Self-Efficacy': 'self-doubt',
+    'Work Style': 'ineffective work patterns'
+  },
+  narrativeTemplates: {
+    executiveIntro: (name, classification) => {
+      const intros = [
+        `${name} completed the Personality Assessment with the following profile:`,
+        `The personality profile for ${name} reveals:`,
+        `Analysis of ${name}'s behavioral patterns indicates:`,
+        `${name}'s personality assessment yields the following insights:`,
+        `Evaluation of ${name}'s disposition shows:`
+      ];
+      return intros[Math.floor(Math.random() * intros.length)];
+    }
+  }
+};
+
+assessmentTemplates['performance'] = {
+  name: 'Performance Assessment',
+  icon: '📈',
+  strengths: {
+    'Productivity & Efficiency': 'high output and efficiency',
+    'Work Quality & Effectiveness': 'quality focus',
+    'Goal Achievement': 'goal orientation',
+    'Accountability': 'ownership and responsibility',
+    'Initiative': 'proactive approach',
+    'Problem-Solving': 'effective problem-solving',
+    'Collaboration': 'team contribution',
+    'Adaptability': 'flexibility',
+    'Time Management': 'efficient time use',
+    'Results Orientation': 'drive for results'
+  },
+  weaknesses: {
+    'Productivity & Efficiency': 'productivity gaps',
+    'Work Quality & Effectiveness': 'quality inconsistencies',
+    'Goal Achievement': 'missed targets',
+    'Accountability': 'limited ownership',
+    'Initiative': 'reactive approach',
+    'Problem-Solving': 'ineffective problem-solving',
+    'Collaboration': 'limited team contribution',
+    'Adaptability': 'rigidity',
+    'Time Management': 'poor time management',
+    'Results Orientation': 'limited results focus'
+  },
+  narrativeTemplates: {
+    executiveIntro: (name, classification) => {
+      const intros = [
+        `${name} completed the Performance Assessment with the following results:`,
+        `The performance profile for ${name} demonstrates:`,
+        `Analysis of ${name}'s work patterns indicates:`,
+        `${name}'s performance assessment yields the following insights:`,
+        `Evaluation of ${name}'s productivity shows:`
+      ];
+      return intros[Math.floor(Math.random() * intros.length)];
+    }
+  }
+};
+
+assessmentTemplates['behavioral'] = {
+  name: 'Behavioral & Soft Skills Assessment',
+  icon: '🗣️',
+  strengths: {
+    'Communication': 'clear communication',
+    'Teamwork': 'collaborative approach',
+    'Emotional Intelligence': 'self and social awareness',
+    'Conflict Resolution': 'effective conflict handling',
+    'Adaptability': 'flexibility',
+    'Empathy': 'understanding others',
+    'Active Listening': 'attentive listening',
+    'Feedback Reception': 'open to feedback',
+    'Interpersonal Skills': 'relationship building',
+    'Professionalism': 'professional conduct'
+  },
+  weaknesses: {
+    'Communication': 'communication gaps',
+    'Teamwork': 'collaboration challenges',
+    'Emotional Intelligence': 'limited self-awareness',
+    'Conflict Resolution': 'conflict avoidance or escalation',
+    'Adaptability': 'rigidity',
+    'Empathy': 'limited perspective-taking',
+    'Active Listening': 'poor listening',
+    'Feedback Reception': 'defensive to feedback',
+    'Interpersonal Skills': 'relationship challenges',
+    'Professionalism': 'professionalism concerns'
+  },
+  narrativeTemplates: {
+    executiveIntro: (name, classification) => {
+      const intros = [
+        `${name} completed the Behavioral Skills Assessment with the following profile:`,
+        `The behavioral profile for ${name} reveals:`,
+        `Analysis of ${name}'s interpersonal patterns indicates:`,
+        `${name}'s soft skills assessment yields the following insights:`,
+        `Evaluation of ${name}'s social competencies shows:`
+      ];
+      return intros[Math.floor(Math.random() * intros.length)];
+    }
+  }
+};
+
+assessmentTemplates['cultural'] = {
+  name: 'Cultural & Attitudinal Fit Assessment',
+  icon: '🤝',
+  strengths: {
+    'Values Alignment': 'values congruence',
+    'Work Ethic': 'strong work ethic',
+    'Adaptability': 'flexibility',
+    'Collaboration': 'team orientation',
+    'Company Culture Fit': 'cultural alignment',
+    'Diversity Awareness': 'inclusive mindset',
+    'Inclusivity': 'inclusive behavior',
+    'Respect': 'respectful interactions',
+    'Integrity': 'ethical behavior',
+    'Professional Conduct': 'professionalism'
+  },
+  weaknesses: {
+    'Values Alignment': 'values mismatch',
+    'Work Ethic': 'work ethic concerns',
+    'Adaptability': 'resistance to change',
+    'Collaboration': 'individualistic approach',
+    'Company Culture Fit': 'cultural misalignment',
+    'Diversity Awareness': 'limited awareness',
+    'Inclusivity': 'exclusionary patterns',
+    'Respect': 'disrespectful behavior',
+    'Integrity': 'ethical concerns',
+    'Professional Conduct': 'unprofessional behavior'
+  },
+  narrativeTemplates: {
+    executiveIntro: (name, classification) => {
+      const intros = [
+        `${name} completed the Cultural Fit Assessment with the following results:`,
+        `The cultural alignment profile for ${name} demonstrates:`,
+        `Analysis of ${name}'s values congruence indicates:`,
+        `${name}'s cultural assessment yields the following insights:`,
+        `Evaluation of ${name}'s organizational fit shows:`
+      ];
+      return intros[Math.floor(Math.random() * intros.length)];
+    }
+  }
+};
+
+// ========== SECTION 3: ENHANCED NARRATIVE ENGINE ==========
+
+/**
+ * Generate dynamic narrative with variable-based sentence construction
+ * Ensures no two reports are identical through:
+ * - Randomized phrase selection
+ * - Variable insertion ({{area}}, {{percentage}}, etc.)
+ * - Classification-based tone adjustment
+ */
+export const generateDynamicNarrative = (
+  template, 
+  variables, 
+  classification,
+  availablePhrases
+) => {
+  if (!template) return '';
+  
+  // Replace all {{variables}} in template
+  let narrative = template;
+  Object.keys(variables).forEach(key => {
+    narrative = narrative.replace(new RegExp(`{{${key}}}`, 'g'), variables[key]);
+  });
+  
+  return narrative;
+};
+
+/**
+ * Build strengths section with unique phrasing per candidate
+ */
+export const buildStrengthsNarrative = (strengths, assessmentType, classification) => {
+  if (strengths.length === 0) {
+    const noStrengthPhrases = [
+      'No significant strengths identified above the 80% threshold.',
+      'The candidate does not demonstrate any standout strengths at this time.',
+      'Performance is consistent but without exceptional peaks in any area.',
+      'No areas exceed the excellence threshold in this assessment.',
+      'Strengths are not prominently differentiated in this profile.'
+    ];
+    return noStrengthPhrases[Math.floor(Math.random() * noStrengthPhrases.length)];
+  }
+  
+  // Generate unique phrases for each strength
+  const strengthStatements = strengths.map((strength, index) => {
+    const area = strength.area || strength;
+    const phrase = getStrengthPhrase(area, assessmentType);
+    
+    // Add variety in how we present the percentage
+    const percentageOptions = [
+      ` (${strength.percentage}% proficiency)`,
+      ` at ${strength.percentage}%`,
+      ` scoring ${strength.percentage}%`,
+      '', // Sometimes omit the percentage
+      ` (${strength.percentage}% mastery)`,
+      ` with ${strength.percentage}% accuracy`,
+      ` demonstrating ${strength.percentage}% capability`,
+      '' // Another omit option
+    ];
+    
+    const percentageText = percentageOptions[Math.floor(Math.random() * percentageOptions.length)];
+    
+    // Randomly add emphasis for top strength
+    if (index === 0 && Math.random() > 0.5) {
+      return `Notably, ${phrase}${percentageText}`;
+    }
+    
+    return phrase + percentageText;
+  });
+  
+  // Different narrative structures
+  const structures = [
+    // Structure 1: Simple list
+    (list) => {
+      if (list.length === 1) return `The candidate ${list[0]}.`;
+      if (list.length === 2) return `The candidate ${list[0]} and ${list[1].replace('The candidate ', '').toLowerCase()}.`;
+      const last = list.pop();
+      return `The candidate ${list.join(', ')}, and ${last.toLowerCase()}.`;
+    },
+    
+    // Structure 2: Emphasized opening
+    (list) => {
+      if (list.length === 1) return `${list[0].charAt(0).toUpperCase() + list[0].slice(1)}.`;
+      const last = list.pop();
+      return `${list.join('. ')}. Additionally, ${last.toLowerCase()}.`;
+    },
+    
+    // Structure 3: Area-focused
+    (list) => {
+      const areas = strengths.map(s => s.area || s).join(', ');
+      return `Key strengths emerge in ${areas}, with ${list[0].toLowerCase()}`;
+    },
+    
+    // Structure 4: Percentage-focused
+    (list) => {
+      const topStrength = strengths[0];
+      return `The strongest performance is in ${topStrength.area || topStrength} at ${topStrength.percentage}%. ${list.slice(1).length > 0 ? `Additional strengths include ${list.slice(1).join(' and ').toLowerCase()}` : ''}`;
+    },
+    
+    // Structure 5: Question format
+    (list) => {
+      return `Where does the candidate excel? ${list.join(' ')}`;
+    },
+    
+    // Structure 6: Observation format
+    (list) => {
+      return `Observations indicate strong performance in ${list.join(' ').toLowerCase()}`;
+    }
+  ];
+  
+  const selectedStructure = structures[Math.floor(Math.random() * structures.length)];
+  return selectedStructure([...strengthStatements]);
+};
+
+/**
+ * Build weaknesses section with unique phrasing per candidate
+ */
+export const buildWeaknessesNarrative = (weaknesses, assessmentType, classification) => {
+  if (weaknesses.length === 0) {
+    const noWeaknessPhrases = [
+      'No significant development areas identified. The candidate meets or exceeds expectations across all categories.',
+      'Performance is consistently strong with no critical gaps detected.',
+      'The candidate demonstrates adequate capability in all assessed areas.',
+      'No priority development needs identified at this time.',
+      'The profile shows balanced competence without notable weaknesses.'
+    ];
+    return noWeaknessPhrases[Math.floor(Math.random() * noWeaknessPhrases.length)];
+  }
+  
+  // Sort weaknesses by priority (lowest scores first)
+  const sortedWeaknesses = [...weaknesses].sort((a, b) => a.percentage - b.percentage);
+  
+  // Generate unique phrases for each weakness with varied impact statements
+  const weaknessStatements = sortedWeaknesses.map((weakness, index) => {
+    const area = weakness.area || weakness;
+    const phrase = getWeaknessPhrase(area, assessmentType);
+    
+    // Determine priority based on score
+    let priority = 'Medium';
+    if (weakness.percentage < 40) priority = 'High';
+    else if (weakness.percentage < 55) priority = 'Medium';
+    else priority = 'Low';
+    
+    const impactPhrase = getImpactPhrase(priority);
+    
+    // Vary how we combine phrase and impact
+    const combinationStyle = Math.floor(Math.random() * 4);
+    
+    switch(combinationStyle) {
+      case 0: return `${phrase} — ${impactPhrase}`;
+      case 1: return `${phrase}. ${impactPhrase.charAt(0).toUpperCase() + impactPhrase.slice(1)}`;
+      case 2: return `${phrase}; ${impactPhrase}`;
+      case 3: return `${phrase} — this is ${impactPhrase.toLowerCase()}`;
+      default: return `${phrase} — ${impactPhrase}`;
+    }
+  });
+  
+  // Different narrative structures
+  const structureType = Math.floor(Math.random() * 8);
+  
+  switch(structureType) {
+    case 0: // List format
+      if (weaknessStatements.length === 1) return weaknessStatements[0];
+      if (weaknessStatements.length === 2) return `${weaknessStatements[0]} ${weaknessStatements[1].charAt(0).toLowerCase() + weaknessStatements[1].slice(1)}`;
+      const last = weaknessStatements.pop();
+      return `${weaknessStatements.join(' ')} ${last.charAt(0).toLowerCase() + last.slice(1)}`;
+      
+    case 1: // Paragraph format
+      return `The assessment reveals development opportunities in several areas: ${weaknessStatements.join(' ')}`;
+      
+    case 2: // Priority-based format
+      const critical = weaknessStatements.slice(0, Math.min(2, weaknessStatements.length)).join(' ');
+      const others = weaknessStatements.slice(2).join(' ');
+      return `Priority development needs include ${critical}. ${others ? `Secondary areas for growth include ${others}.` : ''}`;
+      
+    case 3: // Question format
+      return `What areas require attention? ${weaknessStatements.join(' ')}`;
+      
+    case 4: // Observation format
+      return `Observations indicate that ${weaknessStatements[0].toLowerCase()} ${weaknessStatements.length > 1 ? `Further, ${weaknessStatements.slice(1).join(' ').toLowerCase()}` : ''}`;
+      
+    case 5: // Gap-focused format
+      const biggestGap = sortedWeaknesses[0];
+      return `The most significant gap is in ${biggestGap.area || biggestGap} at ${biggestGap.percentage}%. ${weaknessStatements.slice(1).length > 0 ? `Additional development areas include ${weaknessStatements.slice(1).join(' and ').toLowerCase()}` : ''}`;
+      
+    case 6: // Recommendation format
+      return `To strengthen the profile, ${weaknessStatements[0].toLowerCase()} ${weaknessStatements.length > 1 ? `Additionally, ${weaknessStatements.slice(1).join(' ').toLowerCase()}` : ''}`;
+      
+    case 7: // Summary format
+      const weakAreas = sortedWeaknesses.map(w => w.area || w).join(', ');
+      return `Development is recommended in ${weakAreas}. ${weaknessStatements[0]}`;
+      
+    default:
+      return weaknessStatements.join(' ');
+  }
+};
+
+/**
+ * Generate overall executive summary with classification-based messaging
+ */
+export const generateExecutiveSummary = (
+  candidateName,
+  totalScore,
+  maxScore,
+  percentage,
+  classification,
+  strengths,
+  weaknesses,
+  assessmentType
+) => {
+  const template = assessmentTemplates[assessmentType] || assessmentTemplates.general;
+  
+  // Random intro selection
+  const introOptions = [
+    `${candidateName} completed the ${template.name} with a total score of ${totalScore}/${maxScore} (${percentage}%).`,
+    `The ${template.name} for ${candidateName} yielded a score of ${totalScore}/${maxScore}, representing ${percentage}% overall.`,
+    `Analysis of ${candidateName}'s performance on the ${template.name} shows a score of ${totalScore}/${maxScore} (${percentage}%).`,
+    `${candidateName} achieved ${totalScore} out of ${maxScore} (${percentage}%) on the ${template.name}.`,
+    `Results from the ${template.name} indicate that ${candidateName} scored ${totalScore}/${maxScore}, or ${percentage}%.`
+  ];
+  
+  const intro = introOptions[Math.floor(Math.random() * introOptions.length)];
+  
+  // Classification message
+  const classificationMessage = classification.description;
+  
+  // Build strengths summary with variation
+  let strengthsSummary = '';
+  if (strengths.length > 0) {
+    const strengthAreas = strengths.slice(0, 3).map(s => s.area || s);
+    const strengthPhraseOptions = [
+      `Key strengths include ${strengthAreas.join(', ')}.`,
+      `The candidate demonstrates particular strength in ${strengthAreas.join(', ')}.`,
+      `Notable capabilities emerge in ${strengthAreas.join(', ')}.`,
+      `Areas of excellence include ${strengthAreas.join(', ')}.`,
+      `The strongest performances are in ${strengthAreas.join(', ')}.`
+    ];
+    strengthsSummary = strengthPhraseOptions[Math.floor(Math.random() * strengthPhraseOptions.length)];
+  }
+  
+  // Build weaknesses summary with variation
+  let weaknessesSummary = '';
+  if (weaknesses.length > 0) {
+    const weakAreas = weaknesses.slice(0, 3).map(w => w.area || w);
+    const weakPhraseOptions = [
+      `Priority development areas are ${weakAreas.join(', ')}.`,
+      `Attention should be directed to ${weakAreas.join(', ')}.`,
+      `Opportunities for growth exist in ${weakAreas.join(', ')}.`,
+      `Development needs are most apparent in ${weakAreas.join(', ')}.`,
+      `Focus areas for improvement include ${weakAreas.join(', ')}.`
+    ];
+    weaknessesSummary = weakPhraseOptions[Math.floor(Math.random() * weakPhraseOptions.length)];
+  }
+  
+  // Combine with varied transitions
+  const transitionOptions = ['', 'Additionally, ', 'Furthermore, ', 'Meanwhile, ', 'At the same time, '];
+  const transition = transitionOptions[Math.floor(Math.random() * transitionOptions.length)];
+  
+  let summary = intro;
+  if (strengthsSummary) summary += ` ${strengthsSummary}`;
+  if (weaknessesSummary) summary += ` ${transition}${weaknessesSummary}`;
+  summary += ` ${classificationMessage}`;
+  
+  return summary;
+};
+
+// ========== SECTION 4: REPORT STRUCTURE GENERATORS ==========
+
+/**
+ * Generate cover page data for Stratavax report format
+ */
+export const generateCoverPage = (candidateName, assessmentType, dateTaken, reportDate) => {
+  const template = assessmentTemplates[assessmentType] || assessmentTemplates.general;
+  
+  return {
+    candidateName,
+    assessmentName: template.name,
+    assessmentIcon: template.icon,
+    dateTaken,
+    reportGenerated: reportDate,
+    confidentiality: 'CONFIDENTIAL - For internal use only',
+    branding: 'Stratavax'
+  };
+};
+
+/**
+ * Generate score breakdown table data
+ */
+export const generateScoreBreakdown = (categoryScores) => {
+  return Object.entries(categoryScores).map(([category, data]) => ({
+    category,
+    score: `${data.score}/${data.maxPossible}`,
+    percentage: data.percentage,
+    grade: data.grade || 'N/A',
+    comment: getPerformanceComment(data.percentage)
+  }));
+};
+
+/**
+ * Generate performance comment based on percentage
+ */
+export const getPerformanceComment = (percentage) => {
+  const comments = {
+    excellent: [
+      'Exceptional performance',
+      'Outstanding capability',
+      'Mastery level demonstrated',
+      'Exemplary proficiency',
+      'Superior competence'
+    ],
+    good: [
+      'Very good performance',
+      'Strong capability',
+      'Solid proficiency',
+      'Above average',
+      'Commendable performance'
+    ],
+    average: [
+      'Good performance',
+      'Satisfactory capability',
+      'Adequate proficiency',
+      'Meeting expectations',
+      'Competent performance'
+    ],
+    developing: [
+      'Adequate performance',
+      'Developing capability',
+      'Foundational proficiency',
+      'Room for growth',
+      'Basic competence'
+    ],
+    below: [
+      'Below expectations',
+      'Needs development',
+      'Significant gap',
+      'Requires attention',
+      'Below standard'
+    ],
+    poor: [
+      'Significant gap',
+      'Critical need',
+      'Unsatisfactory',
+      'Immediate attention required',
+      'Fundamental gap'
+    ]
+  };
+  
+  if (percentage >= 85) return comments.excellent[Math.floor(Math.random() * comments.excellent.length)];
+  if (percentage >= 75) return comments.good[Math.floor(Math.random() * comments.good.length)];
+  if (percentage >= 65) return comments.average[Math.floor(Math.random() * comments.average.length)];
+  if (percentage >= 55) return comments.developing[Math.floor(Math.random() * comments.developing.length)];
+  if (percentage >= 45) return comments.below[Math.floor(Math.random() * comments.below.length)];
+  return comments.poor[Math.floor(Math.random() * comments.poor.length)];
+};
+
+/**
+ * Generate visual chart data for PDF reports
+ */
+export const generateChartData = (categoryScores) => {
+  return {
+    labels: Object.keys(categoryScores).map(c => c.length > 15 ? c.substring(0, 15) + '...' : c),
+    datasets: [{
+      data: Object.values(categoryScores).map(c => c.percentage),
+      backgroundColor: Object.values(categoryScores).map(c => 
+        c.percentage >= 80 ? '#4CAF50' :
+        c.percentage >= 60 ? '#2196F3' :
+        c.percentage >= 40 ? '#FF9800' : '#F44336'
+      )
+    }]
+  };
+};
+
+/**
+ * Generate development recommendations with priority levels
+ */
+export const generateStructuredRecommendations = (weaknesses, strengths, assessmentType) => {
+  const template = assessmentTemplates[assessmentType] || assessmentTemplates.general;
+  const recommendations = [];
+  
+  // Priority 1: Critical development areas (bottom 2 weaknesses)
+  weaknesses.slice(0, 2).forEach((weakness, index) => {
+    const area = weakness.area || weakness;
+    const weaknessDesc = template.weaknesses[area] || 'development needed';
+    
+    const actionOptions = [
+      `Complete targeted training in ${area} within 30 days.`,
+      `Work with a mentor to develop ${area} skills.`,
+      `Enroll in a ${area} certification program.`,
+      `Practice ${area} through structured exercises.`,
+      `Receive coaching focused on ${area}.`
+    ];
+    
+    const impactOptions = [
+      `Improving ${area} will significantly enhance overall performance.`,
+      `Strengthening ${area} is critical for role effectiveness.`,
+      `Developing ${area} will address a key competency gap.`,
+      `Progress in ${area} will yield substantial performance gains.`,
+      `Building ${area} competence is foundational for success.`
+    ];
+    
+    recommendations.push({
+      priority: 'High',
+      category: area,
+      recommendation: `Priority: Strengthen ${area} — ${weaknessDesc}.`,
+      action: actionOptions[Math.floor(Math.random() * actionOptions.length)],
+      impact: impactOptions[Math.floor(Math.random() * impactOptions.length)]
+    });
+  });
+  
+  // Priority 2: Secondary development areas
+  weaknesses.slice(2, 4).forEach((weakness) => {
+    const area = weakness.area || weakness;
+    const weaknessDesc = template.weaknesses[area] || 'development opportunity';
+    
+    const actionOptions = [
+      `Practice ${area} skills through on-the-job application.`,
+      `Participate in workshops focused on ${area}.`,
+      `Study best practices in ${area}.`,
+      `Seek feedback on ${area} performance.`,
+      `Take an online course in ${area}.`
+    ];
+    
+    const impactOptions = [
+      `Developing ${area} will round out professional capabilities.`,
+      `Strengthening ${area} supports overall competency development.`,
+      `Improving ${area} enhances versatility.`,
+      `Building ${area} contributes to well-rounded performance.`,
+      `Progress in ${area} complements existing strengths.`
+    ];
+    
+    recommendations.push({
+      priority: 'Medium',
+      category: area,
+      recommendation: `Develop ${area} — ${weaknessDesc}.`,
+      action: actionOptions[Math.floor(Math.random() * actionOptions.length)],
+      impact: impactOptions[Math.floor(Math.random() * impactOptions.length)]
+    });
+  });
+  
+  // Priority 3: Leverage strengths
+  strengths.slice(0, 2).forEach((strength) => {
+    const area = strength.area || strength;
+    const strengthDesc = template.strengths[area] || 'key strength';
+    
+    const actionOptions = [
+      `Mentor others in ${area}.`,
+      `Take on stretch assignments involving ${area}.`,
+      `Lead projects that leverage ${area} expertise.`,
+      `Share best practices in ${area} with the team.`,
+      `Develop training materials for ${area}.`
+    ];
+    
+    const impactOptions = [
+      `Leveraging ${area} creates organizational value.`,
+      `Maximizing this strength enhances team capability.`,
+      `Utilizing ${area} expertise benefits the wider team.`,
+      `Building on this strength accelerates impact.`,
+      `Applying ${area} skills in new contexts drives growth.`
+    ];
+    
+    recommendations.push({
+      priority: 'Leverage',
+      category: area,
+      recommendation: `Leverage strength in ${area} — ${strengthDesc}.`,
+      action: actionOptions[Math.floor(Math.random() * actionOptions.length)],
+      impact: impactOptions[Math.floor(Math.random() * impactOptions.length)]
+    });
+  });
+  
+  return recommendations;
+};
+
+// ========== SECTION 5: MAIN ENHANCED REPORT GENERATOR ==========
+
+/**
+ * Enhanced Stratavax Report Generator
+ * Builds on your existing generatePersonalizedReport but adds:
+ * - Structured 5-section format
+ * - Assessment-specific narratives
+ * - Visual chart data
+ * - Enhanced uniqueness through variable-based sentences
+ */
+export const generateStratavaxReport = (
+  userId,
+  assessmentType,
+  responses,
+  candidateName,
+  dateTaken = new Date().toISOString()
+) => {
+  console.log(`📊 Generating Stratavax report for ${candidateName} (${userId}) on ${assessmentType} assessment`);
+  console.log(`📝 Processing ${responses.length} responses`);
+  
+  // ===== STEP 1: Calculate scores (reuse your existing logic) =====
+  const categoryScores = {};
+  const strengthsList = [];
+  const weaknessesList = [];
+  let totalScore = 0;
+  
+  responses.forEach(response => {
+    const question = response.unique_questions;
+    const answer = response.unique_answers;
+    const section = question?.section || 'General';
+    const score = answer?.score || 0;
+    totalScore += score;
+    
+    if (!categoryScores[section]) {
+      categoryScores[section] = {
+        total: 0,
+        count: 0,
+        maxPossible: 0,
+        average: 0,
+        percentage: 0,
+        score: 0
+      };
+    }
+    
+    categoryScores[section].total += score;
+    categoryScores[section].count += 1;
+    categoryScores[section].maxPossible += 5;
+  });
+  
+  // Calculate percentages and identify strengths/weaknesses
+  Object.keys(categoryScores).forEach(section => {
+    const data = categoryScores[section];
+    data.percentage = Math.round((data.total / data.maxPossible) * 100);
+    data.average = Number((data.total / data.count).toFixed(2));
+    data.score = data.total;
+    
+    // Add grade info
+    const gradeInfo = stratavaxGradeScale.find(g => data.percentage >= g.min) || stratavaxGradeScale[stratavaxGradeScale.length - 1];
+    data.grade = gradeInfo.grade;
+    data.comment = getPerformanceComment(data.percentage);
+    
+    // 80% threshold for strength
+    if (data.percentage >= 80) {
+      strengthsList.push({
+        area: section,
+        percentage: data.percentage,
+        score: data.total,
+        maxPossible: data.maxPossible,
+        grade: data.grade
+      });
+    } else {
+      const gap = Math.round((data.maxPossible * 0.8) - data.total);
+      weaknessesList.push({
+        area: section,
+        percentage: data.percentage,
+        score: data.total,
+        maxPossible: data.maxPossible,
+        grade: data.grade,
+        gap: gap > 0 ? gap : 0
+      });
+    }
+  });
+  
+  const maxScore = responses.length * 5;
+  const percentageScore = Math.round((totalScore / maxScore) * 100);
+  
+  // ===== STEP 2: Apply Stratavax classification =====
+  const classification = stratavaxClassification(percentageScore);
+  const gradeInfo = stratavaxGradeScale.find(g => percentageScore >= g.min) || stratavaxGradeScale[stratavaxGradeScale.length - 1];
+  
+  // ===== STEP 3: Sort strengths and weaknesses =====
+  const sortedStrengths = strengthsList.sort((a, b) => b.percentage - a.percentage);
+  const sortedWeaknesses = weaknessesList.sort((a, b) => a.percentage - b.percentage);
+  
+  // ===== STEP 4: Generate enhanced narratives =====
+  const executiveSummary = generateExecutiveSummary(
+    candidateName,
+    totalScore,
+    maxScore,
+    percentageScore,
+    classification,
+    sortedStrengths,
+    sortedWeaknesses,
+    assessmentType
+  );
+  
+  const strengthsNarrative = buildStrengthsNarrative(sortedStrengths, assessmentType, classification.label);
+  const weaknessesNarrative = buildWeaknessesNarrative(sortedWeaknesses, assessmentType, classification.label);
+  
+  // ===== STEP 5: Generate structured recommendations =====
+  const structuredRecommendations = generateStructuredRecommendations(
+    sortedWeaknesses,
+    sortedStrengths,
+    assessmentType
+  );
+  
+  // ===== STEP 6: Generate visual data =====
+  const chartData = generateChartData(categoryScores);
+  const scoreBreakdown = generateScoreBreakdown(categoryScores);
+  
+  // ===== STEP 7: Generate cover page =====
+  const coverPage = generateCoverPage(
+    candidateName,
+    assessmentType,
+    dateTaken,
+    new Date().toISOString()
+  );
+  
+  // ===== STEP 8: Build complete report object =====
+  return {
+    // Core data (compatible with your existing structure)
+    userId,
+    assessmentType,
+    candidateName,
+    totalScore,
+    maxScore,
+    percentageScore,
+    grade: gradeInfo.grade,
+    gradeInfo,
+    classification,
+    categoryScores,
+    strengths: sortedStrengths,
+    weaknesses: sortedWeaknesses,
+    strengthsForDb: sortedStrengths.map(s => `${s.area} (${s.percentage}%)`),
+    weaknessesForDb: sortedWeaknesses.map(w => `${w.area} (${w.percentage}%)`),
+    
+    // Enhanced Stratavax 5-section structure
+    stratavaxReport: {
+      // Section 1: Cover Page
+      cover: coverPage,
+      
+      // Section 2: Executive Summary
+      executiveSummary: {
+        totalScore: `${totalScore}/${maxScore}`,
+        percentage: percentageScore,
+        grade: gradeInfo.grade,
+        classification: classification.label,
+        narrative: executiveSummary,
+        classificationDescription: classification.description
+      },
+      
+      // Section 3: Score Breakdown Table
+      scoreBreakdown: scoreBreakdown,
+      
+      // Section 4: Strengths & Weaknesses
+      strengths: {
+        items: sortedStrengths,
+        narrative: strengthsNarrative,
+        topStrengths: sortedStrengths.slice(0, 3).map(s => s.area)
+      },
+      weaknesses: {
+        items: sortedWeaknesses,
+        narrative: weaknessesNarrative,
+        topWeaknesses: sortedWeaknesses.slice(0, 3).map(w => w.area)
+      },
+      
+      // Section 5: Development Recommendations
+      recommendations: structuredRecommendations,
+      
+      // Visual data for PDF
+      visualData: {
+        chartData,
+        scoreBreakdown
+      }
+    },
+    
+    // Keep your existing fields for backward compatibility
+    executiveSummary,
+    recommendations: structuredRecommendations.map(r => r.recommendation),
+    overallProfile: classification.description,
+    overallTraits: [gradeInfo.description, classification.label],
+    interpretations: {
+      classification: classification.label,
+      summary: executiveSummary,
+      overallProfile: classification.description,
+      strengths: sortedStrengths.map(s => `${s.area} (${s.percentage}%)`),
+      weaknesses: sortedWeaknesses.map(w => `${w.area} (${w.percentage}%)`)
+    }
+  };
+};
+
+// Export grade info function for backward compatibility
+export const getGradeInfo = (percentage) => {
+  return stratavaxGradeScale.find(g => percentage >= g.min) || stratavaxGradeScale[stratavaxGradeScale.length - 1];
 };
