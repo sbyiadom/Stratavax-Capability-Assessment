@@ -14,9 +14,13 @@ const CandidateReport = dynamic(
   { 
     ssr: false,
     loading: () => (
-      <div style={styles.checkingContainer}>
-        <div style={styles.spinner} />
-        <p>Loading Stratavax professional report...</p>
+      <div style={styles.loadingContainer}>
+        <div style={styles.loadingBackground} />
+        <div style={styles.loadingContent}>
+          <div style={styles.spinner} />
+          <p style={styles.loadingText}>Loading Stratavax professional report...</p>
+          <p style={styles.loadingSubtext}>Generating comprehensive assessment analysis</p>
+        </div>
       </div>
     )
   }
@@ -232,9 +236,13 @@ function CandidateReportComponent() {
 
   if (!authChecked || loading) {
     return (
-      <div style={styles.checkingContainer}>
-        <div style={styles.spinner} />
-        <p>{!authChecked ? "Checking authentication..." : "Generating professional report..."}</p>
+      <div style={styles.loadingContainer}>
+        <div style={styles.loadingBackground} />
+        <div style={styles.loadingContent}>
+          <div style={styles.spinner} />
+          <p style={styles.loadingText}>{!authChecked ? "Verifying credentials..." : "Analyzing assessment data..."}</p>
+          <p style={styles.loadingSubtext}>Please wait while we prepare your comprehensive report</p>
+        </div>
       </div>
     );
   }
@@ -630,23 +638,53 @@ function CandidateReportComponent() {
 }
 
 const styles = {
-  checkingContainer: {
+  loadingContainer: {
     minHeight: '100vh',
     display: 'flex',
-    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '20px',
-    background: 'linear-gradient(135deg, #0A1929 0%, #1A2A3A 100%)',
-    color: 'white'
+    position: 'relative',
+    overflow: 'hidden'
+  },
+  loadingBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundImage: 'url(/images/report-loading-bg.jpg)',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    zIndex: 0
+  },
+  loadingContent: {
+    position: 'relative',
+    zIndex: 1,
+    textAlign: 'center',
+    color: 'white',
+    textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
+    maxWidth: '600px',
+    padding: '0 20px'
+  },
+  loadingText: {
+    fontSize: '24px',
+    fontWeight: 600,
+    marginBottom: '10px'
+  },
+  loadingSubtext: {
+    fontSize: '16px',
+    opacity: 0.9,
+    marginTop: '10px'
   },
   spinner: {
-    width: '50px',
-    height: '50px',
+    width: '60px',
+    height: '60px',
     border: '4px solid rgba(255,255,255,0.3)',
     borderTop: '4px solid white',
     borderRadius: '50%',
-    animation: 'spin 1s linear infinite'
+    animation: 'spin 1s linear infinite',
+    margin: '0 auto 30px',
+    boxShadow: '0 0 20px rgba(0,0,0,0.3)'
   },
   emptyState: {
     textAlign: 'center',
@@ -678,7 +716,13 @@ const styles = {
     width: '90vw',
     maxWidth: '1200px',
     margin: '0 auto',
-    padding: '30px 20px'
+    padding: '30px 20px',
+    backgroundImage: 'url(/images/report-bg.jpg)',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundAttachment: 'fixed',
+    minHeight: '100vh',
+    borderRadius: '0'
   },
   header: {
     display: 'flex',
@@ -686,7 +730,12 @@ const styles = {
     alignItems: 'center',
     marginBottom: '30px',
     flexWrap: 'wrap',
-    gap: '20px'
+    gap: '20px',
+    background: 'rgba(255, 255, 255, 0.9)',
+    padding: '15px 25px',
+    borderRadius: '50px',
+    backdropFilter: 'blur(10px)',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
   },
   backButton: {
     color: '#0A1929',
@@ -757,10 +806,14 @@ const styles = {
     display: 'flex',
     gap: '15px',
     marginBottom: '30px',
-    borderBottom: '1px solid #e5e7eb',
+    borderBottom: '1px solid rgba(255,255,255,0.3)',
     paddingBottom: '10px',
     overflowX: 'auto',
-    whiteSpace: 'nowrap'
+    whiteSpace: 'nowrap',
+    background: 'rgba(255, 255, 255, 0.8)',
+    padding: '15px 25px',
+    borderRadius: '50px',
+    backdropFilter: 'blur(10px)'
   },
   navItem: {
     background: 'none',
@@ -768,18 +821,20 @@ const styles = {
     padding: '8px 12px',
     fontSize: '14px',
     fontWeight: 500,
-    color: '#4b5563',
+    color: '#0A1929',
     cursor: 'pointer',
     transition: 'all 0.2s ease',
     ':hover': {
-      color: '#0A1929'
+      color: '#0A1929',
+      opacity: 0.8
     }
   },
   reportContainer: {
-    background: 'white',
+    background: 'rgba(255, 255, 255, 0.95)',
     borderRadius: '20px',
     padding: '50px',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.1)'
+    boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+    backdropFilter: 'blur(10px)'
   },
   section: {
     marginBottom: '40px'
