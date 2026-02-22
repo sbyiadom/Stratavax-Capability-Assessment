@@ -36,10 +36,10 @@ export default function CreateSupervisorAuth() {
           throw new Error(`Auth exists but password is wrong. ${signInError.message}`);
         }
 
-        // Update supervisors table with user_id
+        // Update supervisor_profiles table with user_id (FIXED TABLE NAME)
         const { error: updateError } = await supabase
-          .from("supervisors")
-          .update({ user_id: signInData.user.id })
+          .from("supervisor_profiles")
+          .update({ id: signInData.user.id })
           .eq("email", "supervisor@stratax.com");
 
         if (updateError) throw updateError;
@@ -48,13 +48,18 @@ export default function CreateSupervisorAuth() {
         return;
       }
 
-      // Update supervisors table with the new user_id
-      const { error: updateError } = await supabase
-        .from("supervisors")
-        .update({ user_id: data.user.id })
-        .eq("email", "supervisor@stratax.com");
+      // Insert into supervisor_profiles with the new user_id (FIXED TABLE NAME)
+      const { error: insertError } = await supabase
+        .from("supervisor_profiles")
+        .insert({
+          id: data.user.id,
+          email: "supervisor@stratax.com",
+          full_name: "Supervisor Admin",
+          role: "supervisor",
+          is_active: true
+        });
 
-      if (updateError) throw updateError;
+      if (insertError) throw insertError;
 
       setSuccess(`Auth account created successfully! User ID: ${data.user.id}\n\nEmail: supervisor@stratax.com\nPassword: ${password}\n\nSave this password securely!`);
 
@@ -96,7 +101,6 @@ export default function CreateSupervisorAuth() {
             <ul style={{ margin: 0, paddingLeft: "20px" }}>
               <li>Name: <strong>Supervisor Admin</strong></li>
               <li>Email: <strong>supervisor@stratax.com</strong></li>
-              <li>Already exists in supervisors table</li>
             </ul>
           </div>
 
@@ -174,8 +178,8 @@ export default function CreateSupervisorAuth() {
             <h3 style={{ margin: "0 0 10px 0", fontSize: "16px" }}>What happens:</h3>
             <ol style={{ margin: 0, paddingLeft: "20px", color: "#555", lineHeight: 1.6 }}>
               <li>Creates authentication account for supervisor@stratax.com</li>
-              <li>Links the auth user_id to the supervisors table</li>
-              <li>Supervisor can login at /supervisor-login</li>
+              <li>Links the auth user_id to the supervisor_profiles table</li>
+              <li>Supervisor can login at /login (FIXED: was /supervisor-login)</li>
               <li>After login, they'll have access to /supervisor dashboard</li>
             </ol>
           </div>
