@@ -24,17 +24,23 @@ export default async function handler(req, res) {
     });
 
     if (authError) {
+      console.error('Auth error:', authError);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    console.log('User authenticated:', authData.user.id);
+
     // Check if user is a supervisor
-    const { data: supervisor } = await supabase
+    const { data: supervisor, error: supError } = await supabase
       .from('supervisor_profiles')
       .select('*')
       .eq('id', authData.user.id)
       .maybeSingle();
 
+    console.log('Supervisor query result:', { supervisor, error: supError });
+
     if (supervisor) {
+      console.log('User is supervisor with role:', supervisor.role);
       return res.status(200).json({
         success: true,
         role: supervisor.role || 'supervisor',
@@ -49,28 +55,38 @@ export default async function handler(req, res) {
     }
 
     // Check if user is a candidate
-    const { data: candidate } = await supabase
+    const { data: candidate, error: canError } = await supabase
       .from('candidate_profiles')
       .select('*')
       .eq('id', authData.user.id)
       .maybeSingle();
 
+    console.log('Candidate query result:', { candidate, error: canError });
+
     if (candidate) {
+      console.log('User is candidate');
       return res.status(200).json({
         success: true,
         role: 'candidate',
         user: {
           id: authData.user.id,
           email: candidate.email,
-          full_name: candidate.full_name
+          full_name: candidate.full_name || candidate.email
         },
         session: authData.session
       });
     }
 
     // User not found in either table
+    console.log('User not found in any profile table');
     await supabase.auth.signOut();
-    return res.status(403).json({ error: 'Account not properly configured' });
+    return res.status(403).json({ 
+      error: 'Account not properly configured',
+      debug: {
+        userId: authData.user.id,
+        email: authData.user.email
+      }
+    });
 
   } catch (error) {
     console.error('Login error:', error);
