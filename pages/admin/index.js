@@ -23,18 +23,18 @@ export default function AdminDashboard() {
     try {
       setLoading(true);
       
-      // Check both localStorage and Supabase session
-      const supervisorSession = localStorage.getItem("supervisorSession");
-      console.log('1. LocalStorage session:', supervisorSession);
+      // Check userSession from localStorage (FIXED)
+      const userSession = localStorage.getItem("userSession");
+      console.log('1. LocalStorage session:', userSession);
       
       // Get Supabase session
       const { data: { session: supabaseSession }, error: sessionError } = await supabase.auth.getSession();
       console.log('2. Supabase session:', supabaseSession);
       console.log('3. Session error:', sessionError);
       
-      if (!supervisorSession && !supabaseSession) {
+      if (!userSession && !supabaseSession) {
         console.log('No session found, redirecting to login');
-        router.push("/supervisor-login");
+        router.push("/login");
         return;
       }
 
@@ -43,20 +43,20 @@ export default function AdminDashboard() {
       if (supabaseSession?.user?.id) {
         userId = supabaseSession.user.id;
         console.log('4. Using Supabase user ID:', userId);
-      } else if (supervisorSession) {
+      } else if (userSession) {
         try {
-          const parsed = JSON.parse(supervisorSession);
+          const parsed = JSON.parse(userSession);
           userId = parsed.user_id;
           console.log('4. Using localStorage user ID:', userId);
         } catch (e) {
-          console.error('Error parsing supervisorSession:', e);
+          console.error('Error parsing userSession:', e);
         }
       }
       
       if (!userId) {
         console.log('5. No user ID found');
         setAuthError('No user ID found');
-        router.push("/supervisor-login");
+        router.push("/login");
         return;
       }
 
@@ -103,7 +103,7 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error('Auth error:', error);
       setAuthError(error.message);
-      router.push('/supervisor-login');
+      router.push('/login');
     } finally {
       setLoading(false);
     }
@@ -138,8 +138,8 @@ export default function AdminDashboard() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    localStorage.removeItem("supervisorSession");
-    router.push("/supervisor-login");
+    localStorage.removeItem("userSession");
+    router.push("/login");
   };
 
   if (loading) {
