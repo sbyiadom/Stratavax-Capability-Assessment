@@ -40,6 +40,7 @@ function CandidateReportComponent() {
   const [activeSection, setActiveSection] = useState('cover');
   const [showPrintView, setShowPrintView] = useState(false);
   const [stratavaxReport, setStratavaxReport] = useState(null);
+  const [assessmentTypeName, setAssessmentTypeName] = useState('');
 
   // Authentication check
   useEffect(() => {
@@ -158,6 +159,9 @@ function CandidateReportComponent() {
 
       const assessmentTypeId = result.assessment_type || 'general';
       const config = getAssessmentType(assessmentTypeId);
+      
+      // Set the assessment type name based on the config
+      setAssessmentTypeName(config.name);
 
       // Generate Stratavax professional report
       const report = generateStratavaxReport(
@@ -226,7 +230,7 @@ function CandidateReportComponent() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${candidate?.full_name || 'candidate'}_report.pdf`;
+      a.download = `${candidate?.full_name || 'candidate'}_${assessmentTypeName.replace(/\s+/g, '_')}_report.pdf`;
       a.click();
     } catch (error) {
       console.error('PDF download error:', error);
@@ -266,6 +270,7 @@ function CandidateReportComponent() {
 
   const report = selectedAssessment.report.stratavaxReport;
   const config = selectedAssessment.config || assessmentTypes.general;
+  const assessmentDisplayName = config.name; // e.g., "Leadership Assessment", "Cognitive Assessment", etc.
 
   return (
     <AppLayout background="/images/preassessmentbg.jpg">
@@ -338,18 +343,18 @@ function CandidateReportComponent() {
         </div>
 
         <div ref={reportRef} style={styles.reportContainer}>
-          {/* SECTION 1: COVER PAGE */}
+          {/* SECTION 1: COVER PAGE - Using assessmentDisplayName */}
           <section style={{...styles.section, display: activeSection === 'cover' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.coverPage}>
               <div style={styles.coverHeader}>
                 <h1 style={styles.coverTitle}>STRATAVAX</h1>
-                <p style={styles.coverSubtitle}>Professional Assessment Report</p>
+                <p style={styles.coverSubtitle}>{assessmentDisplayName}</p>
               </div>
               
               <div style={styles.coverContent}>
                 <div style={styles.coverLogo}>📊</div>
                 <h2 style={styles.coverCandidateName}>{candidate.full_name}</h2>
-                <p style={styles.coverDetail}>Assessment: {config.name}</p>
+                <p style={styles.coverDetail}>Assessment: {assessmentDisplayName}</p>
                 <p style={styles.coverDetail}>Date Taken: {new Date(selectedAssessment.completed_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
                 <p style={styles.coverDetail}>Report Generated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
                 <div style={styles.coverBadge}>CONFIDENTIAL</div>
@@ -361,7 +366,7 @@ function CandidateReportComponent() {
             </div>
           </section>
 
-          {/* SECTION 2: EXECUTIVE SUMMARY */}
+          {/* SECTION 2: EXECUTIVE SUMMARY - Using assessmentDisplayName in the narrative */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'executive' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Executive Summary</h2>
@@ -398,13 +403,17 @@ function CandidateReportComponent() {
               </div>
 
               <div style={styles.narrativeBox}>
-                <p style={styles.narrativeText}>{report.executiveSummary.narrative}</p>
+                <p style={styles.narrativeText}>
+                  {report.executiveSummary.narrative.includes('General Assessment') 
+                    ? report.executiveSummary.narrative.replace('General Assessment', assessmentDisplayName)
+                    : report.executiveSummary.narrative}
+                </p>
                 <p style={styles.narrativeDescription}>{report.executiveSummary.classificationDescription}</p>
               </div>
             </div>
           </section>
 
-          {/* SECTION 3: SCORE BREAKDOWN */}
+          {/* SECTION 3: SCORE BREAKDOWN - Using assessmentDisplayName in context */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'breakdown' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Score Breakdown</h2>
@@ -449,6 +458,7 @@ function CandidateReportComponent() {
                 </tbody>
               </table>
             </div>
+            <p style={styles.tableFootnote}>Performance metrics based on {assessmentDisplayName} criteria and standardized scoring rubrics.</p>
           </section>
 
           {/* SECTION 4: STRENGTHS & WEAKNESSES */}
@@ -485,7 +495,7 @@ function CandidateReportComponent() {
                 </div>
               ) : (
                 <div style={styles.noStrengthsMessage}>
-                  No significant strengths identified above the 80% threshold.
+                  No significant strengths identified above the 80% threshold in this {assessmentDisplayName.toLowerCase()}.
                 </div>
               )}
             </div>
@@ -572,6 +582,9 @@ function CandidateReportComponent() {
                   report.weaknesses.items
                 )}
               </p>
+              <p style={styles.narrativeFootnote}>
+                This summary integrates findings from the {assessmentDisplayName.toLowerCase()} with the candidate's overall performance profile.
+              </p>
             </div>
           </section>
 
@@ -580,6 +593,10 @@ function CandidateReportComponent() {
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Development Recommendations</h2>
             </div>
+            
+            <p style={styles.recommendationIntro}>
+              Based on the {assessmentDisplayName.toLowerCase()} results, the following development actions are recommended:
+            </p>
             
             <div style={styles.recommendationsList}>
               {report.recommendations.map((rec, index) => (
@@ -608,14 +625,14 @@ function CandidateReportComponent() {
             {report.strengths.topStrengths.length > 0 && (
               <div style={styles.tipBox}>
                 <h4 style={styles.tipTitle}>🎯 Leverage Your Strengths</h4>
-                <p>Your strongest areas are <strong>{report.strengths.topStrengths.join(', ')}</strong>. Consider mentoring others and taking on projects that utilize these capabilities.</p>
+                <p>Your strongest areas in the {assessmentDisplayName.toLowerCase()} are <strong>{report.strengths.topStrengths.join(', ')}</strong>. Consider mentoring others and taking on projects that utilize these capabilities.</p>
               </div>
             )}
 
             {report.weaknesses.topWeaknesses.length > 0 && (
               <div style={{...styles.tipBox, background: '#FFEBEE', borderLeftColor: '#F44336'}}>
                 <h4 style={{...styles.tipTitle, color: '#F44336'}}>⚠️ Priority Focus Areas</h4>
-                <p>Focus immediate development on <strong>{report.weaknesses.topWeaknesses.join(', ')}</strong>. Create a 30-day plan with specific learning objectives.</p>
+                <p>Focus immediate development on <strong>{report.weaknesses.topWeaknesses.join(', ')}</strong> as identified in the {assessmentDisplayName.toLowerCase()}. Create a 30-day plan with specific learning objectives.</p>
               </div>
             )}
           </section>
@@ -973,6 +990,14 @@ const styles = {
     marginTop: '15px',
     fontStyle: 'italic'
   },
+  narrativeFootnote: {
+    fontSize: '14px',
+    color: '#718096',
+    marginTop: '15px',
+    fontStyle: 'italic',
+    borderTop: '1px solid #E2E8F0',
+    paddingTop: '15px'
+  },
   tableContainer: {
     overflowX: 'auto',
     borderRadius: '12px',
@@ -1003,6 +1028,13 @@ const styles = {
   tableCell: {
     padding: '12px 15px',
     color: '#2D3748'
+  },
+  tableFootnote: {
+    fontSize: '13px',
+    color: '#718096',
+    marginTop: '15px',
+    fontStyle: 'italic',
+    textAlign: 'right'
   },
   percentageContainer: {
     display: 'flex',
@@ -1240,6 +1272,12 @@ const styles = {
     fontStyle: 'italic',
     flex: 1,
     minWidth: '120px'
+  },
+  recommendationIntro: {
+    fontSize: '16px',
+    color: '#2D3748',
+    marginBottom: '25px',
+    fontStyle: 'italic'
   },
   recommendationsList: {
     display: 'flex',
