@@ -21,21 +21,28 @@ export default function AssignCandidates() {
 
   const checkAdminAuth = async () => {
     try {
-      const supervisorSession = localStorage.getItem("supervisorSession");
-      if (!supervisorSession) {
-        router.push("/supervisor-login");
+      // FIXED: Use userSession instead of supervisorSession
+      const userSession = localStorage.getItem("userSession");
+      if (!userSession) {
+        router.push("/login"); // FIXED: redirect to /login
         return;
       }
 
-      const session = JSON.parse(supervisorSession);
+      const session = JSON.parse(userSession);
       
       const { data: profile, error } = await supabase
         .from('supervisor_profiles')
         .select('role')
         .eq('id', session.user_id)
-        .single();
+        .maybeSingle(); // FIXED: use maybeSingle to avoid errors
 
-      if (error || profile?.role !== 'admin') {
+      if (error) {
+        console.error('Error checking admin status:', error);
+        router.push('/login');
+        return;
+      }
+
+      if (!profile || profile.role !== 'admin') {
         alert('Admin access required');
         router.push('/supervisor');
         return;
@@ -45,7 +52,7 @@ export default function AssignCandidates() {
       fetchData();
     } catch (error) {
       console.error('Auth error:', error);
-      router.push('/supervisor-login');
+      router.push('/login'); // FIXED: redirect to /login
     }
   };
 
