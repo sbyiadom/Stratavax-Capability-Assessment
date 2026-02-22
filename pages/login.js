@@ -11,7 +11,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [loginMode, setLoginMode] = useState('candidate'); // 'candidate' or 'supervisor'
+  const [loginMode, setLoginMode] = useState('candidate');
 
   const handleCandidateLogin = async (e) => {
     e.preventDefault();
@@ -68,52 +68,106 @@ export default function Login() {
       });
 
       if (error || !data.user) {
+        console.error('Auth error:', error);
         throw new Error("Invalid email or password");
       }
 
-      console.log('✅ Auth successful, checking supervisor status...');
+      console.log('✅ Auth successful, user ID:', data.user.id);
+      console.log('✅ Auth email:', data.user.email);
 
-      // Check if user exists in supervisor_profiles
-      const { data: supervisor, error: supervisorError } = await supabase
-        .from('supervisor_profiles')
-        .select('*')
-        .eq('id', data.user.id)
-        .maybeSingle();
-
-      if (supervisorError) {
-        console.error('Supervisor check error:', supervisorError);
-        throw new Error("Error checking supervisor status");
+      // Try to query supervisor_profiles
+      console.log('🔍 Querying supervisor_profiles...');
+      
+      let supervisor = null;
+      let queryError = null;
+      
+      try {
+        const result = await supabase
+          .from('supervisor_profiles')
+          .select('*')
+          .eq('id', data.user.id);
+        
+        supervisor = result.data;
+        queryError = result.error;
+        
+        console.log('📊 Query result:', { 
+          data: supervisor, 
+          error: queryError,
+          status: result.status,
+          statusText: result.statusText
+        });
+        
+      } catch (queryErr) {
+        console.error('💥 Query exception:', queryErr);
+        throw new Error(`Database query failed: ${queryErr.message}`);
       }
 
-      if (!supervisor) {
-        // If not found in supervisor_profiles, sign out and show error
-        await supabase.auth.signOut();
-        throw new Error("No supervisor account found with these credentials");
+      if (queryError) {
+        console.error('❌ Supervisor query error details:', queryError);
+        
+        // Check specific error codes
+        if (queryError.code === '42P01') {
+          throw new Error("Supervisor table does not exist");
+        } else if (queryError.code === '42501' || queryError.message?.includes('permission')) {
+          throw new Error("Permission denied - check RLS policies");
+        } else {
+          throw new Error(`Database error: ${queryError.message}`);
+        }
       }
+
+      if (!supervisor || supervisor.length === 0) {
+        console.log('❌ No supervisor found with ID:', data.user.id);
+        
+        // Try searching by email as fallback
+        console.log('🔍 Trying fallback search by email...');
+        const { data: byEmail, error: emailError } = await supabase
+          .from('supervisor_profiles')
+          .select('*')
+          .eq('email', email);
+        
+        console.log('📊 Email search result:', { data: byEmail, error: emailError });
+        
+        if (byEmail && byEmail.length > 0) {
+          console.log('✅ Found supervisor by email:', byEmail[0]);
+          supervisor = byEmail;
+        } else {
+          await supabase.auth.signOut();
+          throw new Error("No supervisor account found with these credentials");
+        }
+      }
+
+      const supervisorData = supervisor[0];
+      console.log('✅ Supervisor found:', { 
+        id: supervisorData.id,
+        email: supervisorData.email,
+        role: supervisorData.role,
+        name: supervisorData.full_name 
+      });
 
       // Store supervisor session
       const sessionData = {
         loggedIn: true,
         user_id: data.user.id,
         email: data.user.email,
-        full_name: supervisor.full_name,
-        role: supervisor.role || 'supervisor',
+        full_name: supervisorData.full_name,
+        role: supervisorData.role || 'supervisor',
         access_token: data.session.access_token,
         refresh_token: data.session.refresh_token,
         timestamp: Date.now()
       };
       
       localStorage.setItem("userSession", JSON.stringify(sessionData));
-      console.log('✅ Supervisor logged in with role:', sessionData.role);
+      console.log('✅ Session stored, redirecting based on role:', sessionData.role);
 
       // Redirect based on role
-      if (supervisor.role === 'admin') {
+      if (supervisorData.role === 'admin') {
         router.push('/admin');
       } else {
         router.push('/supervisor');
       }
 
     } catch (err) {
+      console.error('🔴 Login error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
