@@ -23,12 +23,12 @@ export default function SupervisorForgotPassword() {
     }
 
     try {
-      // Check if supervisor exists
+      // Check if supervisor exists in supervisor_profiles
       const { data: supervisorData, error: supervisorError } = await supabase
-        .from("supervisors")
-        .select("id, email, name")
+        .from("supervisor_profiles")  // FIXED: was "supervisors"
+        .select("id, email, full_name")  // FIXED: was "name" -> now "full_name"
         .eq("email", email.toLowerCase().trim())
-        .single();
+        .maybeSingle();  // FIXED: using maybeSingle() instead of single() to avoid errors
 
       if (supervisorError || !supervisorData) {
         setError("No account found with this email address");
@@ -36,39 +36,19 @@ export default function SupervisorForgotPassword() {
         return;
       }
 
-      // Generate reset token (in production, use proper token generation)
-      const resetToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
-      const expiresAt = new Date(Date.now() + 3600000); // 1 hour from now
+      // Use Supabase's built-in password reset
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.toLowerCase().trim(), {
+        redirectTo: 'https://stratavax-capability-assessment.vercel.app/update-password',
+      });
 
-      // Store reset token in database
-      const { error: tokenError } = await supabase
-        .from("password_resets")
-        .insert({
-          email: email.toLowerCase().trim(),
-          token: resetToken,
-          expires_at: expiresAt.toISOString(),
-          used: false
-        });
-
-      if (tokenError) {
-        console.error("Token storage error:", tokenError);
+      if (resetError) {
+        console.error("Reset error:", resetError);
         setError("Failed to initiate password reset. Please try again.");
         setLoading(false);
         return;
       }
 
-      // In production, send email with reset link
-      // For demo, just show success message
       setMessage(`Password reset instructions have been sent to ${email}. Check your email.`);
-      
-      // Log the reset request
-      await supabase
-        .from("supervisor_logs")
-        .insert({
-          supervisor_id: supervisorData.id,
-          action: "password_reset_request",
-          timestamp: new Date().toISOString()
-        });
 
     } catch (err) {
       console.error("Reset password error:", err);
@@ -197,7 +177,7 @@ export default function SupervisorForgotPassword() {
               </button>
               <button
                 type="button"
-                onClick={() => router.push("/supervisor-login")}
+                onClick={() => router.push("/login")}  // FIXED: was "/supervisor-login"
                 style={{
                   flex: 1,
                   padding: "14px",
@@ -224,7 +204,7 @@ export default function SupervisorForgotPassword() {
             <p style={{ margin: 0 }}>
               Remember your password?{" "}
               <button
-                onClick={() => router.push("/supervisor-login")}
+                onClick={() => router.push("/login")}  // FIXED: was "/supervisor-login"
                 style={{
                   background: "none",
                   border: "none",
