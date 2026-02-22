@@ -11,7 +11,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [loginType, setLoginType] = useState('candidate'); // 'candidate' or 'supervisor'
+  const [loginType, setLoginType] = useState('candidate');
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -19,16 +19,22 @@ export default function Login() {
     setLoading(true);
 
     try {
+      console.log('1. Attempting login for:', email);
+      
       const { data, error } = await supabase.auth.signInWithPassword({ 
         email, 
         password 
       });
 
       if (error || !data.user) {
+        console.error('2. Auth error:', error);
         throw new Error("Invalid email or password");
       }
 
+      console.log('3. Auth successful, user ID:', data.user.id);
+
       // Check if user is a supervisor/admin
+      console.log('4. Checking supervisor_profiles...');
       const { data: supervisor, error: supervisorError } = await supabase
         .from('supervisor_profiles')
         .select('*')
@@ -36,8 +42,10 @@ export default function Login() {
         .maybeSingle();
 
       if (supervisorError) {
-        console.error('Supervisor check error:', supervisorError);
+        console.error('5. Supervisor check error:', supervisorError);
       }
+
+      console.log('6. Supervisor result:', supervisor);
 
       // Store session data
       const sessionData = {
@@ -52,30 +60,46 @@ export default function Login() {
       };
       
       localStorage.setItem("userSession", JSON.stringify(sessionData));
+      console.log('7. Session stored, role:', sessionData.role);
 
       // Redirect based on role
       if (supervisor) {
         if (supervisor.role === 'admin') {
+          console.log('8. Redirecting to admin');
           router.push('/admin');
         } else {
+          console.log('8. Redirecting to supervisor');
           router.push('/supervisor');
         }
       } else {
+        console.log('8. Redirecting to candidate dashboard');
         router.push('/candidate/dashboard');
       }
 
     } catch (err) {
+      console.error('9. Login error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSupervisorClick = (e) => {
+  const handleSupervisorClick = async (e) => {
     e.preventDefault();
+    
+    // If fields are empty, just set mode and focus
+    if (!email || !password) {
+      setLoginType('supervisor');
+      document.getElementById('email').focus();
+      return;
+    }
+    
+    // If fields are filled, submit the form
     setLoginType('supervisor');
-    // Pre-fill with supervisor hint or just focus on email
-    document.getElementById('email').focus();
+    // Small delay to ensure state is updated
+    setTimeout(() => {
+      document.querySelector('form').requestSubmit();
+    }, 100);
   };
 
   return (
