@@ -54,8 +54,7 @@ export default function SupervisorDashboard() {
       try {
         setLoading(true);
 
-        // Get all candidates with their assessments - NO SUPERVISOR FILTER
-        // This shows ALL candidates in the system since supervisors manage all candidates
+        // Get ONLY candidates assigned to this supervisor
         const { data: candidatesData, error: candidatesError } = await supabase
           .from('candidate_profiles')
           .select(`
@@ -78,6 +77,7 @@ export default function SupervisorDashboard() {
               )
             )
           `)
+          .eq('supervisor_id', currentSupervisor.id)  // Only show assigned candidates
           .order('created_at', { ascending: false });
 
         if (candidatesError) throw candidatesError;
@@ -220,7 +220,7 @@ export default function SupervisorDashboard() {
           <div style={{ ...styles.statCard, background: 'linear-gradient(135deg, #0A1929 0%, #1A2A3A 100%)' }}>
             <div style={styles.statIcon}>👥</div>
             <div style={styles.statContent}>
-              <div style={styles.statLabel}>Total Candidates</div>
+              <div style={styles.statLabel}>My Candidates</div>
               <div style={styles.statValue}>{stats.totalCandidates}</div>
             </div>
           </div>
@@ -273,7 +273,7 @@ export default function SupervisorDashboard() {
         {/* Candidates Table */}
         <div style={styles.tableContainer}>
           <div style={styles.tableHeader}>
-            <h2 style={styles.tableTitle}>Candidate Management</h2>
+            <h2 style={styles.tableTitle}>My Assigned Candidates</h2>
             <Link href="/supervisor/add-candidate" legacyBehavior>
               <a style={styles.addButton}>+ Add New Candidate</a>
             </Link>
@@ -282,16 +282,13 @@ export default function SupervisorDashboard() {
           {loading ? (
             <div style={styles.loadingState}>
               <div style={styles.spinner} />
-              <p>Loading candidates...</p>
+              <p>Loading your candidates...</p>
             </div>
           ) : filteredCandidates.length === 0 ? (
             <div style={styles.emptyState}>
               <div style={styles.emptyIcon}>👥</div>
-              <h3>No Candidates Found</h3>
-              <p>Start by adding candidates and assigning assessments.</p>
-              <Link href="/supervisor/add-candidate" legacyBehavior>
-                <a style={styles.primaryButton}>Add Your First Candidate</a>
-              </Link>
+              <h3>No Assigned Candidates</h3>
+              <p>You don't have any candidates assigned to you yet. Contact an administrator to assign candidates to your account.</p>
             </div>
           ) : (
             <div style={styles.tableWrapper}>
