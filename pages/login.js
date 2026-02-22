@@ -11,15 +11,15 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [loginType, setLoginType] = useState('candidate');
+  const [loginMode, setLoginMode] = useState('candidate'); // 'candidate' or 'supervisor'
 
-  const handleLogin = async (e) => {
+  const handleCandidateLogin = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
     try {
-      console.log('1. Attempting login for:', email);
+      console.log('🔵 Candidate login attempt for:', email);
       
       const { data, error } = await supabase.auth.signInWithPassword({ 
         email, 
@@ -27,14 +27,53 @@ export default function Login() {
       });
 
       if (error || !data.user) {
-        console.error('2. Auth error:', error);
         throw new Error("Invalid email or password");
       }
 
-      console.log('3. Auth successful, user ID:', data.user.id);
+      // Store candidate session
+      const sessionData = {
+        loggedIn: true,
+        user_id: data.user.id,
+        email: data.user.email,
+        full_name: data.user.user_metadata?.full_name || data.user.email?.split('@')[0],
+        role: 'candidate',
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        timestamp: Date.now()
+      };
+      
+      localStorage.setItem("userSession", JSON.stringify(sessionData));
+      console.log('✅ Candidate logged in, redirecting to dashboard');
+      router.push('/candidate/dashboard');
 
-      // Check if user is a supervisor/admin
-      console.log('4. Checking supervisor_profiles...');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSupervisorLogin = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      console.log('🟠 Supervisor login attempt for:', email);
+      
+      // First authenticate
+      const { data, error } = await supabase.auth.signInWithPassword({ 
+        email, 
+        password 
+      });
+
+      if (error || !data.user) {
+        throw new Error("Invalid email or password");
+      }
+
+      console.log('✅ Auth successful, checking supervisor status...');
+
+      // Check if user exists in supervisor_profiles
       const { data: supervisor, error: supervisorError } = await supabase
         .from('supervisor_profiles')
         .select('*')
@@ -42,84 +81,56 @@ export default function Login() {
         .maybeSingle();
 
       if (supervisorError) {
-        console.error('5. Supervisor check error:', supervisorError);
+        console.error('Supervisor check error:', supervisorError);
+        throw new Error("Error checking supervisor status");
       }
 
-      console.log('6. Supervisor result:', supervisor);
+      if (!supervisor) {
+        // If not found in supervisor_profiles, sign out and show error
+        await supabase.auth.signOut();
+        throw new Error("No supervisor account found with these credentials");
+      }
 
-      // Store session data
+      // Store supervisor session
       const sessionData = {
         loggedIn: true,
         user_id: data.user.id,
         email: data.user.email,
-        full_name: data.user.user_metadata?.full_name || data.user.email?.split('@')[0],
-        role: supervisor?.role || 'candidate',
+        full_name: supervisor.full_name,
+        role: supervisor.role || 'supervisor',
         access_token: data.session.access_token,
         refresh_token: data.session.refresh_token,
         timestamp: Date.now()
       };
       
       localStorage.setItem("userSession", JSON.stringify(sessionData));
-      console.log('7. Session stored, role:', sessionData.role);
+      console.log('✅ Supervisor logged in with role:', sessionData.role);
 
       // Redirect based on role
-      if (supervisor) {
-        if (supervisor.role === 'admin') {
-          console.log('8. Redirecting to admin');
-          router.push('/admin');
-        } else {
-          console.log('8. Redirecting to supervisor');
-          router.push('/supervisor');
-        }
+      if (supervisor.role === 'admin') {
+        router.push('/admin');
       } else {
-        console.log('8. Redirecting to candidate dashboard');
-        router.push('/candidate/dashboard');
+        router.push('/supervisor');
       }
 
     } catch (err) {
-      console.error('9. Login error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSupervisorClick = async (e) => {
-    e.preventDefault();
-    
-    // If fields are empty, just set mode and focus
-    if (!email || !password) {
-      setLoginType('supervisor');
-      document.getElementById('email').focus();
-      return;
-    }
-    
-    // If fields are filled, submit the form
-    setLoginType('supervisor');
-    // Small delay to ensure state is updated
-    setTimeout(() => {
-      document.querySelector('form').requestSubmit();
-    }, 100);
-  };
-
   return (
     <AppLayout background="/images/login-bg.jpg">
-      <form
-        onSubmit={handleLogin}
-        style={{
-          backgroundColor: "rgba(255,255,255,0.95)",
-          padding: 40,
-          borderRadius: 16,
-          width: 380,
-          margin: "auto",
-          display: "flex",
-          flexDirection: "column",
-          gap: 20,
-          textAlign: "center",
-          boxShadow: "0 10px 30px rgba(0,0,0,0.15)"
-        }}
-      >
-        <div style={{ marginBottom: 10 }}>
+      <div style={{
+        backgroundColor: "rgba(255,255,255,0.95)",
+        padding: 40,
+        borderRadius: 16,
+        width: 380,
+        margin: "auto",
+        boxShadow: "0 10px 30px rgba(0,0,0,0.15)"
+      }}>
+        <div style={{ marginBottom: 10, textAlign: "center" }}>
           <h1 style={{ 
             marginBottom: 5, 
             color: "#1565c0",
@@ -134,16 +145,49 @@ export default function Login() {
           }}>
             Talent Assessment Portal
           </p>
-          {loginType === 'supervisor' && (
-            <p style={{
-              color: "#1565c0",
-              fontSize: "14px",
-              marginTop: "10px",
-              fontWeight: "600"
-            }}>
-              Supervisor Login Mode
-            </p>
-          )}
+        </div>
+
+        {/* Mode Toggle */}
+        <div style={{
+          display: 'flex',
+          gap: '10px',
+          marginBottom: '20px',
+          borderRadius: '8px',
+          background: '#f0f0f0',
+          padding: '4px'
+        }}>
+          <button
+            onClick={() => setLoginMode('candidate')}
+            style={{
+              flex: 1,
+              padding: '10px',
+              border: 'none',
+              borderRadius: '6px',
+              background: loginMode === 'candidate' ? '#4CAF50' : 'transparent',
+              color: loginMode === 'candidate' ? 'white' : '#666',
+              cursor: 'pointer',
+              fontWeight: '600',
+              transition: 'all 0.3s'
+            }}
+          >
+            👤 Candidate
+          </button>
+          <button
+            onClick={() => setLoginMode('supervisor')}
+            style={{
+              flex: 1,
+              padding: '10px',
+              border: 'none',
+              borderRadius: '6px',
+              background: loginMode === 'supervisor' ? '#1565c0' : 'transparent',
+              color: loginMode === 'supervisor' ? 'white' : '#666',
+              cursor: 'pointer',
+              fontWeight: '600',
+              transition: 'all 0.3s'
+            }}
+          >
+            👑 Supervisor
+          </button>
         </div>
 
         {error && (
@@ -152,134 +196,93 @@ export default function Login() {
             color: "#c62828",
             padding: "12px",
             borderRadius: "8px",
+            marginBottom: "20px",
             fontSize: "14px"
           }}>
             {error}
           </div>
         )}
 
-        <div style={{ textAlign: "left" }}>
-          <label style={{
-            display: "block",
-            marginBottom: "8px",
-            fontWeight: "600",
-            color: "#333",
-            fontSize: "14px"
-          }}>
-            Email
-          </label>
-          <input
-            id="email"
-            type="email"
-            placeholder="Enter your email"
-            value={email}
-            required
-            onChange={(e) => setEmail(e.target.value)}
-            style={{ 
-              width: "100%", 
-              padding: 12,
-              borderRadius: 8, 
-              border: "2px solid #ddd",
-              fontSize: "16px",
-              boxSizing: "border-box"
-            }}
-          />
-        </div>
-
-        <div style={{ textAlign: "left" }}>
-          <label style={{
-            display: "block",
-            marginBottom: "8px",
-            fontWeight: "600",
-            color: "#333",
-            fontSize: "14px"
-          }}>
-            Password
-          </label>
-          <input
-            type="password"
-            placeholder="Enter your password"
-            value={password}
-            required
-            onChange={(e) => setPassword(e.target.value)}
-            style={{ 
-              width: "100%", 
-              padding: 12,
-              borderRadius: 8, 
-              border: "2px solid #ddd",
-              fontSize: "16px",
-              boxSizing: "border-box"
-            }}
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            padding: 15,
-            backgroundColor: loading ? "#81c784" : "#4CAF50",
-            color: "#fff",
-            border: "none",
-            borderRadius: 8,
-            cursor: loading ? "not-allowed" : "pointer",
-            fontWeight: "bold",
-            fontSize: "16px",
-            marginTop: 10,
-            transition: "background 0.3s"
-          }}
-        >
-          {loading ? "Logging in..." : "Login"}
-        </button>
-
-        <div style={{ 
-          marginTop: "25px", 
-          paddingTop: "20px", 
-          borderTop: "1px solid #eee", 
-          textAlign: "center" 
-        }}>
-          <p style={{ 
-            color: "#666", 
-            marginBottom: "15px",
-            fontSize: "14px"
-          }}>
-            Are you a supervisor?
-          </p>
-          <button
-            onClick={handleSupervisorClick}
-            style={{
-              display: "inline-block",
-              padding: "12px 24px",
-              background: "#1565c0",
-              color: "white",
-              textDecoration: "none",
-              borderRadius: "8px",
+        <form onSubmit={loginMode === 'candidate' ? handleCandidateLogin : handleSupervisorLogin}>
+          <div style={{ textAlign: "left", marginBottom: "15px" }}>
+            <label style={{
+              display: "block",
+              marginBottom: "8px",
               fontWeight: "600",
-              fontSize: "14px",
-              border: "none",
-              cursor: "pointer",
+              color: "#333",
+              fontSize: "14px"
+            }}>
+              Email
+            </label>
+            <input
+              type="email"
+              placeholder="Enter your email"
+              value={email}
+              required
+              onChange={(e) => setEmail(e.target.value)}
+              style={{ 
+                width: "100%", 
+                padding: 12,
+                borderRadius: 8, 
+                border: "2px solid #ddd",
+                fontSize: "16px",
+                boxSizing: "border-box"
+              }}
+            />
+          </div>
+
+          <div style={{ textAlign: "left", marginBottom: "20px" }}>
+            <label style={{
+              display: "block",
+              marginBottom: "8px",
+              fontWeight: "600",
+              color: "#333",
+              fontSize: "14px"
+            }}>
+              Password
+            </label>
+            <input
+              type="password"
+              placeholder="Enter your password"
+              value={password}
+              required
+              onChange={(e) => setPassword(e.target.value)}
+              style={{ 
+                width: "100%", 
+                padding: 12,
+                borderRadius: 8, 
+                border: "2px solid #ddd",
+                fontSize: "16px",
+                boxSizing: "border-box"
+              }}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
               width: "100%",
+              padding: 15,
+              background: loading ? "#ccc" : (loginMode === 'candidate' ? "#4CAF50" : "#1565c0"),
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              cursor: loading ? "not-allowed" : "pointer",
+              fontWeight: "bold",
+              fontSize: "16px",
               transition: "background 0.3s"
             }}
-            onMouseOver={(e) => e.currentTarget.style.background = "#0d47a1"}
-            onMouseOut={(e) => e.currentTarget.style.background = "#1565c0"}
           >
-            Login as Supervisor
+            {loading ? "Logging in..." : `Login as ${loginMode === 'candidate' ? 'Candidate' : 'Supervisor'}`}
           </button>
-          <p style={{ 
-            fontSize: "12px", 
-            color: "#888", 
-            marginTop: "10px",
-            fontStyle: "italic"
-          }}>
-            Supervisor access only. Candidates please login above.
-          </p>
-        </div>
+        </form>
 
         <div style={{ 
           marginTop: "20px", 
           fontSize: "14px", 
-          color: "#666" 
+          color: "#666",
+          textAlign: "center"
         }}>
           <p style={{ margin: 0 }}>
             Don't have an account?{" "}
@@ -294,7 +297,7 @@ export default function Login() {
             </Link>
           </p>
         </div>
-      </form>
+      </div>
     </AppLayout>
   );
 }
