@@ -6,6 +6,7 @@ import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 import { generateStratavaxReport } from "../../utils/stratavaxReportGenerator";
 import { assessmentTypes, getAssessmentType } from "../../utils/assessmentConfigs";
+import { generateCommentary, generateStrengthsSummary, generateWeaknessesSummary, generateProfileCommentary } from "../../utils/commentaryEngine";
 
 // Disable SSR for the entire component to prevent hydration issues
 const CandidateReport = dynamic(
@@ -456,39 +457,29 @@ function CandidateReportComponent() {
               </div>
               
               <div style={styles.narrativeBox}>
-                <p style={styles.narrativeText}>{report.strengths.narrative}</p>
+                <p style={styles.narrativeText}>{generateStrengthsSummary(report.strengths.items, report.strengths.topStrengths)}</p>
               </div>
               
-              <div style={styles.cardsGrid}>
-                {report.strengths.items.slice(0, 4).map((strength, index) => (
-                  <div key={index} style={styles.strengthCard}>
-                    <div style={styles.cardHeader}>
-                      <div style={styles.cardTitleSection}>
-                        <span style={styles.cardIcon}>⭐</span>
-                        <span style={styles.cardTitle}>{strength.area}</span>
+              {report.strengths.items.length > 0 ? (
+                <div style={styles.strengthsList}>
+                  {report.strengths.items.slice(0, 4).map((strength, index) => (
+                    <div key={index} style={styles.strengthCard}>
+                      <div style={styles.strengthCardHeader}>
+                        <span style={styles.strengthIcon}>⭐</span>
+                        <span style={styles.strengthName}>{strength.area}</span>
+                        <span style={styles.strengthScore}>{strength.percentage}% ({strength.grade})</span>
                       </div>
-                      <div style={styles.cardScore}>
-                        <span style={{...styles.cardPercentage, color: '#0A5C2E'}}>{strength.percentage}%</span>
-                        <span style={styles.cardGrade}>{strength.grade}</span>
-                      </div>
-                    </div>
-                    <div style={styles.cardBody}>
-                      <div style={styles.metricBar}>
-                        <div style={styles.metricBarLabel}>
-                          <span>Proficiency</span>
-                          <span>{strength.percentage}%</span>
-                        </div>
-                        <div style={styles.progressBarContainer}>
-                          <div style={{...styles.progressBar, width: `${strength.percentage}%`, background: 'linear-gradient(90deg, #0A5C2E, #4CAF50)'}} />
-                        </div>
-                      </div>
-                      <div style={styles.cardFooter}>
-                        <span style={styles.cardFooterText}>Top {index + 1} strength</span>
+                      <div style={styles.strengthInterpretation}>
+                        {generateCommentary(strength.area, strength.percentage, 'strength')}
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={styles.noStrengthsMessage}>
+                  No significant strengths identified above the 80% threshold.
+                </div>
+              )}
             </div>
 
             {/* DEVELOPMENT AREAS SECTION */}
@@ -499,10 +490,10 @@ function CandidateReportComponent() {
               </div>
               
               <div style={{...styles.narrativeBox, background: '#FEF2F2', borderLeftColor: '#F44336'}}>
-                <p style={styles.narrativeText}>{report.weaknesses.narrative}</p>
+                <p style={styles.narrativeText}>{generateWeaknessesSummary(report.weaknesses.items, report.weaknesses.topWeaknesses, report.executiveSummary.percentage)}</p>
               </div>
               
-              {/* DEVELOPMENT AREAS BULLET LIST */}
+              {/* DEVELOPMENT AREAS LIST WITH RICH COMMENTARY */}
               <div style={styles.developmentList}>
                 {report.weaknesses.items.slice(0, 5).map((weakness, index) => {
                   const priority = weakness.percentage < 40 ? 'Critical' : weakness.percentage < 55 ? 'High' : 'Medium';
@@ -524,27 +515,16 @@ function CandidateReportComponent() {
                         </div>
                       </div>
                       
-                      <div style={styles.developmentItemBody}>
-                        <div style={styles.developmentBar}>
-                          <div style={styles.developmentBarLabel}>
-                            <span>Current: {weakness.percentage}%</span>
-                            <span>Target: 80%</span>
-                          </div>
-                          <div style={styles.developmentBarContainer}>
-                            <div style={{...styles.developmentBarFill, width: `${weakness.percentage}%`, backgroundColor: priorityColor}} />
-                            <div style={{...styles.developmentBarTarget, left: '80%'}}>
-                              <span style={styles.targetMarker}>●</span>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {weakness.gap > 0 && (
-                          <div style={styles.gapIndicator}>
-                            <span style={styles.gapIcon}>📈</span>
-                            <span style={styles.gapText}>Needs +{weakness.gap} points to reach target</span>
-                          </div>
-                        )}
+                      <div style={styles.developmentInterpretation}>
+                        {generateCommentary(weakness.area, weakness.percentage, 'weakness')}
                       </div>
+                      
+                      {weakness.gap > 0 && (
+                        <div style={styles.gapIndicator}>
+                          <span style={styles.gapIcon}>📈</span>
+                          <span style={styles.gapText}>Development gap: {weakness.gap} points needed to reach proficiency target</span>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -561,11 +541,29 @@ function CandidateReportComponent() {
                         <span style={styles.moreArea}>{weakness.area}</span>
                         <span style={styles.morePercentage}>{weakness.percentage}%</span>
                         <span style={styles.moreGrade}>{weakness.grade}</span>
+                        <span style={styles.moreInterpretation}>
+                          {weakness.percentage < 40 ? 'Critical priority' : 
+                           weakness.percentage < 55 ? 'High priority' : 
+                           weakness.percentage < 70 ? 'Medium priority' : 'Low priority'}
+                        </span>
                       </div>
                     ))}
                   </div>
                 </details>
               )}
+            </div>
+            
+            {/* OVERALL PROFILE COMMENTARY */}
+            <div style={{...styles.narrativeBox, marginTop: '40px', background: '#F0F4F8'}}>
+              <h4 style={{margin: '0 0 15px 0', color: '#0A1929'}}>Professional Profile Summary</h4>
+              <p style={styles.narrativeText}>
+                {generateProfileCommentary(
+                  report.executiveSummary.percentage,
+                  report.executiveSummary.classification,
+                  report.strengths.items,
+                  report.weaknesses.items
+                )}
+              </p>
             </div>
           </section>
 
@@ -992,82 +990,52 @@ const styles = {
   badgeIcon: {
     fontSize: '28px'
   },
-  cardsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '20px',
+  strengthsList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '15px',
     marginTop: '25px'
   },
   strengthCard: {
     background: '#F0F9F0',
-    borderRadius: '16px',
-    padding: '20px',
-    border: '1px solid #C6F6D5',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      transform: 'translateY(-2px)',
-      boxShadow: '0 8px 24px rgba(0,100,0,0.1)'
-    }
+    borderRadius: '12px',
+    padding: '18px',
+    border: '1px solid #C6F6D5'
   },
-  cardHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '15px'
-  },
-  cardTitleSection: {
+  strengthCardHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px'
+    gap: '12px',
+    marginBottom: '10px'
   },
-  cardIcon: {
-    fontSize: '16px',
-    color: '#FBBF24'
+  strengthIcon: {
+    fontSize: '18px'
   },
-  cardTitle: {
+  strengthName: {
     fontSize: '16px',
     fontWeight: 600,
+    color: '#0A5C2E',
+    flex: 1
+  },
+  strengthScore: {
+    fontSize: '18px',
+    fontWeight: 700,
     color: '#0A5C2E'
   },
-  cardScore: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px'
-  },
-  cardPercentage: {
-    fontSize: '20px',
-    fontWeight: 700
-  },
-  cardGrade: {
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#718096',
-    background: 'white',
-    padding: '2px 6px',
-    borderRadius: '4px'
-  },
-  cardBody: {
-    marginTop: '10px'
-  },
-  metricBar: {
-    marginBottom: '12px'
-  },
-  metricBarLabel: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: '12px',
-    color: '#4A5568',
-    marginBottom: '4px'
-  },
-  cardFooter: {
-    borderTop: '1px solid #C6F6D5',
-    paddingTop: '12px',
-    marginTop: '4px'
-  },
-  cardFooterText: {
-    fontSize: '12px',
+  strengthInterpretation: {
+    fontSize: '14px',
     color: '#2F855A',
-    fontStyle: 'italic'
+    lineHeight: '1.6',
+    paddingLeft: '30px'
+  },
+  noStrengthsMessage: {
+    padding: '20px',
+    background: '#F7FAFC',
+    borderRadius: '12px',
+    color: '#718096',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: '20px'
   },
   developmentList: {
     display: 'flex',
@@ -1077,21 +1045,15 @@ const styles = {
   },
   developmentItem: {
     background: 'white',
-    borderRadius: '16px',
-    padding: '20px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
-    border: '1px solid #FEE2E2',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      boxShadow: '0 8px 24px rgba(0,0,0,0.04)',
-      borderColor: '#FECACA'
-    }
+    borderRadius: '12px',
+    padding: '18px',
+    border: '1px solid #FEE2E2'
   },
   developmentItemHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '15px',
+    marginBottom: '12px',
     flexWrap: 'wrap',
     gap: '12px'
   },
@@ -1107,7 +1069,7 @@ const styles = {
     display: 'inline-block'
   },
   developmentArea: {
-    fontSize: '18px',
+    fontSize: '16px',
     fontWeight: 600,
     color: '#1A2A3A'
   },
@@ -1126,7 +1088,7 @@ const styles = {
   developmentScore: {
     fontSize: '18px',
     fontWeight: 700,
-    color: '#1A2A3A',
+    color: '#B71C1C',
     minWidth: '50px',
     textAlign: 'right'
   },
@@ -1140,56 +1102,23 @@ const styles = {
     minWidth: '40px',
     textAlign: 'center'
   },
-  developmentItemBody: {
-    marginTop: '10px'
-  },
-  developmentBar: {
-    marginBottom: '10px'
-  },
-  developmentBarLabel: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: '13px',
+  developmentInterpretation: {
+    fontSize: '14px',
     color: '#4A5568',
-    marginBottom: '6px'
-  },
-  developmentBarContainer: {
-    height: '8px',
-    background: '#EDF2F7',
-    borderRadius: '4px',
-    position: 'relative',
-    overflow: 'visible'
-  },
-  developmentBarFill: {
-    height: '100%',
-    borderRadius: '4px',
-    transition: 'width 0.3s ease'
-  },
-  developmentBarTarget: {
-    position: 'absolute',
-    top: '-2px',
-    width: '2px',
-    height: '12px',
-    backgroundColor: '#718096',
-    transform: 'translateX(-50%)'
-  },
-  targetMarker: {
-    position: 'absolute',
-    top: '-8px',
-    left: '-4px',
-    fontSize: '12px',
-    color: '#4A5568'
+    lineHeight: '1.6',
+    marginBottom: '12px',
+    paddingLeft: '22px'
   },
   gapIndicator: {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
-    marginTop: '12px',
     padding: '8px 12px',
     background: '#FEF2F2',
     borderRadius: '8px',
     fontSize: '13px',
-    color: '#B91C1C'
+    color: '#B91C1C',
+    marginLeft: '22px'
   },
   gapIcon: {
     fontSize: '14px'
@@ -1208,10 +1137,7 @@ const styles = {
     fontWeight: 500,
     cursor: 'pointer',
     fontSize: '14px',
-    padding: '4px 8px',
-    ':hover': {
-      color: '#991B1B'
-    }
+    padding: '4px 8px'
   },
   moreList: {
     marginTop: '15px',
@@ -1223,18 +1149,20 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
-    padding: '8px 12px',
+    padding: '10px 12px',
     background: '#FEF2F2',
     borderRadius: '8px',
-    fontSize: '14px'
+    fontSize: '14px',
+    flexWrap: 'wrap'
   },
   moreBullet: {
     color: '#FCA5A5',
     fontSize: '16px'
   },
   moreArea: {
-    flex: 1,
-    color: '#2D3748'
+    flex: 2,
+    color: '#2D3748',
+    fontWeight: 500
   },
   morePercentage: {
     fontWeight: 600,
@@ -1250,6 +1178,13 @@ const styles = {
     color: '#B91C1C',
     minWidth: '35px',
     textAlign: 'center'
+  },
+  moreInterpretation: {
+    fontSize: '12px',
+    color: '#718096',
+    fontStyle: 'italic',
+    flex: 1,
+    minWidth: '120px'
   },
   recommendationsList: {
     display: 'flex',
