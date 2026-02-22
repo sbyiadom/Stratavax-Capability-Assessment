@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
@@ -54,7 +54,7 @@ export default function SupervisorDashboard() {
     checkAuth();
   }, [router]);
 
-  // FIXED: Data fetching with proper assessment_results table
+  // Fixed data fetching with proper assessment_results table
   useEffect(() => {
     if (!currentSupervisor) return;
 
@@ -653,4 +653,404 @@ export default function SupervisorDashboard() {
   );
 }
 
-// ... keep all the styles from your existing file ...
+const styles = {
+  checkingContainer: {
+    minHeight: '100vh',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '20px',
+    background: 'linear-gradient(135deg, #0A1929 0%, #1A2A3A 100%)',
+    color: 'white'
+  },
+  spinner: {
+    width: '40px',
+    height: '40px',
+    border: '4px solid rgba(255,255,255,0.3)',
+    borderTop: '4px solid white',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite'
+  },
+  container: {
+    width: '90vw',
+    maxWidth: '1400px',
+    margin: '0 auto',
+    padding: '30px 20px'
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '30px',
+    background: 'white',
+    padding: '20px 30px',
+    borderRadius: '16px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+  },
+  title: {
+    margin: 0,
+    color: '#0A1929',
+    fontSize: '28px',
+    fontWeight: 700
+  },
+  welcome: {
+    margin: '5px 0 0 0',
+    color: '#666',
+    fontSize: '14px'
+  },
+  logoutButton: {
+    background: '#F44336',
+    color: 'white',
+    border: 'none',
+    padding: '10px 24px',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 600,
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#D32F2F',
+      transform: 'translateY(-1px)',
+      boxShadow: '0 4px 12px rgba(244, 67, 54, 0.3)'
+    }
+  },
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '20px',
+    marginBottom: '30px'
+  },
+  statCard: {
+    padding: '25px',
+    borderRadius: '16px',
+    color: 'white',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '20px',
+    boxShadow: '0 8px 24px rgba(0,0,0,0.1)'
+  },
+  statIcon: {
+    fontSize: '36px',
+    opacity: 0.9
+  },
+  statContent: {
+    flex: 1
+  },
+  statLabel: {
+    fontSize: '14px',
+    opacity: 0.9,
+    marginBottom: '5px'
+  },
+  statValue: {
+    fontSize: '32px',
+    fontWeight: 700
+  },
+  filterBar: {
+    background: 'white',
+    padding: '20px',
+    borderRadius: '12px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    marginBottom: '20px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '20px',
+    flexWrap: 'wrap'
+  },
+  filterLabel: {
+    fontWeight: 600,
+    color: '#333'
+  },
+  filterButtons: {
+    display: 'flex',
+    gap: '10px',
+    flexWrap: 'wrap'
+  },
+  filterButton: {
+    padding: '8px 16px',
+    border: 'none',
+    borderRadius: '20px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 500,
+    transition: 'all 0.2s ease'
+  },
+  tableContainer: {
+    background: 'white',
+    padding: '25px',
+    borderRadius: '16px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+  },
+  tableHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '20px'
+  },
+  tableTitle: {
+    margin: 0,
+    color: '#0A1929',
+    fontSize: '20px',
+    fontWeight: 600
+  },
+  addButton: {
+    background: '#0A1929',
+    color: 'white',
+    padding: '10px 20px',
+    borderRadius: '8px',
+    textDecoration: 'none',
+    fontSize: '14px',
+    fontWeight: 500,
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#1A2A3A',
+      transform: 'translateY(-1px)',
+      boxShadow: '0 4px 12px rgba(10, 25, 41, 0.3)'
+    }
+  },
+  loadingState: {
+    textAlign: 'center',
+    padding: '60px'
+  },
+  emptyState: {
+    textAlign: 'center',
+    padding: '60px 20px',
+    background: '#F8FAFC',
+    borderRadius: '12px'
+  },
+  emptyIcon: {
+    fontSize: '64px',
+    marginBottom: '20px',
+    opacity: 0.5
+  },
+  primaryButton: {
+    display: 'inline-block',
+    background: '#0A1929',
+    color: 'white',
+    padding: '12px 30px',
+    borderRadius: '30px',
+    textDecoration: 'none',
+    fontSize: '16px',
+    fontWeight: 500,
+    marginTop: '20px',
+    cursor: 'pointer'
+  },
+  tableWrapper: {
+    overflowX: 'auto'
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '14px',
+    minWidth: '1200px'
+  },
+  tableHeadRow: {
+    borderBottom: '2px solid #0A1929',
+    background: '#F8FAFC'
+  },
+  tableHead: {
+    padding: '15px',
+    fontWeight: 600,
+    color: '#0A1929',
+    textAlign: 'left'
+  },
+  tableRow: {
+    borderBottom: '1px solid #E2E8F0',
+    transition: 'background 0.2s ease',
+    ':hover': {
+      background: '#F8FAFC'
+    }
+  },
+  tableCell: {
+    padding: '15px'
+  },
+  candidateInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px'
+  },
+  candidateAvatar: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '20px',
+    background: '#E2E8F0',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#0A1929'
+  },
+  candidateName: {
+    fontWeight: 600,
+    color: '#0A1929',
+    marginBottom: '4px'
+  },
+  candidateId: {
+    fontSize: '11px',
+    color: '#718096',
+    fontFamily: 'monospace'
+  },
+  candidateEmail: {
+    fontSize: '14px',
+    color: '#0A1929',
+    marginBottom: '4px'
+  },
+  candidatePhone: {
+    fontSize: '12px',
+    color: '#718096'
+  },
+  assessmentStats: {
+    display: 'flex',
+    gap: '15px',
+    marginBottom: '8px'
+  },
+  assessmentCount: {
+    fontSize: '13px',
+    color: '#4A5568'
+  },
+  assessmentTags: {
+    display: 'flex',
+    gap: '5px',
+    flexWrap: 'wrap'
+  },
+  assessmentTag: {
+    padding: '2px 8px',
+    borderRadius: '4px',
+    fontSize: '11px',
+    fontWeight: 600,
+    textTransform: 'capitalize'
+  },
+  viewDetailsButton: {
+    marginTop: '8px',
+    padding: '4px 8px',
+    background: 'none',
+    border: '1px solid #0A1929',
+    borderRadius: '4px',
+    color: '#0A1929',
+    fontSize: '11px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#0A1929',
+      color: 'white'
+    }
+  },
+  scoreBadge: {
+    display: 'inline-block',
+    padding: '5px 12px',
+    borderRadius: '20px',
+    fontWeight: 600,
+    fontSize: '13px'
+  },
+  noScore: {
+    fontSize: '13px',
+    color: '#9E9E9E',
+    fontStyle: 'italic'
+  },
+  classificationBadge: {
+    display: 'inline-block',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    fontWeight: 600,
+    fontSize: '12px'
+  },
+  date: {
+    fontSize: '13px',
+    color: '#718096'
+  },
+  actionButtons: {
+    display: 'flex',
+    gap: '8px',
+    flexWrap: 'wrap'
+  },
+  viewButton: {
+    background: '#0A1929',
+    color: 'white',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    textDecoration: 'none',
+    fontSize: '12px',
+    fontWeight: 500,
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#1A2A3A'
+    }
+  },
+  assignButton: {
+    background: '#4CAF50',
+    color: 'white',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    textDecoration: 'none',
+    fontSize: '12px',
+    fontWeight: 500,
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#45a049'
+    }
+  },
+  expandedRow: {
+    background: '#F8FAFC'
+  },
+  expandedCell: {
+    padding: '20px 30px',
+    borderBottom: '1px solid #E2E8F0'
+  },
+  assessmentsList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px'
+  },
+  assessmentsListTitle: {
+    margin: '0 0 10px 0',
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#0A1929'
+  },
+  assessmentItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '10px 15px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #E2E8F0'
+  },
+  assessmentItemInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '15px',
+    flexWrap: 'wrap'
+  },
+  assessmentItemTitle: {
+    fontSize: '13px',
+    fontWeight: 500,
+    color: '#0A1929',
+    minWidth: '200px'
+  },
+  assessmentItemStatus: {
+    padding: '3px 8px',
+    borderRadius: '4px',
+    fontSize: '11px',
+    fontWeight: 600
+  },
+  assessmentItemScore: {
+    fontSize: '12px',
+    color: '#4A5568'
+  },
+  resetSmallButton: {
+    padding: '4px 10px',
+    background: '#FF9800',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    fontSize: '11px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#F57C00'
+    }
+  }
+};
