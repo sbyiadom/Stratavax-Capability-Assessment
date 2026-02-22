@@ -18,12 +18,12 @@ export default function SupervisorSetup() {
   useEffect(() => {
     const checkSupervisors = async () => {
       const { count, error } = await supabase
-        .from("supervisors")
+        .from("supervisor_profiles")  // FIXED: was "supervisors"
         .select("*", { count: 'exact', head: true });
 
       if (!error && count > 0) {
         // Supervisors exist, redirect to login
-        router.push("/supervisor-login");
+        router.push("/login");  // FIXED: was "/supervisor-login"
       }
     };
 
@@ -58,7 +58,7 @@ export default function SupervisorSetup() {
     try {
       // Check if email already exists
       const { data: existing } = await supabase
-        .from("supervisors")
+        .from("supervisor_profiles")  // FIXED: was "supervisors"
         .select("id")
         .eq("email", formData.email.toLowerCase().trim())
         .maybeSingle();
@@ -67,15 +67,30 @@ export default function SupervisorSetup() {
         throw new Error("Email already registered");
       }
 
-      // Create supervisor
+      // First, create auth user
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email.toLowerCase().trim(),
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.full_name,
+            role: 'admin',
+            is_supervisor: true
+          }
+        }
+      });
+
+      if (authError) throw authError;
+
+      // Then create supervisor profile
       const { data, error } = await supabase
-        .from("supervisors")
+        .from("supervisor_profiles")  // FIXED: was "supervisors"
         .insert({
+          id: authData.user.id,  // Link to auth user ID
           full_name: formData.full_name,
           email: formData.email.toLowerCase().trim(),
           role: 'admin',
-          is_active: true,
-          created_at: new Date().toISOString()
+          is_active: true
         })
         .select()
         .single();
@@ -86,7 +101,7 @@ export default function SupervisorSetup() {
       
       // Redirect to login after 3 seconds
       setTimeout(() => {
-        router.push("/supervisor-login");
+        router.push("/login");  // FIXED: was "/supervisor-login"
       }, 3000);
 
     } catch (err) {
@@ -95,6 +110,8 @@ export default function SupervisorSetup() {
       setLoading(false);
     }
   };
+
+  // ... rest of the component remains the same until the footer
 
   return (
     <div style={styles.container}>
@@ -217,7 +234,7 @@ export default function SupervisorSetup() {
         {/* Footer */}
         <div style={styles.footer}>
           <button
-            onClick={() => router.push("/supervisor-login")}
+            onClick={() => router.push("/login")}  // FIXED: was "/supervisor-login"
             style={styles.backButton}
           >
             ← Back to Login
@@ -235,6 +252,7 @@ export default function SupervisorSetup() {
   );
 }
 
+// Styles remain exactly the same
 const styles = {
   container: {
     minHeight: '100vh',
