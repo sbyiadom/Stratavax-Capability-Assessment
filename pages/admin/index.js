@@ -23,7 +23,7 @@ export default function AdminDashboard() {
     try {
       setLoading(true);
       
-      // Check userSession from localStorage (FIXED)
+      // Check userSession from localStorage
       const userSession = localStorage.getItem("userSession");
       console.log('1. LocalStorage session:', userSession);
       
@@ -269,14 +269,6 @@ export default function AdminDashboard() {
             </a>
           </Link>
         </div>
-
-        {/* Debug Info - Remove in production */}
-        <div style={styles.debugSection}>
-          <h3 style={styles.debugTitle}>🔧 Session Info (Admin Only)</h3>
-          <pre style={styles.debugPre}>
-            {JSON.stringify({ isAdmin, stats }, null, 2)}
-          </pre>
-        </div>
       </div>
 
       <style jsx>{`
@@ -446,27 +438,5 @@ const styles = {
     color: '#718096',
     fontSize: '13px',
     lineHeight: '1.5'
-  },
-  debugSection: {
-    background: '#1E1E2E',
-    padding: '20px',
-    borderRadius: '12px',
-    marginTop: '40px',
-    border: '1px solid #333'
-  },
-  debugTitle: {
-    margin: '0 0 15px 0',
-    color: '#fff',
-    fontSize: '16px',
-    fontWeight: 600
-  },
-  debugPre: {
-    background: '#2D2D3A',
-    padding: '15px',
-    borderRadius: '8px',
-    color: '#00FF00',
-    fontSize: '12px',
-    overflow: 'auto',
-    fontFamily: 'monospace'
   }
 };
