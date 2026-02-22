@@ -18,6 +18,7 @@ export default function SupervisorDashboard() {
     pendingAssessments: 0,
     byType: {}
   });
+  const [expandedCandidate, setExpandedCandidate] = useState(null);
 
   // Authentication check
   useEffect(() => {
@@ -60,7 +61,7 @@ export default function SupervisorDashboard() {
       try {
         setLoading(true);
 
-        // First, get candidates with their basic assessment info (no max_score)
+        // First, get candidates with their basic assessment info
         const { data: candidatesData, error: candidatesError } = await supabase
           .from('candidate_profiles')
           .select(`
@@ -111,7 +112,8 @@ export default function SupervisorDashboard() {
                       ...assessment,
                       max_score: assessmentData.max_score || 100,
                       assessment_type: assessmentData.assessment_types?.code || 'unknown',
-                      assessment_name: assessmentData.assessment_types?.name || 'Unknown'
+                      assessment_name: assessmentData.assessment_types?.name || 'Unknown',
+                      assessment_title: assessmentData.title || 'Unknown Assessment'
                     };
                   }
                 }
@@ -119,7 +121,8 @@ export default function SupervisorDashboard() {
                   ...assessment,
                   max_score: 100,
                   assessment_type: 'unknown',
-                  assessment_name: 'Unknown'
+                  assessment_name: 'Unknown',
+                  assessment_title: 'Unknown Assessment'
                 };
               })
             );
@@ -150,12 +153,8 @@ export default function SupervisorDashboard() {
               pendingAssessments: pendingAssessments.length,
               assessment_breakdown: assessmentBreakdown,
               latestAssessment: latestAssessment,
-              assessments: assessmentsWithDetails.map(a => ({
-                score: a.score,
-                max_score: a.max_score,
-                completed_at: a.completed_at,
-                type: a.assessment_type
-              }))
+              hasCompletedAssessments: completedAssessments.length > 0,
+              assessments: assessmentsWithDetails
             };
           })
         );
@@ -232,6 +231,59 @@ export default function SupervisorDashboard() {
     await supabase.auth.signOut();
     localStorage.removeItem("userSession");
     router.push("/login");
+  };
+
+  // Toggle candidate details
+  const toggleCandidateDetails = (candidateId) => {
+    if (expandedCandidate === candidateId) {
+      setExpandedCandidate(null);
+    } else {
+      setExpandedCandidate(candidateId);
+    }
+  };
+
+  // Assessment-specific reset function
+  const handleResetAssessment = async (candidateId, assessmentId, assessmentTitle, candidateName) => {
+    if (!confirm(`Are you sure you want to reset "${assessmentTitle}" for ${candidateName}? They will be able to retake it.`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // Update specific assessment to 'pending' status
+      const { error } = await supabase
+        .from('candidate_assessments')
+        .update({ 
+          status: 'pending',
+          score: null,
+          completed_at: null 
+        })
+        .eq('user_id', candidateId)
+        .eq('assessment_id', assessmentId);
+
+      if (error) throw error;
+
+      // Delete any assessment sessions for this specific assessment
+      const { error: sessionError } = await supabase
+        .from('assessment_sessions')
+        .delete()
+        .eq('user_id', candidateId)
+        .eq('assessment_id', assessmentId);
+
+      if (sessionError) throw sessionError;
+
+      alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}. They can now retake it.`);
+      
+      // Refresh the data
+      window.location.reload();
+
+    } catch (error) {
+      console.error('Error resetting assessment:', error);
+      alert('❌ Failed to reset assessment: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!currentSupervisor) {
@@ -348,113 +400,168 @@ export default function SupervisorDashboard() {
                     const maxScore = candidate.latestAssessment?.max_score || 100;
                     const percentage = latestScore ? Math.round((latestScore/maxScore)*100) : 0;
                     const classification = getClassification(latestScore, maxScore);
+                    const isExpanded = expandedCandidate === candidate.id;
 
                     return (
-                      <tr key={candidate.id} style={styles.tableRow}>
-                        <td style={styles.tableCell}>
-                          <div style={styles.candidateInfo}>
-                            <div style={styles.candidateAvatar}>
-                              {candidate.full_name?.charAt(0) || 'C'}
+                      <>
+                        <tr key={candidate.id} style={styles.tableRow}>
+                          <td style={styles.tableCell}>
+                            <div style={styles.candidateInfo}>
+                              <div style={styles.candidateAvatar}>
+                                {candidate.full_name?.charAt(0) || 'C'}
+                              </div>
+                              <div>
+                                <div style={styles.candidateName}>{candidate.full_name}</div>
+                                <div style={styles.candidateId}>ID: {candidate.id.substring(0, 8)}...</div>
+                              </div>
                             </div>
-                            <div>
-                              <div style={styles.candidateName}>{candidate.full_name}</div>
-                              <div style={styles.candidateId}>ID: {candidate.id.substring(0, 8)}...</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td style={styles.tableCell}>
-                          <div style={styles.candidateEmail}>{candidate.email}</div>
-                          {candidate.phone && <div style={styles.candidatePhone}>{candidate.phone}</div>}
-                        </td>
-                        <td style={styles.tableCell}>
-                          <div style={styles.assessmentStats}>
-                            <span style={styles.assessmentCount}>
-                              <strong>{candidate.completedAssessments}</strong> completed
-                            </span>
-                            <span style={styles.assessmentCount}>
-                              <strong>{candidate.pendingAssessments}</strong> pending
-                            </span>
-                          </div>
-                          <div style={styles.assessmentTags}>
-                            {Object.entries(candidate.assessment_breakdown).map(([type, count]) => (
-                              <span key={type} style={{
-                                ...styles.assessmentTag,
-                                background: type === 'leadership' ? '#E3F2FD' :
-                                           type === 'cognitive' ? '#E8F5E9' :
-                                           type === 'technical' ? '#FFEBEE' :
-                                           type === 'personality' ? '#F3E5F5' :
-                                           type === 'performance' ? '#FFF3E0' :
-                                           type === 'behavioral' ? '#E0F2F1' :
-                                           type === 'cultural' ? '#F1F5F9' :
-                                           '#F1F5F9',
-                                color: type === 'leadership' ? '#1565C0' :
-                                       type === 'cognitive' ? '#2E7D32' :
-                                       type === 'technical' ? '#C62828' :
-                                       type === 'personality' ? '#7B1FA2' :
-                                       type === 'performance' ? '#EF6C00' :
-                                       type === 'behavioral' ? '#00695C' :
-                                       type === 'cultural' ? '#37474F' :
-                                       '#37474F'
-                              }}>
-                                {type}: {count}
+                          </td>
+                          <td style={styles.tableCell}>
+                            <div style={styles.candidateEmail}>{candidate.email}</div>
+                            {candidate.phone && <div style={styles.candidatePhone}>{candidate.phone}</div>}
+                          </td>
+                          <td style={styles.tableCell}>
+                            <div style={styles.assessmentStats}>
+                              <span style={styles.assessmentCount}>
+                                <strong>{candidate.completedAssessments}</strong> completed
                               </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td style={styles.tableCell}>
-                          {candidate.latestAssessment ? (
+                              <span style={styles.assessmentCount}>
+                                <strong>{candidate.pendingAssessments}</strong> pending
+                              </span>
+                            </div>
+                            <div style={styles.assessmentTags}>
+                              {Object.entries(candidate.assessment_breakdown).map(([type, count]) => (
+                                <span key={type} style={{
+                                  ...styles.assessmentTag,
+                                  background: type === 'leadership' ? '#E3F2FD' :
+                                             type === 'cognitive' ? '#E8F5E9' :
+                                             type === 'technical' ? '#FFEBEE' :
+                                             type === 'personality' ? '#F3E5F5' :
+                                             type === 'performance' ? '#FFF3E0' :
+                                             type === 'behavioral' ? '#E0F2F1' :
+                                             type === 'cultural' ? '#F1F5F9' :
+                                             '#F1F5F9',
+                                  color: type === 'leadership' ? '#1565C0' :
+                                         type === 'cognitive' ? '#2E7D32' :
+                                         type === 'technical' ? '#C62828' :
+                                         type === 'personality' ? '#7B1FA2' :
+                                         type === 'performance' ? '#EF6C00' :
+                                         type === 'behavioral' ? '#00695C' :
+                                         type === 'cultural' ? '#37474F' :
+                                         '#37474F'
+                                }}>
+                                  {type}: {count}
+                                </span>
+                              ))}
+                            </div>
+                            {candidate.assessments.length > 0 && (
+                              <button
+                                onClick={() => toggleCandidateDetails(candidate.id)}
+                                style={styles.viewDetailsButton}
+                              >
+                                {isExpanded ? '▲ Hide Details' : '▼ View Assessments'}
+                              </button>
+                            )}
+                          </td>
+                          <td style={styles.tableCell}>
+                            {candidate.latestAssessment ? (
+                              <span style={{
+                                ...styles.scoreBadge,
+                                background: percentage >= 85 ? '#E8F5E9' :
+                                           percentage >= 70 ? '#E3F2FD' :
+                                           percentage >= 55 ? '#FFF3E0' :
+                                           percentage >= 40 ? '#F3E5F5' :
+                                           '#FFEBEE',
+                                color: percentage >= 85 ? '#2E7D32' :
+                                      percentage >= 70 ? '#1565C0' :
+                                      percentage >= 55 ? '#F57C00' :
+                                      percentage >= 40 ? '#7B1FA2' :
+                                      '#C62828'
+                              }}>
+                                {latestScore}/{maxScore} ({percentage}%)
+                              </span>
+                            ) : (
+                              <span style={styles.noScore}>No assessments</span>
+                            )}
+                          </td>
+                          <td style={styles.tableCell}>
                             <span style={{
-                              ...styles.scoreBadge,
-                              background: percentage >= 85 ? '#E8F5E9' :
-                                         percentage >= 70 ? '#E3F2FD' :
-                                         percentage >= 55 ? '#FFF3E0' :
-                                         percentage >= 40 ? '#F3E5F5' :
-                                         '#FFEBEE',
-                              color: percentage >= 85 ? '#2E7D32' :
-                                    percentage >= 70 ? '#1565C0' :
-                                    percentage >= 55 ? '#F57C00' :
-                                    percentage >= 40 ? '#7B1FA2' :
-                                    '#C62828'
+                              ...styles.classificationBadge,
+                              color: classification.color,
+                              background: `${classification.color}15`,
+                              border: `1px solid ${classification.color}30`
                             }}>
-                              {latestScore}/{maxScore} ({percentage}%)
+                              {classification.label}
                             </span>
-                          ) : (
-                            <span style={styles.noScore}>No assessments</span>
-                          )}
-                        </td>
-                        <td style={styles.tableCell}>
-                          <span style={{
-                            ...styles.classificationBadge,
-                            color: classification.color,
-                            background: `${classification.color}15`,
-                            border: `1px solid ${classification.color}30`
-                          }}>
-                            {classification.label}
-                          </span>
-                        </td>
-                        <td style={styles.tableCell}>
-                          <span style={styles.date}>
-                            {candidate.latestAssessment 
-                              ? formatDate(candidate.latestAssessment.completed_at)
-                              : 'Never'
-                            }
-                          </span>
-                        </td>
-                        <td style={styles.tableCell}>
-                          <div style={styles.actionButtons}>
-                            <Link href={`/supervisor/${candidate.id}`} legacyBehavior>
-                              <a style={styles.viewButton}>
-                                View Reports
-                              </a>
-                            </Link>
-                            <Link href={`/supervisor/assign-assessment/${candidate.id}`} legacyBehavior>
-                              <a style={styles.assignButton}>
-                                Assign
-                              </a>
-                            </Link>
-                          </div>
-                        </td>
-                      </tr>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <span style={styles.date}>
+                              {candidate.latestAssessment 
+                                ? formatDate(candidate.latestAssessment.completed_at)
+                                : 'Never'
+                              }
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <div style={styles.actionButtons}>
+                              <Link href={`/supervisor/${candidate.id}`} legacyBehavior>
+                                <a style={styles.viewButton}>
+                                  View Reports
+                                </a>
+                              </Link>
+                              <Link href={`/supervisor/assign-assessment/${candidate.id}`} legacyBehavior>
+                                <a style={styles.assignButton}>
+                                  Assign
+                                </a>
+                              </Link>
+                            </div>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr style={styles.expandedRow}>
+                            <td colSpan="7" style={styles.expandedCell}>
+                              <div style={styles.assessmentsList}>
+                                <h4 style={styles.assessmentsListTitle}>Individual Assessments</h4>
+                                {candidate.assessments.map((assessment) => (
+                                  <div key={assessment.id} style={styles.assessmentItem}>
+                                    <div style={styles.assessmentItemInfo}>
+                                      <span style={styles.assessmentItemTitle}>
+                                        {assessment.assessment_title}
+                                      </span>
+                                      <span style={{
+                                        ...styles.assessmentItemStatus,
+                                        background: assessment.status === 'completed' ? '#E8F5E9' : '#FFF3E0',
+                                        color: assessment.status === 'completed' ? '#2E7D32' : '#F57C00'
+                                      }}>
+                                        {assessment.status === 'completed' ? '✓ Completed' : '⏳ Pending'}
+                                      </span>
+                                      {assessment.status === 'completed' && (
+                                        <span style={styles.assessmentItemScore}>
+                                          Score: {assessment.score}/{assessment.max_score} 
+                                          ({Math.round((assessment.score/assessment.max_score)*100)}%)
+                                        </span>
+                                      )}
+                                    </div>
+                                    {assessment.status === 'completed' && (
+                                      <button
+                                        onClick={() => handleResetAssessment(
+                                          candidate.id, 
+                                          assessment.assessment_id, 
+                                          assessment.assessment_title,
+                                          candidate.full_name
+                                        )}
+                                        style={styles.resetSmallButton}
+                                      >
+                                        🔄 Reset
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
                     );
                   })}
                 </tbody>
@@ -742,6 +849,21 @@ const styles = {
     fontWeight: 600,
     textTransform: 'capitalize'
   },
+  viewDetailsButton: {
+    marginTop: '8px',
+    padding: '4px 8px',
+    background: 'none',
+    border: '1px solid #0A1929',
+    borderRadius: '4px',
+    color: '#0A1929',
+    fontSize: '11px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#0A1929',
+      color: 'white'
+    }
+  },
   scoreBadge: {
     display: 'inline-block',
     padding: '5px 12px',
@@ -767,7 +889,8 @@ const styles = {
   },
   actionButtons: {
     display: 'flex',
-    gap: '8px'
+    gap: '8px',
+    flexWrap: 'wrap'
   },
   viewButton: {
     background: '#0A1929',
@@ -793,6 +916,69 @@ const styles = {
     transition: 'all 0.2s ease',
     ':hover': {
       background: '#45a049'
+    }
+  },
+  expandedRow: {
+    background: '#F8FAFC'
+  },
+  expandedCell: {
+    padding: '20px 30px',
+    borderBottom: '1px solid #E2E8F0'
+  },
+  assessmentsList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px'
+  },
+  assessmentsListTitle: {
+    margin: '0 0 10px 0',
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#0A1929'
+  },
+  assessmentItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '10px 15px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #E2E8F0'
+  },
+  assessmentItemInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '15px',
+    flexWrap: 'wrap'
+  },
+  assessmentItemTitle: {
+    fontSize: '13px',
+    fontWeight: 500,
+    color: '#0A1929',
+    minWidth: '200px'
+  },
+  assessmentItemStatus: {
+    padding: '3px 8px',
+    borderRadius: '4px',
+    fontSize: '11px',
+    fontWeight: 600
+  },
+  assessmentItemScore: {
+    fontSize: '12px',
+    color: '#4A5568'
+  },
+  resetSmallButton: {
+    padding: '4px 10px',
+    background: '#FF9800',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    fontSize: '11px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#F57C00'
     }
   }
 };
