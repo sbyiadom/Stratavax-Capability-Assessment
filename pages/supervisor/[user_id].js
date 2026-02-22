@@ -42,13 +42,13 @@ function CandidateReportComponent() {
   const [stratavaxReport, setStratavaxReport] = useState(null);
   const [assessmentTypeName, setAssessmentTypeName] = useState('');
 
-  // Authentication check - FIXED to use /login instead of /supervisor-login
+  // Authentication check
   useEffect(() => {
     const checkAuth = () => {
       try {
         if (typeof window === 'undefined') return;
         
-        const userSession = localStorage.getItem("userSession") || localStorage.getItem("supervisorSession");
+        const userSession = localStorage.getItem("userSession");
         
         if (!userSession) {
           router.push("/login");
@@ -83,7 +83,6 @@ function CandidateReportComponent() {
         
         console.log("📊 Fetching Stratavax report data for user:", user_id);
 
-        // Fetch candidate profile
         const { data: profileData, error: profileError } = await supabase
           .from('candidate_profiles')
           .select('*')
@@ -101,7 +100,6 @@ function CandidateReportComponent() {
         };
         setCandidate(candidateInfo);
 
-        // Fetch assessment results
         const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
           .select('*')
@@ -133,7 +131,6 @@ function CandidateReportComponent() {
 
   const loadAssessmentData = async (result, candidateInfo) => {
     try {
-      // Fetch responses with questions and answers
       const { data: responsesData, error: responsesError } = await supabase
         .from('responses')
         .select(`
@@ -160,10 +157,8 @@ function CandidateReportComponent() {
       const assessmentTypeId = result.assessment_type || 'general';
       const config = getAssessmentType(assessmentTypeId);
       
-      // Set the assessment type name based on the config
       setAssessmentTypeName(config.name);
 
-      // Generate Stratavax professional report
       const report = generateStratavaxReport(
         user_id,
         assessmentTypeId,
@@ -270,7 +265,7 @@ function CandidateReportComponent() {
 
   const report = selectedAssessment.report.stratavaxReport;
   const config = selectedAssessment.config || assessmentTypes.general;
-  const assessmentDisplayName = config.name; // e.g., "Leadership Assessment", "Cognitive Assessment", etc.
+  const assessmentDisplayName = config.name;
 
   return (
     <AppLayout background="/images/preassessmentbg.jpg">
@@ -467,7 +462,6 @@ function CandidateReportComponent() {
               <h2 style={styles.sectionTitle}>Strengths & Development Areas</h2>
             </div>
             
-            {/* STRENGTHS SECTION */}
             <div style={styles.strengthsSection}>
               <div style={styles.sectionBadge}>
                 <span style={styles.badgeIcon}>🔷</span>
@@ -500,7 +494,6 @@ function CandidateReportComponent() {
               )}
             </div>
 
-            {/* DEVELOPMENT AREAS SECTION */}
             <div style={{...styles.strengthsSection, marginTop: '50px'}}>
               <div style={styles.sectionBadge}>
                 <span style={styles.badgeIcon}>⚠️</span>
@@ -511,7 +504,6 @@ function CandidateReportComponent() {
                 <p style={styles.narrativeText}>{generateWeaknessesSummary(report.weaknesses.items, report.weaknesses.topWeaknesses, report.executiveSummary.percentage)}</p>
               </div>
               
-              {/* DEVELOPMENT AREAS LIST WITH RICH COMMENTARY */}
               <div style={styles.developmentList}>
                 {report.weaknesses.items.slice(0, 5).map((weakness, index) => {
                   const priority = weakness.percentage < 40 ? 'Critical' : weakness.percentage < 55 ? 'High' : 'Medium';
@@ -548,7 +540,6 @@ function CandidateReportComponent() {
                 })}
               </div>
 
-              {/* ADDITIONAL DEVELOPMENT AREAS */}
               {report.weaknesses.items.length > 5 && (
                 <details style={styles.moreDetails}>
                   <summary style={styles.moreSummary}>View {report.weaknesses.items.length - 5} additional development areas</summary>
@@ -571,7 +562,6 @@ function CandidateReportComponent() {
               )}
             </div>
             
-            {/* OVERALL PROFILE COMMENTARY */}
             <div style={{...styles.narrativeBox, marginTop: '40px', background: '#F0F4F8'}}>
               <h4 style={{margin: '0 0 15px 0', color: '#0A1929'}}>Professional Profile Summary</h4>
               <p style={styles.narrativeText}>
