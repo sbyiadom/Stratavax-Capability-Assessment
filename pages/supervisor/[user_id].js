@@ -21,8 +21,6 @@ const CandidateReport = dynamic(
   }
 );
 
-export default CandidateReport;
-
 function CandidateReportComponent() {
   const router = useRouter();
   const { user_id } = router.query;
