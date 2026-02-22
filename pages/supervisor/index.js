@@ -60,7 +60,7 @@ export default function SupervisorDashboard() {
       try {
         setLoading(true);
 
-        // First, get candidates with their basic assessment info (no nested assessments query)
+        // First, get candidates with their basic assessment info (no max_score)
         const { data: candidatesData, error: candidatesError } = await supabase
           .from('candidate_profiles')
           .select(`
@@ -74,7 +74,6 @@ export default function SupervisorDashboard() {
               assessment_id,
               status,
               score,
-              max_score,
               completed_at
             )
           `)
@@ -97,6 +96,7 @@ export default function SupervisorDashboard() {
                     .select(`
                       id,
                       title,
+                      max_score,
                       assessment_type_id,
                       assessment_types (
                         code,
@@ -109,6 +109,7 @@ export default function SupervisorDashboard() {
                   if (!assessmentError && assessmentData) {
                     return {
                       ...assessment,
+                      max_score: assessmentData.max_score || 100,
                       assessment_type: assessmentData.assessment_types?.code || 'unknown',
                       assessment_name: assessmentData.assessment_types?.name || 'Unknown'
                     };
@@ -116,6 +117,7 @@ export default function SupervisorDashboard() {
                 }
                 return {
                   ...assessment,
+                  max_score: 100,
                   assessment_type: 'unknown',
                   assessment_name: 'Unknown'
                 };
