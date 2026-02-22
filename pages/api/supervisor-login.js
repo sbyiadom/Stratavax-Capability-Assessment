@@ -69,11 +69,11 @@ export default async function handler(req, res) {
 
     console.log('Auth successful for user:', authData.user.id);
 
-    // Step 2: Check if user is in supervisor_profiles table (FIXED TABLE NAME)
+    // Step 2: Check if user is in supervisor_profiles table
     const { data: supervisor, error: supervisorError } = await supabase
-      .from('supervisor_profiles')  // Changed from 'supervisors' to 'supervisor_profiles'
+      .from('supervisor_profiles')
       .select('*')
-      .eq('id', authData.user.id)  // Changed from 'user_id' to 'id'
+      .eq('id', authData.user.id)
       .eq('is_active', true)
       .maybeSingle();
 
@@ -97,17 +97,7 @@ export default async function handler(req, res) {
 
     console.log('Supervisor found:', supervisor.email);
 
-    // Step 3: Update last login
-    try {
-      await supabase
-        .from('supervisor_profiles')  // Changed from 'supervisors' to 'supervisor_profiles'
-        .update({ last_login: new Date().toISOString() })
-        .eq('id', supervisor.id);  // Changed from 'id' to 'id' (already correct)
-    } catch (updateError) {
-      console.warn('Failed to update last login:', updateError);
-    }
-
-    // Step 4: Return success with COMPLETE session data
+    // Step 3: Return success with COMPLETE session data
     return res.status(200).json({
       success: true,
       user: {
