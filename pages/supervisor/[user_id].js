@@ -42,29 +42,29 @@ function CandidateReportComponent() {
   const [stratavaxReport, setStratavaxReport] = useState(null);
   const [assessmentTypeName, setAssessmentTypeName] = useState('');
 
-  // Authentication check
+  // Authentication check - FIXED to use /login instead of /supervisor-login
   useEffect(() => {
     const checkAuth = () => {
       try {
         if (typeof window === 'undefined') return;
         
-        const supervisorSession = localStorage.getItem("supervisorSession");
+        const userSession = localStorage.getItem("userSession") || localStorage.getItem("supervisorSession");
         
-        if (!supervisorSession) {
-          router.push("/supervisor-login");
+        if (!userSession) {
+          router.push("/login");
           return;
         }
         
-        const session = JSON.parse(supervisorSession);
+        const session = JSON.parse(userSession);
         
         if (session.loggedIn) {
           setIsSupervisor(true);
         } else {
-          router.push("/supervisor-login");
+          router.push("/login");
         }
       } catch (error) {
         console.error("Auth check error:", error);
-        router.push("/supervisor-login");
+        router.push("/login");
       } finally {
         setAuthChecked(true);
       }
@@ -343,7 +343,7 @@ function CandidateReportComponent() {
         </div>
 
         <div ref={reportRef} style={styles.reportContainer}>
-          {/* SECTION 1: COVER PAGE - Using assessmentDisplayName */}
+          {/* SECTION 1: COVER PAGE */}
           <section style={{...styles.section, display: activeSection === 'cover' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.coverPage}>
               <div style={styles.coverHeader}>
@@ -366,7 +366,7 @@ function CandidateReportComponent() {
             </div>
           </section>
 
-          {/* SECTION 2: EXECUTIVE SUMMARY - Using assessmentDisplayName in the narrative */}
+          {/* SECTION 2: EXECUTIVE SUMMARY */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'executive' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Executive Summary</h2>
@@ -413,7 +413,7 @@ function CandidateReportComponent() {
             </div>
           </section>
 
-          {/* SECTION 3: SCORE BREAKDOWN - Using assessmentDisplayName in context */}
+          {/* SECTION 3: SCORE BREAKDOWN */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'breakdown' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Score Breakdown</h2>
