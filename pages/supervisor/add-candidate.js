@@ -17,7 +17,6 @@ export default function AddCandidate() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  // Check supervisor authentication
   useEffect(() => {
     const checkAuth = () => {
       if (typeof window !== 'undefined') {
@@ -62,13 +61,11 @@ export default function AddCandidate() {
     setSubmitting(true);
 
     try {
-      // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(formData.email)) {
         throw new Error("Please enter a valid email address");
       }
 
-      // Check if candidate already exists
       const { data: existing, error: checkError } = await supabase
         .from('candidate_profiles')
         .select('id')
@@ -81,8 +78,7 @@ export default function AddCandidate() {
         throw new Error("A candidate with this email already exists");
       }
 
-      // Create auth user for candidate
-      const tempPassword = Math.random().toString(36).slice(-8) + "A1!"; // Generate random password
+      const tempPassword = Math.random().toString(36).slice(-8) + "A1!";
       
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email.toLowerCase().trim(),
@@ -98,7 +94,6 @@ export default function AddCandidate() {
 
       if (authError) throw authError;
 
-      // Create candidate profile with supervisor assignment
       const { error: profileError } = await supabase
         .from('candidate_profiles')
         .insert({
@@ -114,7 +109,6 @@ export default function AddCandidate() {
 
       setSuccess(`✅ Candidate added successfully!\n\nName: ${formData.full_name}\nEmail: ${formData.email}\nTemporary Password: ${tempPassword}\n\nShare these credentials with the candidate.`);
       
-      // Clear form
       setFormData({
         full_name: "",
         email: "",
