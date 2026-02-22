@@ -11,25 +11,71 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loginType, setLoginType] = useState('candidate'); // 'candidate' or 'supervisor'
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    const { data, error } = await supabase.auth.signInWithPassword({ 
-      email, 
-      password 
-    });
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ 
+        email, 
+        password 
+      });
 
-    if (error || !data.user) {
-      setError("User not found or incorrect password");
+      if (error || !data.user) {
+        throw new Error("Invalid email or password");
+      }
+
+      // Check if user is a supervisor/admin
+      const { data: supervisor, error: supervisorError } = await supabase
+        .from('supervisor_profiles')
+        .select('*')
+        .eq('id', data.user.id)
+        .maybeSingle();
+
+      if (supervisorError) {
+        console.error('Supervisor check error:', supervisorError);
+      }
+
+      // Store session data
+      const sessionData = {
+        loggedIn: true,
+        user_id: data.user.id,
+        email: data.user.email,
+        full_name: data.user.user_metadata?.full_name || data.user.email?.split('@')[0],
+        role: supervisor?.role || 'candidate',
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        timestamp: Date.now()
+      };
+      
+      localStorage.setItem("userSession", JSON.stringify(sessionData));
+
+      // Redirect based on role
+      if (supervisor) {
+        if (supervisor.role === 'admin') {
+          router.push('/admin');
+        } else {
+          router.push('/supervisor');
+        }
+      } else {
+        router.push('/candidate/dashboard');
+      }
+
+    } catch (err) {
+      setError(err.message);
+    } finally {
       setLoading(false);
-      return;
     }
+  };
 
-    // Redirect to candidate dashboard instead of pre-assessment
-router.push("/candidate/dashboard");
+  const handleSupervisorClick = (e) => {
+    e.preventDefault();
+    setLoginType('supervisor');
+    // Pre-fill with supervisor hint or just focus on email
+    document.getElementById('email').focus();
   };
 
   return (
@@ -64,6 +110,16 @@ router.push("/candidate/dashboard");
           }}>
             Talent Assessment Portal
           </p>
+          {loginType === 'supervisor' && (
+            <p style={{
+              color: "#1565c0",
+              fontSize: "14px",
+              marginTop: "10px",
+              fontWeight: "600"
+            }}>
+              Supervisor Login Mode
+            </p>
+          )}
         </div>
 
         {error && (
@@ -89,6 +145,7 @@ router.push("/candidate/dashboard");
             Email
           </label>
           <input
+            id="email"
             type="email"
             placeholder="Enter your email"
             value={email}
@@ -148,7 +205,7 @@ router.push("/candidate/dashboard");
             transition: "background 0.3s"
           }}
         >
-          {loading ? "Logging in..." : "Login as Candidate"}
+          {loading ? "Logging in..." : "Login"}
         </button>
 
         <div style={{ 
@@ -164,8 +221,9 @@ router.push("/candidate/dashboard");
           }}>
             Are you a supervisor?
           </p>
-          <Link href="/supervisor-login" legacyBehavior>
-            <a style={{
+          <button
+            onClick={handleSupervisorClick}
+            style={{
               display: "inline-block",
               padding: "12px 24px",
               background: "#1565c0",
@@ -174,14 +232,16 @@ router.push("/candidate/dashboard");
               borderRadius: "8px",
               fontWeight: "600",
               fontSize: "14px",
+              border: "none",
+              cursor: "pointer",
+              width: "100%",
               transition: "background 0.3s"
             }}
             onMouseOver={(e) => e.currentTarget.style.background = "#0d47a1"}
             onMouseOut={(e) => e.currentTarget.style.background = "#1565c0"}
-            >
-              Login as Supervisor
-            </a>
-          </Link>
+          >
+            Login as Supervisor
+          </button>
           <p style={{ 
             fontSize: "12px", 
             color: "#888", 
@@ -214,4 +274,3 @@ router.push("/candidate/dashboard");
     </AppLayout>
   );
 }
-
