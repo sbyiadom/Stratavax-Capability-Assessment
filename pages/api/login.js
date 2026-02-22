@@ -40,10 +40,11 @@ export default async function handler(req, res) {
     }
 
     console.log('4. Auth successful, user ID:', authData.user.id);
+    console.log('4a. Auth user email:', authData.user.email);
 
-    // Step 2: Check supervisor_profiles
-    console.log('5. Querying supervisor_profiles...');
-    const { data: supervisor, error: supError } = await supabase
+    // Step 2: Check supervisor_profiles - with more details
+    console.log('5. Querying supervisor_profiles for ID:', authData.user.id);
+    const { data: supervisor, error: supError, status, statusText } = await supabase
       .from('supervisor_profiles')
       .select('*')
       .eq('id', authData.user.id);
@@ -51,16 +52,21 @@ export default async function handler(req, res) {
     console.log('6. Supervisor query result:', { 
       found: supervisor?.length > 0, 
       count: supervisor?.length,
-      error: supError?.message 
+      data: supervisor,
+      error: supError,
+      status,
+      statusText
     });
 
     if (supError) {
-      console.error('7. Supervisor query error:', supError);
+      console.error('7. Supervisor query error details:', supError);
+      // Don't return yet, continue to candidate check
     }
 
     if (supervisor && supervisor.length > 0) {
       const user = supervisor[0];
       console.log('8. User is supervisor with role:', user.role);
+      console.log('8a. Full supervisor record:', user);
       return res.status(200).json({
         success: true,
         role: user.role || 'supervisor',
@@ -75,7 +81,7 @@ export default async function handler(req, res) {
     }
 
     // Step 3: Check candidate_profiles
-    console.log('9. Checking candidate_profiles...');
+    console.log('9. Checking candidate_profiles for ID:', authData.user.id);
     const { data: candidate, error: canError } = await supabase
       .from('candidate_profiles')
       .select('*')
@@ -84,6 +90,7 @@ export default async function handler(req, res) {
     console.log('10. Candidate query result:', { 
       found: candidate?.length > 0, 
       count: candidate?.length,
+      data: candidate,
       error: canError?.message 
     });
 
@@ -104,12 +111,26 @@ export default async function handler(req, res) {
 
     // Step 4: Not found in either table
     console.log('12. User not found in any profile table');
+    console.log('12a. User ID from auth:', authData.user.id);
+    console.log('12b. User email from auth:', authData.user.email);
+    
+    // Double-check with email query
+    console.log('12c. Checking supervisor_profiles by email...');
+    const { data: byEmail } = await supabase
+      .from('supervisor_profiles')
+      .select('*')
+      .eq('email', email);
+    
+    console.log('12d. Search by email result:', byEmail);
+
     await supabase.auth.signOut();
     return res.status(403).json({ 
       error: 'Account not properly configured',
       debug: {
         userId: authData.user.id,
-        email: authData.user.email
+        email: authData.user.email,
+        searchedById: supervisor,
+        searchedByEmail: byEmail
       }
     });
 
