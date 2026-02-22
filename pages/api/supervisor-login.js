@@ -75,11 +75,20 @@ export default async function handler(req, res) {
       .select('*')
       .eq('id', authData.user.id)
       .eq('is_active', true)
-      .maybeSingle();
+      .single();  // Changed from maybeSingle() to single()
 
     if (supervisorError) {
       console.error('Supervisor query error:', supervisorError);
       await supabase.auth.signOut();
+      
+      // Check if error is because no rows found
+      if (supervisorError.code === 'PGRST116') {
+        return res.status(403).json({ 
+          success: false,
+          error: 'You do not have supervisor access' 
+        });
+      }
+      
       return res.status(403).json({ 
         success: false,
         error: 'Database error checking supervisor status' 
@@ -97,7 +106,7 @@ export default async function handler(req, res) {
 
     console.log('Supervisor found:', supervisor.email);
 
-    // Step 3: Return success with COMPLETE session data
+    // Step 3: Return success
     return res.status(200).json({
       success: true,
       user: {
