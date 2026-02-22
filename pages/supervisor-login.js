@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 
-export default function SupervisorLogin() {
+export default function Login() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -17,7 +17,7 @@ export default function SupervisorLogin() {
     try {
       console.log('Attempting login for:', email);
 
-      const response = await fetch('/api/supervisor-login', {
+      const response = await fetch('/api/login', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -27,38 +27,35 @@ export default function SupervisorLogin() {
       });
 
       const data = await response.json();
-      console.log('Login response:', { status: response.status, success: data.success });
+      console.log('Login response:', data);
 
       if (!response.ok) {
-        throw new Error(data.error || `Login failed (${response.status})`);
+        throw new Error(data.error || `Login failed`);
       }
 
-      if (!data.success) {
-        throw new Error(data.error || 'Login failed');
-      }
-
-      // Store COMPLETE session data in localStorage
+      // Store session data
       const sessionData = {
         loggedIn: true,
         user_id: data.user.id,
         email: data.user.email,
         full_name: data.user.full_name,
-        role: data.user.role,
+        role: data.role,
         access_token: data.session.access_token,
         refresh_token: data.session.refresh_token,
-        expires_at: data.session.expires_at,
         timestamp: Date.now()
       };
       
-      localStorage.setItem("supervisorSession", JSON.stringify(sessionData));
+      localStorage.setItem("userSession", JSON.stringify(sessionData));
       
-      console.log('Session stored successfully');
+      console.log('Session stored, role:', data.role);
 
       // Redirect based on role
-      if (data.user.role === 'admin') {
+      if (data.role === 'admin') {
         router.push('/admin');
-      } else {
+      } else if (data.role === 'supervisor') {
         router.push('/supervisor');
+      } else {
+        router.push('/candidate/dashboard');
       }
 
     } catch (err) {
@@ -69,7 +66,6 @@ export default function SupervisorLogin() {
     }
   };
 
-  // Styles object (keep your existing styles)
   const styles = {
     pageContainer: {
       position: 'relative',
@@ -83,7 +79,7 @@ export default function SupervisorLogin() {
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundImage: 'url(/images/supervisor-login-bg.jpg)',
+      backgroundImage: 'url(/images/login-bg.jpg)',
       backgroundSize: 'cover',
       backgroundPosition: 'center',
       zIndex: 0
@@ -130,7 +126,8 @@ export default function SupervisorLogin() {
       borderRadius: '8px',
       marginBottom: '20px',
       fontSize: '14px',
-      textAlign: 'center'
+      textAlign: 'center',
+      border: '1px solid rgba(211, 47, 47, 0.3)'
     },
     formGroup: {
       marginBottom: '20px'
@@ -150,33 +147,54 @@ export default function SupervisorLogin() {
       fontSize: '16px',
       background: 'rgba(255, 255, 255, 0.15)',
       color: 'white',
-      outline: 'none'
+      outline: 'none',
+      transition: 'all 0.2s ease',
+      ':focus': {
+        borderColor: 'rgba(255, 255, 255, 0.8)',
+        background: 'rgba(255, 255, 255, 0.25)'
+      }
     },
     submitButton: {
       width: '100%',
       padding: '14px',
-      background: 'rgba(21, 101, 192, 0.8)',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
       color: 'white',
       border: 'none',
       borderRadius: '12px',
       fontSize: '16px',
       fontWeight: 600,
       cursor: 'pointer',
-      marginBottom: '20px'
+      marginBottom: '20px',
+      transition: 'all 0.2s ease',
+      ':hover': {
+        transform: 'translateY(-2px)',
+        boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
+      }
     },
     links: {
       display: 'flex',
       justifyContent: 'center',
-      gap: '10px',
+      gap: '15px',
       fontSize: '14px'
     },
     link: {
       color: 'white',
       textDecoration: 'none',
-      cursor: 'pointer'
+      cursor: 'pointer',
+      opacity: 0.9,
+      ':hover': {
+        opacity: 1,
+        textDecoration: 'underline'
+      }
     },
     separator: {
       color: 'rgba(255, 255, 255, 0.6)'
+    },
+    registerLink: {
+      marginTop: '20px',
+      textAlign: 'center',
+      borderTop: '1px solid rgba(255, 255, 255, 0.2)',
+      paddingTop: '20px'
     }
   };
 
@@ -186,7 +204,7 @@ export default function SupervisorLogin() {
       <div style={styles.container}>
         <div style={styles.card}>
           <div style={styles.logo}>🏢 Stratavax</div>
-          <h1 style={styles.title}>Supervisor Login</h1>
+          <h1 style={styles.title}>Welcome Back</h1>
           
           {error && <div style={styles.errorAlert}>{error}</div>}
 
@@ -229,11 +247,11 @@ export default function SupervisorLogin() {
           </form>
 
           <div style={styles.links}>
-            <Link href="/login" passHref legacyBehavior>
-              <a style={styles.link}>Candidate Login</a>
+            <Link href="/register" legacyBehavior>
+              <a style={styles.link}>Create Account</a>
             </Link>
             <span style={styles.separator}>|</span>
-            <Link href="/supervisor-forgot-password" passHref legacyBehavior>
+            <Link href="/forgot-password" legacyBehavior>
               <a style={styles.link}>Forgot Password?</a>
             </Link>
           </div>
