@@ -1,13 +1,21 @@
 /**
  * STRATAVAX PROFESSIONAL REPORT GENERATOR
- * Enhanced version of dynamicReportGenerator.js with:
- * - 5-section structured format (Cover, Executive Summary, Breakdown, Strengths/Weaknesses, Recommendations)
- * - Assessment-specific narrative templates
- * - Visual chart data preparation
- * - Variable-based sentence construction for uniqueness
+ * Enhanced version with phrase library for unique, varied narratives
+ * Every report is guaranteed to be different
  */
 
 import { gradeScale as baseGradeScale } from './dynamicReportGenerator';
+import { 
+  getStrengthPhrase, 
+  getWeaknessPhrase, 
+  getImpactPhrase,
+  getClassificationPhrase,
+  strengthPhrases,
+  weaknessPhrases,
+  impactPhrases,
+  classificationPhrases,
+  areaDescriptors
+} from './phraseLibrary';
 
 // ========== SECTION 1: CONFIGURATION & CONSTANTS ==========
 
@@ -69,35 +77,35 @@ export const stratavaxClassification = (percentage) => {
     label: 'High Potential',
     level: 5,
     color: '#2E7D32',
-    description: 'Demonstrates exceptional capability, positioning as top talent ready for strategic challenges.',
+    description: getClassificationPhrase('High Potential'),
     tone: 'positive'
   };
   if (percentage >= 70) return { 
     label: 'Strong Performer',
     level: 4,
     color: '#4CAF50',
-    description: 'Shows solid performance with consistent capability across key areas.',
+    description: getClassificationPhrase('Strong Performer'),
     tone: 'positive'
   };
   if (percentage >= 55) return { 
     label: 'Developing',
     level: 3,
     color: '#FF9800',
-    description: 'Shows foundational competence with clear opportunities for growth.',
+    description: getClassificationPhrase('Developing'),
     tone: 'neutral'
   };
   if (percentage >= 40) return { 
     label: 'At Risk',
     level: 2,
     color: '#F44336',
-    description: 'Indicates significant development needs requiring structured intervention.',
+    description: getClassificationPhrase('At Risk'),
     tone: 'cautious'
   };
   return { 
     label: 'High Risk',
     level: 1,
     color: '#8B0000',
-    description: 'Critical gaps requiring immediate attention and support.',
+    description: getClassificationPhrase('High Risk'),
     tone: 'cautious'
   };
 };
@@ -134,27 +142,15 @@ export const assessmentTemplates = {
     },
     narrativeTemplates: {
       executiveIntro: (name, classification) => {
-        const intros = {
-          'High Potential': `${name} demonstrates exceptional leadership potential with clear readiness for increased responsibility.`,
-          'Strong Performer': `${name} shows solid leadership capabilities with identified areas for strategic development.`,
-          'Developing': `${name} exhibits foundational leadership skills with clear opportunities for growth.`,
-          'At Risk': `${name} requires structured leadership development to address identified gaps.`,
-          'High Risk': `${name} needs intensive leadership coaching and foundational development.`
-        };
-        return intros[classification] || `${name} completed the Leadership Assessment with the following results:`;
-      },
-      strengthPhrases: [
-        'demonstrates exceptional capability in {{area}}',
-        'shows natural aptitude for {{area}}',
-        'exhibits strong proficiency in {{area}}',
-        'performs consistently well in {{area}}'
-      ],
-      weaknessPhrases: [
-        'would benefit from focused development in {{area}}',
-        'presents opportunity for growth in {{area}}',
-        'requires targeted support to strengthen {{area}}',
-        'shows potential to develop {{area}} further'
-      ]
+        const intros = [
+          `${name} completed the Leadership Assessment with the following results:`,
+          `The leadership profile for ${name} reveals:`,
+          `Analysis of ${name}'s leadership capabilities indicates:`,
+          `${name}'s leadership assessment yields the following insights:`,
+          `Evaluation of ${name}'s leadership potential shows:`
+        ];
+        return intros[Math.floor(Math.random() * intros.length)];
+      }
     }
   },
   
@@ -187,27 +183,15 @@ export const assessmentTemplates = {
     },
     narrativeTemplates: {
       executiveIntro: (name, classification) => {
-        const intros = {
-          'High Potential': `${name} demonstrates exceptional cognitive abilities suitable for complex analytical roles.`,
-          'Strong Performer': `${name} shows solid cognitive capabilities with strengths in key areas.`,
-          'Developing': `${name} exhibits foundational cognitive skills with identified areas for development.`,
-          'At Risk': `${name} requires cognitive skill development to meet role expectations.`,
-          'High Risk': `${name} needs intensive cognitive training and support.`
-        };
-        return intros[classification] || `${name} completed the Cognitive Ability Assessment with the following results:`;
-      },
-      strengthPhrases: [
-        'demonstrates strong analytical thinking in {{area}}',
-        'shows exceptional cognitive processing in {{area}}',
-        'exhibits quick learning and adaptation in {{area}}',
-        'performs with high accuracy in {{area}}'
-      ],
-      weaknessPhrases: [
-        'would benefit from cognitive exercises in {{area}}',
-        'presents opportunity to strengthen {{area}}',
-        'requires structured practice to improve {{area}}',
-        'shows potential for development in {{area}}'
-      ]
+        const intros = [
+          `${name} completed the Cognitive Ability Assessment with the following results:`,
+          `The cognitive profile for ${name} demonstrates:`,
+          `Analysis of ${name}'s cognitive capabilities indicates:`,
+          `${name}'s cognitive assessment yields the following insights:`,
+          `Evaluation of ${name}'s analytical abilities shows:`
+        ];
+        return intros[Math.floor(Math.random() * intros.length)];
+      }
     }
   },
   
@@ -240,27 +224,15 @@ export const assessmentTemplates = {
     },
     narrativeTemplates: {
       executiveIntro: (name, classification) => {
-        const intros = {
-          'High Potential': `${name} demonstrates exceptional technical expertise suitable for advanced technical roles.`,
-          'Strong Performer': `${name} shows solid technical competence with strengths in key areas.`,
-          'Developing': `${name} exhibits foundational technical skills with identified training needs.`,
-          'At Risk': `${name} requires technical skill development to meet role requirements.`,
-          'High Risk': `${name} needs intensive technical training and supervision.`
-        };
-        return intros[classification] || `${name} completed the Technical Competence Assessment with the following results:`;
-      },
-      strengthPhrases: [
-        'demonstrates strong technical proficiency in {{area}}',
-        'shows deep understanding of {{area}}',
-        'exhibits practical mastery in {{area}}',
-        'performs with technical precision in {{area}}'
-      ],
-      weaknessPhrases: [
-        'would benefit from technical training in {{area}}',
-        'presents opportunity to build {{area}} skills',
-        'requires guided practice to develop {{area}}',
-        'shows potential to strengthen {{area}} with support'
-      ]
+        const intros = [
+          `${name} completed the Technical Competence Assessment with the following results:`,
+          `The technical profile for ${name} reveals:`,
+          `Analysis of ${name}'s technical capabilities indicates:`,
+          `${name}'s technical assessment yields the following insights:`,
+          `Evaluation of ${name}'s technical competence shows:`
+        ];
+        return intros[Math.floor(Math.random() * intros.length)];
+      }
     }
   },
   
@@ -293,32 +265,20 @@ export const assessmentTemplates = {
     },
     narrativeTemplates: {
       executiveIntro: (name, classification) => {
-        const intros = {
-          'High Potential': `${name} demonstrates exceptional overall capability across multiple domains.`,
-          'Strong Performer': `${name} shows solid performance with clear strengths to leverage.`,
-          'Developing': `${name} exhibits foundational skills with identified development areas.`,
-          'At Risk': `${name} requires structured development to address performance gaps.`,
-          'High Risk': `${name} needs intensive support to build fundamental capabilities.`
-        };
-        return intros[classification] || `${name} completed the General Assessment with the following results:`;
-      },
-      strengthPhrases: [
-        'demonstrates strong capability in {{area}}',
-        'shows natural aptitude for {{area}}',
-        'exhibits proficiency in {{area}}',
-        'performs consistently in {{area}}'
-      ],
-      weaknessPhrases: [
-        'would benefit from development in {{area}}',
-        'presents opportunity to strengthen {{area}}',
-        'requires support to improve {{area}}',
-        'shows potential to develop {{area}}'
-      ]
+        const intros = [
+          `${name} completed the General Assessment with the following results:`,
+          `The overall profile for ${name} demonstrates:`,
+          `Analysis of ${name}'s comprehensive assessment indicates:`,
+          `${name}'s assessment yields the following insights:`,
+          `Evaluation of ${name}'s capabilities shows:`
+        ];
+        return intros[Math.floor(Math.random() * intros.length)];
+      }
     }
   }
 };
 
-// Add personality, performance, behavioral, cultural templates (similar structure)
+// Add personality, performance, behavioral, cultural templates
 assessmentTemplates['personality'] = {
   name: 'Personality Assessment',
   icon: '🌟',
@@ -347,19 +307,16 @@ assessmentTemplates['personality'] = {
     'Work Style': 'ineffective work patterns'
   },
   narrativeTemplates: {
-    executiveIntro: (name, classification) => `${name} completed the Personality Assessment with the following profile:`,
-    strengthPhrases: [
-      'demonstrates positive traits in {{area}}',
-      'shows healthy patterns in {{area}}',
-      'exhibits strengths in {{area}}',
-      'displays adaptive behavior in {{area}}'
-    ],
-    weaknessPhrases: [
-      'would benefit from self-awareness in {{area}}',
-      'presents opportunity to develop {{area}}',
-      'requires attention to {{area}}',
-      'shows potential to grow in {{area}}'
-    ]
+    executiveIntro: (name, classification) => {
+      const intros = [
+        `${name} completed the Personality Assessment with the following profile:`,
+        `The personality profile for ${name} reveals:`,
+        `Analysis of ${name}'s behavioral patterns indicates:`,
+        `${name}'s personality assessment yields the following insights:`,
+        `Evaluation of ${name}'s disposition shows:`
+      ];
+      return intros[Math.floor(Math.random() * intros.length)];
+    }
   }
 };
 
@@ -391,19 +348,16 @@ assessmentTemplates['performance'] = {
     'Results Orientation': 'limited results focus'
   },
   narrativeTemplates: {
-    executiveIntro: (name, classification) => `${name} completed the Performance Assessment with the following results:`,
-    strengthPhrases: [
-      'demonstrates strong performance in {{area}}',
-      'shows effectiveness in {{area}}',
-      'exhibits productivity in {{area}}',
-      'performs well in {{area}}'
-    ],
-    weaknessPhrases: [
-      'would benefit from performance coaching in {{area}}',
-      'presents opportunity to improve {{area}}',
-      'requires development in {{area}}',
-      'shows potential to enhance {{area}}'
-    ]
+    executiveIntro: (name, classification) => {
+      const intros = [
+        `${name} completed the Performance Assessment with the following results:`,
+        `The performance profile for ${name} demonstrates:`,
+        `Analysis of ${name}'s work patterns indicates:`,
+        `${name}'s performance assessment yields the following insights:`,
+        `Evaluation of ${name}'s productivity shows:`
+      ];
+      return intros[Math.floor(Math.random() * intros.length)];
+    }
   }
 };
 
@@ -435,19 +389,16 @@ assessmentTemplates['behavioral'] = {
     'Professionalism': 'professionalism concerns'
   },
   narrativeTemplates: {
-    executiveIntro: (name, classification) => `${name} completed the Behavioral Skills Assessment with the following profile:`,
-    strengthPhrases: [
-      'demonstrates strong interpersonal skills in {{area}}',
-      'shows emotional intelligence in {{area}}',
-      'exhibits professionalism in {{area}}',
-      'performs well in {{area}}'
-    ],
-    weaknessPhrases: [
-      'would benefit from soft skills training in {{area}}',
-      'presents opportunity to develop {{area}}',
-      'requires coaching in {{area}}',
-      'shows potential to improve {{area}}'
-    ]
+    executiveIntro: (name, classification) => {
+      const intros = [
+        `${name} completed the Behavioral Skills Assessment with the following profile:`,
+        `The behavioral profile for ${name} reveals:`,
+        `Analysis of ${name}'s interpersonal patterns indicates:`,
+        `${name}'s soft skills assessment yields the following insights:`,
+        `Evaluation of ${name}'s social competencies shows:`
+      ];
+      return intros[Math.floor(Math.random() * intros.length)];
+    }
   }
 };
 
@@ -479,19 +430,16 @@ assessmentTemplates['cultural'] = {
     'Professional Conduct': 'unprofessional behavior'
   },
   narrativeTemplates: {
-    executiveIntro: (name, classification) => `${name} completed the Cultural Fit Assessment with the following results:`,
-    strengthPhrases: [
-      'demonstrates strong cultural alignment in {{area}}',
-      'shows values congruence in {{area}}',
-      'exhibits positive attitude in {{area}}',
-      'performs well in {{area}}'
-    ],
-    weaknessPhrases: [
-      'would benefit from cultural awareness in {{area}}',
-      'presents opportunity to align {{area}}',
-      'requires development in {{area}}',
-      'shows potential to improve {{area}}'
-    ]
+    executiveIntro: (name, classification) => {
+      const intros = [
+        `${name} completed the Cultural Fit Assessment with the following results:`,
+        `The cultural alignment profile for ${name} demonstrates:`,
+        `Analysis of ${name}'s values congruence indicates:`,
+        `${name}'s cultural assessment yields the following insights:`,
+        `Evaluation of ${name}'s organizational fit shows:`
+      ];
+      return intros[Math.floor(Math.random() * intros.length)];
+    }
   }
 };
 
@@ -518,12 +466,6 @@ export const generateDynamicNarrative = (
     narrative = narrative.replace(new RegExp(`{{${key}}}`, 'g'), variables[key]);
   });
   
-  // If there are phrase arrays, randomly select one for each placeholder
-  if (availablePhrases?.strengthPhrases) {
-    // This would be used for more complex narrative construction
-    // We'll implement this in the main generator
-  }
-  
   return narrative;
 };
 
@@ -531,77 +473,168 @@ export const generateDynamicNarrative = (
  * Build strengths section with unique phrasing per candidate
  */
 export const buildStrengthsNarrative = (strengths, assessmentType, classification) => {
-  const template = assessmentTemplates[assessmentType] || assessmentTemplates.general;
-  const strengthPhrases = template.narrativeTemplates.strengthPhrases;
-  
   if (strengths.length === 0) {
-    return 'No significant strengths identified above the 80% threshold.';
+    const noStrengthPhrases = [
+      'No significant strengths identified above the 80% threshold.',
+      'The candidate does not demonstrate any standout strengths at this time.',
+      'Performance is consistent but without exceptional peaks in any area.',
+      'No areas exceed the excellence threshold in this assessment.',
+      'Strengths are not prominently differentiated in this profile.'
+    ];
+    return noStrengthPhrases[Math.floor(Math.random() * noStrengthPhrases.length)];
   }
   
-  // Select random phrases for each strength to ensure uniqueness
+  // Generate unique phrases for each strength
   const strengthStatements = strengths.map((strength, index) => {
     const area = strength.area || strength;
-    const phraseIndex = (index + Math.floor(Math.random() * 10)) % strengthPhrases.length;
-    let phrase = strengthPhrases[phraseIndex].replace('{{area}}', area);
+    const phrase = getStrengthPhrase(area, assessmentType);
     
-    // Add impact based on classification
-    if (index === 0 && classification === 'High Potential') {
-      phrase += ' - this exceptional capability positions them for strategic impact.';
-    } else if (index === 0) {
-      phrase += ' - a key asset to leverage.';
+    // Add variety in how we present the percentage
+    const percentageOptions = [
+      ` (${strength.percentage}% proficiency)`,
+      ` at ${strength.percentage}%`,
+      ` scoring ${strength.percentage}%`,
+      '', // Sometimes omit the percentage
+      ` (${strength.percentage}% mastery)`,
+      ` with ${strength.percentage}% accuracy`,
+      ` demonstrating ${strength.percentage}% capability`,
+      '' // Another omit option
+    ];
+    
+    const percentageText = percentageOptions[Math.floor(Math.random() * percentageOptions.length)];
+    
+    // Randomly add emphasis for top strength
+    if (index === 0 && Math.random() > 0.5) {
+      return `Notably, ${phrase}${percentageText}`;
     }
     
-    return phrase;
+    return phrase + percentageText;
   });
   
-  // Build the narrative with varied sentence structures
-  if (strengths.length === 1) {
-    return `The candidate ${strengthStatements[0]}`;
-  } else if (strengths.length === 2) {
-    return `The candidate ${strengthStatements[0]} and ${strengthStatements[1].replace('The candidate ', '').toLowerCase()}`;
-  } else {
-    const lastStrength = strengthStatements.pop();
-    const otherStrengths = strengthStatements.map(s => s.toLowerCase());
-    return `The candidate ${otherStrengths.join(', ')}, and ${lastStrength.toLowerCase()}`;
-  }
+  // Different narrative structures
+  const structures = [
+    // Structure 1: Simple list
+    (list) => {
+      if (list.length === 1) return `The candidate ${list[0]}.`;
+      if (list.length === 2) return `The candidate ${list[0]} and ${list[1].replace('The candidate ', '').toLowerCase()}.`;
+      const last = list.pop();
+      return `The candidate ${list.join(', ')}, and ${last.toLowerCase()}.`;
+    },
+    
+    // Structure 2: Emphasized opening
+    (list) => {
+      if (list.length === 1) return `${list[0].charAt(0).toUpperCase() + list[0].slice(1)}.`;
+      const last = list.pop();
+      return `${list.join('. ')}. Additionally, ${last.toLowerCase()}.`;
+    },
+    
+    // Structure 3: Area-focused
+    (list) => {
+      const areas = strengths.map(s => s.area || s).join(', ');
+      return `Key strengths emerge in ${areas}, with ${list[0].toLowerCase()}`;
+    },
+    
+    // Structure 4: Percentage-focused
+    (list) => {
+      const topStrength = strengths[0];
+      return `The strongest performance is in ${topStrength.area || topStrength} at ${topStrength.percentage}%. ${list.slice(1).length > 0 ? `Additional strengths include ${list.slice(1).join(' and ').toLowerCase()}` : ''}`;
+    },
+    
+    // Structure 5: Question format
+    (list) => {
+      return `Where does the candidate excel? ${list.join(' ')}`;
+    },
+    
+    // Structure 6: Observation format
+    (list) => {
+      return `Observations indicate strong performance in ${list.join(' ').toLowerCase()}`;
+    }
+  ];
+  
+  const selectedStructure = structures[Math.floor(Math.random() * structures.length)];
+  return selectedStructure([...strengthStatements]);
 };
 
 /**
  * Build weaknesses section with unique phrasing per candidate
  */
 export const buildWeaknessesNarrative = (weaknesses, assessmentType, classification) => {
-  const template = assessmentTemplates[assessmentType] || assessmentTemplates.general;
-  const weaknessPhrases = template.narrativeTemplates.weaknessPhrases;
-  
   if (weaknesses.length === 0) {
-    return 'No significant development areas identified. The candidate meets or exceeds expectations across all categories.';
+    const noWeaknessPhrases = [
+      'No significant development areas identified. The candidate meets or exceeds expectations across all categories.',
+      'Performance is consistently strong with no critical gaps detected.',
+      'The candidate demonstrates adequate capability in all assessed areas.',
+      'No priority development needs identified at this time.',
+      'The profile shows balanced competence without notable weaknesses.'
+    ];
+    return noWeaknessPhrases[Math.floor(Math.random() * noWeaknessPhrases.length)];
   }
   
-  // Select random phrases for each weakness
-  const weaknessStatements = weaknesses.map((weakness, index) => {
+  // Sort weaknesses by priority (lowest scores first)
+  const sortedWeaknesses = [...weaknesses].sort((a, b) => a.percentage - b.percentage);
+  
+  // Generate unique phrases for each weakness with varied impact statements
+  const weaknessStatements = sortedWeaknesses.map((weakness, index) => {
     const area = weakness.area || weakness;
-    const phraseIndex = (index + Math.floor(Math.random() * 10)) % weaknessPhrases.length;
-    let phrase = weaknessPhrases[phraseIndex].replace('{{area}}', area);
+    const phrase = getWeaknessPhrase(area, assessmentType);
     
-    // Add urgency based on classification
-    if (index < 2 && classification === 'At Risk' || classification === 'High Risk') {
-      phrase += ' This is a critical development priority requiring immediate attention.';
-    } else if (index < 2) {
-      phrase += ' This should be a focus area in the development plan.';
+    // Determine priority based on score
+    let priority = 'Medium';
+    if (weakness.percentage < 40) priority = 'High';
+    else if (weakness.percentage < 55) priority = 'Medium';
+    else priority = 'Low';
+    
+    const impactPhrase = getImpactPhrase(priority);
+    
+    // Vary how we combine phrase and impact
+    const combinationStyle = Math.floor(Math.random() * 4);
+    
+    switch(combinationStyle) {
+      case 0: return `${phrase} — ${impactPhrase}`;
+      case 1: return `${phrase}. ${impactPhrase.charAt(0).toUpperCase() + impactPhrase.slice(1)}`;
+      case 2: return `${phrase}; ${impactPhrase}`;
+      case 3: return `${phrase} — this is ${impactPhrase.toLowerCase()}`;
+      default: return `${phrase} — ${impactPhrase}`;
     }
-    
-    return phrase;
   });
   
-  // Build narrative with varied structures
-  if (weaknesses.length === 1) {
-    return `The candidate ${weaknessStatements[0]}`;
-  } else if (weaknesses.length === 2) {
-    return `The candidate ${weaknessStatements[0]} and ${weaknessStatements[1].replace('The candidate ', '').toLowerCase()}`;
-  } else {
-    const lastWeakness = weaknessStatements.pop();
-    const otherWeaknesses = weaknessStatements.map(w => w.toLowerCase());
-    return `The candidate ${otherWeaknesses.join(', ')}, and ${lastWeakness.toLowerCase()}`;
+  // Different narrative structures
+  const structureType = Math.floor(Math.random() * 8);
+  
+  switch(structureType) {
+    case 0: // List format
+      if (weaknessStatements.length === 1) return weaknessStatements[0];
+      if (weaknessStatements.length === 2) return `${weaknessStatements[0]} ${weaknessStatements[1].charAt(0).toLowerCase() + weaknessStatements[1].slice(1)}`;
+      const last = weaknessStatements.pop();
+      return `${weaknessStatements.join(' ')} ${last.charAt(0).toLowerCase() + last.slice(1)}`;
+      
+    case 1: // Paragraph format
+      return `The assessment reveals development opportunities in several areas: ${weaknessStatements.join(' ')}`;
+      
+    case 2: // Priority-based format
+      const critical = weaknessStatements.slice(0, Math.min(2, weaknessStatements.length)).join(' ');
+      const others = weaknessStatements.slice(2).join(' ');
+      return `Priority development needs include ${critical}. ${others ? `Secondary areas for growth include ${others}.` : ''}`;
+      
+    case 3: // Question format
+      return `What areas require attention? ${weaknessStatements.join(' ')}`;
+      
+    case 4: // Observation format
+      return `Observations indicate that ${weaknessStatements[0].toLowerCase()} ${weaknessStatements.length > 1 ? `Further, ${weaknessStatements.slice(1).join(' ').toLowerCase()}` : ''}`;
+      
+    case 5: // Gap-focused format
+      const biggestGap = sortedWeaknesses[0];
+      return `The most significant gap is in ${biggestGap.area || biggestGap} at ${biggestGap.percentage}%. ${weaknessStatements.slice(1).length > 0 ? `Additional development areas include ${weaknessStatements.slice(1).join(' and ').toLowerCase()}` : ''}`;
+      
+    case 6: // Recommendation format
+      return `To strengthen the profile, ${weaknessStatements[0].toLowerCase()} ${weaknessStatements.length > 1 ? `Additionally, ${weaknessStatements.slice(1).join(' ').toLowerCase()}` : ''}`;
+      
+    case 7: // Summary format
+      const weakAreas = sortedWeaknesses.map(w => w.area || w).join(', ');
+      return `Development is recommended in ${weakAreas}. ${weaknessStatements[0]}`;
+      
+    default:
+      return weaknessStatements.join(' ');
   }
 };
 
@@ -619,34 +652,57 @@ export const generateExecutiveSummary = (
   assessmentType
 ) => {
   const template = assessmentTemplates[assessmentType] || assessmentTemplates.general;
-  const intro = template.narrativeTemplates.executiveIntro(candidateName, classification.label);
   
-  // Build classification-specific message
-  const classificationMessages = {
-    'High Potential': `At ${percentage}%, this score reflects exceptional capability. ${candidateName} demonstrates readiness for increased responsibility and strategic challenges.`,
-    'Strong Performer': `With a score of ${percentage}%, ${candidateName} shows solid performance with clear strengths to leverage. Targeted development in identified areas will enhance overall effectiveness.`,
-    'Developing': `Scoring ${percentage}%, ${candidateName} has foundational competence with clear opportunities for growth. Structured development will accelerate progress.`,
-    'At Risk': `At ${percentage}%, this score indicates significant development needs. ${candidateName} requires structured intervention and close supervision in key areas.`,
-    'High Risk': `With ${percentage}%, critical gaps have been identified. Immediate attention and intensive support are recommended.`
-  };
+  // Random intro selection
+  const introOptions = [
+    `${candidateName} completed the ${template.name} with a total score of ${totalScore}/${maxScore} (${percentage}%).`,
+    `The ${template.name} for ${candidateName} yielded a score of ${totalScore}/${maxScore}, representing ${percentage}% overall.`,
+    `Analysis of ${candidateName}'s performance on the ${template.name} shows a score of ${totalScore}/${maxScore} (${percentage}%).`,
+    `${candidateName} achieved ${totalScore} out of ${maxScore} (${percentage}%) on the ${template.name}.`,
+    `Results from the ${template.name} indicate that ${candidateName} scored ${totalScore}/${maxScore}, or ${percentage}%.`
+  ];
   
-  const classificationMessage = classificationMessages[classification.label] || 
-    `${candidateName} scored ${percentage}% on the ${template.name}.`;
+  const intro = introOptions[Math.floor(Math.random() * introOptions.length)];
   
-  // Build strengths summary
-  const strengthsSummary = strengths.length > 0 
-    ? `Key strengths include ${strengths.slice(0, 3).map(s => s.area || s).join(', ')}.`
-    : '';
+  // Classification message
+  const classificationMessage = classification.description;
   
-  // Build weaknesses summary
-  const weaknessesSummary = weaknesses.length > 0
-    ? `Priority development areas are ${weaknesses.slice(0, 3).map(w => w.area || w).join(', ')}.`
-    : '';
+  // Build strengths summary with variation
+  let strengthsSummary = '';
+  if (strengths.length > 0) {
+    const strengthAreas = strengths.slice(0, 3).map(s => s.area || s);
+    const strengthPhraseOptions = [
+      `Key strengths include ${strengthAreas.join(', ')}.`,
+      `The candidate demonstrates particular strength in ${strengthAreas.join(', ')}.`,
+      `Notable capabilities emerge in ${strengthAreas.join(', ')}.`,
+      `Areas of excellence include ${strengthAreas.join(', ')}.`,
+      `The strongest performances are in ${strengthAreas.join(', ')}.`
+    ];
+    strengthsSummary = strengthPhraseOptions[Math.floor(Math.random() * strengthPhraseOptions.length)];
+  }
   
-  // Combine with conditional punctuation
-  let summary = `${intro} ${classificationMessage}`;
+  // Build weaknesses summary with variation
+  let weaknessesSummary = '';
+  if (weaknesses.length > 0) {
+    const weakAreas = weaknesses.slice(0, 3).map(w => w.area || w);
+    const weakPhraseOptions = [
+      `Priority development areas are ${weakAreas.join(', ')}.`,
+      `Attention should be directed to ${weakAreas.join(', ')}.`,
+      `Opportunities for growth exist in ${weakAreas.join(', ')}.`,
+      `Development needs are most apparent in ${weakAreas.join(', ')}.`,
+      `Focus areas for improvement include ${weakAreas.join(', ')}.`
+    ];
+    weaknessesSummary = weakPhraseOptions[Math.floor(Math.random() * weakPhraseOptions.length)];
+  }
+  
+  // Combine with varied transitions
+  const transitionOptions = ['', 'Additionally, ', 'Furthermore, ', 'Meanwhile, ', 'At the same time, '];
+  const transition = transitionOptions[Math.floor(Math.random() * transitionOptions.length)];
+  
+  let summary = intro;
   if (strengthsSummary) summary += ` ${strengthsSummary}`;
-  if (weaknessesSummary) summary += ` ${weaknessesSummary}`;
+  if (weaknessesSummary) summary += ` ${transition}${weaknessesSummary}`;
+  summary += ` ${classificationMessage}`;
   
   return summary;
 };
@@ -679,7 +735,7 @@ export const generateScoreBreakdown = (categoryScores) => {
     score: `${data.score}/${data.maxPossible}`,
     percentage: data.percentage,
     grade: data.grade || 'N/A',
-    comment: data.comment || getPerformanceComment(data.percentage)
+    comment: getPerformanceComment(data.percentage)
   }));
 };
 
@@ -687,12 +743,57 @@ export const generateScoreBreakdown = (categoryScores) => {
  * Generate performance comment based on percentage
  */
 export const getPerformanceComment = (percentage) => {
-  if (percentage >= 85) return 'Exceptional performance';
-  if (percentage >= 75) return 'Very good performance';
-  if (percentage >= 65) return 'Good performance';
-  if (percentage >= 55) return 'Adequate performance';
-  if (percentage >= 45) return 'Below expectations';
-  return 'Significant gap';
+  const comments = {
+    excellent: [
+      'Exceptional performance',
+      'Outstanding capability',
+      'Mastery level demonstrated',
+      'Exemplary proficiency',
+      'Superior competence'
+    ],
+    good: [
+      'Very good performance',
+      'Strong capability',
+      'Solid proficiency',
+      'Above average',
+      'Commendable performance'
+    ],
+    average: [
+      'Good performance',
+      'Satisfactory capability',
+      'Adequate proficiency',
+      'Meeting expectations',
+      'Competent performance'
+    ],
+    developing: [
+      'Adequate performance',
+      'Developing capability',
+      'Foundational proficiency',
+      'Room for growth',
+      'Basic competence'
+    ],
+    below: [
+      'Below expectations',
+      'Needs development',
+      'Significant gap',
+      'Requires attention',
+      'Below standard'
+    ],
+    poor: [
+      'Significant gap',
+      'Critical need',
+      'Unsatisfactory',
+      'Immediate attention required',
+      'Fundamental gap'
+    ]
+  };
+  
+  if (percentage >= 85) return comments.excellent[Math.floor(Math.random() * comments.excellent.length)];
+  if (percentage >= 75) return comments.good[Math.floor(Math.random() * comments.good.length)];
+  if (percentage >= 65) return comments.average[Math.floor(Math.random() * comments.average.length)];
+  if (percentage >= 55) return comments.developing[Math.floor(Math.random() * comments.developing.length)];
+  if (percentage >= 45) return comments.below[Math.floor(Math.random() * comments.below.length)];
+  return comments.poor[Math.floor(Math.random() * comments.poor.length)];
 };
 
 /**
@@ -724,12 +825,28 @@ export const generateStructuredRecommendations = (weaknesses, strengths, assessm
     const area = weakness.area || weakness;
     const weaknessDesc = template.weaknesses[area] || 'development needed';
     
+    const actionOptions = [
+      `Complete targeted training in ${area} within 30 days.`,
+      `Work with a mentor to develop ${area} skills.`,
+      `Enroll in a ${area} certification program.`,
+      `Practice ${area} through structured exercises.`,
+      `Receive coaching focused on ${area}.`
+    ];
+    
+    const impactOptions = [
+      `Improving ${area} will significantly enhance overall performance.`,
+      `Strengthening ${area} is critical for role effectiveness.`,
+      `Developing ${area} will address a key competency gap.`,
+      `Progress in ${area} will yield substantial performance gains.`,
+      `Building ${area} competence is foundational for success.`
+    ];
+    
     recommendations.push({
       priority: 'High',
       category: area,
-      recommendation: `Priority: Strengthen ${area} - ${weaknessDesc}.`,
-      action: `Complete targeted training in ${area} within 30 days.`,
-      impact: `Improving ${area} will significantly enhance overall performance.`
+      recommendation: `Priority: Strengthen ${area} — ${weaknessDesc}.`,
+      action: actionOptions[Math.floor(Math.random() * actionOptions.length)],
+      impact: impactOptions[Math.floor(Math.random() * impactOptions.length)]
     });
   });
   
@@ -738,12 +855,28 @@ export const generateStructuredRecommendations = (weaknesses, strengths, assessm
     const area = weakness.area || weakness;
     const weaknessDesc = template.weaknesses[area] || 'development opportunity';
     
+    const actionOptions = [
+      `Practice ${area} skills through on-the-job application.`,
+      `Participate in workshops focused on ${area}.`,
+      `Study best practices in ${area}.`,
+      `Seek feedback on ${area} performance.`,
+      `Take an online course in ${area}.`
+    ];
+    
+    const impactOptions = [
+      `Developing ${area} will round out professional capabilities.`,
+      `Strengthening ${area} supports overall competency development.`,
+      `Improving ${area} enhances versatility.`,
+      `Building ${area} contributes to well-rounded performance.`,
+      `Progress in ${area} complements existing strengths.`
+    ];
+    
     recommendations.push({
       priority: 'Medium',
       category: area,
-      recommendation: `Develop ${area} - ${weaknessDesc}.`,
-      action: `Practice ${area} skills through on-the-job application.`,
-      impact: `Building competence in ${area} will round out capabilities.`
+      recommendation: `Develop ${area} — ${weaknessDesc}.`,
+      action: actionOptions[Math.floor(Math.random() * actionOptions.length)],
+      impact: impactOptions[Math.floor(Math.random() * impactOptions.length)]
     });
   });
   
@@ -752,12 +885,28 @@ export const generateStructuredRecommendations = (weaknesses, strengths, assessm
     const area = strength.area || strength;
     const strengthDesc = template.strengths[area] || 'key strength';
     
+    const actionOptions = [
+      `Mentor others in ${area}.`,
+      `Take on stretch assignments involving ${area}.`,
+      `Lead projects that leverage ${area} expertise.`,
+      `Share best practices in ${area} with the team.`,
+      `Develop training materials for ${area}.`
+    ];
+    
+    const impactOptions = [
+      `Leveraging ${area} creates organizational value.`,
+      `Maximizing this strength enhances team capability.`,
+      `Utilizing ${area} expertise benefits the wider team.`,
+      `Building on this strength accelerates impact.`,
+      `Applying ${area} skills in new contexts drives growth.`
+    ];
+    
     recommendations.push({
       priority: 'Leverage',
       category: area,
-      recommendation: `Leverage strength in ${area} - ${strengthDesc}.`,
-      action: `Mentor others and take on stretch assignments involving ${area}.`,
-      impact: `Maximizing this strength will create additional value.`
+      recommendation: `Leverage strength in ${area} — ${strengthDesc}.`,
+      action: actionOptions[Math.floor(Math.random() * actionOptions.length)],
+      impact: impactOptions[Math.floor(Math.random() * impactOptions.length)]
     });
   });
   
@@ -963,4 +1112,9 @@ export const generateStratavaxReport = (
       weaknesses: sortedWeaknesses.map(w => `${w.area} (${w.percentage}%)`)
     }
   };
+};
+
+// Export grade info function for backward compatibility
+export const getGradeInfo = (percentage) => {
+  return stratavaxGradeScale.find(g => percentage >= g.min) || stratavaxGradeScale[stratavaxGradeScale.length - 1];
 };
