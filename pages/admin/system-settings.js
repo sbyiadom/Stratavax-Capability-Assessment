@@ -10,15 +10,15 @@ export default function SystemSettings() {
   const [saving, setSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [settings, setSettings] = useState({
-    siteName: "Stratavax",
-    supportEmail: "support@stratavax.com",
-    defaultAssessmentTimeLimit: 180,
-    defaultPassingScore: 80,
-    enableRegistration: true,
-    requireEmailConfirmation: true,
-    sessionTimeout: 60,
-    maxLoginAttempts: 5,
-    maintenanceMode: false
+    site_name: "Stratavax",                       // snake_case to match DB
+    support_email: "support@stratavax.com",       // snake_case
+    default_assessment_time_limit: 180,           // snake_case
+    default_passing_score: 80,                     // snake_case
+    enable_registration: true,                     // snake_case
+    require_email_confirmation: true,               // snake_case
+    session_timeout: 60,                            // snake_case
+    max_login_attempts: 5,                          // snake_case
+    maintenance_mode: false                          // snake_case
   });
   const [message, setMessage] = useState({ type: '', text: '' });
 
@@ -58,18 +58,21 @@ export default function SystemSettings() {
 
   const loadSettings = async () => {
     try {
-      // Try to load from settings table if it exists
       const { data, error } = await supabase
         .from('system_settings')
         .select('*')
+        .eq('id', 1)
         .maybeSingle();
+
+      if (error) {
+        console.error('Error loading settings:', error);
+      }
 
       if (data) {
         setSettings(data);
       }
     } catch (error) {
       console.error('Error loading settings:', error);
-      // Use defaults if table doesn't exist
     } finally {
       setLoading(false);
     }
@@ -80,17 +83,18 @@ export default function SystemSettings() {
     setMessage({ type: '', text: '' });
 
     try {
-      // Check if settings table exists, if not create it
-      const { error: upsertError } = await supabase
+      const userSession = JSON.parse(localStorage.getItem('userSession') || '{}');
+      
+      const { error } = await supabase
         .from('system_settings')
         .upsert({
           id: 1,
           ...settings,
           updated_at: new Date().toISOString(),
-          updated_by: (JSON.parse(localStorage.getItem('userSession') || '{}')).user_id
+          updated_by: userSession.user_id
         });
 
-      if (upsertError) throw upsertError;
+      if (error) throw error;
 
       setMessage({ 
         type: 'success', 
@@ -102,7 +106,7 @@ export default function SystemSettings() {
       console.error('Error saving settings:', error);
       setMessage({ 
         type: 'error', 
-        text: '❌ Failed to save settings. Make sure system_settings table exists.' 
+        text: `❌ Failed to save settings: ${error.message}` 
       });
     } finally {
       setSaving(false);
@@ -156,8 +160,8 @@ export default function SystemSettings() {
                 <label style={styles.label}>Site Name</label>
                 <input
                   type="text"
-                  value={settings.siteName}
-                  onChange={(e) => handleChange('siteName', e.target.value)}
+                  value={settings.site_name}
+                  onChange={(e) => handleChange('site_name', e.target.value)}
                   style={styles.input}
                   placeholder="Stratavax"
                 />
@@ -167,8 +171,8 @@ export default function SystemSettings() {
                 <label style={styles.label}>Support Email</label>
                 <input
                   type="email"
-                  value={settings.supportEmail}
-                  onChange={(e) => handleChange('supportEmail', e.target.value)}
+                  value={settings.support_email}
+                  onChange={(e) => handleChange('support_email', e.target.value)}
                   style={styles.input}
                   placeholder="support@example.com"
                 />
@@ -178,21 +182,21 @@ export default function SystemSettings() {
                 <label style={styles.label}>Enable Public Registration</label>
                 <div style={styles.toggleContainer}>
                   <button
-                    onClick={() => handleChange('enableRegistration', true)}
+                    onClick={() => handleChange('enable_registration', true)}
                     style={{
                       ...styles.toggleButton,
-                      background: settings.enableRegistration ? '#4CAF50' : '#E2E8F0',
-                      color: settings.enableRegistration ? 'white' : '#2D3748'
+                      background: settings.enable_registration ? '#4CAF50' : '#E2E8F0',
+                      color: settings.enable_registration ? 'white' : '#2D3748'
                     }}
                   >
                     Enabled
                   </button>
                   <button
-                    onClick={() => handleChange('enableRegistration', false)}
+                    onClick={() => handleChange('enable_registration', false)}
                     style={{
                       ...styles.toggleButton,
-                      background: !settings.enableRegistration ? '#F44336' : '#E2E8F0',
-                      color: !settings.enableRegistration ? 'white' : '#2D3748'
+                      background: !settings.enable_registration ? '#F44336' : '#E2E8F0',
+                      color: !settings.enable_registration ? 'white' : '#2D3748'
                     }}
                   >
                     Disabled
@@ -204,21 +208,21 @@ export default function SystemSettings() {
                 <label style={styles.label}>Require Email Confirmation</label>
                 <div style={styles.toggleContainer}>
                   <button
-                    onClick={() => handleChange('requireEmailConfirmation', true)}
+                    onClick={() => handleChange('require_email_confirmation', true)}
                     style={{
                       ...styles.toggleButton,
-                      background: settings.requireEmailConfirmation ? '#4CAF50' : '#E2E8F0',
-                      color: settings.requireEmailConfirmation ? 'white' : '#2D3748'
+                      background: settings.require_email_confirmation ? '#4CAF50' : '#E2E8F0',
+                      color: settings.require_email_confirmation ? 'white' : '#2D3748'
                     }}
                   >
                     Required
                   </button>
                   <button
-                    onClick={() => handleChange('requireEmailConfirmation', false)}
+                    onClick={() => handleChange('require_email_confirmation', false)}
                     style={{
                       ...styles.toggleButton,
-                      background: !settings.requireEmailConfirmation ? '#F44336' : '#E2E8F0',
-                      color: !settings.requireEmailConfirmation ? 'white' : '#2D3748'
+                      background: !settings.require_email_confirmation ? '#F44336' : '#E2E8F0',
+                      color: !settings.require_email_confirmation ? 'white' : '#2D3748'
                     }}
                   >
                     Not Required
@@ -230,21 +234,21 @@ export default function SystemSettings() {
                 <label style={styles.label}>Maintenance Mode</label>
                 <div style={styles.toggleContainer}>
                   <button
-                    onClick={() => handleChange('maintenanceMode', true)}
+                    onClick={() => handleChange('maintenance_mode', true)}
                     style={{
                       ...styles.toggleButton,
-                      background: settings.maintenanceMode ? '#F44336' : '#E2E8F0',
-                      color: settings.maintenanceMode ? 'white' : '#2D3748'
+                      background: settings.maintenance_mode ? '#F44336' : '#E2E8F0',
+                      color: settings.maintenance_mode ? 'white' : '#2D3748'
                     }}
                   >
                     On
                   </button>
                   <button
-                    onClick={() => handleChange('maintenanceMode', false)}
+                    onClick={() => handleChange('maintenance_mode', false)}
                     style={{
                       ...styles.toggleButton,
-                      background: !settings.maintenanceMode ? '#4CAF50' : '#E2E8F0',
-                      color: !settings.maintenanceMode ? 'white' : '#2D3748'
+                      background: !settings.maintenance_mode ? '#4CAF50' : '#E2E8F0',
+                      color: !settings.maintenance_mode ? 'white' : '#2D3748'
                     }}
                   >
                     Off
@@ -262,8 +266,8 @@ export default function SystemSettings() {
                 <label style={styles.label}>Default Time Limit (minutes)</label>
                 <input
                   type="number"
-                  value={settings.defaultAssessmentTimeLimit}
-                  onChange={(e) => handleChange('defaultAssessmentTimeLimit', parseInt(e.target.value))}
+                  value={settings.default_assessment_time_limit}
+                  onChange={(e) => handleChange('default_assessment_time_limit', parseInt(e.target.value))}
                   style={styles.input}
                   min="30"
                   max="300"
@@ -274,8 +278,8 @@ export default function SystemSettings() {
                 <label style={styles.label}>Default Passing Score (%)</label>
                 <input
                   type="number"
-                  value={settings.defaultPassingScore}
-                  onChange={(e) => handleChange('defaultPassingScore', parseInt(e.target.value))}
+                  value={settings.default_passing_score}
+                  onChange={(e) => handleChange('default_passing_score', parseInt(e.target.value))}
                   style={styles.input}
                   min="0"
                   max="100"
@@ -292,8 +296,8 @@ export default function SystemSettings() {
                 <label style={styles.label}>Session Timeout (minutes)</label>
                 <input
                   type="number"
-                  value={settings.sessionTimeout}
-                  onChange={(e) => handleChange('sessionTimeout', parseInt(e.target.value))}
+                  value={settings.session_timeout}
+                  onChange={(e) => handleChange('session_timeout', parseInt(e.target.value))}
                   style={styles.input}
                   min="5"
                   max="240"
@@ -304,8 +308,8 @@ export default function SystemSettings() {
                 <label style={styles.label}>Max Login Attempts</label>
                 <input
                   type="number"
-                  value={settings.maxLoginAttempts}
-                  onChange={(e) => handleChange('maxLoginAttempts', parseInt(e.target.value))}
+                  value={settings.max_login_attempts}
+                  onChange={(e) => handleChange('max_login_attempts', parseInt(e.target.value))}
                   style={styles.input}
                   min="3"
                   max="10"
@@ -320,25 +324,20 @@ export default function SystemSettings() {
             <div style={styles.sectionContent}>
               <div style={styles.statusRow}>
                 <span style={styles.statusLabel}>Supervisors</span>
-                <span style={styles.statusValue}>Active</span>
+                <span style={styles.statusValue}>✅ Active</span>
               </div>
               <div style={styles.statusRow}>
                 <span style={styles.statusLabel}>Candidates</span>
-                <span style={styles.statusValue}>Active</span>
+                <span style={styles.statusValue}>✅ Active</span>
               </div>
               <div style={styles.statusRow}>
                 <span style={styles.statusLabel}>Assessments</span>
-                <span style={styles.statusValue}>Active</span>
+                <span style={styles.statusValue}>✅ Active</span>
               </div>
               <div style={styles.statusRow}>
                 <span style={styles.statusLabel}>System Settings Table</span>
-                <span style={styles.statusValue}>⚠️ Not Created</span>
+                <span style={styles.statusValue}>✅ Created</span>
               </div>
-              <p style={styles.note}>
-                Note: System settings are currently stored in memory. 
-                <br />
-                Create a 'system_settings' table in Supabase to persist settings.
-              </p>
             </div>
           </div>
         </div>
@@ -514,13 +513,6 @@ const styles = {
     fontSize: '14px',
     fontWeight: 600,
     color: '#2E7D32'
-  },
-  note: {
-    margin: '15px 0 0 0',
-    fontSize: '12px',
-    color: '#718096',
-    fontStyle: 'italic',
-    lineHeight: '1.6'
   },
   saveSection: {
     display: 'flex',
