@@ -428,9 +428,9 @@ function CandidateReportComponent() {
                             <div style={{
                               ...styles.progressBar,
                               width: `${item.percentage}%`,
-                              background: item.percentage >= 80 ? '#4CAF50' :
-                                         item.percentage >= 60 ? '#2196F3' :
-                                         item.percentage >= 40 ? '#FF9800' : '#F44336'
+                              background: item.percentage >= 80 ? 'linear-gradient(90deg, #0A5C2E, #4CAF50)' :
+                                         item.percentage >= 60 ? 'linear-gradient(90deg, #1565C0, #2196F3)' :
+                                         item.percentage >= 40 ? 'linear-gradient(90deg, #E65100, #FF9800)' : 'linear-gradient(90deg, #B71C1C, #F44336)'
                             }} />
                           </div>
                         </div>
@@ -452,8 +452,13 @@ function CandidateReportComponent() {
               <h2 style={styles.sectionTitle}>Strengths & Development Areas</h2>
             </div>
             
+            {/* STRENGTHS SECTION */}
             <div style={styles.strengthsSection}>
-              <h3 style={styles.subsectionTitle}>🔷 Key Strengths</h3>
+              <div style={styles.sectionBadge}>
+                <span style={styles.badgeIcon}>🔷</span>
+                <h3 style={styles.subsectionTitle}>Key Strengths</h3>
+              </div>
+              
               <div style={styles.narrativeBox}>
                 <p style={styles.narrativeText}>{report.strengths.narrative}</p>
               </div>
@@ -462,39 +467,109 @@ function CandidateReportComponent() {
                 {report.strengths.items.slice(0, 4).map((strength, index) => (
                   <div key={index} style={styles.strengthCard}>
                     <div style={styles.cardHeader}>
-                      <span style={styles.cardTitle}>{strength.area}</span>
-                      <span style={{...styles.cardPercentage, color: '#4CAF50'}}>{strength.percentage}%</span>
+                      <div style={styles.cardTitleSection}>
+                        <span style={styles.cardIcon}>⭐</span>
+                        <span style={styles.cardTitle}>{strength.area}</span>
+                      </div>
+                      <div style={styles.cardScore}>
+                        <span style={{...styles.cardPercentage, color: '#0A5C2E'}}>{strength.percentage}%</span>
+                        <span style={styles.cardGrade}>{strength.grade}</span>
+                      </div>
                     </div>
-                    <div style={styles.cardGrade}>Grade: {strength.grade || 'N/A'}</div>
-                    <div style={styles.progressBarContainer}>
-                      <div style={{...styles.progressBar, width: `${strength.percentage}%`, background: '#4CAF50'}} />
+                    <div style={styles.cardBody}>
+                      <div style={styles.metricBar}>
+                        <div style={styles.metricBarLabel}>
+                          <span>Proficiency</span>
+                          <span>{strength.percentage}%</span>
+                        </div>
+                        <div style={styles.progressBarContainer}>
+                          <div style={{...styles.progressBar, width: `${strength.percentage}%`, background: 'linear-gradient(90deg, #0A5C2E, #4CAF50)'}} />
+                        </div>
+                      </div>
+                      <div style={styles.cardFooter}>
+                        <span style={styles.cardFooterText}>Top {index + 1} strength</span>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
+            </div>
 
-              <h3 style={{...styles.subsectionTitle, marginTop: '40px'}}>⚠️ Development Areas</h3>
-              <div style={styles.narrativeBox}>
+            {/* DEVELOPMENT AREAS SECTION - WITH BULLET POINTS */}
+            <div style={{...styles.strengthsSection, marginTop: '50px'}}>
+              <div style={styles.sectionBadge}>
+                <span style={styles.badgeIcon}>⚠️</span>
+                <h3 style={{...styles.subsectionTitle, color: '#B71C1C'}}>Development Areas</h3>
+              </div>
+              
+              <div style={{...styles.narrativeBox, background: '#FEF2F2', borderLeftColor: '#F44336'}}>
                 <p style={styles.narrativeText}>{report.weaknesses.narrative}</p>
               </div>
               
-              <div style={styles.cardsGrid}>
-                {report.weaknesses.items.slice(0, 4).map((weakness, index) => (
-                  <div key={index} style={styles.weaknessCard}>
-                    <div style={styles.cardHeader}>
-                      <span style={styles.cardTitle}>{weakness.area}</span>
-                      <span style={{...styles.cardPercentage, color: '#F44336'}}>{weakness.percentage}%</span>
+              {/* BULLET POINT FORMAT FOR DEVELOPMENT AREAS */}
+              <div style={styles.developmentList}>
+                {report.weaknesses.items.slice(0, 5).map((weakness, index) => {
+                  const priority = weakness.percentage < 40 ? 'Critical' : weakness.percentage < 55 ? 'High' : 'Medium';
+                  const priorityColor = priority === 'Critical' ? '#B71C1C' : priority === 'High' ? '#F57C00' : '#F9A825';
+                  
+                  return (
+                    <div key={index} style={styles.developmentItem}>
+                      <div style={styles.developmentItemHeader}>
+                        <div style={styles.bulletContainer}>
+                          <span style={{...styles.bulletPoint, backgroundColor: priorityColor}}></span>
+                          <span style={styles.developmentArea}>{weakness.area}</span>
+                        </div>
+                        <div style={styles.developmentMetrics}>
+                          <span style={{...styles.priorityBadge, backgroundColor: priorityColor, color: 'white'}}>
+                            {priority} Priority
+                          </span>
+                          <span style={styles.developmentScore}>{weakness.percentage}%</span>
+                          <span style={styles.developmentGrade}>{weakness.grade}</span>
+                        </div>
+                      </div>
+                      
+                      <div style={styles.developmentItemBody}>
+                        <div style={styles.developmentBar}>
+                          <div style={styles.developmentBarLabel}>
+                            <span>Current: {weakness.percentage}%</span>
+                            <span>Target: 80%</span>
+                          </div>
+                          <div style={styles.developmentBarContainer}>
+                            <div style={{...styles.developmentBarFill, width: `${weakness.percentage}%`, backgroundColor: priorityColor}} />
+                            <div style={{...styles.developmentBarTarget, left: '80%'}}>
+                              <span style={styles.targetMarker}>●</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {weakness.gap > 0 && (
+                          <div style={styles.gapIndicator}>
+                            <span style={styles.gapIcon}>📈</span>
+                            <span style={styles.gapText}>Needs +{weakness.gap} points to reach target</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div style={styles.cardGrade}>Grade: {weakness.grade || 'N/A'}</div>
-                    <div style={styles.progressBarContainer}>
-                      <div style={{...styles.progressBar, width: `${weakness.percentage}%`, background: '#F44336'}} />
-                    </div>
-                    {weakness.gap > 0 && (
-                      <div style={styles.gapText}>Need +{weakness.gap} points to reach 80%</div>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
+
+              {/* ADDITIONAL DEVELOPMENT AREAS (COLLAPSIBLE IF MORE THAN 5) */}
+              {report.weaknesses.items.length > 5 && (
+                <details style={styles.moreDetails}>
+                  <summary style={styles.moreSummary}>View {report.weaknesses.items.length - 5} additional development areas</summary>
+                  <div style={styles.moreList}>
+                    {report.weaknesses.items.slice(5).map((weakness, index) => (
+                      <div key={index} style={styles.moreItem}>
+                        <span style={styles.moreBullet}>•</span>
+                        <span style={styles.moreArea}>{weakness.area}</span>
+                        <span style={styles.morePercentage}>{weakness.percentage}%</span>
+                        <span style={styles.moreGrade}>{weakness.grade}</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
             </div>
           </section>
 
@@ -626,7 +701,12 @@ const styles = {
     fontWeight: 500,
     padding: '8px 16px',
     borderRadius: '20px',
-    border: '1px solid #0A1929'
+    border: '1px solid #0A1929',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#0A1929',
+      color: 'white'
+    }
   },
   headerActions: {
     display: 'flex',
@@ -640,7 +720,12 @@ const styles = {
     borderRadius: '8px',
     fontSize: '14px',
     minWidth: '300px',
-    background: 'white'
+    background: 'white',
+    cursor: 'pointer',
+    outline: 'none',
+    ':focus': {
+      borderColor: '#0A1929'
+    }
   },
   printButton: {
     background: '#0A1929',
@@ -650,7 +735,13 @@ const styles = {
     borderRadius: '8px',
     fontSize: '14px',
     fontWeight: 600,
-    cursor: 'pointer'
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#1A2A3A',
+      transform: 'translateY(-1px)',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+    }
   },
   pdfButton: {
     background: '#4CAF50',
@@ -660,7 +751,13 @@ const styles = {
     borderRadius: '8px',
     fontSize: '14px',
     fontWeight: 600,
-    cursor: 'pointer'
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#45a049',
+      transform: 'translateY(-1px)',
+      boxShadow: '0 4px 12px rgba(76, 175, 80, 0.3)'
+    }
   },
   navigation: {
     display: 'flex',
@@ -678,7 +775,11 @@ const styles = {
     fontSize: '14px',
     fontWeight: 500,
     color: '#4b5563',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      color: '#0A1929'
+    }
   },
   reportContainer: {
     background: 'white',
@@ -698,13 +799,14 @@ const styles = {
     margin: 0,
     fontSize: '28px',
     fontWeight: 700,
-    color: '#0A1929'
+    color: '#0A1929',
+    letterSpacing: '-0.5px'
   },
   subsectionTitle: {
     fontSize: '22px',
     fontWeight: 600,
     color: '#0A1929',
-    margin: '0 0 20px 0'
+    margin: '0'
   },
   coverPage: {
     minHeight: '80vh',
@@ -727,7 +829,8 @@ const styles = {
   },
   coverSubtitle: {
     fontSize: '24px',
-    color: '#666'
+    color: '#666',
+    fontWeight: 300
   },
   coverContent: {
     flex: 1,
@@ -776,16 +879,19 @@ const styles = {
     gap: '20px'
   },
   scoreItem: {
-    background: '#f8f9fa',
+    background: '#F7FAFC',
     padding: '20px',
     borderRadius: '12px',
-    textAlign: 'center'
+    textAlign: 'center',
+    border: '1px solid #E2E8F0'
   },
   scoreLabel: {
     display: 'block',
     fontSize: '14px',
-    color: '#666',
-    marginBottom: '8px'
+    color: '#718096',
+    marginBottom: '8px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   },
   scoreValue: {
     display: 'block',
@@ -801,7 +907,7 @@ const styles = {
     fontWeight: 600
   },
   narrativeBox: {
-    background: '#f8f9fa',
+    background: '#F7FAFC',
     padding: '30px',
     borderRadius: '12px',
     borderLeft: '6px solid #0A1929'
@@ -809,17 +915,19 @@ const styles = {
   narrativeText: {
     fontSize: '16px',
     lineHeight: '1.8',
-    color: '#333',
+    color: '#2D3748',
     margin: 0
   },
   narrativeDescription: {
     fontSize: '15px',
-    color: '#666',
+    color: '#718096',
     marginTop: '15px',
     fontStyle: 'italic'
   },
   tableContainer: {
-    overflowX: 'auto'
+    overflowX: 'auto',
+    borderRadius: '12px',
+    border: '1px solid #E2E8F0'
   },
   table: {
     width: '100%',
@@ -833,13 +941,19 @@ const styles = {
   tableHead: {
     padding: '15px',
     fontWeight: 600,
-    textAlign: 'left'
+    textAlign: 'left',
+    fontSize: '14px'
   },
   tableRow: {
-    borderBottom: '1px solid #e5e7eb'
+    borderBottom: '1px solid #E2E8F0',
+    transition: 'background 0.2s ease',
+    ':hover': {
+      background: '#F7FAFC'
+    }
   },
   tableCell: {
-    padding: '12px 15px'
+    padding: '12px 15px',
+    color: '#2D3748'
   },
   percentageContainer: {
     display: 'flex',
@@ -847,12 +961,13 @@ const styles = {
     gap: '10px'
   },
   percentageText: {
-    minWidth: '40px'
+    minWidth: '40px',
+    fontWeight: 500
   },
   progressBarContainer: {
     flex: 1,
     height: '8px',
-    background: '#e5e7eb',
+    background: '#EDF2F7',
     borderRadius: '4px',
     overflow: 'hidden'
   },
@@ -872,48 +987,273 @@ const styles = {
   strengthsSection: {
     marginTop: '20px'
   },
+  sectionBadge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '20px'
+  },
+  badgeIcon: {
+    fontSize: '28px'
+  },
   cardsGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, 1fr)',
     gap: '20px',
-    marginTop: '20px'
+    marginTop: '25px'
   },
   strengthCard: {
+    background: '#F0F9F0',
+    borderRadius: '16px',
     padding: '20px',
-    background: '#E8F5E9',
-    borderRadius: '12px',
-    borderLeft: '6px solid #4CAF50'
-  },
-  weaknessCard: {
-    padding: '20px',
-    background: '#FFEBEE',
-    borderRadius: '12px',
-    borderLeft: '6px solid #F44336'
+    border: '1px solid #C6F6D5',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      transform: 'translateY(-2px)',
+      boxShadow: '0 8px 24px rgba(0,100,0,0.1)'
+    }
   },
   cardHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '10px'
+    marginBottom: '15px'
+  },
+  cardTitleSection: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  },
+  cardIcon: {
+    fontSize: '16px',
+    color: '#FBBF24'
   },
   cardTitle: {
-    fontSize: '18px',
-    fontWeight: 600
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#0A5C2E'
+  },
+  cardScore: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
   },
   cardPercentage: {
     fontSize: '20px',
     fontWeight: 700
   },
   cardGrade: {
-    fontSize: '13px',
-    color: '#666',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#718096',
+    background: 'white',
+    padding: '2px 6px',
+    borderRadius: '4px'
+  },
+  cardBody: {
+    marginTop: '10px'
+  },
+  metricBar: {
+    marginBottom: '12px'
+  },
+  metricBarLabel: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: '12px',
+    color: '#4A5568',
+    marginBottom: '4px'
+  },
+  cardFooter: {
+    borderTop: '1px solid #C6F6D5',
+    paddingTop: '12px',
+    marginTop: '4px'
+  },
+  cardFooterText: {
+    fontSize: '12px',
+    color: '#2F855A',
+    fontStyle: 'italic'
+  },
+  developmentList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+    marginTop: '25px'
+  },
+  developmentItem: {
+    background: 'white',
+    borderRadius: '16px',
+    padding: '20px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+    border: '1px solid #FEE2E2',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      boxShadow: '0 8px 24px rgba(0,0,0,0.04)',
+      borderColor: '#FECACA'
+    }
+  },
+  developmentItemHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '15px',
+    flexWrap: 'wrap',
+    gap: '12px'
+  },
+  bulletContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px'
+  },
+  bulletPoint: {
+    width: '10px',
+    height: '10px',
+    borderRadius: '50%',
+    display: 'inline-block'
+  },
+  developmentArea: {
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#1A2A3A'
+  },
+  developmentMetrics: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px'
+  },
+  priorityBadge: {
+    padding: '4px 12px',
+    borderRadius: '30px',
+    fontSize: '12px',
+    fontWeight: 600,
+    letterSpacing: '0.3px'
+  },
+  developmentScore: {
+    fontSize: '18px',
+    fontWeight: 700,
+    color: '#1A2A3A',
+    minWidth: '50px',
+    textAlign: 'right'
+  },
+  developmentGrade: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#718096',
+    background: '#F7FAFC',
+    padding: '4px 8px',
+    borderRadius: '6px',
+    minWidth: '40px',
+    textAlign: 'center'
+  },
+  developmentItemBody: {
+    marginTop: '10px'
+  },
+  developmentBar: {
     marginBottom: '10px'
   },
-  gapText: {
-    marginTop: '10px',
+  developmentBarLabel: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: '13px',
+    color: '#4A5568',
+    marginBottom: '6px'
+  },
+  developmentBarContainer: {
+    height: '8px',
+    background: '#EDF2F7',
+    borderRadius: '4px',
+    position: 'relative',
+    overflow: 'visible'
+  },
+  developmentBarFill: {
+    height: '100%',
+    borderRadius: '4px',
+    transition: 'width 0.3s ease'
+  },
+  developmentBarTarget: {
+    position: 'absolute',
+    top: '-2px',
+    width: '2px',
+    height: '12px',
+    backgroundColor: '#718096',
+    transform: 'translateX(-50%)'
+  },
+  targetMarker: {
+    position: 'absolute',
+    top: '-8px',
+    left: '-4px',
     fontSize: '12px',
-    color: '#F44336',
+    color: '#4A5568'
+  },
+  gapIndicator: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginTop: '12px',
+    padding: '8px 12px',
+    background: '#FEF2F2',
+    borderRadius: '8px',
+    fontSize: '13px',
+    color: '#B91C1C'
+  },
+  gapIcon: {
+    fontSize: '14px'
+  },
+  gapText: {
     fontWeight: 500
+  },
+  moreDetails: {
+    marginTop: '20px',
+    border: '1px solid #FEE2E2',
+    borderRadius: '12px',
+    padding: '12px'
+  },
+  moreSummary: {
+    color: '#B91C1C',
+    fontWeight: 500,
+    cursor: 'pointer',
+    fontSize: '14px',
+    padding: '4px 8px',
+    ':hover': {
+      color: '#991B1B'
+    }
+  },
+  moreList: {
+    marginTop: '15px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px'
+  },
+  moreItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '8px 12px',
+    background: '#FEF2F2',
+    borderRadius: '8px',
+    fontSize: '14px'
+  },
+  moreBullet: {
+    color: '#FCA5A5',
+    fontSize: '16px'
+  },
+  moreArea: {
+    flex: 1,
+    color: '#2D3748'
+  },
+  morePercentage: {
+    fontWeight: 600,
+    color: '#B91C1C',
+    minWidth: '50px'
+  },
+  moreGrade: {
+    background: '#FEE2E2',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#B91C1C',
+    minWidth: '35px',
+    textAlign: 'center'
   },
   recommendationsList: {
     display: 'flex',
@@ -925,8 +1265,12 @@ const styles = {
     padding: '20px',
     background: 'white',
     borderRadius: '12px',
-    border: '1px solid #e5e7eb',
-    borderLeftWidth: '6px'
+    border: '1px solid #E2E8F0',
+    borderLeftWidth: '6px',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+    }
   },
   recHeader: {
     display: 'flex',
@@ -934,41 +1278,41 @@ const styles = {
     gap: '15px',
     marginBottom: '10px'
   },
-  priorityBadge: {
-    padding: '4px 12px',
-    borderRadius: '20px',
-    color: 'white',
-    fontSize: '12px',
-    fontWeight: 600
-  },
   recCategory: {
     fontSize: '16px',
-    fontWeight: 600
+    fontWeight: 600,
+    color: '#2D3748'
   },
   recText: {
     fontSize: '15px',
-    marginBottom: '10px'
+    color: '#4A5568',
+    marginBottom: '10px',
+    lineHeight: '1.6'
   },
   recAction: {
     fontSize: '14px',
-    background: '#f8f9fa',
-    padding: '8px',
-    borderRadius: '6px',
-    marginBottom: '5px'
+    background: '#F7FAFC',
+    padding: '10px',
+    borderRadius: '8px',
+    marginBottom: '8px',
+    color: '#2D3748'
   },
   recImpact: {
     fontSize: '13px',
-    color: '#666'
+    color: '#718096',
+    fontStyle: 'italic'
   },
   tipBox: {
     padding: '20px',
-    background: '#E8F5E9',
+    background: '#F0F9F0',
     borderRadius: '12px',
     borderLeft: '6px solid #4CAF50',
     marginTop: '20px'
   },
   tipTitle: {
     margin: '0 0 10px 0',
-    color: '#4CAF50'
+    color: '#2F855A',
+    fontSize: '16px',
+    fontWeight: 600
   }
 };
