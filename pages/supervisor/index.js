@@ -19,28 +19,35 @@ export default function SupervisorDashboard() {
     byType: {}
   });
 
+  // Authentication check - FIXED to use userSession
   useEffect(() => {
     const checkAuth = () => {
       if (typeof window !== 'undefined') {
-        const supervisorSession = localStorage.getItem("supervisorSession");
-        if (!supervisorSession) {
-          router.push("/supervisor-login");
+        const userSession = localStorage.getItem("userSession");
+        
+        if (!userSession) {
+          router.push("/login");
           return;
         }
         
         try {
-          const session = JSON.parse(supervisorSession);
-          if (session.loggedIn) {
+          const session = JSON.parse(userSession);
+          if (session.loggedIn && (session.role === 'supervisor' || session.role === 'admin')) {
             setCurrentSupervisor({
               id: session.user_id,
               email: session.email,
-              name: session.name || 'Supervisor'
+              name: session.full_name || session.email
             });
           } else {
-            router.push("/supervisor-login");
+            // If not a supervisor/admin, redirect to appropriate dashboard
+            if (session.role === 'candidate') {
+              router.push("/candidate/dashboard");
+            } else {
+              router.push("/login");
+            }
           }
         } catch {
-          router.push("/supervisor-login");
+          router.push("/login");
         }
       }
     };
@@ -77,7 +84,7 @@ export default function SupervisorDashboard() {
               )
             )
           `)
-          .eq('supervisor_id', currentSupervisor.id)  // Only show assigned candidates
+          .eq('supervisor_id', currentSupervisor.id)
           .order('created_at', { ascending: false });
 
         if (candidatesError) throw candidatesError;
@@ -188,9 +195,10 @@ export default function SupervisorDashboard() {
     });
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("supervisorSession");
-    router.push("/supervisor-login");
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    localStorage.removeItem("userSession");
+    router.push("/login");
   };
 
   if (!currentSupervisor) {
