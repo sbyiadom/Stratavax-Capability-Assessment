@@ -60,6 +60,7 @@ export default function SupervisorDashboard() {
       try {
         setLoading(true);
 
+        // First, get candidates with their basic assessment info (no nested assessments query)
         const { data: candidatesData, error: candidatesError } = await supabase
           .from('candidate_profiles')
           .select(`
@@ -74,12 +75,7 @@ export default function SupervisorDashboard() {
               status,
               score,
               max_score,
-              completed_at,
-              assessments (
-                id,
-                title,
-                assessment_type
-              )
+              completed_at
             )
           `)
           .eq('supervisor_id', currentSupervisor.id)
@@ -87,43 +83,84 @@ export default function SupervisorDashboard() {
 
         if (candidatesError) throw candidatesError;
 
-        const processedCandidates = (candidatesData || []).map(candidate => {
-          const assessments = candidate.candidate_assessments || [];
-          const completedAssessments = assessments.filter(a => a.status === 'completed');
-          const pendingAssessments = assessments.filter(a => a.status === 'pending' || a.status === 'in_progress');
-          
-          const assessmentBreakdown = {};
-          assessments.forEach(a => {
-            const type = a.assessments?.assessment_type || 'unknown';
-            assessmentBreakdown[type] = (assessmentBreakdown[type] || 0) + 1;
-          });
+        // Process candidates and fetch assessment details separately
+        const processedCandidates = await Promise.all(
+          (candidatesData || []).map(async (candidate) => {
+            const assessments = candidate.candidate_assessments || [];
+            
+            // Get assessment details for each assessment
+            const assessmentsWithDetails = await Promise.all(
+              assessments.map(async (assessment) => {
+                if (assessment.assessment_id) {
+                  const { data: assessmentData, error: assessmentError } = await supabase
+                    .from('assessments')
+                    .select(`
+                      id,
+                      title,
+                      assessment_type_id,
+                      assessment_types (
+                        code,
+                        name
+                      )
+                    `)
+                    .eq('id', assessment.assessment_id)
+                    .single();
+                  
+                  if (!assessmentError && assessmentData) {
+                    return {
+                      ...assessment,
+                      assessment_type: assessmentData.assessment_types?.code || 'unknown',
+                      assessment_name: assessmentData.assessment_types?.name || 'Unknown'
+                    };
+                  }
+                }
+                return {
+                  ...assessment,
+                  assessment_type: 'unknown',
+                  assessment_name: 'Unknown'
+                };
+              })
+            );
 
-          const latestAssessment = completedAssessments.sort((a, b) => 
-            new Date(b.completed_at) - new Date(a.completed_at)
-          )[0];
+            const completedAssessments = assessmentsWithDetails.filter(a => a.status === 'completed');
+            const pendingAssessments = assessmentsWithDetails.filter(a => a.status === 'pending' || a.status === 'in_progress');
+            
+            // Calculate assessment breakdown by type
+            const assessmentBreakdown = {};
+            assessmentsWithDetails.forEach(a => {
+              const type = a.assessment_type || 'unknown';
+              assessmentBreakdown[type] = (assessmentBreakdown[type] || 0) + 1;
+            });
 
-          return {
-            id: candidate.id,
-            full_name: candidate.full_name || 'Unnamed Candidate',
-            email: candidate.email || 'No email provided',
-            phone: candidate.phone,
-            created_at: candidate.created_at,
-            totalAssessments: assessments.length,
-            completedAssessments: completedAssessments.length,
-            pendingAssessments: pendingAssessments.length,
-            assessment_breakdown: assessmentBreakdown,
-            latestAssessment: latestAssessment,
-            assessments: assessments.map(a => ({
-              score: a.score,
-              max_score: a.max_score,
-              completed_at: a.completed_at,
-              type: a.assessments?.assessment_type
-            }))
-          };
-        });
+            // Get latest completed assessment
+            const latestAssessment = completedAssessments.sort((a, b) => 
+              new Date(b.completed_at) - new Date(a.completed_at)
+            )[0];
+
+            return {
+              id: candidate.id,
+              full_name: candidate.full_name || 'Unnamed Candidate',
+              email: candidate.email || 'No email provided',
+              phone: candidate.phone,
+              created_at: candidate.created_at,
+              totalAssessments: assessmentsWithDetails.length,
+              completedAssessments: completedAssessments.length,
+              pendingAssessments: pendingAssessments.length,
+              assessment_breakdown: assessmentBreakdown,
+              latestAssessment: latestAssessment,
+              assessments: assessmentsWithDetails.map(a => ({
+                score: a.score,
+                max_score: a.max_score,
+                completed_at: a.completed_at,
+                type: a.assessment_type
+              }))
+            };
+          })
+        );
 
         setCandidates(processedCandidates);
 
+        // Calculate stats
         const types = new Set();
         const typeCounts = {};
         let totalAssessments = 0;
