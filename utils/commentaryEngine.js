@@ -1,0 +1,240 @@
+/**
+ * PROFESSIONAL COMMENTARY ENGINE
+ * Generates rich, narrative commentary for assessment results
+ * Each commentary is unique and reads like a consultant wrote it
+ */
+
+// ===== SCORE-BASED COMMENTARY TEMPLATES =====
+
+const criticalGapCommentary = (area, percentage) => {
+  const templates = [
+    `${area} presents a critical development priority at ${percentage}%. This significant gap will likely impede performance in roles requiring these capabilities. Immediate, structured intervention is essential to build foundational competence.`,
+    
+    `At ${percentage}%, ${area} represents a substantial weakness that requires urgent attention. Without targeted development, this gap will continue to impact overall effectiveness and may create risks in role performance.`,
+    
+    `The score of ${percentage}% in ${area} indicates fundamental challenges that must be addressed. This area should be prioritized for intensive coaching and structured skill-building exercises.`,
+    
+    `${area} emerges as a critical vulnerability with a score of ${percentage}%. This level of performance suggests limited exposure to or understanding of core concepts in this domain. A comprehensive development plan with clear milestones is recommended.`,
+    
+    `With only ${percentage}% proficiency, ${area} requires immediate remediation. This gap is substantial enough to warrant dedicated focus in the development plan, with regular progress monitoring and targeted learning interventions.`
+  ];
+  
+  return templates[Math.floor(Math.random() * templates.length)];
+};
+
+const significantGapCommentary = (area, percentage) => {
+  const templates = [
+    `${area} shows significant development needs at ${percentage}%. While foundational awareness may exist, the candidate would benefit substantially from structured learning opportunities and guided practice in this area.`,
+    
+    `At ${percentage}%, ${area} represents a notable gap that should be addressed in the development plan. Focused training and practical application will help build competence and confidence in this domain.`,
+    
+    `The ${percentage}% score in ${area} indicates that this competency requires strengthening. With targeted support and deliberate practice, meaningful improvement can be achieved over the next 3-6 months.`,
+    
+    `${area} emerges as a development priority with a score of ${percentage}%. The candidate demonstrates basic awareness but needs structured guidance to translate this into applied capability.`,
+    
+    `Performance in ${area} at ${percentage}% suggests gaps in both knowledge and application. A combination of formal training and mentored practice would accelerate development in this area.`
+  ];
+  
+  return templates[Math.floor(Math.random() * templates.length)];
+};
+
+const developingCommentary = (area, percentage) => {
+  const templates = [
+    `${area} is developing with a score of ${percentage}%. The candidate shows foundational understanding and would benefit from continued practice and exposure to increasingly complex applications.`,
+    
+    `At ${percentage}%, ${area} demonstrates emerging competence. With structured support and real-world application, this area can be strengthened to meet role expectations within 6-12 months.`,
+    
+    `The ${percentage}% score in ${area} indicates that the candidate has established basic competence but would benefit from targeted development to reach full proficiency.`,
+    
+    `${area} shows promising foundations at ${percentage}%. Continued development through practical application and feedback will help solidify these skills.`,
+    
+    `Performance in ${area} at ${percentage}% suggests the candidate is on a positive trajectory. Focused practice and exposure to varied situations will accelerate progress toward proficiency.`
+  ];
+  
+  return templates[Math.floor(Math.random() * templates.length)];
+};
+
+const approachingProficiencyCommentary = (area, percentage) => {
+  const templates = [
+    `${area} is approaching expected levels at ${percentage}%. The candidate demonstrates solid understanding and would benefit from fine-tuning through practical application and feedback.`,
+    
+    `At ${percentage}%, ${area} shows good foundational strength. With continued experience and occasional guidance, this area should reach full proficiency.`,
+    
+    `The ${percentage}% score in ${area} indicates that the candidate is close to meeting expectations. Targeted refinement and application in real-world contexts will bridge the remaining gap.`,
+    
+    `${area} is nearly at proficiency with a score of ${percentage}%. The candidate demonstrates competence and would benefit from opportunities to apply these skills in varied contexts.`,
+    
+    `Performance in ${area} at ${percentage}% suggests solid capability. Fine-tuning through feedback and exposure to complex situations will elevate this area to strength status.`
+  ];
+  
+  return templates[Math.floor(Math.random() * templates.length)];
+};
+
+const proficientCommentary = (area, percentage) => {
+  const templates = [
+    `${area} meets expectations at ${percentage}%. The candidate demonstrates reliable capability and can perform independently in this area.`,
+    
+    `At ${percentage}%, ${area} shows solid competence. The candidate can be trusted to handle typical demands in this domain with minimal guidance.`,
+    
+    `The ${percentage}% score in ${area} indicates satisfactory performance. This provides a foundation that can be built upon for future growth.`,
+    
+    `${area} demonstrates expected capability at ${percentage}%. The candidate has established a reliable skill set in this area.`,
+    
+    `Performance in ${area} at ${percentage}% meets role requirements. Continued application will further consolidate these skills.`
+  ];
+  
+  return templates[Math.floor(Math.random() * templates.length)];
+};
+
+const strengthCommentary = (area, percentage) => {
+  const templates = [
+    `${area} is a clear strength at ${percentage}%. The candidate demonstrates strong capability that can be leveraged for impact. This area exceeds expectations and represents a reliable asset.`,
+    
+    `At ${percentage}%, ${area} stands out as a notable strength. The candidate shows advanced capability that distinguishes them from peers. This competency can be leveraged for greater responsibility.`,
+    
+    `The ${percentage}% score in ${area} indicates exceptional performance. This strength provides a foundation for taking on stretch assignments and mentoring others.`,
+    
+    `${area} emerges as a significant strength with a score of ${percentage}%. The candidate demonstrates sophisticated understanding and application in this domain.`,
+    
+    `Performance in ${area} at ${percentage}% is exceptional. This represents a competitive advantage that should be leveraged in role placement and development opportunities.`
+  ];
+  
+  return templates[Math.floor(Math.random() * templates.length)];
+};
+
+const exceptionalCommentary = (area, percentage) => {
+  const templates = [
+    `${area} is exceptional at ${percentage}%. The candidate demonstrates mastery that far exceeds expectations. This level of capability is rare and positions them as a potential subject matter expert or mentor in this domain.`,
+    
+    `At ${percentage}%, ${area} represents elite performance. The candidate shows sophisticated understanding and application that distinguishes them as a top talent in this area.`,
+    
+    `The ${percentage}% score in ${area} indicates mastery-level capability. This is a significant asset that should be leveraged for organizational impact and knowledge sharing.`,
+    
+    `${area} is a standout strength at ${percentage}%. The candidate demonstrates exceptional proficiency that can be leveraged for mentoring others and leading complex initiatives.`,
+    
+    `Performance in ${area} at ${percentage}% is extraordinary. This level of capability suggests deep expertise that can drive significant value in roles requiring these competencies.`
+  ];
+  
+  return templates[Math.floor(Math.random() * templates.length)];
+};
+
+// ===== STRENGTH SUMMARY COMMENTARY =====
+
+export const generateStrengthsSummary = (strengths, topStrengths) => {
+  if (strengths.length === 0) {
+    const templates = [
+      "The assessment did not identify any areas scoring above the 80% proficiency threshold. While the candidate demonstrates functional capability across competencies, there are no standout strengths to leverage at this time. Development efforts should focus on building foundational skills across all areas.",
+      
+      "No significant strengths emerged from this assessment. Performance is consistent but without exceptional peaks in any domain. This suggests a profile that would benefit from broad-based development before specialization.",
+      
+      "The candidate's performance does not reveal any areas of exceptional strength. The profile shows consistent, moderate performance across competencies, indicating that foundational development should be the initial priority."
+    ];
+    return templates[Math.floor(Math.random() * templates.length)];
+  }
+
+  const templates = [
+    `The candidate demonstrates notable strengths in ${topStrengths.join(', ')}. These areas represent reliable assets that can be leveraged for impact. Performance in these domains exceeds expectations and provides a foundation for taking on increased responsibility.`,
+    
+    `Key strengths emerge in ${topStrengths.join(', ')}. These competencies distinguish the candidate and should be considered when identifying opportunities for contribution and growth.`,
+    
+    `${topStrengths.join(', ')} stand out as areas of relative strength. The candidate shows advanced capability in these domains, which can be leveraged to add value while developing other areas.`,
+    
+    `The candidate's strongest performances are in ${topStrengths.join(', ')}. These areas demonstrate capability beyond the expected level and provide a platform for further development and contribution.`
+  ];
+  
+  return templates[Math.floor(Math.random() * templates.length)];
+};
+
+// ===== WEAKNESS SUMMARY COMMENTARY =====
+
+export const generateWeaknessesSummary = (weaknesses, topWeaknesses, overallPercentage) => {
+  if (weaknesses.length === 0) {
+    const templates = [
+      "The candidate meets or exceeds expectations across all assessed areas. No significant development gaps were identified, indicating readiness for roles requiring these competencies.",
+      
+      "Performance is consistently strong with no critical gaps detected. The candidate demonstrates adequate capability across all assessed dimensions.",
+      
+      "All areas meet expected performance levels. Development should focus on building upon existing strengths rather than addressing specific gaps."
+    ];
+    return templates[Math.floor(Math.random() * templates.length)];
+  }
+
+  const templates = [
+    `Priority development areas include ${topWeaknesses.join(', ')}. These competencies show the greatest gap relative to expectations and should be the focus of the development plan. Addressing these areas will have the most significant impact on overall effectiveness.`,
+    
+    `The assessment identifies development needs in ${topWeaknesses.join(', ')}. These areas present the most immediate opportunities for growth and should be prioritized in the development journey.`,
+    
+    `${topWeaknesses.join(', ')} emerge as the primary development areas. Targeted intervention in these competencies will yield the greatest return on development investment.`,
+    
+    `Focus should be directed toward strengthening ${topWeaknesses.join(', ')}. These areas show the most significant gap between current and expected performance.`
+  ];
+  
+  return templates[Math.floor(Math.random() * templates.length)];
+};
+
+// ===== OVERALL PROFILE COMMENTARY =====
+
+export const generateProfileCommentary = (percentage, classification, strengths, weaknesses) => {
+  const strengthCount = strengths.length;
+  const weaknessCount = weaknesses.length;
+  
+  if (percentage >= 85) {
+    const templates = [
+      `This profile reflects exceptional capability with ${strengthCount} identified strengths and only ${weaknessCount} minor development areas. The candidate demonstrates readiness for increased responsibility and strategic challenges.`,
+      
+      `At ${percentage}%, this performance places the candidate in the exceptional range. The profile shows mastery across multiple competencies with minimal development needs.`,
+      
+      `The candidate presents as high-potential talent with a strong foundation for advancement. The combination of ${strengthCount} strengths and limited development areas suggests readiness for challenging assignments.`
+    ];
+    return templates[Math.floor(Math.random() * templates.length)];
+  }
+  
+  if (percentage >= 70) {
+    const templates = [
+      `This profile shows solid performance with ${strengthCount} identified strengths and ${weaknessCount} development areas. The candidate demonstrates reliable capability with clear opportunities for strategic growth.`,
+      
+      `At ${percentage}%, the candidate performs solidly with consistent capability across key areas. Development efforts should leverage existing strengths to address identified gaps.`,
+      
+      `The profile reveals a strong performer with ${strengthCount} areas of relative strength and ${weaknessCount} areas for development. This balanced profile suggests readiness for roles with moderate complexity.`
+    ];
+    return templates[Math.floor(Math.random() * templates.length)];
+  }
+  
+  if (percentage >= 55) {
+    const templates = [
+      `This profile shows foundational competence with ${weaknessCount} identified development areas. The candidate has building-block skills that can be strengthened through targeted development.`,
+      
+      `At ${percentage}%, the candidate demonstrates developing capability. The ${weaknessCount} development areas represent opportunities for growth that should be addressed through structured learning.`,
+      
+      `The profile reveals a developing performer with clear opportunities for growth. Focused attention on the ${weaknessCount} priority areas will accelerate progress toward full proficiency.`
+    ];
+    return templates[Math.floor(Math.random() * templates.length)];
+  }
+  
+  const templates = [
+    `This profile indicates significant development needs with ${weaknessCount} areas requiring attention. Structured intervention and close supervision are recommended to build foundational capabilities.`,
+    
+    `At ${percentage}%, the candidate shows substantial gaps that need immediate attention. A comprehensive development plan with clear milestones and regular progress monitoring is essential.`,
+    
+    `The profile reveals critical development needs across multiple areas. Intensive support and structured learning experiences are required to build fundamental competence.`
+  ];
+  
+  return templates[Math.floor(Math.random() * templates.length)];
+};
+
+// ===== MAIN EXPORT FUNCTION =====
+
+export const generateCommentary = (area, percentage, type = 'weakness') => {
+  if (type === 'strength') {
+    if (percentage >= 90) return exceptionalCommentary(area, percentage);
+    if (percentage >= 80) return strengthCommentary(area, percentage);
+    return proficientCommentary(area, percentage);
+  } else {
+    if (percentage < 30) return criticalGapCommentary(area, percentage);
+    if (percentage < 40) return significantGapCommentary(area, percentage);
+    if (percentage < 50) return developingCommentary(area, percentage);
+    if (percentage < 60) return approachingProficiencyCommentary(area, percentage);
+    if (percentage < 70) return proficientCommentary(area, percentage);
+    return strengthCommentary(area, percentage);
+  }
+};
