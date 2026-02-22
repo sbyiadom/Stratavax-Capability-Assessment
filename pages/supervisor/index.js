@@ -7,15 +7,12 @@ import { supabase } from "../../supabase/client";
 export default function SupervisorDashboard() {
   const router = useRouter();
   const [candidates, setCandidates] = useState([]);
-  const [supervisors, setSupervisors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentSupervisor, setCurrentSupervisor] = useState(null);
-  const [activeTab, setActiveTab] = useState('candidates');
   const [selectedAssessmentType, setSelectedAssessmentType] = useState('all');
   const [assessmentTypes, setAssessmentTypes] = useState([]);
   const [stats, setStats] = useState({
     totalCandidates: 0,
-    totalSupervisors: 0,
     totalAssessments: 0,
     completedAssessments: 0,
     pendingAssessments: 0,
@@ -57,7 +54,8 @@ export default function SupervisorDashboard() {
       try {
         setLoading(true);
 
-        // Get all candidates with their assessments
+        // Get all candidates with their assessments - NO SUPERVISOR FILTER
+        // This shows ALL candidates in the system since supervisors manage all candidates
         const { data: candidatesData, error: candidatesError } = await supabase
           .from('candidate_profiles')
           .select(`
@@ -124,22 +122,6 @@ export default function SupervisorDashboard() {
 
         setCandidates(processedCandidates);
 
-        // Get all supervisors (if current user is admin, otherwise show limited view)
-        const { data: supervisorsData, error: supervisorsError } = await supabase
-          .from('supervisor_profiles')
-          .select(`
-            id,
-            full_name,
-            email,
-            role,
-            created_at
-          `)
-          .order('created_at', { ascending: false });
-
-        if (!supervisorsError) {
-          setSupervisors(supervisorsData || []);
-        }
-
         // Calculate stats
         const types = new Set();
         const typeCounts = {};
@@ -165,7 +147,6 @@ export default function SupervisorDashboard() {
         setAssessmentTypes(['all', ...Array.from(types)]);
         setStats({
           totalCandidates: processedCandidates.length,
-          totalSupervisors: supervisorsData?.length || 0,
           totalAssessments,
           completedAssessments,
           pendingAssessments,
@@ -226,7 +207,7 @@ export default function SupervisorDashboard() {
       <div style={styles.container}>
         <div style={styles.header}>
           <div>
-            <h1 style={styles.title}>Stratavax Administration</h1>
+            <h1 style={styles.title}>Supervisor Dashboard</h1>
             <p style={styles.welcome}>Welcome back, <strong>{currentSupervisor.name || currentSupervisor.email}</strong></p>
           </div>
           <button onClick={handleLogout} style={styles.logoutButton}>
@@ -289,278 +270,163 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        {/* Tab Navigation */}
-        <div style={styles.tabContainer}>
-          <button 
-            style={{...styles.tabButton, borderBottom: activeTab === 'candidates' ? '3px solid #0A1929' : '3px solid transparent'}}
-            onClick={() => setActiveTab('candidates')}
-          >
-            <span style={styles.tabIcon}>👤</span>
-            Candidates ({stats.totalCandidates})
-          </button>
-          <button 
-            style={{...styles.tabButton, borderBottom: activeTab === 'supervisors' ? '3px solid #0A1929' : '3px solid transparent'}}
-            onClick={() => setActiveTab('supervisors')}
-          >
-            <span style={styles.tabIcon}>👑</span>
-            Supervisors ({stats.totalSupervisors})
-          </button>
-        </div>
+        {/* Candidates Table */}
+        <div style={styles.tableContainer}>
+          <div style={styles.tableHeader}>
+            <h2 style={styles.tableTitle}>Candidate Management</h2>
+            <Link href="/supervisor/add-candidate" legacyBehavior>
+              <a style={styles.addButton}>+ Add New Candidate</a>
+            </Link>
+          </div>
 
-        {/* Candidates Tab */}
-        {activeTab === 'candidates' && (
-          <div style={styles.tableContainer}>
-            <div style={styles.tableHeader}>
-              <h2 style={styles.tableTitle}>Candidate Management</h2>
+          {loading ? (
+            <div style={styles.loadingState}>
+              <div style={styles.spinner} />
+              <p>Loading candidates...</p>
+            </div>
+          ) : filteredCandidates.length === 0 ? (
+            <div style={styles.emptyState}>
+              <div style={styles.emptyIcon}>👥</div>
+              <h3>No Candidates Found</h3>
+              <p>Start by adding candidates and assigning assessments.</p>
               <Link href="/supervisor/add-candidate" legacyBehavior>
-                <a style={styles.addButton}>+ Add New Candidate</a>
+                <a style={styles.primaryButton}>Add Your First Candidate</a>
               </Link>
             </div>
+          ) : (
+            <div style={styles.tableWrapper}>
+              <table style={styles.table}>
+                <thead>
+                  <tr style={styles.tableHeadRow}>
+                    <th style={styles.tableHead}>Candidate</th>
+                    <th style={styles.tableHead}>Contact</th>
+                    <th style={styles.tableHead}>Assessments</th>
+                    <th style={styles.tableHead}>Latest Score</th>
+                    <th style={styles.tableHead}>Classification</th>
+                    <th style={styles.tableHead}>Last Active</th>
+                    <th style={styles.tableHead}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCandidates.map((candidate) => {
+                    const latestScore = candidate.latestAssessment?.score || 0;
+                    const maxScore = candidate.latestAssessment?.max_score || 100;
+                    const percentage = latestScore ? Math.round((latestScore/maxScore)*100) : 0;
+                    const classification = getClassification(latestScore, maxScore);
 
-            {loading ? (
-              <div style={styles.loadingState}>
-                <div style={styles.spinner} />
-                <p>Loading candidates...</p>
-              </div>
-            ) : filteredCandidates.length === 0 ? (
-              <div style={styles.emptyState}>
-                <div style={styles.emptyIcon}>👥</div>
-                <h3>No Candidates Found</h3>
-                <p>Start by adding candidates and assigning assessments.</p>
-                <Link href="/supervisor/add-candidate" legacyBehavior>
-                  <a style={styles.primaryButton}>Add Your First Candidate</a>
-                </Link>
-              </div>
-            ) : (
-              <div style={styles.tableWrapper}>
-                <table style={styles.table}>
-                  <thead>
-                    <tr style={styles.tableHeadRow}>
-                      <th style={styles.tableHead}>Candidate</th>
-                      <th style={styles.tableHead}>Contact</th>
-                      <th style={styles.tableHead}>Assessments</th>
-                      <th style={styles.tableHead}>Latest Score</th>
-                      <th style={styles.tableHead}>Classification</th>
-                      <th style={styles.tableHead}>Last Active</th>
-                      <th style={styles.tableHead}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredCandidates.map((candidate) => {
-                      const latestScore = candidate.latestAssessment?.score || 0;
-                      const maxScore = candidate.latestAssessment?.max_score || 100;
-                      const classification = getClassification(latestScore, maxScore);
-
-                      return (
-                        <tr key={candidate.id} style={styles.tableRow}>
-                          <td style={styles.tableCell}>
-                            <div style={styles.candidateInfo}>
-                              <div style={styles.candidateAvatar}>
-                                {candidate.full_name?.charAt(0) || 'C'}
-                              </div>
-                              <div>
-                                <div style={styles.candidateName}>{candidate.full_name}</div>
-                                <div style={styles.candidateId}>ID: {candidate.id.substring(0, 8)}...</div>
-                              </div>
+                    return (
+                      <tr key={candidate.id} style={styles.tableRow}>
+                        <td style={styles.tableCell}>
+                          <div style={styles.candidateInfo}>
+                            <div style={styles.candidateAvatar}>
+                              {candidate.full_name?.charAt(0) || 'C'}
                             </div>
-                          </td>
-                          <td style={styles.tableCell}>
-                            <div style={styles.candidateEmail}>{candidate.email}</div>
-                            {candidate.phone && <div style={styles.candidatePhone}>{candidate.phone}</div>}
-                          </td>
-                          <td style={styles.tableCell}>
-                            <div style={styles.assessmentStats}>
-                              <span style={styles.assessmentCount}>
-                                <strong>{candidate.completedAssessments}</strong> completed
-                              </span>
-                              <span style={styles.assessmentCount}>
-                                <strong>{candidate.pendingAssessments}</strong> pending
-                              </span>
+                            <div>
+                              <div style={styles.candidateName}>{candidate.full_name}</div>
+                              <div style={styles.candidateId}>ID: {candidate.id.substring(0, 8)}...</div>
                             </div>
-                            <div style={styles.assessmentTags}>
-                              {Object.entries(candidate.assessment_breakdown).map(([type, count]) => (
-                                <span key={type} style={{
-                                  ...styles.assessmentTag,
-                                  background: type === 'leadership' ? '#E3F2FD' :
-                                             type === 'cognitive' ? '#E8F5E9' :
-                                             type === 'technical' ? '#FFEBEE' :
-                                             type === 'personality' ? '#F3E5F5' :
-                                             type === 'performance' ? '#FFF3E0' :
-                                             type === 'behavioral' ? '#E0F2F1' :
-                                             type === 'cultural' ? '#F1F5F9' :
-                                             '#F1F5F9',
-                                  color: type === 'leadership' ? '#1565C0' :
-                                         type === 'cognitive' ? '#2E7D32' :
-                                         type === 'technical' ? '#C62828' :
-                                         type === 'personality' ? '#7B1FA2' :
-                                         type === 'performance' ? '#EF6C00' :
-                                         type === 'behavioral' ? '#00695C' :
-                                         type === 'cultural' ? '#37474F' :
-                                         '#37474F'
-                                }}>
-                                  {type}: {count}
-                                </span>
-                              ))}
-                            </div>
-                          </td>
-                          <td style={styles.tableCell}>
-                            {candidate.latestAssessment ? (
-                              <span style={{
-                                ...styles.scoreBadge,
-                                background: latestScore >= 85 ? '#E8F5E9' :
-                                           latestScore >= 70 ? '#E3F2FD' :
-                                           latestScore >= 55 ? '#FFF3E0' :
-                                           latestScore >= 40 ? '#F3E5F5' :
-                                           '#FFEBEE',
-                                color: latestScore >= 85 ? '#2E7D32' :
-                                      latestScore >= 70 ? '#1565C0' :
-                                      latestScore >= 55 ? '#F57C00' :
-                                      latestScore >= 40 ? '#7B1FA2' :
-                                      '#C62828'
+                          </div>
+                        </td>
+                        <td style={styles.tableCell}>
+                          <div style={styles.candidateEmail}>{candidate.email}</div>
+                          {candidate.phone && <div style={styles.candidatePhone}>{candidate.phone}</div>}
+                        </td>
+                        <td style={styles.tableCell}>
+                          <div style={styles.assessmentStats}>
+                            <span style={styles.assessmentCount}>
+                              <strong>{candidate.completedAssessments}</strong> completed
+                            </span>
+                            <span style={styles.assessmentCount}>
+                              <strong>{candidate.pendingAssessments}</strong> pending
+                            </span>
+                          </div>
+                          <div style={styles.assessmentTags}>
+                            {Object.entries(candidate.assessment_breakdown).map(([type, count]) => (
+                              <span key={type} style={{
+                                ...styles.assessmentTag,
+                                background: type === 'leadership' ? '#E3F2FD' :
+                                           type === 'cognitive' ? '#E8F5E9' :
+                                           type === 'technical' ? '#FFEBEE' :
+                                           type === 'personality' ? '#F3E5F5' :
+                                           type === 'performance' ? '#FFF3E0' :
+                                           type === 'behavioral' ? '#E0F2F1' :
+                                           type === 'cultural' ? '#F1F5F9' :
+                                           '#F1F5F9',
+                                color: type === 'leadership' ? '#1565C0' :
+                                       type === 'cognitive' ? '#2E7D32' :
+                                       type === 'technical' ? '#C62828' :
+                                       type === 'personality' ? '#7B1FA2' :
+                                       type === 'performance' ? '#EF6C00' :
+                                       type === 'behavioral' ? '#00695C' :
+                                       type === 'cultural' ? '#37474F' :
+                                       '#37474F'
                               }}>
-                                {latestScore}/{maxScore} ({Math.round((latestScore/maxScore)*100)}%)
+                                {type}: {count}
                               </span>
-                            ) : (
-                              <span style={styles.noScore}>No assessments</span>
-                            )}
-                          </td>
-                          <td style={styles.tableCell}>
+                            ))}
+                          </div>
+                        </td>
+                        <td style={styles.tableCell}>
+                          {candidate.latestAssessment ? (
                             <span style={{
-                              ...styles.classificationBadge,
-                              color: classification.color,
-                              background: `${classification.color}15`,
-                              border: `1px solid ${classification.color}30`
+                              ...styles.scoreBadge,
+                              background: percentage >= 85 ? '#E8F5E9' :
+                                         percentage >= 70 ? '#E3F2FD' :
+                                         percentage >= 55 ? '#FFF3E0' :
+                                         percentage >= 40 ? '#F3E5F5' :
+                                         '#FFEBEE',
+                              color: percentage >= 85 ? '#2E7D32' :
+                                    percentage >= 70 ? '#1565C0' :
+                                    percentage >= 55 ? '#F57C00' :
+                                    percentage >= 40 ? '#7B1FA2' :
+                                    '#C62828'
                             }}>
-                              {classification.label}
+                              {latestScore}/{maxScore} ({percentage}%)
                             </span>
-                          </td>
-                          <td style={styles.tableCell}>
-                            <span style={styles.date}>
-                              {candidate.latestAssessment 
-                                ? formatDate(candidate.latestAssessment.completed_at)
-                                : 'Never'
-                              }
-                            </span>
-                          </td>
-                          <td style={styles.tableCell}>
-                            <div style={styles.actionButtons}>
-                              <Link href={`/supervisor/${candidate.id}`} legacyBehavior>
-                                <a style={styles.viewButton}>
-                                  View Reports
-                                </a>
-                              </Link>
-                              <Link href={`/supervisor/assign-assessment/${candidate.id}`} legacyBehavior>
-                                <a style={styles.assignButton}>
-                                  Assign
-                                </a>
-                              </Link>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Supervisors Tab */}
-        {activeTab === 'supervisors' && (
-          <div style={styles.tableContainer}>
-            <div style={styles.tableHeader}>
-              <h2 style={styles.tableTitle}>Supervisor Management</h2>
-              <Link href="/admin/add-supervisor" legacyBehavior>
-                <a style={styles.addButton}>+ Add New Supervisor</a>
-              </Link>
+                          ) : (
+                            <span style={styles.noScore}>No assessments</span>
+                          )}
+                        </td>
+                        <td style={styles.tableCell}>
+                          <span style={{
+                            ...styles.classificationBadge,
+                            color: classification.color,
+                            background: `${classification.color}15`,
+                            border: `1px solid ${classification.color}30`
+                          }}>
+                            {classification.label}
+                          </span>
+                        </td>
+                        <td style={styles.tableCell}>
+                          <span style={styles.date}>
+                            {candidate.latestAssessment 
+                              ? formatDate(candidate.latestAssessment.completed_at)
+                              : 'Never'
+                            }
+                          </span>
+                        </td>
+                        <td style={styles.tableCell}>
+                          <div style={styles.actionButtons}>
+                            <Link href={`/supervisor/${candidate.id}`} legacyBehavior>
+                              <a style={styles.viewButton}>
+                                View Reports
+                              </a>
+                            </Link>
+                            <Link href={`/supervisor/assign-assessment/${candidate.id}`} legacyBehavior>
+                              <a style={styles.assignButton}>
+                                Assign
+                              </a>
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-
-            {loading ? (
-              <div style={styles.loadingState}>
-                <div style={styles.spinner} />
-                <p>Loading supervisors...</p>
-              </div>
-            ) : supervisors.length === 0 ? (
-              <div style={styles.emptyState}>
-                <div style={styles.emptyIcon}>👑</div>
-                <h3>No Supervisors Found</h3>
-                <p>Add supervisors to help manage candidates and assessments.</p>
-              </div>
-            ) : (
-              <div style={styles.tableWrapper}>
-                <table style={styles.table}>
-                  <thead>
-                    <tr style={styles.tableHeadRow}>
-                      <th style={styles.tableHead}>Supervisor</th>
-                      <th style={styles.tableHead}>Contact</th>
-                      <th style={styles.tableHead}>Role</th>
-                      <th style={styles.tableHead}>Candidates</th>
-                      <th style={styles.tableHead}>Joined</th>
-                      <th style={styles.tableHead}>Status</th>
-                      <th style={styles.tableHead}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {supervisors.map((supervisor) => {
-                      const candidateCount = candidates.filter(c => c.created_by === supervisor.id).length;
-                      
-                      return (
-                        <tr key={supervisor.id} style={styles.tableRow}>
-                          <td style={styles.tableCell}>
-                            <div style={styles.candidateInfo}>
-                              <div style={{...styles.candidateAvatar, background: '#0A1929', color: 'white'}}>
-                                {supervisor.full_name?.charAt(0) || 'S'}
-                              </div>
-                              <div>
-                                <div style={styles.candidateName}>{supervisor.full_name || 'Unnamed'}</div>
-                                <div style={styles.candidateId}>ID: {supervisor.id.substring(0, 8)}...</div>
-                              </div>
-                            </div>
-                          </td>
-                          <td style={styles.tableCell}>
-                            <div style={styles.candidateEmail}>{supervisor.email}</div>
-                          </td>
-                          <td style={styles.tableCell}>
-                            <span style={{
-                              ...styles.roleBadge,
-                              background: supervisor.role === 'admin' ? '#FFEBEE' : '#E3F2FD',
-                              color: supervisor.role === 'admin' ? '#C62828' : '#1565C0'
-                            }}>
-                              {supervisor.role === 'admin' ? 'Administrator' : 'Supervisor'}
-                            </span>
-                          </td>
-                          <td style={styles.tableCell}>
-                            <span style={styles.candidateCount}>
-                              <strong>{candidateCount}</strong> candidate{candidateCount !== 1 ? 's' : ''}
-                            </span>
-                          </td>
-                          <td style={styles.tableCell}>
-                            <span style={styles.date}>{formatDate(supervisor.created_at)}</span>
-                          </td>
-                          <td style={styles.tableCell}>
-                            <span style={{...styles.statusBadge, background: '#E8F5E9', color: '#2E7D32'}}>
-                              Active
-                            </span>
-                          </td>
-                          <td style={styles.tableCell}>
-                            <div style={styles.actionButtons}>
-                              <Link href={`/admin/supervisor/${supervisor.id}`} legacyBehavior>
-                                <a style={styles.viewButton}>
-                                  Manage
-                                </a>
-                              </Link>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <style jsx>{`
@@ -694,35 +560,6 @@ const styles = {
     fontSize: '14px',
     fontWeight: 500,
     transition: 'all 0.2s ease'
-  },
-  tabContainer: {
-    display: 'flex',
-    gap: '30px',
-    marginBottom: '30px',
-    background: 'white',
-    padding: '0 30px',
-    borderRadius: '50px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    width: 'fit-content'
-  },
-  tabButton: {
-    background: 'none',
-    border: 'none',
-    padding: '15px 20px',
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#0A1929',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      opacity: 0.8
-    }
-  },
-  tabIcon: {
-    fontSize: '20px'
   },
   tableContainer: {
     background: 'white',
@@ -888,24 +725,6 @@ const styles = {
     borderRadius: '6px',
     fontWeight: 600,
     fontSize: '12px'
-  },
-  roleBadge: {
-    display: 'inline-block',
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '12px',
-    fontWeight: 600
-  },
-  statusBadge: {
-    display: 'inline-block',
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '12px',
-    fontWeight: 600
-  },
-  candidateCount: {
-    fontSize: '14px',
-    color: '#0A1929'
   },
   date: {
     fontSize: '13px',
