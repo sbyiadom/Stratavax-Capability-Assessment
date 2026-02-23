@@ -16,9 +16,11 @@ export default function SupervisorDashboard() {
     totalAssessments: 0,
     completedAssessments: 0,
     pendingAssessments: 0,
+    blockedAssessments: 0,
     byType: {}
   });
   const [expandedCandidate, setExpandedCandidate] = useState(null);
+  const [processingAssessment, setProcessingAssessment] = useState(null);
 
   // Authentication check
   useEffect(() => {
@@ -54,7 +56,7 @@ export default function SupervisorDashboard() {
     checkAuth();
   }, [router]);
 
-  // Fixed data fetching with proper assessment_results table
+  // Fetch data
   useEffect(() => {
     if (!currentSupervisor) return;
 
@@ -77,11 +79,39 @@ export default function SupervisorDashboard() {
 
         if (candidatesError) throw candidatesError;
 
-        // For each candidate, get their assessment results
+        // For each candidate, get their assessment access and results
         const processedCandidates = await Promise.all(
           (candidatesData || []).map(async (candidate) => {
             
-            // Get assessment results for this candidate
+            // Get assessment access for this candidate
+            const { data: accessData, error: accessError } = await supabase
+              .from('candidate_assessments')
+              .select(`
+                id,
+                assessment_id,
+                status,
+                created_at,
+                unblocked_at,
+                unblocked_by,
+                assessments (
+                  id,
+                  title,
+                  description,
+                  assessment_type_id,
+                  assessment_types (
+                    code,
+                    name,
+                    icon,
+                    gradient_start,
+                    gradient_end
+                  )
+                )
+              `)
+              .eq('user_id', candidate.id);
+
+            if (accessError) throw accessError;
+
+            // Get assessment results for completed ones
             const { data: resultsData, error: resultsError } = await supabase
               .from('assessment_results')
               .select(`
@@ -93,111 +123,51 @@ export default function SupervisorDashboard() {
                 completed_at,
                 assessment_type_id
               `)
-              .eq('user_id', candidate.id)
-              .order('completed_at', { ascending: false });
+              .eq('user_id', candidate.id);
 
             if (resultsError) throw resultsError;
 
-            // Get assessment details for each result
-            const assessmentsWithDetails = await Promise.all(
-              (resultsData || []).map(async (result) => {
-                
-                // Get assessment type details
-                const { data: typeData, error: typeError } = await supabase
-                  .from('assessment_types')
-                  .select('code, name')
-                  .eq('id', result.assessment_type_id)
-                  .single();
+            // Combine access and results
+            const assessmentsWithDetails = (accessData || []).map(access => {
+              const result = resultsData?.find(r => r.assessment_id === access.assessment_id);
+              const assessment = access.assessments;
+              const typeData = assessment?.assessment_types;
 
-                if (typeError) {
-                  console.error('Error fetching assessment type:', typeError);
-                }
-
-                return {
-                  id: result.id,
-                  assessment_id: result.assessment_id,
+              return {
+                id: access.id,
+                assessment_id: access.assessment_id,
+                assessment_title: assessment?.title || 'Unknown Assessment',
+                assessment_type: typeData?.code || 'general',
+                assessment_type_name: typeData?.name || 'General',
+                type_icon: typeData?.icon || '📋',
+                type_gradient_start: typeData?.gradient_start || '#667eea',
+                type_gradient_end: typeData?.gradient_end || '#764ba2',
+                status: access.status,
+                created_at: access.created_at,
+                unblocked_at: access.unblocked_at,
+                result: result ? {
                   score: result.total_score,
                   max_score: result.max_score,
                   percentage: result.percentage_score,
-                  completed_at: result.completed_at,
-                  assessment_type: typeData?.code || 'unknown',
-                  assessment_name: typeData?.name || 'Unknown',
-                  assessment_title: typeData?.name || 'Unknown Assessment',
-                  status: 'completed'
-                };
-              })
-            );
+                  completed_at: result.completed_at
+                } : null
+              };
+            });
 
-            // Also get pending/in-progress assessments from candidate_assessments
-            const { data: pendingData, error: pendingError } = await supabase
-              .from('candidate_assessments')
-              .select(`
-                id,
-                assessment_id,
-                status,
-                created_at
-              `)
-              .eq('user_id', candidate.id)
-              .in('status', ['pending', 'in_progress']);
-
-            if (pendingError) throw pendingError;
-
-            // Get assessment details for pending assessments
-            const pendingWithDetails = await Promise.all(
-              (pendingData || []).map(async (pending) => {
-                
-                // Get assessment details
-                const { data: assessmentData, error: assessmentError } = await supabase
-                  .from('assessments')
-                  .select(`
-                    title,
-                    assessment_type_id
-                  `)
-                  .eq('id', pending.assessment_id)
-                  .single();
-
-                if (assessmentError) {
-                  console.error('Error fetching assessment:', assessmentError);
-                }
-
-                // Get assessment type
-                const { data: typeData, error: typeError } = await supabase
-                  .from('assessment_types')
-                  .select('code, name')
-                  .eq('id', assessmentData?.assessment_type_id)
-                  .single();
-
-                return {
-                  id: pending.id,
-                  assessment_id: pending.assessment_id,
-                  score: null,
-                  max_score: null,
-                  percentage: null,
-                  completed_at: null,
-                  assessment_type: typeData?.code || 'unknown',
-                  assessment_name: typeData?.name || 'Unknown',
-                  assessment_title: assessmentData?.title || 'Unknown Assessment',
-                  status: pending.status
-                };
-              })
-            );
-
-            // Combine completed and pending assessments
-            const allAssessments = [...assessmentsWithDetails, ...pendingWithDetails];
-            
-            // Sort by date (most recent first)
-            allAssessments.sort((a, b) => {
+            // Sort by date
+            assessmentsWithDetails.sort((a, b) => {
               const dateA = a.completed_at || a.created_at || 0;
               const dateB = b.completed_at || b.created_at || 0;
               return new Date(dateB) - new Date(dateA);
             });
 
-            const completedAssessments = allAssessments.filter(a => a.status === 'completed');
-            const pendingAssessments = allAssessments.filter(a => a.status === 'pending' || a.status === 'in_progress');
+            const completedAssessments = assessmentsWithDetails.filter(a => a.result);
+            const unblockedAssessments = assessmentsWithDetails.filter(a => a.status === 'unblocked' && !a.result);
+            const blockedAssessments = assessmentsWithDetails.filter(a => a.status === 'blocked' && !a.result);
             
             // Calculate assessment breakdown by type
             const assessmentBreakdown = {};
-            allAssessments.forEach(a => {
+            assessmentsWithDetails.forEach(a => {
               const type = a.assessment_type || 'unknown';
               assessmentBreakdown[type] = (assessmentBreakdown[type] || 0) + 1;
             });
@@ -211,13 +181,14 @@ export default function SupervisorDashboard() {
               email: candidate.email || 'No email provided',
               phone: candidate.phone,
               created_at: candidate.created_at,
-              totalAssessments: allAssessments.length,
+              totalAssessments: assessmentsWithDetails.length,
               completedAssessments: completedAssessments.length,
-              pendingAssessments: pendingAssessments.length,
+              unblockedAssessments: unblockedAssessments.length,
+              blockedAssessments: blockedAssessments.length,
               assessment_breakdown: assessmentBreakdown,
               latestAssessment: latestAssessment,
               hasCompletedAssessments: completedAssessments.length > 0,
-              assessments: allAssessments
+              assessments: assessmentsWithDetails
             };
           })
         );
@@ -229,12 +200,14 @@ export default function SupervisorDashboard() {
         const typeCounts = {};
         let totalAssessments = 0;
         let completedAssessments = 0;
-        let pendingAssessments = 0;
+        let unblockedAssessments = 0;
+        let blockedAssessments = 0;
 
         processedCandidates.forEach(candidate => {
           totalAssessments += candidate.totalAssessments;
           completedAssessments += candidate.completedAssessments;
-          pendingAssessments += candidate.pendingAssessments;
+          unblockedAssessments += candidate.unblockedAssessments;
+          blockedAssessments += candidate.blockedAssessments;
           
           if (candidate.assessment_breakdown) {
             Object.entries(candidate.assessment_breakdown).forEach(([type, count]) => {
@@ -251,7 +224,8 @@ export default function SupervisorDashboard() {
           totalCandidates: processedCandidates.length,
           totalAssessments,
           completedAssessments,
-          pendingAssessments,
+          unblockedAssessments,
+          blockedAssessments,
           byType: typeCounts
         });
 
@@ -264,6 +238,127 @@ export default function SupervisorDashboard() {
 
     fetchData();
   }, [currentSupervisor]);
+
+  // Function to unblock an assessment
+  const handleUnblockAssessment = async (candidateId, candidateName, assessmentId, assessmentTitle) => {
+    if (!confirm(`Unblock "${assessmentTitle}" for ${candidateName}? They will be able to take this assessment.`)) {
+      return;
+    }
+
+    setProcessingAssessment({ candidateId, assessmentId });
+
+    try {
+      const { error } = await supabase
+        .from('candidate_assessments')
+        .update({
+          status: 'unblocked',
+          unblocked_by: currentSupervisor.id,
+          unblocked_at: new Date().toISOString()
+        })
+        .eq('user_id', candidateId)
+        .eq('assessment_id', assessmentId);
+
+      if (error) throw error;
+
+      alert(`✅ "${assessmentTitle}" unblocked successfully for ${candidateName}.`);
+
+      // Refresh data
+      window.location.reload();
+
+    } catch (error) {
+      console.error('Error unblocking assessment:', error);
+      alert('❌ Failed to unblock assessment: ' + error.message);
+    } finally {
+      setProcessingAssessment(null);
+    }
+  };
+
+  // Function to block an assessment
+  const handleBlockAssessment = async (candidateId, candidateName, assessmentId, assessmentTitle) => {
+    if (!confirm(`Block "${assessmentTitle}" for ${candidateName}? They will NOT be able to take this assessment.`)) {
+      return;
+    }
+
+    setProcessingAssessment({ candidateId, assessmentId });
+
+    try {
+      const { error } = await supabase
+        .from('candidate_assessments')
+        .update({
+          status: 'blocked',
+          blocked_by: currentSupervisor.id,
+          blocked_at: new Date().toISOString()
+        })
+        .eq('user_id', candidateId)
+        .eq('assessment_id', assessmentId);
+
+      if (error) throw error;
+
+      alert(`🔒 "${assessmentTitle}" blocked for ${candidateName}.`);
+
+      // Refresh data
+      window.location.reload();
+
+    } catch (error) {
+      console.error('Error blocking assessment:', error);
+      alert('❌ Failed to block assessment: ' + error.message);
+    } finally {
+      setProcessingAssessment(null);
+    }
+  };
+
+  // Function to reset a completed assessment
+  const handleResetAssessment = async (candidateId, assessmentId, assessmentTitle, candidateName) => {
+    if (!confirm(`Are you sure you want to reset "${assessmentTitle}" for ${candidateName}? They will be able to retake it.`)) {
+      return;
+    }
+
+    setProcessingAssessment({ candidateId, assessmentId });
+
+    try {
+      // Delete the assessment result
+      const { error: deleteError } = await supabase
+        .from('assessment_results')
+        .delete()
+        .eq('user_id', candidateId)
+        .eq('assessment_id', assessmentId);
+
+      if (deleteError) throw deleteError;
+
+      // Update candidate_assessments to blocked (so supervisor must unblock again)
+      const { error: updateError } = await supabase
+        .from('candidate_assessments')
+        .update({ 
+          status: 'blocked',
+          unblocked_by: null,
+          unblocked_at: null
+        })
+        .eq('user_id', candidateId)
+        .eq('assessment_id', assessmentId);
+
+      if (updateError) throw updateError;
+
+      // Delete any assessment sessions
+      const { error: sessionError } = await supabase
+        .from('assessment_sessions')
+        .delete()
+        .eq('user_id', candidateId)
+        .eq('assessment_id', assessmentId);
+
+      if (sessionError) throw sessionError;
+
+      alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}. It is now BLOCKED. Unblock it to let them retake.`);
+      
+      // Refresh the data
+      window.location.reload();
+
+    } catch (error) {
+      console.error('Error resetting assessment:', error);
+      alert('❌ Failed to reset assessment: ' + error.message);
+    } finally {
+      setProcessingAssessment(null);
+    }
+  };
 
   const filteredCandidates = selectedAssessmentType === 'all'
     ? candidates
@@ -302,59 +397,6 @@ export default function SupervisorDashboard() {
       setExpandedCandidate(null);
     } else {
       setExpandedCandidate(candidateId);
-    }
-  };
-
-  // Assessment-specific reset function
-  const handleResetAssessment = async (candidateId, assessmentId, assessmentTitle, candidateName) => {
-    if (!confirm(`Are you sure you want to reset "${assessmentTitle}" for ${candidateName}? They will be able to retake it.`)) {
-      return;
-    }
-
-    try {
-      setLoading(true);
-      
-      // Delete the assessment result
-      const { error: deleteError } = await supabase
-        .from('assessment_results')
-        .delete()
-        .eq('user_id', candidateId)
-        .eq('assessment_id', assessmentId);
-
-      if (deleteError) throw deleteError;
-
-      // Update candidate_assessments to pending
-      const { error: updateError } = await supabase
-        .from('candidate_assessments')
-        .update({ 
-          status: 'pending',
-          score: null,
-          completed_at: null 
-        })
-        .eq('user_id', candidateId)
-        .eq('assessment_id', assessmentId);
-
-      if (updateError) throw updateError;
-
-      // Delete any assessment sessions
-      const { error: sessionError } = await supabase
-        .from('assessment_sessions')
-        .delete()
-        .eq('user_id', candidateId)
-        .eq('assessment_id', assessmentId);
-
-      if (sessionError) throw sessionError;
-
-      alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}. They can now retake it.`);
-      
-      // Refresh the data
-      window.location.reload();
-
-    } catch (error) {
-      console.error('Error resetting assessment:', error);
-      alert('❌ Failed to reset assessment: ' + error.message);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -405,11 +447,19 @@ export default function SupervisorDashboard() {
             </div>
           </div>
 
+          <div style={{ ...styles.statCard, background: 'linear-gradient(135deg, #2196F3 0%, #1976D2 100%)' }}>
+            <div style={styles.statIcon}>🔓</div>
+            <div style={styles.statContent}>
+              <div style={styles.statLabel}>Unblocked</div>
+              <div style={styles.statValue}>{stats.unblockedAssessments}</div>
+            </div>
+          </div>
+
           <div style={{ ...styles.statCard, background: 'linear-gradient(135deg, #F57C00 0%, #FF9800 100%)' }}>
             <div style={styles.statIcon}>⏳</div>
             <div style={styles.statContent}>
-              <div style={styles.statLabel}>Pending</div>
-              <div style={styles.statValue}>{stats.pendingAssessments}</div>
+              <div style={styles.statLabel}>Blocked</div>
+              <div style={styles.statValue}>{stats.blockedAssessments}</div>
             </div>
           </div>
         </div>
@@ -468,8 +518,8 @@ export default function SupervisorDashboard() {
                 </thead>
                 <tbody>
                   {filteredCandidates.map((candidate) => {
-                    const latestScore = candidate.latestAssessment?.score || 0;
-                    const maxScore = candidate.latestAssessment?.max_score || 100;
+                    const latestScore = candidate.latestAssessment?.result?.score || 0;
+                    const maxScore = candidate.latestAssessment?.result?.max_score || 100;
                     const percentage = latestScore && maxScore ? Math.round((latestScore/maxScore)*100) : 0;
                     const classification = getClassification(latestScore, maxScore);
                     const isExpanded = expandedCandidate === candidate.id;
@@ -498,7 +548,10 @@ export default function SupervisorDashboard() {
                                 <strong>{candidate.completedAssessments}</strong> completed
                               </span>
                               <span style={styles.assessmentCount}>
-                                <strong>{candidate.pendingAssessments}</strong> pending
+                                <strong>{candidate.unblockedAssessments}</strong> unblocked
+                              </span>
+                              <span style={styles.assessmentCount}>
+                                <strong>{candidate.blockedAssessments}</strong> blocked
                               </span>
                             </div>
                             <div style={styles.assessmentTags}>
@@ -536,7 +589,7 @@ export default function SupervisorDashboard() {
                             )}
                           </td>
                           <td style={styles.tableCell}>
-                            {candidate.latestAssessment ? (
+                            {candidate.latestAssessment?.result ? (
                               <span style={{
                                 ...styles.scoreBadge,
                                 background: percentage >= 85 ? '#E8F5E9' :
@@ -568,8 +621,8 @@ export default function SupervisorDashboard() {
                           </td>
                           <td style={styles.tableCell}>
                             <span style={styles.date}>
-                              {candidate.latestAssessment 
-                                ? formatDate(candidate.latestAssessment.completed_at)
+                              {candidate.latestAssessment?.result 
+                                ? formatDate(candidate.latestAssessment.result.completed_at)
                                 : 'Never'
                               }
                             </span>
@@ -594,41 +647,120 @@ export default function SupervisorDashboard() {
                             <td colSpan="7" style={styles.expandedCell}>
                               <div style={styles.assessmentsList}>
                                 <h4 style={styles.assessmentsListTitle}>Individual Assessments</h4>
-                                {candidate.assessments.map((assessment) => (
-                                  <div key={assessment.id} style={styles.assessmentItem}>
-                                    <div style={styles.assessmentItemInfo}>
-                                      <span style={styles.assessmentItemTitle}>
-                                        {assessment.assessment_title || assessment.assessment_name}
-                                      </span>
-                                      <span style={{
-                                        ...styles.assessmentItemStatus,
-                                        background: assessment.status === 'completed' ? '#E8F5E9' : '#FFF3E0',
-                                        color: assessment.status === 'completed' ? '#2E7D32' : '#F57C00'
-                                      }}>
-                                        {assessment.status === 'completed' ? '✓ Completed' : '⏳ Pending'}
-                                      </span>
-                                      {assessment.status === 'completed' && (
-                                        <span style={styles.assessmentItemScore}>
-                                          Score: {assessment.score}/{assessment.max_score} 
-                                          ({Math.round((assessment.score/assessment.max_score)*100)}%)
-                                        </span>
-                                      )}
-                                    </div>
-                                    {assessment.status === 'completed' && (
-                                      <button
-                                        onClick={() => handleResetAssessment(
-                                          candidate.id, 
-                                          assessment.assessment_id, 
-                                          assessment.assessment_title || assessment.assessment_name,
-                                          candidate.full_name
+                                {candidate.assessments.map((assessment) => {
+                                  const isProcessing = processingAssessment?.candidateId === candidate.id && 
+                                                      processingAssessment?.assessmentId === assessment.assessment_id;
+
+                                  return (
+                                    <div key={assessment.id} style={{
+                                      ...styles.assessmentItem,
+                                      border: assessment.status === 'unblocked' ? '2px solid #4CAF50' : 
+                                             assessment.result ? '1px solid #E2E8F0' : '1px solid #FF9800'
+                                    }}>
+                                      <div style={styles.assessmentItemInfo}>
+                                        <div style={{
+                                          ...styles.assessmentTypeIcon,
+                                          background: `linear-gradient(135deg, ${assessment.type_gradient_start}, ${assessment.type_gradient_end})`
+                                        }}>
+                                          {assessment.type_icon}
+                                        </div>
+                                        <div>
+                                          <span style={styles.assessmentItemTitle}>
+                                            {assessment.assessment_title}
+                                          </span>
+                                          <div style={styles.assessmentItemMeta}>
+                                            <span style={{
+                                              ...styles.assessmentItemType,
+                                              background: assessment.assessment_type === 'leadership' ? '#E3F2FD' :
+                                                         assessment.assessment_type === 'cognitive' ? '#E8F5E9' :
+                                                         assessment.assessment_type === 'technical' ? '#FFEBEE' :
+                                                         '#F1F5F9',
+                                              color: assessment.assessment_type === 'leadership' ? '#1565C0' :
+                                                     assessment.assessment_type === 'cognitive' ? '#2E7D32' :
+                                                     assessment.assessment_type === 'technical' ? '#C62828' :
+                                                     '#37474F'
+                                            }}>
+                                              {assessment.assessment_type_name}
+                                            </span>
+                                            {assessment.result ? (
+                                              <span style={styles.assessmentItemScore}>
+                                                Score: {assessment.result.score}/{assessment.result.max_score} 
+                                                ({Math.round((assessment.result.score/assessment.result.max_score)*100)}%)
+                                              </span>
+                                            ) : (
+                                              <span style={{
+                                                ...styles.assessmentItemStatus,
+                                                background: assessment.status === 'unblocked' ? '#E8F5E9' : '#FFF3E0',
+                                                color: assessment.status === 'unblocked' ? '#2E7D32' : '#F57C00'
+                                              }}>
+                                                {assessment.status === 'unblocked' ? '🔓 Unblocked' : '🔒 Blocked'}
+                                              </span>
+                                            )}
+                                            {assessment.unblocked_at && (
+                                              <span style={styles.unblockedDate}>
+                                                Unblocked: {formatDate(assessment.unblocked_at)}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div style={styles.assessmentItemActions}>
+                                        {assessment.result ? (
+                                          <button
+                                            onClick={() => handleResetAssessment(
+                                              candidate.id,
+                                              assessment.assessment_id,
+                                              assessment.assessment_title,
+                                              candidate.full_name
+                                            )}
+                                            disabled={isProcessing}
+                                            style={{
+                                              ...styles.resetButton,
+                                              opacity: isProcessing ? 0.5 : 1,
+                                              cursor: isProcessing ? 'not-allowed' : 'pointer'
+                                            }}
+                                          >
+                                            {isProcessing ? '⏳' : '🔄 Reset'}
+                                          </button>
+                                        ) : assessment.status === 'blocked' ? (
+                                          <button
+                                            onClick={() => handleUnblockAssessment(
+                                              candidate.id,
+                                              candidate.full_name,
+                                              assessment.assessment_id,
+                                              assessment.assessment_title
+                                            )}
+                                            disabled={isProcessing}
+                                            style={{
+                                              ...styles.unblockButton,
+                                              opacity: isProcessing ? 0.5 : 1,
+                                              cursor: isProcessing ? 'not-allowed' : 'pointer'
+                                            }}
+                                          >
+                                            {isProcessing ? '⏳' : '🔓 Unblock'}
+                                          </button>
+                                        ) : (
+                                          <button
+                                            onClick={() => handleBlockAssessment(
+                                              candidate.id,
+                                              candidate.full_name,
+                                              assessment.assessment_id,
+                                              assessment.assessment_title
+                                            )}
+                                            disabled={isProcessing}
+                                            style={{
+                                              ...styles.blockButton,
+                                              opacity: isProcessing ? 0.5 : 1,
+                                              cursor: isProcessing ? 'not-allowed' : 'pointer'
+                                            }}
+                                          >
+                                            {isProcessing ? '⏳' : '🔒 Block'}
+                                          </button>
                                         )}
-                                        style={styles.resetSmallButton}
-                                      >
-                                        🔄 Reset
-                                      </button>
-                                    )}
-                                  </div>
-                                ))}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </td>
                           </tr>
@@ -717,7 +849,7 @@ const styles = {
   },
   statsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
+    gridTemplateColumns: 'repeat(5, 1fr)',
     gap: '20px',
     marginBottom: '30px'
   },
@@ -903,7 +1035,8 @@ const styles = {
   assessmentStats: {
     display: 'flex',
     gap: '15px',
-    marginBottom: '8px'
+    marginBottom: '8px',
+    flexWrap: 'wrap'
   },
   assessmentCount: {
     fontSize: '13px',
@@ -1012,7 +1145,7 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '10px 15px',
+    padding: '15px',
     background: 'white',
     borderRadius: '8px',
     border: '1px solid #E2E8F0'
@@ -1023,34 +1156,93 @@ const styles = {
     gap: '15px',
     flexWrap: 'wrap'
   },
+  assessmentTypeIcon: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '20px',
+    color: 'white'
+  },
   assessmentItemTitle: {
-    fontSize: '13px',
-    fontWeight: 500,
+    fontSize: '14px',
+    fontWeight: 600,
     color: '#0A1929',
-    minWidth: '200px'
+    marginRight: '10px'
+  },
+  assessmentItemMeta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    flexWrap: 'wrap',
+    marginTop: '4px'
+  },
+  assessmentItemType: {
+    padding: '2px 6px',
+    borderRadius: '4px',
+    fontSize: '10px',
+    fontWeight: 600
   },
   assessmentItemStatus: {
-    padding: '3px 8px',
+    padding: '2px 6px',
     borderRadius: '4px',
-    fontSize: '11px',
+    fontSize: '10px',
     fontWeight: 600
   },
   assessmentItemScore: {
-    fontSize: '12px',
+    fontSize: '11px',
     color: '#4A5568'
   },
-  resetSmallButton: {
-    padding: '4px 10px',
+  unblockedDate: {
+    fontSize: '10px',
+    color: '#718096'
+  },
+  assessmentItemActions: {
+    display: 'flex',
+    gap: '8px'
+  },
+  unblockButton: {
+    padding: '6px 12px',
+    background: '#4CAF50',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    fontSize: '12px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#45a049'
+    }
+  },
+  blockButton: {
+    padding: '6px 12px',
     background: '#FF9800',
     color: 'white',
     border: 'none',
     borderRadius: '4px',
-    fontSize: '11px',
+    fontSize: '12px',
     fontWeight: 500,
     cursor: 'pointer',
     transition: 'all 0.2s ease',
     ':hover': {
       background: '#F57C00'
+    }
+  },
+  resetButton: {
+    padding: '6px 12px',
+    background: '#2196F3',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    fontSize: '12px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#1976D2'
     }
   }
 };
