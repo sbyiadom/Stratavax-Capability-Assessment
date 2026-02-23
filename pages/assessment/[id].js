@@ -73,6 +73,8 @@ export default function AssessmentPage() {
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
   const [hoveredQuestion, setHoveredQuestion] = useState(null);
   const [hoveredAnswer, setHoveredAnswer] = useState(null);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [accessChecked, setAccessChecked] = useState(false);
 
   // Auth state listener
   useEffect(() => {
@@ -89,7 +91,46 @@ export default function AssessmentPage() {
     };
   }, [router]);
 
-  // Initialize assessment
+  // NEW: Check if assessment is unblocked for this user
+  const checkAssessmentAccess = async (userId, assessmentId) => {
+    try {
+      // First check if already completed (can't retake)
+      const completed = await isAssessmentCompleted(userId, assessmentId);
+      if (completed) {
+        setAlreadySubmitted(true);
+        setAccessChecked(true);
+        return false;
+      }
+
+      // Check if assessment is unblocked in candidate_assessments
+      const { data, error } = await supabase
+        .from('candidate_assessments')
+        .select('status')
+        .eq('user_id', userId)
+        .eq('assessment_id', assessmentId)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      // If no record found or status is not 'unblocked', deny access
+      const hasAccess = data?.status === 'unblocked';
+      
+      if (!hasAccess) {
+        setAccessDenied(true);
+      }
+      
+      setAccessChecked(true);
+      return hasAccess;
+
+    } catch (error) {
+      console.error("Error checking assessment access:", error);
+      setAccessDenied(true);
+      setAccessChecked(true);
+      return false;
+    }
+  };
+
+  // Initialize assessment with access check
   useEffect(() => {
     const init = async () => {
       try {
@@ -105,7 +146,15 @@ export default function AssessmentPage() {
 
         if (!assessmentId) return;
 
-        // Check if already completed
+        // FIRST: Check if user has access to this assessment
+        const hasAccess = await checkAssessmentAccess(authSession.user.id, assessmentId);
+        
+        if (!hasAccess) {
+          setLoading(false);
+          return; // Stop initialization, show access denied message
+        }
+
+        // Check if already completed (redundant but safe)
         const completed = await isAssessmentCompleted(authSession.user.id, assessmentId);
         if (completed) {
           setAlreadySubmitted(true);
@@ -178,7 +227,7 @@ export default function AssessmentPage() {
 
   // Timer effect
   useEffect(() => {
-    if (loading || alreadySubmitted || !session) return;
+    if (loading || alreadySubmitted || !session || accessDenied) return;
 
     const timer = setInterval(async () => {
       setElapsedSeconds(prev => {
@@ -199,11 +248,11 @@ export default function AssessmentPage() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [loading, alreadySubmitted, session, timeLimit, assessmentId, user?.id, currentIndex, questions]);
+  }, [loading, alreadySubmitted, session, timeLimit, assessmentId, user?.id, currentIndex, questions, accessDenied]);
 
   // Handle answer selection
   const handleAnswerSelect = async (questionId, answerId) => {
-    if (alreadySubmitted || !session || !questionId || !answerId) return;
+    if (alreadySubmitted || !session || !questionId || !answerId || accessDenied) return;
 
     setAnswers(prev => ({ ...prev, [questionId]: answerId }));
     setSaveStatus(prev => ({ ...prev, [questionId]: 'saving' }));
@@ -243,10 +292,11 @@ export default function AssessmentPage() {
       setTimeout(() => {
         setSaveStatus(prev => {
           const newStatus = { ...prev };
-          delete newStatus[questionId];
-          return newStatus;
-        });
-      }, 2000);
+            delete newStatus[questionId];
+            return newStatus;
+          });
+        }, 2000);
+      }
     }
   };
 
@@ -270,9 +320,9 @@ export default function AssessmentPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Submit assessment - OPTIMIZED for immediate submission
+  // Submit assessment
   const handleSubmit = async () => {
-    if (!session || alreadySubmitted) return;
+    if (!session || alreadySubmitted || accessDenied) return;
 
     console.log("🔍 Submit button clicked");
     console.log("Current session:", session);
@@ -294,10 +344,7 @@ export default function AssessmentPage() {
     setShowSubmitModal(false);
 
     try {
-      // OPTIMIZATION: Don't resave all responses - they're already saved
-      // Just save final progress and submit in parallel
-      
-      // Save progress and timer (quick operations)
+      // Save progress and timer
       await Promise.all([
         saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id),
         updateSessionTimer(session.id, elapsedSeconds)
@@ -305,20 +352,19 @@ export default function AssessmentPage() {
       
       console.log("📤 Calling submitAssessment with session:", session.id);
       
-      // Submit assessment (API call)
+      // Submit assessment
       const result = await submitAssessment(session.id);
       console.log("✅ Submit successful:", result);
       
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
       
-      // Redirect immediately - no delay
+      // Redirect
       router.push('/candidate/dashboard');
       
     } catch (error) {
       console.error("❌ Submission error:", error);
       
-      // Check if it's an "already submitted" error
       if (error.message === "already_submitted" || error.message?.includes("already submitted")) {
         setAlreadySubmitted(true);
         alert("This assessment has already been submitted.");
@@ -330,11 +376,9 @@ export default function AssessmentPage() {
     }
   };
 
-  // Debug back button - FIXED to prevent undefined redirect
   const handleBackClick = async () => {
     console.log("🔙 Back button clicked");
     
-    // Check if user is still authenticated
     const { data: { session: authSession } } = await supabase.auth.getSession();
     console.log("Auth session on back click:", authSession ? "Valid" : "Invalid");
     
@@ -346,9 +390,7 @@ export default function AssessmentPage() {
     }
   };
 
-  // Calculate progress (kept for internal use, but not displayed)
   const totalAnswered = Object.keys(answers || {}).length;
-  
   const isLastQuestion = currentIndex === questions.length - 1;
   const timeRemainingSeconds = Math.max(0, timeLimit - elapsedSeconds);
   const timeRemainingFormatted = formatTime(timeRemainingSeconds);
@@ -358,7 +400,27 @@ export default function AssessmentPage() {
 
   const currentQuestion = questions[currentIndex] || {};
 
-  // LOADING SECTION WITH CLEAR, UNCOVERED BACKGROUND IMAGE
+  // Show access denied message
+  if (!loading && accessDenied && accessChecked) {
+    return (
+      <div style={styles.messageContainer}>
+        <div style={styles.messageCard}>
+          <div style={styles.errorIcon}>🔒</div>
+          <h2 style={{ marginBottom: '15px' }}>Access Denied</h2>
+          <p style={{ marginBottom: '10px', color: '#64748b' }}>
+            You don't have permission to take this assessment.
+          </p>
+          <p style={{ marginBottom: '25px', color: '#64748b', fontSize: '14px' }}>
+            Assessments must be unblocked by your supervisor before you can take them.
+          </p>
+          <button onClick={() => router.push('/candidate/dashboard')} style={styles.primaryButton}>
+            ← Go to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div style={styles.loadingContainer}>
@@ -519,11 +581,9 @@ export default function AssessmentPage() {
 
         {/* Main Content - Two Column Layout */}
         <div style={styles.mainContent}>
-          {/* Left Column - Questions (PROGRESS TRACKER REMOVED) */}
+          {/* Left Column - Questions */}
           <div style={styles.questionColumn}>
-            {/* Question Card - Now moved up */}
             <div style={styles.questionCard}>
-              {/* Section Badge */}
               <div style={styles.sectionBadge}>
                 <div style={{
                   ...styles.sectionIcon,
@@ -539,12 +599,10 @@ export default function AssessmentPage() {
                 </div>
               </div>
 
-              {/* Question Text */}
               <div style={styles.questionText}>
                 {currentQuestion?.question_text}
               </div>
 
-              {/* Save Status */}
               {saveStatus[currentQuestion?.id] && (
                 <div style={{
                   ...styles.saveStatus,
@@ -560,7 +618,6 @@ export default function AssessmentPage() {
                 </div>
               )}
 
-              {/* Answer Options */}
               <div style={styles.answersContainer}>
                 {currentQuestion?.answers?.map((answer, index) => {
                   const isSelected = answers[currentQuestion.id] === answer.id;
@@ -604,7 +661,6 @@ export default function AssessmentPage() {
                 })}
               </div>
 
-              {/* Navigation Buttons */}
               <div style={styles.navigation}>
                 <button
                   onClick={handlePrevious}
@@ -661,7 +717,6 @@ export default function AssessmentPage() {
                 <h3>Question Navigator</h3>
               </div>
 
-              {/* Stats Cards */}
               <div style={styles.statsGrid}>
                 <div style={styles.statCard}>
                   <div style={{ ...styles.statValue, color: '#4caf50' }}>{totalAnswered}</div>
@@ -677,7 +732,6 @@ export default function AssessmentPage() {
                 </div>
               </div>
 
-              {/* Question Grid */}
               <div style={styles.questionGrid}>
                 {questions.map((q, index) => {
                   const isAnswered = answers[q.id];
@@ -710,7 +764,6 @@ export default function AssessmentPage() {
                 })}
               </div>
 
-              {/* Legend */}
               <div style={styles.legend}>
                 <div style={styles.legendItem}>
                   <div style={{ ...styles.legendDot, background: '#4caf50' }} />
@@ -726,7 +779,6 @@ export default function AssessmentPage() {
                 </div>
               </div>
 
-              {/* Assessment Info */}
               <div style={styles.assessmentInfo}>
                 <div style={styles.infoRow}>
                   <span>Assessment:</span>
@@ -742,7 +794,6 @@ export default function AssessmentPage() {
         </div>
       </div>
 
-      {/* Global Styles */}
       <style jsx global>{`
         @keyframes spin {
           0% { transform: rotate(0deg); }
@@ -764,9 +815,7 @@ export default function AssessmentPage() {
   );
 }
 
-// Styles - COMPACT VERSION with reduced sizes
 const styles = {
-  // LOADING STYLES WITH CLEAR, UNCOVERED BACKGROUND
   loadingContainer: {
     minHeight: '100vh',
     display: 'flex',
@@ -784,7 +833,6 @@ const styles = {
     backgroundImage: 'url(/images/assessment-loading-bg.jpg)',
     backgroundSize: 'cover',
     backgroundPosition: 'center',
-    // NO FILTERS, NO OVERLAY - image is completely clear
     zIndex: 0
   },
   loadingContent: {
@@ -792,7 +840,6 @@ const styles = {
     textAlign: 'center',
     zIndex: 1,
     color: 'white',
-    // Text shadow only - background is clear
     textShadow: '2px 2px 4px rgba(0,0,0,0.5)'
   },
   loadingSpinner: {
@@ -803,7 +850,6 @@ const styles = {
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
     margin: '0 auto 20px',
-    // Add shadow to spinner to make it pop against bright backgrounds
     boxShadow: '0 0 20px rgba(0,0,0,0.3)'
   },
   messageContainer: {
@@ -924,7 +970,6 @@ const styles = {
     flexDirection: 'column',
     gap: '20px'
   },
-  // PROGRESS CONTAINER REMOVED - question card moves up
   questionCard: {
     background: 'white',
     borderRadius: '16px',
