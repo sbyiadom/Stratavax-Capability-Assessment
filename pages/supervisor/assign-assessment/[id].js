@@ -145,7 +145,7 @@ export default function AssignAssessment() {
             toAdd.map(assessmentId => ({
               user_id: candidateId,
               assessment_id: assessmentId,
-              status: 'pending',
+              status: 'blocked', // IMPORTANT: Default to BLOCKED, not pending
               created_at: new Date().toISOString()
             }))
           );
@@ -153,7 +153,19 @@ export default function AssignAssessment() {
         if (addError) throw addError;
       }
 
-      setSuccess(`✅ Successfully assigned ${toAdd.length} assessment(s) to ${candidate.full_name}`);
+      const toRemove = currentIds.filter(id => !selectedIds.includes(id));
+
+      if (toRemove.length > 0) {
+        const { error: removeError } = await supabase
+          .from('candidate_assessments')
+          .delete()
+          .eq('user_id', candidateId)
+          .in('assessment_id', toRemove);
+
+        if (removeError) throw removeError;
+      }
+
+      setSuccess(`✅ Successfully updated assessments for ${candidate.full_name}. New assessments are BLOCKED by default. Unblock them from the dashboard.`);
 
     } catch (err) {
       console.error('Error saving assignments:', err);
@@ -229,6 +241,11 @@ export default function AssignAssessment() {
             </div>
           )}
 
+          <div style={styles.noteBox}>
+            <span style={styles.noteIcon}>ℹ️</span>
+            <span><strong>Note:</strong> Newly assigned assessments are <strong>BLOCKED</strong> by default. You must manually unblock them from the dashboard before candidates can take them.</span>
+          </div>
+
           <div style={styles.assessmentsGrid}>
             {assessments.map(assessment => {
               const assessmentType = assessment.assessment_type?.code || 'general';
@@ -293,10 +310,16 @@ export default function AssignAssessment() {
                   {currentStatus && (
                     <div style={{
                       ...styles.statusBadge,
-                      background: currentStatus === 'completed' ? '#E8F5E9' : '#FFF3E0',
-                      color: currentStatus === 'completed' ? '#2E7D32' : '#F57C00'
+                      background: currentStatus === 'completed' ? '#E8F5E9' : 
+                                 currentStatus === 'unblocked' ? '#E8F5E9' : 
+                                 currentStatus === 'blocked' ? '#FFF3E0' : '#F1F5F9',
+                      color: currentStatus === 'completed' ? '#2E7D32' :
+                             currentStatus === 'unblocked' ? '#2E7D32' :
+                             currentStatus === 'blocked' ? '#F57C00' : '#37474F'
                     }}>
-                      {currentStatus === 'completed' ? '✓ Completed' : '⏳ In Progress'}
+                      {currentStatus === 'completed' ? '✓ Completed' : 
+                       currentStatus === 'unblocked' ? '🔓 Unblocked' :
+                       currentStatus === 'blocked' ? '🔒 Blocked' : '📝 Assigned'}
                     </div>
                   )}
                 </div>
@@ -474,6 +497,20 @@ const styles = {
     padding: '15px',
     borderRadius: '8px',
     marginBottom: '20px'
+  },
+  noteBox: {
+    background: '#E3F2FD',
+    color: '#1565C0',
+    padding: '15px',
+    borderRadius: '8px',
+    marginBottom: '20px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    border: '1px solid #90CAF9'
+  },
+  noteIcon: {
+    fontSize: '20px'
   },
   assessmentsGrid: {
     display: 'grid',
