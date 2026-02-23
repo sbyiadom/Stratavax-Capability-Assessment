@@ -17,6 +17,7 @@ export default function CandidateDashboard() {
   const [hoveredCard, setHoveredCard] = useState(null);
   const [assessmentTypes, setAssessmentTypes] = useState([]);
   const [selectedAssessmentAreas, setSelectedAssessmentAreas] = useState(null);
+  const [unblockedAssessments, setUnblockedAssessments] = useState([]);
 
   // ===== ASSESSMENT KEY AREAS (only category names) =====
   const assessmentAreas = {
@@ -161,22 +162,21 @@ export default function CandidateDashboard() {
     }
   };
 
-  // Assessment types to exclude (manufacturing removed)
+  // Assessment types to exclude
   const excludedTypes = ['manufacturing'];
 
   useEffect(() => {
     if (session?.user) {
-      // Fetch the full profile from candidate_profiles to get the stored name
       fetchCandidateProfile(session.user.id);
       fetchAssessments();
       fetchUserProgress();
       fetchAssessmentTypes();
+      fetchUnblockedAssessments(session.user.id);
     }
   }, [session]);
 
   const fetchCandidateProfile = async (userId) => {
     try {
-      // First, try to get from candidate_profiles (most reliable)
       const { data, error } = await supabase
         .from('candidate_profiles')
         .select('full_name, email')
@@ -185,38 +185,62 @@ export default function CandidateDashboard() {
 
       if (error) {
         console.error("Error fetching candidate profile:", error);
-        // Fallback to user metadata
         const metadataName = session?.user?.user_metadata?.full_name;
-        if (metadataName) {
-          setUserName(metadataName);
-          return;
-        }
-        // Final fallback to email
         const emailName = session?.user?.email?.split('@')[0] || 'Candidate';
-        setUserName(emailName);
+        setUserName(metadataName || emailName);
         return;
       }
 
       if (data?.full_name) {
-        // Use the full_name from the profile
         setUserName(data.full_name);
       } else {
-        // Fallback to user metadata
         const metadataName = session?.user?.user_metadata?.full_name;
-        if (metadataName) {
-          setUserName(metadataName);
-          return;
-        }
-        // Final fallback to email
         const emailName = session?.user?.email?.split('@')[0] || 'Candidate';
-        setUserName(emailName);
+        setUserName(metadataName || emailName);
       }
     } catch (error) {
       console.error("Error in fetchCandidateProfile:", error);
-      // Fallback to session metadata or email
       const metadataName = session?.user?.user_metadata?.full_name;
       const emailName = session?.user?.email?.split('@')[0] || 'Candidate';
       setUserName(metadataName || emailName);
+    }
+  };
+
+  // NEW: Fetch only unblocked assessments
+  const fetchUnblockedAssessments = async (userId) => {
+    try {
+      const { data, error } = await supabase
+        .from('candidate_assessments')
+        .select(`
+          assessment_id,
+          status,
+          unblocked_at,
+          assessments (
+            id,
+            title,
+            description,
+            assessment_type_id,
+            assessment_types (
+              code,
+              name,
+              icon,
+              gradient_start,
+              gradient_end
+            )
+          )
+        `)
+        .eq('user_id', userId)
+        .eq('status', 'unblocked');
+
+      if (error) throw error;
+
+      const unblockedIds = (data || []).map(item => item.assessment_id);
+      setUnblockedAssessments(unblockedIds);
+      
+      return unblockedIds;
+    } catch (error) {
+      console.error("Error fetching unblocked assessments:", error);
+      return [];
     }
   };
 
@@ -231,7 +255,6 @@ export default function CandidateDashboard() {
       if (error) throw error;
       
       if (data) {
-        // Filter out excluded types
         const filteredData = data.filter(type => !excludedTypes.includes(type.code));
         
         const transformedTypes = filteredData.map(type => ({
@@ -328,6 +351,11 @@ export default function CandidateDashboard() {
     return assessments.find(a => a.assessment_type?.code === typeCode);
   };
 
+  // MODIFIED: Check if assessment is unblocked
+  const isAssessmentUnblocked = (assessmentId) => {
+    return unblockedAssessments.includes(assessmentId);
+  };
+
   const isAssessmentCompleted = (assessmentId) => {
     return completedAssessments.some(a => a.assessment_id === assessmentId);
   };
@@ -351,9 +379,22 @@ export default function CandidateDashboard() {
     return assessments.length;
   };
 
+  const getUnblockedCount = () => {
+    return unblockedAssessments.length;
+  };
+
   const handleTabChange = (tabId) => {
     setActiveTab(tabId);
     setSelectedAssessmentAreas(assessmentAreas[tabId] || []);
+  };
+
+  const handleStartAssessment = (assessmentId) => {
+    // Double-check access before navigating
+    if (!isAssessmentUnblocked(assessmentId) && !isAssessmentCompleted(assessmentId) && !isAssessmentInProgress(assessmentId)) {
+      alert("This assessment is currently blocked. Please contact your supervisor to unblock it.");
+      return;
+    }
+    router.push(`/assessment/${assessmentId}`);
   };
 
   if (authLoading || loading) {
@@ -374,6 +415,7 @@ export default function CandidateDashboard() {
   const activeAssessment = activeTab ? getAssessmentByType(activeTab) : null;
   const completedCount = getCompletedCount();
   const totalAssessments = getTotalAssessments();
+  const unblockedCount = getUnblockedCount();
 
   return (
     <div style={styles.pageContainer}>
@@ -405,7 +447,9 @@ export default function CandidateDashboard() {
               Welcome back, <span style={styles.welcomeName}>{userName}</span>
             </h2>
             <p style={styles.welcomeText}>
-              Select an assessment to begin. Your progress is automatically saved.
+              {unblockedCount > 0 
+                ? `You have ${unblockedCount} unblocked assessment(s) ready to take.` 
+                : "No assessments are currently unblocked. Contact your supervisor to unlock assessments."}
             </p>
           </div>
           <div style={styles.progressBadge}>
@@ -474,6 +518,7 @@ export default function CandidateDashboard() {
                     {(() => {
                       const completed = isAssessmentCompleted(activeAssessment.id);
                       const inProgress = isAssessmentInProgress(activeAssessment.id);
+                      const unblocked = isAssessmentUnblocked(activeAssessment.id);
                       const score = getAssessmentScore(activeAssessment.id);
                       
                       if (completed) {
@@ -498,31 +543,58 @@ export default function CandidateDashboard() {
                             In Progress
                           </span>
                         );
+                      } else if (unblocked) {
+                        return (
+                          <span style={{
+                            ...styles.statusBadge,
+                            background: '#E8F5E9',
+                            color: '#2E7D32',
+                            border: '1px solid #4CAF50'
+                          }}>
+                            🔓 Ready to Start
+                          </span>
+                        );
                       } else {
                         return (
                           <span style={{
                             ...styles.statusBadge,
-                            background: '#f8fafc',
-                            color: assessmentColors[activeTab]?.color || '#2563eb',
-                            border: `1px solid ${assessmentColors[activeTab]?.color}40`
+                            background: '#F5F5F5',
+                            color: '#9E9E9E',
+                            border: '1px solid #E0E0E0'
                           }}>
-                            Ready to Start
+                            🔒 Blocked
                           </span>
                         );
                       }
                     })()}
                   </div>
                 </div>
-                <button
-                  onClick={() => router.push(`/assessment/${activeAssessment.id}`)}
-                  style={{
-                    ...styles.startButton,
-                    background: assessmentColors[activeTab]?.gradient || assessmentColors.general.gradient,
-                    boxShadow: `0 4px 12px rgba(0,0,0,0.2)`
-                  }}
-                >
-                  {isAssessmentInProgress(activeAssessment.id) ? 'Continue Assessment →' : 'Start Assessment →'}
-                </button>
+                {isAssessmentUnblocked(activeAssessment.id) || 
+                 isAssessmentInProgress(activeAssessment.id) ? (
+                  <button
+                    onClick={() => handleStartAssessment(activeAssessment.id)}
+                    style={{
+                      ...styles.startButton,
+                      background: assessmentColors[activeTab]?.gradient || assessmentColors.general.gradient,
+                      boxShadow: `0 4px 12px rgba(0,0,0,0.2)`
+                    }}
+                  >
+                    {isAssessmentInProgress(activeAssessment.id) ? 'Continue Assessment →' : 'Start Assessment →'}
+                  </button>
+                ) : (
+                  <button
+                    disabled
+                    style={{
+                      ...styles.startButton,
+                      background: '#E0E0E0',
+                      color: '#9E9E9E',
+                      cursor: 'not-allowed',
+                      boxShadow: 'none'
+                    }}
+                  >
+                    Contact Supervisor to Unblock
+                  </button>
+                )}
               </div>
 
               {selectedAssessmentAreas && selectedAssessmentAreas.length > 0 && (
@@ -553,13 +625,14 @@ export default function CandidateDashboard() {
             <div style={styles.progressGrid}>
               {assessmentTypes.map(type => {
                 const typeAssessment = getAssessmentByType(type.id);
+                const isUnblocked = typeAssessment ? isAssessmentUnblocked(typeAssessment.id) : false;
                 const isCompleted = typeAssessment ? isAssessmentCompleted(typeAssessment.id) : false;
                 const isInProgress = typeAssessment ? isAssessmentInProgress(typeAssessment.id) : false;
                 const colors = assessmentColors[type.id] || assessmentColors.general;
                 
                 let statusColor = colors.color;
-                let statusText = 'Not Started';
-                let statusBg = 'rgba(255,255,255,0.9)';
+                let statusText = 'Blocked';
+                let statusBg = '#F5F5F5';
                 
                 if (isCompleted) {
                   statusColor = '#166534';
@@ -569,6 +642,10 @@ export default function CandidateDashboard() {
                   statusColor = colors.color;
                   statusBg = colors.light;
                   statusText = 'In Progress';
+                } else if (isUnblocked) {
+                  statusColor = '#2E7D32';
+                  statusBg = '#E8F5E9';
+                  statusText = 'Unblocked';
                 }
                 
                 return (
@@ -598,7 +675,7 @@ export default function CandidateDashboard() {
 
           <div style={styles.infoNote}>
             <span style={styles.infoIcon}>ℹ️</span>
-            <span><strong>Note:</strong> All assessments have 100 questions and a 3-hour (180 minutes) time limit.</span>
+            <span><strong>Note:</strong> Assessments must be unblocked by your supervisor before you can take them. All assessments have 100 questions and a 3-hour (180 minutes) time limit.</span>
           </div>
 
           <div style={styles.guidelinesWrapper}>
@@ -636,6 +713,18 @@ export default function CandidateDashboard() {
 
                 <div style={styles.guidelineCard}>
                   <div style={styles.guidelineIconWrapper}>
+                    <span style={styles.guidelineIcon}>🔓</span>
+                  </div>
+                  <div style={styles.guidelineTextWrapper}>
+                    <h4 style={styles.guidelineTitle}>Must Be Unblocked</h4>
+                    <p style={styles.guidelineText}>
+                      Your supervisor must unblock each assessment before you can take it. Contact them if you don't see an assessment you expect.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={styles.guidelineCard}>
+                  <div style={styles.guidelineIconWrapper}>
                     <span style={styles.guidelineIcon}>💾</span>
                   </div>
                   <div style={styles.guidelineTextWrapper}>
@@ -645,24 +734,12 @@ export default function CandidateDashboard() {
                     </p>
                   </div>
                 </div>
-
-                <div style={styles.guidelineCard}>
-                  <div style={styles.guidelineIconWrapper}>
-                    <span style={styles.guidelineIcon}>📝</span>
-                  </div>
-                  <div style={styles.guidelineTextWrapper}>
-                    <h4 style={styles.guidelineTitle}>100 Questions</h4>
-                    <p style={styles.guidelineText}>
-                      Each assessment contains 100 questions. Take your time and answer carefully.
-                    </p>
-                  </div>
-                </div>
               </div>
 
               <div style={styles.tipCard}>
                 <span style={styles.tipIcon}>💡</span>
                 <div style={styles.tipContent}>
-                  <strong>Pro Tip:</strong> Complete assessments one at a time when you're ready. Your progress is automatically saved.
+                  <strong>Pro Tip:</strong> If an assessment shows as "Blocked", contact your supervisor to request access. Once unblocked, it will appear as ready to start.
                 </div>
               </div>
             </div>
