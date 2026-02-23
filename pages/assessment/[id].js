@@ -292,11 +292,10 @@ export default function AssessmentPage() {
       setTimeout(() => {
         setSaveStatus(prev => {
           const newStatus = { ...prev };
-            delete newStatus[questionId];
-            return newStatus;
-          });
-        }, 2000);
-      }
+          delete newStatus[questionId];
+          return newStatus;
+        });
+      }, 2000);
     }
   };
 
@@ -815,6 +814,7 @@ export default function AssessmentPage() {
   );
 }
 
+// Styles object - fixed syntax
 const styles = {
   loadingContainer: {
     minHeight: '100vh',
