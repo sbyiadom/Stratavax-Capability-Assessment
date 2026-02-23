@@ -41,6 +41,10 @@ function CandidateReportComponent() {
   const [showPrintView, setShowPrintView] = useState(false);
   const [stratavaxReport, setStratavaxReport] = useState(null);
   const [assessmentTypeName, setAssessmentTypeName] = useState('');
+  
+  // NEW: State for competency data
+  const [competencyScores, setCompetencyScores] = useState([]);
+  const [showCompetencyView, setShowCompetencyView] = useState(false);
 
   // Authentication check
   useEffect(() => {
@@ -131,6 +135,7 @@ function CandidateReportComponent() {
 
   const loadAssessmentData = async (result, candidateInfo) => {
     try {
+      // Fetch responses
       const { data: responsesData, error: responsesError } = await supabase
         .from('responses')
         .select(`
@@ -152,6 +157,24 @@ function CandidateReportComponent() {
 
       if (responsesError) {
         console.error("Error fetching responses:", responsesError);
+      }
+
+      // NEW: Fetch competency scores for this assessment
+      const { data: compScores, error: compError } = await supabase
+        .from('candidate_competency_scores')
+        .select(`
+          *,
+          competencies(name, category)
+        `)
+        .eq('candidate_id', user_id)
+        .eq('assessment_id', result.assessment_id)
+        .order('percentage', { ascending: false });
+
+      if (compError) {
+        console.error("Error fetching competency scores:", compError);
+      } else if (compScores && compScores.length > 0) {
+        console.log(`✅ Found ${compScores.length} competency scores`);
+        setCompetencyScores(compScores);
       }
 
       const assessmentTypeId = result.assessment_type || 'general';
@@ -324,6 +347,15 @@ function CandidateReportComponent() {
             Score Breakdown
           </button>
           <button 
+            style={{...styles.navItem, borderBottom: activeSection === 'competency' ? '3px solid #0A1929' : '3px solid transparent'}}
+            onClick={() => {
+              setActiveSection('competency');
+              setShowCompetencyView(true);
+            }}
+          >
+            Competency Analysis
+          </button>
+          <button 
             style={{...styles.navItem, borderBottom: activeSection === 'strengths' ? '3px solid #0A1929' : '3px solid transparent'}}
             onClick={() => setActiveSection('strengths')}
           >
@@ -456,7 +488,132 @@ function CandidateReportComponent() {
             <p style={styles.tableFootnote}>Performance metrics based on {assessmentDisplayName} criteria and standardized scoring rubrics.</p>
           </section>
 
-          {/* SECTION 4: STRENGTHS & WEAKNESSES */}
+          {/* NEW SECTION 4: COMPETENCY ANALYSIS */}
+          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'competency' || (showPrintView && competencyScores.length > 0) ? 'block' : 'none'}}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>Competency Analysis</h2>
+              <p style={styles.sectionSubtitle}>Detailed breakdown of core competencies measured in this {assessmentDisplayName.toLowerCase()}</p>
+            </div>
+            
+            {competencyScores && competencyScores.length > 0 ? (
+              <>
+                {/* Competency Summary Cards */}
+                <div style={styles.competencySummaryGrid}>
+                  <div style={styles.competencySummaryCard}>
+                    <span style={styles.competencySummaryLabel}>Competencies Assessed</span>
+                    <span style={styles.competencySummaryValue}>{competencyScores.length}</span>
+                  </div>
+                  <div style={styles.competencySummaryCard}>
+                    <span style={styles.competencySummaryLabel}>Strong (≥80%)</span>
+                    <span style={{...styles.competencySummaryValue, color: '#4CAF50'}}>
+                      {competencyScores.filter(c => c.classification === 'Strong').length}
+                    </span>
+                  </div>
+                  <div style={styles.competencySummaryCard}>
+                    <span style={styles.competencySummaryLabel}>Moderate (55-79%)</span>
+                    <span style={{...styles.competencySummaryValue, color: '#FF9800'}}>
+                      {competencyScores.filter(c => c.classification === 'Moderate').length}
+                    </span>
+                  </div>
+                  <div style={styles.competencySummaryCard}>
+                    <span style={styles.competencySummaryLabel}>Needs Development (&lt;55%)</span>
+                    <span style={{...styles.competencySummaryValue, color: '#F44336'}}>
+                      {competencyScores.filter(c => c.classification === 'Needs Development').length}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Competency Grid */}
+                <div style={styles.competencyGrid}>
+                  {competencyScores.map(comp => (
+                    <div key={comp.id} style={{
+                      ...styles.competencyCard,
+                      borderLeft: `6px solid ${
+                        comp.classification === 'Strong' ? '#4CAF50' :
+                        comp.classification === 'Moderate' ? '#FF9800' : '#F44336'
+                      }`
+                    }}>
+                      <div style={styles.competencyHeader}>
+                        <div>
+                          <span style={styles.competencyName}>{comp.competencies?.name || 'Unknown'}</span>
+                          <span style={styles.competencyCategory}>{comp.competencies?.category || 'General'}</span>
+                        </div>
+                        <div style={styles.competencyScoreContainer}>
+                          <span style={{
+                            ...styles.competencyScore,
+                            color: comp.classification === 'Strong' ? '#4CAF50' :
+                                   comp.classification === 'Moderate' ? '#FF9800' : '#F44336'
+                          }}>
+                            {comp.percentage}%
+                          </span>
+                          <span style={styles.competencyBadge}>{comp.classification}</span>
+                        </div>
+                      </div>
+                      
+                      <div style={styles.competencyBarContainer}>
+                        <div style={styles.competencyBar}>
+                          <div style={{
+                            width: `${comp.percentage}%`,
+                            height: '10px',
+                            background: comp.classification === 'Strong' ? '#4CAF50' :
+                                       comp.classification === 'Moderate' ? '#FF9800' : '#F44336',
+                            borderRadius: '5px',
+                            transition: 'width 0.3s ease'
+                          }} />
+                        </div>
+                        <span style={styles.competencyTarget}>Target: 80%</span>
+                      </div>
+                      
+                      <div style={styles.competencyDetails}>
+                        <div style={styles.competencyDetail}>
+                          <span style={styles.competencyDetailLabel}>Raw Score:</span>
+                          <span style={styles.competencyDetailValue}>{Math.round(comp.raw_score)}/{Math.round(comp.max_possible)}</span>
+                        </div>
+                        <div style={styles.competencyDetail}>
+                          <span style={styles.competencyDetailLabel}>Questions:</span>
+                          <span style={styles.competencyDetailValue}>{comp.question_count}</span>
+                        </div>
+                      </div>
+                      
+                      {comp.percentage < 80 && (
+                        <div style={styles.competencyGap}>
+                          <span style={styles.gapIcon}>📈</span>
+                          <span style={styles.gapText}>
+                            Need {(80 - comp.percentage).toFixed(1)}% more to reach proficiency target
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Competency Interpretation */}
+                <div style={styles.competencyInterpretation}>
+                  <h4 style={styles.interpretationTitle}>What This Means</h4>
+                  <p style={styles.interpretationText}>
+                    This competency analysis provides a deeper view into {candidate.full_name}'s performance on the {assessmentDisplayName.toLowerCase()}. 
+                    {competencyScores.filter(c => c.classification === 'Strong').length > 0 
+                      ? ` Strong competencies (${competencyScores.filter(c => c.classification === 'Strong').map(c => c.competencies?.name).join(', ')}) indicate natural aptitude and readiness for tasks requiring these skills.` 
+                      : ''}
+                    {competencyScores.filter(c => c.classification === 'Needs Development').length > 0 
+                      ? ` Areas needing development (${competencyScores.filter(c => c.classification === 'Needs Development').map(c => c.competencies?.name).join(', ')}) would benefit from focused training and practice.` 
+                      : ''}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div style={styles.noCompetencyData}>
+                <p>Competency data is not available for this assessment. This may be because:</p>
+                <ul style={styles.competencyBulletList}>
+                  <li>The assessment was completed before the competency framework was implemented</li>
+                  <li>Questions have not been mapped to competencies yet</li>
+                  <li>Run the competency setup script to enable this feature</li>
+                </ul>
+              </div>
+            )}
+          </section>
+
+          {/* SECTION 5: STRENGTHS & WEAKNESSES */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'strengths' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Strengths & Development Areas</h2>
@@ -578,7 +735,7 @@ function CandidateReportComponent() {
             </div>
           </section>
 
-          {/* SECTION 5: DEVELOPMENT RECOMMENDATIONS */}
+          {/* SECTION 6: DEVELOPMENT RECOMMENDATIONS */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'recommendations' || showPrintView ? 'block' : 'none'}}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Development Recommendations</h2>
@@ -858,6 +1015,12 @@ const styles = {
     color: '#0A1929',
     letterSpacing: '-0.5px'
   },
+  sectionSubtitle: {
+    fontSize: '14px',
+    color: '#718096',
+    marginTop: '8px',
+    fontStyle: 'italic'
+  },
   subsectionTitle: {
     fontSize: '22px',
     fontWeight: 600,
@@ -1055,6 +1218,167 @@ const styles = {
     fontWeight: 700,
     fontSize: '12px'
   },
+  
+  // NEW Competency Styles
+  competencySummaryGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '15px',
+    marginBottom: '30px'
+  },
+  competencySummaryCard: {
+    background: '#F8FAFC',
+    padding: '20px',
+    borderRadius: '12px',
+    textAlign: 'center',
+    border: '1px solid #E2E8F0'
+  },
+  competencySummaryLabel: {
+    display: 'block',
+    fontSize: '13px',
+    color: '#64748B',
+    marginBottom: '8px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.3px'
+  },
+  competencySummaryValue: {
+    display: 'block',
+    fontSize: '32px',
+    fontWeight: 700,
+    color: '#0A1929'
+  },
+  competencyGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '20px',
+    marginBottom: '30px'
+  },
+  competencyCard: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '20px',
+    border: '1px solid #E2E8F0',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+  },
+  competencyHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: '15px',
+    flexWrap: 'wrap',
+    gap: '10px'
+  },
+  competencyName: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#0A1929',
+    display: 'block',
+    marginBottom: '4px'
+  },
+  competencyCategory: {
+    fontSize: '12px',
+    color: '#718096',
+    background: '#F1F5F9',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    display: 'inline-block'
+  },
+  competencyScoreContainer: {
+    textAlign: 'right'
+  },
+  competencyScore: {
+    fontSize: '24px',
+    fontWeight: 700,
+    display: 'block',
+    lineHeight: 1.2
+  },
+  competencyBadge: {
+    fontSize: '11px',
+    color: '#64748B',
+    background: '#F1F5F9',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    display: 'inline-block',
+    marginTop: '4px'
+  },
+  competencyBarContainer: {
+    marginBottom: '15px'
+  },
+  competencyBar: {
+    height: '10px',
+    background: '#EDF2F7',
+    borderRadius: '5px',
+    overflow: 'hidden',
+    marginBottom: '5px'
+  },
+  competencyTarget: {
+    fontSize: '11px',
+    color: '#718096',
+    display: 'block',
+    textAlign: 'right'
+  },
+  competencyDetails: {
+    display: 'flex',
+    gap: '15px',
+    marginBottom: '12px',
+    fontSize: '13px'
+  },
+  competencyDetail: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '5px'
+  },
+  competencyDetailLabel: {
+    color: '#718096'
+  },
+  competencyDetailValue: {
+    fontWeight: 600,
+    color: '#0A1929'
+  },
+  competencyGap: {
+    padding: '8px 12px',
+    background: '#FEF2F2',
+    borderRadius: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '12px',
+    color: '#B91C1C'
+  },
+  competencyInterpretation: {
+    background: '#F0F4F8',
+    padding: '25px',
+    borderRadius: '12px',
+    marginTop: '20px'
+  },
+  interpretationTitle: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#0A1929',
+    marginBottom: '10px'
+  },
+  interpretationText: {
+    fontSize: '14px',
+    lineHeight: '1.7',
+    color: '#2D3748',
+    margin: 0
+  },
+  noCompetencyData: {
+    background: '#FEF2F2',
+    padding: '30px',
+    borderRadius: '12px',
+    textAlign: 'center',
+    color: '#B91C1C',
+    fontSize: '15px',
+    border: '1px solid #FEE2E2'
+  },
+  competencyBulletList: {
+    textAlign: 'left',
+    marginTop: '15px',
+    paddingLeft: '30px',
+    color: '#4A5568'
+  },
+  
   strengthsSection: {
     marginTop: '20px'
   },
