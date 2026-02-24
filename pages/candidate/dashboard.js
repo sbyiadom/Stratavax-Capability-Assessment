@@ -400,6 +400,7 @@ export default function CandidateDashboard() {
   if (authLoading || loading) {
     return (
       <div style={styles.loadingContainer}>
+        <div style={styles.loadingBackground} />
         <div style={styles.loadingContent}>
           <div style={styles.loadingLogo}>Stratavax</div>
           <div style={styles.loadingSpinner} />
@@ -785,16 +786,34 @@ const styles = {
     minHeight: '100vh',
     width: '100%'
   },
+  // UPDATED: Loading container with background image
   loadingContainer: {
     minHeight: '100vh',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)'
+    position: 'relative',
+    overflow: 'hidden'
+  },
+  // NEW: Loading background image
+  loadingBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundImage: 'url(/images/loading-bg.jpg)', // You can change this to your preferred image
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    filter: 'brightness(0.7)', // Darkens the image slightly so text stands out
+    zIndex: 0
   },
   loadingContent: {
+    position: 'relative',
     textAlign: 'center',
-    color: 'white'
+    color: 'white',
+    zIndex: 1,
+    textShadow: '2px 2px 4px rgba(0,0,0,0.5)' // Makes text readable on any background
   },
   loadingLogo: {
     fontSize: '32px',
