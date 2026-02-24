@@ -17,9 +17,17 @@ export default async function handler(req, res) {
   );
 
   try {
-    const { assessmentType } = req.body;
+    console.log("🚀 Starting competency setup...");
 
-    // 1. Insert default competencies if they don't exist
+    // 1. First, clear existing mappings to avoid duplicates
+    console.log("🧹 Clearing existing question_competencies...");
+    await serviceClient
+      .from('question_competencies')
+      .delete()
+      .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+
+    // 2. Insert default competencies if they don't exist
+    console.log("📋 Inserting default competencies...");
     const defaultCompetencies = [
       // Leadership competencies
       { name: 'Strategic Thinking', description: 'Ability to think ahead, envision possibilities, and plan strategically', category: 'Leadership', display_order: 1 },
@@ -50,20 +58,15 @@ export default async function handler(req, res) {
     ];
 
     for (const comp of defaultCompetencies) {
-      await serviceClient
+      const { error } = await serviceClient
         .from('competencies')
         .upsert(comp, { onConflict: 'name' });
+      
+      if (error) console.error(`Error inserting ${comp.name}:`, error);
     }
 
-    // 2. Get all questions
-    const { data: questions, error: questionsError } = await serviceClient
-      .from('questions')
-      .select('id, section, assessment_type_id')
-      .limit(1000);
-
-    if (questionsError) throw questionsError;
-
-    // 3. Get competencies with their IDs
+    // 3. Get all competencies with their IDs
+    console.log("🔍 Fetching competencies...");
     const { data: competencies, error: compError } = await serviceClient
       .from('competencies')
       .select('id, name');
@@ -74,76 +77,180 @@ export default async function handler(req, res) {
     competencies.forEach(c => {
       compMap[c.name] = c.id;
     });
+    console.log(`✅ Found ${competencies.length} competencies`);
 
-    // 4. Map questions to competencies based on section
+    // 4. Get all questions
+    console.log("🔍 Fetching questions...");
+    const { data: questions, error: questionsError } = await serviceClient
+      .from('questions')
+      .select('id, section, assessment_type_id')
+      .limit(1000);
+
+    if (questionsError) throw questionsError;
+    console.log(`✅ Found ${questions.length} questions`);
+
+    // 5. Map questions to competencies based on section names
+    console.log("🔗 Creating question-competency mappings...");
     const mappings = [];
+    let mappedCount = 0;
     
     questions.forEach(question => {
       const section = question.section?.toLowerCase() || '';
+      let mapped = false;
       
-      // Map based on section name
-      if (section.includes('strategic') || section.includes('vision')) {
-        if (compMap['Strategic Thinking']) mappings.push({ question_id: question.id, competency_id: compMap['Strategic Thinking'], weight: 1.0 });
+      // Leadership mappings
+      if (section.includes('strategic') || section.includes('vision') || section.includes('foresight')) {
+        if (compMap['Strategic Thinking']) {
+          mappings.push({ question_id: question.id, competency_id: compMap['Strategic Thinking'], weight: 1.0 });
+          mapped = true;
+        }
       }
-      if (section.includes('emotional') || section.includes('empathy')) {
-        if (compMap['Emotional Intelligence']) mappings.push({ question_id: question.id, competency_id: compMap['Emotional Intelligence'], weight: 1.0 });
+      if (section.includes('emotional') || section.includes('empathy') || section.includes('self-awareness')) {
+        if (compMap['Emotional Intelligence']) {
+          mappings.push({ question_id: question.id, competency_id: compMap['Emotional Intelligence'], weight: 1.0 });
+          mapped = true;
+        }
       }
-      if (section.includes('decision')) {
-        if (compMap['Decision Making']) mappings.push({ question_id: question.id, competency_id: compMap['Decision Making'], weight: 1.0 });
+      if (section.includes('decision') || section.includes('judgment') || section.includes('choose')) {
+        if (compMap['Decision Making']) {
+          mappings.push({ question_id: question.id, competency_id: compMap['Decision Making'], weight: 1.0 });
+          mapped = true;
+        }
       }
-      if (section.includes('communicat')) {
-        if (compMap['Communication']) mappings.push({ question_id: question.id, competency_id: compMap['Communication'], weight: 1.0 });
+      if (section.includes('communicat') || section.includes('present') || section.includes('speak')) {
+        if (compMap['Communication']) {
+          mappings.push({ question_id: question.id, competency_id: compMap['Communication'], weight: 1.0 });
+          mapped = true;
+        }
       }
-      if (section.includes('people') || section.includes('manag')) {
-        if (compMap['People Management']) mappings.push({ question_id: question.id, competency_id: compMap['People Management'], weight: 1.0 });
+      if (section.includes('people') || section.includes('manag') || section.includes('lead')) {
+        if (compMap['People Management']) {
+          mappings.push({ question_id: question.id, competency_id: compMap['People Management'], weight: 1.0 });
+          mapped = true;
+        }
       }
-      if (section.includes('adapt')) {
-        if (compMap['Adaptability']) mappings.push({ question_id: question.id, competency_id: compMap['Adaptability'], weight: 1.0 });
+      if (section.includes('adapt') || section.includes('flexib')) {
+        if (compMap['Adaptability']) {
+          mappings.push({ question_id: question.id, competency_id: compMap['Adaptability'], weight: 1.0 });
+          mapped = true;
+        }
       }
-      if (section.includes('account')) {
-        if (compMap['Accountability']) mappings.push({ question_id: question.id, competency_id: compMap['Accountability'], weight: 1.0 });
+      if (section.includes('account') || section.includes('responsib') || section.includes('owner')) {
+        if (compMap['Accountability']) {
+          mappings.push({ question_id: question.id, competency_id: compMap['Accountability'], weight: 1.0 });
+          mapped = true;
+        }
       }
-      if (section.includes('cognitive') || section.includes('analyt')) {
-        if (compMap['Cognitive Ability']) mappings.push({ question_id: question.id, competency_id: compMap['Cognitive Ability'], weight: 1.0 });
+      if (section.includes('cognitive') || section.includes('analyt') || section.includes('reason')) {
+        if (compMap['Cognitive Ability']) {
+          mappings.push({ question_id: question.id, competency_id: compMap['Cognitive Ability'], weight: 1.0 });
+          mapped = true;
+        }
       }
-      if (section.includes('technical')) {
-        if (compMap['Technical Knowledge']) mappings.push({ question_id: question.id, competency_id: compMap['Technical Knowledge'], weight: 1.0 });
+      if (section.includes('problem') || section.includes('solve')) {
+        if (compMap['Problem Solving']) {
+          mappings.push({ question_id: question.id, competency_id: compMap['Problem Solving'], weight: 1.0 });
+          mapped = true;
+        }
       }
-      if (section.includes('cultural') || section.includes('fit')) {
-        if (compMap['Cultural Fit']) mappings.push({ question_id: question.id, competency_id: compMap['Cultural Fit'], weight: 1.0 });
+      if (section.includes('learn') || section.includes('agility')) {
+        if (compMap['Learning Agility']) {
+          mappings.push({ question_id: question.id, competency_id: compMap['Learning Agility'], weight: 1.0 });
+          mapped = true;
+        }
       }
-      if (section.includes('integrity') || section.includes('ethic')) {
-        if (compMap['Integrity']) mappings.push({ question_id: question.id, competency_id: compMap['Integrity'], weight: 1.0 });
+      if (section.includes('technical') || section.includes('technolog') || section.includes('system')) {
+        if (compMap['Technical Knowledge']) {
+          mappings.push({ question_id: question.id, competency_id: compMap['Technical Knowledge'], weight: 1.0 });
+          mapped = true;
+        }
       }
-      if (section.includes('collab') || section.includes('team')) {
-        if (compMap['Collaboration']) mappings.push({ question_id: question.id, competency_id: compMap['Collaboration'], weight: 1.0 });
+      if (section.includes('cultural') || section.includes('fit') || section.includes('values')) {
+        if (compMap['Cultural Fit']) {
+          mappings.push({ question_id: question.id, competency_id: compMap['Cultural Fit'], weight: 1.0 });
+          mapped = true;
+        }
       }
-      if (section.includes('resilience')) {
-        if (compMap['Resilience']) mappings.push({ question_id: question.id, competency_id: compMap['Resilience'], weight: 1.0 });
+      if (section.includes('integrit') || section.includes('ethic')) {
+        if (compMap['Integrity']) {
+          mappings.push({ question_id: question.id, competency_id: compMap['Integrity'], weight: 1.0 });
+          mapped = true;
+        }
       }
-      if (section.includes('execution') || section.includes('result')) {
-        if (compMap['Execution']) mappings.push({ question_id: question.id, competency_id: compMap['Execution'], weight: 1.0 });
+      if (section.includes('collab') || section.includes('team') || section.includes('cooperat')) {
+        if (compMap['Collaboration']) {
+          mappings.push({ question_id: question.id, competency_id: compMap['Collaboration'], weight: 1.0 });
+          mapped = true;
+        }
       }
+      if (section.includes('resilien') || section.includes('stress') || section.includes('pressure')) {
+        if (compMap['Resilience']) {
+          mappings.push({ question_id: question.id, competency_id: compMap['Resilience'], weight: 1.0 });
+          mapped = true;
+        }
+      }
+      if (section.includes('execution') || section.includes('result') || section.includes('deliver')) {
+        if (compMap['Execution']) {
+          mappings.push({ question_id: question.id, competency_id: compMap['Execution'], weight: 1.0 });
+          mapped = true;
+        }
+      }
+      
+      if (mapped) mappedCount++;
     });
 
-    // 5. Insert mappings
-    if (mappings.length > 0) {
-      const { error: insertError } = await serviceClient
-        .from('question_competencies')
-        .upsert(mappings, { onConflict: 'question_id, competency_id' });
+    console.log(`✅ Mapped ${mappedCount} questions to competencies`);
 
-      if (insertError) throw insertError;
+    // 6. Insert mappings in batches to avoid timeouts
+    if (mappings.length > 0) {
+      console.log(`💾 Inserting ${mappings.length} mappings...`);
+      
+      // Insert in batches of 100
+      const batchSize = 100;
+      for (let i = 0; i < mappings.length; i += batchSize) {
+        const batch = mappings.slice(i, i + batchSize);
+        const { error: insertError } = await serviceClient
+          .from('question_competencies')
+          .insert(batch);
+
+        if (insertError) {
+          console.error(`Error inserting batch ${i}:`, insertError);
+        } else {
+          console.log(`✅ Inserted batch ${i / batchSize + 1} (${batch.length} mappings)`);
+        }
+      }
+    }
+
+    // 7. Verify the setup
+    console.log("🔍 Verifying setup...");
+    const { count, error: countError } = await serviceClient
+      .from('question_competencies')
+      .select('*', { count: 'exact', head: true });
+
+    if (countError) {
+      console.error("Error verifying count:", countError);
+    } else {
+      console.log(`✅ Total mappings in database: ${count}`);
     }
 
     res.status(200).json({
       success: true,
-      competenciesAdded: defaultCompetencies.length,
-      questionsProcessed: questions.length,
-      mappingsCreated: mappings.length
+      message: "Competency setup completed successfully",
+      stats: {
+        competenciesAdded: defaultCompetencies.length,
+        questionsProcessed: questions.length,
+        questionsMapped: mappedCount,
+        totalMappings: mappings.length,
+        finalCount: count
+      }
     });
 
   } catch (error) {
-    console.error('Error setting up competencies:', error);
-    res.status(500).json({ error: error.message });
+    console.error('❌ Error setting up competencies:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message,
+      stack: error.stack 
+    });
   }
 }
