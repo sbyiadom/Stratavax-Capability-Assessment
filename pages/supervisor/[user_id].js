@@ -879,8 +879,562 @@ function CandidateReportComponent() {
   );
 }
 
-// Add the missing styles for the new elements
-const additionalStyles = {
+// Define all styles directly in the file
+const styles = {
+  loadingContainer: {
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    overflow: 'hidden'
+  },
+  loadingBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundImage: 'url(/images/report-loading-bg.jpg)',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    zIndex: 0
+  },
+  loadingContent: {
+    position: 'relative',
+    zIndex: 1,
+    textAlign: 'center',
+    color: 'white',
+    textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
+    maxWidth: '600px',
+    padding: '0 20px'
+  },
+  loadingText: {
+    fontSize: '24px',
+    fontWeight: 600,
+    marginBottom: '10px'
+  },
+  loadingSubtext: {
+    fontSize: '16px',
+    opacity: 0.9,
+    marginTop: '10px'
+  },
+  spinner: {
+    width: '60px',
+    height: '60px',
+    border: '4px solid rgba(255,255,255,0.3)',
+    borderTop: '4px solid white',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite',
+    margin: '0 auto 30px',
+    boxShadow: '0 0 20px rgba(0,0,0,0.3)'
+  },
+  emptyState: {
+    textAlign: 'center',
+    padding: '60px 20px',
+    background: 'white',
+    borderRadius: '16px',
+    boxShadow: '0 10px 40px rgba(0,0,0,0.1)',
+    margin: '20px auto',
+    maxWidth: '500px'
+  },
+  emptyIcon: {
+    fontSize: '64px',
+    marginBottom: '20px',
+    opacity: 0.5
+  },
+  primaryButton: {
+    display: 'inline-block',
+    background: '#0A1929',
+    color: 'white',
+    padding: '12px 30px',
+    borderRadius: '30px',
+    textDecoration: 'none',
+    fontSize: '16px',
+    fontWeight: 500,
+    marginTop: '20px',
+    cursor: 'pointer'
+  },
+  container: {
+    width: '90vw',
+    maxWidth: '1200px',
+    margin: '0 auto',
+    padding: '30px 20px',
+    backgroundImage: 'url(/images/report-bg.jpg)',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundAttachment: 'fixed',
+    minHeight: '100vh',
+    borderRadius: '0'
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '30px',
+    flexWrap: 'wrap',
+    gap: '20px',
+    background: 'rgba(255, 255, 255, 0.9)',
+    padding: '15px 25px',
+    borderRadius: '50px',
+    backdropFilter: 'blur(10px)',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+  },
+  backButton: {
+    color: '#0A1929',
+    textDecoration: 'none',
+    fontSize: '16px',
+    fontWeight: 500,
+    padding: '8px 16px',
+    borderRadius: '20px',
+    border: '1px solid #0A1929',
+    transition: 'all 0.2s ease'
+  },
+  headerActions: {
+    display: 'flex',
+    gap: '10px',
+    alignItems: 'center',
+    flexWrap: 'wrap'
+  },
+  assessmentSelect: {
+    padding: '10px 16px',
+    border: '2px solid #e0e0e0',
+    borderRadius: '8px',
+    fontSize: '14px',
+    minWidth: '300px',
+    background: 'white',
+    cursor: 'pointer',
+    outline: 'none'
+  },
+  printButton: {
+    background: '#0A1929',
+    color: 'white',
+    border: 'none',
+    padding: '10px 20px',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  pdfButton: {
+    background: '#4CAF50',
+    color: 'white',
+    border: 'none',
+    padding: '10px 20px',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  navigation: {
+    display: 'flex',
+    gap: '15px',
+    marginBottom: '30px',
+    borderBottom: '1px solid rgba(255,255,255,0.3)',
+    paddingBottom: '10px',
+    overflowX: 'auto',
+    whiteSpace: 'nowrap',
+    background: 'rgba(255, 255, 255, 0.8)',
+    padding: '15px 25px',
+    borderRadius: '50px',
+    backdropFilter: 'blur(10px)'
+  },
+  navItem: {
+    background: 'none',
+    border: 'none',
+    padding: '8px 12px',
+    fontSize: '14px',
+    fontWeight: 500,
+    color: '#0A1929',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  reportContainer: {
+    background: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: '20px',
+    padding: '50px',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+    backdropFilter: 'blur(10px)'
+  },
+  section: {
+    marginBottom: '40px'
+  },
+  sectionHeader: {
+    marginBottom: '30px',
+    borderBottom: '3px solid #0A1929',
+    paddingBottom: '10px'
+  },
+  sectionTitle: {
+    margin: 0,
+    fontSize: '28px',
+    fontWeight: 700,
+    color: '#0A1929',
+    letterSpacing: '-0.5px'
+  },
+  sectionSubtitle: {
+    fontSize: '14px',
+    color: '#718096',
+    marginTop: '8px',
+    fontStyle: 'italic'
+  },
+  subsectionTitle: {
+    fontSize: '22px',
+    fontWeight: 600,
+    color: '#0A1929',
+    margin: '0'
+  },
+  coverPage: {
+    minHeight: '80vh',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    textAlign: 'center',
+    padding: '40px 20px'
+  },
+  coverHeader: {
+    marginBottom: '60px'
+  },
+  coverTitle: {
+    fontSize: '48px',
+    fontWeight: 800,
+    color: '#0A1929',
+    marginBottom: '10px',
+    letterSpacing: '2px'
+  },
+  coverSubtitle: {
+    fontSize: '24px',
+    color: '#666',
+    fontWeight: 300
+  },
+  coverContent: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  coverLogo: {
+    fontSize: '100px',
+    marginBottom: '40px'
+  },
+  coverCandidateName: {
+    fontSize: '42px',
+    fontWeight: 700,
+    color: '#0A1929',
+    marginBottom: '30px'
+  },
+  coverDetail: {
+    fontSize: '18px',
+    color: '#666',
+    margin: '5px 0'
+  },
+  coverBadge: {
+    marginTop: '50px',
+    padding: '10px 40px',
+    border: '2px solid #F44336',
+    borderRadius: '40px',
+    color: '#F44336',
+    fontWeight: 600,
+    letterSpacing: '2px'
+  },
+  coverFooter: {
+    marginTop: '60px',
+    color: '#999',
+    fontSize: '14px'
+  },
+  executiveSummary: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '30px'
+  },
+  scoreGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '20px'
+  },
+  scoreItem: {
+    background: '#F7FAFC',
+    padding: '20px',
+    borderRadius: '12px',
+    textAlign: 'center',
+    border: '1px solid #E2E8F0'
+  },
+  scoreLabel: {
+    display: 'block',
+    fontSize: '14px',
+    color: '#718096',
+    marginBottom: '8px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
+  },
+  scoreValue: {
+    display: 'block',
+    fontSize: '28px',
+    fontWeight: 700,
+    color: '#0A1929'
+  },
+  classificationPill: {
+    display: 'inline-block',
+    padding: '8px 20px',
+    borderRadius: '30px',
+    fontSize: '16px',
+    fontWeight: 600
+  },
+  narrativeBox: {
+    background: '#F7FAFC',
+    padding: '30px',
+    borderRadius: '12px',
+    borderLeft: '6px solid #0A1929'
+  },
+  narrativeText: {
+    fontSize: '16px',
+    lineHeight: '1.8',
+    color: '#2D3748',
+    margin: 0
+  },
+  narrativeDescription: {
+    fontSize: '15px',
+    color: '#718096',
+    marginTop: '15px',
+    fontStyle: 'italic'
+  },
+  narrativeFootnote: {
+    fontSize: '14px',
+    color: '#718096',
+    marginTop: '15px',
+    fontStyle: 'italic',
+    borderTop: '1px solid #E2E8F0',
+    paddingTop: '15px'
+  },
+  tableContainer: {
+    overflowX: 'auto',
+    borderRadius: '12px',
+    border: '1px solid #E2E8F0'
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '14px'
+  },
+  tableHeadRow: {
+    background: '#0A1929',
+    color: 'white'
+  },
+  tableHead: {
+    padding: '15px',
+    fontWeight: 600,
+    textAlign: 'left',
+    fontSize: '14px'
+  },
+  tableRow: {
+    borderBottom: '1px solid #E2E8F0',
+    transition: 'background 0.2s ease'
+  },
+  tableCell: {
+    padding: '12px 15px',
+    color: '#2D3748'
+  },
+  tableFootnote: {
+    fontSize: '13px',
+    color: '#718096',
+    marginTop: '15px',
+    fontStyle: 'italic',
+    textAlign: 'right'
+  },
+  percentageContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px'
+  },
+  percentageText: {
+    minWidth: '40px',
+    fontWeight: 500
+  },
+  progressBarContainer: {
+    flex: 1,
+    height: '8px',
+    background: '#EDF2F7',
+    borderRadius: '4px',
+    overflow: 'hidden'
+  },
+  progressBar: {
+    height: '100%',
+    borderRadius: '4px'
+  },
+  gradeBadge: {
+    display: 'inline-block',
+    padding: '4px 8px',
+    background: '#0A1929',
+    color: 'white',
+    borderRadius: '4px',
+    fontWeight: 700,
+    fontSize: '12px'
+  },
+  
+  // NEW Competency Styles
+  competencySummaryGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '15px',
+    marginBottom: '30px'
+  },
+  competencySummaryCard: {
+    background: '#F8FAFC',
+    padding: '20px',
+    borderRadius: '12px',
+    textAlign: 'center',
+    border: '1px solid #E2E8F0'
+  },
+  competencySummaryLabel: {
+    display: 'block',
+    fontSize: '13px',
+    color: '#64748B',
+    marginBottom: '8px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.3px'
+  },
+  competencySummaryValue: {
+    display: 'block',
+    fontSize: '32px',
+    fontWeight: 700,
+    color: '#0A1929'
+  },
+  competencyGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '20px',
+    marginBottom: '30px'
+  },
+  competencyCard: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '20px',
+    border: '1px solid #E2E8F0',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+  },
+  competencyHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: '15px',
+    flexWrap: 'wrap',
+    gap: '10px'
+  },
+  competencyName: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#0A1929',
+    display: 'block',
+    marginBottom: '4px'
+  },
+  competencyCategory: {
+    fontSize: '12px',
+    color: '#718096',
+    background: '#F1F5F9',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    display: 'inline-block'
+  },
+  competencyScoreContainer: {
+    textAlign: 'right'
+  },
+  competencyScore: {
+    fontSize: '24px',
+    fontWeight: 700,
+    display: 'block',
+    lineHeight: 1.2
+  },
+  competencyBadge: {
+    fontSize: '11px',
+    color: '#64748B',
+    background: '#F1F5F9',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    display: 'inline-block',
+    marginTop: '4px'
+  },
+  competencyBarContainer: {
+    marginBottom: '15px'
+  },
+  competencyBar: {
+    height: '10px',
+    background: '#EDF2F7',
+    borderRadius: '5px',
+    overflow: 'hidden',
+    marginBottom: '5px'
+  },
+  competencyTarget: {
+    fontSize: '11px',
+    color: '#718096',
+    display: 'block',
+    textAlign: 'right'
+  },
+  competencyDetails: {
+    display: 'flex',
+    gap: '15px',
+    marginBottom: '12px',
+    fontSize: '13px'
+  },
+  competencyDetail: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '5px'
+  },
+  competencyDetailLabel: {
+    color: '#718096'
+  },
+  competencyDetailValue: {
+    fontWeight: 600,
+    color: '#0A1929'
+  },
+  competencyGap: {
+    padding: '8px 12px',
+    background: '#FEF2F2',
+    borderRadius: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '12px',
+    color: '#B91C1C'
+  },
+  competencyInterpretation: {
+    background: '#F0F4F8',
+    padding: '25px',
+    borderRadius: '12px',
+    marginTop: '20px'
+  },
+  interpretationTitle: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#0A1929',
+    marginBottom: '10px'
+  },
+  interpretationText: {
+    fontSize: '14px',
+    lineHeight: '1.7',
+    color: '#2D3748',
+    margin: 0
+  },
+  noCompetencyData: {
+    background: '#FEF2F2',
+    padding: '30px',
+    borderRadius: '12px',
+    textAlign: 'center',
+    color: '#B91C1C',
+    fontSize: '15px',
+    border: '1px solid #FEE2E2'
+  },
+  competencyBulletList: {
+    textAlign: 'left',
+    marginTop: '15px',
+    paddingLeft: '30px',
+    color: '#4A5568'
+  },
+  
+  // Additional new styles
   suitabilityList: {
     listStyle: 'none',
     padding: 0,
@@ -906,13 +1460,278 @@ const additionalStyles = {
     borderRadius: '8px',
     color: '#B91C1C',
     fontSize: '14px'
+  },
+  strengthsSection: {
+    marginTop: '20px'
+  },
+  sectionBadge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '20px'
+  },
+  badgeIcon: {
+    fontSize: '28px'
+  },
+  strengthsList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '15px',
+    marginTop: '25px'
+  },
+  strengthCard: {
+    background: '#F0F9F0',
+    borderRadius: '12px',
+    padding: '18px',
+    border: '1px solid #C6F6D5'
+  },
+  strengthCardHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '10px'
+  },
+  strengthIcon: {
+    fontSize: '18px'
+  },
+  strengthName: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#0A5C2E',
+    flex: 1
+  },
+  strengthScore: {
+    fontSize: '18px',
+    fontWeight: 700,
+    color: '#0A5C2E'
+  },
+  strengthInterpretation: {
+    fontSize: '14px',
+    color: '#2F855A',
+    lineHeight: '1.6',
+    paddingLeft: '30px'
+  },
+  noStrengthsMessage: {
+    padding: '20px',
+    background: '#F7FAFC',
+    borderRadius: '12px',
+    color: '#718096',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: '20px'
+  },
+  developmentList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+    marginTop: '25px'
+  },
+  developmentItem: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '18px',
+    border: '1px solid #FEE2E2'
+  },
+  developmentItemHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '12px',
+    flexWrap: 'wrap',
+    gap: '12px'
+  },
+  bulletContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px'
+  },
+  bulletPoint: {
+    width: '10px',
+    height: '10px',
+    borderRadius: '50%',
+    display: 'inline-block'
+  },
+  developmentArea: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#1A2A3A'
+  },
+  developmentMetrics: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px'
+  },
+  priorityBadge: {
+    padding: '4px 12px',
+    borderRadius: '30px',
+    fontSize: '12px',
+    fontWeight: 600,
+    letterSpacing: '0.3px'
+  },
+  developmentScore: {
+    fontSize: '18px',
+    fontWeight: 700,
+    color: '#B71C1C',
+    minWidth: '50px',
+    textAlign: 'right'
+  },
+  developmentGrade: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#718096',
+    background: '#F7FAFC',
+    padding: '4px 8px',
+    borderRadius: '6px',
+    minWidth: '40px',
+    textAlign: 'center'
+  },
+  developmentInterpretation: {
+    fontSize: '14px',
+    color: '#4A5568',
+    lineHeight: '1.6',
+    marginBottom: '12px',
+    paddingLeft: '22px'
+  },
+  gapIndicator: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 12px',
+    background: '#FEF2F2',
+    borderRadius: '8px',
+    fontSize: '13px',
+    color: '#B91C1C',
+    marginLeft: '22px'
+  },
+  gapIcon: {
+    fontSize: '14px'
+  },
+  gapText: {
+    fontWeight: 500
+  },
+  moreDetails: {
+    marginTop: '20px',
+    border: '1px solid #FEE2E2',
+    borderRadius: '12px',
+    padding: '12px'
+  },
+  moreSummary: {
+    color: '#B91C1C',
+    fontWeight: 500,
+    cursor: 'pointer',
+    fontSize: '14px',
+    padding: '4px 8px'
+  },
+  moreList: {
+    marginTop: '15px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px'
+  },
+  moreItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '10px 12px',
+    background: '#FEF2F2',
+    borderRadius: '8px',
+    fontSize: '14px',
+    flexWrap: 'wrap'
+  },
+  moreBullet: {
+    color: '#FCA5A5',
+    fontSize: '16px'
+  },
+  moreArea: {
+    flex: 2,
+    color: '#2D3748',
+    fontWeight: 500
+  },
+  morePercentage: {
+    fontWeight: 600,
+    color: '#B91C1C',
+    minWidth: '50px'
+  },
+  moreGrade: {
+    background: '#FEE2E2',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#B91C1C',
+    minWidth: '35px',
+    textAlign: 'center'
+  },
+  moreInterpretation: {
+    fontSize: '12px',
+    color: '#718096',
+    fontStyle: 'italic',
+    flex: 1,
+    minWidth: '120px'
+  },
+  recommendationIntro: {
+    fontSize: '16px',
+    color: '#2D3748',
+    marginBottom: '25px',
+    fontStyle: 'italic'
+  },
+  recommendationsList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '15px',
+    marginBottom: '30px'
+  },
+  recommendationCard: {
+    padding: '20px',
+    background: 'white',
+    borderRadius: '12px',
+    border: '1px solid #E2E8F0',
+    borderLeftWidth: '6px',
+    transition: 'all 0.2s ease'
+  },
+  recHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '15px',
+    marginBottom: '10px'
+  },
+  recCategory: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#2D3748'
+  },
+  recText: {
+    fontSize: '15px',
+    color: '#4A5568',
+    marginBottom: '10px',
+    lineHeight: '1.6'
+  },
+  recAction: {
+    fontSize: '14px',
+    background: '#F7FAFC',
+    padding: '10px',
+    borderRadius: '8px',
+    marginBottom: '8px',
+    color: '#2D3748'
+  },
+  recImpact: {
+    fontSize: '13px',
+    color: '#718096',
+    fontStyle: 'italic'
+  },
+  tipBox: {
+    padding: '20px',
+    background: '#F0F9F0',
+    borderRadius: '12px',
+    borderLeft: '6px solid #4CAF50',
+    marginTop: '20px'
+  },
+  tipTitle: {
+    margin: '0 0 10px 0',
+    color: '#2F855A',
+    fontSize: '16px',
+    fontWeight: 600
   }
-};
-
-// Merge with existing styles
-const styles = {
-  ...(typeof window !== 'undefined' ? require('./styles').default : {}),
-  ...additionalStyles
 };
 
 export default CandidateReport;
