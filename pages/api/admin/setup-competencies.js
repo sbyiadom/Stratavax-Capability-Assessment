@@ -5,7 +5,6 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Verify admin authorization
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -19,12 +18,63 @@ export default async function handler(req, res) {
   try {
     console.log("🚀 Starting competency setup...");
 
-    // 1. First, clear existing mappings to avoid duplicates
-    console.log("🧹 Clearing existing question_competencies...");
-    await serviceClient
-      .from('question_competencies')
-      .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+    // First, check if tables exist
+    console.log("🔍 Checking database tables...");
+    
+    // 1. Create competencies table if it doesn't exist
+    const { error: createTableError } = await serviceClient.rpc('create_competencies_table_if_not_exists');
+    
+    // If RPC doesn't exist, we need to create the table manually
+    if (createTableError) {
+      console.log("⚠️ RPC not available, checking if table exists via query...");
+      
+      // Try to query the table to see if it exists
+      const { error: checkError } = await serviceClient
+        .from('competencies')
+        .select('id')
+        .limit(1);
+      
+      if (checkError && checkError.message.includes('relation') && checkError.message.includes('does not exist')) {
+        console.log("📋 Table doesn't exist, please create it manually in Supabase SQL editor:");
+        console.log(`
+CREATE TABLE competencies (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    description TEXT,
+    category TEXT,
+    display_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE question_competencies (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    question_id UUID REFERENCES questions(id) ON DELETE CASCADE,
+    competency_id UUID REFERENCES competencies(id) ON DELETE CASCADE,
+    weight DECIMAL(3,2) DEFAULT 1.0,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(question_id, competency_id)
+);
+
+CREATE TABLE candidate_competency_scores (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    candidate_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    assessment_id UUID REFERENCES assessments(id) ON DELETE CASCADE,
+    competency_id UUID REFERENCES competencies(id) ON DELETE CASCADE,
+    raw_score DECIMAL(10,2),
+    max_possible DECIMAL(10,2),
+    percentage DECIMAL(5,2),
+    classification TEXT CHECK (classification IN ('Strong', 'Moderate', 'Needs Development')),
+    question_count INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(candidate_id, assessment_id, competency_id)
+);
+        `);
+        
+        return res.status(400).json({ 
+          error: 'Database tables not found. Please run the SQL commands above in your Supabase SQL editor first.' 
+        });
+      }
+    }
 
     // 2. Insert default competencies if they don't exist
     console.log("📋 Inserting default competencies...");
@@ -201,7 +251,14 @@ export default async function handler(req, res) {
 
     console.log(`✅ Mapped ${mappedCount} questions to competencies`);
 
-    // 6. Insert mappings in batches to avoid timeouts
+    // 6. Clear existing mappings to avoid duplicates
+    console.log("🧹 Clearing existing question_competencies...");
+    await serviceClient
+      .from('question_competencies')
+      .delete()
+      .neq('id', '00000000-0000-0000-0000-000000000000');
+
+    // 7. Insert mappings in batches
     if (mappings.length > 0) {
       console.log(`💾 Inserting ${mappings.length} mappings...`);
       
@@ -216,12 +273,12 @@ export default async function handler(req, res) {
         if (insertError) {
           console.error(`Error inserting batch ${i}:`, insertError);
         } else {
-          console.log(`✅ Inserted batch ${i / batchSize + 1} (${batch.length} mappings)`);
+          console.log(`✅ Inserted batch ${Math.floor(i / batchSize) + 1} (${batch.length} mappings)`);
         }
       }
     }
 
-    // 7. Verify the setup
+    // 8. Verify the setup
     console.log("🔍 Verifying setup...");
     const { count, error: countError } = await serviceClient
       .from('question_competencies')
