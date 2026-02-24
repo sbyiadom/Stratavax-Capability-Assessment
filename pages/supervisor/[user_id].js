@@ -43,7 +43,7 @@ function CandidateReportComponent() {
   const [stratavaxReport, setStratavaxReport] = useState(null);
   const [assessmentTypeName, setAssessmentTypeName] = useState('');
   
-  // NEW: State for competency data from category_scores
+  // State for competency data from category_scores
   const [competencyData, setCompetencyData] = useState([]);
   const [competencyInterpretation, setCompetencyInterpretation] = useState(null);
   const [showCompetencyView, setShowCompetencyView] = useState(false);
@@ -135,7 +135,7 @@ function CandidateReportComponent() {
     fetchData();
   }, [authChecked, isSupervisor, user_id]);
 
-  // NEW: Function to extract competency data from category_scores
+  // Function to extract competency data from category_scores
   const extractCompetencyData = (categoryScores, assessmentTypeId, candidateName, overallPercentage) => {
     if (!categoryScores || Object.keys(categoryScores).length === 0) {
       return { competencies: [], interpretation: null };
@@ -235,7 +235,7 @@ function CandidateReportComponent() {
 
       setStratavaxReport(report);
       
-      // NEW: Extract competency data from category_scores in the result
+      // Extract competency data from category_scores in the result
       if (result.category_scores) {
         const { competencies, interpretation } = extractCompetencyData(
           result.category_scores,
@@ -546,16 +546,31 @@ function CandidateReportComponent() {
             <p style={styles.tableFootnote}>Performance metrics based on {assessmentDisplayName} criteria and standardized scoring rubrics.</p>
           </section>
 
-          {/* SECTION 4: COMPETENCY ANALYSIS - UPDATED TO USE CATEGORY_SCORES */}
+          {/* SECTION 4: COMPETENCY ANALYSIS - WITH PROPER NARRATIVE COMMENTARY */}
           <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'competency' || (showPrintView && competencyData.length > 0) ? 'block' : 'none'}}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Competency Analysis</h2>
-              <p style={styles.sectionSubtitle}>Detailed breakdown of core competencies measured in this {assessmentDisplayName.toLowerCase()}</p>
+              <p style={styles.sectionSubtitle}>Professional interpretation of core competencies measured in this {assessmentDisplayName.toLowerCase()}</p>
             </div>
             
             {competencyData && competencyData.length > 0 ? (
               <>
-                {/* Competency Summary Cards */}
+                {/* Overall Competency Narrative - Using commentaryEngine */}
+                <div style={styles.competencyOverallNarrative}>
+                  <div style={styles.narrativeBox}>
+                    <h4 style={styles.narrativeSubtitle}>Competency Profile Summary</h4>
+                    <p style={styles.narrativeText}>
+                      {generateProfileCommentary(
+                        selectedAssessment.percentage,
+                        report.executiveSummary.classification,
+                        competencyData.filter(c => c.percentage >= 70).map(c => ({ area: c.competencies.name, percentage: c.percentage })),
+                        competencyData.filter(c => c.percentage < 60).map(c => ({ area: c.competencies.name, percentage: c.percentage }))
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Competency Summary Cards - Keep these for quick reference */}
                 <div style={styles.competencySummaryGrid}>
                   <div style={styles.competencySummaryCard}>
                     <span style={styles.competencySummaryLabel}>Competencies Assessed</span>
@@ -581,96 +596,186 @@ function CandidateReportComponent() {
                   </div>
                 </div>
 
-                {/* Competency Grid */}
+                {/* Detailed Competency Cards WITH INDIVIDUAL COMMENTARY */}
                 <div style={styles.competencyGrid}>
-                  {competencyData.map(comp => (
-                    <div key={comp.id} style={{
-                      ...styles.competencyCard,
-                      borderLeft: `6px solid ${
-                        comp.classification === 'Strong' ? '#4CAF50' :
-                        comp.classification === 'Moderate' ? '#FF9800' : '#F44336'
-                      }`
-                    }}>
-                      <div style={styles.competencyHeader}>
-                        <div>
-                          <span style={styles.competencyName}>{comp.competencies?.name || 'Unknown'}</span>
-                          <span style={styles.competencyCategory}>{comp.competencies?.category || 'General'}</span>
+                  {competencyData.map(comp => {
+                    // Generate specific commentary for this competency using commentaryEngine
+                    const commentary = generateCommentary(
+                      comp.competencies.name, 
+                      comp.percentage, 
+                      comp.classification === 'Strong' ? 'strength' : 
+                      comp.classification === 'Moderate' ? 'neutral' : 'weakness'
+                    );
+                    
+                    // Get detailed interpretation from categoryMapper if available
+                    const detailedInterpretation = competencyInterpretation?.categoryInterpretation?.[comp.competencies.name]?.interpretation;
+                    
+                    return (
+                      <div key={comp.id} style={{
+                        ...styles.competencyCard,
+                        borderLeft: `6px solid ${
+                          comp.classification === 'Strong' ? '#4CAF50' :
+                          comp.classification === 'Moderate' ? '#FF9800' : '#F44336'
+                        }`
+                      }}>
+                        <div style={styles.competencyHeader}>
+                          <div>
+                            <span style={styles.competencyName}>{comp.competencies.name}</span>
+                            <span style={styles.competencyCategory}>{comp.competencies.category}</span>
+                          </div>
+                          <div style={styles.competencyScoreContainer}>
+                            <span style={{
+                              ...styles.competencyScore,
+                              color: comp.classification === 'Strong' ? '#4CAF50' :
+                                     comp.classification === 'Moderate' ? '#FF9800' : '#F44336'
+                            }}>
+                              {comp.percentage}%
+                            </span>
+                            <span style={styles.competencyBadge}>{comp.classification}</span>
+                          </div>
                         </div>
-                        <div style={styles.competencyScoreContainer}>
-                          <span style={{
-                            ...styles.competencyScore,
-                            color: comp.classification === 'Strong' ? '#4CAF50' :
-                                   comp.classification === 'Moderate' ? '#FF9800' : '#F44336'
-                          }}>
-                            {comp.percentage}%
-                          </span>
-                          <span style={styles.competencyBadge}>{comp.classification}</span>
+                        
+                        {/* Progress Bar - Keep visual */}
+                        <div style={styles.competencyBarContainer}>
+                          <div style={styles.competencyBar}>
+                            <div style={{
+                              width: `${comp.percentage}%`,
+                              height: '10px',
+                              background: comp.classification === 'Strong' ? '#4CAF50' :
+                                         comp.classification === 'Moderate' ? '#FF9800' : '#F44336',
+                              borderRadius: '5px',
+                              transition: 'width 0.3s ease'
+                            }} />
+                          </div>
+                          <span style={styles.competencyTarget}>Target: 80%</span>
                         </div>
+                        
+                        {/* COMPETENCY COMMENTARY - This is the key addition */}
+                        <div style={styles.competencyCommentary}>
+                          <p style={styles.commentaryText}>
+                            {detailedInterpretation || commentary}
+                          </p>
+                        </div>
+                        
+                        {/* Raw scores - Keep for reference but de-emphasize */}
+                        <details style={styles.rawScoreDetails}>
+                          <summary style={styles.rawScoreSummary}>View raw scores</summary>
+                          <div style={styles.competencyDetails}>
+                            <div style={styles.competencyDetail}>
+                              <span style={styles.competencyDetailLabel}>Raw Score:</span>
+                              <span style={styles.competencyDetailValue}>{Math.round(comp.raw_score)}/{Math.round(comp.max_possible)}</span>
+                            </div>
+                            <div style={styles.competencyDetail}>
+                              <span style={styles.competencyDetailLabel}>Questions:</span>
+                              <span style={styles.competencyDetailValue}>{comp.question_count}</span>
+                            </div>
+                          </div>
+                        </details>
+                        
+                        {comp.gap > 0 && (
+                          <div style={styles.competencyGap}>
+                            <span style={styles.gapIcon}>📈</span>
+                            <span style={styles.gapText}>
+                              Development opportunity: {comp.gap.toFixed(1)}% gap to proficiency target
+                            </span>
+                          </div>
+                        )}
                       </div>
-                      
-                      <div style={styles.competencyBarContainer}>
-                        <div style={styles.competencyBar}>
-                          <div style={{
-                            width: `${comp.percentage}%`,
-                            height: '10px',
-                            background: comp.classification === 'Strong' ? '#4CAF50' :
-                                       comp.classification === 'Moderate' ? '#FF9800' : '#F44336',
-                            borderRadius: '5px',
-                            transition: 'width 0.3s ease'
-                          }} />
-                        </div>
-                        <span style={styles.competencyTarget}>Target: 80%</span>
-                      </div>
-                      
-                      <div style={styles.competencyDetails}>
-                        <div style={styles.competencyDetail}>
-                          <span style={styles.competencyDetailLabel}>Raw Score:</span>
-                          <span style={styles.competencyDetailValue}>{Math.round(comp.raw_score)}/{Math.round(comp.max_possible)}</span>
-                        </div>
-                        <div style={styles.competencyDetail}>
-                          <span style={styles.competencyDetailLabel}>Questions:</span>
-                          <span style={styles.competencyDetailValue}>{comp.question_count}</span>
-                        </div>
-                      </div>
-                      
-                      {comp.gap > 0 && (
-                        <div style={styles.competencyGap}>
-                          <span style={styles.gapIcon}>📈</span>
-                          <span style={styles.gapText}>
-                            Need {comp.gap.toFixed(1)}% more to reach proficiency target
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
-                {/* Competency Interpretation from categoryMapper */}
+                {/* Enhanced Competency Interpretation from categoryMapper */}
                 {competencyInterpretation && (
                   <div style={styles.competencyInterpretation}>
-                    <h4 style={styles.interpretationTitle}>What This Means</h4>
+                    <h4 style={styles.interpretationTitle}>Professional Profile Analysis</h4>
                     <p style={styles.interpretationText}>
-                      {competencyInterpretation.profileDescription}
+                      {competencyInterpretation.overallSummary}
                     </p>
+                    
+                    {/* Top Strengths with Commentary */}
+                    {competencyInterpretation.topStrengths?.length > 0 && (
+                      <div style={styles.interpretationSection}>
+                        <h5 style={styles.interpretationSubtitle}>🔷 Key Strengths</h5>
+                        <ul style={styles.interpretationList}>
+                          {competencyInterpretation.topStrengths.map((strength, idx) => {
+                            const strengthCommentary = generateCommentary(strength, 80, 'strength');
+                            return (
+                              <li key={idx} style={styles.interpretationListItem}>
+                                <strong>{strength}:</strong> {strengthCommentary}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {/* Development Areas with Commentary */}
+                    {competencyInterpretation.topWeaknesses?.length > 0 && (
+                      <div style={styles.interpretationSection}>
+                        <h5 style={{...styles.interpretationSubtitle, color: '#B91C1C'}}>⚠️ Development Priorities</h5>
+                        <ul style={styles.interpretationList}>
+                          {competencyInterpretation.topWeaknesses.map((weakness, idx) => {
+                            const weaknessCommentary = generateCommentary(weakness, 50, 'weakness');
+                            return (
+                              <li key={idx} style={styles.interpretationListItem}>
+                                <strong>{weakness}:</strong> {weaknessCommentary}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {/* Role Suitability - Professional narrative */}
                     {competencyInterpretation.suitability && competencyInterpretation.suitability.length > 0 && (
-                      <>
-                        <h4 style={{...styles.interpretationTitle, marginTop: '15px', fontSize: '15px'}}>Role Suitability</h4>
+                      <div style={styles.interpretationSection}>
+                        <h5 style={styles.interpretationSubtitle}>✓ Role Suitability</h5>
                         <ul style={styles.suitabilityList}>
                           {competencyInterpretation.suitability.map((item, idx) => (
-                            <li key={idx} style={styles.suitabilityItem}>✓ {item}</li>
+                            <li key={idx} style={styles.suitabilityItem}>{item}</li>
                           ))}
                         </ul>
-                      </>
+                      </div>
                     )}
+                    
+                    {/* Risks/Considerations - Professional narrative */}
                     {competencyInterpretation.risks && competencyInterpretation.risks.length > 0 && (
-                      <>
-                        <h4 style={{...styles.interpretationTitle, marginTop: '15px', fontSize: '15px', color: '#B91C1C'}}>Considerations</h4>
+                      <div style={styles.interpretationSection}>
+                        <h5 style={{...styles.interpretationSubtitle, color: '#B91C1C'}}>⚠️ Considerations</h5>
                         <ul style={styles.risksList}>
                           {competencyInterpretation.risks.map((risk, idx) => (
-                            <li key={idx} style={styles.riskItem}>⚠️ {risk}</li>
+                            <li key={idx} style={styles.riskItem}>{risk}</li>
                           ))}
                         </ul>
-                      </>
+                      </div>
+                    )}
+                    
+                    {/* Development Focus Areas */}
+                    {competencyInterpretation.developmentFocus && competencyInterpretation.developmentFocus.length > 0 && (
+                      <div style={styles.interpretationSection}>
+                        <h5 style={styles.interpretationSubtitle}>📋 Recommended Focus Areas</h5>
+                        <div style={styles.focusGrid}>
+                          {competencyInterpretation.developmentFocus.map((focus, idx) => (
+                            <div key={idx} style={{
+                              ...styles.focusCard,
+                              borderLeft: `4px solid ${
+                                focus.priority === 'High' ? '#F44336' :
+                                focus.priority === 'Medium' ? '#FF9800' : '#4CAF50'
+                              }`
+                            }}>
+                              <span style={styles.focusArea}>{focus.area}</span>
+                              <span style={{
+                                ...styles.focusPriority,
+                                background: focus.priority === 'High' ? '#FEF2F2' :
+                                           focus.priority === 'Medium' ? '#FFF3E0' : '#F0F9F0',
+                                color: focus.priority === 'High' ? '#B91C1C' :
+                                       focus.priority === 'Medium' ? '#F57C00' : '#2F855A'
+                              }}>{focus.priority} Priority</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
@@ -683,10 +788,6 @@ function CandidateReportComponent() {
                   <li>Questions have not been mapped to competencies yet</li>
                   <li>The category_scores data is not present in the assessment result</li>
                 </ul>
-                <p style={{marginTop: '15px', fontStyle: 'italic'}}>
-                  Note: Your assessment data is stored in the category_scores JSON field. 
-                  If this assessment was completed recently, please ensure the category_scores were properly saved.
-                </p>
               </div>
             )}
           </section>
@@ -988,7 +1089,12 @@ const styles = {
     padding: '8px 16px',
     borderRadius: '20px',
     border: '1px solid #0A1929',
-    transition: 'all 0.2s ease'
+    transition: 'all 0.2s ease',
+    cursor: 'pointer',
+    ':hover': {
+      background: '#0A1929',
+      color: 'white'
+    }
   },
   headerActions: {
     display: 'flex',
@@ -1004,7 +1110,10 @@ const styles = {
     minWidth: '300px',
     background: 'white',
     cursor: 'pointer',
-    outline: 'none'
+    outline: 'none',
+    ':focus': {
+      borderColor: '#0A1929'
+    }
   },
   printButton: {
     background: '#0A1929',
@@ -1015,7 +1124,12 @@ const styles = {
     fontSize: '14px',
     fontWeight: 600,
     cursor: 'pointer',
-    transition: 'all 0.2s ease'
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#1A2A3A',
+      transform: 'translateY(-1px)',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+    }
   },
   pdfButton: {
     background: '#4CAF50',
@@ -1026,7 +1140,12 @@ const styles = {
     fontSize: '14px',
     fontWeight: 600,
     cursor: 'pointer',
-    transition: 'all 0.2s ease'
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#45a049',
+      transform: 'translateY(-1px)',
+      boxShadow: '0 4px 12px rgba(76, 175, 80, 0.3)'
+    }
   },
   navigation: {
     display: 'flex',
@@ -1049,7 +1168,11 @@ const styles = {
     fontWeight: 500,
     color: '#0A1929',
     cursor: 'pointer',
-    transition: 'all 0.2s ease'
+    transition: 'all 0.2s ease',
+    ':hover': {
+      color: '#0A1929',
+      opacity: 0.8
+    }
   },
   reportContainer: {
     background: 'rgba(255, 255, 255, 0.95)',
@@ -1231,7 +1354,10 @@ const styles = {
   },
   tableRow: {
     borderBottom: '1px solid #E2E8F0',
-    transition: 'background 0.2s ease'
+    transition: 'background 0.2s ease',
+    ':hover': {
+      background: '#F7FAFC'
+    }
   },
   tableCell: {
     padding: '12px 15px',
@@ -1274,7 +1400,16 @@ const styles = {
     fontSize: '12px'
   },
   
-  // NEW Competency Styles
+  // Competency Styles
+  competencyOverallNarrative: {
+    marginBottom: '30px'
+  },
+  narrativeSubtitle: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#0A1929',
+    marginBottom: '10px'
+  },
   competencySummaryGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(4, 1fr)',
@@ -1372,10 +1507,36 @@ const styles = {
     display: 'block',
     textAlign: 'right'
   },
+  competencyCommentary: {
+    margin: '15px 0',
+    padding: '12px',
+    background: '#F8FAFC',
+    borderRadius: '8px',
+    borderLeft: '3px solid #0A1929'
+  },
+  commentaryText: {
+    fontSize: '14px',
+    lineHeight: '1.6',
+    color: '#2D3748',
+    margin: 0,
+    fontStyle: 'italic'
+  },
+  rawScoreDetails: {
+    marginTop: '10px',
+    border: '1px solid #E2E8F0',
+    borderRadius: '6px',
+    padding: '8px'
+  },
+  rawScoreSummary: {
+    fontSize: '12px',
+    color: '#718096',
+    cursor: 'pointer',
+    fontWeight: 500
+  },
   competencyDetails: {
     display: 'flex',
     gap: '15px',
-    marginBottom: '12px',
+    marginTop: '10px',
     fontSize: '13px'
   },
   competencyDetail: {
@@ -1407,16 +1568,67 @@ const styles = {
     marginTop: '20px'
   },
   interpretationTitle: {
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#0A1929',
+    marginBottom: '15px'
+  },
+  interpretationText: {
+    fontSize: '15px',
+    lineHeight: '1.7',
+    color: '#2D3748',
+    marginBottom: '20px'
+  },
+  interpretationSection: {
+    marginTop: '20px',
+    padding: '15px',
+    background: 'white',
+    borderRadius: '8px'
+  },
+  interpretationSubtitle: {
     fontSize: '16px',
     fontWeight: 600,
     color: '#0A1929',
-    marginBottom: '10px'
+    marginBottom: '12px'
   },
-  interpretationText: {
-    fontSize: '14px',
-    lineHeight: '1.7',
-    color: '#2D3748',
+  interpretationList: {
+    listStyle: 'none',
+    padding: 0,
     margin: 0
+  },
+  interpretationListItem: {
+    padding: '8px 0',
+    borderBottom: '1px solid #E2E8F0',
+    fontSize: '14px',
+    lineHeight: '1.6',
+    color: '#2D3748'
+  },
+  focusGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+    gap: '10px',
+    marginTop: '10px'
+  },
+  focusCard: {
+    padding: '12px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #E2E8F0',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  focusArea: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#0A1929'
+  },
+  focusPriority: {
+    fontSize: '11px',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    display: 'inline-block',
+    alignSelf: 'flex-start'
   },
   noCompetencyData: {
     background: '#FEF2F2',
@@ -1434,33 +1646,7 @@ const styles = {
     color: '#4A5568'
   },
   
-  // Additional new styles
-  suitabilityList: {
-    listStyle: 'none',
-    padding: 0,
-    margin: '10px 0'
-  },
-  suitabilityItem: {
-    padding: '8px 12px',
-    marginBottom: '6px',
-    background: '#F0F9F0',
-    borderRadius: '8px',
-    color: '#2F855A',
-    fontSize: '14px'
-  },
-  risksList: {
-    listStyle: 'none',
-    padding: 0,
-    margin: '10px 0'
-  },
-  riskItem: {
-    padding: '8px 12px',
-    marginBottom: '6px',
-    background: '#FEF2F2',
-    borderRadius: '8px',
-    color: '#B91C1C',
-    fontSize: '14px'
-  },
+  // Strengths & Weaknesses Styles
   strengthsSection: {
     marginTop: '20px'
   },
@@ -1669,6 +1855,8 @@ const styles = {
     flex: 1,
     minWidth: '120px'
   },
+  
+  // Recommendations Styles
   recommendationIntro: {
     fontSize: '16px',
     color: '#2D3748',
@@ -1687,7 +1875,10 @@ const styles = {
     borderRadius: '12px',
     border: '1px solid #E2E8F0',
     borderLeftWidth: '6px',
-    transition: 'all 0.2s ease'
+    transition: 'all 0.2s ease',
+    ':hover': {
+      boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+    }
   },
   recHeader: {
     display: 'flex',
@@ -1731,6 +1922,32 @@ const styles = {
     color: '#2F855A',
     fontSize: '16px',
     fontWeight: 600
+  },
+  suitabilityList: {
+    listStyle: 'none',
+    padding: 0,
+    margin: '10px 0'
+  },
+  suitabilityItem: {
+    padding: '8px 12px',
+    marginBottom: '6px',
+    background: '#F0F9F0',
+    borderRadius: '8px',
+    color: '#2F855A',
+    fontSize: '14px'
+  },
+  risksList: {
+    listStyle: 'none',
+    padding: 0,
+    margin: '10px 0'
+  },
+  riskItem: {
+    padding: '8px 12px',
+    marginBottom: '6px',
+    background: '#FEF2F2',
+    borderRadius: '8px',
+    color: '#B91C1C',
+    fontSize: '14px'
   }
 };
 
