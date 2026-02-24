@@ -30,6 +30,14 @@ export default function Login() {
         throw new Error("Invalid email or password");
       }
 
+      // Ensure user metadata has role
+      if (data.user.user_metadata?.role !== 'candidate') {
+        // Update user metadata with role if not set
+        await supabase.auth.updateUser({
+          data: { role: 'candidate' }
+        });
+      }
+
       // Store candidate session
       const sessionData = {
         loggedIn: true,
@@ -142,6 +150,14 @@ export default function Login() {
         email: supervisorData.email,
         role: supervisorData.role,
         name: supervisorData.full_name 
+      });
+
+      // Update user metadata with role
+      await supabase.auth.updateUser({
+        data: { 
+          role: supervisorData.role || 'supervisor',
+          full_name: supervisorData.full_name 
+        }
       });
 
       // Store supervisor session
