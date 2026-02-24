@@ -5,78 +5,31 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const serviceClient = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
-
   try {
-    console.log("🚀 Starting competency setup...");
-
-    // First, check if tables exist
-    console.log("🔍 Checking database tables...");
-    
-    // 1. Create competencies table if it doesn't exist
-    const { error: createTableError } = await serviceClient.rpc('create_competencies_table_if_not_exists');
-    
-    // If RPC doesn't exist, we need to create the table manually
-    if (createTableError) {
-      console.log("⚠️ RPC not available, checking if table exists via query...");
-      
-      // Try to query the table to see if it exists
-      const { error: checkError } = await serviceClient
-        .from('competencies')
-        .select('id')
-        .limit(1);
-      
-      if (checkError && checkError.message.includes('relation') && checkError.message.includes('does not exist')) {
-        console.log("📋 Table doesn't exist, please create it manually in Supabase SQL editor:");
-        console.log(`
-CREATE TABLE competencies (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name TEXT NOT NULL,
-    description TEXT,
-    category TEXT,
-    display_order INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE question_competencies (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    question_id UUID REFERENCES questions(id) ON DELETE CASCADE,
-    competency_id UUID REFERENCES competencies(id) ON DELETE CASCADE,
-    weight DECIMAL(3,2) DEFAULT 1.0,
-    created_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(question_id, competency_id)
-);
-
-CREATE TABLE candidate_competency_scores (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    candidate_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    assessment_id UUID REFERENCES assessments(id) ON DELETE CASCADE,
-    competency_id UUID REFERENCES competencies(id) ON DELETE CASCADE,
-    raw_score DECIMAL(10,2),
-    max_possible DECIMAL(10,2),
-    percentage DECIMAL(5,2),
-    classification TEXT CHECK (classification IN ('Strong', 'Moderate', 'Needs Development')),
-    question_count INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(candidate_id, assessment_id, competency_id)
-);
-        `);
-        
-        return res.status(400).json({ 
-          error: 'Database tables not found. Please run the SQL commands above in your Supabase SQL editor first.' 
-        });
-      }
+    // Get the user's session from the authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // 2. Insert default competencies if they don't exist
+    const token = authHeader.replace('Bearer ', '');
+
+    // Create a client with the user's token (respects RLS policies)
+    const userClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      }
+    );
+
+    console.log("🚀 Starting competency setup with user token...");
+
+    // 1. Insert default competencies if they don't exist
     console.log("📋 Inserting default competencies...");
     const defaultCompetencies = [
       // Leadership competencies
@@ -107,21 +60,34 @@ CREATE TABLE candidate_competency_scores (
       { name: 'Cultural Fit', description: 'Alignment with organizational values and culture', category: 'Cultural', display_order: 17 }
     ];
 
+    // Insert competencies one by one to handle errors gracefully
     for (const comp of defaultCompetencies) {
-      const { error } = await serviceClient
+      const { error } = await userClient
         .from('competencies')
         .upsert(comp, { onConflict: 'name' });
       
-      if (error) console.error(`Error inserting ${comp.name}:`, error);
+      if (error) {
+        console.error(`Error inserting ${comp.name}:`, error);
+        return res.status(500).json({ 
+          success: false, 
+          error: `Permission denied. Make sure you have INSERT privileges on the competencies table.` 
+        });
+      }
     }
 
-    // 3. Get all competencies with their IDs
+    // 2. Get all competencies with their IDs
     console.log("🔍 Fetching competencies...");
-    const { data: competencies, error: compError } = await serviceClient
+    const { data: competencies, error: compError } = await userClient
       .from('competencies')
       .select('id, name');
 
-    if (compError) throw compError;
+    if (compError) {
+      console.error("Error fetching competencies:", compError);
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Failed to fetch competencies: ' + compError.message 
+      });
+    }
 
     const compMap = {};
     competencies.forEach(c => {
@@ -129,17 +95,24 @@ CREATE TABLE candidate_competency_scores (
     });
     console.log(`✅ Found ${competencies.length} competencies`);
 
-    // 4. Get all questions
+    // 3. Get all questions
     console.log("🔍 Fetching questions...");
-    const { data: questions, error: questionsError } = await serviceClient
+    const { data: questions, error: questionsError } = await userClient
       .from('questions')
       .select('id, section, assessment_type_id')
       .limit(1000);
 
-    if (questionsError) throw questionsError;
+    if (questionsError) {
+      console.error("Error fetching questions:", questionsError);
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Failed to fetch questions: ' + questionsError.message 
+      });
+    }
+    
     console.log(`✅ Found ${questions.length} questions`);
 
-    // 5. Map questions to competencies based on section names
+    // 4. Map questions to competencies based on section names
     console.log("🔗 Creating question-competency mappings...");
     const mappings = [];
     let mappedCount = 0;
@@ -251,44 +224,47 @@ CREATE TABLE candidate_competency_scores (
 
     console.log(`✅ Mapped ${mappedCount} questions to competencies`);
 
-    // 6. Clear existing mappings to avoid duplicates
+    // 5. Clear existing mappings to avoid duplicates
     console.log("🧹 Clearing existing question_competencies...");
-    await serviceClient
+    const { error: deleteError } = await userClient
       .from('question_competencies')
       .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000');
+      .neq('id', 0);
 
-    // 7. Insert mappings in batches
+    if (deleteError) {
+      console.error("Error clearing mappings:", deleteError);
+      // Continue anyway
+    }
+
+    // 6. Insert mappings in batches
     if (mappings.length > 0) {
       console.log(`💾 Inserting ${mappings.length} mappings...`);
       
-      // Insert in batches of 100
-      const batchSize = 100;
+      // Insert in batches of 50 to avoid payload size limits
+      const batchSize = 50;
       for (let i = 0; i < mappings.length; i += batchSize) {
         const batch = mappings.slice(i, i + batchSize);
-        const { error: insertError } = await serviceClient
+        const { error: insertError } = await userClient
           .from('question_competencies')
           .insert(batch);
 
         if (insertError) {
           console.error(`Error inserting batch ${i}:`, insertError);
+          return res.status(500).json({ 
+            success: false, 
+            error: 'Failed to insert mappings: ' + insertError.message 
+          });
         } else {
           console.log(`✅ Inserted batch ${Math.floor(i / batchSize) + 1} (${batch.length} mappings)`);
         }
       }
     }
 
-    // 8. Verify the setup
+    // 7. Verify the setup
     console.log("🔍 Verifying setup...");
-    const { count, error: countError } = await serviceClient
+    const { count, error: countError } = await userClient
       .from('question_competencies')
       .select('*', { count: 'exact', head: true });
-
-    if (countError) {
-      console.error("Error verifying count:", countError);
-    } else {
-      console.log(`✅ Total mappings in database: ${count}`);
-    }
 
     res.status(200).json({
       success: true,
@@ -298,7 +274,7 @@ CREATE TABLE candidate_competency_scores (
         questionsProcessed: questions.length,
         questionsMapped: mappedCount,
         totalMappings: mappings.length,
-        finalCount: count
+        finalCount: count || 0
       }
     });
 
@@ -306,8 +282,7 @@ CREATE TABLE candidate_competency_scores (
     console.error('❌ Error setting up competencies:', error);
     res.status(500).json({ 
       success: false,
-      error: error.message,
-      stack: error.stack 
+      error: error.message 
     });
   }
 }
