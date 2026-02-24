@@ -24,8 +24,39 @@ export default function SupervisorDashboard() {
 
   // Authentication check
   useEffect(() => {
-    const checkAuth = () => {
+    const checkAuth = async () => {
       if (typeof window !== 'undefined') {
+        // First check Supabase session
+        const { data: { session: supabaseSession } } = await supabase.auth.getSession();
+        
+        if (supabaseSession) {
+          // User is logged in via Supabase, check their role from user metadata
+          const userRole = supabaseSession.user?.user_metadata?.role;
+          
+          if (userRole === 'supervisor' || userRole === 'admin') {
+            setCurrentSupervisor({
+              id: supabaseSession.user.id,
+              email: supabaseSession.user.email,
+              name: supabaseSession.user.user_metadata?.full_name || supabaseSession.user.email
+            });
+            
+            // Also update localStorage for consistency
+            localStorage.setItem("userSession", JSON.stringify({
+              loggedIn: true,
+              user_id: supabaseSession.user.id,
+              email: supabaseSession.user.email,
+              full_name: supabaseSession.user.user_metadata?.full_name,
+              role: userRole
+            }));
+            
+            return;
+          } else if (userRole === 'candidate') {
+            router.push("/candidate/dashboard");
+            return;
+          }
+        }
+        
+        // Fallback to localStorage if Supabase session doesn't exist
         const userSession = localStorage.getItem("userSession");
         
         if (!userSession) {
@@ -53,7 +84,31 @@ export default function SupervisorDashboard() {
         }
       }
     };
+    
     checkAuth();
+    
+    // Set up auth state change listener
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("Auth state changed:", event);
+      if (event === 'SIGNED_OUT') {
+        localStorage.removeItem("userSession");
+        router.push("/login");
+      } else if (event === 'SIGNED_IN' && session) {
+        // Handle sign in
+        const userRole = session.user?.user_metadata?.role;
+        if (userRole === 'supervisor' || userRole === 'admin') {
+          setCurrentSupervisor({
+            id: session.user.id,
+            email: session.user.email,
+            name: session.user.user_metadata?.full_name || session.user.email
+          });
+        }
+      }
+    });
+
+    return () => {
+      authListener?.subscription.unsubscribe();
+    };
   }, [router]);
 
   // Fetch data
