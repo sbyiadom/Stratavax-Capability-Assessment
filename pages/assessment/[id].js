@@ -22,26 +22,360 @@ const formatTime = (seconds) => {
   return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-// ===== ANTI-CHEAT =====
-const setupAntiCheat = () => {
-  if (typeof window === 'undefined') return;
+// ===== ANTI-CHEAT SETUP =====
+const setupAntiCheat = (handleForcedSubmission) => {
+  if (typeof window === 'undefined') return () => {};
+
+  let tabSwitchCount = parseInt(sessionStorage.getItem('tabSwitchCount') || '0');
+  const MAX_TAB_SWITCHES = 3;
+  let devToolsInterval;
+  let lastWidth = window.innerWidth;
+  let lastHeight = window.innerHeight;
+  let fullscreenAttempts = 0;
+  const MAX_FULLSCREEN_ATTEMPTS = 3;
+
+  // 1. Prevent right-click context menu
+  const preventContextMenu = (e) => {
+    e.preventDefault();
+    return false;
+  };
+  document.addEventListener('contextmenu', preventContextMenu);
+
+  // 2. Prevent copy/paste/cut
+  const preventCopy = (e) => e.preventDefault();
+  const preventPaste = (e) => e.preventDefault();
+  const preventCut = (e) => e.preventDefault();
   
-  // Temporarily disabled for debugging
-  // document.addEventListener('contextmenu', (e) => e.preventDefault());
-  // document.addEventListener('copy', (e) => e.preventDefault());
-  // document.addEventListener('paste', (e) => e.preventDefault());
-  // document.addEventListener('cut', (e) => e.preventDefault());
+  document.addEventListener('copy', preventCopy);
+  document.addEventListener('paste', preventPaste);
+  document.addEventListener('cut', preventCut);
+
+  // 3. Prevent keyboard shortcuts and function keys
+  const preventKeyboardShortcuts = (e) => {
+    // Block all Ctrl/Meta combinations except essential ones
+    if (e.ctrlKey || e.metaKey) {
+      // Allow Ctrl+Shift+? for accessibility (zoom, etc.)
+      if (!e.shiftKey) {
+        e.preventDefault();
+        return false;
+      }
+    }
+
+    // Block function keys and other dangerous keys
+    const blockedKeys = [
+      'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
+      'PrintScreen', 'ScrollLock', 'Pause',
+      'Escape', 'Tab', 'ContextMenu',
+      'Insert', 'Delete', 'Home', 'End', 'PageUp', 'PageDown'
+    ];
+
+    // Block key combinations
+    const blockedCombos = [
+      (e.ctrlKey && e.key === 'r'), // Ctrl+R
+      (e.ctrlKey && e.key === 'R'),
+      (e.ctrlKey && e.key === 'F5'), // Ctrl+F5
+      (e.ctrlKey && e.shiftKey && e.key === 'I'), // Ctrl+Shift+I (DevTools)
+      (e.ctrlKey && e.shiftKey && e.key === 'J'), // Ctrl+Shift+J (Console)
+      (e.ctrlKey && e.shiftKey && e.key === 'C'), // Ctrl+Shift+C (Inspect)
+      (e.ctrlKey && e.shiftKey && e.key === 'K'), // Ctrl+Shift+K (Console in some browsers)
+      (e.ctrlKey && e.shiftKey && e.key === 'E'), // Ctrl+Shift+E (Network panel)
+      (e.ctrlKey && e.shiftKey && e.key === 'P'), // Ctrl+Shift+P (Command palette)
+      (e.ctrlKey && e.shiftKey && e.key === 'M'), // Ctrl+Shift+M (Device toolbar)
+      (e.altKey && e.key === 'Tab'), // Alt+Tab
+      (e.altKey && e.key === 'F4'), // Alt+F4
+      (e.altKey && e.key === 'ArrowLeft'), // Alt+Left (back)
+      (e.altKey && e.key === 'ArrowRight'), // Alt+Right (forward)
+      (e.metaKey && e.key === 'q'), // Cmd+Q (Quit)
+      (e.metaKey && e.key === 'w'), // Cmd+W (Close tab)
+      (e.metaKey && e.key === 't'), // Cmd+T (New tab)
+      (e.metaKey && e.key === 'n'), // Cmd+N (New window)
+      (e.metaKey && e.shiftKey && e.key === 'N') // Cmd+Shift+N (New incognito)
+    ];
+
+    if (blockedKeys.includes(e.key) || blockedCombos.some(Boolean)) {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+  };
+  document.addEventListener('keydown', preventKeyboardShortcuts);
+
+  // 4. Detect tab/window focus changes
+  const handleVisibilityChange = () => {
+    if (document.hidden) {
+      tabSwitchCount++;
+      sessionStorage.setItem('tabSwitchCount', tabSwitchCount.toString());
+      
+      console.warn(`⚠️ Tab switch detected (${tabSwitchCount}/${MAX_TAB_SWITCHES})`);
+      
+      // Show warning
+      const warning = document.createElement('div');
+      warning.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #ff9800;
+        color: white;
+        padding: 15px 30px;
+        border-radius: 50px;
+        font-weight: bold;
+        z-index: 10000;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        animation: slideDown 0.3s ease;
+      `;
+      warning.textContent = `⚠️ Warning: Tab switch ${tabSwitchCount}/${MAX_TAB_SWITCHES}. Further switches may auto-submit.`;
+      document.body.appendChild(warning);
+      
+      setTimeout(() => warning.remove(), 3000);
+      
+      // Auto-submit if too many switches
+      if (tabSwitchCount >= MAX_TAB_SWITCHES) {
+        handleForcedSubmission('Excessive tab switching detected');
+      }
+    }
+  };
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+
+  // 5. Detect DevTools (multiple methods)
+  const detectDevTools = () => {
+    // Method 1: Debugger check
+    const start = performance.now();
+    debugger;
+    const end = performance.now();
+    
+    if (end - start > 100) {
+      showDevToolsWarning();
+    }
+
+    // Method 2: Console check
+    const element = new Image();
+    Object.defineProperty(element, 'id', {
+      get: function() {
+        showDevToolsWarning();
+      }
+    });
+    console.log('%c', element);
+  };
+
+  const showDevToolsWarning = () => {
+    const warning = document.createElement('div');
+    warning.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #f44336;
+      color: white;
+      padding: 30px;
+      border-radius: 16px;
+      font-weight: bold;
+      z-index: 10001;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      text-align: center;
+      animation: pulse 1s infinite;
+    `;
+    warning.innerHTML = `
+      <div style="font-size: 48px; margin-bottom: 20px;">🚨</div>
+      <div style="font-size: 24px; margin-bottom: 10px;">Developer Tools Detected!</div>
+      <div style="font-size: 16px; opacity: 0.9;">Please close DevTools to continue the assessment.</div>
+    `;
+    document.body.appendChild(warning);
+    
+    setTimeout(() => warning.remove(), 5000);
+  };
+
+  devToolsInterval = setInterval(detectDevTools, 2000);
+
+  // 6. Detect window resize (potential DevTools opening)
+  const handleResize = () => {
+    const newWidth = window.innerWidth;
+    const newHeight = window.innerHeight;
+    const widthDiff = Math.abs(newWidth - lastWidth);
+    const heightDiff = Math.abs(newHeight - lastHeight);
+    
+    // Significant change might indicate DevTools opening/closing
+    if (widthDiff > 100 || heightDiff > 100) {
+      console.warn('⚠️ Significant window resize detected');
+      
+      const warning = document.createElement('div');
+      warning.style.cssText = `
+        position: fixed;
+        top: 80px;
+        right: 20px;
+        background: #ff9800;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-weight: bold;
+        z-index: 10000;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      `;
+      warning.textContent = '⚠️ Window resize detected - possible DevTools activity';
+      document.body.appendChild(warning);
+      
+      setTimeout(() => warning.remove(), 2000);
+    }
+    
+    lastWidth = newWidth;
+    lastHeight = newHeight;
+  };
+  window.addEventListener('resize', handleResize);
+
+  // 7. Prevent multiple tabs/windows
+  const tabId = Math.random().toString(36).substring(7);
+  const originalTabId = localStorage.getItem('assessment_tab_id');
   
-  // document.addEventListener('keydown', (e) => {
-  //   if (e.ctrlKey || e.metaKey) {
-  //     e.preventDefault();
-  //   }
-  //   if (e.key === 'F12' || e.key === 'PrintScreen') {
-  //     e.preventDefault();
-  //   }
-  // });
+  if (originalTabId && originalTabId !== tabId) {
+    alert('This assessment is already open in another tab. Please close this tab and continue in the original tab.');
+    window.location.href = '/candidate/dashboard';
+    return () => {};
+  }
   
-  console.log("🔓 Anti-cheat temporarily disabled for debugging");
+  localStorage.setItem('assessment_tab_id', tabId);
+
+  const handleStorageChange = (e) => {
+    if (e.key === 'assessment_tab_id' && e.newValue && e.newValue !== tabId) {
+      alert('A new tab has been opened. This tab will be closed for security.');
+      window.location.href = '/candidate/dashboard';
+    }
+  };
+  window.addEventListener('storage', handleStorageChange);
+
+  // 8. Enforce fullscreen mode
+  const enterFullscreen = () => {
+    const elem = document.documentElement;
+    const requestFullscreen = elem.requestFullscreen || 
+                             elem.webkitRequestFullscreen || 
+                             elem.mozRequestFullScreen || 
+                             elem.msRequestFullscreen;
+    
+    if (requestFullscreen) {
+      try {
+        requestFullscreen.call(elem);
+      } catch (err) {
+        console.warn('Fullscreen request failed:', err);
+      }
+    }
+  };
+
+  // Try to enter fullscreen on start
+  setTimeout(enterFullscreen, 1000);
+
+  // Monitor fullscreen changes
+  const handleFullscreenChange = () => {
+    if (!document.fullscreenElement && !document.webkitFullscreenElement && 
+        !document.mozFullScreenElement && !document.msFullscreenElement) {
+      
+      fullscreenAttempts++;
+      
+      if (fullscreenAttempts <= MAX_FULLSCREEN_ATTEMPTS) {
+        alert('Please stay in fullscreen mode during the assessment.');
+        enterFullscreen();
+      } else {
+        handleForcedSubmission('Excessive attempts to exit fullscreen mode');
+      }
+    }
+  };
+  
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+  document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+  document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+  // 9. Disable selection
+  const disableSelection = (e) => {
+    e.preventDefault();
+    return false;
+  };
+  document.addEventListener('selectstart', disableSelection);
+  document.addEventListener('dragstart', disableSelection);
+
+  // 10. Monitor for multiple monitors (potential screen capture)
+  const checkScreenChange = () => {
+    if (window.screen) {
+      const screenWidth = window.screen.width;
+      const screenHeight = window.screen.height;
+      
+      // Store initial screen dimensions
+      if (!window.initialScreenWidth) {
+        window.initialScreenWidth = screenWidth;
+        window.initialScreenHeight = screenHeight;
+      }
+      
+      // If screen dimensions change significantly, might be moving between monitors
+      if (window.initialScreenWidth && window.initialScreenHeight) {
+        if (Math.abs(screenWidth - window.initialScreenWidth) > 100 ||
+            Math.abs(screenHeight - window.initialScreenHeight) > 100) {
+          console.warn('⚠️ Screen configuration changed');
+        }
+      }
+    }
+  };
+  
+  window.addEventListener('orientationchange', checkScreenChange);
+
+  // Add CSS to prevent text selection and dragging
+  const style = document.createElement('style');
+  style.textContent = `
+    * {
+      -webkit-user-select: none !important;
+      -moz-user-select: none !important;
+      -ms-user-select: none !important;
+      user-select: none !important;
+      -webkit-touch-callout: none !important;
+      -webkit-tap-highlight-color: transparent !important;
+    }
+    
+    input, textarea {
+      -webkit-user-select: auto !important;
+      -moz-user-select: auto !important;
+      -ms-user-select: auto !important;
+      user-select: auto !important;
+    }
+    
+    @keyframes slideDown {
+      from {
+        transform: translate(-50%, -100%);
+        opacity: 0;
+      }
+      to {
+        transform: translate(-50%, 0);
+        opacity: 1;
+      }
+    }
+    
+    @keyframes pulse {
+      0% { transform: translate(-50%, -50%) scale(1); }
+      50% { transform: translate(-50%, -50%) scale(1.05); }
+      100% { transform: translate(-50%, -50%) scale(1); }
+    }
+  `;
+  document.head.appendChild(style);
+
+  console.log("🔒 Anti-cheat fully reactivated with enhanced protection");
+
+  // Return cleanup function
+  return () => {
+    document.removeEventListener('contextmenu', preventContextMenu);
+    document.removeEventListener('copy', preventCopy);
+    document.removeEventListener('paste', preventPaste);
+    document.removeEventListener('cut', preventCut);
+    document.removeEventListener('keydown', preventKeyboardShortcuts);
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+    window.removeEventListener('resize', handleResize);
+    window.removeEventListener('storage', handleStorageChange);
+    document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    document.removeEventListener('selectstart', disableSelection);
+    document.removeEventListener('dragstart', disableSelection);
+    window.removeEventListener('orientationchange', checkScreenChange);
+    clearInterval(devToolsInterval);
+    document.head.removeChild(style);
+    localStorage.removeItem('assessment_tab_id');
+  };
 };
 
 export default function AssessmentPage() {
@@ -75,6 +409,55 @@ export default function AssessmentPage() {
   const [hoveredAnswer, setHoveredAnswer] = useState(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [accessChecked, setAccessChecked] = useState(false);
+  const [tabSwitchCount, setTabSwitchCount] = useState(0);
+  const [antiCheatCleanup, setAntiCheatCleanup] = useState(null);
+
+  // Handle forced submission from anti-cheat
+  const handleForcedSubmission = async (reason) => {
+    console.log(`🚨 Forced submission due to: ${reason}`);
+    
+    if (!session || alreadySubmitted || accessDenied || isSubmitting) return;
+    
+    // Show final warning
+    alert(`Assessment automatically submitted due to: ${reason}`);
+    
+    try {
+      setIsSubmitting(true);
+      
+      // Save final progress
+      await Promise.all([
+        saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id),
+        updateSessionTimer(session.id, elapsedSeconds)
+      ]);
+      
+      // Submit assessment
+      await submitAssessment(session.id);
+      
+      setAlreadySubmitted(true);
+      
+      // Log the forced submission
+      await supabase
+        .from('assessment_audit_logs')
+        .insert([{
+          session_id: session.id,
+          user_id: user.id,
+          action: 'forced_submission',
+          reason: reason,
+          timestamp: new Date().toISOString()
+        }]);
+      
+      // Redirect with message
+      router.push({
+        pathname: '/candidate/dashboard',
+        query: { autoSubmitted: 'true', reason: reason }
+      });
+      
+    } catch (error) {
+      console.error("❌ Forced submission error:", error);
+      alert(`Failed to auto-submit: ${error.message}. Please contact support.`);
+      setIsSubmitting(false);
+    }
+  };
 
   // Auth state listener
   useEffect(() => {
@@ -91,7 +474,15 @@ export default function AssessmentPage() {
     };
   }, [router]);
 
-  // NEW: Check if assessment is unblocked for this user
+  // Load tab switch count from session storage
+  useEffect(() => {
+    const savedCount = sessionStorage.getItem('tabSwitchCount');
+    if (savedCount) {
+      setTabSwitchCount(parseInt(savedCount));
+    }
+  }, []);
+
+  // Check if assessment is unblocked for this user
   const checkAssessmentAccess = async (userId, assessmentId) => {
     try {
       // First check if already completed (can't retake)
@@ -211,9 +602,6 @@ export default function AssessmentPage() {
           }
         }
 
-        // Setup anti-cheat (temporarily disabled)
-        setupAntiCheat();
-
         setLoading(false);
       } catch (error) {
         console.error("❌ Initialization error:", error);
@@ -225,6 +613,21 @@ export default function AssessmentPage() {
     init();
   }, [assessmentId, router]);
 
+  // Setup anti-cheat after loading is complete
+  useEffect(() => {
+    if (loading || alreadySubmitted || accessDenied || !session) return;
+
+    // Setup anti-cheat with forced submission handler
+    const cleanup = setupAntiCheat(handleForcedSubmission);
+    setAntiCheatCleanup(() => cleanup);
+
+    return () => {
+      if (cleanup) {
+        cleanup();
+      }
+    };
+  }, [loading, alreadySubmitted, accessDenied, session]);
+
   // Timer effect
   useEffect(() => {
     if (loading || alreadySubmitted || !session || accessDenied) return;
@@ -235,7 +638,7 @@ export default function AssessmentPage() {
         setTimeRemaining(timeLimit - newElapsed);
         
         if (newElapsed >= timeLimit) {
-          handleSubmit();
+          handleForcedSubmission('Time limit exceeded');
         }
         
         if (newElapsed % 30 === 0) {
@@ -358,8 +761,15 @@ export default function AssessmentPage() {
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
       
+      // Cleanup anti-cheat before redirect
+      if (antiCheatCleanup) {
+        antiCheatCleanup();
+      }
+      
       // Redirect
-      router.push('/candidate/dashboard');
+      setTimeout(() => {
+        router.push('/candidate/dashboard');
+      }, 2000);
       
     } catch (error) {
       console.error("❌ Submission error:", error);
@@ -385,6 +795,10 @@ export default function AssessmentPage() {
       console.log("No session, redirecting to login instead");
       router.push('/login');
     } else {
+      // Cleanup anti-cheat before navigating away
+      if (antiCheatCleanup) {
+        antiCheatCleanup();
+      }
       router.push('/assessment/pre');
     }
   };
@@ -787,6 +1201,12 @@ export default function AssessmentPage() {
                   <span>Time Limit:</span>
                   <span style={{ fontWeight: 600 }}>3 hours</span>
                 </div>
+                {tabSwitchCount > 0 && (
+                  <div style={{ ...styles.infoRow, marginTop: '8px', color: '#ff9800' }}>
+                    <span>⚠️ Tab switches:</span>
+                    <span style={{ fontWeight: 600 }}>{tabSwitchCount}/3</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
