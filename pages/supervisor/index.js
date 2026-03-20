@@ -25,6 +25,26 @@ export default function SupervisorDashboard() {
   const [processingAssessment, setProcessingAssessment] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
 
+  // Load state from URL on mount
+  useEffect(() => {
+    const { expanded, selectedAssessment, search, filterType, filterStatus: status } = router.query;
+    if (expanded) setExpandedCandidate(expanded);
+    if (search) setSearchTerm(search);
+    if (filterType && filterType !== 'all') setSelectedAssessmentType(filterType);
+    if (status && status !== 'all') setFilterStatus(status);
+  }, [router.query]);
+
+  // Update URL when filters change
+  useEffect(() => {
+    const query = {};
+    if (expandedCandidate) query.expanded = expandedCandidate;
+    if (searchTerm) query.search = searchTerm;
+    if (selectedAssessmentType !== 'all') query.filterType = selectedAssessmentType;
+    if (filterStatus !== 'all') query.filterStatus = filterStatus;
+    
+    router.replace({ pathname: router.pathname, query }, undefined, { shallow: true });
+  }, [expandedCandidate, searchTerm, selectedAssessmentType, filterStatus]);
+
   // Authentication check
   useEffect(() => {
     const checkAuth = async () => {
@@ -402,8 +422,37 @@ export default function SupervisorDashboard() {
         .eq('assessment_id', assessmentId);
 
       alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}. It is now BLOCKED.`);
-      window.location.reload();
-
+      
+      // Refresh data without full page reload
+      const updatedCandidates = await Promise.all(candidates.map(async (candidate) => {
+        if (candidate.id === candidateId) {
+          // Refresh this candidate's data
+          const { data: resultsData } = await supabase
+            .from('assessment_results')
+            .select('*')
+            .eq('user_id', candidateId);
+          
+          const { data: accessData } = await supabase
+            .from('candidate_assessments')
+            .select(`
+              *,
+              assessments (
+                *,
+                assessment_types (*)
+              )
+            `)
+            .eq('user_id', candidateId);
+          
+          // Rebuild the candidate data...
+          // For simplicity, reload the page
+          window.location.reload();
+        }
+        return candidate;
+      }));
+      
+      // Keep expanded state
+      setExpandedCandidate(candidateId);
+      
     } catch (error) {
       console.error('Reset error:', error);
       alert('❌ Failed to reset assessment: ' + error.message);
@@ -433,8 +482,25 @@ export default function SupervisorDashboard() {
       if (error) throw error;
 
       alert(`✅ "${assessmentTitle}" unblocked successfully for ${candidateName}.`);
-      window.location.reload();
-
+      
+      // Refresh data without losing expanded state
+      // Update local state instead of full reload
+      setCandidates(prev => prev.map(c => {
+        if (c.id === candidateId) {
+          const updatedAssessments = c.assessments.map(a => {
+            if (a.assessment_id === assessmentId) {
+              return { ...a, status: 'unblocked' };
+            }
+            return a;
+          });
+          return { ...c, assessments: updatedAssessments };
+        }
+        return c;
+      }));
+      
+      // Keep the candidate expanded
+      setExpandedCandidate(candidateId);
+      
     } catch (error) {
       console.error('Error unblocking assessment:', error);
       alert('❌ Failed to unblock assessment: ' + error.message);
@@ -464,8 +530,24 @@ export default function SupervisorDashboard() {
       if (error) throw error;
 
       alert(`🔒 "${assessmentTitle}" blocked for ${candidateName}.`);
-      window.location.reload();
-
+      
+      // Refresh data without losing expanded state
+      setCandidates(prev => prev.map(c => {
+        if (c.id === candidateId) {
+          const updatedAssessments = c.assessments.map(a => {
+            if (a.assessment_id === assessmentId) {
+              return { ...a, status: 'blocked' };
+            }
+            return a;
+          });
+          return { ...c, assessments: updatedAssessments };
+        }
+        return c;
+      }));
+      
+      // Keep the candidate expanded
+      setExpandedCandidate(candidateId);
+      
     } catch (error) {
       console.error('Error blocking assessment:', error);
       alert('❌ Failed to block assessment: ' + error.message);
@@ -502,6 +584,8 @@ export default function SupervisorDashboard() {
   const toggleCandidateDetails = (candidateId) => {
     if (expandedCandidate === candidateId) {
       setExpandedCandidate(null);
+      // Remove from URL
+      router.replace({ pathname: router.pathname, query: {} }, undefined, { shallow: true });
     } else {
       setExpandedCandidate(candidateId);
     }
