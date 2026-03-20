@@ -7,9 +7,11 @@ import { supabase } from "../../supabase/client";
 export default function ManageCandidates() {
   const router = useRouter();
   const [candidates, setCandidates] = useState([]);
+  const [filteredCandidates, setFilteredCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filteredCandidates, setFilteredCandidates] = useState([]);
+  const [selectedSupervisor, setSelectedSupervisor] = useState('all');
+  const [supervisors, setSupervisors] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(null);
   const [expandedCandidate, setExpandedCandidate] = useState(null);
@@ -42,6 +44,7 @@ export default function ManageCandidates() {
 
             if (profile?.role === 'admin') {
               setIsAdmin(true);
+              fetchSupervisors();
               fetchCandidates();
             } else {
               router.push('/supervisor');
@@ -57,6 +60,20 @@ export default function ManageCandidates() {
     };
     checkAdmin();
   }, [router]);
+
+  const fetchSupervisors = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('supervisor_profiles')
+        .select('id, full_name, email')
+        .order('full_name');
+
+      if (error) throw error;
+      setSupervisors(data || []);
+    } catch (error) {
+      console.error('Error fetching supervisors:', error);
+    }
+  };
 
   const fetchCandidates = async () => {
     try {
@@ -134,7 +151,7 @@ export default function ManageCandidates() {
       );
 
       setCandidates(candidatesWithDetails);
-      setFilteredCandidates(candidatesWithDetails);
+      applyFilters(candidatesWithDetails, searchTerm, selectedSupervisor);
       
     } catch (error) {
       console.error('Error fetching candidates:', error);
@@ -144,12 +161,17 @@ export default function ManageCandidates() {
     }
   };
 
-  // Filter candidates based on search
-  useEffect(() => {
-    let filtered = [...candidates];
+  const applyFilters = (candidatesList, search, supervisorId) => {
+    let filtered = [...candidatesList];
     
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase().trim();
+    // Filter by supervisor
+    if (supervisorId !== 'all') {
+      filtered = filtered.filter(c => c.supervisor_id === supervisorId);
+    }
+    
+    // Filter by search term
+    if (search.trim()) {
+      const term = search.toLowerCase().trim();
       filtered = filtered.filter(c => 
         c.full_name?.toLowerCase().includes(term) ||
         c.email?.toLowerCase().includes(term) ||
@@ -158,7 +180,12 @@ export default function ManageCandidates() {
     }
     
     setFilteredCandidates(filtered);
-  }, [candidates, searchTerm]);
+  };
+
+  // Handle search term change
+  useEffect(() => {
+    applyFilters(candidates, searchTerm, selectedSupervisor);
+  }, [searchTerm, selectedSupervisor, candidates]);
 
   const handleResetAssessment = async (candidateId, assessmentId, assessmentTitle, candidateName) => {
     if (!confirm(`Are you sure you want to reset "${assessmentTitle}" for ${candidateName}? They will be able to retake it.`)) {
@@ -317,20 +344,59 @@ export default function ManageCandidates() {
           </div>
         )}
 
-        {/* Search Bar */}
-        <div style={styles.searchContainer}>
-          <span style={styles.searchIcon}>🔍</span>
-          <input
-            type="text"
-            placeholder="Search candidates by name, email, or phone..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={styles.searchInput}
-          />
-          {searchTerm && (
-            <button onClick={() => setSearchTerm('')} style={styles.clearButton}>
-              ✕
-            </button>
+        {/* Filter Section */}
+        <div style={styles.filterSection}>
+          {/* Search Bar */}
+          <div style={styles.searchContainer}>
+            <span style={styles.searchIcon}>🔍</span>
+            <input
+              type="text"
+              placeholder="Search candidates by name, email, or phone..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={styles.searchInput}
+            />
+            {searchTerm && (
+              <button onClick={() => setSearchTerm('')} style={styles.clearButton}>
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Supervisor Filter */}
+          <div style={styles.filterContainer}>
+            <span style={styles.filterIcon}>👤</span>
+            <select
+              value={selectedSupervisor}
+              onChange={(e) => setSelectedSupervisor(e.target.value)}
+              style={styles.filterSelect}
+            >
+              <option value="all">All Supervisors ({candidates.length} candidates)</option>
+              {supervisors.map(supervisor => {
+                const candidateCount = candidates.filter(c => c.supervisor_id === supervisor.id).length;
+                return (
+                  <option key={supervisor.id} value={supervisor.id}>
+                    {supervisor.full_name || supervisor.email} ({candidateCount} candidates)
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          {/* Filter Stats */}
+          {filteredCandidates.length !== candidates.length && (
+            <div style={styles.filterStats}>
+              Showing {filteredCandidates.length} of {candidates.length} candidates
+              <button 
+                onClick={() => {
+                  setSearchTerm('');
+                  setSelectedSupervisor('all');
+                }}
+                style={styles.clearFiltersButton}
+              >
+                Clear Filters
+              </button>
+            </div>
           )}
         </div>
 
@@ -353,7 +419,9 @@ export default function ManageCandidates() {
                 {filteredCandidates.length === 0 ? (
                   <tr>
                     <td colSpan="6" style={styles.noData}>
-                      {searchTerm ? "No candidates match your search." : "No candidates found. Assign candidates to get started."}
+                      {searchTerm || selectedSupervisor !== 'all' 
+                        ? "No candidates match your filters. Try adjusting your search or filter criteria."
+                        : "No candidates found. Assign candidates to get started."}
                     </td>
                   </tr>
                 ) : (
@@ -648,10 +716,17 @@ const styles = {
     marginBottom: '20px',
     fontSize: '14px'
   },
+  filterSection: {
+    display: 'flex',
+    gap: '20px',
+    marginBottom: '20px',
+    flexWrap: 'wrap',
+    alignItems: 'center'
+  },
   searchContainer: {
     position: 'relative',
-    maxWidth: '400px',
-    marginBottom: '20px'
+    flex: 2,
+    minWidth: '250px'
   },
   searchIcon: {
     position: 'absolute',
@@ -684,6 +759,57 @@ const styles = {
     cursor: 'pointer',
     color: '#999',
     fontSize: '16px'
+  },
+  filterContainer: {
+    position: 'relative',
+    flex: 1,
+    minWidth: '250px'
+  },
+  filterIcon: {
+    position: 'absolute',
+    left: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    color: '#999',
+    fontSize: '16px',
+    zIndex: 1
+  },
+  filterSelect: {
+    width: '100%',
+    padding: '12px 12px 12px 36px',
+    border: '1px solid #E2E8F0',
+    borderRadius: '8px',
+    fontSize: '14px',
+    background: 'white',
+    cursor: 'pointer',
+    outline: 'none',
+    appearance: 'none',
+    ':focus': {
+      borderColor: '#0A1929',
+      boxShadow: '0 0 0 3px rgba(10,25,41,0.1)'
+    }
+  },
+  filterStats: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '8px 16px',
+    background: '#E3F2FD',
+    borderRadius: '8px',
+    fontSize: '13px',
+    color: '#1565C0'
+  },
+  clearFiltersButton: {
+    background: 'none',
+    border: 'none',
+    color: '#1565C0',
+    cursor: 'pointer',
+    fontSize: '12px',
+    textDecoration: 'underline',
+    padding: '4px 8px',
+    ':hover': {
+      color: '#0A1929'
+    }
   },
   tableContainer: {
     background: 'white',
