@@ -49,7 +49,7 @@ function CandidateReportComponent() {
   const [competencyInterpretation, setCompetencyInterpretation] = useState(null);
   const [showCompetencyView, setShowCompetencyView] = useState(false);
   
-  // NEW: Super Analysis data
+  // Super Analysis data
   const [superAnalysis, setSuperAnalysis] = useState(null);
 
   // Authentication check
@@ -91,8 +91,9 @@ function CandidateReportComponent() {
       try {
         setLoading(true);
         
-        console.log("📊 Fetching data for super analysis - user:", user_id);
+        console.log("📊 Fetching data for candidate - user:", user_id);
 
+        // First get candidate profile
         const { data: profileData, error: profileError } = await supabase
           .from('candidate_profiles')
           .select('*')
@@ -110,9 +111,17 @@ function CandidateReportComponent() {
         };
         setCandidate(candidateInfo);
 
+        // PRIMARY METHOD: Fetch from assessment_results with assessment details
         const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
-          .select('*')
+          .select(`
+            *,
+            assessment:assessments(
+              id,
+              title,
+              assessment_type:assessment_types(*)
+            )
+          `)
           .eq('user_id', user_id)
           .order('completed_at', { ascending: false });
 
@@ -120,16 +129,91 @@ function CandidateReportComponent() {
           console.error("Error fetching results:", resultsError);
         }
 
+        // If results found, use them
         if (resultsData && resultsData.length > 0) {
-          console.log(`✅ Found ${resultsData.length} assessments`);
+          console.log(`✅ Found ${resultsData.length} assessments in assessment_results`);
           setAllAssessments(resultsData);
           
           const defaultAssessment = resultsData[0];
           await loadAssessmentData(defaultAssessment, candidateInfo);
-        } else {
-          console.log("❌ No assessment results found");
           setLoading(false);
+          return;
         }
+
+        // SECONDARY METHOD: Check candidate_assessments for completed assessments with results
+        console.log("No results in assessment_results, checking candidate_assessments...");
+        
+        const { data: caData, error: caError } = await supabase
+          .from('candidate_assessments')
+          .select(`
+            *,
+            assessment:assessments(
+              id,
+              title,
+              assessment_type:assessment_types(*)
+            ),
+            result:assessment_results(*)
+          `)
+          .eq('user_id', user_id)
+          .eq('status', 'completed');
+
+        if (caError) {
+          console.error("Error fetching candidate_assessments:", caError);
+        }
+
+        if (caData && caData.length > 0) {
+          // Extract results from candidate_assessments where result exists
+          const extractedResults = caData
+            .filter(ca => ca.result)
+            .map(ca => ({
+              ...ca.result,
+              assessment: ca.assessment
+            }));
+
+          if (extractedResults.length > 0) {
+            console.log(`✅ Found ${extractedResults.length} assessments via candidate_assessments`);
+            setAllAssessments(extractedResults);
+            
+            const defaultAssessment = extractedResults[0];
+            await loadAssessmentData(defaultAssessment, candidateInfo);
+            setLoading(false);
+            return;
+          }
+        }
+
+        // TERTIARY METHOD: Check if there are sessions that might need results generated
+        console.log("No results found, checking for completed sessions...");
+        
+        const { data: sessionsData, error: sessionsError } = await supabase
+          .from('assessment_sessions')
+          .select(`
+            *,
+            assessment:assessments(
+              id,
+              title,
+              assessment_type:assessment_types(*)
+            )
+          `)
+          .eq('user_id', user_id)
+          .eq('status', 'completed');
+
+        if (sessionsError) {
+          console.error("Error checking sessions:", sessionsError);
+        }
+
+        if (sessionsData && sessionsData.length > 0) {
+          console.log(`Found ${sessionsData.length} completed sessions but no results - may need to generate results`);
+          
+          // Optional: You could trigger result generation here
+          // For now, just show the info
+          setAllAssessments([]);
+        } else {
+          console.log("❌ No assessment data found for this candidate");
+          setAllAssessments([]);
+        }
+        
+        setLoading(false);
+
       } catch (error) {
         console.error("Error fetching data:", error);
         setLoading(false);
@@ -200,7 +284,7 @@ function CandidateReportComponent() {
 
   const loadAssessmentData = async (result, candidateInfo) => {
     try {
-      // Fetch responses
+      // Fetch responses with proper joins
       const { data: responsesData, error: responsesError } = await supabase
         .from('responses')
         .select(`
@@ -251,7 +335,7 @@ function CandidateReportComponent() {
         setCompetencyInterpretation(interpretation);
         console.log(`✅ Extracted ${competencies.length} competencies from category_scores`);
         
-        // ===== GENERATE SUPER ANALYSIS (combines everything!) =====
+        // Generate super analysis
         console.log("🔮 Generating super analysis...");
         const analysis = generateSuperAnalysis(
           candidateInfo.full_name,
@@ -282,10 +366,8 @@ function CandidateReportComponent() {
         report: report
       });
       
-      setLoading(false);
     } catch (error) {
       console.error("Error loading assessment data:", error);
-      setLoading(false);
     }
   };
 
@@ -355,7 +437,20 @@ function CandidateReportComponent() {
       <div style={styles.emptyState}>
         <div style={styles.emptyIcon}>📊</div>
         <h3>No Assessment Data Available</h3>
-        <p>This candidate hasn't completed any assessments yet.</p>
+        <p>This candidate hasn't completed any assessments yet, or the results haven't been processed.</p>
+        
+        {/* Debug info - will help identify issues but won't affect other candidates */}
+        <div style={{marginTop: '20px', padding: '15px', background: '#F0F4F8', borderRadius: '8px', textAlign: 'left', fontSize: '12px', maxWidth: '500px', margin: '20px auto'}}>
+          <p><strong>Debug Info (visible only when no data):</strong></p>
+          <p>User ID: {user_id}</p>
+          <p>Auth Checked: {authChecked ? 'Yes' : 'No'}</p>
+          <p>Is Supervisor: {isSupervisor ? 'Yes' : 'No'}</p>
+          <p>Candidate Profile: {candidate ? 'Loaded' : 'Not loaded'}</p>
+          <p>Assessments Found: {allAssessments?.length || 0}</p>
+          <p>Selected Assessment: {selectedAssessment ? 'Yes' : 'No'}</p>
+          <p>Report Generated: {stratavaxReport ? 'Yes' : 'No'}</p>
+        </div>
+        
         <Link href="/supervisor" legacyBehavior>
           <a style={styles.primaryButton}>← Back to Dashboard</a>
         </Link>
@@ -1299,7 +1394,7 @@ const styles = {
     borderRadius: '16px',
     boxShadow: '0 10px 40px rgba(0,0,0,0.1)',
     margin: '20px auto',
-    maxWidth: '500px'
+    maxWidth: '600px'
   },
   emptyIcon: {
     fontSize: '64px',
