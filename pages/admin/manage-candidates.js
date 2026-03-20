@@ -286,6 +286,13 @@ export default function ManageCandidates() {
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.container}>
+        {/* Back Button */}
+        <div style={styles.backButtonContainer}>
+          <button onClick={() => router.push('/admin')} style={styles.backButton}>
+            ← Back to Admin Dashboard
+          </button>
+        </div>
+
         <div style={styles.header}>
           <div>
             <h1 style={styles.title}>Manage Candidates</h1>
@@ -340,7 +347,7 @@ export default function ManageCandidates() {
                   <th style={styles.th}>Assessments</th>
                   <th style={styles.th}>Latest Score</th>
                   <th style={styles.th}>Actions</th>
-                </tr>
+                 </tr>
               </thead>
               <tbody>
                 {filteredCandidates.length === 0 ? (
@@ -565,6 +572,27 @@ const styles = {
     maxWidth: '1400px',
     margin: '0 auto',
     padding: '40px 20px'
+  },
+  backButtonContainer: {
+    marginBottom: '20px'
+  },
+  backButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 20px',
+    background: 'white',
+    border: '1px solid #E2E8F0',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 500,
+    color: '#0A1929',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#F8FAFC',
+      transform: 'translateX(-2px)'
+    }
   },
   header: {
     display: 'flex',
