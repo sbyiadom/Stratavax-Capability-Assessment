@@ -20,8 +20,8 @@ const CandidateReport = dynamic(
         <div style={styles.loadingBackground} />
         <div style={styles.loadingContent}>
           <div style={styles.spinner} />
-          <p style={styles.loadingText}>Generating Super Analysis...</p>
-          <p style={styles.loadingSubtext}>Combining 12 dimensions of personalized insights</p>
+          <p style={styles.loadingText}>Loading Report...</p>
+          <p style={styles.loadingSubtext}>Please wait while we prepare the candidate data</p>
         </div>
       </div>
     )
@@ -34,6 +34,7 @@ function CandidateReportComponent() {
   const reportRef = useRef(null);
   
   const [loading, setLoading] = useState(true);
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
   const [isSupervisor, setIsSupervisor] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [candidate, setCandidate] = useState(null);
@@ -51,6 +52,20 @@ function CandidateReportComponent() {
   
   // Super Analysis data
   const [superAnalysis, setSuperAnalysis] = useState(null);
+  const [superAnalysisError, setSuperAnalysisError] = useState(false);
+
+  // Add a timeout to prevent infinite loading
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (loading) {
+        console.log("Loading timeout - forcing render");
+        setLoadingTimeout(true);
+        setLoading(false);
+      }
+    }, 15000); // 15 seconds timeout
+
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   // Authentication check
   useEffect(() => {
@@ -233,7 +248,7 @@ function CandidateReportComponent() {
       return { competencies: [], interpretation: null };
     }
 
-    console.log("🔍 Extracting competency data from category_scores:", categoryScores);
+    console.log("🔍 Extracting competency data from category_scores");
 
     // Convert category_scores object to array format
     const competencies = Object.entries(categoryScores).map(([category, data], index) => {
@@ -314,10 +329,15 @@ function CandidateReportComponent() {
         console.error("Error fetching responses:", responsesError);
       }
 
-      const assessmentTypeId = result.assessment_type || 'general';
+      // Get the assessment type from the result's assessment data
+      const assessmentTypeId = result.assessment?.assessment_type?.code || result.assessment_type || 'general';
       const config = getAssessmentType(assessmentTypeId);
       
-      setAssessmentTypeName(config.name);
+      // Set the assessment type name from the config
+      const assessmentName = config.name;
+      setAssessmentTypeName(assessmentName);
+      
+      console.log(`📋 Assessment type: ${assessmentTypeId}, Name: ${assessmentName}`);
 
       const report = generateStratavaxReport(
         user_id,
@@ -341,19 +361,25 @@ function CandidateReportComponent() {
         setCompetencyInterpretation(interpretation);
         console.log(`✅ Extracted ${competencies.length} competencies from category_scores`);
         
-        // Generate super analysis
-        console.log("🔮 Generating super analysis...");
-        const analysis = generateSuperAnalysis(
-          candidateInfo.full_name,
-          assessmentTypeId,
-          responsesData || [],
-          result.category_scores,
-          result.total_score,
-          result.max_score
-        );
-        
-        setSuperAnalysis(analysis);
-        console.log(`✅ Super analysis complete - Profile ID: ${analysis.profileId}`);
+        // Generate super analysis with error handling
+        try {
+          console.log("🔮 Generating super analysis...");
+          const analysis = generateSuperAnalysis(
+            candidateInfo.full_name,
+            assessmentTypeId,
+            responsesData || [],
+            result.category_scores,
+            result.total_score,
+            result.max_score
+          );
+          
+          setSuperAnalysis(analysis);
+          console.log(`✅ Super analysis complete - Profile ID: ${analysis.profileId}`);
+        } catch (saError) {
+          console.error("Error generating super analysis:", saError);
+          setSuperAnalysisError(true);
+          // Continue without super analysis
+        }
       } else {
         console.log("⚠️ No category_scores found in assessment result");
       }
@@ -362,7 +388,7 @@ function CandidateReportComponent() {
         id: result.id,
         assessment_id: result.assessment_id,
         assessment_type: assessmentTypeId,
-        assessment_name: config.name,
+        assessment_name: assessmentName,
         total_score: result.total_score,
         max_score: result.max_score,
         percentage: report.percentageScore,
@@ -395,31 +421,31 @@ function CandidateReportComponent() {
     }, 100);
   };
 
-  const handleDownloadPDF = async () => {
-    try {
-      const response = await fetch('/api/generate-pdf-report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user_id,
-          assessmentId: selectedAssessment?.assessment_id,
-          profileId: superAnalysis?.profileId
-        })
-      });
-
-      if (!response.ok) throw new Error('PDF generation failed');
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${candidate?.full_name || 'candidate'}_${assessmentTypeName.replace(/\s+/g, '_')}_report.pdf`;
-      a.click();
-    } catch (error) {
-      console.error('PDF download error:', error);
-      alert('Failed to generate PDF. Please try again.');
-    }
-  };
+  if (loadingTimeout) {
+    return (
+      <div style={styles.errorContainer}>
+        <div style={styles.errorCard}>
+          <div style={styles.errorIcon}>⚠️</div>
+          <h2>Loading Timeout</h2>
+          <p>The report is taking too long to generate. This could be due to:</p>
+          <ul style={{textAlign: 'left', marginTop: '10px'}}>
+            <li>Large amount of data to process</li>
+            <li>Network connectivity issues</li>
+            <li>Server processing delay</li>
+          </ul>
+          <button 
+            onClick={() => window.location.reload()} 
+            style={styles.retryButton}
+          >
+            Try Again
+          </button>
+          <Link href="/supervisor" legacyBehavior>
+            <a style={styles.backLink}>← Back to Dashboard</a>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (!authChecked || loading) {
     return (
@@ -427,8 +453,12 @@ function CandidateReportComponent() {
         <div style={styles.loadingBackground} />
         <div style={styles.loadingContent}>
           <div style={styles.spinner} />
-          <p style={styles.loadingText}>{!authChecked ? "Verifying credentials..." : "Generating super analysis..."}</p>
-          <p style={styles.loadingSubtext}>Analyzing 12 dimensions of candidate performance</p>
+          <p style={styles.loadingText}>
+            {!authChecked ? "Verifying credentials..." : "Generating report..."}
+          </p>
+          <p style={styles.loadingSubtext}>
+            {!authChecked ? "Checking your access level" : "Analyzing candidate performance data"}
+          </p>
         </div>
       </div>
     );
@@ -445,18 +475,6 @@ function CandidateReportComponent() {
         <h3>No Assessment Data Available</h3>
         <p>This candidate hasn't completed any assessments yet, or the results haven't been processed.</p>
         
-        {/* Debug info - will help identify issues but won't affect other candidates */}
-        <div style={{marginTop: '20px', padding: '15px', background: '#F0F4F8', borderRadius: '8px', textAlign: 'left', fontSize: '12px', maxWidth: '500px', margin: '20px auto'}}>
-          <p><strong>Debug Info (visible only when no data):</strong></p>
-          <p>User ID: {user_id}</p>
-          <p>Auth Checked: {authChecked ? 'Yes' : 'No'}</p>
-          <p>Is Supervisor: {isSupervisor ? 'Yes' : 'No'}</p>
-          <p>Candidate Profile: {candidate ? 'Loaded' : 'Not loaded'}</p>
-          <p>Assessments Found: {allAssessments?.length || 0}</p>
-          <p>Selected Assessment: {selectedAssessment ? 'Yes' : 'No'}</p>
-          <p>Report Generated: {stratavaxReport ? 'Yes' : 'No'}</p>
-        </div>
-        
         <Link href="/supervisor" legacyBehavior>
           <a style={styles.primaryButton}>← Back to Dashboard</a>
         </Link>
@@ -466,7 +484,7 @@ function CandidateReportComponent() {
 
   const report = selectedAssessment.report.stratavaxReport;
   const config = selectedAssessment.config || assessmentTypes.general;
-  const assessmentDisplayName = config.name;
+  const assessmentDisplayName = selectedAssessment.assessment_name || config.name;
 
   return (
     <AppLayout background="/images/preassessmentbg.jpg">
@@ -482,6 +500,11 @@ function CandidateReportComponent() {
                 <span style={styles.profileIdValue}>{superAnalysis.profileId}</span>
               </div>
             )}
+            {superAnalysisError && (
+              <div style={styles.warningBadge}>
+                ⚠️ Enhanced analysis unavailable
+              </div>
+            )}
             {allAssessments.length > 1 && (
               <select 
                 value={selectedAssessment.id} 
@@ -490,7 +513,7 @@ function CandidateReportComponent() {
               >
                 <option value="">-- Select Assessment --</option>
                 {allAssessments.map((a, index) => {
-                  const type = a.assessment_type || 'general';
+                  const type = a.assessment?.assessment_type?.code || a.assessment_type || 'general';
                   const config = getAssessmentType(type);
                   const assessmentDate = new Date(a.completed_at).toLocaleDateString();
                   
@@ -503,10 +526,7 @@ function CandidateReportComponent() {
               </select>
             )}
             <button onClick={handlePrint} style={styles.printButton}>
-              🖨️ Print
-            </button>
-            <button onClick={handleDownloadPDF} style={styles.pdfButton}>
-              📥 Download PDF
+              🖨️ Print / Save as PDF
             </button>
           </div>
         </div>
@@ -632,40 +652,6 @@ function CandidateReportComponent() {
                 </p>
                 <p style={styles.narrativeDescription}>{report.executiveSummary.classificationDescription}</p>
               </div>
-
-              {/* Super Analysis Quick Stats */}
-              {superAnalysis && (
-                <div style={styles.insightsGrid}>
-                  <div style={styles.insightCard}>
-                    <span style={styles.insightIcon}>📈</span>
-                    <div>
-                      <span style={styles.insightLabel}>Strengths</span>
-                      <span style={styles.insightValue}>{superAnalysis.strengths.byScore.length}</span>
-                    </div>
-                  </div>
-                  <div style={styles.insightCard}>
-                    <span style={styles.insightIcon}>🎯</span>
-                    <div>
-                      <span style={styles.insightLabel}>Development Areas</span>
-                      <span style={styles.insightValue}>{superAnalysis.developmentAreas.byScore.length}</span>
-                    </div>
-                  </div>
-                  <div style={styles.insightCard}>
-                    <span style={styles.insightIcon}>🔍</span>
-                    <div>
-                      <span style={styles.insightLabel}>Patterns</span>
-                      <span style={styles.insightValue}>{superAnalysis.patterns.crossCategory.length}</span>
-                    </div>
-                  </div>
-                  <div style={styles.insightCard}>
-                    <span style={styles.insightIcon}>🏆</span>
-                    <div>
-                      <span style={styles.insightLabel}>Differentiators</span>
-                      <span style={styles.insightValue}>{superAnalysis.differentiators.length}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </section>
 
@@ -1097,7 +1083,7 @@ function CandidateReportComponent() {
             )}
           </section>
 
-          {/* SECTION 7: SUPER ANALYSIS - NEW SECTION */}
+          {/* SECTION 7: SUPER ANALYSIS - Only show if available */}
           {superAnalysis && (
             <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'super' || showPrintView ? 'block' : 'none'}}>
               <div style={styles.sectionHeader}>
@@ -1336,14 +1322,13 @@ function CandidateReportComponent() {
         
         @media print {
           body { background: white; }
-          button { display: none; }
+          button, .no-print { display: none; }
         }
       `}</style>
     </AppLayout>
   );
 }
 
-// All styles defined directly in the file
 const styles = {
   loadingContainer: {
     minHeight: '100vh',
@@ -1351,7 +1336,8 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    overflow: 'hidden'
+    overflow: 'hidden',
+    background: 'linear-gradient(135deg, #0A1929 0%, #1A2A3A 100%)'
   },
   loadingBackground: {
     position: 'absolute',
@@ -1362,14 +1348,14 @@ const styles = {
     backgroundImage: 'url(/images/report-loading-bg.jpg)',
     backgroundSize: 'cover',
     backgroundPosition: 'center',
-    zIndex: 0
+    zIndex: 0,
+    opacity: 0.3
   },
   loadingContent: {
     position: 'relative',
     zIndex: 1,
     textAlign: 'center',
     color: 'white',
-    textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
     maxWidth: '600px',
     padding: '0 20px'
   },
@@ -1392,6 +1378,44 @@ const styles = {
     animation: 'spin 1s linear infinite',
     margin: '0 auto 30px',
     boxShadow: '0 0 20px rgba(0,0,0,0.3)'
+  },
+  errorContainer: {
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'linear-gradient(135deg, #0A1929 0%, #1A2A3A 100%)',
+    padding: '20px'
+  },
+  errorCard: {
+    background: 'white',
+    padding: '40px',
+    borderRadius: '16px',
+    maxWidth: '500px',
+    textAlign: 'center',
+    boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+  },
+  errorIcon: {
+    fontSize: '48px',
+    marginBottom: '20px'
+  },
+  retryButton: {
+    padding: '12px 30px',
+    background: '#2196F3',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '16px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    margin: '20px 10px 10px'
+  },
+  backLink: {
+    display: 'block',
+    color: '#666',
+    textDecoration: 'none',
+    marginTop: '15px',
+    fontSize: '14px'
   },
   emptyState: {
     textAlign: 'center',
@@ -1418,6 +1442,14 @@ const styles = {
     fontWeight: 500,
     marginTop: '20px',
     cursor: 'pointer'
+  },
+  warningBadge: {
+    padding: '8px 12px',
+    background: '#FFEBEE',
+    borderRadius: '8px',
+    fontSize: '12px',
+    color: '#F44336',
+    fontWeight: 500
   },
   container: {
     width: '90vw',
@@ -1491,17 +1523,6 @@ const styles = {
   },
   printButton: {
     background: '#0A1929',
-    color: 'white',
-    border: 'none',
-    padding: '10px 20px',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease'
-  },
-  pdfButton: {
-    background: '#4CAF50',
     color: 'white',
     border: 'none',
     padding: '10px 20px',
@@ -1959,33 +1980,6 @@ const styles = {
     fontSize: '14px',
     lineHeight: '1.6',
     color: '#2D3748'
-  },
-  focusGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-    gap: '10px',
-    marginTop: '10px'
-  },
-  focusCard: {
-    padding: '12px',
-    background: 'white',
-    borderRadius: '8px',
-    border: '1px solid #E2E8F0',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px'
-  },
-  focusArea: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#0A1929'
-  },
-  focusPriority: {
-    fontSize: '11px',
-    padding: '2px 8px',
-    borderRadius: '4px',
-    display: 'inline-block',
-    alignSelf: 'flex-start'
   },
   noCompetencyData: {
     background: '#FEF2F2',
