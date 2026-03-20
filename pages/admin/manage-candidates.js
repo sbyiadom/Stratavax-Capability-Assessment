@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
@@ -11,11 +11,7 @@ export default function ManageCandidates() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredCandidates, setFilteredCandidates] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [showResetModal, setShowResetModal] = useState(false);
-  const [selectedCandidate, setSelectedCandidate] = useState(null);
-  const [selectedAssessment, setSelectedAssessment] = useState(null);
-  const [resetting, setResetting] = useState(false);
-  const [resetPasswordId, setResetPasswordId] = useState(null);
+  const [resettingPassword, setResettingPassword] = useState(null);
   const [expandedCandidate, setExpandedCandidate] = useState(null);
   const [processingAssessment, setProcessingAssessment] = useState(null);
   const [error, setError] = useState('');
@@ -205,7 +201,7 @@ export default function ManageCandidates() {
         .eq('user_id', candidateId)
         .eq('assessment_id', assessmentId);
 
-      setSuccess(`✅ "${assessmentTitle}" reset successfully for ${candidateName}. It is now BLOCKED.`);
+      setSuccess(`✅ "${assessmentTitle}" reset successfully for ${candidateName}.`);
       setTimeout(() => setSuccess(''), 3000);
       
       // Refresh data
@@ -225,7 +221,7 @@ export default function ManageCandidates() {
       return;
     }
 
-    setResetPasswordId(candidateId);
+    setResettingPassword(candidateId);
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(candidateEmail, {
@@ -242,7 +238,7 @@ export default function ManageCandidates() {
       setError('❌ Failed to send password reset email: ' + error.message);
       setTimeout(() => setError(''), 3000);
     } finally {
-      setResetPasswordId(null);
+      setResettingPassword(null);
     }
   };
 
@@ -337,7 +333,7 @@ export default function ManageCandidates() {
           <div style={styles.tableContainer}>
             <table style={styles.table}>
               <thead>
-                <tr>
+                <tr style={styles.tableHeadRow}>
                   <th style={styles.th}>Candidate</th>
                   <th style={styles.th}>Contact</th>
                   <th style={styles.th}>Supervisor</th>
@@ -449,9 +445,9 @@ export default function ManageCandidates() {
                               <button
                                 style={styles.resetPasswordButton}
                                 onClick={() => handleResetPassword(candidate.id, candidate.email, candidate.full_name)}
-                                disabled={resetPasswordId === candidate.id}
+                                disabled={resettingPassword === candidate.id}
                               >
-                                {resetPasswordId === candidate.id ? '⏳' : '🔑 Reset Password'}
+                                {resettingPassword === candidate.id ? '⏳' : '🔑 Reset Password'}
                               </button>
                             </div>
                           </td>
@@ -665,18 +661,21 @@ const styles = {
     background: 'white',
     borderRadius: '16px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    overflow: 'hidden'
+    overflow: 'auto'
   },
   table: {
     width: '100%',
     borderCollapse: 'collapse',
-    fontSize: '13px'
+    fontSize: '13px',
+    minWidth: '900px'
+  },
+  tableHeadRow: {
+    background: '#F8FAFC',
+    borderBottom: '2px solid #0A1929'
   },
   th: {
     textAlign: 'left',
     padding: '15px 20px',
-    background: '#F8FAFC',
-    borderBottom: '2px solid #0A1929',
     fontWeight: 600,
     color: '#0A1929'
   },
@@ -823,6 +822,7 @@ const styles = {
     textDecoration: 'none',
     cursor: 'pointer',
     transition: 'all 0.2s ease',
+    display: 'inline-block',
     ':hover': {
       background: '#1A2A3A',
       transform: 'translateY(-1px)'
