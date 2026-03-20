@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
@@ -31,7 +31,7 @@ export default function AdminDashboard() {
       setLoading(true);
       
       const userSession = localStorage.getItem("userSession");
-      const { data: { session: supabaseSession }, error: sessionError } = await supabase.auth.getSession();
+      const { data: { session: supabaseSession } } = await supabase.auth.getSession();
       
       if (!userSession && !supabaseSession) {
         router.push("/login");
@@ -266,16 +266,6 @@ export default function AdminDashboard() {
       if (error) throw error;
 
       alert(`✅ Password reset email sent to ${candidateEmail}. The candidate will receive instructions to set a new password.`);
-      
-      // Log the action
-      await supabase
-        .from('audit_logs')
-        .insert({
-          action: 'password_reset',
-          user_id: candidateId,
-          performed_by: 'admin',
-          timestamp: new Date().toISOString()
-        });
       
     } catch (error) {
       console.error('Password reset error:', error);
@@ -601,7 +591,7 @@ export default function AdminDashboard() {
                             <td colSpan="7" style={styles.expandedCell}>
                               <div style={styles.expandedContent}>
                                 <h4 style={styles.expandedTitle}>Assessments for {candidate.full_name}</h4>
-                                {candidate.assessments?.length > 0 ? (
+                                {candidate.assessments && candidate.assessments.length > 0 ? (
                                   <div style={styles.assessmentsGrid}>
                                     {candidate.assessments.map((assessment) => {
                                       const result = candidate.results?.find(r => r.assessment_id === assessment.assessment_id);
