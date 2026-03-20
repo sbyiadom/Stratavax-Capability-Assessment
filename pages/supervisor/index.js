@@ -27,7 +27,7 @@ export default function SupervisorDashboard() {
 
   // Load state from URL on mount
   useEffect(() => {
-    const { expanded, selectedAssessment, search, filterType, filterStatus: status } = router.query;
+    const { expanded, search, filterType, filterStatus: status } = router.query;
     if (expanded) setExpandedCandidate(expanded);
     if (search) setSearchTerm(search);
     if (filterType && filterType !== 'all') setSelectedAssessmentType(filterType);
@@ -423,35 +423,29 @@ export default function SupervisorDashboard() {
 
       alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}. It is now BLOCKED.`);
       
-      // Refresh data without full page reload
-      const updatedCandidates = await Promise.all(candidates.map(async (candidate) => {
-        if (candidate.id === candidateId) {
-          // Refresh this candidate's data
-          const { data: resultsData } = await supabase
-            .from('assessment_results')
-            .select('*')
-            .eq('user_id', candidateId);
+      // Update local state
+      setCandidates(prev => prev.map(c => {
+        if (c.id === candidateId) {
+          const updatedAssessments = c.assessments.map(a => {
+            if (a.assessment_id === assessmentId) {
+              return { ...a, status: 'blocked', result: null };
+            }
+            return a;
+          });
+          const completedCount = updatedAssessments.filter(a => a.result !== null).length;
+          const unblockedCount = updatedAssessments.filter(a => a.status === 'unblocked' && !a.result).length;
+          const blockedCount = updatedAssessments.filter(a => a.status === 'blocked' && !a.result).length;
           
-          const { data: accessData } = await supabase
-            .from('candidate_assessments')
-            .select(`
-              *,
-              assessments (
-                *,
-                assessment_types (*)
-              )
-            `)
-            .eq('user_id', candidateId);
-          
-          // Rebuild the candidate data...
-          // For simplicity, reload the page
-          window.location.reload();
+          return { 
+            ...c, 
+            assessments: updatedAssessments,
+            completedAssessments: completedCount,
+            unblockedAssessments: unblockedCount,
+            blockedAssessments: blockedCount
+          };
         }
-        return candidate;
+        return c;
       }));
-      
-      // Keep expanded state
-      setExpandedCandidate(candidateId);
       
     } catch (error) {
       console.error('Reset error:', error);
@@ -483,8 +477,7 @@ export default function SupervisorDashboard() {
 
       alert(`✅ "${assessmentTitle}" unblocked successfully for ${candidateName}.`);
       
-      // Refresh data without losing expanded state
-      // Update local state instead of full reload
+      // Update local state
       setCandidates(prev => prev.map(c => {
         if (c.id === candidateId) {
           const updatedAssessments = c.assessments.map(a => {
@@ -493,13 +486,18 @@ export default function SupervisorDashboard() {
             }
             return a;
           });
-          return { ...c, assessments: updatedAssessments };
+          const unblockedCount = updatedAssessments.filter(a => a.status === 'unblocked' && !a.result).length;
+          const blockedCount = updatedAssessments.filter(a => a.status === 'blocked' && !a.result).length;
+          
+          return { 
+            ...c, 
+            assessments: updatedAssessments,
+            unblockedAssessments: unblockedCount,
+            blockedAssessments: blockedCount
+          };
         }
         return c;
       }));
-      
-      // Keep the candidate expanded
-      setExpandedCandidate(candidateId);
       
     } catch (error) {
       console.error('Error unblocking assessment:', error);
@@ -531,7 +529,7 @@ export default function SupervisorDashboard() {
 
       alert(`🔒 "${assessmentTitle}" blocked for ${candidateName}.`);
       
-      // Refresh data without losing expanded state
+      // Update local state
       setCandidates(prev => prev.map(c => {
         if (c.id === candidateId) {
           const updatedAssessments = c.assessments.map(a => {
@@ -540,13 +538,18 @@ export default function SupervisorDashboard() {
             }
             return a;
           });
-          return { ...c, assessments: updatedAssessments };
+          const unblockedCount = updatedAssessments.filter(a => a.status === 'unblocked' && !a.result).length;
+          const blockedCount = updatedAssessments.filter(a => a.status === 'blocked' && !a.result).length;
+          
+          return { 
+            ...c, 
+            assessments: updatedAssessments,
+            unblockedAssessments: unblockedCount,
+            blockedAssessments: blockedCount
+          };
         }
         return c;
       }));
-      
-      // Keep the candidate expanded
-      setExpandedCandidate(candidateId);
       
     } catch (error) {
       console.error('Error blocking assessment:', error);
@@ -584,7 +587,6 @@ export default function SupervisorDashboard() {
   const toggleCandidateDetails = (candidateId) => {
     if (expandedCandidate === candidateId) {
       setExpandedCandidate(null);
-      // Remove from URL
       router.replace({ pathname: router.pathname, query: {} }, undefined, { shallow: true });
     } else {
       setExpandedCandidate(candidateId);
@@ -795,50 +797,28 @@ export default function SupervisorDashboard() {
                             {candidate.phone && <div style={styles.candidatePhone}>{candidate.phone}</div>}
                           </td>
                           <td style={styles.tableCell}>
-                            <div style={styles.assessmentStats}>
-                              <span style={styles.assessmentCount}>
-                                <strong>{candidate.completedAssessments}</strong> completed
-                              </span>
-                              <span style={styles.assessmentCount}>
-                                <strong>{candidate.unblockedAssessments}</strong> unblocked
-                              </span>
-                              <span style={styles.assessmentCount}>
-                                <strong>{candidate.blockedAssessments}</strong> blocked
-                              </span>
-                            </div>
-                            <div style={styles.assessmentTags}>
-                              {Object.entries(candidate.assessment_breakdown).map(([type, count]) => (
-                                <span key={type} style={{
-                                  ...styles.assessmentTag,
-                                  background: type === 'leadership' ? '#E3F2FD' :
-                                             type === 'cognitive' ? '#E8F5E9' :
-                                             type === 'technical' ? '#FFEBEE' :
-                                             type === 'personality' ? '#F3E5F5' :
-                                             type === 'performance' ? '#FFF3E0' :
-                                             type === 'behavioral' ? '#E0F2F1' :
-                                             type === 'cultural' ? '#F1F5F9' :
-                                             '#F1F5F9',
-                                  color: type === 'leadership' ? '#1565C0' :
-                                         type === 'cognitive' ? '#2E7D32' :
-                                         type === 'technical' ? '#C62828' :
-                                         type === 'personality' ? '#7B1FA2' :
-                                         type === 'performance' ? '#EF6C00' :
-                                         type === 'behavioral' ? '#00695C' :
-                                         type === 'cultural' ? '#37474F' :
-                                         '#37474F'
-                                }}>
-                                  {type}: {count}
+                            {/* SIMPLIFIED ASSESSMENT SUMMARY - Only numbers, no tags */}
+                            <div style={styles.assessmentSummary}>
+                              <div style={styles.summaryStats}>
+                                <span style={styles.summaryCompleted}>
+                                  <strong>{candidate.completedAssessments}</strong> completed
                                 </span>
-                              ))}
+                                <span style={styles.summaryUnblocked}>
+                                  <strong>{candidate.unblockedAssessments}</strong> unblocked
+                                </span>
+                                <span style={styles.summaryBlocked}>
+                                  <strong>{candidate.blockedAssessments}</strong> blocked
+                                </span>
+                              </div>
+                              {candidate.assessments.length > 0 && (
+                                <button
+                                  onClick={() => toggleCandidateDetails(candidate.id)}
+                                  style={styles.viewAssessmentsButton}
+                                >
+                                  {isExpanded ? '▲ Hide Assessments' : '▼ View Assessments'}
+                                </button>
+                              )}
                             </div>
-                            {candidate.assessments.length > 0 && (
-                              <button
-                                onClick={() => toggleCandidateDetails(candidate.id)}
-                                style={styles.viewDetailsButton}
-                              >
-                                {isExpanded ? '▲ Hide Details' : '▼ View Assessments'}
-                              </button>
-                            )}
                           </td>
                           <td style={styles.tableCell}>
                             {candidate.latestAssessment?.result ? (
@@ -1073,8 +1053,8 @@ export default function SupervisorDashboard() {
                                     );
                                   })}
                               </div>
-                            </td>
-                          </tr>
+                             </td>
+                           </tr>
                         )}
                       </React.Fragment>
                     );
@@ -1388,38 +1368,57 @@ const styles = {
     fontSize: '12px',
     color: '#718096'
   },
-  assessmentStats: {
+  // NEW SIMPLIFIED ASSESSMENT SUMMARY STYLES
+  assessmentSummary: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  summaryStats: {
     display: 'flex',
     gap: '15px',
-    marginBottom: '8px',
     flexWrap: 'wrap'
   },
-  assessmentCount: {
+  summaryCompleted: {
     fontSize: '13px',
-    color: '#4A5568'
+    color: '#2E7D32',
+    background: '#E8F5E9',
+    padding: '4px 12px',
+    borderRadius: '20px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px'
   },
-  assessmentTags: {
-    display: 'flex',
-    gap: '5px',
-    flexWrap: 'wrap'
+  summaryUnblocked: {
+    fontSize: '13px',
+    color: '#1565C0',
+    background: '#E3F2FD',
+    padding: '4px 12px',
+    borderRadius: '20px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px'
   },
-  assessmentTag: {
-    padding: '2px 8px',
-    borderRadius: '4px',
-    fontSize: '11px',
-    fontWeight: 600,
-    textTransform: 'capitalize'
+  summaryBlocked: {
+    fontSize: '13px',
+    color: '#F57C00',
+    background: '#FFF3E0',
+    padding: '4px 12px',
+    borderRadius: '20px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px'
   },
-  viewDetailsButton: {
-    marginTop: '8px',
-    padding: '4px 8px',
+  viewAssessmentsButton: {
     background: 'none',
     border: '1px solid #0A1929',
-    borderRadius: '4px',
-    color: '#0A1929',
+    borderRadius: '20px',
+    padding: '6px 12px',
     fontSize: '11px',
+    color: '#0A1929',
     cursor: 'pointer',
     transition: 'all 0.2s ease',
+    width: 'fit-content',
     ':hover': {
       background: '#0A1929',
       color: 'white'
