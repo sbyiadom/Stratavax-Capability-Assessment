@@ -7,10 +7,12 @@ import { supabase } from "../../supabase/client";
 export default function SupervisorDashboard() {
   const router = useRouter();
   const [candidates, setCandidates] = useState([]);
+  const [filteredCandidates, setFilteredCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentSupervisor, setCurrentSupervisor] = useState(null);
   const [selectedAssessmentType, setSelectedAssessmentType] = useState('all');
   const [assessmentTypes, setAssessmentTypes] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [stats, setStats] = useState({
     totalCandidates: 0,
     totalAssessments: 0,
@@ -21,12 +23,12 @@ export default function SupervisorDashboard() {
   });
   const [expandedCandidate, setExpandedCandidate] = useState(null);
   const [processingAssessment, setProcessingAssessment] = useState(null);
+  const [filterStatus, setFilterStatus] = useState('all'); // all, completed, unblocked, blocked
 
   // Authentication check
   useEffect(() => {
     const checkAuth = async () => {
       if (typeof window !== 'undefined') {
-        // First check Supabase session
         const { data: { session: supabaseSession } } = await supabase.auth.getSession();
         
         if (supabaseSession) {
@@ -118,7 +120,6 @@ export default function SupervisorDashboard() {
 
         const isAdmin = currentSupervisor.role === 'admin';
 
-        // Get candidates - for admin, show ALL candidates
         let candidatesQuery = supabase
           .from('candidate_profiles')
           .select(`
@@ -139,11 +140,9 @@ export default function SupervisorDashboard() {
 
         if (candidatesError) throw candidatesError;
 
-        // For each candidate, get their assessment access and results
         const processedCandidates = await Promise.all(
           (candidatesData || []).map(async (candidate) => {
             
-            // Get all assessment results for this candidate FIRST
             const { data: resultsData, error: resultsError } = await supabase
               .from('assessment_results')
               .select(`
@@ -159,13 +158,11 @@ export default function SupervisorDashboard() {
 
             if (resultsError) throw resultsError;
 
-            // Create a map of results by assessment_id
             const resultsMap = {};
             resultsData?.forEach(result => {
               resultsMap[result.assessment_id] = result;
             });
 
-            // Get candidate_assessments
             const { data: accessData, error: accessError } = await supabase
               .from('candidate_assessments')
               .select(`
@@ -194,11 +191,9 @@ export default function SupervisorDashboard() {
 
             if (accessError) throw accessError;
 
-            // Combine access and results
             const assessmentsWithDetails = (accessData || []).map(access => {
               const result = resultsMap[access.assessment_id] || null;
               
-              // If we have a result but no result_id in candidate_assessments, update it silently
               if (result && !access.result_id) {
                 supabase
                   .from('candidate_assessments')
@@ -237,7 +232,6 @@ export default function SupervisorDashboard() {
               };
             });
 
-            // Sort by date
             assessmentsWithDetails.sort((a, b) => {
               const dateA = a.result?.completed_at || a.created_at || 0;
               const dateB = b.result?.completed_at || b.created_at || 0;
@@ -248,14 +242,12 @@ export default function SupervisorDashboard() {
             const unblockedAssessments = assessmentsWithDetails.filter(a => a.status === 'unblocked' && !a.result);
             const blockedAssessments = assessmentsWithDetails.filter(a => a.status === 'blocked' && !a.result);
             
-            // Calculate assessment breakdown by type
             const assessmentBreakdown = {};
             assessmentsWithDetails.forEach(a => {
               const type = a.assessment_type || 'unknown';
               assessmentBreakdown[type] = (assessmentBreakdown[type] || 0) + 1;
             });
 
-            // Get latest completed assessment
             const latestAssessment = completedAssessments[0];
 
             return {
@@ -278,8 +270,8 @@ export default function SupervisorDashboard() {
         );
 
         setCandidates(processedCandidates);
+        setFilteredCandidates(processedCandidates);
 
-        // Calculate stats
         const types = new Set();
         const typeCounts = {};
         let totalAssessments = 0;
@@ -323,57 +315,76 @@ export default function SupervisorDashboard() {
     fetchData();
   }, [currentSupervisor]);
 
-  // FIXED: Working reset function that properly deletes all data
+  // Filter function
+  useEffect(() => {
+    let filtered = [...candidates];
+    
+    // Filter by assessment type
+    if (selectedAssessmentType !== 'all') {
+      filtered = filtered.filter(c => 
+        c.assessment_breakdown?.[selectedAssessmentType] > 0
+      );
+    }
+    
+    // Filter by status
+    if (filterStatus !== 'all') {
+      filtered = filtered.filter(c => {
+        if (filterStatus === 'completed') return c.completedAssessments > 0;
+        if (filterStatus === 'unblocked') return c.unblockedAssessments > 0;
+        if (filterStatus === 'blocked') return c.blockedAssessments > 0;
+        return true;
+      });
+    }
+    
+    // Search by name, email, or phone
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase().trim();
+      filtered = filtered.filter(c => 
+        c.full_name?.toLowerCase().includes(term) ||
+        c.email?.toLowerCase().includes(term) ||
+        c.phone?.includes(term)
+      );
+    }
+    
+    setFilteredCandidates(filtered);
+  }, [candidates, selectedAssessmentType, filterStatus, searchTerm]);
+
   const handleResetAssessment = async (candidateId, assessmentId, assessmentTitle, candidateName) => {
-    if (!confirm(`Are you sure you want to reset "${assessmentTitle}" for ${candidateName}? They will be able to retake it.`)) {
+    if (!confirm(`Are you sure you want to reset "${assessmentTitle}" for ${candidateName}?`)) {
       return;
     }
 
     setProcessingAssessment({ candidateId, assessmentId });
 
     try {
-      console.log("🔄 Resetting assessment:", { candidateId, assessmentId, assessmentTitle });
-
-      // Step 1: Delete ALL responses for this candidate and assessment
+      // Delete responses
       const { error: responsesError } = await supabase
         .from('responses')
         .delete()
         .eq('user_id', candidateId)
         .eq('assessment_id', assessmentId);
 
-      if (responsesError) {
-        console.error("Error deleting responses:", responsesError);
-        throw new Error("Failed to delete responses: " + responsesError.message);
-      }
-      console.log("✅ Deleted responses");
+      if (responsesError) throw new Error("Failed to delete responses: " + responsesError.message);
 
-      // Step 2: Delete ALL sessions for this candidate and assessment
+      // Delete sessions
       const { error: sessionsError } = await supabase
         .from('assessment_sessions')
         .delete()
         .eq('user_id', candidateId)
         .eq('assessment_id', assessmentId);
 
-      if (sessionsError) {
-        console.error("Error deleting sessions:", sessionsError);
-        throw new Error("Failed to delete sessions: " + sessionsError.message);
-      }
-      console.log("✅ Deleted sessions");
+      if (sessionsError) throw new Error("Failed to delete sessions: " + sessionsError.message);
 
-      // Step 3: Delete ALL results for this candidate and assessment
+      // Delete results
       const { error: resultsError } = await supabase
         .from('assessment_results')
         .delete()
         .eq('user_id', candidateId)
         .eq('assessment_id', assessmentId);
 
-      if (resultsError) {
-        console.error("Error deleting results:", resultsError);
-        throw new Error("Failed to delete results: " + resultsError.message);
-      }
-      console.log("✅ Deleted assessment results");
+      if (resultsError) throw new Error("Failed to delete results: " + resultsError.message);
 
-      // Step 4: Update candidate_assessments to BLOCKED
+      // Update candidate_assessments
       const { error: updateError } = await supabase
         .from('candidate_assessments')
         .update({ 
@@ -385,35 +396,28 @@ export default function SupervisorDashboard() {
         .eq('user_id', candidateId)
         .eq('assessment_id', assessmentId);
 
-      if (updateError) {
-        console.error("Error updating candidate_assessments:", updateError);
-        throw new Error("Failed to update assessment status: " + updateError.message);
-      }
-      console.log("✅ Updated candidate_assessments to BLOCKED");
+      if (updateError) throw new Error("Failed to update assessment status: " + updateError.message);
 
-      // Step 5: Delete any progress records
+      // Delete progress records
       await supabase
         .from('assessment_progress')
         .delete()
         .eq('user_id', candidateId)
         .eq('assessment_id', assessmentId);
 
-      alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}. It is now BLOCKED. You must unblock it for them to retake.`);
-      
-      // Force a complete page reload
+      alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}. It is now BLOCKED.`);
       window.location.reload();
 
     } catch (error) {
-      console.error('❌ Reset error:', error);
+      console.error('Reset error:', error);
       alert('❌ Failed to reset assessment: ' + error.message);
     } finally {
       setProcessingAssessment(null);
     }
   };
 
-  // Function to unblock an assessment
   const handleUnblockAssessment = async (candidateId, candidateName, assessmentId, assessmentTitle) => {
-    if (!confirm(`Unblock "${assessmentTitle}" for ${candidateName}? They will be able to take this assessment.`)) {
+    if (!confirm(`Unblock "${assessmentTitle}" for ${candidateName}?`)) {
       return;
     }
 
@@ -443,9 +447,8 @@ export default function SupervisorDashboard() {
     }
   };
 
-  // Function to block an assessment
   const handleBlockAssessment = async (candidateId, candidateName, assessmentId, assessmentTitle) => {
-    if (!confirm(`Block "${assessmentTitle}" for ${candidateName}? They will NOT be able to take this assessment.`)) {
+    if (!confirm(`Block "${assessmentTitle}" for ${candidateName}?`)) {
       return;
     }
 
@@ -474,12 +477,6 @@ export default function SupervisorDashboard() {
       setProcessingAssessment(null);
     }
   };
-
-  const filteredCandidates = selectedAssessmentType === 'all'
-    ? candidates
-    : candidates.filter(c => 
-        c.assessment_breakdown?.[selectedAssessmentType] > 0
-      );
 
   const getClassification = (score, maxScore) => {
     if (!score || !maxScore) return { label: "No Data", color: "#9E9E9E" };
@@ -581,28 +578,61 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        <div style={styles.filterBar}>
-          <span style={styles.filterLabel}>Filter by Assessment:</span>
-          <div style={styles.filterButtons}>
-            {assessmentTypes.map(type => (
-              <button
-                key={type}
-                onClick={() => setSelectedAssessmentType(type)}
-                style={{
-                  ...styles.filterButton,
-                  background: selectedAssessmentType === type ? '#0A1929' : '#f0f0f0',
-                  color: selectedAssessmentType === type ? 'white' : '#333'
-                }}
+        {/* Search and Filter Bar */}
+        <div style={styles.searchFilterBar}>
+          <div style={styles.searchContainer}>
+            <span style={styles.searchIcon}>🔍</span>
+            <input
+              type="text"
+              placeholder="Search by name, email, or phone..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={styles.searchInput}
+            />
+            {searchTerm && (
+              <button 
+                onClick={() => setSearchTerm('')} 
+                style={styles.clearButton}
               >
-                {type === 'all' ? 'All Assessments' : type.charAt(0).toUpperCase() + type.slice(1)}
+                ✕
               </button>
-            ))}
+            )}
+          </div>
+          
+          <div style={styles.filterGroup}>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              style={styles.filterSelect}
+            >
+              <option value="all">All Status</option>
+              <option value="completed">Completed Only</option>
+              <option value="unblocked">Unblocked Only</option>
+              <option value="blocked">Blocked Only</option>
+            </select>
+            
+            <select
+              value={selectedAssessmentType}
+              onChange={(e) => setSelectedAssessmentType(e.target.value)}
+              style={styles.filterSelect}
+            >
+              {assessmentTypes.map(type => (
+                <option key={type} value={type}>
+                  {type === 'all' ? 'All Assessments' : type.charAt(0).toUpperCase() + type.slice(1)}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
         <div style={styles.tableContainer}>
           <div style={styles.tableHeader}>
-            <h2 style={styles.tableTitle}>My Assigned Candidates</h2>
+            <h2 style={styles.tableTitle}>
+              My Assigned Candidates 
+              {filteredCandidates.length !== candidates.length && (
+                <span style={styles.filterCount}> ({filteredCandidates.length} of {candidates.length})</span>
+              )}
+            </h2>
             <Link href="/supervisor/add-candidate" legacyBehavior>
               <a style={styles.addButton}>+ Add New Candidate</a>
             </Link>
@@ -616,8 +646,24 @@ export default function SupervisorDashboard() {
           ) : filteredCandidates.length === 0 ? (
             <div style={styles.emptyState}>
               <div style={styles.emptyIcon}>👥</div>
-              <h3>No Assigned Candidates</h3>
-              <p>You don't have any candidates assigned to you yet. Contact an administrator to assign candidates to your account.</p>
+              <h3>No Candidates Found</h3>
+              <p>
+                {searchTerm || filterStatus !== 'all' || selectedAssessmentType !== 'all' 
+                  ? "No candidates match your search or filter criteria. Try adjusting your filters."
+                  : "You don't have any candidates assigned to you yet. Contact an administrator to assign candidates to your account."}
+              </p>
+              {(searchTerm || filterStatus !== 'all' || selectedAssessmentType !== 'all') && (
+                <button 
+                  onClick={() => {
+                    setSearchTerm('');
+                    setFilterStatus('all');
+                    setSelectedAssessmentType('all');
+                  }}
+                  style={styles.clearFiltersButton}
+                >
+                  Clear All Filters
+                </button>
+              )}
             </div>
           ) : (
             <div style={styles.tableWrapper}>
@@ -994,34 +1040,88 @@ const styles = {
     fontSize: '32px',
     fontWeight: 700
   },
-  filterBar: {
+  searchFilterBar: {
     background: 'white',
     padding: '20px',
     borderRadius: '12px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
     marginBottom: '20px',
     display: 'flex',
-    alignItems: 'center',
     gap: '20px',
-    flexWrap: 'wrap'
+    flexWrap: 'wrap',
+    alignItems: 'center'
   },
-  filterLabel: {
-    fontWeight: 600,
-    color: '#333'
+  searchContainer: {
+    flex: 2,
+    position: 'relative',
+    minWidth: '250px'
   },
-  filterButtons: {
+  searchIcon: {
+    position: 'absolute',
+    left: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    color: '#999',
+    fontSize: '16px'
+  },
+  searchInput: {
+    width: '100%',
+    padding: '12px 12px 12px 36px',
+    border: '1px solid #E2E8F0',
+    borderRadius: '8px',
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'all 0.2s ease',
+    ':focus': {
+      borderColor: '#0A1929',
+      boxShadow: '0 0 0 3px rgba(10, 25, 41, 0.1)'
+    }
+  },
+  clearButton: {
+    position: 'absolute',
+    right: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    color: '#999',
+    fontSize: '16px',
+    padding: '4px',
+    ':hover': {
+      color: '#F44336'
+    }
+  },
+  filterGroup: {
     display: 'flex',
     gap: '10px',
     flexWrap: 'wrap'
   },
-  filterButton: {
-    padding: '8px 16px',
-    border: 'none',
-    borderRadius: '20px',
-    cursor: 'pointer',
+  filterSelect: {
+    padding: '10px 16px',
+    border: '1px solid #E2E8F0',
+    borderRadius: '8px',
     fontSize: '14px',
-    fontWeight: 500,
-    transition: 'all 0.2s ease'
+    background: 'white',
+    cursor: 'pointer',
+    outline: 'none',
+    minWidth: '140px'
+  },
+  filterCount: {
+    fontSize: '14px',
+    fontWeight: 'normal',
+    color: '#666',
+    marginLeft: '8px'
+  },
+  clearFiltersButton: {
+    marginTop: '15px',
+    padding: '8px 16px',
+    background: '#0A1929',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '14px'
   },
   tableContainer: {
     background: 'white',
@@ -1033,7 +1133,9 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '20px'
+    marginBottom: '20px',
+    flexWrap: 'wrap',
+    gap: '10px'
   },
   tableTitle: {
     margin: 0,
