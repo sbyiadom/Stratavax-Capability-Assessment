@@ -15,7 +15,7 @@ export default function SupervisorDashboard() {
     totalCandidates: 0,
     totalAssessments: 0,
     completedAssessments: 0,
-    pendingAssessments: 0,
+    unblockedAssessments: 0,
     blockedAssessments: 0,
     byType: {}
   });
@@ -30,17 +30,16 @@ export default function SupervisorDashboard() {
         const { data: { session: supabaseSession } } = await supabase.auth.getSession();
         
         if (supabaseSession) {
-          // User is logged in via Supabase, check their role from user metadata
           const userRole = supabaseSession.user?.user_metadata?.role;
           
           if (userRole === 'supervisor' || userRole === 'admin') {
             setCurrentSupervisor({
               id: supabaseSession.user.id,
               email: supabaseSession.user.email,
-              name: supabaseSession.user.user_metadata?.full_name || supabaseSession.user.email
+              name: supabaseSession.user.user_metadata?.full_name || supabaseSession.user.email,
+              role: userRole
             });
             
-            // Also update localStorage for consistency
             localStorage.setItem("userSession", JSON.stringify({
               loggedIn: true,
               user_id: supabaseSession.user.id,
@@ -56,7 +55,6 @@ export default function SupervisorDashboard() {
           }
         }
         
-        // Fallback to localStorage if Supabase session doesn't exist
         const userSession = localStorage.getItem("userSession");
         
         if (!userSession) {
@@ -70,7 +68,8 @@ export default function SupervisorDashboard() {
             setCurrentSupervisor({
               id: session.user_id,
               email: session.email,
-              name: session.full_name || session.email
+              name: session.full_name || session.email,
+              role: session.role
             });
           } else {
             if (session.role === 'candidate') {
@@ -87,20 +86,18 @@ export default function SupervisorDashboard() {
     
     checkAuth();
     
-    // Set up auth state change listener
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("Auth state changed:", event);
       if (event === 'SIGNED_OUT') {
         localStorage.removeItem("userSession");
         router.push("/login");
       } else if (event === 'SIGNED_IN' && session) {
-        // Handle sign in
         const userRole = session.user?.user_metadata?.role;
         if (userRole === 'supervisor' || userRole === 'admin') {
           setCurrentSupervisor({
             id: session.user.id,
             email: session.user.email,
-            name: session.user.user_metadata?.full_name || session.user.email
+            name: session.user.user_metadata?.full_name || session.user.email,
+            role: userRole
           });
         }
       }
@@ -119,17 +116,25 @@ export default function SupervisorDashboard() {
       try {
         setLoading(true);
 
-        // First, get candidates assigned to this supervisor
-        const { data: candidatesData, error: candidatesError } = await supabase
+        const isAdmin = currentSupervisor.role === 'admin';
+
+        // Get candidates - for admin, show ALL candidates
+        let candidatesQuery = supabase
           .from('candidate_profiles')
           .select(`
             id,
             full_name,
             email,
             phone,
-            created_at
-          `)
-          .eq('supervisor_id', currentSupervisor.id)
+            created_at,
+            supervisor_id
+          `);
+
+        if (!isAdmin) {
+          candidatesQuery = candidatesQuery.eq('supervisor_id', currentSupervisor.id);
+        }
+
+        const { data: candidatesData, error: candidatesError } = await candidatesQuery
           .order('created_at', { ascending: false });
 
         if (candidatesError) throw candidatesError;
@@ -138,7 +143,29 @@ export default function SupervisorDashboard() {
         const processedCandidates = await Promise.all(
           (candidatesData || []).map(async (candidate) => {
             
-            // Get assessment access for this candidate
+            // Get all assessment results for this candidate FIRST
+            const { data: resultsData, error: resultsError } = await supabase
+              .from('assessment_results')
+              .select(`
+                id,
+                assessment_id,
+                total_score,
+                max_score,
+                percentage_score,
+                completed_at,
+                assessment_type_id
+              `)
+              .eq('user_id', candidate.id);
+
+            if (resultsError) throw resultsError;
+
+            // Create a map of results by assessment_id
+            const resultsMap = {};
+            resultsData?.forEach(result => {
+              resultsMap[result.assessment_id] = result;
+            });
+
+            // Get candidate_assessments
             const { data: accessData, error: accessError } = await supabase
               .from('candidate_assessments')
               .select(`
@@ -148,6 +175,7 @@ export default function SupervisorDashboard() {
                 created_at,
                 unblocked_at,
                 unblocked_by,
+                result_id,
                 assessments (
                   id,
                   title,
@@ -166,25 +194,24 @@ export default function SupervisorDashboard() {
 
             if (accessError) throw accessError;
 
-            // Get assessment results for completed ones
-            const { data: resultsData, error: resultsError } = await supabase
-              .from('assessment_results')
-              .select(`
-                id,
-                assessment_id,
-                total_score,
-                max_score,
-                percentage_score,
-                completed_at,
-                assessment_type_id
-              `)
-              .eq('user_id', candidate.id);
-
-            if (resultsError) throw resultsError;
-
             // Combine access and results
             const assessmentsWithDetails = (accessData || []).map(access => {
-              const result = resultsData?.find(r => r.assessment_id === access.assessment_id);
+              const result = resultsMap[access.assessment_id] || null;
+              
+              // If we have a result but no result_id in candidate_assessments, update it silently
+              if (result && !access.result_id) {
+                supabase
+                  .from('candidate_assessments')
+                  .update({ 
+                    result_id: result.id, 
+                    status: 'completed' 
+                  })
+                  .eq('id', access.id)
+                  .then(({ error }) => {
+                    if (error) console.error('Error updating result_id:', error);
+                  });
+              }
+
               const assessment = access.assessments;
               const typeData = assessment?.assessment_types;
 
@@ -197,10 +224,11 @@ export default function SupervisorDashboard() {
                 type_icon: typeData?.icon || '📋',
                 type_gradient_start: typeData?.gradient_start || '#667eea',
                 type_gradient_end: typeData?.gradient_end || '#764ba2',
-                status: access.status,
+                status: result ? 'completed' : access.status,
                 created_at: access.created_at,
                 unblocked_at: access.unblocked_at,
                 result: result ? {
+                  id: result.id,
                   score: result.total_score,
                   max_score: result.max_score,
                   percentage: result.percentage_score,
@@ -211,12 +239,12 @@ export default function SupervisorDashboard() {
 
             // Sort by date
             assessmentsWithDetails.sort((a, b) => {
-              const dateA = a.completed_at || a.created_at || 0;
-              const dateB = b.completed_at || b.created_at || 0;
+              const dateA = a.result?.completed_at || a.created_at || 0;
+              const dateB = b.result?.completed_at || b.created_at || 0;
               return new Date(dateB) - new Date(dateA);
             });
 
-            const completedAssessments = assessmentsWithDetails.filter(a => a.result);
+            const completedAssessments = assessmentsWithDetails.filter(a => a.result !== null);
             const unblockedAssessments = assessmentsWithDetails.filter(a => a.status === 'unblocked' && !a.result);
             const blockedAssessments = assessmentsWithDetails.filter(a => a.status === 'blocked' && !a.result);
             
@@ -236,6 +264,7 @@ export default function SupervisorDashboard() {
               email: candidate.email || 'No email provided',
               phone: candidate.phone,
               created_at: candidate.created_at,
+              supervisor_id: candidate.supervisor_id,
               totalAssessments: assessmentsWithDetails.length,
               completedAssessments: completedAssessments.length,
               unblockedAssessments: unblockedAssessments.length,
@@ -294,6 +323,95 @@ export default function SupervisorDashboard() {
     fetchData();
   }, [currentSupervisor]);
 
+  // FIXED: Working reset function
+  const handleResetAssessment = async (candidateId, assessmentId, assessmentTitle, candidateName) => {
+    if (!confirm(`Are you sure you want to reset "${assessmentTitle}" for ${candidateName}? They will be able to retake it.`)) {
+      return;
+    }
+
+    setProcessingAssessment({ candidateId, assessmentId });
+
+    try {
+      console.log("🔄 Resetting assessment:", { candidateId, assessmentId, assessmentTitle });
+
+      // 1. First, find all sessions for this candidate and assessment
+      const { data: sessions, error: sessionsError } = await supabase
+        .from('assessment_sessions')
+        .select('id')
+        .eq('user_id', candidateId)
+        .eq('assessment_id', assessmentId);
+
+      if (sessionsError) throw sessionsError;
+      console.log(`Found ${sessions?.length || 0} sessions`);
+
+      // 2. Delete all responses for these sessions
+      if (sessions && sessions.length > 0) {
+        const sessionIds = sessions.map(s => s.id);
+        
+        const { error: responsesError } = await supabase
+          .from('responses')
+          .delete()
+          .in('session_id', sessionIds);
+
+        if (responsesError) throw responsesError;
+        console.log(`✅ Deleted responses for ${sessionIds.length} sessions`);
+      }
+
+      // 3. Delete all sessions
+      const { error: sessionDeleteError } = await supabase
+        .from('assessment_sessions')
+        .delete()
+        .eq('user_id', candidateId)
+        .eq('assessment_id', assessmentId);
+
+      if (sessionDeleteError) throw sessionDeleteError;
+      console.log("✅ Deleted sessions");
+
+      // 4. Delete the assessment result
+      const { error: resultError } = await supabase
+        .from('assessment_results')
+        .delete()
+        .eq('user_id', candidateId)
+        .eq('assessment_id', assessmentId);
+
+      if (resultError) throw resultError;
+      console.log("✅ Deleted assessment result");
+
+      // 5. Update candidate_assessments to BLOCKED (not unblocked)
+      const { error: updateError } = await supabase
+        .from('candidate_assessments')
+        .update({ 
+          status: 'blocked',
+          unblocked_by: null,
+          unblocked_at: null,
+          result_id: null
+        })
+        .eq('user_id', candidateId)
+        .eq('assessment_id', assessmentId);
+
+      if (updateError) throw updateError;
+      console.log("✅ Updated candidate_assessments to BLOCKED");
+
+      // 6. Also delete any progress records
+      await supabase
+        .from('assessment_progress')
+        .delete()
+        .eq('user_id', candidateId)
+        .eq('assessment_id', assessmentId);
+
+      alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}. It is now BLOCKED. Unblock it to let them retake.`);
+      
+      // Force a complete page reload to show updated data
+      window.location.reload();
+
+    } catch (error) {
+      console.error('❌ Reset error:', error);
+      alert('❌ Failed to reset assessment: ' + error.message);
+    } finally {
+      setProcessingAssessment(null);
+    }
+  };
+
   // Function to unblock an assessment
   const handleUnblockAssessment = async (candidateId, candidateName, assessmentId, assessmentTitle) => {
     if (!confirm(`Unblock "${assessmentTitle}" for ${candidateName}? They will be able to take this assessment.`)) {
@@ -316,8 +434,6 @@ export default function SupervisorDashboard() {
       if (error) throw error;
 
       alert(`✅ "${assessmentTitle}" unblocked successfully for ${candidateName}.`);
-
-      // Refresh data
       window.location.reload();
 
     } catch (error) {
@@ -350,66 +466,11 @@ export default function SupervisorDashboard() {
       if (error) throw error;
 
       alert(`🔒 "${assessmentTitle}" blocked for ${candidateName}.`);
-
-      // Refresh data
       window.location.reload();
 
     } catch (error) {
       console.error('Error blocking assessment:', error);
       alert('❌ Failed to block assessment: ' + error.message);
-    } finally {
-      setProcessingAssessment(null);
-    }
-  };
-
-  // Function to reset a completed assessment
-  const handleResetAssessment = async (candidateId, assessmentId, assessmentTitle, candidateName) => {
-    if (!confirm(`Are you sure you want to reset "${assessmentTitle}" for ${candidateName}? They will be able to retake it.`)) {
-      return;
-    }
-
-    setProcessingAssessment({ candidateId, assessmentId });
-
-    try {
-      // Delete the assessment result
-      const { error: deleteError } = await supabase
-        .from('assessment_results')
-        .delete()
-        .eq('user_id', candidateId)
-        .eq('assessment_id', assessmentId);
-
-      if (deleteError) throw deleteError;
-
-      // Update candidate_assessments to blocked (so supervisor must unblock again)
-      const { error: updateError } = await supabase
-        .from('candidate_assessments')
-        .update({ 
-          status: 'blocked',
-          unblocked_by: null,
-          unblocked_at: null
-        })
-        .eq('user_id', candidateId)
-        .eq('assessment_id', assessmentId);
-
-      if (updateError) throw updateError;
-
-      // Delete any assessment sessions
-      const { error: sessionError } = await supabase
-        .from('assessment_sessions')
-        .delete()
-        .eq('user_id', candidateId)
-        .eq('assessment_id', assessmentId);
-
-      if (sessionError) throw sessionError;
-
-      alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}. It is now BLOCKED. Unblock it to let them retake.`);
-      
-      // Refresh the data
-      window.location.reload();
-
-    } catch (error) {
-      console.error('Error resetting assessment:', error);
-      alert('❌ Failed to reset assessment: ' + error.message);
     } finally {
       setProcessingAssessment(null);
     }
@@ -446,7 +507,6 @@ export default function SupervisorDashboard() {
     router.push("/login");
   };
 
-  // Toggle candidate details
   const toggleCandidateDetails = (candidateId) => {
     if (expandedCandidate === candidateId) {
       setExpandedCandidate(null);
@@ -471,6 +531,9 @@ export default function SupervisorDashboard() {
           <div>
             <h1 style={styles.title}>Supervisor Dashboard</h1>
             <p style={styles.welcome}>Welcome back, <strong>{currentSupervisor.name || currentSupervisor.email}</strong></p>
+            {currentSupervisor.role === 'admin' && (
+              <p style={styles.adminBadge}>Admin • Viewing all candidates</p>
+            )}
           </div>
           <button onClick={handleLogout} style={styles.logoutButton}>
             Sign Out
@@ -569,7 +632,7 @@ export default function SupervisorDashboard() {
                     <th style={styles.tableHead}>Classification</th>
                     <th style={styles.tableHead}>Last Active</th>
                     <th style={styles.tableHead}>Actions</th>
-                  </tr>
+                   </tr>
                 </thead>
                 <tbody>
                   {filteredCandidates.map((candidate) => {
@@ -578,6 +641,7 @@ export default function SupervisorDashboard() {
                     const percentage = latestScore && maxScore ? Math.round((latestScore/maxScore)*100) : 0;
                     const classification = getClassification(latestScore, maxScore);
                     const isExpanded = expandedCandidate === candidate.id;
+                    const isProcessing = processingAssessment?.candidateId === candidate.id;
 
                     return (
                       <React.Fragment key={candidate.id}>
@@ -661,7 +725,7 @@ export default function SupervisorDashboard() {
                                 {latestScore}/{maxScore} ({percentage}%)
                               </span>
                             ) : (
-                              <span style={styles.noScore}>No assessments</span>
+                              <span style={styles.noScore}>No completed assessments</span>
                             )}
                           </td>
                           <td style={styles.tableCell}>
@@ -703,14 +767,15 @@ export default function SupervisorDashboard() {
                               <div style={styles.assessmentsList}>
                                 <h4 style={styles.assessmentsListTitle}>Individual Assessments</h4>
                                 {candidate.assessments.map((assessment) => {
-                                  const isProcessing = processingAssessment?.candidateId === candidate.id && 
-                                                      processingAssessment?.assessmentId === assessment.assessment_id;
+                                  const isProcessingThis = isProcessing && 
+                                    processingAssessment?.assessmentId === assessment.assessment_id;
 
                                   return (
                                     <div key={assessment.id} style={{
                                       ...styles.assessmentItem,
-                                      border: assessment.status === 'unblocked' ? '2px solid #4CAF50' : 
-                                             assessment.result ? '1px solid #E2E8F0' : '1px solid #FF9800'
+                                      border: assessment.result ? '2px solid #4CAF50' : 
+                                             assessment.status === 'unblocked' ? '2px solid #2196F3' : 
+                                             '1px solid #FF9800'
                                     }}>
                                       <div style={styles.assessmentItemInfo}>
                                         <div style={{
@@ -740,20 +805,16 @@ export default function SupervisorDashboard() {
                                             {assessment.result ? (
                                               <span style={styles.assessmentItemScore}>
                                                 Score: {assessment.result.score}/{assessment.result.max_score} 
-                                                ({Math.round((assessment.result.score/assessment.result.max_score)*100)}%)
+                                                ({Math.round((assessment.result.score/assessment.result.max_score)*100)}%) • 
+                                                Completed: {formatDate(assessment.result.completed_at)}
                                               </span>
                                             ) : (
                                               <span style={{
                                                 ...styles.assessmentItemStatus,
-                                                background: assessment.status === 'unblocked' ? '#E8F5E9' : '#FFF3E0',
-                                                color: assessment.status === 'unblocked' ? '#2E7D32' : '#F57C00'
+                                                background: assessment.status === 'unblocked' ? '#E8F5E9' : '#FFEBEE',
+                                                color: assessment.status === 'unblocked' ? '#2E7D32' : '#D32F2F'
                                               }}>
-                                                {assessment.status === 'unblocked' ? '🔓 Unblocked' : '🔒 Blocked'}
-                                              </span>
-                                            )}
-                                            {assessment.unblocked_at && (
-                                              <span style={styles.unblockedDate}>
-                                                Unblocked: {formatDate(assessment.unblocked_at)}
+                                                {assessment.status === 'unblocked' ? '🔓 Ready to take' : '🔒 Blocked'}
                                               </span>
                                             )}
                                           </div>
@@ -768,14 +829,14 @@ export default function SupervisorDashboard() {
                                               assessment.assessment_title,
                                               candidate.full_name
                                             )}
-                                            disabled={isProcessing}
+                                            disabled={isProcessingThis}
                                             style={{
                                               ...styles.resetButton,
-                                              opacity: isProcessing ? 0.5 : 1,
-                                              cursor: isProcessing ? 'not-allowed' : 'pointer'
+                                              opacity: isProcessingThis ? 0.5 : 1,
+                                              cursor: isProcessingThis ? 'not-allowed' : 'pointer'
                                             }}
                                           >
-                                            {isProcessing ? '⏳' : '🔄 Reset'}
+                                            {isProcessingThis ? '⏳' : '🔄 Reset'}
                                           </button>
                                         ) : assessment.status === 'blocked' ? (
                                           <button
@@ -785,14 +846,14 @@ export default function SupervisorDashboard() {
                                               assessment.assessment_id,
                                               assessment.assessment_title
                                             )}
-                                            disabled={isProcessing}
+                                            disabled={isProcessingThis}
                                             style={{
                                               ...styles.unblockButton,
-                                              opacity: isProcessing ? 0.5 : 1,
-                                              cursor: isProcessing ? 'not-allowed' : 'pointer'
+                                              opacity: isProcessingThis ? 0.5 : 1,
+                                              cursor: isProcessingThis ? 'not-allowed' : 'pointer'
                                             }}
                                           >
-                                            {isProcessing ? '⏳' : '🔓 Unblock'}
+                                            {isProcessingThis ? '⏳' : '🔓 Unblock'}
                                           </button>
                                         ) : (
                                           <button
@@ -802,14 +863,14 @@ export default function SupervisorDashboard() {
                                               assessment.assessment_id,
                                               assessment.assessment_title
                                             )}
-                                            disabled={isProcessing}
+                                            disabled={isProcessingThis}
                                             style={{
                                               ...styles.blockButton,
-                                              opacity: isProcessing ? 0.5 : 1,
-                                              cursor: isProcessing ? 'not-allowed' : 'pointer'
+                                              opacity: isProcessingThis ? 0.5 : 1,
+                                              cursor: isProcessingThis ? 'not-allowed' : 'pointer'
                                             }}
                                           >
-                                            {isProcessing ? '⏳' : '🔒 Block'}
+                                            {isProcessingThis ? '⏳' : '🔒 Block'}
                                           </button>
                                         )}
                                       </div>
@@ -886,6 +947,12 @@ const styles = {
     color: '#666',
     fontSize: '14px'
   },
+  adminBadge: {
+    margin: '5px 0 0 0',
+    color: '#4CAF50',
+    fontSize: '12px',
+    fontWeight: 600
+  },
   logoutButton: {
     background: '#F44336',
     color: 'white',
@@ -895,12 +962,7 @@ const styles = {
     cursor: 'pointer',
     fontSize: '14px',
     fontWeight: 600,
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#D32F2F',
-      transform: 'translateY(-1px)',
-      boxShadow: '0 4px 12px rgba(244, 67, 54, 0.3)'
-    }
+    transition: 'all 0.2s ease'
   },
   statsGrid: {
     display: 'grid',
@@ -1009,18 +1071,6 @@ const styles = {
     fontSize: '64px',
     marginBottom: '20px',
     opacity: 0.5
-  },
-  primaryButton: {
-    display: 'inline-block',
-    background: '#0A1929',
-    color: 'white',
-    padding: '12px 30px',
-    borderRadius: '30px',
-    textDecoration: 'none',
-    fontSize: '16px',
-    fontWeight: 500,
-    marginTop: '20px',
-    cursor: 'pointer'
   },
   tableWrapper: {
     overflowX: 'auto'
@@ -1249,10 +1299,6 @@ const styles = {
   assessmentItemScore: {
     fontSize: '11px',
     color: '#4A5568'
-  },
-  unblockedDate: {
-    fontSize: '10px',
-    color: '#718096'
   },
   assessmentItemActions: {
     display: 'flex',
