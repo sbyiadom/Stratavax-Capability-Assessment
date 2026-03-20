@@ -323,7 +323,7 @@ export default function SupervisorDashboard() {
     fetchData();
   }, [currentSupervisor]);
 
-  // FIXED: Working reset function
+  // FIXED: Working reset function that properly deletes all data
   const handleResetAssessment = async (candidateId, assessmentId, assessmentTitle, candidateName) => {
     if (!confirm(`Are you sure you want to reset "${assessmentTitle}" for ${candidateName}? They will be able to retake it.`)) {
       return;
@@ -334,50 +334,46 @@ export default function SupervisorDashboard() {
     try {
       console.log("🔄 Resetting assessment:", { candidateId, assessmentId, assessmentTitle });
 
-      // 1. First, find all sessions for this candidate and assessment
-      const { data: sessions, error: sessionsError } = await supabase
-        .from('assessment_sessions')
-        .select('id')
+      // Step 1: Delete ALL responses for this candidate and assessment
+      const { error: responsesError } = await supabase
+        .from('responses')
+        .delete()
         .eq('user_id', candidateId)
         .eq('assessment_id', assessmentId);
 
-      if (sessionsError) throw sessionsError;
-      console.log(`Found ${sessions?.length || 0} sessions`);
-
-      // 2. Delete all responses for these sessions
-      if (sessions && sessions.length > 0) {
-        const sessionIds = sessions.map(s => s.id);
-        
-        const { error: responsesError } = await supabase
-          .from('responses')
-          .delete()
-          .in('session_id', sessionIds);
-
-        if (responsesError) throw responsesError;
-        console.log(`✅ Deleted responses for ${sessionIds.length} sessions`);
+      if (responsesError) {
+        console.error("Error deleting responses:", responsesError);
+        throw new Error("Failed to delete responses: " + responsesError.message);
       }
+      console.log("✅ Deleted responses");
 
-      // 3. Delete all sessions
-      const { error: sessionDeleteError } = await supabase
+      // Step 2: Delete ALL sessions for this candidate and assessment
+      const { error: sessionsError } = await supabase
         .from('assessment_sessions')
         .delete()
         .eq('user_id', candidateId)
         .eq('assessment_id', assessmentId);
 
-      if (sessionDeleteError) throw sessionDeleteError;
+      if (sessionsError) {
+        console.error("Error deleting sessions:", sessionsError);
+        throw new Error("Failed to delete sessions: " + sessionsError.message);
+      }
       console.log("✅ Deleted sessions");
 
-      // 4. Delete the assessment result
-      const { error: resultError } = await supabase
+      // Step 3: Delete ALL results for this candidate and assessment
+      const { error: resultsError } = await supabase
         .from('assessment_results')
         .delete()
         .eq('user_id', candidateId)
         .eq('assessment_id', assessmentId);
 
-      if (resultError) throw resultError;
-      console.log("✅ Deleted assessment result");
+      if (resultsError) {
+        console.error("Error deleting results:", resultsError);
+        throw new Error("Failed to delete results: " + resultsError.message);
+      }
+      console.log("✅ Deleted assessment results");
 
-      // 5. Update candidate_assessments to BLOCKED (not unblocked)
+      // Step 4: Update candidate_assessments to BLOCKED
       const { error: updateError } = await supabase
         .from('candidate_assessments')
         .update({ 
@@ -389,19 +385,22 @@ export default function SupervisorDashboard() {
         .eq('user_id', candidateId)
         .eq('assessment_id', assessmentId);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error("Error updating candidate_assessments:", updateError);
+        throw new Error("Failed to update assessment status: " + updateError.message);
+      }
       console.log("✅ Updated candidate_assessments to BLOCKED");
 
-      // 6. Also delete any progress records
+      // Step 5: Delete any progress records
       await supabase
         .from('assessment_progress')
         .delete()
         .eq('user_id', candidateId)
         .eq('assessment_id', assessmentId);
 
-      alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}. It is now BLOCKED. Unblock it to let them retake.`);
+      alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}. It is now BLOCKED. You must unblock it for them to retake.`);
       
-      // Force a complete page reload to show updated data
+      // Force a complete page reload
       window.location.reload();
 
     } catch (error) {
