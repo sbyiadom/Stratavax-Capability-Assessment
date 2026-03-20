@@ -148,6 +148,7 @@ export default function SupervisorDashboard() {
                 created_at,
                 unblocked_at,
                 unblocked_by,
+                result_id,
                 assessments (
                   id,
                   title,
@@ -166,7 +167,7 @@ export default function SupervisorDashboard() {
 
             if (accessError) throw accessError;
 
-            // Get assessment results for completed ones
+            // Get assessment results for this candidate
             const { data: resultsData, error: resultsError } = await supabase
               .from('assessment_results')
               .select(`
@@ -182,9 +183,15 @@ export default function SupervisorDashboard() {
 
             if (resultsError) throw resultsError;
 
+            // Create a map of results by assessment_id for easy lookup
+            const resultsMap = {};
+            resultsData?.forEach(result => {
+              resultsMap[result.assessment_id] = result;
+            });
+
             // Combine access and results
             const assessmentsWithDetails = (accessData || []).map(access => {
-              const result = resultsData?.find(r => r.assessment_id === access.assessment_id);
+              const result = resultsMap[access.assessment_id];
               const assessment = access.assessments;
               const typeData = assessment?.assessment_types;
 
@@ -201,6 +208,7 @@ export default function SupervisorDashboard() {
                 created_at: access.created_at,
                 unblocked_at: access.unblocked_at,
                 result: result ? {
+                  id: result.id,
                   score: result.total_score,
                   max_score: result.max_score,
                   percentage: result.percentage_score,
@@ -211,12 +219,13 @@ export default function SupervisorDashboard() {
 
             // Sort by date
             assessmentsWithDetails.sort((a, b) => {
-              const dateA = a.completed_at || a.created_at || 0;
-              const dateB = b.completed_at || b.created_at || 0;
+              const dateA = a.result?.completed_at || a.created_at || 0;
+              const dateB = b.result?.completed_at || b.created_at || 0;
               return new Date(dateB) - new Date(dateA);
             });
 
-            const completedAssessments = assessmentsWithDetails.filter(a => a.result);
+            // Count assessments based on status and results
+            const completedAssessments = assessmentsWithDetails.filter(a => a.result !== null);
             const unblockedAssessments = assessmentsWithDetails.filter(a => a.status === 'unblocked' && !a.result);
             const blockedAssessments = assessmentsWithDetails.filter(a => a.status === 'blocked' && !a.result);
             
@@ -386,7 +395,8 @@ export default function SupervisorDashboard() {
         .update({ 
           status: 'blocked',
           unblocked_by: null,
-          unblocked_at: null
+          unblocked_at: null,
+          result_id: null
         })
         .eq('user_id', candidateId)
         .eq('assessment_id', assessmentId);
