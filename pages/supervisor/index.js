@@ -15,7 +15,7 @@ export default function SupervisorDashboard() {
     totalCandidates: 0,
     totalAssessments: 0,
     completedAssessments: 0,
-    pendingAssessments: 0,
+    unblockedAssessments: 0,
     blockedAssessments: 0,
     byType: {}
   });
@@ -30,15 +30,18 @@ export default function SupervisorDashboard() {
         const { data: { session: supabaseSession } } = await supabase.auth.getSession();
         
         if (supabaseSession) {
+          // User is logged in via Supabase, check their role from user metadata
           const userRole = supabaseSession.user?.user_metadata?.role;
           
           if (userRole === 'supervisor' || userRole === 'admin') {
             setCurrentSupervisor({
               id: supabaseSession.user.id,
               email: supabaseSession.user.email,
-              name: supabaseSession.user.user_metadata?.full_name || supabaseSession.user.email
+              name: supabaseSession.user.user_metadata?.full_name || supabaseSession.user.email,
+              role: userRole
             });
             
+            // Also update localStorage for consistency
             localStorage.setItem("userSession", JSON.stringify({
               loggedIn: true,
               user_id: supabaseSession.user.id,
@@ -54,6 +57,7 @@ export default function SupervisorDashboard() {
           }
         }
         
+        // Fallback to localStorage if Supabase session doesn't exist
         const userSession = localStorage.getItem("userSession");
         
         if (!userSession) {
@@ -67,7 +71,8 @@ export default function SupervisorDashboard() {
             setCurrentSupervisor({
               id: session.user_id,
               email: session.email,
-              name: session.full_name || session.email
+              name: session.full_name || session.email,
+              role: session.role
             });
           } else {
             if (session.role === 'candidate') {
@@ -84,17 +89,21 @@ export default function SupervisorDashboard() {
     
     checkAuth();
     
+    // Set up auth state change listener
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("Auth state changed:", event);
       if (event === 'SIGNED_OUT') {
         localStorage.removeItem("userSession");
         router.push("/login");
       } else if (event === 'SIGNED_IN' && session) {
+        // Handle sign in
         const userRole = session.user?.user_metadata?.role;
         if (userRole === 'supervisor' || userRole === 'admin') {
           setCurrentSupervisor({
             id: session.user.id,
             email: session.user.email,
-            name: session.user.user_metadata?.full_name || session.user.email
+            name: session.user.user_metadata?.full_name || session.user.email,
+            role: userRole
           });
         }
       }
@@ -113,22 +122,44 @@ export default function SupervisorDashboard() {
       try {
         setLoading(true);
 
-        // Get candidates assigned to this supervisor
-        const { data: candidatesData, error: candidatesError } = await supabase
+        // Check if current user is admin
+        const isAdmin = currentSupervisor.role === 'admin';
+
+        // Get candidates - for admin, show ALL candidates
+        let candidatesQuery = supabase
           .from('candidate_profiles')
           .select(`
             id,
             full_name,
             email,
             phone,
-            created_at
-          `)
-          .eq('supervisor_id', currentSupervisor.id)
+            created_at,
+            supervisor_id
+          `);
+
+        // If not admin, filter by supervisor_id
+        if (!isAdmin) {
+          candidatesQuery = candidatesQuery.eq('supervisor_id', currentSupervisor.id);
+        }
+
+        const { data: candidatesData, error: candidatesError } = await candidatesQuery
           .order('created_at', { ascending: false });
 
         if (candidatesError) throw candidatesError;
 
-        // For each candidate, get their assessments and results
+        // Fetch supervisor names for display
+        const supervisorIds = [...new Set(candidatesData?.map(c => c.supervisor_id).filter(Boolean))];
+        const { data: supervisors } = await supabase
+          .from('supervisor_profiles')
+          .select('id, full_name, email')
+          .in('id', supervisorIds);
+
+        const supervisorMap = {};
+        supervisors?.forEach(s => {
+          supervisorMap[s.id] = s.full_name || s.email;
+        });
+
+        // For each candidate, get their assessment access and results
         const processedCandidates = await Promise.all(
           (candidatesData || []).map(async (candidate) => {
             
@@ -188,12 +219,14 @@ export default function SupervisorDashboard() {
               // First check if we have a result in the resultsMap
               const result = resultsMap[access.assessment_id] || null;
               
-              // If we have a result but no result_id in candidate_assessments, we should update it
+              // If we have a result but no result_id in candidate_assessments, update it silently
               if (result && !access.result_id) {
-                // Silently update the candidate_assessments (fire and forget)
                 supabase
                   .from('candidate_assessments')
-                  .update({ result_id: result.id, status: 'completed' })
+                  .update({ 
+                    result_id: result.id, 
+                    status: 'completed' 
+                  })
                   .eq('id', access.id)
                   .then(({ error }) => {
                     if (error) console.error('Error updating result_id:', error);
@@ -212,7 +245,7 @@ export default function SupervisorDashboard() {
                 type_icon: typeData?.icon || '📋',
                 type_gradient_start: typeData?.gradient_start || '#667eea',
                 type_gradient_end: typeData?.gradient_end || '#764ba2',
-                status: result ? 'completed' : access.status, // If we have a result, status should be completed
+                status: result ? 'completed' : access.status,
                 created_at: access.created_at,
                 unblocked_at: access.unblocked_at,
                 result: result ? {
@@ -253,6 +286,8 @@ export default function SupervisorDashboard() {
               email: candidate.email || 'No email provided',
               phone: candidate.phone,
               created_at: candidate.created_at,
+              supervisor_id: candidate.supervisor_id,
+              supervisor_name: supervisorMap[candidate.supervisor_id] || 'Unassigned',
               totalAssessments: assessmentsWithDetails.length,
               completedAssessments: completedAssessments.length,
               unblockedAssessments: unblockedAssessments.length,
@@ -333,6 +368,8 @@ export default function SupervisorDashboard() {
       if (error) throw error;
 
       alert(`✅ "${assessmentTitle}" unblocked successfully for ${candidateName}.`);
+      
+      // Refresh data
       window.location.reload();
 
     } catch (error) {
@@ -365,6 +402,8 @@ export default function SupervisorDashboard() {
       if (error) throw error;
 
       alert(`🔒 "${assessmentTitle}" blocked for ${candidateName}.`);
+      
+      // Refresh data
       window.location.reload();
 
     } catch (error) {
@@ -375,7 +414,7 @@ export default function SupervisorDashboard() {
     }
   };
 
-  // Function to reset a completed assessment
+  // FIXED: Function to reset a completed assessment
   const handleResetAssessment = async (candidateId, assessmentId, assessmentTitle, candidateName) => {
     if (!confirm(`Are you sure you want to reset "${assessmentTitle}" for ${candidateName}? They will be able to retake it.`)) {
       return;
@@ -384,16 +423,51 @@ export default function SupervisorDashboard() {
     setProcessingAssessment({ candidateId, assessmentId });
 
     try {
-      // Delete the assessment result
-      const { error: deleteError } = await supabase
+      console.log("🔄 Resetting assessment:", { candidateId, assessmentId });
+
+      // 1. First, find all sessions for this candidate and assessment
+      const { data: sessions, error: sessionsError } = await supabase
+        .from('assessment_sessions')
+        .select('id')
+        .eq('user_id', candidateId)
+        .eq('assessment_id', assessmentId);
+
+      if (sessionsError) throw sessionsError;
+
+      // 2. Delete all responses for these sessions
+      if (sessions && sessions.length > 0) {
+        const sessionIds = sessions.map(s => s.id);
+        
+        const { error: responsesError } = await supabase
+          .from('responses')
+          .delete()
+          .in('session_id', sessionIds);
+
+        if (responsesError) throw responsesError;
+        console.log(`✅ Deleted responses for ${sessionIds.length} sessions`);
+      }
+
+      // 3. Delete all sessions
+      const { error: sessionDeleteError } = await supabase
+        .from('assessment_sessions')
+        .delete()
+        .eq('user_id', candidateId)
+        .eq('assessment_id', assessmentId);
+
+      if (sessionDeleteError) throw sessionDeleteError;
+      console.log("✅ Deleted sessions");
+
+      // 4. Delete the assessment result
+      const { error: resultError } = await supabase
         .from('assessment_results')
         .delete()
         .eq('user_id', candidateId)
         .eq('assessment_id', assessmentId);
 
-      if (deleteError) throw deleteError;
+      if (resultError) throw resultError;
+      console.log("✅ Deleted assessment result");
 
-      // Update candidate_assessments
+      // 5. Update candidate_assessments to BLOCKED (not unblocked)
       const { error: updateError } = await supabase
         .from('candidate_assessments')
         .update({ 
@@ -406,17 +480,11 @@ export default function SupervisorDashboard() {
         .eq('assessment_id', assessmentId);
 
       if (updateError) throw updateError;
+      console.log("✅ Updated candidate_assessments to BLOCKED");
 
-      // Delete any assessment sessions
-      const { error: sessionError } = await supabase
-        .from('assessment_sessions')
-        .delete()
-        .eq('user_id', candidateId)
-        .eq('assessment_id', assessmentId);
-
-      if (sessionError) throw sessionError;
-
-      alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}.`);
+      alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}. It is now BLOCKED. You must unblock it for them to retake.`);
+      
+      // Refresh the data
       window.location.reload();
 
     } catch (error) {
@@ -458,6 +526,7 @@ export default function SupervisorDashboard() {
     router.push("/login");
   };
 
+  // Toggle candidate details
   const toggleCandidateDetails = (candidateId) => {
     if (expandedCandidate === candidateId) {
       setExpandedCandidate(null);
@@ -482,6 +551,9 @@ export default function SupervisorDashboard() {
           <div>
             <h1 style={styles.title}>Supervisor Dashboard</h1>
             <p style={styles.welcome}>Welcome back, <strong>{currentSupervisor.name || currentSupervisor.email}</strong></p>
+            {currentSupervisor.role === 'admin' && (
+              <p style={styles.adminBadge}>Admin • Viewing all candidates</p>
+            )}
           </div>
           <button onClick={handleLogout} style={styles.logoutButton}>
             Sign Out
@@ -566,7 +638,7 @@ export default function SupervisorDashboard() {
             <div style={styles.emptyState}>
               <div style={styles.emptyIcon}>👥</div>
               <h3>No Assigned Candidates</h3>
-              <p>You don't have any candidates assigned to you yet.</p>
+              <p>You don't have any candidates assigned to you yet. Contact an administrator to assign candidates to your account.</p>
             </div>
           ) : (
             <div style={styles.tableWrapper}>
@@ -601,6 +673,11 @@ export default function SupervisorDashboard() {
                               <div>
                                 <div style={styles.candidateName}>{candidate.full_name}</div>
                                 <div style={styles.candidateId}>ID: {candidate.id.substring(0, 8)}...</div>
+                                {currentSupervisor.role === 'admin' && (
+                                  <div style={styles.supervisorName}>
+                                    Supervisor: {candidate.supervisor_name}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -631,6 +708,7 @@ export default function SupervisorDashboard() {
                                              type === 'performance' ? '#FFF3E0' :
                                              type === 'behavioral' ? '#E0F2F1' :
                                              type === 'cultural' ? '#F1F5F9' :
+                                             type === 'manufacturing' ? '#FCE4EC' :
                                              '#F1F5F9',
                                   color: type === 'leadership' ? '#1565C0' :
                                          type === 'cognitive' ? '#2E7D32' :
@@ -639,6 +717,7 @@ export default function SupervisorDashboard() {
                                          type === 'performance' ? '#EF6C00' :
                                          type === 'behavioral' ? '#00695C' :
                                          type === 'cultural' ? '#37474F' :
+                                         type === 'manufacturing' ? '#C2185B' :
                                          '#37474F'
                                 }}>
                                   {type}: {count}
@@ -741,10 +820,20 @@ export default function SupervisorDashboard() {
                                               background: assessment.assessment_type === 'leadership' ? '#E3F2FD' :
                                                          assessment.assessment_type === 'cognitive' ? '#E8F5E9' :
                                                          assessment.assessment_type === 'technical' ? '#FFEBEE' :
+                                                         assessment.assessment_type === 'personality' ? '#F3E5F5' :
+                                                         assessment.assessment_type === 'performance' ? '#FFF3E0' :
+                                                         assessment.assessment_type === 'behavioral' ? '#E0F2F1' :
+                                                         assessment.assessment_type === 'cultural' ? '#F1F5F9' :
+                                                         assessment.assessment_type === 'manufacturing' ? '#FCE4EC' :
                                                          '#F1F5F9',
                                               color: assessment.assessment_type === 'leadership' ? '#1565C0' :
                                                      assessment.assessment_type === 'cognitive' ? '#2E7D32' :
                                                      assessment.assessment_type === 'technical' ? '#C62828' :
+                                                     assessment.assessment_type === 'personality' ? '#7B1FA2' :
+                                                     assessment.assessment_type === 'performance' ? '#EF6C00' :
+                                                     assessment.assessment_type === 'behavioral' ? '#00695C' :
+                                                     assessment.assessment_type === 'cultural' ? '#37474F' :
+                                                     assessment.assessment_type === 'manufacturing' ? '#C2185B' :
                                                      '#37474F'
                                             }}>
                                               {assessment.assessment_type_name}
@@ -894,6 +983,12 @@ const styles = {
     color: '#666',
     fontSize: '14px'
   },
+  adminBadge: {
+    margin: '5px 0 0 0',
+    color: '#4CAF50',
+    fontSize: '12px',
+    fontWeight: 600
+  },
   logoutButton: {
     background: '#F44336',
     color: 'white',
@@ -902,7 +997,13 @@ const styles = {
     borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '14px',
-    fontWeight: 600
+    fontWeight: 600,
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#D32F2F',
+      transform: 'translateY(-1px)',
+      boxShadow: '0 4px 12px rgba(244, 67, 54, 0.3)'
+    }
   },
   statsGrid: {
     display: 'grid',
@@ -961,7 +1062,8 @@ const styles = {
     borderRadius: '20px',
     cursor: 'pointer',
     fontSize: '14px',
-    fontWeight: 500
+    fontWeight: 500,
+    transition: 'all 0.2s ease'
   },
   tableContainer: {
     background: 'white',
@@ -988,7 +1090,13 @@ const styles = {
     borderRadius: '8px',
     textDecoration: 'none',
     fontSize: '14px',
-    fontWeight: 500
+    fontWeight: 500,
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#1A2A3A',
+      transform: 'translateY(-1px)',
+      boxShadow: '0 4px 12px rgba(10, 25, 41, 0.3)'
+    }
   },
   loadingState: {
     textAlign: 'center',
@@ -1025,7 +1133,11 @@ const styles = {
     textAlign: 'left'
   },
   tableRow: {
-    borderBottom: '1px solid #E2E8F0'
+    borderBottom: '1px solid #E2E8F0',
+    transition: 'background 0.2s ease',
+    ':hover': {
+      background: '#F8FAFC'
+    }
   },
   tableCell: {
     padding: '15px'
@@ -1056,6 +1168,11 @@ const styles = {
     fontSize: '11px',
     color: '#718096',
     fontFamily: 'monospace'
+  },
+  supervisorName: {
+    fontSize: '10px',
+    color: '#4CAF50',
+    marginTop: '2px'
   },
   candidateEmail: {
     fontSize: '14px',
@@ -1096,7 +1213,12 @@ const styles = {
     borderRadius: '4px',
     color: '#0A1929',
     fontSize: '11px',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#0A1929',
+      color: 'white'
+    }
   },
   scoreBadge: {
     display: 'inline-block',
@@ -1133,7 +1255,11 @@ const styles = {
     borderRadius: '6px',
     textDecoration: 'none',
     fontSize: '12px',
-    fontWeight: 500
+    fontWeight: 500,
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#1A2A3A'
+    }
   },
   assignButton: {
     background: '#4CAF50',
@@ -1142,7 +1268,11 @@ const styles = {
     borderRadius: '6px',
     textDecoration: 'none',
     fontSize: '12px',
-    fontWeight: 500
+    fontWeight: 500,
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#45a049'
+    }
   },
   expandedRow: {
     background: '#F8FAFC'
@@ -1168,7 +1298,8 @@ const styles = {
     alignItems: 'center',
     padding: '15px',
     background: 'white',
-    borderRadius: '8px'
+    borderRadius: '8px',
+    border: '1px solid #E2E8F0'
   },
   assessmentItemInfo: {
     display: 'flex',
@@ -1215,10 +1346,6 @@ const styles = {
     fontSize: '11px',
     color: '#4A5568'
   },
-  unblockedDate: {
-    fontSize: '10px',
-    color: '#718096'
-  },
   assessmentItemActions: {
     display: 'flex',
     gap: '8px'
@@ -1231,7 +1358,11 @@ const styles = {
     borderRadius: '4px',
     fontSize: '12px',
     fontWeight: 500,
-    cursor: 'pointer'
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#45a049'
+    }
   },
   blockButton: {
     padding: '6px 12px',
@@ -1241,7 +1372,11 @@ const styles = {
     borderRadius: '4px',
     fontSize: '12px',
     fontWeight: 500,
-    cursor: 'pointer'
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#F57C00'
+    }
   },
   resetButton: {
     padding: '6px 12px',
@@ -1251,6 +1386,10 @@ const styles = {
     borderRadius: '4px',
     fontSize: '12px',
     fontWeight: 500,
-    cursor: 'pointer'
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#1976D2'
+    }
   }
 };
