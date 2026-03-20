@@ -23,7 +23,7 @@ export default function SupervisorDashboard() {
   });
   const [expandedCandidate, setExpandedCandidate] = useState(null);
   const [processingAssessment, setProcessingAssessment] = useState(null);
-  const [filterStatus, setFilterStatus] = useState('all'); // all, completed, unblocked, blocked
+  const [filterStatus, setFilterStatus] = useState('all');
 
   // Authentication check
   useEffect(() => {
@@ -357,7 +357,6 @@ export default function SupervisorDashboard() {
     setProcessingAssessment({ candidateId, assessmentId });
 
     try {
-      // Delete responses
       const { error: responsesError } = await supabase
         .from('responses')
         .delete()
@@ -366,7 +365,6 @@ export default function SupervisorDashboard() {
 
       if (responsesError) throw new Error("Failed to delete responses: " + responsesError.message);
 
-      // Delete sessions
       const { error: sessionsError } = await supabase
         .from('assessment_sessions')
         .delete()
@@ -375,7 +373,6 @@ export default function SupervisorDashboard() {
 
       if (sessionsError) throw new Error("Failed to delete sessions: " + sessionsError.message);
 
-      // Delete results
       const { error: resultsError } = await supabase
         .from('assessment_results')
         .delete()
@@ -384,7 +381,6 @@ export default function SupervisorDashboard() {
 
       if (resultsError) throw new Error("Failed to delete results: " + resultsError.message);
 
-      // Update candidate_assessments
       const { error: updateError } = await supabase
         .from('candidate_assessments')
         .update({ 
@@ -398,7 +394,6 @@ export default function SupervisorDashboard() {
 
       if (updateError) throw new Error("Failed to update assessment status: " + updateError.message);
 
-      // Delete progress records
       await supabase
         .from('assessment_progress')
         .delete()
@@ -810,118 +805,145 @@ export default function SupervisorDashboard() {
                           <tr style={styles.expandedRow}>
                             <td colSpan="7" style={styles.expandedCell}>
                               <div style={styles.assessmentsList}>
-                                <h4 style={styles.assessmentsListTitle}>Individual Assessments</h4>
-                                {candidate.assessments.map((assessment) => {
-                                  const isProcessingThis = isProcessing && 
-                                    processingAssessment?.assessmentId === assessment.assessment_id;
+                                <h4 style={styles.assessmentsListTitle}>
+                                  Individual Assessments
+                                  {selectedAssessmentType !== 'all' && (
+                                    <span style={styles.filteredAssessmentTag}>
+                                      Showing: {selectedAssessmentType.charAt(0).toUpperCase() + selectedAssessmentType.slice(1)} only
+                                    </span>
+                                  )}
+                                </h4>
+                                {candidate.assessments
+                                  .filter(assessment => {
+                                    if (selectedAssessmentType !== 'all') {
+                                      return assessment.assessment_type === selectedAssessmentType;
+                                    }
+                                    return true;
+                                  })
+                                  .map((assessment) => {
+                                    const isProcessingThis = isProcessing && 
+                                      processingAssessment?.assessmentId === assessment.assessment_id;
 
-                                  return (
-                                    <div key={assessment.id} style={{
-                                      ...styles.assessmentItem,
-                                      border: assessment.result ? '2px solid #4CAF50' : 
-                                             assessment.status === 'unblocked' ? '2px solid #2196F3' : 
-                                             '1px solid #FF9800'
-                                    }}>
-                                      <div style={styles.assessmentItemInfo}>
-                                        <div style={{
-                                          ...styles.assessmentTypeIcon,
-                                          background: `linear-gradient(135deg, ${assessment.type_gradient_start}, ${assessment.type_gradient_end})`
-                                        }}>
-                                          {assessment.type_icon}
-                                        </div>
-                                        <div>
-                                          <span style={styles.assessmentItemTitle}>
-                                            {assessment.assessment_title}
-                                          </span>
-                                          <div style={styles.assessmentItemMeta}>
-                                            <span style={{
-                                              ...styles.assessmentItemType,
-                                              background: assessment.assessment_type === 'leadership' ? '#E3F2FD' :
-                                                         assessment.assessment_type === 'cognitive' ? '#E8F5E9' :
-                                                         assessment.assessment_type === 'technical' ? '#FFEBEE' :
-                                                         '#F1F5F9',
-                                              color: assessment.assessment_type === 'leadership' ? '#1565C0' :
-                                                     assessment.assessment_type === 'cognitive' ? '#2E7D32' :
-                                                     assessment.assessment_type === 'technical' ? '#C62828' :
-                                                     '#37474F'
-                                            }}>
-                                              {assessment.assessment_type_name}
+                                    return (
+                                      <div key={assessment.id} style={{
+                                        ...styles.assessmentItem,
+                                        border: assessment.result ? '2px solid #4CAF50' : 
+                                               assessment.status === 'unblocked' ? '2px solid #2196F3' : 
+                                               '1px solid #FF9800'
+                                      }}>
+                                        <div style={styles.assessmentItemInfo}>
+                                          <div style={{
+                                            ...styles.assessmentTypeIcon,
+                                            background: `linear-gradient(135deg, ${assessment.type_gradient_start}, ${assessment.type_gradient_end})`
+                                          }}>
+                                            {assessment.type_icon}
+                                          </div>
+                                          <div>
+                                            <span style={styles.assessmentItemTitle}>
+                                              {assessment.assessment_title}
                                             </span>
-                                            {assessment.result ? (
-                                              <span style={styles.assessmentItemScore}>
-                                                Score: {assessment.result.score}/{assessment.result.max_score} 
-                                                ({Math.round((assessment.result.score/assessment.result.max_score)*100)}%) • 
-                                                Completed: {formatDate(assessment.result.completed_at)}
-                                              </span>
-                                            ) : (
+                                            <div style={styles.assessmentItemMeta}>
                                               <span style={{
-                                                ...styles.assessmentItemStatus,
-                                                background: assessment.status === 'unblocked' ? '#E8F5E9' : '#FFEBEE',
-                                                color: assessment.status === 'unblocked' ? '#2E7D32' : '#D32F2F'
+                                                ...styles.assessmentItemType,
+                                                background: assessment.assessment_type === 'leadership' ? '#E3F2FD' :
+                                                           assessment.assessment_type === 'cognitive' ? '#E8F5E9' :
+                                                           assessment.assessment_type === 'technical' ? '#FFEBEE' :
+                                                           '#F1F5F9',
+                                                color: assessment.assessment_type === 'leadership' ? '#1565C0' :
+                                                       assessment.assessment_type === 'cognitive' ? '#2E7D32' :
+                                                       assessment.assessment_type === 'technical' ? '#C62828' :
+                                                       '#37474F'
                                               }}>
-                                                {assessment.status === 'unblocked' ? '🔓 Ready to take' : '🔒 Blocked'}
+                                                {assessment.assessment_type_name}
                                               </span>
-                                            )}
+                                              {assessment.result ? (
+                                                <span style={styles.assessmentItemScore}>
+                                                  Score: {assessment.result.score}/{assessment.result.max_score} 
+                                                  ({Math.round((assessment.result.score/assessment.result.max_score)*100)}%) • 
+                                                  Completed: {formatDate(assessment.result.completed_at)}
+                                                </span>
+                                              ) : (
+                                                <span style={{
+                                                  ...styles.assessmentItemStatus,
+                                                  background: assessment.status === 'unblocked' ? '#E8F5E9' : '#FFEBEE',
+                                                  color: assessment.status === 'unblocked' ? '#2E7D32' : '#D32F2F'
+                                                }}>
+                                                  {assessment.status === 'unblocked' ? '🔓 Ready to take' : '🔒 Blocked'}
+                                                </span>
+                                              )}
+                                            </div>
                                           </div>
                                         </div>
+                                        <div style={styles.assessmentItemActions}>
+                                          {assessment.result ? (
+                                            <button
+                                              onClick={() => handleResetAssessment(
+                                                candidate.id,
+                                                assessment.assessment_id,
+                                                assessment.assessment_title,
+                                                candidate.full_name
+                                              )}
+                                              disabled={isProcessingThis}
+                                              style={{
+                                                ...styles.resetButton,
+                                                opacity: isProcessingThis ? 0.5 : 1,
+                                                cursor: isProcessingThis ? 'not-allowed' : 'pointer'
+                                              }}
+                                            >
+                                              {isProcessingThis ? '⏳' : '🔄 Reset'}
+                                            </button>
+                                          ) : assessment.status === 'blocked' ? (
+                                            <button
+                                              onClick={() => handleUnblockAssessment(
+                                                candidate.id,
+                                                candidate.full_name,
+                                                assessment.assessment_id,
+                                                assessment.assessment_title
+                                              )}
+                                              disabled={isProcessingThis}
+                                              style={{
+                                                ...styles.unblockButton,
+                                                opacity: isProcessingThis ? 0.5 : 1,
+                                                cursor: isProcessingThis ? 'not-allowed' : 'pointer'
+                                              }}
+                                            >
+                                              {isProcessingThis ? '⏳' : '🔓 Unblock'}
+                                            </button>
+                                          ) : (
+                                            <button
+                                              onClick={() => handleBlockAssessment(
+                                                candidate.id,
+                                                candidate.full_name,
+                                                assessment.assessment_id,
+                                                assessment.assessment_title
+                                              )}
+                                              disabled={isProcessingThis}
+                                              style={{
+                                                ...styles.blockButton,
+                                                opacity: isProcessingThis ? 0.5 : 1,
+                                                cursor: isProcessingThis ? 'not-allowed' : 'pointer'
+                                              }}
+                                            >
+                                              {isProcessingThis ? '⏳' : '🔒 Block'}
+                                            </button>
+                                          )}
+                                        </div>
                                       </div>
-                                      <div style={styles.assessmentItemActions}>
-                                        {assessment.result ? (
-                                          <button
-                                            onClick={() => handleResetAssessment(
-                                              candidate.id,
-                                              assessment.assessment_id,
-                                              assessment.assessment_title,
-                                              candidate.full_name
-                                            )}
-                                            disabled={isProcessingThis}
-                                            style={{
-                                              ...styles.resetButton,
-                                              opacity: isProcessingThis ? 0.5 : 1,
-                                              cursor: isProcessingThis ? 'not-allowed' : 'pointer'
-                                            }}
-                                          >
-                                            {isProcessingThis ? '⏳' : '🔄 Reset'}
-                                          </button>
-                                        ) : assessment.status === 'blocked' ? (
-                                          <button
-                                            onClick={() => handleUnblockAssessment(
-                                              candidate.id,
-                                              candidate.full_name,
-                                              assessment.assessment_id,
-                                              assessment.assessment_title
-                                            )}
-                                            disabled={isProcessingThis}
-                                            style={{
-                                              ...styles.unblockButton,
-                                              opacity: isProcessingThis ? 0.5 : 1,
-                                              cursor: isProcessingThis ? 'not-allowed' : 'pointer'
-                                            }}
-                                          >
-                                            {isProcessingThis ? '⏳' : '🔓 Unblock'}
-                                          </button>
-                                        ) : (
-                                          <button
-                                            onClick={() => handleBlockAssessment(
-                                              candidate.id,
-                                              candidate.full_name,
-                                              assessment.assessment_id,
-                                              assessment.assessment_title
-                                            )}
-                                            disabled={isProcessingThis}
-                                            style={{
-                                              ...styles.blockButton,
-                                              opacity: isProcessingThis ? 0.5 : 1,
-                                              cursor: isProcessingThis ? 'not-allowed' : 'pointer'
-                                            }}
-                                          >
-                                            {isProcessingThis ? '⏳' : '🔒 Block'}
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
+                                    );
+                                  })}
+                                
+                                {/* Show message if no assessments match the filter */}
+                                {candidate.assessments.filter(a => {
+                                  if (selectedAssessmentType !== 'all') {
+                                    return a.assessment_type === selectedAssessmentType;
+                                  }
+                                  return true;
+                                }).length === 0 && (
+                                  <div style={styles.noMatchingAssessments}>
+                                    <span style={styles.noMatchingIcon}>📭</span>
+                                    <p>No {selectedAssessmentType !== 'all' ? selectedAssessmentType : ''} assessments found for this candidate</p>
+                                  </div>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1345,7 +1367,34 @@ const styles = {
     margin: '0 0 10px 0',
     fontSize: '14px',
     fontWeight: 600,
-    color: '#0A1929'
+    color: '#0A1929',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    flexWrap: 'wrap'
+  },
+  filteredAssessmentTag: {
+    fontSize: '12px',
+    fontWeight: 'normal',
+    background: '#E3F2FD',
+    color: '#1565C0',
+    padding: '4px 12px',
+    borderRadius: '20px',
+    display: 'inline-block'
+  },
+  noMatchingAssessments: {
+    textAlign: 'center',
+    padding: '30px',
+    background: '#F8FAFC',
+    borderRadius: '8px',
+    color: '#718096',
+    fontSize: '14px'
+  },
+  noMatchingIcon: {
+    fontSize: '32px',
+    display: 'block',
+    marginBottom: '10px',
+    opacity: 0.5
   },
   assessmentItem: {
     display: 'flex',
