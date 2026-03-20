@@ -264,7 +264,8 @@ export default function SupervisorDashboard() {
               assessment_breakdown: assessmentBreakdown,
               latestAssessment: latestAssessment,
               hasCompletedAssessments: completedAssessments.length > 0,
-              assessments: assessmentsWithDetails
+              assessments: assessmentsWithDetails,
+              selectedAssessmentType: assessmentsWithDetails[0]?.assessment_type || null
             };
           })
         );
@@ -504,6 +505,14 @@ export default function SupervisorDashboard() {
     } else {
       setExpandedCandidate(candidateId);
     }
+  };
+
+  const handleAssessmentDropdownChange = (candidateId, assessmentType) => {
+    setCandidates(prev => prev.map(c => 
+      c.id === candidateId 
+        ? { ...c, selectedAssessmentType: assessmentType }
+        : c
+    ));
   };
 
   if (!currentSupervisor) {
@@ -805,20 +814,31 @@ export default function SupervisorDashboard() {
                           <tr style={styles.expandedRow}>
                             <td colSpan="7" style={styles.expandedCell}>
                               <div style={styles.assessmentsList}>
-                                <h4 style={styles.assessmentsListTitle}>
-                                  Individual Assessments
-                                  {selectedAssessmentType !== 'all' && (
-                                    <span style={styles.filteredAssessmentTag}>
-                                      Showing: {selectedAssessmentType.charAt(0).toUpperCase() + selectedAssessmentType.slice(1)} only
-                                    </span>
+                                <div style={styles.assessmentsListHeader}>
+                                  <h4 style={styles.assessmentsListTitle}>Individual Assessments</h4>
+                                  {candidate.assessments.length > 0 && (
+                                    <select
+                                      value={candidate.selectedAssessmentType || candidate.assessments[0]?.assessment_type}
+                                      onChange={(e) => handleAssessmentDropdownChange(candidate.id, e.target.value)}
+                                      style={styles.assessmentDropdown}
+                                    >
+                                      {candidate.assessments.map(assessment => (
+                                        <option key={assessment.assessment_id} value={assessment.assessment_type}>
+                                          {assessment.assessment_type_name} 
+                                          {assessment.result && ` (Score: ${Math.round((assessment.result.score/assessment.result.max_score)*100)}%)`}
+                                          {!assessment.result && assessment.status === 'unblocked' && ' (Ready)'}
+                                          {!assessment.result && assessment.status === 'blocked' && ' (Blocked)'}
+                                        </option>
+                                      ))}
+                                    </select>
                                   )}
-                                </h4>
+                                </div>
+                                
+                                {/* Show only the selected assessment */}
                                 {candidate.assessments
                                   .filter(assessment => {
-                                    if (selectedAssessmentType !== 'all') {
-                                      return assessment.assessment_type === selectedAssessmentType;
-                                    }
-                                    return true;
+                                    const selectedType = candidate.selectedAssessmentType || candidate.assessments[0]?.assessment_type;
+                                    return assessment.assessment_type === selectedType;
                                   })
                                   .map((assessment) => {
                                     const isProcessingThis = isProcessing && 
@@ -838,13 +858,13 @@ export default function SupervisorDashboard() {
                                           }}>
                                             {assessment.type_icon}
                                           </div>
-                                          <div>
-                                            <span style={styles.assessmentItemTitle}>
-                                              {assessment.assessment_title}
-                                            </span>
-                                            <div style={styles.assessmentItemMeta}>
+                                          <div style={styles.assessmentDetails}>
+                                            <div style={styles.assessmentHeader}>
+                                              <span style={styles.assessmentItemTitle}>
+                                                {assessment.assessment_title}
+                                              </span>
                                               <span style={{
-                                                ...styles.assessmentItemType,
+                                                ...styles.assessmentTypeBadge,
                                                 background: assessment.assessment_type === 'leadership' ? '#E3F2FD' :
                                                            assessment.assessment_type === 'cognitive' ? '#E8F5E9' :
                                                            assessment.assessment_type === 'technical' ? '#FFEBEE' :
@@ -856,42 +876,79 @@ export default function SupervisorDashboard() {
                                               }}>
                                                 {assessment.assessment_type_name}
                                               </span>
-                                              {assessment.result ? (
-                                                <span style={styles.assessmentItemScore}>
-                                                  Score: {assessment.result.score}/{assessment.result.max_score} 
-                                                  ({Math.round((assessment.result.score/assessment.result.max_score)*100)}%) • 
-                                                  Completed: {formatDate(assessment.result.completed_at)}
-                                                </span>
-                                              ) : (
-                                                <span style={{
-                                                  ...styles.assessmentItemStatus,
-                                                  background: assessment.status === 'unblocked' ? '#E8F5E9' : '#FFEBEE',
-                                                  color: assessment.status === 'unblocked' ? '#2E7D32' : '#D32F2F'
-                                                }}>
-                                                  {assessment.status === 'unblocked' ? '🔓 Ready to take' : '🔒 Blocked'}
-                                                </span>
-                                              )}
                                             </div>
+                                            
+                                            {assessment.result ? (
+                                              <>
+                                                <div style={styles.assessmentScoreSection}>
+                                                  <div style={styles.scoreCircle}>
+                                                    <span style={styles.scoreLarge}>
+                                                      {Math.round((assessment.result.score/assessment.result.max_score)*100)}%
+                                                    </span>
+                                                    <span style={styles.scoreLabel}>Overall</span>
+                                                  </div>
+                                                  <div style={styles.scoreDetails}>
+                                                    <div style={styles.scoreRow}>
+                                                      <span>Score:</span>
+                                                      <strong>{assessment.result.score}/{assessment.result.max_score}</strong>
+                                                    </div>
+                                                    <div style={styles.scoreRow}>
+                                                      <span>Classification:</span>
+                                                      <span style={{
+                                                        ...styles.classificationSmall,
+                                                        color: getClassification(assessment.result.score, assessment.result.max_score).color,
+                                                        background: `${getClassification(assessment.result.score, assessment.result.max_score).color}15`
+                                                      }}>
+                                                        {getClassification(assessment.result.score, assessment.result.max_score).label}
+                                                      </span>
+                                                    </div>
+                                                    <div style={styles.scoreRow}>
+                                                      <span>Completed:</span>
+                                                      <span>{formatDate(assessment.result.completed_at)}</span>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              </>
+                                            ) : (
+                                              <div style={styles.noScoreSection}>
+                                                <span style={styles.noScoreIcon}>📋</span>
+                                                <div>
+                                                  <div style={styles.noScoreTitle}>Not Started</div>
+                                                  <div style={styles.noScoreSubtitle}>
+                                                    {assessment.status === 'unblocked' 
+                                                      ? 'Candidate can start this assessment' 
+                                                      : 'Assessment is blocked. Unblock to allow candidate to take it.'}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            )}
                                           </div>
                                         </div>
                                         <div style={styles.assessmentItemActions}>
                                           {assessment.result ? (
-                                            <button
-                                              onClick={() => handleResetAssessment(
-                                                candidate.id,
-                                                assessment.assessment_id,
-                                                assessment.assessment_title,
-                                                candidate.full_name
-                                              )}
-                                              disabled={isProcessingThis}
-                                              style={{
-                                                ...styles.resetButton,
-                                                opacity: isProcessingThis ? 0.5 : 1,
-                                                cursor: isProcessingThis ? 'not-allowed' : 'pointer'
-                                              }}
-                                            >
-                                              {isProcessingThis ? '⏳' : '🔄 Reset'}
-                                            </button>
+                                            <>
+                                              <Link href={`/supervisor/${candidate.id}?assessment=${assessment.assessment_id}`} legacyBehavior>
+                                                <a style={styles.viewFullReportButton}>
+                                                  📄 View Full Report
+                                                </a>
+                                              </Link>
+                                              <button
+                                                onClick={() => handleResetAssessment(
+                                                  candidate.id,
+                                                  assessment.assessment_id,
+                                                  assessment.assessment_title,
+                                                  candidate.full_name
+                                                )}
+                                                disabled={isProcessingThis}
+                                                style={{
+                                                  ...styles.resetButton,
+                                                  opacity: isProcessingThis ? 0.5 : 1,
+                                                  cursor: isProcessingThis ? 'not-allowed' : 'pointer'
+                                                }}
+                                              >
+                                                {isProcessingThis ? '⏳' : '🔄 Reset'}
+                                              </button>
+                                            </>
                                           ) : assessment.status === 'blocked' ? (
                                             <button
                                               onClick={() => handleUnblockAssessment(
@@ -931,19 +988,6 @@ export default function SupervisorDashboard() {
                                       </div>
                                     );
                                   })}
-                                
-                                {/* Show message if no assessments match the filter */}
-                                {candidate.assessments.filter(a => {
-                                  if (selectedAssessmentType !== 'all') {
-                                    return a.assessment_type === selectedAssessmentType;
-                                  }
-                                  return true;
-                                }).length === 0 && (
-                                  <div style={styles.noMatchingAssessments}>
-                                    <span style={styles.noMatchingIcon}>📭</span>
-                                    <p>No {selectedAssessmentType !== 'all' ? selectedAssessmentType : ''} assessments found for this candidate</p>
-                                  </div>
-                                )}
                               </div>
                             </td>
                           </tr>
@@ -1363,137 +1407,213 @@ const styles = {
     flexDirection: 'column',
     gap: '10px'
   },
+  assessmentsListHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '20px',
+    flexWrap: 'wrap',
+    gap: '15px'
+  },
   assessmentsListTitle: {
-    margin: '0 0 10px 0',
+    margin: 0,
     fontSize: '14px',
     fontWeight: 600,
-    color: '#0A1929',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    flexWrap: 'wrap'
+    color: '#0A1929'
   },
-  filteredAssessmentTag: {
-    fontSize: '12px',
-    fontWeight: 'normal',
-    background: '#E3F2FD',
-    color: '#1565C0',
-    padding: '4px 12px',
-    borderRadius: '20px',
-    display: 'inline-block'
-  },
-  noMatchingAssessments: {
-    textAlign: 'center',
-    padding: '30px',
-    background: '#F8FAFC',
+  assessmentDropdown: {
+    padding: '8px 16px',
+    border: '1px solid #E2E8F0',
     borderRadius: '8px',
-    color: '#718096',
-    fontSize: '14px'
-  },
-  noMatchingIcon: {
-    fontSize: '32px',
-    display: 'block',
-    marginBottom: '10px',
-    opacity: 0.5
+    fontSize: '14px',
+    background: 'white',
+    cursor: 'pointer',
+    outline: 'none',
+    minWidth: '250px',
+    fontFamily: 'inherit'
   },
   assessmentItem: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '15px',
+    padding: '20px',
     background: 'white',
-    borderRadius: '8px',
-    border: '1px solid #E2E8F0'
+    borderRadius: '12px',
+    border: '1px solid #E2E8F0',
+    flexWrap: 'wrap',
+    gap: '15px'
   },
   assessmentItemInfo: {
     display: 'flex',
     alignItems: 'center',
-    gap: '15px',
-    flexWrap: 'wrap'
+    gap: '20px',
+    flex: 1,
+    minWidth: '300px'
   },
   assessmentTypeIcon: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '8px',
+    width: '50px',
+    height: '50px',
+    borderRadius: '12px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '20px',
-    color: 'white'
+    fontSize: '24px',
+    color: 'white',
+    flexShrink: 0
+  },
+  assessmentDetails: {
+    flex: 1
+  },
+  assessmentHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '15px',
+    flexWrap: 'wrap'
   },
   assessmentItemTitle: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#0A1929'
+  },
+  assessmentTypeBadge: {
+    padding: '4px 12px',
+    borderRadius: '20px',
+    fontSize: '12px',
+    fontWeight: 500
+  },
+  assessmentScoreSection: {
+    display: 'flex',
+    gap: '24px',
+    alignItems: 'center',
+    flexWrap: 'wrap'
+  },
+  scoreCircle: {
+    width: '80px',
+    height: '80px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #0A1929, #1A2A3A)',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: 'white',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+  },
+  scoreLarge: {
+    fontSize: '24px',
+    fontWeight: 700,
+    lineHeight: 1
+  },
+  scoreLabel: {
+    fontSize: '10px',
+    opacity: 0.8,
+    marginTop: '4px'
+  },
+  scoreDetails: {
+    flex: 1
+  },
+  scoreRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '6px 0',
+    borderBottom: '1px solid #E2E8F0',
+    fontSize: '13px',
+    '&:last-child': {
+      borderBottom: 'none'
+    }
+  },
+  classificationSmall: {
+    padding: '2px 8px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: 500
+  },
+  noScoreSection: {
+    display: 'flex',
+    gap: '16px',
+    alignItems: 'center',
+    padding: '12px',
+    background: '#F8FAFC',
+    borderRadius: '12px'
+  },
+  noScoreIcon: {
+    fontSize: '32px',
+    opacity: 0.5
+  },
+  noScoreTitle: {
     fontSize: '14px',
     fontWeight: 600,
     color: '#0A1929',
-    marginRight: '10px'
+    marginBottom: '4px'
   },
-  assessmentItemMeta: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    flexWrap: 'wrap',
-    marginTop: '4px'
-  },
-  assessmentItemType: {
-    padding: '2px 6px',
-    borderRadius: '4px',
-    fontSize: '10px',
-    fontWeight: 600
-  },
-  assessmentItemStatus: {
-    padding: '2px 6px',
-    borderRadius: '4px',
-    fontSize: '10px',
-    fontWeight: 600
-  },
-  assessmentItemScore: {
-    fontSize: '11px',
-    color: '#4A5568'
+  noScoreSubtitle: {
+    fontSize: '12px',
+    color: '#718096'
   },
   assessmentItemActions: {
     display: 'flex',
-    gap: '8px'
+    gap: '10px',
+    alignItems: 'center'
+  },
+  viewFullReportButton: {
+    background: '#0A1929',
+    color: 'white',
+    padding: '8px 16px',
+    borderRadius: '6px',
+    textDecoration: 'none',
+    fontSize: '12px',
+    fontWeight: 500,
+    transition: 'all 0.2s ease',
+    display: 'inline-block',
+    ':hover': {
+      background: '#1A2A3A',
+      transform: 'translateY(-1px)'
+    }
   },
   unblockButton: {
-    padding: '6px 12px',
+    padding: '8px 16px',
     background: '#4CAF50',
     color: 'white',
     border: 'none',
-    borderRadius: '4px',
+    borderRadius: '6px',
     fontSize: '12px',
     fontWeight: 500,
     cursor: 'pointer',
     transition: 'all 0.2s ease',
     ':hover': {
-      background: '#45a049'
+      background: '#45a049',
+      transform: 'translateY(-1px)'
     }
   },
   blockButton: {
-    padding: '6px 12px',
+    padding: '8px 16px',
     background: '#FF9800',
     color: 'white',
     border: 'none',
-    borderRadius: '4px',
+    borderRadius: '6px',
     fontSize: '12px',
     fontWeight: 500,
     cursor: 'pointer',
     transition: 'all 0.2s ease',
     ':hover': {
-      background: '#F57C00'
+      background: '#F57C00',
+      transform: 'translateY(-1px)'
     }
   },
   resetButton: {
-    padding: '6px 12px',
+    padding: '8px 16px',
     background: '#2196F3',
     color: 'white',
     border: 'none',
-    borderRadius: '4px',
+    borderRadius: '6px',
     fontSize: '12px',
     fontWeight: 500,
     cursor: 'pointer',
     transition: 'all 0.2s ease',
     ':hover': {
-      background: '#1976D2'
+      background: '#1976D2',
+      transform: 'translateY(-1px)'
     }
   }
 };
