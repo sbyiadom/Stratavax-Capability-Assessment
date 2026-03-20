@@ -111,17 +111,11 @@ function CandidateReportComponent() {
         };
         setCandidate(candidateInfo);
 
-        // PRIMARY METHOD: Fetch from assessment_results with assessment details
+        // DIRECT APPROACH: Get all assessment results first
+        console.log("🔍 Step 1: Fetching assessment_results...");
         const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
-          .select(`
-            *,
-            assessment:assessments(
-              id,
-              title,
-              assessment_type:assessment_types(*)
-            )
-          `)
+          .select('*')
           .eq('user_id', user_id)
           .order('completed_at', { ascending: false });
 
@@ -129,31 +123,49 @@ function CandidateReportComponent() {
           console.error("Error fetching results:", resultsError);
         }
 
-        // If results found, use them
+        console.log(`Found ${resultsData?.length || 0} assessment results`);
+
         if (resultsData && resultsData.length > 0) {
-          console.log(`✅ Found ${resultsData.length} assessments in assessment_results`);
-          setAllAssessments(resultsData);
+          // For each result, get the assessment details separately
+          const resultsWithAssessments = [];
           
-          const defaultAssessment = resultsData[0];
-          await loadAssessmentData(defaultAssessment, candidateInfo);
-          setLoading(false);
-          return;
+          for (const result of resultsData) {
+            console.log(`Fetching assessment details for ID: ${result.assessment_id}`);
+            
+            const { data: assessment, error: assError } = await supabase
+              .from('assessments')
+              .select('*, assessment_type:assessment_types(*)')
+              .eq('id', result.assessment_id)
+              .single();
+
+            if (assError) {
+              console.error("Error fetching assessment:", assError);
+              continue;
+            }
+
+            resultsWithAssessments.push({
+              ...result,
+              assessment: assessment
+            });
+          }
+
+          if (resultsWithAssessments.length > 0) {
+            console.log(`✅ Successfully loaded ${resultsWithAssessments.length} assessments with details`);
+            setAllAssessments(resultsWithAssessments);
+            
+            // Load the first assessment
+            const defaultAssessment = resultsWithAssessments[0];
+            await loadAssessmentData(defaultAssessment, candidateInfo);
+            setLoading(false);
+            return;
+          }
         }
 
-        // SECONDARY METHOD: Check candidate_assessments for completed assessments with results
-        console.log("No results in assessment_results, checking candidate_assessments...");
-        
+        // If no results found, check candidate_assessments
+        console.log("🔍 Step 2: Checking candidate_assessments...");
         const { data: caData, error: caError } = await supabase
           .from('candidate_assessments')
-          .select(`
-            *,
-            assessment:assessments(
-              id,
-              title,
-              assessment_type:assessment_types(*)
-            ),
-            result:assessment_results(*)
-          `)
+          .select('*')
           .eq('user_id', user_id)
           .eq('status', 'completed');
 
@@ -161,57 +173,49 @@ function CandidateReportComponent() {
           console.error("Error fetching candidate_assessments:", caError);
         }
 
-        if (caData && caData.length > 0) {
-          // Extract results from candidate_assessments where result exists
-          const extractedResults = caData
-            .filter(ca => ca.result)
-            .map(ca => ({
-              ...ca.result,
-              assessment: ca.assessment
-            }));
+        console.log(`Found ${caData?.length || 0} completed candidate_assessments`);
 
-          if (extractedResults.length > 0) {
-            console.log(`✅ Found ${extractedResults.length} assessments via candidate_assessments`);
-            setAllAssessments(extractedResults);
-            
-            const defaultAssessment = extractedResults[0];
+        if (caData && caData.length > 0) {
+          const resultsFromCA = [];
+          
+          for (const ca of caData) {
+            // Get the result if it exists
+            if (ca.result_id) {
+              const { data: result } = await supabase
+                .from('assessment_results')
+                .select('*')
+                .eq('id', ca.result_id)
+                .single();
+
+              if (result) {
+                const { data: assessment } = await supabase
+                  .from('assessments')
+                  .select('*, assessment_type:assessment_types(*)')
+                  .eq('id', ca.assessment_id)
+                  .single();
+
+                if (assessment) {
+                  resultsFromCA.push({
+                    ...result,
+                    assessment: assessment
+                  });
+                }
+              }
+            }
+          }
+
+          if (resultsFromCA.length > 0) {
+            console.log(`✅ Found ${resultsFromCA.length} results via candidate_assessments`);
+            setAllAssessments(resultsFromCA);
+            const defaultAssessment = resultsFromCA[0];
             await loadAssessmentData(defaultAssessment, candidateInfo);
             setLoading(false);
             return;
           }
         }
 
-        // TERTIARY METHOD: Check if there are sessions that might need results generated
-        console.log("No results found, checking for completed sessions...");
-        
-        const { data: sessionsData, error: sessionsError } = await supabase
-          .from('assessment_sessions')
-          .select(`
-            *,
-            assessment:assessments(
-              id,
-              title,
-              assessment_type:assessment_types(*)
-            )
-          `)
-          .eq('user_id', user_id)
-          .eq('status', 'completed');
-
-        if (sessionsError) {
-          console.error("Error checking sessions:", sessionsError);
-        }
-
-        if (sessionsData && sessionsData.length > 0) {
-          console.log(`Found ${sessionsData.length} completed sessions but no results - may need to generate results`);
-          
-          // Optional: You could trigger result generation here
-          // For now, just show the info
-          setAllAssessments([]);
-        } else {
-          console.log("❌ No assessment data found for this candidate");
-          setAllAssessments([]);
-        }
-        
+        console.log("❌ No assessment data found for this candidate");
+        setAllAssessments([]);
         setLoading(false);
 
       } catch (error) {
@@ -284,7 +288,9 @@ function CandidateReportComponent() {
 
   const loadAssessmentData = async (result, candidateInfo) => {
     try {
-      // Fetch responses with proper joins
+      console.log("Loading assessment data for result:", result.id);
+      
+      // Fetch responses
       const { data: responsesData, error: responsesError } = await supabase
         .from('responses')
         .select(`
