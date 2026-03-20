@@ -30,7 +30,6 @@ export default function SupervisorDashboard() {
         const { data: { session: supabaseSession } } = await supabase.auth.getSession();
         
         if (supabaseSession) {
-          // User is logged in via Supabase, check their role from user metadata
           const userRole = supabaseSession.user?.user_metadata?.role;
           
           if (userRole === 'supervisor' || userRole === 'admin') {
@@ -40,7 +39,6 @@ export default function SupervisorDashboard() {
               name: supabaseSession.user.user_metadata?.full_name || supabaseSession.user.email
             });
             
-            // Also update localStorage for consistency
             localStorage.setItem("userSession", JSON.stringify({
               loggedIn: true,
               user_id: supabaseSession.user.id,
@@ -56,7 +54,6 @@ export default function SupervisorDashboard() {
           }
         }
         
-        // Fallback to localStorage if Supabase session doesn't exist
         const userSession = localStorage.getItem("userSession");
         
         if (!userSession) {
@@ -87,14 +84,11 @@ export default function SupervisorDashboard() {
     
     checkAuth();
     
-    // Set up auth state change listener
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("Auth state changed:", event);
       if (event === 'SIGNED_OUT') {
         localStorage.removeItem("userSession");
         router.push("/login");
       } else if (event === 'SIGNED_IN' && session) {
-        // Handle sign in
         const userRole = session.user?.user_metadata?.role;
         if (userRole === 'supervisor' || userRole === 'admin') {
           setCurrentSupervisor({
@@ -119,7 +113,7 @@ export default function SupervisorDashboard() {
       try {
         setLoading(true);
 
-        // First, get candidates assigned to this supervisor
+        // Get candidates assigned to this supervisor
         const { data: candidatesData, error: candidatesError } = await supabase
           .from('candidate_profiles')
           .select(`
@@ -134,11 +128,33 @@ export default function SupervisorDashboard() {
 
         if (candidatesError) throw candidatesError;
 
-        // For each candidate, get their assessment access and results
+        // For each candidate, get their assessments and results
         const processedCandidates = await Promise.all(
           (candidatesData || []).map(async (candidate) => {
             
-            // Get assessment access for this candidate
+            // Get all assessment results for this candidate FIRST
+            const { data: resultsData, error: resultsError } = await supabase
+              .from('assessment_results')
+              .select(`
+                id,
+                assessment_id,
+                total_score,
+                max_score,
+                percentage_score,
+                completed_at,
+                assessment_type_id
+              `)
+              .eq('user_id', candidate.id);
+
+            if (resultsError) throw resultsError;
+
+            // Create a map of results by assessment_id
+            const resultsMap = {};
+            resultsData?.forEach(result => {
+              resultsMap[result.assessment_id] = result;
+            });
+
+            // Get candidate_assessments
             const { data: accessData, error: accessError } = await supabase
               .from('candidate_assessments')
               .select(`
@@ -167,31 +183,23 @@ export default function SupervisorDashboard() {
 
             if (accessError) throw accessError;
 
-            // Get assessment results for this candidate
-            const { data: resultsData, error: resultsError } = await supabase
-              .from('assessment_results')
-              .select(`
-                id,
-                assessment_id,
-                total_score,
-                max_score,
-                percentage_score,
-                completed_at,
-                assessment_type_id
-              `)
-              .eq('user_id', candidate.id);
-
-            if (resultsError) throw resultsError;
-
-            // Create a map of results by assessment_id for easy lookup
-            const resultsMap = {};
-            resultsData?.forEach(result => {
-              resultsMap[result.assessment_id] = result;
-            });
-
             // Combine access and results
             const assessmentsWithDetails = (accessData || []).map(access => {
-              const result = resultsMap[access.assessment_id];
+              // First check if we have a result in the resultsMap
+              const result = resultsMap[access.assessment_id] || null;
+              
+              // If we have a result but no result_id in candidate_assessments, we should update it
+              if (result && !access.result_id) {
+                // Silently update the candidate_assessments (fire and forget)
+                supabase
+                  .from('candidate_assessments')
+                  .update({ result_id: result.id, status: 'completed' })
+                  .eq('id', access.id)
+                  .then(({ error }) => {
+                    if (error) console.error('Error updating result_id:', error);
+                  });
+              }
+
               const assessment = access.assessments;
               const typeData = assessment?.assessment_types;
 
@@ -204,7 +212,7 @@ export default function SupervisorDashboard() {
                 type_icon: typeData?.icon || '📋',
                 type_gradient_start: typeData?.gradient_start || '#667eea',
                 type_gradient_end: typeData?.gradient_end || '#764ba2',
-                status: access.status,
+                status: result ? 'completed' : access.status, // If we have a result, status should be completed
                 created_at: access.created_at,
                 unblocked_at: access.unblocked_at,
                 result: result ? {
@@ -224,7 +232,7 @@ export default function SupervisorDashboard() {
               return new Date(dateB) - new Date(dateA);
             });
 
-            // Count assessments based on status and results
+            // Count assessments based on results existence
             const completedAssessments = assessmentsWithDetails.filter(a => a.result !== null);
             const unblockedAssessments = assessmentsWithDetails.filter(a => a.status === 'unblocked' && !a.result);
             const blockedAssessments = assessmentsWithDetails.filter(a => a.status === 'blocked' && !a.result);
@@ -325,8 +333,6 @@ export default function SupervisorDashboard() {
       if (error) throw error;
 
       alert(`✅ "${assessmentTitle}" unblocked successfully for ${candidateName}.`);
-
-      // Refresh data
       window.location.reload();
 
     } catch (error) {
@@ -359,8 +365,6 @@ export default function SupervisorDashboard() {
       if (error) throw error;
 
       alert(`🔒 "${assessmentTitle}" blocked for ${candidateName}.`);
-
-      // Refresh data
       window.location.reload();
 
     } catch (error) {
@@ -389,7 +393,7 @@ export default function SupervisorDashboard() {
 
       if (deleteError) throw deleteError;
 
-      // Update candidate_assessments to blocked (so supervisor must unblock again)
+      // Update candidate_assessments
       const { error: updateError } = await supabase
         .from('candidate_assessments')
         .update({ 
@@ -412,9 +416,7 @@ export default function SupervisorDashboard() {
 
       if (sessionError) throw sessionError;
 
-      alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}. It is now BLOCKED. Unblock it to let them retake.`);
-      
-      // Refresh the data
+      alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}.`);
       window.location.reload();
 
     } catch (error) {
@@ -456,7 +458,6 @@ export default function SupervisorDashboard() {
     router.push("/login");
   };
 
-  // Toggle candidate details
   const toggleCandidateDetails = (candidateId) => {
     if (expandedCandidate === candidateId) {
       setExpandedCandidate(null);
@@ -565,7 +566,7 @@ export default function SupervisorDashboard() {
             <div style={styles.emptyState}>
               <div style={styles.emptyIcon}>👥</div>
               <h3>No Assigned Candidates</h3>
-              <p>You don't have any candidates assigned to you yet. Contact an administrator to assign candidates to your account.</p>
+              <p>You don't have any candidates assigned to you yet.</p>
             </div>
           ) : (
             <div style={styles.tableWrapper}>
@@ -671,7 +672,7 @@ export default function SupervisorDashboard() {
                                 {latestScore}/{maxScore} ({percentage}%)
                               </span>
                             ) : (
-                              <span style={styles.noScore}>No assessments</span>
+                              <span style={styles.noScore}>No completed assessments</span>
                             )}
                           </td>
                           <td style={styles.tableCell}>
@@ -719,8 +720,9 @@ export default function SupervisorDashboard() {
                                   return (
                                     <div key={assessment.id} style={{
                                       ...styles.assessmentItem,
-                                      border: assessment.status === 'unblocked' ? '2px solid #4CAF50' : 
-                                             assessment.result ? '1px solid #E2E8F0' : '1px solid #FF9800'
+                                      border: assessment.result ? '2px solid #4CAF50' : 
+                                             assessment.status === 'unblocked' ? '2px solid #2196F3' : 
+                                             '1px solid #FF9800'
                                     }}>
                                       <div style={styles.assessmentItemInfo}>
                                         <div style={{
@@ -750,7 +752,8 @@ export default function SupervisorDashboard() {
                                             {assessment.result ? (
                                               <span style={styles.assessmentItemScore}>
                                                 Score: {assessment.result.score}/{assessment.result.max_score} 
-                                                ({Math.round((assessment.result.score/assessment.result.max_score)*100)}%)
+                                                ({Math.round((assessment.result.score/assessment.result.max_score)*100)}%) • 
+                                                Completed: {formatDate(assessment.result.completed_at)}
                                               </span>
                                             ) : (
                                               <span style={{
@@ -758,12 +761,7 @@ export default function SupervisorDashboard() {
                                                 background: assessment.status === 'unblocked' ? '#E8F5E9' : '#FFF3E0',
                                                 color: assessment.status === 'unblocked' ? '#2E7D32' : '#F57C00'
                                               }}>
-                                                {assessment.status === 'unblocked' ? '🔓 Unblocked' : '🔒 Blocked'}
-                                              </span>
-                                            )}
-                                            {assessment.unblocked_at && (
-                                              <span style={styles.unblockedDate}>
-                                                Unblocked: {formatDate(assessment.unblocked_at)}
+                                                {assessment.status === 'unblocked' ? '🔓 Ready to take' : '🔒 Blocked'}
                                               </span>
                                             )}
                                           </div>
@@ -904,13 +902,7 @@ const styles = {
     borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '14px',
-    fontWeight: 600,
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#D32F2F',
-      transform: 'translateY(-1px)',
-      boxShadow: '0 4px 12px rgba(244, 67, 54, 0.3)'
-    }
+    fontWeight: 600
   },
   statsGrid: {
     display: 'grid',
@@ -969,8 +961,7 @@ const styles = {
     borderRadius: '20px',
     cursor: 'pointer',
     fontSize: '14px',
-    fontWeight: 500,
-    transition: 'all 0.2s ease'
+    fontWeight: 500
   },
   tableContainer: {
     background: 'white',
@@ -997,13 +988,7 @@ const styles = {
     borderRadius: '8px',
     textDecoration: 'none',
     fontSize: '14px',
-    fontWeight: 500,
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#1A2A3A',
-      transform: 'translateY(-1px)',
-      boxShadow: '0 4px 12px rgba(10, 25, 41, 0.3)'
-    }
+    fontWeight: 500
   },
   loadingState: {
     textAlign: 'center',
@@ -1019,18 +1004,6 @@ const styles = {
     fontSize: '64px',
     marginBottom: '20px',
     opacity: 0.5
-  },
-  primaryButton: {
-    display: 'inline-block',
-    background: '#0A1929',
-    color: 'white',
-    padding: '12px 30px',
-    borderRadius: '30px',
-    textDecoration: 'none',
-    fontSize: '16px',
-    fontWeight: 500,
-    marginTop: '20px',
-    cursor: 'pointer'
   },
   tableWrapper: {
     overflowX: 'auto'
@@ -1052,11 +1025,7 @@ const styles = {
     textAlign: 'left'
   },
   tableRow: {
-    borderBottom: '1px solid #E2E8F0',
-    transition: 'background 0.2s ease',
-    ':hover': {
-      background: '#F8FAFC'
-    }
+    borderBottom: '1px solid #E2E8F0'
   },
   tableCell: {
     padding: '15px'
@@ -1127,12 +1096,7 @@ const styles = {
     borderRadius: '4px',
     color: '#0A1929',
     fontSize: '11px',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#0A1929',
-      color: 'white'
-    }
+    cursor: 'pointer'
   },
   scoreBadge: {
     display: 'inline-block',
@@ -1169,11 +1133,7 @@ const styles = {
     borderRadius: '6px',
     textDecoration: 'none',
     fontSize: '12px',
-    fontWeight: 500,
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#1A2A3A'
-    }
+    fontWeight: 500
   },
   assignButton: {
     background: '#4CAF50',
@@ -1182,11 +1142,7 @@ const styles = {
     borderRadius: '6px',
     textDecoration: 'none',
     fontSize: '12px',
-    fontWeight: 500,
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#45a049'
-    }
+    fontWeight: 500
   },
   expandedRow: {
     background: '#F8FAFC'
@@ -1212,8 +1168,7 @@ const styles = {
     alignItems: 'center',
     padding: '15px',
     background: 'white',
-    borderRadius: '8px',
-    border: '1px solid #E2E8F0'
+    borderRadius: '8px'
   },
   assessmentItemInfo: {
     display: 'flex',
@@ -1276,11 +1231,7 @@ const styles = {
     borderRadius: '4px',
     fontSize: '12px',
     fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#45a049'
-    }
+    cursor: 'pointer'
   },
   blockButton: {
     padding: '6px 12px',
@@ -1290,11 +1241,7 @@ const styles = {
     borderRadius: '4px',
     fontSize: '12px',
     fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#F57C00'
-    }
+    cursor: 'pointer'
   },
   resetButton: {
     padding: '6px 12px',
@@ -1304,10 +1251,6 @@ const styles = {
     borderRadius: '4px',
     fontSize: '12px',
     fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#1976D2'
-    }
+    cursor: 'pointer'
   }
 };
