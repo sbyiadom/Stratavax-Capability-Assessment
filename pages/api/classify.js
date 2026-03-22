@@ -31,22 +31,51 @@ export default async function handler(req, res) {
     const strengths = getStrengths(sectionScores);
     const developmentAreas = getDevelopmentAreas(sectionScores);
 
+    // Get the assessment type to determine which sections to save
+    const { data: assessment } = await supabase
+      .from("assessments")
+      .select("assessment_type:assessment_types(code)")
+      .eq("id", assessment_id)
+      .single();
+
+    const assessmentType = assessment?.assessment_type?.code || 'general';
+
+    // Build the scores object based on assessment type
+    let scoresToSave = {
+      assessment_id,
+      user_id,
+      total_score: overallScore,
+      classification,
+      strengths: strengths.length > 0 ? strengths : null,
+      development_areas: developmentAreas.length > 0 ? developmentAreas : null,
+    };
+
+    // Handle personality assessment separately with 6 traits
+    if (assessmentType === 'personality') {
+      scoresToSave.personality_ownership = sectionScores['Ownership'] || 0;
+      scoresToSave.personality_collaboration = sectionScores['Collaboration'] || 0;
+      scoresToSave.personality_action = sectionScores['Action'] || 0;
+      scoresToSave.personality_analysis = sectionScores['Analysis'] || 0;
+      scoresToSave.personality_risk_tolerance = sectionScores['Risk Tolerance'] || 0;
+      scoresToSave.personality_structure = sectionScores['Structure'] || 0;
+    } else {
+      // For other assessment types, use generic fields
+      scoresToSave.cognitive_score = sectionScores['Cognitive Abilities'] || 
+                                      sectionScores['Cognitive Ability'] || 
+                                      sectionScores['Logical / Abstract Reasoning'] || 0;
+      scoresToSave.leadership_score = sectionScores['Leadership Potential'] || 
+                                      sectionScores['Leadership & Management'] || 
+                                      sectionScores['Vision & Strategic Thinking'] || 0;
+      scoresToSave.technical_score = sectionScores['Technical Competence'] || 
+                                     sectionScores['Technical Knowledge'] || 0;
+      scoresToSave.performance_score = sectionScores['Performance Metrics'] || 
+                                       sectionScores['Productivity & Efficiency'] || 0;
+    }
+
     // Save to talent_classification
     const { error: insertError } = await supabase
       .from("talent_classification")
-      .upsert({
-        assessment_id,
-        user_id,
-        total_score: overallScore,
-        cognitive_score: sectionScores['Cognitive Abilities'] || 0,
-        personality_score: sectionScores['Personality Assessment'] || 0,
-        leadership_score: sectionScores['Leadership Potential'] || 0,
-        technical_score: sectionScores['Technical Competence'] || 0,
-        performance_score: sectionScores['Performance Metrics'] || 0,
-        classification,
-        strengths: strengths.length > 0 ? strengths : null,
-        development_areas: developmentAreas.length > 0 ? developmentAreas : null,
-      }, { 
+      .upsert(scoresToSave, { 
         onConflict: ["assessment_id", "user_id"] 
       });
 
@@ -66,35 +95,33 @@ export default async function handler(req, res) {
   }
 }
 
-// Helper functions (you can import these from your utils or define them here)
+// Helper functions
 function calculateTotalScore(responses) {
   if (!responses || responses.length === 0) return 0;
   const total = responses.reduce((sum, r) => sum + (r.score || 0), 0);
-  const maxPossible = responses.length * 4;
+  const maxPossible = responses.length * 5; // Changed from 4 to 5 (since scores are 0-5)
   return Math.round((total / maxPossible) * 100);
 }
 
 function calculateSectionScores(responses) {
-  const sections = {
-    'Cognitive Abilities': { total: 0, count: 0 },
-    'Personality Assessment': { total: 0, count: 0 },
-    'Leadership Potential': { total: 0, count: 0 },
-    'Technical Competence': { total: 0, count: 0 },
-    'Performance Metrics': { total: 0, count: 0 }
-  };
+  const sections = {};
 
   responses.forEach(response => {
     const section = response.question?.section;
-    if (section && sections[section]) {
+    if (section) {
+      if (!sections[section]) {
+        sections[section] = { total: 0, count: 0, maxPossible: 0 };
+      }
       sections[section].total += response.score || 0;
       sections[section].count += 1;
+      sections[section].maxPossible += 5;
     }
   });
 
   const result = {};
   Object.entries(sections).forEach(([section, data]) => {
     if (data.count > 0) {
-      result[section] = Math.round((data.total / (data.count * 4)) * 100);
+      result[section] = Math.round((data.total / data.maxPossible) * 100);
     } else {
       result[section] = 0;
     }
