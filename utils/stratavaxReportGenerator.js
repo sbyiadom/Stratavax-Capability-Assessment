@@ -278,33 +278,25 @@ export const assessmentTemplates = {
   }
 };
 
-// Add personality, performance, behavioral, cultural templates
+// UPDATED: Personality assessment with 6 new traits
 assessmentTemplates['personality'] = {
   name: 'Personality Assessment',
   icon: '🌟',
   strengths: {
-    'Openness': 'intellectual curiosity and creativity',
-    'Conscientiousness': 'organization and reliability',
-    'Extraversion': 'energy and sociability',
-    'Agreeableness': 'cooperation and empathy',
-    'Neuroticism': 'emotional stability',
-    'Resilience': 'ability to bounce back',
-    'Adaptability': 'flexibility in new situations',
-    'Optimism': 'positive outlook',
-    'Self-Efficacy': 'confidence in abilities',
-    'Work Style': 'productive work patterns'
+    'Ownership': 'accountability, initiative, and follow-through',
+    'Collaboration': 'teamwork, consensus-building, and interpersonal effectiveness',
+    'Action': 'decisiveness, urgency, and proactive execution',
+    'Analysis': 'analytical thinking, systematic approach, and data-driven reasoning',
+    'Risk Tolerance': 'innovation mindset, calculated risk-taking, and comfort with uncertainty',
+    'Structure': 'process adherence, organizational consistency, and reliability'
   },
   weaknesses: {
-    'Openness': 'resistance to new ideas',
-    'Conscientiousness': 'organization challenges',
-    'Extraversion': 'reserved or withdrawn',
-    'Agreeableness': 'interpersonal friction',
-    'Neuroticism': 'emotional reactivity',
-    'Resilience': 'difficulty recovering from setbacks',
-    'Adaptability': 'struggles with change',
-    'Optimism': 'negative outlook',
-    'Self-Efficacy': 'self-doubt',
-    'Work Style': 'ineffective work patterns'
+    'Ownership': 'limited accountability or initiative',
+    'Collaboration': 'difficulty with teamwork or building consensus',
+    'Action': 'indecisiveness or lack of urgency',
+    'Analysis': 'limited analytical thinking or systematic approach',
+    'Risk Tolerance': 'excessive caution or resistance to innovation',
+    'Structure': 'inconsistent process adherence or organizational gaps'
   },
   narrativeTemplates: {
     executiveIntro: (name, classification) => {
