@@ -94,6 +94,58 @@ const categoryInterpretations = {
     poor: 'Poor technical expertise. Significant knowledge gaps.'
   },
 
+  // ============================================
+  // NEW PERSONALITY TRAITS (6 Traits)
+  // ============================================
+  
+  'Ownership': {
+    excellent: 'Exceptional ownership. Takes full accountability for outcomes, drives results proactively, and owns mistakes as learning opportunities. A natural leader.',
+    good: 'Strong ownership. Generally takes responsibility, follows through on commitments, and shows initiative. Reliable and accountable.',
+    average: 'Moderate ownership. Accepts responsibility for assigned tasks but may hesitate to take initiative beyond defined scope. Would benefit from stretching accountability.',
+    below_average: 'Ownership needs development. May sometimes deflect responsibility or wait for direction. Requires clear expectations and accountability check-ins.',
+    poor: 'Poor ownership. Tends to avoid responsibility and may blame external factors. Significant development needed in accountability and initiative.'
+  },
+  
+  'Collaboration': {
+    excellent: 'Exceptional collaborator. Builds strong team relationships, actively seeks diverse perspectives, and elevates collective performance. Fosters psychological safety.',
+    good: 'Strong collaboration. Works effectively with others, shares credit generously, and contributes to team goals. Valued team member.',
+    average: 'Moderate collaboration. Cooperates when needed but may prefer working independently. Would benefit from teamwork development.',
+    below_average: 'Collaboration needs improvement. May struggle with team dynamics or prioritize individual goals. Requires guidance on effective collaboration.',
+    poor: 'Poor collaboration. Often works in silos and struggles with teamwork. Significant development needed in interpersonal and team skills.'
+  },
+  
+  'Action': {
+    excellent: 'Exceptional action orientation. Moves quickly on priorities, makes decisive choices, and takes initiative without waiting for direction. Thrives in fast-paced environments.',
+    good: 'Strong action orientation. Generally proactive and willing to act. Makes timely decisions with appropriate information.',
+    average: 'Moderate action orientation. Takes action when prompted but may hesitate without clear direction. Would benefit from building decision-making confidence.',
+    below_average: 'Action orientation needs development. May delay decisions or wait for instructions. Requires encouragement to act and develop urgency.',
+    poor: 'Poor action orientation. Struggles with decisiveness and initiative. Significant development needed in proactive execution.'
+  },
+  
+  'Analysis': {
+    excellent: 'Exceptional analytical thinking. Thoroughly analyzes problems, seeks data before acting, and thinks systematically. Excels in roles requiring careful planning.',
+    good: 'Strong analytical skills. Gathers necessary information and considers options before acting. Makes well-reasoned decisions.',
+    average: 'Moderate analytical ability. Considers basic factors but may not always dig deeper for root causes. Would benefit from structured analytical frameworks.',
+    below_average: 'Analysis needs development. May act without sufficient information or fail to consider alternatives. Requires guidance on systematic problem-solving.',
+    poor: 'Poor analytical thinking. Struggles with structured analysis and may rely on intuition without data. Significant development needed in analytical skills.'
+  },
+  
+  'Risk Tolerance': {
+    excellent: 'Healthy risk tolerance. Comfortable with uncertainty, experiments with new approaches, and pushes boundaries appropriately. Balances innovation with prudence.',
+    good: 'Good risk awareness. Willing to try new approaches when supported, while maintaining reasonable caution. Accepts calculated risks.',
+    average: 'Moderate risk orientation. Generally prefers proven approaches but will accept calculated risks with support. Would benefit from confidence-building.',
+    below_average: 'Risk orientation needs development. Prefers certainty and may avoid necessary risks. Requires encouragement to embrace innovation.',
+    poor: 'Excessive risk aversion. Struggles with uncertainty and resists new approaches. Significant development needed in adaptability and innovation.'
+  },
+  
+  'Structure': {
+    excellent: 'Exceptional process orientation. Follows procedures reliably, respects established systems, and maintains consistent quality. Provides stability and reliability.',
+    good: 'Strong structure orientation. Generally follows processes and values consistency. Maintains organized approach to work.',
+    average: 'Moderate process adherence. Follows procedures when clear but may improvise without guidance. Would benefit from structured training.',
+    below_average: 'Process adherence needs improvement. May skip steps or improvise without considering consequences. Requires reinforcement of procedures.',
+    poor: 'Poor process orientation. Struggles to follow procedures consistently and may create instability. Significant development needed in process discipline.'
+  },
+
   // Leadership Assessment Categories
   'Change Leadership & Agility': {
     excellent: 'Exceptional change leader. Drives transformation and adapts quickly.',
@@ -431,6 +483,14 @@ const getSuitabilityAndRisks = (scores) => {
   const cultural = scores['Cultural & Attitudinal Fit'] || 0;
   const ei = scores['Emotional Intelligence'] || 0;
   const communication = scores['Communication'] || 0;
+  
+  // New personality traits
+  const ownership = scores['Ownership'] || 0;
+  const collaboration = scores['Collaboration'] || 0;
+  const action = scores['Action'] || 0;
+  const analysis = scores['Analysis'] || 0;
+  const riskTolerance = scores['Risk Tolerance'] || 0;
+  const structure = scores['Structure'] || 0;
 
   // Suitability based on strengths
   if (leadership >= 70 && cognitive >= 70 && ei >= 60) {
@@ -448,6 +508,20 @@ const getSuitabilityAndRisks = (scores) => {
   if (technical >= 60 && cultural >= 60) {
     suitability.push('Good fit for operational roles in structured environments');
   }
+  
+  // New personality-based suitability
+  if (ownership >= 70 && action >= 60) {
+    suitability.push('Strong fit for roles requiring initiative and accountability');
+  }
+  if (collaboration >= 70) {
+    suitability.push('Excellent fit for team-based and collaborative environments');
+  }
+  if (analysis >= 70 && structure >= 60) {
+    suitability.push('Well-suited for analytical and process-driven roles');
+  }
+  if (riskTolerance >= 70 && action >= 60) {
+    suitability.push('Good fit for innovation-focused and fast-paced environments');
+  }
 
   // Risks based on weaknesses
   if (cognitive < 50) {
@@ -464,6 +538,23 @@ const getSuitabilityAndRisks = (scores) => {
   }
   if (technical < 50 && cognitive < 50) {
     risks.push('Significant development needed for technical or analytical roles');
+  }
+  
+  // New personality-based risks
+  if (ownership < 40) {
+    risks.push('Limited accountability - may require close supervision and clear expectations');
+  }
+  if (collaboration < 40) {
+    risks.push('Collaboration concerns - may struggle in team environments');
+  }
+  if (action < 40 && riskTolerance < 40) {
+    risks.push('Risk of stagnation - may be overly cautious and slow to act');
+  }
+  if (analysis < 40 && structure < 40) {
+    risks.push('Process and planning concerns - may struggle with organization and quality');
+  }
+  if (ownership < 50 && action < 50) {
+    risks.push('Initiative concerns - may need prompting to take action');
   }
 
   return { suitability, risks };
