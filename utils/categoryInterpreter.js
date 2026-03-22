@@ -202,20 +202,22 @@ export const interpretConscientiousness = (data, candidateName) => {
 export const interpretPerformanceRisks = (data, candidateName) => {
   const { percentage, lowScoreCount } = data;
   
+  let interpretation = '';
+  
   if (percentage >= 80) {
-    return `${candidateName} presents **minimal performance risks**. Demonstrates strong accountability, consistent delivery, and effective performance management.`;
+    interpretation = `${candidateName} presents **minimal performance risks**. Demonstrates strong accountability, consistent delivery, and effective performance management.`;
   } else if (percentage >= 70) {
-    return `${candidateName} presents **low performance risks**. Generally meets expectations but may have isolated areas needing attention.`;
+    interpretation = `${candidateName} presents **low performance risks**. Generally meets expectations but may have isolated areas needing attention.`;
   } else if (percentage >= 60) {
-    return `${candidateName} presents **moderate performance risks**. May have inconsistent delivery or accountability in certain areas.`;
+    interpretation = `${candidateName} presents **moderate performance risks**. May have inconsistent delivery or accountability in certain areas.`;
   } else if (percentage >= 50) {
-    return `${candidateName} presents **elevated performance risks**. Shows patterns of inconsistent performance and accountability gaps.`;
+    interpretation = `${candidateName} presents **elevated performance risks**. Shows patterns of inconsistent performance and accountability gaps.`;
   } else {
-    return `${candidateName} presents **significant performance risks**. Demonstrates consistent challenges with accountability, delivery, and performance standards. Requires close supervision and clear performance expectations.`;
+    interpretation = `${candidateName} presents **significant performance risks**. Demonstrates consistent challenges with accountability, delivery, and performance standards. Requires close supervision and clear performance expectations.`;
   }
   
   if (lowScoreCount > 2) {
-    return interpretation + `\n\n**⚠️ Concern:** Multiple responses indicate performance vulnerabilities that need addressing.`;
+    interpretation += `\n\n**⚠️ Concern:** Multiple responses indicate performance vulnerabilities that need addressing.`;
   }
   
   return interpretation;
@@ -291,6 +293,238 @@ export const interpretOpenness = (data, candidateName) => {
   } else {
     return `${candidateName} demonstrates **low openness**. Strongly prefers routine and familiar approaches. May struggle significantly with change and innovation.`;
   }
+};
+
+// ============================================
+// PERSONALITY ASSESSMENT - NEW 6 TRAITS
+// ============================================
+
+export const interpretOwnership = (data, candidateName) => {
+  const { percentage, highScoreCount, lowScoreCount } = data;
+  
+  let interpretation = '';
+  
+  if (percentage >= 80) {
+    interpretation = `${candidateName} demonstrates **exceptional ownership**. `;
+    interpretation += `Takes full responsibility for outcomes, proactively drives results, and owns mistakes as learning opportunities. `;
+    interpretation += `This is a hallmark of high performers and future leaders.`;
+  } else if (percentage >= 70) {
+    interpretation = `${candidateName} shows **strong ownership**. `;
+    interpretation += `Generally takes responsibility for work and follows through on commitments. `;
+    interpretation += `Occasionally may need encouragement to step up in challenging situations.`;
+  } else if (percentage >= 60) {
+    interpretation = `${candidateName} has **moderate ownership**. `;
+    interpretation += `Accepts responsibility for assigned tasks but may hesitate to take initiative beyond defined scope. `;
+    interpretation += `Would benefit from opportunities to stretch accountability.`;
+  } else if (percentage >= 50) {
+    interpretation = `${candidateName} shows **inconsistent ownership**. `;
+    interpretation += `May sometimes deflect responsibility or wait for direction rather than taking initiative. `;
+    interpretation += `Requires clear expectations and regular accountability check-ins.`;
+  } else {
+    interpretation = `${candidateName} demonstrates **limited ownership**. `;
+    interpretation += `Tends to avoid responsibility and may blame external factors for challenges. `;
+    interpretation += `Significant development needed in accountability and initiative.`;
+  }
+  
+  if (highScoreCount > lowScoreCount && highScoreCount > 2) {
+    interpretation += `\n\n**✅ Strength:** Demonstrated strong ownership in ${highScoreCount} key scenarios, showing reliability and accountability.`;
+  }
+  
+  if (lowScoreCount > 2) {
+    interpretation += `\n\n**⚠️ Concern:** Responses in ${lowScoreCount} areas indicate challenges with taking full ownership and accountability.`;
+  }
+  
+  return interpretation;
+};
+
+export const interpretCollaboration = (data, candidateName) => {
+  const { percentage, highScoreCount, lowScoreCount } = data;
+  
+  let interpretation = '';
+  
+  if (percentage >= 80) {
+    interpretation = `${candidateName} demonstrates **exceptional collaboration skills**. `;
+    interpretation += `Builds strong team relationships, actively seeks diverse perspectives, and elevates collective performance. `;
+    interpretation += `A natural team player who fosters psychological safety.`;
+  } else if (percentage >= 70) {
+    interpretation = `${candidateName} shows **strong collaboration**. `;
+    interpretation += `Works effectively with others, shares credit generously, and contributes to team goals. `;
+    interpretation += `May need occasional encouragement to include quieter team members.`;
+  } else if (percentage >= 60) {
+    interpretation = `${candidateName} has **moderate collaboration**. `;
+    interpretation += `Cooperates when needed but may prefer working independently. `;
+    interpretation += `Would benefit from teamwork development and shared goal alignment.`;
+  } else if (percentage >= 50) {
+    interpretation = `${candidateName} shows **inconsistent collaboration**. `;
+    interpretation += `May struggle with team dynamics or prioritize individual goals over team success. `;
+    interpretation += `Requires guidance on effective collaboration and communication.`;
+  } else {
+    interpretation = `${candidateName} demonstrates **limited collaboration**. `;
+    interpretation += `Often works in silos and may struggle with teamwork. `;
+    interpretation += `Significant development needed in interpersonal and team skills.`;
+  }
+  
+  if (highScoreCount > lowScoreCount && highScoreCount > 2) {
+    interpretation += `\n\n**✅ Strength:** Demonstrated strong collaboration in ${highScoreCount} scenarios, showing team orientation and interpersonal effectiveness.`;
+  }
+  
+  if (lowScoreCount > 2) {
+    interpretation += `\n\n**⚠️ Concern:** Responses in ${lowScoreCount} areas indicate challenges with teamwork and collaboration.`;
+  }
+  
+  return interpretation;
+};
+
+export const interpretAction = (data, candidateName) => {
+  const { percentage, highScoreCount, lowScoreCount } = data;
+  
+  let interpretation = '';
+  
+  if (percentage >= 80) {
+    interpretation = `${candidateName} demonstrates **exceptional action orientation**. `;
+    interpretation += `Moves quickly on priorities, makes decisive choices, and takes initiative without waiting for direction. `;
+    interpretation += `Thrives in fast-paced, dynamic environments.`;
+  } else if (percentage >= 70) {
+    interpretation = `${candidateName} shows **strong action orientation**. `;
+    interpretation += `Generally proactive and willing to act. Makes timely decisions with appropriate information. `;
+    interpretation += `Occasionally may benefit from slowing down to ensure thoroughness.`;
+  } else if (percentage >= 60) {
+    interpretation = `${candidateName} has **moderate action orientation**. `;
+    interpretation += `Takes action when prompted but may hesitate without clear direction. `;
+    interpretation += `Would benefit from building confidence in independent decision-making.`;
+  } else if (percentage >= 50) {
+    interpretation = `${candidateName} shows **inconsistent action orientation**. `;
+    interpretation += `May delay decisions or wait for instructions rather than taking initiative. `;
+    interpretation += `Requires encouragement to act and develop urgency.`;
+  } else {
+    interpretation = `${candidateName} demonstrates **limited action orientation**. `;
+    interpretation += `Struggles with decisiveness and initiative. `;
+    interpretation += `Significant development needed in proactive execution.`;
+  }
+  
+  if (highScoreCount > lowScoreCount && highScoreCount > 2) {
+    interpretation += `\n\n**✅ Strength:** Demonstrated strong action orientation in ${highScoreCount} scenarios, showing decisiveness and initiative.`;
+  }
+  
+  if (lowScoreCount > 2) {
+    interpretation += `\n\n**⚠️ Concern:** Responses in ${lowScoreCount} areas indicate challenges with taking initiative and decisive action.`;
+  }
+  
+  return interpretation;
+};
+
+export const interpretAnalysis = (data, candidateName) => {
+  const { percentage, highScoreCount, lowScoreCount } = data;
+  
+  let interpretation = '';
+  
+  if (percentage >= 80) {
+    interpretation = `${candidateName} demonstrates **exceptional analytical thinking**. `;
+    interpretation += `Thoroughly analyzes problems, seeks data before acting, and thinks systematically. `;
+    interpretation += `Excels in roles requiring careful planning and evidence-based decisions.`;
+  } else if (percentage >= 70) {
+    interpretation = `${candidateName} shows **strong analytical skills**. `;
+    interpretation += `Gathers necessary information and considers options before acting. `;
+    interpretation += `May occasionally need support with complex analysis.`;
+  } else if (percentage >= 60) {
+    interpretation = `${candidateName} has **moderate analytical ability**. `;
+    interpretation += `Considers basic factors but may not always dig deeper for root causes. `;
+    interpretation += `Would benefit from structured analytical frameworks.`;
+  } else if (percentage >= 50) {
+    interpretation = `${candidateName} shows **inconsistent analysis**. `;
+    interpretation += `May act without sufficient information or fail to consider alternatives. `;
+    interpretation += `Requires guidance on systematic problem-solving.`;
+  } else {
+    interpretation = `${candidateName} demonstrates **limited analytical thinking**. `;
+    interpretation += `Struggles with structured analysis and may rely on intuition without data. `;
+    interpretation += `Significant development needed in analytical skills.`;
+  }
+  
+  if (highScoreCount > lowScoreCount && highScoreCount > 2) {
+    interpretation += `\n\n**✅ Strength:** Demonstrated strong analytical thinking in ${highScoreCount} scenarios, showing thoroughness and systematic approach.`;
+  }
+  
+  if (lowScoreCount > 2) {
+    interpretation += `\n\n**⚠️ Concern:** Responses in ${lowScoreCount} areas indicate challenges with thorough analysis and structured thinking.`;
+  }
+  
+  return interpretation;
+};
+
+export const interpretRiskTolerance = (data, candidateName) => {
+  const { percentage, highScoreCount, lowScoreCount } = data;
+  
+  let interpretation = '';
+  
+  if (percentage >= 80) {
+    interpretation = `${candidateName} demonstrates **healthy risk tolerance**. `;
+    interpretation += `Comfortable with uncertainty, experiments with new approaches, and pushes boundaries appropriately. `;
+    interpretation += `Balances innovation with prudence.`;
+  } else if (percentage >= 70) {
+    interpretation = `${candidateName} shows **good risk awareness**. `;
+    interpretation += `Willing to try new approaches when supported, while maintaining reasonable caution. `;
+    interpretation += `May need encouragement for bolder initiatives.`;
+  } else if (percentage >= 60) {
+    interpretation = `${candidateName} has **moderate risk orientation**. `;
+    interpretation += `Generally prefers proven approaches but will accept calculated risks with support. `;
+    interpretation += `Would benefit from confidence-building in uncertain situations.`;
+  } else if (percentage >= 50) {
+    interpretation = `${candidateName} shows **cautious risk approach**. `;
+    interpretation += `Prefers certainty and may avoid necessary risks. `;
+    interpretation += `Requires encouragement to embrace innovation and change.`;
+  } else {
+    interpretation = `${candidateName} demonstrates **excessive risk aversion**. `;
+    interpretation += `Struggles with uncertainty and resists new approaches. `;
+    interpretation += `Significant development needed in adaptability and innovation.`;
+  }
+  
+  if (highScoreCount > lowScoreCount && highScoreCount > 2) {
+    interpretation += `\n\n**✅ Strength:** Demonstrated appropriate risk-taking in ${highScoreCount} scenarios, balancing innovation with caution.`;
+  }
+  
+  if (lowScoreCount > 2) {
+    interpretation += `\n\n**⚠️ Concern:** Responses in ${lowScoreCount} areas indicate excessive caution that may limit innovation and adaptability.`;
+  }
+  
+  return interpretation;
+};
+
+export const interpretStructure = (data, candidateName) => {
+  const { percentage, highScoreCount, lowScoreCount } = data;
+  
+  let interpretation = '';
+  
+  if (percentage >= 80) {
+    interpretation = `${candidateName} demonstrates **exceptional process orientation**. `;
+    interpretation += `Follows procedures reliably, respects established systems, and maintains consistent quality. `;
+    interpretation += `Provides stability and reliability to teams.`;
+  } else if (percentage >= 70) {
+    interpretation = `${candidateName} shows **strong structure orientation**. `;
+    interpretation += `Generally follows processes and values consistency. `;
+    interpretation += `May need flexibility in novel situations.`;
+  } else if (percentage >= 60) {
+    interpretation = `${candidateName} has **moderate process adherence**. `;
+    interpretation += `Follows procedures when clear but may improvise without guidance. `;
+    interpretation += `Would benefit from structured training.`;
+  } else if (percentage >= 50) {
+    interpretation = `${candidateName} shows **inconsistent process adherence**. `;
+    interpretation += `May skip steps or improvise without considering consequences. `;
+    interpretation += `Requires reinforcement of procedures and quality standards.`;
+  } else {
+    interpretation = `${candidateName} demonstrates **limited process orientation**. `;
+    interpretation += `Struggles to follow procedures consistently and may create instability. `;
+    interpretation += `Significant development needed in process discipline.`;
+  }
+  
+  if (highScoreCount > lowScoreCount && highScoreCount > 2) {
+    interpretation += `\n\n**✅ Strength:** Demonstrated strong process orientation in ${highScoreCount} scenarios, showing reliability and consistency.`;
+  }
+  
+  if (lowScoreCount > 2) {
+    interpretation += `\n\n**⚠️ Concern:** Responses in ${lowScoreCount} areas indicate challenges with following processes and maintaining consistency.`;
+  }
+  
+  return interpretation;
 };
 
 
@@ -825,7 +1059,7 @@ export const interpretInitiative = (data, candidateName) => {
   }
 };
 
-export const interpretCollaboration = (data, candidateName) => {
+export const interpretCollaborationPerf = (data, candidateName) => {
   const { percentage } = data;
   
   if (percentage >= 80) {
