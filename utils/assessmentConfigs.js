@@ -84,21 +84,77 @@ export const assessmentTypes = {
   'personality': {
     id: 'personality',
     name: 'Personality Assessment',
-    description: 'Evaluate personality traits and interpersonal skills',
+    description: 'Evaluate work style, decision-making, and interpersonal approach based on 6 key traits: Ownership, Collaboration, Action, Analysis, Risk Tolerance, and Structure',
     icon: '🌟',
     categories: [
-      { id: 'openness', name: 'Openness', maxScore: 50 },
-      { id: 'conscientiousness', name: 'Conscientiousness', maxScore: 50 },
-      { id: 'extraversion', name: 'Extraversion', maxScore: 50 },
-      { id: 'agreeableness', name: 'Agreeableness', maxScore: 50 },
-      { id: 'neuroticism', name: 'Neuroticism', maxScore: 50 },
-      { id: 'resilience', name: 'Resilience', maxScore: 50 },
-      { id: 'adaptability', name: 'Adaptability', maxScore: 50 },
-      { id: 'optimism', name: 'Optimism', maxScore: 50 },
-      { id: 'efficacy', name: 'Self-Efficacy', maxScore: 50 },
-      { id: 'workstyle', name: 'Work Style', maxScore: 50 }
+      { 
+        id: 'ownership', 
+        name: 'Ownership', 
+        maxScore: 50, 
+        description: 'Takes responsibility, drives outcomes, owns mistakes, and follows through on commitments' 
+      },
+      { 
+        id: 'collaboration', 
+        name: 'Collaboration', 
+        maxScore: 50, 
+        description: 'Works well in teams, builds consensus, supports others, and values collective success' 
+      },
+      { 
+        id: 'action', 
+        name: 'Action', 
+        maxScore: 50, 
+        description: 'Makes quick decisions, takes initiative, moves fast, and acts with urgency' 
+      },
+      { 
+        id: 'analysis', 
+        name: 'Analysis', 
+        maxScore: 50, 
+        description: 'Seeks data, plans carefully, thinks before acting, and values thoroughness' 
+      },
+      { 
+        id: 'risk', 
+        name: 'Risk Tolerance', 
+        maxScore: 50, 
+        description: 'Comfortable with uncertainty, experiments, pushes boundaries, and embraces innovation' 
+      },
+      { 
+        id: 'structure', 
+        name: 'Structure', 
+        maxScore: 50, 
+        description: 'Follows process, respects hierarchy, values stability, and seeks consistency' 
+      }
     ],
-    weightage: 'All personality dimensions equally weighted'
+    weightage: 'All personality dimensions equally weighted',
+    traitDescriptions: {
+      ownership: 'High Ownership individuals take initiative, own their outcomes, and drive results independently. They are accountable, reliable, and follow through on commitments.',
+      collaboration: 'High Collaboration individuals are team-focused, build consensus, and maintain harmony. They excel in group settings and value collective success.',
+      action: 'High Action individuals are fast-moving, decisive, and comfortable with uncertainty. They prefer to act quickly and take initiative.',
+      analysis: 'High Analysis individuals are data-driven, methodical, and seek clarity before acting. They prefer to plan thoroughly and value accuracy.',
+      risk: 'High Risk individuals are comfortable with uncertainty, enjoy experimentation, and push boundaries. They thrive in innovative environments.',
+      structure: 'High Structure individuals are process-oriented, follow rules, and value consistency. They prefer clear guidelines and stable environments.'
+    },
+    profileClassifications: {
+      'High Ownership Leader': {
+        traits: ['ownership', 'action'],
+        description: 'Takes initiative, drives results, and leads with accountability'
+      },
+      'Collaborative Stabilizer': {
+        traits: ['collaboration', 'structure'],
+        description: 'Builds consensus, maintains harmony, and follows processes'
+      },
+      'Risk Driver / Executor': {
+        traits: ['action', 'risk'],
+        description: 'Moves fast, takes calculated risks, and drives execution'
+      },
+      'Analytical Thinker': {
+        traits: ['analysis', 'structure'],
+        description: 'Thinks deeply, plans carefully, and values data-driven decisions'
+      },
+      'Balanced Professional': {
+        traits: [],
+        description: 'Adapts approach based on situation with balanced traits'
+      }
+    }
   },
   
   'performance': {
@@ -164,4 +220,31 @@ export const assessmentTypes = {
 
 export const getAssessmentType = (typeId) => {
   return assessmentTypes[typeId] || assessmentTypes.general;
+};
+
+export const getPersonalityTraits = () => {
+  return assessmentTypes.personality.categories;
+};
+
+export const getPersonalityTraitDescription = (traitId) => {
+  const trait = assessmentTypes.personality.categories.find(c => c.id === traitId);
+  return trait ? trait.description : '';
+};
+
+export const getPersonalityProfileClassification = (ownership, collaboration, action, analysis, risk, structure) => {
+  const scores = { ownership, collaboration, action, analysis, risk, structure };
+  
+  if (ownership >= 70 && action >= 60) {
+    return assessmentTypes.personality.profileClassifications['High Ownership Leader'];
+  }
+  if (collaboration >= 70 && structure >= 60) {
+    return assessmentTypes.personality.profileClassifications['Collaborative Stabilizer'];
+  }
+  if (action >= 70 && risk >= 60) {
+    return assessmentTypes.personality.profileClassifications['Risk Driver / Executor'];
+  }
+  if (analysis >= 70 && structure >= 60) {
+    return assessmentTypes.personality.profileClassifications['Analytical Thinker'];
+  }
+  return assessmentTypes.personality.profileClassifications['Balanced Professional'];
 };
