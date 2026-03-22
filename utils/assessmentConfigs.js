@@ -157,6 +157,62 @@ export const assessmentTypes = {
     }
   },
   
+  'strategic_leadership': {
+    id: 'strategic_leadership',
+    name: 'Strategic Leadership Assessment',
+    description: 'Comprehensive assessment measuring strategic vision, people leadership, decision-making, accountability, emotional intelligence, execution drive, and ethical judgment.',
+    icon: '👑',
+    categories: [
+      { id: 'vision_strategy', name: 'Vision / Strategy', maxScore: 100, description: 'Strategic thinking, long-term planning, and direction setting' },
+      { id: 'people_leadership', name: 'People Leadership', maxScore: 100, description: 'Team development, coaching, engagement, and motivation' },
+      { id: 'decision_making', name: 'Decision Making', maxScore: 100, description: 'Decisiveness, judgment, and problem-solving under uncertainty' },
+      { id: 'accountability', name: 'Accountability', maxScore: 100, description: 'Ownership, responsibility, and follow-through' },
+      { id: 'emotional_intelligence', name: 'Emotional Intelligence', maxScore: 100, description: 'Self-awareness, empathy, and conflict management' },
+      { id: 'execution_drive', name: 'Execution Drive', maxScore: 100, description: 'Results orientation, urgency, and delivery focus' },
+      { id: 'ethics', name: 'Ethics', maxScore: 100, description: 'Integrity, ethical judgment, and principled behavior' }
+    ],
+    weightage: 'All leadership dimensions equally weighted',
+    profileClassifications: {
+      '🏆 Strategic Leader': {
+        traits: ['vision_strategy', 'people_leadership', 'decision_making'],
+        description: 'Excels in strategic thinking, people leadership, and decisive action'
+      },
+      '👥 People-Focused Leader': {
+        traits: ['people_leadership', 'emotional_intelligence'],
+        description: 'Prioritizes team development, empathy, and relationship building'
+      },
+      '⚡ Execution Leader': {
+        traits: ['execution_drive', 'accountability'],
+        description: 'Drives results with strong follow-through and accountability'
+      },
+      '🔭 Visionary Leader': {
+        traits: ['vision_strategy'],
+        description: 'Exceptional strategic thinking and long-term vision'
+      },
+      '⚖️ Ethical Leader': {
+        traits: ['ethics'],
+        description: 'Strong moral compass and principled decision-making'
+      },
+      '⚖️ Balanced Leader': {
+        traits: ['vision_strategy', 'people_leadership', 'execution_drive'],
+        description: 'Well-rounded across strategy, people, and execution'
+      },
+      '📈 Developing Leader': {
+        traits: [],
+        description: 'Emerging leadership capabilities with growth potential'
+      }
+    },
+    dimensionDescriptions: {
+      vision_strategy: 'Strategic thinking, long-term planning, and ability to set direction',
+      people_leadership: 'Team development, coaching, engagement, and motivation',
+      decision_making: 'Decisiveness, judgment, and problem-solving under uncertainty',
+      accountability: 'Ownership, responsibility, and follow-through',
+      emotional_intelligence: 'Self-awareness, empathy, and conflict management',
+      execution_drive: 'Results orientation, urgency, and delivery focus',
+      ethics: 'Integrity, ethical judgment, and principled behavior'
+    }
+  },
+  
   'performance': {
     id: 'performance',
     name: 'Performance Assessment',
@@ -226,9 +282,18 @@ export const getPersonalityTraits = () => {
   return assessmentTypes.personality.categories;
 };
 
+export const getStrategicLeadershipDimensions = () => {
+  return assessmentTypes.strategic_leadership.categories;
+};
+
 export const getPersonalityTraitDescription = (traitId) => {
   const trait = assessmentTypes.personality.categories.find(c => c.id === traitId);
   return trait ? trait.description : '';
+};
+
+export const getStrategicLeadershipDimensionDescription = (dimensionId) => {
+  const dimension = assessmentTypes.strategic_leadership.categories.find(c => c.id === dimensionId);
+  return dimension ? dimension.description : '';
 };
 
 export const getPersonalityProfileClassification = (ownership, collaboration, action, analysis, risk, structure) => {
@@ -247,4 +312,41 @@ export const getPersonalityProfileClassification = (ownership, collaboration, ac
     return assessmentTypes.personality.profileClassifications['Analytical Thinker'];
   }
   return assessmentTypes.personality.profileClassifications['Balanced Professional'];
+};
+
+export const getStrategicLeadershipProfile = (
+  visionStrategy, 
+  peopleLeadership, 
+  decisionMaking, 
+  accountability, 
+  emotionalIntelligence, 
+  executionDrive, 
+  ethics
+) => {
+  // Strategic Leader
+  if (visionStrategy >= 70 && peopleLeadership >= 70 && decisionMaking >= 70) {
+    return assessmentTypes.strategic_leadership.profileClassifications['🏆 Strategic Leader'];
+  }
+  // People-Focused Leader
+  if (peopleLeadership >= 80 && emotionalIntelligence >= 70) {
+    return assessmentTypes.strategic_leadership.profileClassifications['👥 People-Focused Leader'];
+  }
+  // Execution Leader
+  if (executionDrive >= 80 && accountability >= 70) {
+    return assessmentTypes.strategic_leadership.profileClassifications['⚡ Execution Leader'];
+  }
+  // Visionary Leader
+  if (visionStrategy >= 80) {
+    return assessmentTypes.strategic_leadership.profileClassifications['🔭 Visionary Leader'];
+  }
+  // Ethical Leader
+  if (ethics >= 80) {
+    return assessmentTypes.strategic_leadership.profileClassifications['⚖️ Ethical Leader'];
+  }
+  // Balanced Leader
+  if (visionStrategy >= 60 && peopleLeadership >= 60 && executionDrive >= 60) {
+    return assessmentTypes.strategic_leadership.profileClassifications['⚖️ Balanced Leader'];
+  }
+  // Default
+  return assessmentTypes.strategic_leadership.profileClassifications['📈 Developing Leader'];
 };
