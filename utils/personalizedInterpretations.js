@@ -133,34 +133,35 @@ export const assessmentConfigs = {
     description: 'Assess technical knowledge and skills',
     icon: '⚙️'
   },
+  // UPDATED: Personality assessment with 6 new traits
   'personality': {
     name: 'Personality Assessment',
     categories: [
-      'Openness',
-      'Conscientiousness',
-      'Extraversion',
-      'Agreeableness',
-      'Neuroticism',
-      'Resilience',
-      'Adaptability',
-      'Optimism',
-      'Self-Efficacy',
-      'Work Style'
+      'Ownership',
+      'Collaboration',
+      'Action',
+      'Analysis',
+      'Risk Tolerance',
+      'Structure'
     ],
     maxScores: {
-      'Openness': 50,
-      'Conscientiousness': 50,
-      'Extraversion': 50,
-      'Agreeableness': 50,
-      'Neuroticism': 50,
-      'Resilience': 50,
-      'Adaptability': 50,
-      'Optimism': 50,
-      'Self-Efficacy': 50,
-      'Work Style': 50
+      'Ownership': 50,
+      'Collaboration': 50,
+      'Action': 50,
+      'Analysis': 50,
+      'Risk Tolerance': 50,
+      'Structure': 50
     },
-    description: 'Evaluate personality traits and interpersonal skills',
-    icon: '🌟'
+    description: 'Evaluate work style, decision-making, and interpersonal approach based on 6 key traits',
+    icon: '🌟',
+    traitDescriptions: {
+      'Ownership': 'Takes responsibility, drives outcomes, owns mistakes, and follows through on commitments.',
+      'Collaboration': 'Works well in teams, builds consensus, supports others, and values collective success.',
+      'Action': 'Makes quick decisions, takes initiative, moves fast, and acts with urgency.',
+      'Analysis': 'Seeks data, plans carefully, thinks before acting, and values thoroughness.',
+      'Risk Tolerance': 'Comfortable with uncertainty, experiments, pushes boundaries, and embraces innovation.',
+      'Structure': 'Follows process, respects hierarchy, values stability, and seeks consistency.'
+    }
   },
   'performance': {
     name: 'Performance Assessment',
@@ -316,6 +317,19 @@ export const getClassification = (score, maxScore, assessmentType = 'general') =
     if (percentage >= 50) return { label: "Basic", color: "#9C27B0" };
     return { label: "Needs Improvement", color: "#F44336" };
   }
+};
+
+// Helper to get personality trait descriptions
+export const getPersonalityTraitDescription = (trait) => {
+  const descriptions = {
+    'Ownership': 'Takes responsibility, drives outcomes, owns mistakes, and follows through on commitments.',
+    'Collaboration': 'Works well in teams, builds consensus, supports others, and values collective success.',
+    'Action': 'Makes quick decisions, takes initiative, moves fast, and acts with urgency.',
+    'Analysis': 'Seeks data, plans carefully, thinks before acting, and values thoroughness.',
+    'Risk Tolerance': 'Comfortable with uncertainty, experiments, pushes boundaries, and embraces innovation.',
+    'Structure': 'Follows process, respects hierarchy, values stability, and seeks consistency.'
+  };
+  return descriptions[trait] || '';
 };
 
 // Keep only essential functions that are actually used
