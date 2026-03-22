@@ -83,21 +83,14 @@ export default function CandidateDashboard() {
       'Leadership',
       'Work Style'
     ],
+    // UPDATED: Personality assessment now shows 6 key traits
     'personality': [
-      'Agreeableness',
-      'Behavioral Style',
-      'Cognitive Patterns',
-      'Conscientiousness',
-      'Emotional Intelligence',
-      'Extraversion',
-      'Integrity',
-      'Mixed Traits',
-      'Motivations',
-      'Neuroticism',
-      'Openness to Experience',
-      'Performance Risks',
-      'Stress Management',
-      'Work Pace'
+      'Ownership - Takes responsibility and drives outcomes',
+      'Collaboration - Works well in teams and builds consensus',
+      'Action - Makes quick decisions and takes initiative',
+      'Analysis - Seeks data and plans carefully',
+      'Risk Tolerance - Comfortable with uncertainty and experimentation',
+      'Structure - Follows process and values consistency'
     ],
     'behavioral': [
       'Adaptability',
@@ -786,7 +779,6 @@ const styles = {
     minHeight: '100vh',
     width: '100%'
   },
-  // UPDATED: Loading container with background image
   loadingContainer: {
     minHeight: '100vh',
     display: 'flex',
@@ -795,17 +787,16 @@ const styles = {
     position: 'relative',
     overflow: 'hidden'
   },
-  // NEW: Loading background image
   loadingBackground: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundImage: 'url(/images/loading-bg.jpg)', // You can change this to your preferred image
+    backgroundImage: 'url(/images/loading-bg.jpg)',
     backgroundSize: 'cover',
     backgroundPosition: 'center',
-    filter: 'brightness(0.7)', // Darkens the image slightly so text stands out
+    filter: 'brightness(0.7)',
     zIndex: 0
   },
   loadingContent: {
@@ -813,7 +804,7 @@ const styles = {
     textAlign: 'center',
     color: 'white',
     zIndex: 1,
-    textShadow: '2px 2px 4px rgba(0,0,0,0.5)' // Makes text readable on any background
+    textShadow: '2px 2px 4px rgba(0,0,0,0.5)'
   },
   loadingLogo: {
     fontSize: '32px',
