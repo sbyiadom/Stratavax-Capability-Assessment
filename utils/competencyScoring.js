@@ -29,13 +29,14 @@ export const assessmentCompetencyWeights = {
     'Problem Solving': 1.2,
     'Execution': 1.1
   },
+  // UPDATED: Personality assessment with 6 new traits
   'personality': {
-    'Emotional Intelligence': 1.3,
-    'Adaptability': 1.1,
-    'Cultural Fit': 1.2,
-    'Accountability': 1.0,
-    'Collaboration': 1.1,
-    'Integrity': 1.2
+    'Ownership': 1.3,
+    'Collaboration': 1.2,
+    'Action': 1.2,
+    'Analysis': 1.3,
+    'Risk Tolerance': 1.1,
+    'Structure': 1.0
   },
   'performance': {
     'Accountability': 1.3,
@@ -237,6 +238,37 @@ export function generateCompetencyRecommendations(competencyResults) {
       'Seek opportunities to mentor others',
       'Take a course on people management',
       'Practice giving constructive feedback'
+    ],
+    // NEW: Personality trait recommendations
+    'Ownership': [
+      'Take initiative on projects without being asked',
+      'Volunteer to lead a small team initiative',
+      'Practice owning mistakes and presenting lessons learned',
+      'Set personal goals and track progress publicly'
+    ],
+    'Action': [
+      'Practice making decisions with 80% of the information',
+      'Set time limits for decision-making',
+      'Volunteer for time-sensitive projects',
+      'Create action plans with clear deadlines'
+    ],
+    'Analysis': [
+      'Take a course in data analysis or critical thinking',
+      'Practice using decision matrices for important choices',
+      'Create structured problem-solving templates',
+      'Study root cause analysis methodologies'
+    ],
+    'Risk Tolerance': [
+      'Volunteer for pilot projects or experimental initiatives',
+      'Practice evaluating risks using structured frameworks',
+      'Participate in innovation workshops',
+      'Learn about calculated risk-taking in business contexts'
+    ],
+    'Structure': [
+      'Create personal work templates and processes',
+      'Study project management methodologies',
+      'Practice documenting procedures for repeatable tasks',
+      'Implement a personal organization system'
     ]
   };
   
