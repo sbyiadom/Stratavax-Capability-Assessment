@@ -22,20 +22,13 @@ export const generatePsychometricAnalysis = (categoryScores, assessmentType, can
   const moderate = categories.filter(c => c.percentage >= 50 && c.percentage < 70);
   const risks = categories.filter(c => c.percentage < 50);
 
-  // Find key categories for narrative
-  const openness = categories.find(c => c.name.includes('Openness')) || { percentage: 0, name: 'Openness to Experience' };
-  const conscientiousness = categories.find(c => c.name.includes('Conscientiousness')) || { percentage: 0, name: 'Conscientiousness' };
-  const cognitive = categories.find(c => c.name.includes('Cognitive') || c.name.includes('Patterns')) || { percentage: 0, name: 'Cognitive Patterns' };
-  const stress = categories.find(c => c.name.includes('Stress')) || { percentage: 0, name: 'Stress Management' };
-  const emotional = categories.find(c => c.name.includes('Emotional')) || { percentage: 0, name: 'Emotional Intelligence' };
-  const extraversion = categories.find(c => c.name.includes('Extraversion')) || { percentage: 0, name: 'Extraversion' };
-  const agreeableness = categories.find(c => c.name.includes('Agreeableness')) || { percentage: 0, name: 'Agreeableness' };
-  const motivations = categories.find(c => c.name.includes('Motivations')) || { percentage: 0, name: 'Motivations' };
-  const integrity = categories.find(c => c.name.includes('Integrity')) || { percentage: 0, name: 'Integrity' };
-  const workPace = categories.find(c => c.name.includes('Work Pace')) || { percentage: 0, name: 'Work Pace' };
-  const mixedTraits = categories.find(c => c.name.includes('Mixed')) || { percentage: 0, name: 'Mixed Traits' };
-  const behavioralStyle = categories.find(c => c.name.includes('Behavioral Style')) || { percentage: 0, name: 'Behavioral Style' };
-  const performance = categories.find(c => c.name.includes('Performance')) || { percentage: 0, name: 'Performance Risks' };
+  // Find key categories for narrative (updated for 6 new traits)
+  const ownership = categories.find(c => c.name.includes('Ownership')) || { percentage: 0, name: 'Ownership' };
+  const collaboration = categories.find(c => c.name.includes('Collaboration')) || { percentage: 0, name: 'Collaboration' };
+  const action = categories.find(c => c.name.includes('Action')) || { percentage: 0, name: 'Action' };
+  const analysis = categories.find(c => c.name.includes('Analysis')) || { percentage: 0, name: 'Analysis' };
+  const riskTolerance = categories.find(c => c.name.includes('Risk')) || { percentage: 0, name: 'Risk Tolerance' };
+  const structure = categories.find(c => c.name.includes('Structure')) || { percentage: 0, name: 'Structure' };
 
   return {
     overallPerformance: {
@@ -45,20 +38,20 @@ export const generatePsychometricAnalysis = (categoryScores, assessmentType, can
       overallGrade,
       classification
     },
-    executiveSummary: generateExecutiveSummary(candidateName, avgScore, strengths, risks, openness, conscientiousness, cognitive, stress),
+    executiveSummary: generateExecutiveSummary(candidateName, avgScore, strengths, risks, ownership, collaboration, action, analysis, riskTolerance, structure),
     categoryAnalysis: {
       strengths: generateStrengthsAnalysis(strengths),
       moderate: generateModerateAnalysis(moderate),
       risks: generateRisksAnalysis(risks)
     },
-    personalityStructure: generatePersonalityStructure(openness, conscientiousness, cognitive, stress),
-    roleSuitability: generateRoleSuitability(strengths, risks, openness, cognitive, stress),
+    personalityStructure: generatePersonalityStructure(ownership, collaboration, action, analysis, riskTolerance, structure),
+    roleSuitability: generateRoleSuitability(strengths, risks, ownership, collaboration, action, analysis, riskTolerance, structure),
     developmentPriorities: generateDevelopmentPriorities(risks, moderate),
-    overallInterpretation: generateOverallInterpretation(candidateName, avgScore, strengths, risks, cognitive, stress)
+    overallInterpretation: generateOverallInterpretation(candidateName, avgScore, strengths, risks, analysis, riskTolerance, structure)
   };
 };
 
-const generateExecutiveSummary = (candidateName, avgScore, strengths, risks, openness, conscientiousness, cognitive, stress) => {
+const generateExecutiveSummary = (candidateName, avgScore, strengths, risks, ownership, collaboration, action, analysis, riskTolerance, structure) => {
   const strengthCount = strengths.length;
   const riskCount = risks.length;
   
@@ -69,20 +62,25 @@ const generateExecutiveSummary = (candidateName, avgScore, strengths, risks, ope
   } else if (avgScore >= 50) {
     summary += `This profile reflects a moderate but uneven performer. `;
     
-    if (openness.percentage >= 70) {
-      summary += `The candidate shows high openness `;
-      if (conscientiousness.percentage >= 50) {
-        summary += `and decent work discipline, `;
-      }
+    if (ownership.percentage >= 70 || action.percentage >= 70) {
+      summary += `The candidate shows strong initiative and drive, `;
+    }
+    if (collaboration.percentage >= 70) {
+      summary += `good teamwork orientation, `;
+    }
+    if (analysis.percentage >= 70) {
+      summary += `strong analytical capabilities, `;
     }
     
     if (riskCount >= 3) {
       summary += `but significant weaknesses in `;
       const riskNames = risks.slice(0,3).map(r => {
-        if (r.name.includes('Cognitive')) return 'cognitive processing';
-        if (r.name.includes('Stress')) return 'stress tolerance';
-        if (r.name.includes('Motivations')) return 'motivation clarity';
-        if (r.name.includes('Emotional')) return 'emotional stability';
+        if (r.name.includes('Structure')) return 'process discipline';
+        if (r.name.includes('Risk')) return 'risk management';
+        if (r.name.includes('Analysis')) return 'analytical depth';
+        if (r.name.includes('Action')) return 'decisiveness';
+        if (r.name.includes('Collaboration')) return 'teamwork';
+        if (r.name.includes('Ownership')) return 'accountability';
         return r.name.toLowerCase();
       }).join(', ');
       summary += `${riskNames}. `;
@@ -152,73 +150,131 @@ const generateRisksAnalysis = (risks) => {
   return analysis;
 };
 
-const generatePersonalityStructure = (openness, conscientiousness, cognitive, stress) => {
+const generatePersonalityStructure = (ownership, collaboration, action, analysis, riskTolerance, structure) => {
   let analysis = `🧠 **Personality Structure Interpretation**\n\n`;
   analysis += `This is an interesting contrast profile:\n\n`;
-  analysis += `• Very high Openness (${openness.percentage}%)\n`;
-  analysis += `• ${conscientiousness.percentage >= 70 ? 'High' : conscientiousness.percentage >= 50 ? 'Moderate' : 'Low'} Conscientiousness (${conscientiousness.percentage}%)\n`;
-  analysis += `• ${cognitive.percentage >= 70 ? 'High' : cognitive.percentage >= 50 ? 'Moderate' : 'Very low'} Cognitive Pattern score (${cognitive.percentage}%)\n`;
-  analysis += `• ${stress.percentage >= 70 ? 'High' : stress.percentage >= 50 ? 'Moderate' : 'Low'} Stress Management (${stress.percentage}%)\n\n`;
+  analysis += `• ${ownership.percentage >= 70 ? 'High' : ownership.percentage >= 50 ? 'Moderate' : 'Low'} Ownership (${ownership.percentage}%)\n`;
+  analysis += `• ${collaboration.percentage >= 70 ? 'High' : collaboration.percentage >= 50 ? 'Moderate' : 'Low'} Collaboration (${collaboration.percentage}%)\n`;
+  analysis += `• ${action.percentage >= 70 ? 'High' : action.percentage >= 50 ? 'Moderate' : 'Low'} Action (${action.percentage}%)\n`;
+  analysis += `• ${analysis.percentage >= 70 ? 'High' : analysis.percentage >= 50 ? 'Moderate' : 'Low'} Analysis (${analysis.percentage}%)\n`;
+  analysis += `• ${riskTolerance.percentage >= 70 ? 'High' : riskTolerance.percentage >= 50 ? 'Moderate' : 'Low'} Risk Tolerance (${riskTolerance.percentage}%)\n`;
+  analysis += `• ${structure.percentage >= 70 ? 'High' : structure.percentage >= 50 ? 'Moderate' : 'Low'} Structure (${structure.percentage}%)\n\n`;
 
-  if (openness.percentage >= 70 && cognitive.percentage < 50 && stress.percentage < 60) {
-    analysis += `This can describe someone who:\n\n`;
-    analysis += `• Has ideas\n`;
-    analysis += `• Enjoys new concepts\n`;
-    analysis += `• But struggles to structure thinking\n`;
-    analysis += `• May not convert ideas into structured execution\n\n`;
-    analysis += `High curiosity + weak cognitive structure = scattered potential.\n`;
+  // Driver profile: High Action + High Risk Tolerance
+  if (action.percentage >= 70 && riskTolerance.percentage >= 60) {
+    analysis += `This describes a Driver profile:\n\n`;
+    analysis += `• Makes quick decisions\n`;
+    analysis += `• Takes calculated risks\n`;
+    analysis += `• Thrives in fast-paced environments\n`;
+    analysis += `• May need to balance speed with thoroughness\n\n`;
+  }
+  
+  // Stabilizer profile: High Collaboration + High Structure
+  else if (collaboration.percentage >= 70 && structure.percentage >= 60) {
+    analysis += `This describes a Stabilizer profile:\n\n`;
+    analysis += `• Builds consensus and maintains harmony\n`;
+    analysis += `• Follows processes reliably\n`;
+    analysis += `• Provides stability to teams\n`;
+    analysis += `• May need encouragement for innovation\n\n`;
+  }
+  
+  // Analyst profile: High Analysis + High Structure
+  else if (analysis.percentage >= 70 && structure.percentage >= 60) {
+    analysis += `This describes an Analyst profile:\n\n`;
+    analysis += `• Thorough and data-driven\n`;
+    analysis += `• Plans carefully before acting\n`;
+    analysis += `• Values accuracy and quality\n`;
+    analysis += `• May need support for quick decisions\n\n`;
+  }
+  
+  // Leader profile: High Ownership + High Action
+  else if (ownership.percentage >= 70 && action.percentage >= 60) {
+    analysis += `This describes a Leader profile:\n\n`;
+    analysis += `• Takes initiative and drives results\n`;
+    analysis += `• Owns outcomes and follows through\n`;
+    analysis += `• Sets direction for others\n`;
+    analysis += `• Ready for increased responsibility\n\n`;
+  }
+  
+  // Balanced profile
+  else {
+    analysis += `This profile shows a balanced approach, with moderate expression across most traits. `;
+    analysis += `The candidate can adapt their style based on situation but may not have a dominant natural mode. `;
   }
 
   return analysis;
 };
 
-const generateRoleSuitability = (strengths, risks, openness, cognitive, stress) => {
+const generateRoleSuitability = (strengths, risks, ownership, collaboration, action, analysis, riskTolerance, structure) => {
   const strengthNames = strengths.map(s => s.name);
   const riskNames = risks.map(r => r.name);
   
-  let analysis = `🎯 **Role Suitability**\n\n`;
+  let analysisText = `🎯 **Role Suitability**\n\n`;
   
   // Suitable For
-  analysis += `**Suitable For:**\n\n`;
+  analysisText += `**Suitable For:**\n\n`;
   
-  if (strengthNames.some(s => s.includes('Openness'))) {
-    analysis += `• Creative or exploratory roles\n`;
-    analysis += `• Research support roles\n`;
-    analysis += `• Innovation brainstorming teams\n`;
+  if (strengthNames.includes('Ownership') || strengthNames.includes('Action')) {
+    analysisText += `• Roles requiring initiative and accountability\n`;
+    analysisText += `• Leadership or lead contributor positions\n`;
+    analysisText += `• Project management and ownership roles\n`;
   }
   
-  if (strengthNames.some(s => s.includes('Conscientiousness'))) {
-    analysis += `• Structured operational roles\n`;
+  if (strengthNames.includes('Collaboration')) {
+    analysisText += `• Team-based and collaborative environments\n`;
+    analysisText += `• Client-facing or stakeholder management roles\n`;
+    analysisText += `• Cross-functional initiatives\n`;
   }
   
-  if (openness.percentage >= 70 && (cognitive.percentage < 50 || stress.percentage < 50)) {
-    analysis += `• Environments with structured supervision\n`;
+  if (strengthNames.includes('Analysis') || strengthNames.includes('Structure')) {
+    analysisText += `• Analytical and process-driven roles\n`;
+    analysisText += `• Quality assurance and compliance positions\n`;
+    analysisText += `• Strategic planning and research roles\n`;
   }
   
-  if (analysis.endsWith('**Suitable For:**\n\n')) {
-    analysis += `• Entry-level positions with clear guidance\n`;
-    analysis += `• Structured environments with close supervision\n`;
+  if (strengthNames.includes('Risk Tolerance')) {
+    analysisText += `• Innovation and experimentation roles\n`;
+    analysisText += `• Research and development positions\n`;
+    analysisText += `• Agile or startup environments\n`;
   }
   
-  analysis += `\n**Risky For:**\n\n`;
-  
-  if (riskNames.some(r => r.includes('Cognitive'))) {
-    analysis += `• Senior leadership\n`;
-    analysis += `• Strategic decision-making roles\n`;
-  }
-  if (riskNames.some(r => r.includes('Stress'))) {
-    analysis += `• High-pressure operational roles\n`;
-    analysis += `• Crisis management positions\n`;
-  }
-  if (riskNames.some(r => r.includes('Agreeableness'))) {
-    analysis += `• Client-facing positions\n`;
+  if (analysisText.endsWith('**Suitable For:**\n\n')) {
+    analysisText += `• Entry-level positions with clear guidance\n`;
+    analysisText += `• Structured environments with close supervision\n`;
   }
   
-  if (analysis.endsWith('**Risky For:**\n\n')) {
-    analysis += `• No significant role risks identified\n`;
+  analysisText += `\n**Risky For:**\n\n`;
+  
+  if (riskNames.includes('Ownership')) {
+    analysisText += `• Roles requiring high independence\n`;
+    analysisText += `• Positions with ambiguous expectations\n`;
+  }
+  if (riskNames.includes('Collaboration')) {
+    analysisText += `• Heavy team-dependent roles\n`;
+    analysisText += `• Client-facing positions\n`;
+  }
+  if (riskNames.includes('Action')) {
+    analysisText += `• Fast-paced, time-sensitive roles\n`;
+    analysisText += `• Crisis management positions\n`;
+  }
+  if (riskNames.includes('Analysis')) {
+    analysisText += `• Strategic decision-making roles\n`;
+    analysisText += `• Complex problem-solving positions\n`;
+  }
+  if (riskNames.includes('Risk Tolerance')) {
+    analysisText += `• Innovation and experimentation roles\n`;
+    analysisText += `• High-uncertainty environments\n`;
+  }
+  if (riskNames.includes('Structure')) {
+    analysisText += `• Quality-critical roles\n`;
+    analysisText += `• Process-dependent positions\n`;
+  }
+  
+  if (analysisText.endsWith('**Risky For:**\n\n')) {
+    analysisText += `• No significant role risks identified\n`;
   }
 
-  return analysis;
+  return analysisText;
 };
 
 const generateDevelopmentPriorities = (risks, moderate) => {
@@ -230,7 +286,7 @@ const generateDevelopmentPriorities = (risks, moderate) => {
   
   priorities.forEach((item, index) => {
     const priorityNumber = index + 1;
-    const priorityEmoji = getPriorityEmoji(priorityNumber);
+    const priorityEmoji = getPriorityEmoji(item.name);
     analysis += `${priorityNumber}️⃣ **${priorityEmoji}**\n\n`;
     analysis += `${getDevelopmentRecommendation(item.name)}\n\n`;
   });
@@ -238,31 +294,37 @@ const generateDevelopmentPriorities = (risks, moderate) => {
   return analysis;
 };
 
-const generateOverallInterpretation = (candidateName, avgScore, strengths, risks, cognitive, stress) => {
+const generateOverallInterpretation = (candidateName, avgScore, strengths, risks, analysis, riskTolerance, structure) => {
   const riskCount = risks.length;
+  const hasAnalysisIssue = analysis.percentage < 50;
+  const hasStructureIssue = structure.percentage < 50;
+  const hasRiskIssue = riskTolerance.percentage < 40;
   
-  let analysis = `📌 **Overall Interpretation**\n\n`;
+  let analysisText = `📌 **Overall Interpretation**\n\n`;
   
   if (avgScore >= 70) {
-    analysis += `This is a capable individual with clear strengths and manageable development areas. `;
+    analysisText += `This is a capable individual with clear strengths and manageable development areas. `;
   } else if (avgScore >= 50) {
-    if (cognitive.percentage < 50 && stress.percentage < 50) {
-      analysis += `This is a curious, adaptable individual with moderate discipline but weak cognitive structure and stress resilience. `;
-      analysis += `The candidate has growth potential but requires structured development before handling high-responsibility or high-pressure roles. `;
+    if (hasAnalysisIssue && hasStructureIssue) {
+      analysisText += `This is a motivated individual with moderate discipline but weak analytical structure and process orientation. `;
+      analysisText += `The candidate has growth potential but requires structured development before handling complex analytical or quality-critical roles. `;
+    } else if (hasRiskIssue) {
+      analysisText += `This candidate shows caution that may limit innovation and adaptability. `;
+      analysisText += `With targeted development in risk tolerance and innovation mindset, they can expand their capabilities. `;
     } else if (riskCount >= 3) {
-      analysis += `This candidate has potential but requires significant development in key areas. `;
+      analysisText += `This candidate has potential but requires significant development in key areas. `;
     } else {
-      analysis += `This candidate has growth potential with targeted development in key areas. `;
+      analysisText += `This candidate has growth potential with targeted development in key areas. `;
     }
   } else {
-    analysis += `This candidate requires significant development across multiple areas before being ready for increased responsibility. `;
+    analysisText += `This candidate requires significant development across multiple areas before being ready for increased responsibility. `;
   }
   
-  return analysis;
+  return analysisText;
 };
 
 // ============================================
-// HELPER FUNCTIONS
+// HELPER FUNCTIONS (UPDATED)
 // ============================================
 
 const getGrade = (percentage) => {
@@ -296,37 +358,67 @@ const getClassification = (percentage) => {
   return 'High Risk';
 };
 
-const getPriorityEmoji = (number) => {
-  const priorities = [
-    'Cognitive Structuring',
-    'Stress Resilience',
-    'Motivation Clarification',
-    'Interpersonal Development',
-    'Performance Consistency',
-    'Emotional Intelligence Development'
-  ];
-  return priorities[number - 1] || 'Development Priority';
+const getPriorityEmoji = (name) => {
+  const priorities = {
+    'Ownership': 'Accountability Building',
+    'Collaboration': 'Teamwork Development',
+    'Action': 'Decisiveness Training',
+    'Analysis': 'Analytical Skills',
+    'Risk Tolerance': 'Innovation Mindset',
+    'Structure': 'Process Discipline'
+  };
+  return priorities[name] || 'Development Priority';
 };
 
 const getStrengthNarrative = (name, percentage) => {
   const narratives = {
-    'Openness to Experience': 'Exceptional strength.',
-    'Conscientiousness': 'Reasonably organized. Moderately disciplined. Can follow through on tasks. Some reliability in execution.',
-    'Integrity': 'Generally ethical. Likely trustworthy. Low probability of deliberate misconduct.',
-    'Work Pace': 'Maintains steady output. Neither overly slow nor overly impulsive.',
-    'Extraversion': 'Balanced social engagement. Comfortable in team settings.',
-    'Emotional Intelligence': 'Basic interpersonal awareness. Functional but not highly influential.'
+    'Ownership': 'Strong accountability and follow-through. Takes initiative and owns outcomes.',
+    'Collaboration': 'Excellent team player. Builds consensus and supports collective success.',
+    'Action': 'Decisive and proactive. Moves quickly on priorities.',
+    'Analysis': 'Strong analytical thinking. Systematic and data-driven approach.',
+    'Risk Tolerance': 'Healthy comfort with uncertainty. Balances innovation with prudence.',
+    'Structure': 'Strong process orientation. Follows procedures consistently.'
   };
   return narratives[name] || `Strong performance at ${percentage}%.`;
 };
 
 const getStrengthIndicators = (name) => {
   const indicators = {
-    'Openness to Experience': [
-      'Strong curiosity and learning agility',
-      'Adaptability to new ideas',
-      'Innovation-friendly mindset',
-      'Willingness to experiment and explore'
+    'Ownership': [
+      'Takes initiative without prompting',
+      'Owns mistakes and learns from them',
+      'Follows through on commitments',
+      'Drives results independently'
+    ],
+    'Collaboration': [
+      'Builds strong team relationships',
+      'Seeks input from others',
+      'Shares credit generously',
+      'Fosters psychological safety'
+    ],
+    'Action': [
+      'Makes timely decisions',
+      'Acts with urgency',
+      'Takes initiative',
+      'Thrives in fast-paced environments'
+    ],
+    'Analysis': [
+      'Thorough problem analysis',
+      'Data-driven decision-making',
+      'Systematic approach',
+      'Thinks before acting'
+    ],
+    'Risk Tolerance': [
+      'Comfortable with uncertainty',
+      'Experiments with new approaches',
+      'Pushes boundaries appropriately',
+      'Embraces innovation'
+    ],
+    'Structure': [
+      'Follows procedures reliably',
+      'Maintains consistent quality',
+      'Organized approach',
+      'Provides stability'
     ]
   };
   return indicators[name] || [];
@@ -334,55 +426,59 @@ const getStrengthIndicators = (name) => {
 
 const getModerateNarrative = (name) => {
   const narratives = {
-    'Emotional Intelligence': 'Basic interpersonal awareness. Functional but not highly influential.',
-    'Extraversion': 'Balanced social engagement. Neither highly dominant nor withdrawn.',
-    'Mixed Traits': 'Inconsistent behavioral tendencies. May behave differently under varying pressures.',
-    'Behavioral Style': 'Moderately adaptable. Not strongly defined leadership presence.',
-    'Conscientiousness': 'Reasonably organized. Moderately disciplined. Can follow through on tasks.',
-    'Work Pace': 'Maintains steady output. Neither overly slow nor overly impulsive.'
+    'Ownership': 'Shows reasonable accountability but may need encouragement to take initiative.',
+    'Collaboration': 'Works adequately with others but may occasionally work in silos.',
+    'Action': 'Acts when prompted but may hesitate without clear direction.',
+    'Analysis': 'Considers basic factors but may need support for complex analysis.',
+    'Risk Tolerance': 'Prefers proven approaches but can accept calculated risks with support.',
+    'Structure': 'Follows processes when clear but may improvise without guidance.'
   };
   return narratives[name] || 'Shows moderate competency in this area with room for growth.';
 };
 
 const getRiskNarrative = (name, percentage) => {
   const narratives = {
-    'Cognitive Patterns': 'This is the most serious concern.',
-    'Stress Management': 'Likely struggles under pressure. May experience performance dips in high-demand situations. Risk of emotional reactivity.',
-    'Agreeableness': 'May appear blunt or less collaborative. Possible interpersonal friction. Not naturally cooperative.',
-    'Motivations': 'Unclear internal drive. May lack strong achievement orientation. Needs external structure or incentives.',
-    'Performance Risks': 'Suggests inconsistency. Possible burnout vulnerability. Decision instability under pressure.',
-    'Mixed Traits': 'Inconsistent behavioral tendencies. May behave differently under varying pressures.'
+    'Ownership': 'May deflect responsibility or wait for direction.',
+    'Collaboration': 'May struggle with team dynamics or prefer working alone.',
+    'Action': 'May delay decisions or wait for instructions.',
+    'Analysis': 'May act without sufficient information or fail to consider alternatives.',
+    'Risk Tolerance': 'Excessive caution may limit innovation and adaptability.',
+    'Structure': 'May skip steps or improvise without considering consequences.'
   };
   return narratives[name] || 'Significant development needed in this area.';
 };
 
 const getRiskImplications = (name) => {
   const implications = {
-    'Cognitive Patterns': [
-      'Weak analytical structure',
-      'Poor strategic thinking',
-      'Difficulty organizing thoughts',
-      'Inconsistent reasoning patterns'
+    'Ownership': [
+      'May avoid taking responsibility',
+      'Needs clear direction and supervision',
+      'May not follow through consistently'
     ],
-    'Stress Management': [
-      'Likely struggles under pressure',
-      'May experience performance dips in high-demand situations',
-      'Risk of emotional reactivity'
+    'Collaboration': [
+      'May struggle to build relationships',
+      'Could create team friction',
+      'May not seek input from others'
     ],
-    'Agreeableness': [
-      'May appear blunt or less collaborative',
-      'Possible interpersonal friction',
-      'Not naturally cooperative'
+    'Action': [
+      'May miss opportunities due to hesitation',
+      'Could delay important decisions',
+      'May need prompting to act'
     ],
-    'Motivations': [
-      'Unclear internal drive',
-      'May lack strong achievement orientation',
-      'Needs external structure or incentives'
+    'Analysis': [
+      'May make decisions without sufficient data',
+      'Could miss important considerations',
+      'May need structured problem-solving guidance'
     ],
-    'Performance Risks': [
-      'Inconsistency',
-      'Possible burnout vulnerability',
-      'Decision instability under pressure'
+    'Risk Tolerance': [
+      'May avoid necessary innovation',
+      'Could miss opportunities for improvement',
+      'May resist beneficial change'
+    ],
+    'Structure': [
+      'May create inconsistency',
+      'Could impact quality and reliability',
+      'May need reinforcement of procedures'
     ]
   };
   return implications[name] || [];
@@ -390,13 +486,12 @@ const getRiskImplications = (name) => {
 
 const getDevelopmentRecommendation = (name) => {
   const recommendations = {
-    'Cognitive Patterns': 'Critical thinking training. Structured decision-making frameworks. Analytical writing exercises.',
-    'Stress Management': 'Stress management coaching. Pressure simulation exercises. Mindfulness and emotional regulation training.',
-    'Agreeableness': 'Conflict management training. Collaboration workshops. Assertiveness training.',
-    'Motivations': 'Goal-setting alignment. KPI-based accountability. Performance coaching.',
-    'Performance Risks': 'Performance monitoring. Regular feedback sessions. Stress management techniques.',
-    'Mixed Traits': 'Behavioral coaching. Self-awareness exercises. Feedback sessions.',
-    'Emotional Intelligence': 'EI workshops. Active listening practice. Empathy exercises.'
+    'Ownership': 'Accountability coaching. Initiative training. Project ownership opportunities.',
+    'Collaboration': 'Teamwork workshops. Conflict resolution training. Cross-functional project participation.',
+    'Action': 'Decision-making frameworks. Time-boxed decisions. Initiative-building exercises.',
+    'Analysis': 'Critical thinking training. Structured problem-solving frameworks. Data analysis courses.',
+    'Risk Tolerance': 'Innovation mindset workshops. Safe experimentation environments. Calculated risk training.',
+    'Structure': 'Process discipline training. Organizational systems. Quality management courses.'
   };
   return recommendations[name] || 'Targeted training and structured development in this area.';
 };
