@@ -92,6 +92,16 @@ export default function CandidateDashboard() {
       'Risk Tolerance - Comfortable with uncertainty and experimentation',
       'Structure - Follows process and values consistency'
     ],
+    // NEW: Strategic Leadership Assessment
+    'strategic_leadership': [
+      'Vision / Strategy - Strategic thinking and long-term planning',
+      'People Leadership - Team development, coaching, and engagement',
+      'Decision Making - Decisiveness and problem-solving under uncertainty',
+      'Accountability - Ownership, responsibility, and follow-through',
+      'Emotional Intelligence - Self-awareness, empathy, and conflict management',
+      'Execution Drive - Results orientation, urgency, and delivery focus',
+      'Ethics - Integrity, ethical judgment, and principled behavior'
+    ],
     'behavioral': [
       'Adaptability',
       'Clinical',
@@ -134,6 +144,13 @@ export default function CandidateDashboard() {
       color: '#0d9488',
       light: '#ccfbf1',
       border: '1px solid #0d948820'
+    },
+    // NEW: Strategic Leadership Assessment colors
+    'strategic_leadership': {
+      gradient: 'linear-gradient(135deg, #1E3A8A 0%, #5B21B6 100%)',
+      color: '#5B21B6',
+      light: '#E9D8FD',
+      border: '1px solid #5B21B640'
     },
     'performance': {
       gradient: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
