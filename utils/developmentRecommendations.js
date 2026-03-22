@@ -109,6 +109,46 @@ export const getDevelopmentRecommendation = (category, percentage) => {
       opportunity: `Lead process improvement initiatives. Establish standards for the team. Create documentation systems. Mentor others on process discipline.`
     },
 
+        // ============================================
+    // STRATEGIC LEADERSHIP DIMENSIONS (7 Dimensions)
+    // ============================================
+    
+    'Vision / Strategy': {
+      critical: `Complete foundational strategic thinking and planning courses. Study your organization's long-term strategy and industry trends. Practice writing strategic memos and scenario plans. Work with a mentor to develop strategic analysis skills. Schedule weekly strategic thinking sessions.`,
+      significant: `Participate in strategic planning sessions. Read books on strategic management and business strategy. Practice analyzing case studies of successful and failed strategies. Create a personal strategic development plan with quarterly milestones.`,
+      opportunity: `Lead a strategic initiative or project. Mentor others on strategic thinking. Contribute to organizational strategy development. Present strategic recommendations to leadership. Develop expertise in competitive analysis.`
+    },
+    'People Leadership': {
+      critical: `Complete foundational people management and leadership development programs. Practice giving constructive feedback in low-stakes situations. Shadow an experienced leader. Seek opportunities to mentor or coach junior team members.`,
+      significant: `Take on team leadership responsibilities for small projects. Develop a coaching practice with team members. Attend workshops on emotional intelligence and team development. Seek feedback on your leadership effectiveness.`,
+      opportunity: `Lead a team or department. Develop and deliver leadership training. Coach other leaders on people development. Create a culture of continuous feedback and growth. Mentor future leaders.`
+    },
+    'Decision Making': {
+      critical: `Use structured decision-making frameworks for all major choices (decision matrices, pros/cons, risk analysis). Practice making decisions with 80% of available information. Discuss major decisions with a mentor before finalizing. Document decision outcomes and learn from them.`,
+      significant: `Volunteer for decisions that require complex analysis. Study decision-making biases and how to avoid them. Practice scenario planning and risk assessment. Lead decision-making processes for team initiatives.`,
+      opportunity: `Lead high-stakes decision-making processes. Develop and teach decision-making frameworks to others. Create a decision-making culture that balances speed and quality. Serve as a trusted advisor for complex decisions.`
+    },
+    'Accountability': {
+      critical: `Take ownership of a small project from start to finish. Create personal accountability commitments and share them publicly. Practice owning mistakes and presenting lessons learned. Set up weekly accountability check-ins with a mentor.`,
+      significant: `Volunteer to lead initiatives with clear ownership. Develop systems to track and report progress. When things go wrong, focus on solutions rather than blame. Request feedback on your follow-through and reliability.`,
+      opportunity: `Lead critical projects with significant accountability. Create accountability frameworks for teams. Mentor others on taking ownership. Model accountability in all situations. Drive accountability culture across the organization.`
+    },
+    'Emotional Intelligence': {
+      critical: `Participate in emotional intelligence and self-awareness workshops. Practice identifying emotions in self and others daily. Seek regular feedback on interpersonal interactions. Keep a journal to reflect on emotional responses.`,
+      significant: `Practice active listening and perspective-taking in all conversations. Develop empathy through understanding others' experiences. Learn conflict resolution techniques. Use emotional intelligence to navigate difficult conversations.`,
+      opportunity: `Lead team through challenging interpersonal situations. Mentor others on emotional intelligence. Create a psychologically safe environment. Use emotional intelligence to build strong relationships across the organization.`
+    },
+    'Execution Drive': {
+      critical: `Set SMART goals and track progress daily. Use project management tools consistently. Break large initiatives into small, achievable milestones. Address obstacles immediately rather than avoiding them. Create daily execution rituals.`,
+      significant: `Lead execution-focused initiatives. Develop systems to measure and improve delivery speed. Practice overcoming obstacles and maintaining momentum. Celebrate small wins to build execution momentum.`,
+      opportunity: `Lead complex, multi-stakeholder execution efforts. Create execution frameworks for the organization. Mentor others on results orientation. Drive a culture of delivery and accountability. Transform strategy into measurable results.`
+    },
+    'Ethics': {
+      critical: `Complete ethics and integrity training programs. Study ethical frameworks and decision-making models. Discuss ethical dilemmas with a mentor. Create a personal ethics statement. Seek guidance on complex ethical situations.`,
+      significant: `Practice identifying ethical dimensions in business decisions. Lead by example in ethical behavior. Speak up when you observe ethical concerns. Develop a reputation for principled decision-making.`,
+      opportunity: `Lead ethics initiatives within the organization. Create ethical decision-making frameworks. Mentor others on ethical leadership. Serve as an ethics champion. Build a culture of integrity and trust.`
+    },
+    
     // Leadership Assessment
     'Vision & Strategic Thinking': {
       critical: `Study the organization's strategy and how your role connects. Practice writing a vision for your team or function. Discuss strategic concepts with a mentor.`,
