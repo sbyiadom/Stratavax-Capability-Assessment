@@ -38,6 +38,16 @@ export const assessmentCompetencyWeights = {
     'Risk Tolerance': 1.1,
     'Structure': 1.0
   },
+  // NEW: Strategic Leadership Assessment with 7 dimensions
+  'strategic_leadership': {
+    'Vision / Strategy': 1.4,
+    'People Leadership': 1.3,
+    'Decision Making': 1.3,
+    'Accountability': 1.2,
+    'Emotional Intelligence': 1.2,
+    'Execution Drive': 1.3,
+    'Ethics': 1.4
+  },
   'performance': {
     'Accountability': 1.3,
     'Execution': 1.3,
@@ -269,6 +279,56 @@ export function generateCompetencyRecommendations(competencyResults) {
       'Study project management methodologies',
       'Practice documenting procedures for repeatable tasks',
       'Implement a personal organization system'
+    ],
+    // NEW: Strategic Leadership dimension recommendations
+    'Vision / Strategy': [
+      'Complete a strategic management certification program',
+      'Practice writing strategic memos and business cases',
+      'Participate in industry trend analysis exercises',
+      'Shadow senior leaders during strategic planning sessions',
+      'Read books on strategic thinking and competitive strategy'
+    ],
+    'People Leadership': [
+      'Take a leadership development program',
+      'Practice coaching conversations with team members',
+      'Lead a cross-functional team initiative',
+      'Complete 360-degree feedback and create action plan',
+      'Mentor junior colleagues or new team members'
+    ],
+    'Decision Making': [
+      'Study decision science and cognitive bias frameworks',
+      'Practice making decisions with limited information',
+      'Lead complex problem-solving workshops',
+      'Develop a personal decision-making framework',
+      'Analyze past decisions to identify improvement areas'
+    ],
+    'Accountability': [
+      'Take ownership of a high-visibility project',
+      'Create accountability systems for team initiatives',
+      'Practice transparent reporting of outcomes',
+      'Lead post-mortem analysis sessions',
+      'Set personal accountability goals with regular check-ins'
+    ],
+    'Emotional Intelligence': [
+      'Complete an emotional intelligence assessment',
+      'Practice empathy mapping and perspective-taking',
+      'Lead conflict resolution sessions',
+      'Develop self-regulation techniques',
+      'Seek feedback on interpersonal effectiveness'
+    ],
+    'Execution Drive': [
+      'Learn agile and project management methodologies',
+      'Lead time-sensitive initiatives with aggressive deadlines',
+      'Create and track execution metrics',
+      'Develop systems to overcome execution obstacles',
+      'Practice breaking large projects into milestone-based deliverables'
+    ],
+    'Ethics': [
+      'Complete ethics and compliance certification',
+      'Participate in ethical dilemma workshops',
+      'Create an ethical decision-making framework',
+      'Lead by example in ethical conduct',
+      'Study case studies of ethical leadership'
     ]
   };
   
