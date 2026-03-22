@@ -101,6 +101,22 @@ const assessmentDescriptors = {
       'Structure': 'Follows process, respects hierarchy, values stability, and seeks consistency.'
     }
   },
+  // NEW: Strategic Leadership Assessment
+  'strategic_leadership': {
+    name: 'Strategic Leadership Assessment',
+    strengths: ['Vision / Strategy', 'People Leadership', 'Decision Making', 'Accountability', 'Emotional Intelligence', 'Execution Drive', 'Ethics'],
+    weaknesses: ['strategic gaps', 'people development', 'decisiveness', 'accountability gaps', 'emotional awareness', 'execution consistency', 'ethical judgment'],
+    icon: '👑',
+    dimensionDescriptions: {
+      'Vision / Strategy': 'Strategic thinking, long-term planning, and ability to set direction',
+      'People Leadership': 'Team development, coaching, engagement, and motivation',
+      'Decision Making': 'Decisiveness, judgment, and problem-solving under uncertainty',
+      'Accountability': 'Ownership, responsibility, and follow-through',
+      'Emotional Intelligence': 'Self-awareness, empathy, and conflict management',
+      'Execution Drive': 'Results orientation, urgency, and delivery focus',
+      'Ethics': 'Integrity, ethical judgment, and principled behavior'
+    }
+  },
   'behavioral': {
     name: 'Behavioral & Soft Skills Assessment',
     strengths: ['communication', 'collaboration', 'adaptability'],
@@ -161,6 +177,7 @@ export const getStrengthComment = (area, percentage, allStrengths, assessmentTyp
   
   // Personality trait specific strength phrases
   const traitSpecificPhrases = {
+    // Personality traits
     'Ownership': [
       `Demonstrates exceptional accountability and follow-through in ${area}`,
       `Shows natural ownership and initiative in ${area}`,
@@ -202,6 +219,56 @@ export const getStrengthComment = (area, percentage, allStrengths, assessmentTyp
       `Exhibits strong organizational skills in ${area}`,
       `Consistently maintains quality standards in ${area}`,
       `Has developed robust systematic approach in ${area}`
+    ],
+    // Strategic Leadership dimensions
+    'Vision / Strategy': [
+      `Demonstrates exceptional strategic thinking and long-term vision in ${area}`,
+      `Shows natural ability to see the big picture and set direction in ${area}`,
+      `Exhibits strong foresight and planning capabilities in ${area}`,
+      `Consistently anticipates future trends and opportunities in ${area}`,
+      `Has developed robust strategic planning skills in ${area}`
+    ],
+    'People Leadership': [
+      `Demonstrates exceptional ability to develop and coach teams in ${area}`,
+      `Shows natural talent for engaging and motivating others in ${area}`,
+      `Exhibits strong mentorship and development skills in ${area}`,
+      `Consistently builds high-performing teams in ${area}`,
+      `Has developed robust people management capabilities in ${area}`
+    ],
+    'Decision Making': [
+      `Demonstrates exceptional decisiveness and judgment in ${area}`,
+      `Shows natural ability to make sound decisions under pressure in ${area}`,
+      `Exhibits strong analytical problem-solving in ${area}`,
+      `Consistently makes timely, well-reasoned choices in ${area}`,
+      `Has developed robust decision-making frameworks in ${area}`
+    ],
+    'Accountability': [
+      `Demonstrates exceptional ownership and responsibility in ${area}`,
+      `Shows natural drive to take charge and follow through in ${area}`,
+      `Exhibits strong commitment to outcomes in ${area}`,
+      `Consistently owns results, both successes and failures in ${area}`,
+      `Has developed robust accountability practices in ${area}`
+    ],
+    'Emotional Intelligence': [
+      `Demonstrates exceptional self-awareness and empathy in ${area}`,
+      `Shows natural ability to understand and manage emotions in ${area}`,
+      `Exhibits strong interpersonal awareness in ${area}`,
+      `Consistently navigates complex social situations effectively in ${area}`,
+      `Has developed robust emotional intelligence in ${area}`
+    ],
+    'Execution Drive': [
+      `Demonstrates exceptional focus on results and delivery in ${area}`,
+      `Shows natural urgency and drive to achieve in ${area}`,
+      `Exhibits strong follow-through and persistence in ${area}`,
+      `Consistently meets or exceeds performance targets in ${area}`,
+      `Has developed robust execution capabilities in ${area}`
+    ],
+    'Ethics': [
+      `Demonstrates exceptional integrity and moral judgment in ${area}`,
+      `Shows natural commitment to ethical principles in ${area}`,
+      `Exhibits strong values-aligned behavior in ${area}`,
+      `Consistently makes principled decisions in ${area}`,
+      `Has developed robust ethical reasoning skills in ${area}`
     ]
   };
   
@@ -237,6 +304,7 @@ export const getWeaknessComment = (area, percentage, allWeaknesses, assessmentTy
   
   // Personality trait specific weakness phrases
   const traitSpecificPhrases = {
+    // Personality traits
     'Ownership': [
       `Would benefit significantly from developing stronger accountability in ${area}.`,
       `${area} presents the greatest opportunity for taking more initiative.`,
@@ -278,6 +346,56 @@ export const getWeaknessComment = (area, percentage, allWeaknesses, assessmentTy
       `Developing more systematic approaches should be a priority.`,
       `Additional support in following procedures will unlock greater potential.`,
       `Building consistency in ${area} will enhance overall effectiveness.`
+    ],
+    // Strategic Leadership dimensions
+    'Vision / Strategy': [
+      `Would benefit significantly from developing stronger strategic thinking in ${area}.`,
+      `${area} presents the greatest opportunity for long-term planning.`,
+      `Developing better foresight and direction-setting should be a priority.`,
+      `Additional support in strategic analysis will unlock greater potential.`,
+      `Building strategic capabilities in ${area} will enhance overall effectiveness.`
+    ],
+    'People Leadership': [
+      `Would benefit significantly from developing stronger team development skills in ${area}.`,
+      `${area} presents the greatest opportunity for coaching and mentoring.`,
+      `Developing better engagement and motivation strategies should be a priority.`,
+      `Additional support in people management will unlock greater potential.`,
+      `Building leadership capabilities in ${area} will enhance overall effectiveness.`
+    ],
+    'Decision Making': [
+      `Would benefit significantly from developing greater decisiveness in ${area}.`,
+      `${area} presents the greatest opportunity for improving judgment.`,
+      `Developing better problem-solving frameworks should be a priority.`,
+      `Additional support in decision-making processes will unlock greater potential.`,
+      `Building analytical capabilities in ${area} will enhance overall effectiveness.`
+    ],
+    'Accountability': [
+      `Would benefit significantly from developing stronger ownership in ${area}.`,
+      `${area} presents the greatest opportunity for taking responsibility.`,
+      `Developing better follow-through should be a priority.`,
+      `Additional support in accountability practices will unlock greater potential.`,
+      `Building ownership skills in ${area} will enhance overall effectiveness.`
+    ],
+    'Emotional Intelligence': [
+      `Would benefit significantly from developing greater self-awareness in ${area}.`,
+      `${area} presents the greatest opportunity for empathy development.`,
+      `Developing better emotional regulation should be a priority.`,
+      `Additional support in interpersonal awareness will unlock greater potential.`,
+      `Building emotional intelligence in ${area} will enhance overall effectiveness.`
+    ],
+    'Execution Drive': [
+      `Would benefit significantly from developing stronger results focus in ${area}.`,
+      `${area} presents the greatest opportunity for improving delivery speed.`,
+      `Developing better execution discipline should be a priority.`,
+      `Additional support in performance management will unlock greater potential.`,
+      `Building execution capabilities in ${area} will enhance overall effectiveness.`
+    ],
+    'Ethics': [
+      `Would benefit significantly from developing stronger ethical awareness in ${area}.`,
+      `${area} presents the greatest opportunity for moral reasoning.`,
+      `Developing better ethical decision-making should be a priority.`,
+      `Additional support in integrity practices will unlock greater potential.`,
+      `Building ethical judgment in ${area} will enhance overall effectiveness.`
     ]
   };
   
