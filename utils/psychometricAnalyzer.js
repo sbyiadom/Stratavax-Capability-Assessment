@@ -26,7 +26,7 @@ export const generatePsychometricAnalysis = (categoryScores, assessmentType, can
   const ownership = categories.find(c => c.name.includes('Ownership')) || { percentage: 0, name: 'Ownership' };
   const collaboration = categories.find(c => c.name.includes('Collaboration')) || { percentage: 0, name: 'Collaboration' };
   const action = categories.find(c => c.name.includes('Action')) || { percentage: 0, name: 'Action' };
-  const analysis = categories.find(c => c.name.includes('Analysis')) || { percentage: 0, name: 'Analysis' };
+  const analysisTrait = categories.find(c => c.name.includes('Analysis')) || { percentage: 0, name: 'Analysis' };
   const riskTolerance = categories.find(c => c.name.includes('Risk')) || { percentage: 0, name: 'Risk Tolerance' };
   const structure = categories.find(c => c.name.includes('Structure')) || { percentage: 0, name: 'Structure' };
 
@@ -38,16 +38,16 @@ export const generatePsychometricAnalysis = (categoryScores, assessmentType, can
       overallGrade,
       classification
     },
-    executiveSummary: generateExecutiveSummary(candidateName, avgScore, strengths, risks, ownership, collaboration, action, analysis, riskTolerance, structure),
+    executiveSummary: generateExecutiveSummary(candidateName, avgScore, strengths, risks, ownership, collaboration, action, analysisTrait, riskTolerance, structure),
     categoryAnalysis: {
       strengths: generateStrengthsAnalysis(strengths),
       moderate: generateModerateAnalysis(moderate),
       risks: generateRisksAnalysis(risks)
     },
-    personalityStructure: generatePersonalityStructure(ownership, collaboration, action, analysis, riskTolerance, structure),
-    roleSuitability: generateRoleSuitability(strengths, risks, ownership, collaboration, action, analysis, riskTolerance, structure),
+    personalityStructure: generatePersonalityStructure(ownership, collaboration, action, analysisTrait, riskTolerance, structure),
+    roleSuitability: generateRoleSuitability(strengths, risks, ownership, collaboration, action, analysisTrait, riskTolerance, structure),
     developmentPriorities: generateDevelopmentPriorities(risks, moderate),
-    overallInterpretation: generateOverallInterpretation(candidateName, avgScore, strengths, risks, analysis, riskTolerance, structure)
+    overallInterpretation: generateOverallInterpretation(candidateName, avgScore, strengths, risks, analysisTrait, riskTolerance, structure)
   };
 };
 
@@ -150,13 +150,13 @@ const generateRisksAnalysis = (risks) => {
   return analysis;
 };
 
-const generatePersonalityStructure = (ownership, collaboration, action, analysis, riskTolerance, structure) => {
+const generatePersonalityStructure = (ownership, collaboration, action, analysisTrait, riskTolerance, structure) => {
   let analysis = `🧠 **Personality Structure Interpretation**\n\n`;
   analysis += `This is an interesting contrast profile:\n\n`;
   analysis += `• ${ownership.percentage >= 70 ? 'High' : ownership.percentage >= 50 ? 'Moderate' : 'Low'} Ownership (${ownership.percentage}%)\n`;
   analysis += `• ${collaboration.percentage >= 70 ? 'High' : collaboration.percentage >= 50 ? 'Moderate' : 'Low'} Collaboration (${collaboration.percentage}%)\n`;
   analysis += `• ${action.percentage >= 70 ? 'High' : action.percentage >= 50 ? 'Moderate' : 'Low'} Action (${action.percentage}%)\n`;
-  analysis += `• ${analysis.percentage >= 70 ? 'High' : analysis.percentage >= 50 ? 'Moderate' : 'Low'} Analysis (${analysis.percentage}%)\n`;
+  analysis += `• ${analysisTrait.percentage >= 70 ? 'High' : analysisTrait.percentage >= 50 ? 'Moderate' : 'Low'} Analysis (${analysisTrait.percentage}%)\n`;
   analysis += `• ${riskTolerance.percentage >= 70 ? 'High' : riskTolerance.percentage >= 50 ? 'Moderate' : 'Low'} Risk Tolerance (${riskTolerance.percentage}%)\n`;
   analysis += `• ${structure.percentage >= 70 ? 'High' : structure.percentage >= 50 ? 'Moderate' : 'Low'} Structure (${structure.percentage}%)\n\n`;
 
@@ -179,7 +179,7 @@ const generatePersonalityStructure = (ownership, collaboration, action, analysis
   }
   
   // Analyst profile: High Analysis + High Structure
-  else if (analysis.percentage >= 70 && structure.percentage >= 60) {
+  else if (analysisTrait.percentage >= 70 && structure.percentage >= 60) {
     analysis += `This describes an Analyst profile:\n\n`;
     analysis += `• Thorough and data-driven\n`;
     analysis += `• Plans carefully before acting\n`;
@@ -294,9 +294,9 @@ const generateDevelopmentPriorities = (risks, moderate) => {
   return analysis;
 };
 
-const generateOverallInterpretation = (candidateName, avgScore, strengths, risks, analysis, riskTolerance, structure) => {
+const generateOverallInterpretation = (candidateName, avgScore, strengths, risks, analysisTrait, riskTolerance, structure) => {
   const riskCount = risks.length;
-  const hasAnalysisIssue = analysis.percentage < 50;
+  const hasAnalysisIssue = analysisTrait.percentage < 50;
   const hasStructureIssue = structure.percentage < 50;
   const hasRiskIssue = riskTolerance.percentage < 40;
   
