@@ -74,6 +74,41 @@ export const getDevelopmentRecommendation = (category, percentage) => {
       opportunity: `Champion new ideas and approaches within team. Lead innovation initiatives.`
     },
 
+    // ============================================
+    // NEW PERSONALITY TRAITS (6 Traits)
+    // ============================================
+    
+    'Ownership': {
+      critical: `Take full ownership of a small project from start to finish. Set personal accountability goals and track progress publicly. Practice owning mistakes and presenting lessons learned. Meet with a mentor weekly to discuss accountability challenges.`,
+      significant: `Volunteer to lead a project or initiative. Create a personal accountability dashboard. When things go wrong, focus on solutions rather than blame. Request feedback on your follow-through.`,
+      opportunity: `Take on stretch assignments that require high accountability. Mentor others on taking ownership. Share your accountability framework with the team. Lead post-mortem discussions.`
+    },
+    'Collaboration': {
+      critical: `Participate in team-building activities. Practice active listening in every conversation. Ask at least one colleague for input before making decisions. Volunteer for cross-functional projects with close supervision.`,
+      significant: `Seek opportunities to work in pairs or small teams. Practice sharing credit generously. Initiate collaborative problem-solving sessions. Ask for feedback on your teamwork effectiveness.`,
+      opportunity: `Lead cross-functional initiatives. Facilitate team meetings and decision-making. Help resolve team conflicts constructively. Mentor others on effective collaboration.`
+    },
+    'Action': {
+      critical: `Practice making decisions with 80% of available information. Set time limits for decision-making (e.g., 2 minutes for small decisions, 1 day for moderate decisions). Create action plans with clear deadlines.`,
+      significant: `Volunteer for time-sensitive projects. Take initiative on tasks without being asked. Set personal deadlines ahead of official due dates. Track your decision-to-action time.`,
+      opportunity: `Lead fast-paced projects. Help others overcome analysis paralysis. Share decision-making frameworks with the team. Take on roles requiring quick execution.`
+    },
+    'Analysis': {
+      critical: `Take a foundational course in critical thinking or data analysis. Use structured problem-solving frameworks for all decisions (PDCA, 5 Whys, decision matrices). Create a habit of gathering data before acting.`,
+      significant: `Practice analyzing case studies. Use root cause analysis for problems you encounter. Create structured notes before important decisions. Review past decisions to identify analytical improvements.`,
+      opportunity: `Lead complex analytical projects. Teach analytical frameworks to others. Establish data-driven decision-making practices for your team. Become a subject matter expert in analysis.`
+    },
+    'Risk Tolerance': {
+      critical: `Start with small, low-stakes experiments. Practice evaluating risks using structured frameworks (probability, impact, mitigation). Discuss risk decisions with a mentor before proceeding.`,
+      significant: `Volunteer for pilot projects or innovation initiatives. Practice presenting risk assessments with mitigation plans. Learn to differentiate between acceptable and unacceptable risks.`,
+      opportunity: `Lead innovation initiatives. Help others navigate calculated risks. Develop risk assessment frameworks for the organization. Champion a culture of experimentation.`
+    },
+    'Structure': {
+      critical: `Create personal templates for recurring tasks. Document procedures for your key responsibilities. Use checklists consistently. Follow established processes without deviation.`,
+      significant: `Develop and share process documentation with the team. Use project management tools consistently. Help identify opportunities to standardize workflows.`,
+      opportunity: `Lead process improvement initiatives. Establish standards for the team. Create documentation systems. Mentor others on process discipline.`
+    },
+
     // Leadership Assessment
     'Vision & Strategic Thinking': {
       critical: `Study the organization's strategy and how your role connects. Practice writing a vision for your team or function. Discuss strategic concepts with a mentor.`,
