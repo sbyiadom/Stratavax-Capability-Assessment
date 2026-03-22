@@ -175,32 +175,38 @@ export const strengthPhrases = {
     "reveals profound commitment to quality in {{area}}"
   ],
   
-  // Personality phrases
+  // UPDATED: Personality phrases - now with 6 new traits
   personality: [
-    "demonstrates stable temperament in {{area}}",
-    "exhibits adaptable nature in {{area}}",
-    "shows positive outlook in {{area}}",
-    "reveals resilience in {{area}}",
-    "displays openness to experience in {{area}}",
-    "showcases conscientious approach in {{area}}",
-    "demonstrates interpersonal warmth in {{area}}",
-    "exhibits emotional stability in {{area}}",
-    "shows self-confidence in {{area}}",
-    "reveals balanced disposition in {{area}}",
-    "possesses magnetic personality in {{area}}",
-    "demonstrates remarkable optimism in {{area}}",
-    "exhibits strong character integrity in {{area}}",
-    "showcases genuine authenticity in {{area}}",
-    "reveals natural curiosity in {{area}}",
-    "displays exceptional emotional regulation in {{area}}",
-    "demonstrates outstanding adaptability in {{area}}",
-    "exhibits keen self-awareness in {{area}}",
-    "shows remarkable personal growth mindset in {{area}}",
-    "possesses natural charisma in {{area}}",
-    "demonstrates exceptional resilience in {{area}}",
-    "exhibits strong moral compass in {{area}}",
-    "showcases masterful self-management in {{area}}",
-    "reveals profound personal insight in {{area}}"
+    "demonstrates exceptional accountability and follow-through in {{area}}",
+    "exhibits strong ownership and initiative in {{area}}",
+    "shows natural drive to take responsibility in {{area}}",
+    "reveals commitment to owning outcomes in {{area}}",
+    "displays remarkable reliability and dependability in {{area}}",
+    "showcases exceptional team orientation in {{area}}",
+    "demonstrates strong collaborative instincts in {{area}}",
+    "exhibits natural ability to build consensus in {{area}}",
+    "shows remarkable interpersonal effectiveness in {{area}}",
+    "reveals talent for fostering team harmony in {{area}}",
+    "displays exceptional decisiveness and urgency in {{area}}",
+    "demonstrates strong action orientation in {{area}}",
+    "exhibits remarkable initiative-taking ability in {{area}}",
+    "shows natural inclination to act swiftly in {{area}}",
+    "reveals impressive execution focus in {{area}}",
+    "displays exceptional analytical thinking in {{area}}",
+    "demonstrates strong systematic approach in {{area}}",
+    "exhibits remarkable data-driven decision-making in {{area}}",
+    "shows natural curiosity and thoroughness in {{area}}",
+    "reveals impressive methodical processing in {{area}}",
+    "displays healthy comfort with uncertainty in {{area}}",
+    "demonstrates appropriate calculated risk-taking in {{area}}",
+    "exhibits remarkable innovation mindset in {{area}}",
+    "shows natural experimentation approach in {{area}}",
+    "reveals impressive boundary-pushing capability in {{area}}",
+    "displays exceptional process discipline in {{area}}",
+    "demonstrates strong organizational consistency in {{area}}",
+    "exhibits remarkable reliability in following procedures in {{area}}",
+    "shows natural affinity for structured approaches in {{area}}",
+    "reveals impressive attention to process in {{area}}"
   ],
   
   // Cultural fit phrases
@@ -426,32 +432,39 @@ export const weaknessPhrases = {
     "would be enhanced by accountability partnerships in {{area}}"
   ],
   
-  // Personality phrases
+  // UPDATED: Personality phrases - now with 6 new traits
   personality: [
-    "would benefit from self-reflection in {{area}}",
-    "presents opportunity to develop {{area}}",
-    "could strengthen through mindfulness in {{area}}",
-    "would gain from perspective-taking in {{area}}",
-    "has potential to enhance {{area}}",
-    "may need support in {{area}}",
-    "would be enhanced by coaching in {{area}}",
-    "shows room to grow in {{area}}",
-    "could benefit from stress management in {{area}}",
-    "has opportunity to develop {{area}}",
-    "would benefit from personality assessment in {{area}}",
-    "presents opportunity to build {{area}} flexibility",
-    "could strengthen through resilience training in {{area}}",
-    "would gain from self-discovery exercises in {{area}}",
-    "has potential to enhance {{area}} adaptability",
-    "may need guidance in {{area}} expression",
-    "would be improved by building {{area}} awareness",
-    "shows developing {{area}} that can be balanced",
-    "could benefit from emotional regulation in {{area}}",
-    "presents opportunity to cultivate {{area}} strength",
-    "would gain from character development in {{area}}",
-    "has room to develop greater {{area}}",
-    "may need additional self-work in {{area}}",
-    "would be enhanced by personal growth coaching in {{area}}"
+    "would benefit from developing stronger accountability in {{area}}",
+    "presents opportunity to build ownership skills in {{area}}",
+    "could strengthen through taking more initiative in {{area}}",
+    "would gain from owning outcomes more consistently in {{area}}",
+    "has potential to develop greater reliability in {{area}}",
+    "may need support in taking responsibility in {{area}}",
+    "would benefit from teamwork development in {{area}}",
+    "presents opportunity to build collaboration skills in {{area}}",
+    "could strengthen through more inclusive behavior in {{area}}",
+    "would gain from seeking input from others in {{area}}",
+    "has potential to develop stronger team orientation in {{area}}",
+    "would benefit from building decisiveness in {{area}}",
+    "presents opportunity to develop faster action orientation in {{area}}",
+    "could strengthen through taking initiative more often in {{area}}",
+    "would gain from making timely decisions in {{area}}",
+    "has potential to develop greater urgency in {{area}}",
+    "would benefit from strengthening analytical skills in {{area}}",
+    "presents opportunity to develop more systematic thinking in {{area}}",
+    "could strengthen through data-driven approaches in {{area}}",
+    "would gain from more thorough planning in {{area}}",
+    "has potential to develop deeper analytical capability in {{area}}",
+    "would benefit from building comfort with uncertainty in {{area}}",
+    "presents opportunity to develop calculated risk-taking in {{area}}",
+    "could strengthen through more experimentation in {{area}}",
+    "would gain from embracing innovation more in {{area}}",
+    "has potential to develop healthier risk orientation in {{area}}",
+    "would benefit from strengthening process discipline in {{area}}",
+    "presents opportunity to develop more consistent procedures in {{area}}",
+    "could strengthen through better organization in {{area}}",
+    "would gain from following processes more reliably in {{area}}",
+    "has potential to develop greater structural consistency in {{area}}"
   ],
   
   // Cultural fit phrases
@@ -722,6 +735,14 @@ export const areaDescriptors = {
   'Communication & Influence': ['persuasive ability', 'influencing skills', 'stakeholder communication', 'persuasion', 'influence tactics', 'stakeholder engagement', 'persuasive communication', 'influential presence', 'advocacy skills', 'persuasive impact'],
   'People Management': ['team leadership', 'coaching ability', 'talent development', 'staff management', 'team guidance', 'employee development', 'people leadership', 'team building', 'staff development', 'personnel management'],
   
+  // UPDATED: New Personality Traits
+  'Ownership': ['accountability', 'initiative', 'responsibility', 'follow-through', 'reliability', 'commitment', 'dependability', 'ownership mindset', 'drive', 'self-direction'],
+  'Collaboration': ['teamwork', 'cooperation', 'consensus-building', 'partnership', 'collegiality', 'coordination', 'alliance-building', 'team orientation', 'interpersonal effectiveness', 'collective success'],
+  'Action': ['decisiveness', 'initiative', 'urgency', 'execution speed', 'proactivity', 'decisive action', 'swift response', 'action orientation', 'impetus', 'momentum'],
+  'Analysis': ['analytical thinking', 'systematic approach', 'data-driven reasoning', 'structured analysis', 'methodical processing', 'logical evaluation', 'critical thinking', 'analytical rigor', 'thoroughness', 'cognitive precision'],
+  'Risk Tolerance': ['innovation mindset', 'calculated risk-taking', 'experimentation', 'comfort with uncertainty', 'boundary-pushing', 'entrepreneurial spirit', 'innovative approach', 'risk acceptance', 'exploratory mindset', 'adaptability to uncertainty'],
+  'Structure': ['process adherence', 'organizational consistency', 'systematic approach', 'procedural discipline', 'methodical execution', 'quality focus', 'consistency', 'orderliness', 'methodical nature', 'procedural reliability'],
+  
   // Default
   'default': ['this competency', 'this area', 'this capability', 'this skill', 'this dimension', 'this aspect', 'this quality', 'this attribute', 'this characteristic', 'this domain']
 };
@@ -737,7 +758,20 @@ export const getStrengthPhrase = (area, category = 'default') => {
   // Determine which phrase set to use based on area keywords
   let phraseSet = 'default';
   
-  if (area.toLowerCase().includes('leader') || area.toLowerCase().includes('vision') || area.toLowerCase().includes('strategic')) {
+  // Check for new personality traits first
+  if (area === 'Ownership' || area === 'Accountability') {
+    phraseSet = 'personality';
+  } else if (area === 'Collaboration' || area === 'Teamwork') {
+    phraseSet = 'personality';
+  } else if (area === 'Action' || area === 'Initiative' || area === 'Decisiveness') {
+    phraseSet = 'personality';
+  } else if (area === 'Analysis' || area === 'Analytical Thinking') {
+    phraseSet = 'personality';
+  } else if (area === 'Risk Tolerance' || area === 'Risk' || area === 'Innovation') {
+    phraseSet = 'personality';
+  } else if (area === 'Structure' || area === 'Process' || area === 'Consistency') {
+    phraseSet = 'personality';
+  } else if (area.toLowerCase().includes('leader') || area.toLowerCase().includes('vision') || area.toLowerCase().includes('strategic')) {
     phraseSet = 'leadership';
   } else if (area.toLowerCase().includes('communicat') || area.toLowerCase().includes('verbal') || area.toLowerCase().includes('influence')) {
     phraseSet = 'communication';
@@ -763,7 +797,20 @@ export const getWeaknessPhrase = (area, category = 'default') => {
   // Similar logic for weakness phrases
   let phraseSet = 'default';
   
-  if (area.toLowerCase().includes('leader') || area.toLowerCase().includes('vision') || area.toLowerCase().includes('strategic')) {
+  // Check for new personality traits first
+  if (area === 'Ownership' || area === 'Accountability') {
+    phraseSet = 'personality';
+  } else if (area === 'Collaboration' || area === 'Teamwork') {
+    phraseSet = 'personality';
+  } else if (area === 'Action' || area === 'Initiative' || area === 'Decisiveness') {
+    phraseSet = 'personality';
+  } else if (area === 'Analysis' || area === 'Analytical Thinking') {
+    phraseSet = 'personality';
+  } else if (area === 'Risk Tolerance' || area === 'Risk' || area === 'Innovation') {
+    phraseSet = 'personality';
+  } else if (area === 'Structure' || area === 'Process' || area === 'Consistency') {
+    phraseSet = 'personality';
+  } else if (area.toLowerCase().includes('leader') || area.toLowerCase().includes('vision') || area.toLowerCase().includes('strategic')) {
     phraseSet = 'leadership';
   } else if (area.toLowerCase().includes('communicat') || area.toLowerCase().includes('verbal') || area.toLowerCase().includes('influence')) {
     phraseSet = 'communication';
