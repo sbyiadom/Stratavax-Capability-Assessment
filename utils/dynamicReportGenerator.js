@@ -86,11 +86,20 @@ const assessmentDescriptors = {
     weaknesses: ['adaptability', 'cultural awareness', 'interpersonal skills'],
     icon: '🤝'
   },
+  // UPDATED: Personality assessment with 6 new traits
   'personality': {
     name: 'Personality Assessment',
-    strengths: ['emotional intelligence', 'self-awareness', 'resilience'],
+    strengths: ['Ownership', 'Collaboration', 'Action', 'Analysis', 'Risk Tolerance', 'Structure'],
     weaknesses: ['behavioral patterns', 'stress management', 'interpersonal dynamics'],
-    icon: '🌟'
+    icon: '🌟',
+    traitDescriptions: {
+      'Ownership': 'Takes responsibility, drives outcomes, owns mistakes, and follows through on commitments.',
+      'Collaboration': 'Works well in teams, builds consensus, supports others, and values collective success.',
+      'Action': 'Makes quick decisions, takes initiative, moves fast, and acts with urgency.',
+      'Analysis': 'Seeks data, plans carefully, thinks before acting, and values thoroughness.',
+      'Risk Tolerance': 'Comfortable with uncertainty, experiments, pushes boundaries, and embraces innovation.',
+      'Structure': 'Follows process, respects hierarchy, values stability, and seeks consistency.'
+    }
   },
   'behavioral': {
     name: 'Behavioral & Soft Skills Assessment',
@@ -150,7 +159,53 @@ export const getStrengthComment = (area, percentage, allStrengths, assessmentTyp
   const rank = allStrengths.findIndex(s => (s.area || s) === area) + 1;
   const isTopStrength = rank === 1;
   
-  const strengthPhrases = [
+  // Personality trait specific strength phrases
+  const traitSpecificPhrases = {
+    'Ownership': [
+      `Demonstrates exceptional accountability and follow-through in ${area}`,
+      `Shows natural ownership and initiative in ${area}`,
+      `Exhibits strong responsibility and drive in ${area}`,
+      `Consistently takes charge and owns outcomes in ${area}`,
+      `Has developed robust accountability skills in ${area}`
+    ],
+    'Collaboration': [
+      `Demonstrates exceptional teamwork and consensus-building in ${area}`,
+      `Shows natural ability to work with others in ${area}`,
+      `Exhibits strong collaborative instincts in ${area}`,
+      `Consistently builds strong team relationships in ${area}`,
+      `Has developed robust partnership skills in ${area}`
+    ],
+    'Action': [
+      `Demonstrates exceptional decisiveness and initiative in ${area}`,
+      `Shows natural ability to act quickly in ${area}`,
+      `Exhibits strong execution focus in ${area}`,
+      `Consistently moves priorities forward in ${area}`,
+      `Has developed robust action-orientation in ${area}`
+    ],
+    'Analysis': [
+      `Demonstrates exceptional analytical thinking in ${area}`,
+      `Shows natural ability to process complex information in ${area}`,
+      `Exhibits strong systematic approach in ${area}`,
+      `Consistently seeks data before acting in ${area}`,
+      `Has developed robust analytical skills in ${area}`
+    ],
+    'Risk Tolerance': [
+      `Demonstrates exceptional comfort with uncertainty in ${area}`,
+      `Shows natural ability to experiment and innovate in ${area}`,
+      `Exhibits strong calculated risk-taking in ${area}`,
+      `Consistently pushes boundaries appropriately in ${area}`,
+      `Has developed robust innovation skills in ${area}`
+    ],
+    'Structure': [
+      `Demonstrates exceptional process discipline in ${area}`,
+      `Shows natural ability to follow procedures in ${area}`,
+      `Exhibits strong organizational skills in ${area}`,
+      `Consistently maintains quality standards in ${area}`,
+      `Has developed robust systematic approach in ${area}`
+    ]
+  };
+  
+  const strengthPhrases = traitSpecificPhrases[area] || [
     `Demonstrates exceptional capability in ${area}`,
     `Shows natural aptitude for ${area}`,
     `Exhibits strong proficiency in ${area}`,
@@ -180,7 +235,53 @@ export const getWeaknessComment = (area, percentage, allWeaknesses, assessmentTy
   const rank = allWeaknesses.findIndex(w => (w.area || w) === area) + 1;
   const isPriority = rank <= 2;
   
-  const weaknessPhrases = [
+  // Personality trait specific weakness phrases
+  const traitSpecificPhrases = {
+    'Ownership': [
+      `Would benefit significantly from developing stronger accountability in ${area}.`,
+      `${area} presents the greatest opportunity for taking more initiative.`,
+      `Developing stronger ownership skills should be a priority.`,
+      `Additional support in taking responsibility will unlock greater potential.`,
+      `Building accountability in ${area} will enhance overall effectiveness.`
+    ],
+    'Collaboration': [
+      `Would benefit significantly from developing stronger teamwork skills in ${area}.`,
+      `${area} presents the greatest opportunity for building better relationships.`,
+      `Developing stronger collaboration skills should be a priority.`,
+      `Additional support in working with others will unlock greater potential.`,
+      `Building team skills in ${area} will enhance overall effectiveness.`
+    ],
+    'Action': [
+      `Would benefit significantly from developing greater decisiveness in ${area}.`,
+      `${area} presents the greatest opportunity for faster execution.`,
+      `Developing stronger action orientation should be a priority.`,
+      `Additional support in making timely decisions will unlock greater potential.`,
+      `Building initiative in ${area} will enhance overall effectiveness.`
+    ],
+    'Analysis': [
+      `Would benefit significantly from developing stronger analytical skills in ${area}.`,
+      `${area} presents the greatest opportunity for better planning.`,
+      `Developing more systematic thinking should be a priority.`,
+      `Additional support in data-driven decisions will unlock greater potential.`,
+      `Building analytical capability in ${area} will enhance overall effectiveness.`
+    ],
+    'Risk Tolerance': [
+      `Would benefit significantly from developing greater comfort with uncertainty in ${area}.`,
+      `${area} presents the greatest opportunity for more innovation.`,
+      `Developing calculated risk-taking skills should be a priority.`,
+      `Additional support in experimenting will unlock greater potential.`,
+      `Building innovation skills in ${area} will enhance overall effectiveness.`
+    ],
+    'Structure': [
+      `Would benefit significantly from developing stronger process discipline in ${area}.`,
+      `${area} presents the greatest opportunity for better organization.`,
+      `Developing more systematic approaches should be a priority.`,
+      `Additional support in following procedures will unlock greater potential.`,
+      `Building consistency in ${area} will enhance overall effectiveness.`
+    ]
+  };
+  
+  const weaknessPhrases = traitSpecificPhrases[area] || [
     `Would benefit significantly from focused development in ${area}.`,
     `${area} presents the greatest opportunity for growth.`,
     `Developing stronger ${area} skills should be a priority.`,
