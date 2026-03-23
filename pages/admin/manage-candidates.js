@@ -325,11 +325,18 @@ export default function ManageCandidates() {
             <h1 style={styles.title}>Manage Candidates</h1>
             <p style={styles.subtitle}>View, reset assessments, and manage candidate accounts</p>
           </div>
-          <Link href="/admin/assign-candidates" legacyBehavior>
-            <a style={styles.assignButton}>
-              + Assign Candidates
-            </a>
-          </Link>
+          <div style={styles.headerButtons}>
+            <Link href="/admin/assign-assessments" legacyBehavior>
+              <a style={styles.assignAssessmentsButton}>
+                📋 Assign Assessments
+              </a>
+            </Link>
+            <Link href="/admin/assign-candidates" legacyBehavior>
+              <a style={styles.assignButton}>
+                + Assign Supervisors
+              </a>
+            </Link>
+          </div>
         </div>
 
         {/* Error/Success Messages */}
@@ -413,7 +420,7 @@ export default function ManageCandidates() {
                   <th style={styles.th}>Assessments</th>
                   <th style={styles.th}>Latest Score</th>
                   <th style={styles.th}>Actions</th>
-                 </tr>
+                </tr>
               </thead>
               <tbody>
                 {filteredCandidates.length === 0 ? (
@@ -672,6 +679,10 @@ const styles = {
     borderRadius: '16px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
   },
+  headerButtons: {
+    display: 'flex',
+    gap: '12px'
+  },
   title: {
     fontSize: '24px',
     fontWeight: 600,
@@ -682,6 +693,23 @@ const styles = {
     fontSize: '14px',
     color: '#666',
     margin: 0
+  },
+  assignAssessmentsButton: {
+    padding: '12px 24px',
+    background: '#2196F3',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 600,
+    textDecoration: 'none',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#1976D2',
+      transform: 'translateY(-1px)',
+      boxShadow: '0 4px 12px rgba(33,150,243,0.3)'
+    }
   },
   assignButton: {
     padding: '12px 24px',
