@@ -254,8 +254,18 @@ export default function AdminDashboard() {
             <a style={styles.actionCard}>
               <span style={styles.actionCardIcon}>📋</span>
               <div>
-                <h3 style={styles.actionCardTitle}>Assign Candidates</h3>
+                <h3 style={styles.actionCardTitle}>Assign Supervisors</h3>
                 <p style={styles.actionCardDesc}>Assign candidates to specific supervisors</p>
+              </div>
+            </a>
+          </Link>
+
+          <Link href="/admin/assign-assessments" legacyBehavior>
+            <a style={styles.actionCard}>
+              <span style={styles.actionCardIcon}>📋</span>
+              <div>
+                <h3 style={styles.actionCardTitle}>Assign Assessments</h3>
+                <p style={styles.actionCardDesc}>Assign, unblock, or block assessments for candidates</p>
               </div>
             </a>
           </Link>
@@ -381,7 +391,13 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: 'repeat(6, 1fr)',
     gap: '20px',
-    marginBottom: '30px'
+    marginBottom: '30px',
+    '@media (max-width: 1200px)': {
+      gridTemplateColumns: 'repeat(3, 1fr)'
+    },
+    '@media (max-width: 768px)': {
+      gridTemplateColumns: 'repeat(2, 1fr)'
+    }
   },
   statCard: {
     background: 'white',
@@ -422,7 +438,11 @@ const styles = {
     gap: '15px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
     transition: 'all 0.2s ease',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    ':hover': {
+      transform: 'translateY(-2px)',
+      boxShadow: '0 8px 20px rgba(0,0,0,0.1)'
+    }
   },
   actionCardIcon: {
     fontSize: '32px'
