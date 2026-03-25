@@ -8,6 +8,8 @@ export default function PreAssessment() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [error, setError] = useState(null);
+  const [showInstructions, setShowInstructions] = useState(false);
+  const [selectedAssessment, setSelectedAssessment] = useState(null);
 
   // List of assessment types to exclude
   const excludedTypes = ['manufacturing'];
@@ -105,6 +107,16 @@ export default function PreAssessment() {
     router.push('/candidate/dashboard');
   };
 
+  const handleStartClick = (assessment) => {
+    setSelectedAssessment(assessment);
+    setShowInstructions(true);
+  };
+
+  const confirmStart = () => {
+    setShowInstructions(false);
+    router.push(`/assessment/${selectedAssessment.id}`);
+  };
+
   const getIcon = (type) => {
     return type?.icon || '📋';
   };
@@ -182,13 +194,12 @@ export default function PreAssessment() {
                 <div style={styles.cardBody}>
                   <div style={styles.stats}>
                     <div>📝 {type?.question_count || 100} Questions</div>
-                    {/* FORCE 180 MINUTES FOR ALL ASSESSMENTS */}
                     <div>⏱️ 180 Minutes (3 hours)</div>
                     <div>🎯 Max Score: {type?.max_score || 500}</div>
                   </div>
                   
                   <button
-                    onClick={() => router.push(`/assessment/${assessment.id}`)}
+                    onClick={() => handleStartClick(assessment)}
                     disabled={isCompleted}
                     style={{
                       ...styles.button,
@@ -202,6 +213,137 @@ export default function PreAssessment() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Instructions Modal */}
+      {showInstructions && selectedAssessment && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalContent}>
+            <div style={styles.modalHeader}>
+              <span style={styles.modalIcon}>📋</span>
+              <h2 style={styles.modalTitle}>Assessment Instructions</h2>
+              <button onClick={() => setShowInstructions(false)} style={styles.closeButton}>✕</button>
+            </div>
+            
+            <div style={styles.modalBody}>
+              {/* Time & Attempts */}
+              <div style={styles.instructionSection}>
+                <h3 style={styles.sectionTitle}>⏱️ Time & Attempts</h3>
+                <ul style={styles.instructionList}>
+                  <li><strong>Time Limit:</strong> 3 hours (180 minutes)</li>
+                  <li><strong>One Attempt Only:</strong> Once submitted, you cannot retake</li>
+                  <li><strong>Auto-Save:</strong> Your answers are saved automatically</li>
+                  <li><strong>Auto-Submit:</strong> Assessment submits automatically if time expires or security rules are violated</li>
+                </ul>
+              </div>
+
+              {/* DO's */}
+              <div style={styles.instructionSection}>
+                <h3 style={styles.sectionTitle}>✅ DO's</h3>
+                <ul style={styles.instructionList}>
+                  <li>Use a stable internet connection</li>
+                  <li>Find a quiet, distraction-free environment</li>
+                  <li>Read each question carefully</li>
+                  <li>Answer honestly – there are no right or wrong answers</li>
+                  <li>Use the Question Navigator to jump between questions</li>
+                  <li>Review and change answers before final submission</li>
+                  <li>Complete all 100 questions</li>
+                  <li>Submit only when you are ready</li>
+                  <li>Contact your supervisor if you need assistance</li>
+                </ul>
+              </div>
+
+              {/* DON'Ts */}
+              <div style={styles.instructionSection}>
+                <h3 style={styles.sectionTitle}>❌ DON'Ts</h3>
+                <ul style={styles.instructionList}>
+                  <li><strong>Don't switch tabs or windows</strong> – Excessive switching may auto-submit</li>
+                  <li><strong>Don't open the assessment in multiple tabs</strong> – This triggers a security warning</li>
+                  <li><strong>Don't use keyboard shortcuts</strong> – Ctrl+C, Ctrl+V, Ctrl+R, F5 are disabled</li>
+                  <li><strong>Don't right-click</strong> – Copy/paste is disabled</li>
+                  <li><strong>Don't open Developer Tools</strong> – Detected and may auto-submit</li>
+                  <li><strong>Don't exit fullscreen mode repeatedly</strong> – May trigger auto-submission</li>
+                  <li><strong>Don't refresh the page</strong> – Use navigation buttons instead</li>
+                  <li><strong>Don't guess randomly</strong> – Honest answers provide valuable insights</li>
+                  <li><strong>Don't overthink</strong> – Go with your first instinct</li>
+                </ul>
+              </div>
+
+              {/* Security Monitoring */}
+              <div style={styles.instructionSection}>
+                <h3 style={styles.sectionTitle}>🛡️ Security Monitoring</h3>
+                <table style={styles.securityTable}>
+                  <thead>
+                    <tr>
+                      <th>Action</th>
+                      <th>Consequence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>Tab/window switching</td><td>Warning after 1st; auto-submit after 3</td></tr>
+                    <tr><td>Opening Developer Tools</td><td>Warning; repeated attempts auto-submit</td></tr>
+                    <tr><td>Exiting fullscreen</td><td>Warning; repeated attempts auto-submit</td></tr>
+                    <tr><td>Copy/paste attempts</td><td>Blocked</td></tr>
+                    <tr><td>Keyboard shortcuts</td><td>Blocked</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pro Tips */}
+              <div style={styles.instructionSection}>
+                <h3 style={styles.sectionTitle}>💡 Pro Tips</h3>
+                <ul style={styles.instructionList}>
+                  <li>Trust your instinct – the first answer is often the most authentic</li>
+                  <li>Don't analyze the question – read once and respond naturally</li>
+                  <li>Use the navigator – you can skip questions and return later</li>
+                  <li>Green numbers in the navigator show answered questions</li>
+                  <li>Review all answers before final submission</li>
+                </ul>
+              </div>
+
+              {/* Checklist */}
+              <div style={styles.instructionSection}>
+                <h3 style={styles.sectionTitle}>📋 Before You Start Checklist</h3>
+                <ul style={styles.checklist}>
+                  <li><input type="checkbox" id="check1" /> <label htmlFor="check1"> Stable internet connection</label></li>
+                  <li><input type="checkbox" id="check2" /> <label htmlFor="check2"> Quiet, distraction-free environment</label></li>
+                  <li><input type="checkbox" id="check3" /> <label htmlFor="check3"> 3 uninterrupted hours available</label></li>
+                  <li><input type="checkbox" id="check4" /> <label htmlFor="check4"> Understand this is a one-time assessment</label></li>
+                  <li><input type="checkbox" id="check5" /> <label htmlFor="check5"> Will answer honestly based on natural tendencies</label></li>
+                  <li><input type="checkbox" id="check6" /> <label htmlFor="check6"> Will not switch tabs or use keyboard shortcuts</label></li>
+                  <li><input type="checkbox" id="check7" /> <label htmlFor="check7"> Understand results will be shared with supervisor</label></li>
+                </ul>
+              </div>
+
+              {/* Need Help */}
+              <div style={styles.instructionSection}>
+                <h3 style={styles.sectionTitle}>📞 Need Help?</h3>
+                <ul style={styles.instructionList}>
+                  <li><strong>Assessment access:</strong> Contact your supervisor</li>
+                  <li><strong>Technical issues:</strong> Refresh the page (progress is saved)</li>
+                  <li><strong>Access denied:</strong> Supervisor must unblock the assessment</li>
+                </ul>
+              </div>
+
+              {/* Confirmation */}
+              <div style={styles.confirmationSection}>
+                <p style={styles.confirmationText}>
+                  By starting this assessment, you confirm that you have read and understood these instructions, 
+                  will answer honestly, and agree to follow the security guidelines.
+                </p>
+              </div>
+            </div>
+
+            <div style={styles.modalFooter}>
+              <button onClick={() => setShowInstructions(false)} style={styles.cancelButton}>
+                Cancel
+              </button>
+              <button onClick={confirmStart} style={styles.startButton}>
+                I Understand & Start Assessment →
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -369,5 +511,164 @@ const styles = {
     color: '#666',
     fontSize: '14px',
     textAlign: 'center'
+  },
+  // Modal Styles
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0,0,0,0.7)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    padding: '20px',
+    backdropFilter: 'blur(5px)'
+  },
+  modalContent: {
+    background: 'white',
+    borderRadius: '20px',
+    maxWidth: '800px',
+    width: '100%',
+    maxHeight: '90vh',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+  },
+  modalHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '20px 24px',
+    borderBottom: '2px solid #e2e8f0',
+    background: '#f8fafc'
+  },
+  modalIcon: {
+    fontSize: '28px'
+  },
+  modalTitle: {
+    margin: 0,
+    fontSize: '20px',
+    fontWeight: 600,
+    color: '#0A1929',
+    flex: 1,
+    marginLeft: '12px'
+  },
+  closeButton: {
+    background: 'none',
+    border: 'none',
+    fontSize: '24px',
+    cursor: 'pointer',
+    color: '#666',
+    padding: '4px 8px',
+    borderRadius: '8px',
+    ':hover': {
+      background: '#e2e8f0'
+    }
+  },
+  modalBody: {
+    padding: '24px',
+    overflowY: 'auto',
+    flex: 1
+  },
+  instructionSection: {
+    marginBottom: '24px',
+    padding: '16px',
+    background: '#f8fafc',
+    borderRadius: '12px'
+  },
+  sectionTitle: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#0A1929',
+    margin: '0 0 12px 0'
+  },
+  instructionList: {
+    margin: 0,
+    paddingLeft: '20px',
+    color: '#334155',
+    lineHeight: '1.6',
+    '& li': {
+      marginBottom: '6px'
+    }
+  },
+  checklist: {
+    margin: 0,
+    paddingLeft: '0',
+    listStyle: 'none',
+    '& li': {
+      marginBottom: '8px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px'
+    }
+  },
+  securityTable: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '13px',
+    '& th, & td': {
+      padding: '8px 12px',
+      textAlign: 'left',
+      borderBottom: '1px solid #e2e8f0'
+    },
+    '& th': {
+      background: '#f1f5f9',
+      fontWeight: 600,
+      color: '#0A1929'
+    }
+  },
+  confirmationSection: {
+    marginTop: '16px',
+    padding: '16px',
+    background: '#e8f5e9',
+    borderRadius: '12px',
+    borderLeft: '4px solid #4caf50'
+  },
+  confirmationText: {
+    margin: 0,
+    fontSize: '14px',
+    color: '#2e7d32',
+    lineHeight: '1.5'
+  },
+  modalFooter: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '12px',
+    padding: '16px 24px',
+    borderTop: '1px solid #e2e8f0',
+    background: '#f8fafc'
+  },
+  cancelButton: {
+    padding: '10px 24px',
+    background: '#f1f5f9',
+    border: '1px solid #cbd5e1',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    color: '#475569',
+    transition: 'all 0.2s',
+    ':hover': {
+      background: '#e2e8f0'
+    }
+  },
+  startButton: {
+    padding: '10px 24px',
+    background: '#0A1929',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    ':hover': {
+      background: '#1A2A3A',
+      transform: 'translateY(-1px)'
+    }
   }
 };
