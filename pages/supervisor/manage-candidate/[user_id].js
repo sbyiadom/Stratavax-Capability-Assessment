@@ -659,6 +659,15 @@ const styles = {
     marginBottom: '20px',
     opacity: 0.5
   },
+  primaryButton: {
+    display: 'inline-block',
+    marginTop: '20px',
+    padding: '10px 24px',
+    background: '#0A1929',
+    color: 'white',
+    textDecoration: 'none',
+    borderRadius: '8px'
+  },
   container: {
     maxWidth: '1200px',
     margin: '0 auto',
@@ -788,7 +797,8 @@ const styles = {
   },
   statValue: {
     fontSize: '28px',
-    fontWeight: 700'
+    fontWeight: 700,
+    color: '#0A1929'
   },
   assessmentsSection: {
     background: 'white',
@@ -939,7 +949,7 @@ const styles = {
     padding: '8px 16px',
     borderRadius: '8px',
     fontSize: '13px',
-    fontWeight: 500',
+    fontWeight: 500,
     cursor: 'pointer',
     transition: 'all 0.2s',
     ':hover': {
@@ -966,15 +976,6 @@ const styles = {
     color: '#64748b'
   },
   assignLink: {
-    display: 'inline-block',
-    marginTop: '20px',
-    padding: '10px 24px',
-    background: '#0A1929',
-    color: 'white',
-    textDecoration: 'none',
-    borderRadius: '8px'
-  },
-  primaryButton: {
     display: 'inline-block',
     marginTop: '20px',
     padding: '10px 24px',
