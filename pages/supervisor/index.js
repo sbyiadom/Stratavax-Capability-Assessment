@@ -24,6 +24,9 @@ export default function SupervisorDashboard() {
   const [expandedCandidate, setExpandedCandidate] = useState(null);
   const [processingAssessment, setProcessingAssessment] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
+  const [showUnblockModal, setShowUnblockModal] = useState(null);
+  const [timeExtension, setTimeExtension] = useState(30);
+  const [resetFullTime, setResetFullTime] = useState(false);
 
   // Load state from URL on mount
   useEffect(() => {
@@ -340,14 +343,12 @@ export default function SupervisorDashboard() {
   useEffect(() => {
     let filtered = [...candidates];
     
-    // Filter by assessment type
     if (selectedAssessmentType !== 'all') {
       filtered = filtered.filter(c => 
         c.assessment_breakdown?.[selectedAssessmentType] > 0
       );
     }
     
-    // Filter by status
     if (filterStatus !== 'all') {
       filtered = filtered.filter(c => {
         if (filterStatus === 'completed') return c.completedAssessments > 0;
@@ -357,7 +358,6 @@ export default function SupervisorDashboard() {
       });
     }
     
-    // Search by name, email, or phone
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase().trim();
       filtered = filtered.filter(c => 
@@ -370,8 +370,71 @@ export default function SupervisorDashboard() {
     setFilteredCandidates(filtered);
   }, [candidates, selectedAssessmentType, filterStatus, searchTerm]);
 
+  const handleUnblockAssessmentWithTime = async (candidateId, candidateName, assessmentId, assessmentTitle) => {
+    setProcessingAssessment({ candidateId, assessmentId });
+
+    try {
+      const response = await fetch('/api/supervisor/unblock-assessment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId: candidateId, 
+          assessmentId,
+          extendMinutes: resetFullTime ? 0 : timeExtension,
+          resetTime: resetFullTime,
+          performed_by: currentSupervisor.id
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        let message = `✅ "${assessmentTitle}" unblocked for ${candidateName}. `;
+        if (resetFullTime) {
+          message += `Time reset to full 3 hours. `;
+        } else if (timeExtension > 0) {
+          message += `Time extended by ${timeExtension} minutes. `;
+        }
+        message += result.hasExistingProgress ? 'They can continue where they left off.' : 'They can start a new session.';
+        alert(message);
+        
+        // Update local state
+        setCandidates(prev => prev.map(c => {
+          if (c.id === candidateId) {
+            const updatedAssessments = c.assessments.map(a => {
+              if (a.assessment_id === assessmentId) {
+                return { ...a, status: 'unblocked' };
+              }
+              return a;
+            });
+            const unblockedCount = updatedAssessments.filter(a => a.status === 'unblocked' && !a.result).length;
+            const blockedCount = updatedAssessments.filter(a => a.status === 'blocked' && !a.result).length;
+            
+            return { 
+              ...c, 
+              assessments: updatedAssessments,
+              unblockedAssessments: unblockedCount,
+              blockedAssessments: blockedCount
+            };
+          }
+          return c;
+        }));
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (error) {
+      console.error('Error unblocking assessment:', error);
+      alert('❌ Failed to unblock assessment: ' + error.message);
+    } finally {
+      setProcessingAssessment(null);
+      setShowUnblockModal(null);
+      setTimeExtension(30);
+      setResetFullTime(false);
+    }
+  };
+
   const handleResetAssessment = async (candidateId, assessmentId, assessmentTitle, candidateName) => {
-    if (!confirm(`Are you sure you want to reset "${assessmentTitle}" for ${candidateName}?`)) {
+    if (!confirm(`Are you sure you want to reset "${assessmentTitle}" for ${candidateName}? This will delete all progress.`)) {
       return;
     }
 
@@ -455,58 +518,6 @@ export default function SupervisorDashboard() {
     }
   };
 
-  const handleUnblockAssessment = async (candidateId, candidateName, assessmentId, assessmentTitle) => {
-    if (!confirm(`Unblock "${assessmentTitle}" for ${candidateName}?`)) {
-      return;
-    }
-
-    setProcessingAssessment({ candidateId, assessmentId });
-
-    try {
-      const { error } = await supabase
-        .from('candidate_assessments')
-        .update({
-          status: 'unblocked',
-          unblocked_by: currentSupervisor.id,
-          unblocked_at: new Date().toISOString()
-        })
-        .eq('user_id', candidateId)
-        .eq('assessment_id', assessmentId);
-
-      if (error) throw error;
-
-      alert(`✅ "${assessmentTitle}" unblocked successfully for ${candidateName}.`);
-      
-      // Update local state
-      setCandidates(prev => prev.map(c => {
-        if (c.id === candidateId) {
-          const updatedAssessments = c.assessments.map(a => {
-            if (a.assessment_id === assessmentId) {
-              return { ...a, status: 'unblocked' };
-            }
-            return a;
-          });
-          const unblockedCount = updatedAssessments.filter(a => a.status === 'unblocked' && !a.result).length;
-          const blockedCount = updatedAssessments.filter(a => a.status === 'blocked' && !a.result).length;
-          
-          return { 
-            ...c, 
-            assessments: updatedAssessments,
-            unblockedAssessments: unblockedCount,
-            blockedAssessments: blockedCount
-          };
-        }
-        return c;
-      }));
-      
-    } catch (error) {
-      console.error('Error unblocking assessment:', error);
-      alert('❌ Failed to unblock assessment: ' + error.message);
-    } finally {
-      setProcessingAssessment(null);
-    }
-  };
-
   const handleBlockAssessment = async (candidateId, candidateName, assessmentId, assessmentTitle) => {
     if (!confirm(`Block "${assessmentTitle}" for ${candidateName}?`)) {
       return;
@@ -519,8 +530,7 @@ export default function SupervisorDashboard() {
         .from('candidate_assessments')
         .update({
           status: 'blocked',
-          blocked_by: currentSupervisor.id,
-          blocked_at: new Date().toISOString()
+          updated_at: new Date().toISOString()
         })
         .eq('user_id', candidateId)
         .eq('assessment_id', assessmentId);
@@ -768,7 +778,7 @@ export default function SupervisorDashboard() {
                     <th style={styles.tableHead}>Last Active</th>
                     <th style={styles.tableHead}>Actions</th>
                    </tr>
-                </thead>
+                  </thead>
                 <tbody>
                   {filteredCandidates.map((candidate) => {
                     const latestScore = candidate.latestAssessment?.result?.score || 0;
@@ -791,13 +801,12 @@ export default function SupervisorDashboard() {
                                 <div style={styles.candidateId}>ID: {candidate.id.substring(0, 8)}...</div>
                               </div>
                             </div>
-                          </td>
+                           </td>
                           <td style={styles.tableCell}>
                             <div style={styles.candidateEmail}>{candidate.email}</div>
                             {candidate.phone && <div style={styles.candidatePhone}>{candidate.phone}</div>}
-                          </td>
+                           </td>
                           <td style={styles.tableCell}>
-                            {/* SIMPLIFIED ASSESSMENT SUMMARY - Only numbers, no tags */}
                             <div style={styles.assessmentSummary}>
                               <div style={styles.summaryStats}>
                                 <span style={styles.summaryCompleted}>
@@ -819,7 +828,7 @@ export default function SupervisorDashboard() {
                                 </button>
                               )}
                             </div>
-                          </td>
+                           </td>
                           <td style={styles.tableCell}>
                             {candidate.latestAssessment?.result ? (
                               <span style={{
@@ -840,7 +849,7 @@ export default function SupervisorDashboard() {
                             ) : (
                               <span style={styles.noScore}>No completed assessments</span>
                             )}
-                          </td>
+                           </td>
                           <td style={styles.tableCell}>
                             <span style={{
                               ...styles.classificationBadge,
@@ -850,7 +859,7 @@ export default function SupervisorDashboard() {
                             }}>
                               {classification.label}
                             </span>
-                          </td>
+                           </td>
                           <td style={styles.tableCell}>
                             <span style={styles.date}>
                               {candidate.latestAssessment?.result 
@@ -858,7 +867,7 @@ export default function SupervisorDashboard() {
                                 : 'Never'
                               }
                             </span>
-                          </td>
+                           </td>
                           <td style={styles.tableCell}>
                             <div style={styles.actionButtons}>
                               <Link href={`/supervisor/${candidate.id}`} legacyBehavior>
@@ -872,8 +881,8 @@ export default function SupervisorDashboard() {
                                 </a>
                               </Link>
                             </div>
-                          </td>
-                        </tr>
+                           </td>
+                         </tr>
                         {isExpanded && (
                           <tr style={styles.expandedRow}>
                             <td colSpan="7" style={styles.expandedCell}>
@@ -1015,12 +1024,12 @@ export default function SupervisorDashboard() {
                                             </>
                                           ) : assessment.status === 'blocked' ? (
                                             <button
-                                              onClick={() => handleUnblockAssessment(
-                                                candidate.id,
-                                                candidate.full_name,
-                                                assessment.assessment_id,
-                                                assessment.assessment_title
-                                              )}
+                                              onClick={() => setShowUnblockModal({
+                                                candidateId: candidate.id,
+                                                candidateName: candidate.full_name,
+                                                assessmentId: assessment.assessment_id,
+                                                assessmentTitle: assessment.assessment_title
+                                              })}
                                               disabled={isProcessingThis}
                                               style={{
                                                 ...styles.unblockButton,
@@ -1053,9 +1062,9 @@ export default function SupervisorDashboard() {
                                     );
                                   })}
                               </div>
-                             </td>
-                           </tr>
-                        )}
+                              </td>
+                            </tr>
+                          )}
                       </React.Fragment>
                     );
                   })}
@@ -1065,6 +1074,133 @@ export default function SupervisorDashboard() {
           )}
         </div>
       </div>
+
+      {/* Unblock Modal with Time Options */}
+      {showUnblockModal && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.unblockModal}>
+            <div style={styles.modalHeader}>
+              <span style={styles.modalIcon}>🔓</span>
+              <h3>Unblock Assessment</h3>
+              <button onClick={() => setShowUnblockModal(null)} style={styles.closeButton}>✕</button>
+            </div>
+            
+            <div style={styles.modalBody}>
+              <p><strong>Candidate:</strong> {showUnblockModal.candidateName}</p>
+              <p><strong>Assessment:</strong> {showUnblockModal.assessmentTitle}</p>
+              
+              <div style={styles.timeOptions}>
+                <h4>⏰ Time Options</h4>
+                
+                <div style={styles.optionCard}>
+                  <label style={styles.radioLabel}>
+                    <input
+                      type="radio"
+                      checked={!resetFullTime && timeExtension === 30}
+                      onChange={() => {
+                        setResetFullTime(false);
+                        setTimeExtension(30);
+                      }}
+                    />
+                    <div>
+                      <strong>Extend by 30 minutes</strong>
+                      <span>Add 30 minutes to remaining time</span>
+                    </div>
+                  </label>
+                </div>
+                
+                <div style={styles.optionCard}>
+                  <label style={styles.radioLabel}>
+                    <input
+                      type="radio"
+                      checked={!resetFullTime && timeExtension === 60}
+                      onChange={() => {
+                        setResetFullTime(false);
+                        setTimeExtension(60);
+                      }}
+                    />
+                    <div>
+                      <strong>Extend by 1 hour</strong>
+                      <span>Add 60 minutes to remaining time</span>
+                    </div>
+                  </label>
+                </div>
+                
+                <div style={styles.optionCard}>
+                  <label style={styles.radioLabel}>
+                    <input
+                      type="radio"
+                      checked={!resetFullTime && timeExtension === 120}
+                      onChange={() => {
+                        setResetFullTime(false);
+                        setTimeExtension(120);
+                      }}
+                    />
+                    <div>
+                      <strong>Extend by 2 hours</strong>
+                      <span>Add 120 minutes to remaining time</span>
+                    </div>
+                  </label>
+                </div>
+                
+                <div style={styles.optionCard}>
+                  <label style={styles.radioLabel}>
+                    <input
+                      type="radio"
+                      checked={resetFullTime}
+                      onChange={() => setResetFullTime(true)}
+                    />
+                    <div>
+                      <strong>Reset to full time (3 hours)</strong>
+                      <span>Reset timer to 3 hours from now</span>
+                    </div>
+                  </label>
+                </div>
+                
+                <div style={styles.optionCard}>
+                  <label style={styles.radioLabel}>
+                    <input
+                      type="radio"
+                      checked={!resetFullTime && timeExtension === 0}
+                      onChange={() => {
+                        setResetFullTime(false);
+                        setTimeExtension(0);
+                      }}
+                    />
+                    <div>
+                      <strong>No time change</strong>
+                      <span>Just unblock without changing time</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+              
+              <div style={styles.noteBox}>
+                <span>💡</span>
+                <span>Candidate will resume from where they left off. Their existing answers will be preserved.</span>
+              </div>
+            </div>
+            
+            <div style={styles.modalFooter}>
+              <button onClick={() => setShowUnblockModal(null)} style={styles.cancelButton}>
+                Cancel
+              </button>
+              <button 
+                onClick={() => handleUnblockAssessmentWithTime(
+                  showUnblockModal.candidateId,
+                  showUnblockModal.candidateName,
+                  showUnblockModal.assessmentId,
+                  showUnblockModal.assessmentTitle
+                )}
+                disabled={processingAssessment}
+                style={styles.unblockButtonLarge}
+              >
+                {processingAssessment ? 'Processing...' : 'Unblock Assessment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style jsx>{`
         @keyframes spin {
@@ -1077,626 +1213,125 @@ export default function SupervisorDashboard() {
 }
 
 const styles = {
-  checkingContainer: {
-    minHeight: '100vh',
+  // ... keep all existing styles ...
+  // Add modal styles at the end
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0,0,0,0.7)',
     display: 'flex',
-    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '20px',
-    background: 'linear-gradient(135deg, #0A1929 0%, #1A2A3A 100%)',
-    color: 'white'
-  },
-  spinner: {
-    width: '40px',
-    height: '40px',
-    border: '4px solid rgba(255,255,255,0.3)',
-    borderTop: '4px solid white',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite'
-  },
-  container: {
-    width: '90vw',
-    maxWidth: '1400px',
-    margin: '0 auto',
-    padding: '30px 20px'
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '30px',
-    background: 'white',
-    padding: '20px 30px',
-    borderRadius: '16px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
-  },
-  title: {
-    margin: 0,
-    color: '#0A1929',
-    fontSize: '28px',
-    fontWeight: 700
-  },
-  welcome: {
-    margin: '5px 0 0 0',
-    color: '#666',
-    fontSize: '14px'
-  },
-  adminBadge: {
-    margin: '5px 0 0 0',
-    color: '#4CAF50',
-    fontSize: '12px',
-    fontWeight: 600
-  },
-  logoutButton: {
-    background: '#F44336',
-    color: 'white',
-    border: 'none',
-    padding: '10px 24px',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 600,
-    transition: 'all 0.2s ease'
-  },
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(5, 1fr)',
-    gap: '20px',
-    marginBottom: '30px'
-  },
-  statCard: {
-    padding: '25px',
-    borderRadius: '16px',
-    color: 'white',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '20px',
-    boxShadow: '0 8px 24px rgba(0,0,0,0.1)'
-  },
-  statIcon: {
-    fontSize: '36px',
-    opacity: 0.9
-  },
-  statContent: {
-    flex: 1
-  },
-  statLabel: {
-    fontSize: '14px',
-    opacity: 0.9,
-    marginBottom: '5px'
-  },
-  statValue: {
-    fontSize: '32px',
-    fontWeight: 700
-  },
-  searchFilterBar: {
-    background: 'white',
+    zIndex: 1000,
     padding: '20px',
-    borderRadius: '12px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    marginBottom: '20px',
-    display: 'flex',
-    gap: '20px',
-    flexWrap: 'wrap',
-    alignItems: 'center'
+    backdropFilter: 'blur(5px)'
   },
-  searchContainer: {
-    flex: 2,
-    position: 'relative',
-    minWidth: '250px'
-  },
-  searchIcon: {
-    position: 'absolute',
-    left: '12px',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    color: '#999',
-    fontSize: '16px'
-  },
-  searchInput: {
+  unblockModal: {
+    background: 'white',
+    borderRadius: '20px',
+    maxWidth: '500px',
     width: '100%',
-    padding: '12px 12px 12px 36px',
-    border: '1px solid #E2E8F0',
-    borderRadius: '8px',
-    fontSize: '14px',
-    outline: 'none',
-    transition: 'all 0.2s ease',
-    ':focus': {
-      borderColor: '#0A1929',
-      boxShadow: '0 0 0 3px rgba(10, 25, 41, 0.1)'
-    }
+    maxHeight: '90vh',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
   },
-  clearButton: {
-    position: 'absolute',
-    right: '12px',
-    top: '50%',
-    transform: 'translateY(-50%)',
+  modalHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '20px 24px',
+    borderBottom: '2px solid #e2e8f0',
+    background: '#f8fafc'
+  },
+  modalIcon: {
+    fontSize: '28px'
+  },
+  closeButton: {
     background: 'none',
     border: 'none',
+    fontSize: '24px',
     cursor: 'pointer',
-    color: '#999',
-    fontSize: '16px',
-    padding: '4px',
-    ':hover': {
-      color: '#F44336'
-    }
-  },
-  filterGroup: {
-    display: 'flex',
-    gap: '10px',
-    flexWrap: 'wrap'
-  },
-  filterSelect: {
-    padding: '10px 16px',
-    border: '1px solid #E2E8F0',
-    borderRadius: '8px',
-    fontSize: '14px',
-    background: 'white',
-    cursor: 'pointer',
-    outline: 'none',
-    minWidth: '140px'
-  },
-  filterCount: {
-    fontSize: '14px',
-    fontWeight: 'normal',
     color: '#666',
-    marginLeft: '8px'
-  },
-  clearFiltersButton: {
-    marginTop: '15px',
-    padding: '8px 16px',
-    background: '#0A1929',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '14px'
-  },
-  tableContainer: {
-    background: 'white',
-    padding: '25px',
-    borderRadius: '16px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
-  },
-  tableHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '20px',
-    flexWrap: 'wrap',
-    gap: '10px'
-  },
-  tableTitle: {
-    margin: 0,
-    color: '#0A1929',
-    fontSize: '20px',
-    fontWeight: 600
-  },
-  addButton: {
-    background: '#0A1929',
-    color: 'white',
-    padding: '10px 20px',
+    padding: '4px 8px',
     borderRadius: '8px',
-    textDecoration: 'none',
-    fontSize: '14px',
-    fontWeight: 500,
-    transition: 'all 0.2s ease',
     ':hover': {
-      background: '#1A2A3A',
-      transform: 'translateY(-1px)',
-      boxShadow: '0 4px 12px rgba(10, 25, 41, 0.3)'
+      background: '#e2e8f0'
     }
   },
-  loadingState: {
-    textAlign: 'center',
-    padding: '60px'
-  },
-  emptyState: {
-    textAlign: 'center',
-    padding: '60px 20px',
-    background: '#F8FAFC',
-    borderRadius: '12px'
-  },
-  emptyIcon: {
-    fontSize: '64px',
-    marginBottom: '20px',
-    opacity: 0.5
-  },
-  tableWrapper: {
-    overflowX: 'auto'
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '14px',
-    minWidth: '1200px'
-  },
-  tableHeadRow: {
-    borderBottom: '2px solid #0A1929',
-    background: '#F8FAFC'
-  },
-  tableHead: {
-    padding: '15px',
-    fontWeight: 600,
-    color: '#0A1929',
-    textAlign: 'left'
-  },
-  tableRow: {
-    borderBottom: '1px solid #E2E8F0',
-    transition: 'background 0.2s ease',
-    ':hover': {
-      background: '#F8FAFC'
-    }
-  },
-  tableCell: {
-    padding: '15px'
-  },
-  candidateInfo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px'
-  },
-  candidateAvatar: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '20px',
-    background: '#E2E8F0',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '18px',
-    fontWeight: 600,
-    color: '#0A1929'
-  },
-  candidateName: {
-    fontWeight: 600,
-    color: '#0A1929',
-    marginBottom: '4px'
-  },
-  candidateId: {
-    fontSize: '11px',
-    color: '#718096',
-    fontFamily: 'monospace'
-  },
-  candidateEmail: {
-    fontSize: '14px',
-    color: '#0A1929',
-    marginBottom: '4px'
-  },
-  candidatePhone: {
-    fontSize: '12px',
-    color: '#718096'
-  },
-  // NEW SIMPLIFIED ASSESSMENT SUMMARY STYLES
-  assessmentSummary: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px'
-  },
-  summaryStats: {
-    display: 'flex',
-    gap: '15px',
-    flexWrap: 'wrap'
-  },
-  summaryCompleted: {
-    fontSize: '13px',
-    color: '#2E7D32',
-    background: '#E8F5E9',
-    padding: '4px 12px',
-    borderRadius: '20px',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px'
-  },
-  summaryUnblocked: {
-    fontSize: '13px',
-    color: '#1565C0',
-    background: '#E3F2FD',
-    padding: '4px 12px',
-    borderRadius: '20px',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px'
-  },
-  summaryBlocked: {
-    fontSize: '13px',
-    color: '#F57C00',
-    background: '#FFF3E0',
-    padding: '4px 12px',
-    borderRadius: '20px',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px'
-  },
-  viewAssessmentsButton: {
-    background: 'none',
-    border: '1px solid #0A1929',
-    borderRadius: '20px',
-    padding: '6px 12px',
-    fontSize: '11px',
-    color: '#0A1929',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    width: 'fit-content',
-    ':hover': {
-      background: '#0A1929',
-      color: 'white'
-    }
-  },
-  scoreBadge: {
-    display: 'inline-block',
-    padding: '5px 12px',
-    borderRadius: '20px',
-    fontWeight: 600,
-    fontSize: '13px'
-  },
-  noScore: {
-    fontSize: '13px',
-    color: '#9E9E9E',
-    fontStyle: 'italic'
-  },
-  classificationBadge: {
-    display: 'inline-block',
-    padding: '6px 12px',
-    borderRadius: '6px',
-    fontWeight: 600,
-    fontSize: '12px'
-  },
-  date: {
-    fontSize: '13px',
-    color: '#718096'
-  },
-  actionButtons: {
-    display: 'flex',
-    gap: '8px',
-    flexWrap: 'wrap'
-  },
-  viewButton: {
-    background: '#0A1929',
-    color: 'white',
-    padding: '6px 12px',
-    borderRadius: '6px',
-    textDecoration: 'none',
-    fontSize: '12px',
-    fontWeight: 500,
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#1A2A3A'
-    }
-  },
-  assignButton: {
-    background: '#4CAF50',
-    color: 'white',
-    padding: '6px 12px',
-    borderRadius: '6px',
-    textDecoration: 'none',
-    fontSize: '12px',
-    fontWeight: 500,
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#45a049'
-    }
-  },
-  expandedRow: {
-    background: '#F8FAFC'
-  },
-  expandedCell: {
-    padding: '20px 30px',
-    borderBottom: '1px solid #E2E8F0'
-  },
-  assessmentsList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px'
-  },
-  assessmentsListHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '20px',
-    flexWrap: 'wrap',
-    gap: '15px'
-  },
-  assessmentsListTitle: {
-    margin: 0,
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#0A1929'
-  },
-  assessmentDropdown: {
-    padding: '8px 16px',
-    border: '1px solid #E2E8F0',
-    borderRadius: '8px',
-    fontSize: '14px',
-    background: 'white',
-    cursor: 'pointer',
-    outline: 'none',
-    minWidth: '250px',
-    fontFamily: 'inherit'
-  },
-  assessmentItem: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '20px',
-    background: 'white',
-    borderRadius: '12px',
-    border: '1px solid #E2E8F0',
-    flexWrap: 'wrap',
-    gap: '15px'
-  },
-  assessmentItemInfo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '20px',
-    flex: 1,
-    minWidth: '300px'
-  },
-  assessmentTypeIcon: {
-    width: '50px',
-    height: '50px',
-    borderRadius: '12px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '24px',
-    color: 'white',
-    flexShrink: 0
-  },
-  assessmentDetails: {
+  modalBody: {
+    padding: '24px',
+    overflowY: 'auto',
     flex: 1
   },
-  assessmentHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '15px',
-    flexWrap: 'wrap'
+  timeOptions: {
+    marginTop: '20px'
   },
-  assessmentItemTitle: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#0A1929'
-  },
-  assessmentTypeBadge: {
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '12px',
-    fontWeight: 500
-  },
-  assessmentScoreSection: {
-    display: 'flex',
-    gap: '24px',
-    alignItems: 'center',
-    flexWrap: 'wrap'
-  },
-  scoreCircle: {
-    width: '80px',
-    height: '80px',
-    borderRadius: '50%',
-    background: 'linear-gradient(135deg, #0A1929, #1A2A3A)',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: 'white',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-  },
-  scoreLarge: {
-    fontSize: '24px',
-    fontWeight: 700,
-    lineHeight: 1
-  },
-  scoreLabel: {
-    fontSize: '10px',
-    opacity: 0.8,
-    marginTop: '4px'
-  },
-  scoreDetails: {
-    flex: 1
-  },
-  scoreRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    padding: '6px 0',
-    borderBottom: '1px solid #E2E8F0',
-    fontSize: '13px',
-    '&:last-child': {
-      borderBottom: 'none'
-    }
-  },
-  classificationSmall: {
-    padding: '2px 8px',
-    borderRadius: '12px',
-    fontSize: '11px',
-    fontWeight: 500
-  },
-  noScoreSection: {
-    display: 'flex',
-    gap: '16px',
-    alignItems: 'center',
+  optionCard: {
+    marginBottom: '12px',
     padding: '12px',
-    background: '#F8FAFC',
-    borderRadius: '12px'
+    background: '#f8fafc',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0'
   },
-  noScoreIcon: {
-    fontSize: '32px',
-    opacity: 0.5
-  },
-  noScoreTitle: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#0A1929',
-    marginBottom: '4px'
-  },
-  noScoreSubtitle: {
-    fontSize: '12px',
-    color: '#718096'
-  },
-  assessmentItemActions: {
+  radioLabel: {
     display: 'flex',
-    gap: '10px',
-    alignItems: 'center'
+    alignItems: 'flex-start',
+    gap: '12px',
+    cursor: 'pointer'
   },
-  viewFullReportButton: {
-    background: '#0A1929',
-    color: 'white',
-    padding: '8px 16px',
-    borderRadius: '6px',
-    textDecoration: 'none',
-    fontSize: '12px',
-    fontWeight: 500,
-    transition: 'all 0.2s ease',
-    display: 'inline-block',
-    ':hover': {
-      background: '#1A2A3A',
-      transform: 'translateY(-1px)'
-    }
+  noteBox: {
+    marginTop: '20px',
+    padding: '12px',
+    background: '#e3f2fd',
+    borderRadius: '8px',
+    display: 'flex',
+    gap: '12px',
+    fontSize: '13px',
+    color: '#1565c0'
   },
-  unblockButton: {
-    padding: '8px 16px',
-    background: '#4CAF50',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    fontSize: '12px',
-    fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#45a049',
-      transform: 'translateY(-1px)'
-    }
+  modalFooter: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '12px',
+    padding: '16px 24px',
+    borderTop: '1px solid #e2e8f0',
+    background: '#f8fafc'
   },
-  blockButton: {
-    padding: '8px 16px',
-    background: '#FF9800',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    fontSize: '12px',
+  cancelButton: {
+    padding: '10px 24px',
+    background: '#f1f5f9',
+    border: '1px solid #cbd5e1',
+    borderRadius: '8px',
+    fontSize: '14px',
     fontWeight: 500,
     cursor: 'pointer',
-    transition: 'all 0.2s ease',
+    color: '#475569',
+    transition: 'all 0.2s',
     ':hover': {
-      background: '#F57C00',
-      transform: 'translateY(-1px)'
+      background: '#e2e8f0'
     }
   },
-  resetButton: {
-    padding: '8px 16px',
+  unblockButtonLarge: {
+    padding: '10px 24px',
     background: '#2196F3',
     color: 'white',
     border: 'none',
-    borderRadius: '6px',
-    fontSize: '12px',
-    fontWeight: 500,
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 600,
     cursor: 'pointer',
-    transition: 'all 0.2s ease',
+    transition: 'all 0.2s',
     ':hover': {
       background: '#1976D2',
       transform: 'translateY(-1px)'
     }
   }
 };
+
+// Note: Keep all the existing styles from the original file (the long styles object)
+// I've only added the modal styles at the end. You need to merge this with your existing styles.
