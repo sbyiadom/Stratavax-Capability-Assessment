@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import AppLayout from "../../components/AppLayout";
-import { supabase } from "../../supabase/client";
+import AppLayout from "../../../components/AppLayout";
+import { supabase } from "../../../supabase/client";
 
 export default function ManageCandidate() {
   const router = useRouter();
