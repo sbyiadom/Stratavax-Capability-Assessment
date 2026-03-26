@@ -801,11 +801,11 @@ export default function SupervisorDashboard() {
                                 <div style={styles.candidateId}>ID: {candidate.id.substring(0, 8)}...</div>
                               </div>
                             </div>
-                           </td>
+                          </td>
                           <td style={styles.tableCell}>
                             <div style={styles.candidateEmail}>{candidate.email}</div>
                             {candidate.phone && <div style={styles.candidatePhone}>{candidate.phone}</div>}
-                           </td>
+                          </td>
                           <td style={styles.tableCell}>
                             <div style={styles.assessmentSummary}>
                               <div style={styles.summaryStats}>
@@ -828,7 +828,7 @@ export default function SupervisorDashboard() {
                                 </button>
                               )}
                             </div>
-                           </td>
+                          </td>
                           <td style={styles.tableCell}>
                             {candidate.latestAssessment?.result ? (
                               <span style={{
@@ -849,7 +849,7 @@ export default function SupervisorDashboard() {
                             ) : (
                               <span style={styles.noScore}>No completed assessments</span>
                             )}
-                           </td>
+                          </td>
                           <td style={styles.tableCell}>
                             <span style={{
                               ...styles.classificationBadge,
@@ -859,7 +859,7 @@ export default function SupervisorDashboard() {
                             }}>
                               {classification.label}
                             </span>
-                           </td>
+                          </td>
                           <td style={styles.tableCell}>
                             <span style={styles.date}>
                               {candidate.latestAssessment?.result 
@@ -867,7 +867,7 @@ export default function SupervisorDashboard() {
                                 : 'Never'
                               }
                             </span>
-                           </td>
+                          </td>
                           <td style={styles.tableCell}>
                             <div style={styles.actionButtons}>
                               <Link href={`/supervisor/${candidate.id}`} legacyBehavior>
@@ -881,8 +881,8 @@ export default function SupervisorDashboard() {
                                 </a>
                               </Link>
                             </div>
-                           </td>
-                         </tr>
+                          </td>
+                        </tr>
                         {isExpanded && (
                           <tr style={styles.expandedRow}>
                             <td colSpan="7" style={styles.expandedCell}>
@@ -1062,7 +1062,7 @@ export default function SupervisorDashboard() {
                                     );
                                   })}
                               </div>
-                              </td>
+                               </td>
                             </tr>
                           )}
                       </React.Fragment>
@@ -1213,8 +1213,628 @@ export default function SupervisorDashboard() {
 }
 
 const styles = {
-  // ... keep all existing styles ...
-  // Add modal styles at the end
+  checkingContainer: {
+    minHeight: '100vh',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '20px',
+    background: 'linear-gradient(135deg, #0A1929 0%, #1A2A3A 100%)',
+    color: 'white'
+  },
+  spinner: {
+    width: '40px',
+    height: '40px',
+    border: '4px solid rgba(255,255,255,0.3)',
+    borderTop: '4px solid white',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite'
+  },
+  container: {
+    width: '90vw',
+    maxWidth: '1400px',
+    margin: '0 auto',
+    padding: '30px 20px'
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '30px',
+    background: 'white',
+    padding: '20px 30px',
+    borderRadius: '16px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+  },
+  title: {
+    margin: 0,
+    color: '#0A1929',
+    fontSize: '28px',
+    fontWeight: 700
+  },
+  welcome: {
+    margin: '5px 0 0 0',
+    color: '#666',
+    fontSize: '14px'
+  },
+  adminBadge: {
+    margin: '5px 0 0 0',
+    color: '#4CAF50',
+    fontSize: '12px',
+    fontWeight: 600
+  },
+  logoutButton: {
+    background: '#F44336',
+    color: 'white',
+    border: 'none',
+    padding: '10px 24px',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 600,
+    transition: 'all 0.2s ease'
+  },
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(5, 1fr)',
+    gap: '20px',
+    marginBottom: '30px'
+  },
+  statCard: {
+    padding: '25px',
+    borderRadius: '16px',
+    color: 'white',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '20px',
+    boxShadow: '0 8px 24px rgba(0,0,0,0.1)'
+  },
+  statIcon: {
+    fontSize: '36px',
+    opacity: 0.9
+  },
+  statContent: {
+    flex: 1
+  },
+  statLabel: {
+    fontSize: '14px',
+    opacity: 0.9,
+    marginBottom: '5px'
+  },
+  statValue: {
+    fontSize: '32px',
+    fontWeight: 700
+  },
+  searchFilterBar: {
+    background: 'white',
+    padding: '20px',
+    borderRadius: '12px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    marginBottom: '20px',
+    display: 'flex',
+    gap: '20px',
+    flexWrap: 'wrap',
+    alignItems: 'center'
+  },
+  searchContainer: {
+    flex: 2,
+    position: 'relative',
+    minWidth: '250px'
+  },
+  searchIcon: {
+    position: 'absolute',
+    left: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    color: '#999',
+    fontSize: '16px'
+  },
+  searchInput: {
+    width: '100%',
+    padding: '12px 12px 12px 36px',
+    border: '1px solid #E2E8F0',
+    borderRadius: '8px',
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'all 0.2s ease',
+    ':focus': {
+      borderColor: '#0A1929',
+      boxShadow: '0 0 0 3px rgba(10, 25, 41, 0.1)'
+    }
+  },
+  clearButton: {
+    position: 'absolute',
+    right: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    color: '#999',
+    fontSize: '16px',
+    padding: '4px',
+    ':hover': {
+      color: '#F44336'
+    }
+  },
+  filterGroup: {
+    display: 'flex',
+    gap: '10px',
+    flexWrap: 'wrap'
+  },
+  filterSelect: {
+    padding: '10px 16px',
+    border: '1px solid #E2E8F0',
+    borderRadius: '8px',
+    fontSize: '14px',
+    background: 'white',
+    cursor: 'pointer',
+    outline: 'none',
+    minWidth: '140px'
+  },
+  filterCount: {
+    fontSize: '14px',
+    fontWeight: 'normal',
+    color: '#666',
+    marginLeft: '8px'
+  },
+  clearFiltersButton: {
+    marginTop: '15px',
+    padding: '8px 16px',
+    background: '#0A1929',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '14px'
+  },
+  tableContainer: {
+    background: 'white',
+    padding: '25px',
+    borderRadius: '16px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+  },
+  tableHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '20px',
+    flexWrap: 'wrap',
+    gap: '10px'
+  },
+  tableTitle: {
+    margin: 0,
+    color: '#0A1929',
+    fontSize: '20px',
+    fontWeight: 600
+  },
+  addButton: {
+    background: '#0A1929',
+    color: 'white',
+    padding: '10px 20px',
+    borderRadius: '8px',
+    textDecoration: 'none',
+    fontSize: '14px',
+    fontWeight: 500,
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#1A2A3A',
+      transform: 'translateY(-1px)',
+      boxShadow: '0 4px 12px rgba(10, 25, 41, 0.3)'
+    }
+  },
+  loadingState: {
+    textAlign: 'center',
+    padding: '60px'
+  },
+  emptyState: {
+    textAlign: 'center',
+    padding: '60px 20px',
+    background: '#F8FAFC',
+    borderRadius: '12px'
+  },
+  emptyIcon: {
+    fontSize: '64px',
+    marginBottom: '20px',
+    opacity: 0.5
+  },
+  tableWrapper: {
+    overflowX: 'auto'
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '14px',
+    minWidth: '1200px'
+  },
+  tableHeadRow: {
+    borderBottom: '2px solid #0A1929',
+    background: '#F8FAFC'
+  },
+  tableHead: {
+    padding: '15px',
+    fontWeight: 600,
+    color: '#0A1929',
+    textAlign: 'left'
+  },
+  tableRow: {
+    borderBottom: '1px solid #E2E8F0',
+    transition: 'background 0.2s ease',
+    ':hover': {
+      background: '#F8FAFC'
+    }
+  },
+  tableCell: {
+    padding: '15px'
+  },
+  candidateInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px'
+  },
+  candidateAvatar: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '20px',
+    background: '#E2E8F0',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#0A1929'
+  },
+  candidateName: {
+    fontWeight: 600,
+    color: '#0A1929',
+    marginBottom: '4px'
+  },
+  candidateId: {
+    fontSize: '11px',
+    color: '#718096',
+    fontFamily: 'monospace'
+  },
+  candidateEmail: {
+    fontSize: '14px',
+    color: '#0A1929',
+    marginBottom: '4px'
+  },
+  candidatePhone: {
+    fontSize: '12px',
+    color: '#718096'
+  },
+  assessmentSummary: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  summaryStats: {
+    display: 'flex',
+    gap: '15px',
+    flexWrap: 'wrap'
+  },
+  summaryCompleted: {
+    fontSize: '13px',
+    color: '#2E7D32',
+    background: '#E8F5E9',
+    padding: '4px 12px',
+    borderRadius: '20px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px'
+  },
+  summaryUnblocked: {
+    fontSize: '13px',
+    color: '#1565C0',
+    background: '#E3F2FD',
+    padding: '4px 12px',
+    borderRadius: '20px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px'
+  },
+  summaryBlocked: {
+    fontSize: '13px',
+    color: '#F57C00',
+    background: '#FFF3E0',
+    padding: '4px 12px',
+    borderRadius: '20px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px'
+  },
+  viewAssessmentsButton: {
+    background: 'none',
+    border: '1px solid #0A1929',
+    borderRadius: '20px',
+    padding: '6px 12px',
+    fontSize: '11px',
+    color: '#0A1929',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    width: 'fit-content',
+    ':hover': {
+      background: '#0A1929',
+      color: 'white'
+    }
+  },
+  scoreBadge: {
+    display: 'inline-block',
+    padding: '5px 12px',
+    borderRadius: '20px',
+    fontWeight: 600,
+    fontSize: '13px'
+  },
+  noScore: {
+    fontSize: '13px',
+    color: '#9E9E9E',
+    fontStyle: 'italic'
+  },
+  classificationBadge: {
+    display: 'inline-block',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    fontWeight: 600,
+    fontSize: '12px'
+  },
+  date: {
+    fontSize: '13px',
+    color: '#718096'
+  },
+  actionButtons: {
+    display: 'flex',
+    gap: '8px',
+    flexWrap: 'wrap'
+  },
+  viewButton: {
+    background: '#0A1929',
+    color: 'white',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    textDecoration: 'none',
+    fontSize: '12px',
+    fontWeight: 500,
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#1A2A3A'
+    }
+  },
+  assignButton: {
+    background: '#4CAF50',
+    color: 'white',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    textDecoration: 'none',
+    fontSize: '12px',
+    fontWeight: 500,
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#45a049'
+    }
+  },
+  expandedRow: {
+    background: '#F8FAFC'
+  },
+  expandedCell: {
+    padding: '20px 30px',
+    borderBottom: '1px solid #E2E8F0'
+  },
+  assessmentsList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px'
+  },
+  assessmentsListHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '20px',
+    flexWrap: 'wrap',
+    gap: '15px'
+  },
+  assessmentsListTitle: {
+    margin: 0,
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#0A1929'
+  },
+  assessmentDropdown: {
+    padding: '8px 16px',
+    border: '1px solid #E2E8F0',
+    borderRadius: '8px',
+    fontSize: '14px',
+    background: 'white',
+    cursor: 'pointer',
+    outline: 'none',
+    minWidth: '250px',
+    fontFamily: 'inherit'
+  },
+  assessmentItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '20px',
+    background: 'white',
+    borderRadius: '12px',
+    border: '1px solid #E2E8F0',
+    flexWrap: 'wrap',
+    gap: '15px'
+  },
+  assessmentItemInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '20px',
+    flex: 1,
+    minWidth: '300px'
+  },
+  assessmentTypeIcon: {
+    width: '50px',
+    height: '50px',
+    borderRadius: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '24px',
+    color: 'white',
+    flexShrink: 0
+  },
+  assessmentDetails: {
+    flex: 1
+  },
+  assessmentHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '15px',
+    flexWrap: 'wrap'
+  },
+  assessmentItemTitle: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#0A1929'
+  },
+  assessmentTypeBadge: {
+    padding: '4px 12px',
+    borderRadius: '20px',
+    fontSize: '12px',
+    fontWeight: 500
+  },
+  assessmentScoreSection: {
+    display: 'flex',
+    gap: '24px',
+    alignItems: 'center',
+    flexWrap: 'wrap'
+  },
+  scoreCircle: {
+    width: '80px',
+    height: '80px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #0A1929, #1A2A3A)',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: 'white',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+  },
+  scoreLarge: {
+    fontSize: '24px',
+    fontWeight: 700,
+    lineHeight: 1
+  },
+  scoreLabel: {
+    fontSize: '10px',
+    opacity: 0.8,
+    marginTop: '4px'
+  },
+  scoreDetails: {
+    flex: 1
+  },
+  scoreRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '6px 0',
+    borderBottom: '1px solid #E2E8F0',
+    fontSize: '13px',
+    '&:last-child': {
+      borderBottom: 'none'
+    }
+  },
+  classificationSmall: {
+    padding: '2px 8px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: 500
+  },
+  noScoreSection: {
+    display: 'flex',
+    gap: '16px',
+    alignItems: 'center',
+    padding: '12px',
+    background: '#F8FAFC',
+    borderRadius: '12px'
+  },
+  noScoreIcon: {
+    fontSize: '32px',
+    opacity: 0.5
+  },
+  noScoreTitle: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#0A1929',
+    marginBottom: '4px'
+  },
+  noScoreSubtitle: {
+    fontSize: '12px',
+    color: '#718096'
+  },
+  assessmentItemActions: {
+    display: 'flex',
+    gap: '10px',
+    alignItems: 'center'
+  },
+  viewFullReportButton: {
+    background: '#0A1929',
+    color: 'white',
+    padding: '8px 16px',
+    borderRadius: '6px',
+    textDecoration: 'none',
+    fontSize: '12px',
+    fontWeight: 500,
+    transition: 'all 0.2s ease',
+    display: 'inline-block',
+    ':hover': {
+      background: '#1A2A3A',
+      transform: 'translateY(-1px)'
+    }
+  },
+  unblockButton: {
+    padding: '8px 16px',
+    background: '#4CAF50',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#45a049',
+      transform: 'translateY(-1px)'
+    }
+  },
+  blockButton: {
+    padding: '8px 16px',
+    background: '#FF9800',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#F57C00',
+      transform: 'translateY(-1px)'
+    }
+  },
+  resetButton: {
+    padding: '8px 16px',
+    background: '#2196F3',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#1976D2',
+      transform: 'translateY(-1px)'
+    }
+  },
+  // Modal Styles
   modalOverlay: {
     position: 'fixed',
     top: 0,
@@ -1332,6 +1952,3 @@ const styles = {
     }
   }
 };
-
-// Note: Keep all the existing styles from the original file (the long styles object)
-// I've only added the modal styles at the end. You need to merge this with your existing styles.
