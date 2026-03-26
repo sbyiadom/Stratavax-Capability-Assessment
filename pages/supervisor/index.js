@@ -777,8 +777,8 @@ export default function SupervisorDashboard() {
                     <th style={styles.tableHead}>Classification</th>
                     <th style={styles.tableHead}>Last Active</th>
                     <th style={styles.tableHead}>Actions</th>
-                   </tr>
-                  </thead>
+                    </tr>
+                </thead>
                 <tbody>
                   {filteredCandidates.map((candidate) => {
                     const latestScore = candidate.latestAssessment?.result?.score || 0;
@@ -872,17 +872,23 @@ export default function SupervisorDashboard() {
                             <div style={styles.actionButtons}>
                               <Link href={`/supervisor/${candidate.id}`} legacyBehavior>
                                 <a style={styles.viewButton}>
-                                  View Reports
+                                  📄 Report
+                                </a>
+                              </Link>
+                              <Link href={`/supervisor/manage-candidate/${candidate.id}`} legacyBehavior>
+                                <a style={styles.manageButton}>
+                                  ⚙️ Manage
                                 </a>
                               </Link>
                               <Link href={`/supervisor/assign-assessment/${candidate.id}`} legacyBehavior>
                                 <a style={styles.assignButton}>
-                                  Assign
+                                  ➕ Assign
                                 </a>
                               </Link>
                             </div>
                           </td>
                         </tr>
+                        
                         {isExpanded && (
                           <tr style={styles.expandedRow}>
                             <td colSpan="7" style={styles.expandedCell}>
@@ -1062,7 +1068,7 @@ export default function SupervisorDashboard() {
                                     );
                                   })}
                               </div>
-                               </td>
+                              </td>
                             </tr>
                           )}
                       </React.Fragment>
@@ -1092,87 +1098,49 @@ export default function SupervisorDashboard() {
               <div style={styles.timeOptions}>
                 <h4>⏰ Time Options</h4>
                 
-                <div style={styles.optionCard}>
-                  <label style={styles.radioLabel}>
+                {[30, 60, 120].map(minutes => (
+                  <label key={minutes} style={styles.radioLabel}>
                     <input
                       type="radio"
-                      checked={!resetFullTime && timeExtension === 30}
+                      checked={!resetFullTime && timeExtension === minutes}
                       onChange={() => {
                         setResetFullTime(false);
-                        setTimeExtension(30);
+                        setTimeExtension(minutes);
                       }}
                     />
                     <div>
-                      <strong>Extend by 30 minutes</strong>
-                      <span>Add 30 minutes to remaining time</span>
+                      <strong>Extend by {minutes} minutes</strong>
+                      <span>Add {minutes} minutes to remaining time</span>
                     </div>
                   </label>
-                </div>
+                ))}
                 
-                <div style={styles.optionCard}>
-                  <label style={styles.radioLabel}>
-                    <input
-                      type="radio"
-                      checked={!resetFullTime && timeExtension === 60}
-                      onChange={() => {
-                        setResetFullTime(false);
-                        setTimeExtension(60);
-                      }}
-                    />
-                    <div>
-                      <strong>Extend by 1 hour</strong>
-                      <span>Add 60 minutes to remaining time</span>
-                    </div>
-                  </label>
-                </div>
+                <label style={styles.radioLabel}>
+                  <input
+                    type="radio"
+                    checked={resetFullTime}
+                    onChange={() => setResetFullTime(true)}
+                  />
+                  <div>
+                    <strong>Reset to full time (3 hours)</strong>
+                    <span>Reset timer to 3 hours from now</span>
+                  </div>
+                </label>
                 
-                <div style={styles.optionCard}>
-                  <label style={styles.radioLabel}>
-                    <input
-                      type="radio"
-                      checked={!resetFullTime && timeExtension === 120}
-                      onChange={() => {
-                        setResetFullTime(false);
-                        setTimeExtension(120);
-                      }}
-                    />
-                    <div>
-                      <strong>Extend by 2 hours</strong>
-                      <span>Add 120 minutes to remaining time</span>
-                    </div>
-                  </label>
-                </div>
-                
-                <div style={styles.optionCard}>
-                  <label style={styles.radioLabel}>
-                    <input
-                      type="radio"
-                      checked={resetFullTime}
-                      onChange={() => setResetFullTime(true)}
-                    />
-                    <div>
-                      <strong>Reset to full time (3 hours)</strong>
-                      <span>Reset timer to 3 hours from now</span>
-                    </div>
-                  </label>
-                </div>
-                
-                <div style={styles.optionCard}>
-                  <label style={styles.radioLabel}>
-                    <input
-                      type="radio"
-                      checked={!resetFullTime && timeExtension === 0}
-                      onChange={() => {
-                        setResetFullTime(false);
-                        setTimeExtension(0);
-                      }}
-                    />
-                    <div>
-                      <strong>No time change</strong>
-                      <span>Just unblock without changing time</span>
-                    </div>
-                  </label>
-                </div>
+                <label style={styles.radioLabel}>
+                  <input
+                    type="radio"
+                    checked={!resetFullTime && timeExtension === 0}
+                    onChange={() => {
+                      setResetFullTime(false);
+                      setTimeExtension(0);
+                    }}
+                  />
+                  <div>
+                    <strong>No time change</strong>
+                    <span>Just unblock without changing time</span>
+                  </div>
+                </label>
               </div>
               
               <div style={styles.noteBox}>
@@ -1600,6 +1568,20 @@ const styles = {
       background: '#1A2A3A'
     }
   },
+  manageButton: {
+    background: '#9C27B0',
+    color: 'white',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    textDecoration: 'none',
+    fontSize: '12px',
+    fontWeight: 500,
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#7B1FA2',
+      transform: 'translateY(-1px)'
+    }
+  },
   assignButton: {
     background: '#4CAF50',
     color: 'white',
@@ -1891,18 +1873,19 @@ const styles = {
   timeOptions: {
     marginTop: '20px'
   },
-  optionCard: {
-    marginBottom: '12px',
-    padding: '12px',
-    background: '#f8fafc',
-    borderRadius: '8px',
-    border: '1px solid #e2e8f0'
-  },
   radioLabel: {
     display: 'flex',
     alignItems: 'flex-start',
     gap: '12px',
-    cursor: 'pointer'
+    padding: '12px',
+    marginBottom: '8px',
+    background: '#f8fafc',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    ':hover': {
+      background: '#f1f5f9'
+    }
   },
   noteBox: {
     marginTop: '20px',
