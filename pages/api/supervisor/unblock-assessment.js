@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { userId, assessmentId } = req.body;
+    const { userId, assessmentId, extendMinutes, resetTime = false } = req.body;
 
     if (!userId || !assessmentId) {
       return res.status(400).json({ error: "Missing required fields" });
@@ -18,11 +18,12 @@ export default async function handler(req, res) {
     );
 
     console.log(`🔓 Unblocking assessment for user: ${userId}, assessment: ${assessmentId}`);
+    console.log(`⏰ Time extension: ${extendMinutes || 0} minutes, Reset time: ${resetTime}`);
 
     // 1. Check if there's an existing in-progress session
     const { data: existingSession, error: sessionError } = await supabase
       .from('assessment_sessions')
-      .select('id, status, time_spent_seconds, created_at')
+      .select('id, status, time_spent_seconds, created_at, expires_at')
       .eq('user_id', userId)
       .eq('assessment_id', assessmentId)
       .eq('status', 'in_progress')
@@ -32,7 +33,48 @@ export default async function handler(req, res) {
       console.error("❌ Error checking session:", sessionError);
     }
 
-    // 2. Update candidate_assessments to unblocked
+    let newExpiresAt = null;
+    let timeExtensionApplied = 0;
+
+    // 2. Handle time extension
+    if (existingSession && (extendMinutes > 0 || resetTime)) {
+      const currentExpiresAt = new Date(existingSession.expires_at);
+      const now = new Date();
+      
+      if (resetTime) {
+        // Reset to full time (3 hours = 180 minutes)
+        newExpiresAt = new Date(now);
+        newExpiresAt.setMinutes(now.getMinutes() + 180);
+        timeExtensionApplied = 180;
+        console.log(`⏰ Time reset to full 3 hours`);
+      } else if (extendMinutes > 0) {
+        // Extend by specified minutes
+        newExpiresAt = new Date(currentExpiresAt);
+        newExpiresAt.setMinutes(currentExpiresAt.getMinutes() + extendMinutes);
+        timeExtensionApplied = extendMinutes;
+        console.log(`⏰ Extended by ${extendMinutes} minutes`);
+      }
+
+      // Update session with new expiration
+      if (newExpiresAt) {
+        const { error: updateSessionError } = await supabase
+          .from('assessment_sessions')
+          .update({ 
+            expires_at: newExpiresAt.toISOString(),
+            status: 'in_progress',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingSession.id);
+
+        if (updateSessionError) {
+          console.error("❌ Error updating session time:", updateSessionError);
+        } else {
+          console.log(`✅ Session time extended. New expiry: ${newExpiresAt.toISOString()}`);
+        }
+      }
+    }
+
+    // 3. Update candidate_assessments to unblocked
     const { data: existingRecord, error: checkError } = await supabase
       .from('candidate_assessments')
       .select('id, status')
@@ -81,33 +123,33 @@ export default async function handler(req, res) {
       }
     }
 
-    // 3. If there's an existing session, make sure it's active
-    if (existingSession) {
-      console.log(`📝 Found existing session: ${existingSession.id} (${existingSession.status})`);
+    // 4. If there's no session but we have time extension, create a new session
+    if (!existingSession && (extendMinutes > 0 || resetTime)) {
+      const timeLimit = 180; // Default 3 hours
+      const expiresAt = new Date();
+      expiresAt.setMinutes(expiresAt.getMinutes() + timeLimit);
       
-      // If session is blocked or expired, update it to in_progress
-      if (existingSession.status !== 'in_progress') {
-        const { error: updateSessionError } = await supabase
-          .from('assessment_sessions')
-          .update({ 
-            status: 'in_progress',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingSession.id);
+      const { error: createSessionError } = await supabase
+        .from('assessment_sessions')
+        .insert({
+          user_id: userId,
+          assessment_id: assessmentId,
+          status: 'in_progress',
+          started_at: new Date().toISOString(),
+          expires_at: expiresAt.toISOString(),
+          time_spent_seconds: 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
 
-        if (updateSessionError) {
-          console.error("❌ Error updating session:", updateSessionError);
-        } else {
-          console.log("✅ Session status updated to in_progress");
-        }
+      if (createSessionError) {
+        console.error("❌ Error creating new session:", createSessionError);
       } else {
-        console.log("✅ Session already in_progress");
+        console.log("✅ New session created with time limit");
       }
-    } else {
-      console.log("ℹ️ No existing session found - candidate will start fresh");
     }
 
-    // 4. Optional: Add audit log
+    // 5. Optional: Add audit log
     try {
       await supabase
         .from('assessment_audit_logs')
@@ -117,17 +159,22 @@ export default async function handler(req, res) {
           action: 'unblock',
           performed_by: req.headers['x-user-id'] || 'admin',
           timestamp: new Date().toISOString(),
-          details: existingSession ? 'Assessment unblocked - candidate can resume' : 'Assessment unblocked - new session will be created'
+          details: {
+            hadExistingSession: !!existingSession,
+            timeExtensionMinutes: timeExtensionApplied,
+            resetTime: resetTime,
+            newExpiry: newExpiresAt?.toISOString()
+          }
         });
       console.log("✅ Audit log created");
     } catch (auditError) {
       console.error("⚠️ Failed to create audit log:", auditError);
     }
 
-    // 5. Return session info if exists
+    // 6. Return session info
     const { data: finalSession } = await supabase
       .from('assessment_sessions')
-      .select('id, status, time_spent_seconds')
+      .select('id, status, time_spent_seconds, expires_at')
       .eq('user_id', userId)
       .eq('assessment_id', assessmentId)
       .eq('status', 'in_progress')
@@ -139,8 +186,9 @@ export default async function handler(req, res) {
       success: true,
       hasExistingProgress: !!existingSession,
       session: finalSession,
+      timeExtensionApplied: timeExtensionApplied,
       message: existingSession 
-        ? "Assessment unblocked. Candidate can continue from where they left off." 
+        ? `Assessment unblocked. Candidate can continue from where they left off. ${timeExtensionApplied > 0 ? `Time extended by ${timeExtensionApplied} minutes.` : ''}`
         : "Assessment unblocked. Candidate can start a new session."
     });
 
