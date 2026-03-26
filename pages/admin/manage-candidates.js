@@ -18,6 +18,9 @@ export default function ManageCandidates() {
   const [processingAssessment, setProcessingAssessment] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [showUnblockModal, setShowUnblockModal] = useState(null);
+  const [timeExtension, setTimeExtension] = useState(30);
+  const [resetFullTime, setResetFullTime] = useState(false);
 
   // Check if current user is admin
   useEffect(() => {
@@ -29,7 +32,6 @@ export default function ManageCandidates() {
           try {
             const session = JSON.parse(userSession);
             
-            // Verify admin status from database
             const { data: profile, error } = await supabase
               .from('supervisor_profiles')
               .select('role')
@@ -79,7 +81,6 @@ export default function ManageCandidates() {
     try {
       setLoading(true);
       
-      // Fetch all candidates with their supervisor info
       const { data: candidatesData, error: candidatesError } = await supabase
         .from('candidate_profiles')
         .select(`
@@ -94,10 +95,8 @@ export default function ManageCandidates() {
 
       if (candidatesError) throw candidatesError;
 
-      // Get assessment data for each candidate
       const candidatesWithDetails = await Promise.all(
         (candidatesData || []).map(async (candidate) => {
-          // Get assessment results
           const { data: resultsData } = await supabase
             .from('assessment_results')
             .select(`
@@ -116,7 +115,6 @@ export default function ManageCandidates() {
             .eq('user_id', candidate.id)
             .order('completed_at', { ascending: false });
 
-          // Get candidate assessments
           const { data: accessData } = await supabase
             .from('candidate_assessments')
             .select(`
@@ -164,12 +162,10 @@ export default function ManageCandidates() {
   const applyFilters = (candidatesList, search, supervisorId) => {
     let filtered = [...candidatesList];
     
-    // Filter by supervisor
     if (supervisorId !== 'all') {
       filtered = filtered.filter(c => c.supervisor_id === supervisorId);
     }
     
-    // Filter by search term
     if (search.trim()) {
       const term = search.toLowerCase().trim();
       filtered = filtered.filter(c => 
@@ -182,64 +178,51 @@ export default function ManageCandidates() {
     setFilteredCandidates(filtered);
   };
 
-  // Handle search term change
   useEffect(() => {
     applyFilters(candidates, searchTerm, selectedSupervisor);
   }, [searchTerm, selectedSupervisor, candidates]);
 
-  const handleResetAssessment = async (candidateId, assessmentId, assessmentTitle, candidateName) => {
-    if (!confirm(`Are you sure you want to reset "${assessmentTitle}" for ${candidateName}? They will be able to retake it.`)) {
-      return;
-    }
-
+  const handleUnblockAssessment = async (candidateId, assessmentId, assessmentTitle, candidateName) => {
     setProcessingAssessment({ candidateId, assessmentId });
-
+    
     try {
-      // Delete responses
-      await supabase
-        .from('responses')
-        .delete()
-        .eq('user_id', candidateId)
-        .eq('assessment_id', assessmentId);
-
-      // Delete sessions
-      await supabase
-        .from('assessment_sessions')
-        .delete()
-        .eq('user_id', candidateId)
-        .eq('assessment_id', assessmentId);
-
-      // Delete results
-      await supabase
-        .from('assessment_results')
-        .delete()
-        .eq('user_id', candidateId)
-        .eq('assessment_id', assessmentId);
-
-      // Update candidate_assessments
-      await supabase
-        .from('candidate_assessments')
-        .update({ 
-          status: 'blocked',
-          unblocked_by: null,
-          unblocked_at: null,
-          result_id: null
+      const response = await fetch('/api/supervisor/unblock-assessment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId: candidateId, 
+          assessmentId,
+          extendMinutes: resetFullTime ? 0 : timeExtension,
+          resetTime: resetFullTime
         })
-        .eq('user_id', candidateId)
-        .eq('assessment_id', assessmentId);
-
-      setSuccess(`✅ "${assessmentTitle}" reset successfully for ${candidateName}.`);
-      setTimeout(() => setSuccess(''), 3000);
+      });
       
-      // Refresh data
-      fetchCandidates();
+      const result = await response.json();
       
+      if (result.success) {
+        let message = `✅ "${assessmentTitle}" unblocked for ${candidateName}. `;
+        if (resetFullTime) {
+          message += `Time reset to full 3 hours. `;
+        } else if (timeExtension > 0) {
+          message += `Time extended by ${timeExtension} minutes. `;
+        }
+        message += result.hasExistingProgress ? 'They can continue where they left off.' : 'They can start a new session.';
+        setSuccess(message);
+        fetchCandidates();
+      } else {
+        throw new Error(result.message);
+      }
     } catch (error) {
-      console.error('Reset error:', error);
-      setError('Failed to reset assessment: ' + error.message);
-      setTimeout(() => setError(''), 3000);
+      setError('Failed to unblock assessment: ' + error.message);
     } finally {
       setProcessingAssessment(null);
+      setShowUnblockModal(null);
+      setTimeExtension(30);
+      setResetFullTime(false);
+      setTimeout(() => {
+        setSuccess('');
+        setError('');
+      }, 5000);
     }
   };
 
@@ -313,7 +296,6 @@ export default function ManageCandidates() {
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.container}>
-        {/* Back Button */}
         <div style={styles.backButtonContainer}>
           <button onClick={() => router.push('/admin')} style={styles.backButton}>
             ← Back to Admin Dashboard
@@ -323,7 +305,7 @@ export default function ManageCandidates() {
         <div style={styles.header}>
           <div>
             <h1 style={styles.title}>Manage Candidates</h1>
-            <p style={styles.subtitle}>View, reset assessments, and manage candidate accounts</p>
+            <p style={styles.subtitle}>View, unblock assessments, and manage candidate accounts</p>
           </div>
           <div style={styles.headerButtons}>
             <Link href="/admin/assign-assessments" legacyBehavior>
@@ -339,7 +321,6 @@ export default function ManageCandidates() {
           </div>
         </div>
 
-        {/* Error/Success Messages */}
         {error && (
           <div style={styles.errorMessage}>
             ⚠️ {error}
@@ -351,9 +332,7 @@ export default function ManageCandidates() {
           </div>
         )}
 
-        {/* Filter Section */}
         <div style={styles.filterSection}>
-          {/* Search Bar */}
           <div style={styles.searchContainer}>
             <span style={styles.searchIcon}>🔍</span>
             <input
@@ -370,7 +349,6 @@ export default function ManageCandidates() {
             )}
           </div>
 
-          {/* Supervisor Filter */}
           <div style={styles.filterContainer}>
             <span style={styles.filterIcon}>👤</span>
             <select
@@ -390,7 +368,6 @@ export default function ManageCandidates() {
             </select>
           </div>
 
-          {/* Filter Stats */}
           {filteredCandidates.length !== candidates.length && (
             <div style={styles.filterStats}>
               Showing {filteredCandidates.length} of {candidates.length} candidates
@@ -420,7 +397,7 @@ export default function ManageCandidates() {
                   <th style={styles.th}>Assessments</th>
                   <th style={styles.th}>Latest Score</th>
                   <th style={styles.th}>Actions</th>
-                </tr>
+                 </tr>
               </thead>
               <tbody>
                 {filteredCandidates.length === 0 ? (
@@ -535,7 +512,6 @@ export default function ManageCandidates() {
                           </td>
                         </tr>
                         
-                        {/* Expanded Row for Assessments */}
                         {isExpanded && candidate.assessments?.length > 0 && (
                           <tr style={styles.expandedRow}>
                             <td colSpan="6" style={styles.expandedCell}>
@@ -581,38 +557,18 @@ export default function ManageCandidates() {
                                         )}
                                         
                                         <div style={styles.assessmentActions}>
-                                          {result ? (
-                                            <>
-                                              <Link href={`/supervisor/${candidate.id}?assessment=${assessment.assessment_id}`} legacyBehavior>
-                                                <a style={styles.viewFullReportLink}>View Full Report</a>
-                                              </Link>
-                                              <button
-                                                onClick={() => handleResetAssessment(
-                                                  candidate.id,
-                                                  assessment.assessment_id,
-                                                  assessment.assessments?.title,
-                                                  candidate.full_name
-                                                )}
-                                                disabled={isProcessing}
-                                                style={styles.resetButton}
-                                              >
-                                                {isProcessing ? '⏳' : '🔄 Reset'}
-                                              </button>
-                                            </>
-                                          ) : (
-                                            <button
-                                              onClick={() => handleResetAssessment(
-                                                candidate.id,
-                                                assessment.assessment_id,
-                                                assessment.assessments?.title,
-                                                candidate.full_name
-                                              )}
-                                              disabled={isProcessing}
-                                              style={styles.resetButton}
-                                            >
-                                              {isProcessing ? '⏳' : 'Reset'}
-                                            </button>
-                                          )}
+                                          <button
+                                            onClick={() => setShowUnblockModal({
+                                              candidateId: candidate.id,
+                                              assessmentId: assessment.assessment_id,
+                                              assessmentTitle: assessment.assessments?.title,
+                                              candidateName: candidate.full_name
+                                            })}
+                                            disabled={isProcessing}
+                                            style={styles.unblockButton}
+                                          >
+                                            {isProcessing ? '⏳' : '🔓 Unblock'}
+                                          </button>
                                         </div>
                                       </div>
                                     );
@@ -631,6 +587,133 @@ export default function ManageCandidates() {
           </div>
         )}
       </div>
+
+      {/* Unblock Modal with Time Options */}
+      {showUnblockModal && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.unblockModal}>
+            <div style={styles.modalHeader}>
+              <span style={styles.modalIcon}>🔓</span>
+              <h3>Unblock Assessment</h3>
+              <button onClick={() => setShowUnblockModal(null)} style={styles.closeButton}>✕</button>
+            </div>
+            
+            <div style={styles.modalBody}>
+              <p><strong>Candidate:</strong> {showUnblockModal.candidateName}</p>
+              <p><strong>Assessment:</strong> {showUnblockModal.assessmentTitle}</p>
+              
+              <div style={styles.timeOptions}>
+                <h4>⏰ Time Options</h4>
+                
+                <div style={styles.optionCard}>
+                  <label style={styles.radioLabel}>
+                    <input
+                      type="radio"
+                      checked={!resetFullTime && timeExtension === 30}
+                      onChange={() => {
+                        setResetFullTime(false);
+                        setTimeExtension(30);
+                      }}
+                    />
+                    <div>
+                      <strong>Extend by 30 minutes</strong>
+                      <span>Add 30 minutes to remaining time</span>
+                    </div>
+                  </label>
+                </div>
+                
+                <div style={styles.optionCard}>
+                  <label style={styles.radioLabel}>
+                    <input
+                      type="radio"
+                      checked={!resetFullTime && timeExtension === 60}
+                      onChange={() => {
+                        setResetFullTime(false);
+                        setTimeExtension(60);
+                      }}
+                    />
+                    <div>
+                      <strong>Extend by 1 hour</strong>
+                      <span>Add 60 minutes to remaining time</span>
+                    </div>
+                  </label>
+                </div>
+                
+                <div style={styles.optionCard}>
+                  <label style={styles.radioLabel}>
+                    <input
+                      type="radio"
+                      checked={!resetFullTime && timeExtension === 120}
+                      onChange={() => {
+                        setResetFullTime(false);
+                        setTimeExtension(120);
+                      }}
+                    />
+                    <div>
+                      <strong>Extend by 2 hours</strong>
+                      <span>Add 120 minutes to remaining time</span>
+                    </div>
+                  </label>
+                </div>
+                
+                <div style={styles.optionCard}>
+                  <label style={styles.radioLabel}>
+                    <input
+                      type="radio"
+                      checked={resetFullTime}
+                      onChange={() => setResetFullTime(true)}
+                    />
+                    <div>
+                      <strong>Reset to full time (3 hours)</strong>
+                      <span>Reset timer to 3 hours from now</span>
+                    </div>
+                  </label>
+                </div>
+                
+                <div style={styles.optionCard}>
+                  <label style={styles.radioLabel}>
+                    <input
+                      type="radio"
+                      checked={!resetFullTime && timeExtension === 0}
+                      onChange={() => {
+                        setResetFullTime(false);
+                        setTimeExtension(0);
+                      }}
+                    />
+                    <div>
+                      <strong>No time change</strong>
+                      <span>Just unblock without changing time</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+              
+              <div style={styles.noteBox}>
+                <span>💡</span>
+                <span>Candidate will resume from where they left off. Their existing answers will be preserved.</span>
+              </div>
+            </div>
+            
+            <div style={styles.modalFooter}>
+              <button onClick={() => setShowUnblockModal(null)} style={styles.cancelButton}>
+                Cancel
+              </button>
+              <button 
+                onClick={() => handleUnblockAssessment(
+                  showUnblockModal.candidateId,
+                  showUnblockModal.assessmentId,
+                  showUnblockModal.assessmentTitle,
+                  showUnblockModal.candidateName
+                )}
+                disabled={processingAssessment}
+                style={styles.unblockButtonLarge}
+              >
+                {processingAssessment ? 'Processing...' : 'Unblock Assessment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style jsx>{`
         @keyframes spin {
@@ -1085,19 +1168,7 @@ const styles = {
     gap: '8px',
     marginTop: '8px'
   },
-  viewFullReportLink: {
-    background: '#0A1929',
-    color: 'white',
-    padding: '4px 10px',
-    borderRadius: '4px',
-    textDecoration: 'none',
-    fontSize: '11px',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#1A2A3A'
-    }
-  },
-  resetButton: {
+  unblockButton: {
     background: '#2196F3',
     color: 'white',
     padding: '4px 10px',
@@ -1129,5 +1200,122 @@ const styles = {
     fontSize: '14px',
     fontWeight: 500,
     marginTop: '20px'
+  },
+  // Modal Styles
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0,0,0,0.7)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    padding: '20px',
+    backdropFilter: 'blur(5px)'
+  },
+  unblockModal: {
+    background: 'white',
+    borderRadius: '20px',
+    maxWidth: '500px',
+    width: '100%',
+    maxHeight: '90vh',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+  },
+  modalHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '20px 24px',
+    borderBottom: '2px solid #e2e8f0',
+    background: '#f8fafc'
+  },
+  modalIcon: {
+    fontSize: '28px'
+  },
+  closeButton: {
+    background: 'none',
+    border: 'none',
+    fontSize: '24px',
+    cursor: 'pointer',
+    color: '#666',
+    padding: '4px 8px',
+    borderRadius: '8px',
+    ':hover': {
+      background: '#e2e8f0'
+    }
+  },
+  modalBody: {
+    padding: '24px',
+    overflowY: 'auto',
+    flex: 1
+  },
+  timeOptions: {
+    marginTop: '20px'
+  },
+  optionCard: {
+    marginBottom: '12px',
+    padding: '12px',
+    background: '#f8fafc',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0'
+  },
+  radioLabel: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+    cursor: 'pointer'
+  },
+  noteBox: {
+    marginTop: '20px',
+    padding: '12px',
+    background: '#e3f2fd',
+    borderRadius: '8px',
+    display: 'flex',
+    gap: '12px',
+    fontSize: '13px',
+    color: '#1565c0'
+  },
+  modalFooter: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '12px',
+    padding: '16px 24px',
+    borderTop: '1px solid #e2e8f0',
+    background: '#f8fafc'
+  },
+  cancelButton: {
+    padding: '10px 24px',
+    background: '#f1f5f9',
+    border: '1px solid #cbd5e1',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    color: '#475569',
+    transition: 'all 0.2s',
+    ':hover': {
+      background: '#e2e8f0'
+    }
+  },
+  unblockButtonLarge: {
+    padding: '10px 24px',
+    background: '#2196F3',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    ':hover': {
+      background: '#1976D2',
+      transform: 'translateY(-1px)'
+    }
   }
 };
