@@ -12,6 +12,12 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [loginMode, setLoginMode] = useState('candidate');
+  
+  // Forgot Password State
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetMessage, setResetMessage] = useState(null);
+  const [resetLoading, setResetLoading] = useState(false);
 
   const handleCandidateLogin = async (e) => {
     e.preventDefault();
@@ -32,13 +38,11 @@ export default function Login() {
 
       // Ensure user metadata has role
       if (data.user.user_metadata?.role !== 'candidate') {
-        // Update user metadata with role if not set
         await supabase.auth.updateUser({
           data: { role: 'candidate' }
         });
       }
 
-      // Store candidate session
       const sessionData = {
         loggedIn: true,
         user_id: data.user.id,
@@ -69,7 +73,6 @@ export default function Login() {
     try {
       console.log('🟠 Supervisor login attempt for:', email);
       
-      // First authenticate
       const { data, error } = await supabase.auth.signInWithPassword({ 
         email, 
         password 
@@ -81,11 +84,7 @@ export default function Login() {
       }
 
       console.log('✅ Auth successful, user ID:', data.user.id);
-      console.log('✅ Auth email:', data.user.email);
 
-      // Try to query supervisor_profiles
-      console.log('🔍 Querying supervisor_profiles...');
-      
       let supervisor = null;
       let queryError = null;
       
@@ -113,7 +112,6 @@ export default function Login() {
       if (queryError) {
         console.error('❌ Supervisor query error details:', queryError);
         
-        // Check specific error codes
         if (queryError.code === '42P01') {
           throw new Error("Supervisor table does not exist");
         } else if (queryError.code === '42501' || queryError.message?.includes('permission')) {
@@ -126,7 +124,6 @@ export default function Login() {
       if (!supervisor || supervisor.length === 0) {
         console.log('❌ No supervisor found with ID:', data.user.id);
         
-        // Try searching by email as fallback
         console.log('🔍 Trying fallback search by email...');
         const { data: byEmail, error: emailError } = await supabase
           .from('supervisor_profiles')
@@ -152,7 +149,6 @@ export default function Login() {
         name: supervisorData.full_name 
       });
 
-      // Update user metadata with role
       await supabase.auth.updateUser({
         data: { 
           role: supervisorData.role || 'supervisor',
@@ -160,7 +156,6 @@ export default function Login() {
         }
       });
 
-      // Store supervisor session
       const sessionData = {
         loggedIn: true,
         user_id: data.user.id,
@@ -175,7 +170,6 @@ export default function Login() {
       localStorage.setItem("userSession", JSON.stringify(sessionData));
       console.log('✅ Session stored, redirecting based on role:', sessionData.role);
 
-      // Redirect based on role
       if (supervisorData.role === 'admin') {
         router.push('/admin');
       } else {
@@ -187,6 +181,48 @@ export default function Login() {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // NEW: Handle password reset
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    setResetLoading(true);
+    setResetMessage(null);
+
+    try {
+      const response = await fetch('/api/admin/set-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: resetEmail,
+          newPassword: 'Temp123!'
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setResetMessage({ 
+          type: 'success', 
+          text: `✅ Password reset successfully!\n\nTemporary password: Temp123!\n\nPlease log in with this temporary password and change it immediately in your Profile settings.` 
+        });
+        // Clear email field after 3 seconds
+        setTimeout(() => {
+          setShowResetModal(false);
+          setResetEmail("");
+          setResetMessage(null);
+        }, 6000);
+      } else {
+        setResetMessage({ 
+          type: 'error', 
+          text: data.error || 'User not found. Please check your email address.' 
+        });
+      }
+    } catch (err) {
+      setResetMessage({ type: 'error', text: 'Something went wrong. Please try again later.' });
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -348,6 +384,26 @@ export default function Login() {
           </button>
         </form>
 
+        {/* NEW: Forgot Password Link */}
+        <div style={{ 
+          marginTop: "15px", 
+          textAlign: "center"
+        }}>
+          <button
+            onClick={() => setShowResetModal(true)}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#1565c0",
+              cursor: "pointer",
+              fontSize: "14px",
+              textDecoration: "underline"
+            }}
+          >
+            Forgot Password?
+          </button>
+        </div>
+
         <div style={{ 
           marginTop: "20px", 
           fontSize: "14px", 
@@ -368,6 +424,137 @@ export default function Login() {
           </p>
         </div>
       </div>
+
+      {/* NEW: Reset Password Modal */}
+      {showResetModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          backdropFilter: 'blur(5px)'
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '16px',
+            padding: '32px',
+            width: '100%',
+            maxWidth: '400px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+            margin: '20px'
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '20px'
+            }}>
+              <h3 style={{
+                fontSize: '20px',
+                fontWeight: '600',
+                color: '#0A1929',
+                margin: 0
+              }}>
+                Reset Password
+              </h3>
+              <button
+                onClick={() => {
+                  setShowResetModal(false);
+                  setResetEmail("");
+                  setResetMessage(null);
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '20px',
+                  cursor: 'pointer',
+                  color: '#64748B'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <form onSubmit={handleResetPassword}>
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{
+                  display: 'block',
+                  marginBottom: '8px',
+                  fontWeight: '600',
+                  color: '#333',
+                  fontSize: '14px'
+                }}>
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '2px solid #ddd',
+                    borderRadius: '8px',
+                    fontSize: '16px',
+                    boxSizing: 'border-box'
+                  }}
+                  placeholder="Enter your email address"
+                  required
+                />
+              </div>
+
+              {resetMessage && (
+                <div style={{
+                  padding: '12px',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  marginBottom: '16px',
+                  whiteSpace: 'pre-line',
+                  background: resetMessage.type === 'success' ? '#dcfce7' : '#fee2e2',
+                  color: resetMessage.type === 'success' ? '#166534' : '#991b1b',
+                  border: `1px solid ${resetMessage.type === 'success' ? '#86efac' : '#fecaca'}`
+                }}>
+                  {resetMessage.text}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={resetLoading}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  background: resetLoading ? '#ccc' : '#2563EB',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: resetLoading ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {resetLoading ? 'Resetting...' : 'Reset Password'}
+              </button>
+            </form>
+            
+            <div style={{
+              marginTop: '16px',
+              fontSize: '12px',
+              color: '#64748B',
+              textAlign: 'center'
+            }}>
+              <p>A temporary password will be set to: <strong>Temp123!</strong></p>
+              <p>After logging in, go to Profile → Change Password to set a new password.</p>
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }
