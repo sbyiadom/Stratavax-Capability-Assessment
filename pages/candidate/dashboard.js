@@ -83,7 +83,6 @@ export default function CandidateDashboard() {
       'Leadership',
       'Work Style'
     ],
-    // UPDATED: Personality assessment now shows 6 key traits
     'personality': [
       'Ownership - Takes responsibility and drives outcomes',
       'Collaboration - Works well in teams and builds consensus',
@@ -92,7 +91,6 @@ export default function CandidateDashboard() {
       'Risk Tolerance - Comfortable with uncertainty and experimentation',
       'Structure - Follows process and values consistency'
     ],
-    // NEW: Strategic Leadership Assessment
     'strategic_leadership': [
       'Vision / Strategy - Strategic thinking and long-term planning',
       'People Leadership - Team development, coaching, and engagement',
@@ -145,7 +143,6 @@ export default function CandidateDashboard() {
       light: '#ccfbf1',
       border: '1px solid #0d948820'
     },
-    // NEW: Strategic Leadership Assessment colors
     'strategic_leadership': {
       gradient: 'linear-gradient(135deg, #1E3A8A 0%, #5B21B6 100%)',
       color: '#5B21B6',
@@ -216,7 +213,6 @@ export default function CandidateDashboard() {
     }
   };
 
-  // NEW: Fetch only unblocked assessments
   const fetchUnblockedAssessments = async (userId) => {
     try {
       const { data, error } = await supabase
@@ -361,7 +357,6 @@ export default function CandidateDashboard() {
     return assessments.find(a => a.assessment_type?.code === typeCode);
   };
 
-  // MODIFIED: Check if assessment is unblocked
   const isAssessmentUnblocked = (assessmentId) => {
     return unblockedAssessments.includes(assessmentId);
   };
@@ -399,7 +394,6 @@ export default function CandidateDashboard() {
   };
 
   const handleStartAssessment = (assessmentId) => {
-    // Double-check access before navigating
     if (!isAssessmentUnblocked(assessmentId) && !isAssessmentCompleted(assessmentId) && !isAssessmentInProgress(assessmentId)) {
       alert("This assessment is currently blocked. Please contact your supervisor to unblock it.");
       return;
@@ -440,15 +434,23 @@ export default function CandidateDashboard() {
               <span style={styles.headerDivider}>|</span>
               <span style={styles.headerSubtitle}>Assessment Portal</span>
             </div>
-            <button
-              onClick={async () => {
-                await supabase.auth.signOut();
-                router.push("/login");
-              }}
-              style={styles.logoutButton}
-            >
-              Sign Out
-            </button>
+            <div style={styles.headerRight}>
+              {/* NEW: Profile Settings Button */}
+              <Link href="/candidate/profile" legacyBehavior>
+                <a style={styles.profileButton}>
+                  👤 Profile
+                </a>
+              </Link>
+              <button
+                onClick={async () => {
+                  await supabase.auth.signOut();
+                  router.push("/login");
+                }}
+                style={styles.logoutButton}
+              >
+                Sign Out
+              </button>
+            </div>
           </div>
         </div>
 
@@ -879,6 +881,25 @@ const styles = {
     color: 'rgba(255,255,255,0.9)',
     fontWeight: '400',
     textShadow: '1px 1px 2px rgba(0,0,0,0.3)'
+  },
+  headerRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px'
+  },
+  profileButton: {
+    padding: '8px 20px',
+    background: 'rgba(255,255,255,0.2)',
+    color: 'white',
+    border: '1px solid rgba(255,255,255,0.3)',
+    borderRadius: '30px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '500',
+    transition: 'all 0.2s',
+    backdropFilter: 'blur(10px)',
+    textDecoration: 'none',
+    display: 'inline-block'
   },
   logoutButton: {
     padding: '8px 20px',
