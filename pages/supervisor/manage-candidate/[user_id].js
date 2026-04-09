@@ -12,11 +12,18 @@ export default function ManageCandidate() {
   const [candidate, setCandidate] = useState(null);
   const [assessments, setAssessments] = useState([]);
   const [currentSupervisor, setCurrentSupervisor] = useState(null);
-  const [processingAssessment, setProcessingAssessment] = useState(null);
+  const [processingIds, setProcessingIds] = useState(new Set());
   const [showUnblockModal, setShowUnblockModal] = useState(null);
   const [timeExtension, setTimeExtension] = useState(30);
   const [resetFullTime, setResetFullTime] = useState(false);
   const [message, setMessage] = useState(null);
+  
+  // Bulk selection state
+  const [selectedAssessments, setSelectedAssessments] = useState(new Set());
+  const [bulkAction, setBulkAction] = useState("");
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkTimeExtension, setBulkTimeExtension] = useState(30);
+  const [bulkResetFullTime, setBulkResetFullTime] = useState(false);
 
   // Authentication check
   useEffect(() => {
@@ -73,7 +80,6 @@ export default function ManageCandidate() {
       try {
         const isAdmin = currentSupervisor.role === 'admin';
         
-        // Fetch candidate profile
         const { data: candidateData, error: candidateError } = await supabase
           .from('candidate_profiles')
           .select(`
@@ -94,13 +100,11 @@ export default function ManageCandidate() {
         
         if (candidateError) throw candidateError;
         
-        // Check if supervisor has access to this candidate
         if (!isAdmin && candidateData.supervisor_id !== currentSupervisor.id) {
           router.push('/supervisor');
           return;
         }
         
-        // Fetch assessment results
         const { data: resultsData } = await supabase
           .from('assessment_results')
           .select(`
@@ -118,7 +122,6 @@ export default function ManageCandidate() {
           resultsMap[result.assessment_id] = result;
         });
         
-        // Fetch candidate assessments
         const { data: accessData } = await supabase
           .from('candidate_assessments')
           .select(`
@@ -128,6 +131,7 @@ export default function ManageCandidate() {
             created_at,
             unblocked_at,
             result_id,
+            time_limit_minutes,
             assessments (
               id,
               title,
@@ -161,6 +165,7 @@ export default function ManageCandidate() {
             status: result ? 'completed' : access.status,
             created_at: access.created_at,
             unblocked_at: access.unblocked_at,
+            time_limit_minutes: access.time_limit_minutes || 180,
             result: result ? {
               id: result.id,
               score: result.total_score,
@@ -192,7 +197,7 @@ export default function ManageCandidate() {
   }, [user_id, currentSupervisor, router]);
 
   const handleUnblockWithTime = async (assessmentId, assessmentTitle) => {
-    setProcessingAssessment(assessmentId);
+    setProcessingIds(prev => new Set(prev).add(assessmentId));
     
     try {
       const response = await fetch('/api/supervisor/unblock-assessment', {
@@ -219,7 +224,6 @@ export default function ManageCandidate() {
         msg += result.hasExistingProgress ? 'Candidate can continue where they left off.' : 'Candidate can start a new session.';
         setMessage({ type: 'success', text: msg });
         
-        // Update local state
         setAssessments(prev => prev.map(a => 
           a.assessment_id === assessmentId ? { ...a, status: 'unblocked' } : a
         ));
@@ -229,7 +233,11 @@ export default function ManageCandidate() {
     } catch (error) {
       setMessage({ type: 'error', text: 'Failed to unblock assessment: ' + error.message });
     } finally {
-      setProcessingAssessment(null);
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(assessmentId);
+        return newSet;
+      });
       setShowUnblockModal(null);
       setTimeExtension(30);
       setResetFullTime(false);
@@ -242,7 +250,7 @@ export default function ManageCandidate() {
       return;
     }
     
-    setProcessingAssessment(assessmentId);
+    setProcessingIds(prev => new Set(prev).add(assessmentId));
     
     try {
       await supabase.from('responses').delete().eq('user_id', user_id).eq('assessment_id', assessmentId);
@@ -265,7 +273,11 @@ export default function ManageCandidate() {
     } catch (error) {
       setMessage({ type: 'error', text: 'Failed to reset assessment: ' + error.message });
     } finally {
-      setProcessingAssessment(null);
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(assessmentId);
+        return newSet;
+      });
       setTimeout(() => setMessage(null), 5000);
     }
   };
@@ -273,7 +285,7 @@ export default function ManageCandidate() {
   const handleBlock = async (assessmentId, assessmentTitle) => {
     if (!confirm(`Block "${assessmentTitle}" for ${candidate?.full_name}?`)) return;
     
-    setProcessingAssessment(assessmentId);
+    setProcessingIds(prev => new Set(prev).add(assessmentId));
     
     try {
       await supabase
@@ -290,9 +302,115 @@ export default function ManageCandidate() {
     } catch (error) {
       setMessage({ type: 'error', text: 'Failed to block assessment: ' + error.message });
     } finally {
-      setProcessingAssessment(null);
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(assessmentId);
+        return newSet;
+      });
       setTimeout(() => setMessage(null), 5000);
     }
+  };
+
+  // Bulk actions
+  const toggleAssessmentSelection = (assessmentId) => {
+    const newSet = new Set(selectedAssessments);
+    if (newSet.has(assessmentId)) {
+      newSet.delete(assessmentId);
+    } else {
+      newSet.add(assessmentId);
+    }
+    setSelectedAssessments(newSet);
+  };
+
+  const selectAllAssessments = () => {
+    const allIds = assessments.map(a => a.assessment_id);
+    setSelectedAssessments(new Set(allIds));
+  };
+
+  const clearSelection = () => {
+    setSelectedAssessments(new Set());
+  };
+
+  const handleBulkUnblock = () => {
+    if (selectedAssessments.size === 0) {
+      setMessage({ type: 'error', text: 'Please select at least one assessment' });
+      return;
+    }
+    setBulkAction('unblock');
+    setShowBulkModal(true);
+  };
+
+  const handleBulkBlock = () => {
+    if (selectedAssessments.size === 0) {
+      setMessage({ type: 'error', text: 'Please select at least one assessment' });
+      return;
+    }
+    if (!confirm(`Block ${selectedAssessments.size} assessment(s) for ${candidate?.full_name}?`)) return;
+    
+    executeBulkAction('block');
+  };
+
+  const executeBulkAction = async (action) => {
+    setProcessingIds(new Set(selectedAssessments));
+    
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const assessmentId of selectedAssessments) {
+      const assessment = assessments.find(a => a.assessment_id === assessmentId);
+      if (!assessment) continue;
+
+      try {
+        if (action === 'unblock') {
+          const response = await fetch('/api/supervisor/unblock-assessment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              userId: user_id, 
+              assessmentId,
+              extendMinutes: bulkResetFullTime ? 0 : bulkTimeExtension,
+              resetTime: bulkResetFullTime,
+              performed_by: currentSupervisor.id
+            })
+          });
+          
+          const result = await response.json();
+          if (result.success) {
+            setAssessments(prev => prev.map(a => 
+              a.assessment_id === assessmentId ? { ...a, status: 'unblocked' } : a
+            ));
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        } else if (action === 'block') {
+          await supabase
+            .from('candidate_assessments')
+            .update({ status: 'blocked' })
+            .eq('user_id', user_id)
+            .eq('assessment_id', assessmentId);
+          
+          setAssessments(prev => prev.map(a => 
+            a.assessment_id === assessmentId ? { ...a, status: 'blocked' } : a
+          ));
+          successCount++;
+        }
+      } catch (error) {
+        errorCount++;
+      }
+    }
+
+    setMessage({ 
+      type: successCount > 0 ? 'success' : 'error', 
+      text: `✅ ${successCount} successful, ❌ ${errorCount} failed` 
+    });
+    
+    setSelectedAssessments(new Set());
+    setShowBulkModal(false);
+    setBulkTimeExtension(30);
+    setBulkResetFullTime(false);
+    setProcessingIds(new Set());
+    setTimeout(() => setMessage(null), 5000);
   };
 
   const getClassification = (score, maxScore) => {
@@ -413,7 +531,52 @@ export default function ManageCandidate() {
           </div>
         </div>
 
-        {/* Assessments List */}
+        {/* Bulk Actions Bar */}
+        {assessments.length > 0 && (
+          <div style={styles.bulkBar}>
+            <div style={styles.bulkLeft}>
+              <input
+                type="checkbox"
+                checked={selectedAssessments.size === assessments.length && assessments.length > 0}
+                onChange={selectAllAssessments}
+                style={styles.bulkCheckbox}
+              />
+              <span style={styles.bulkCount}>{selectedAssessments.size} selected</span>
+            </div>
+            <div style={styles.bulkRight}>
+              <button
+                onClick={clearSelection}
+                style={styles.bulkClearButton}
+              >
+                Clear
+              </button>
+              <button
+                onClick={handleBulkUnblock}
+                disabled={selectedAssessments.size === 0}
+                style={{
+                  ...styles.bulkUnblockButton,
+                  opacity: selectedAssessments.size === 0 ? 0.5 : 1,
+                  cursor: selectedAssessments.size === 0 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                🔓 Unblock Selected
+              </button>
+              <button
+                onClick={handleBulkBlock}
+                disabled={selectedAssessments.size === 0}
+                style={{
+                  ...styles.bulkBlockButton,
+                  opacity: selectedAssessments.size === 0 ? 0.5 : 1,
+                  cursor: selectedAssessments.size === 0 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                🔒 Block Selected
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Assessments Table */}
         <div style={styles.assessmentsSection}>
           <h2 style={styles.sectionTitle}>Assessments</h2>
           
@@ -425,119 +588,133 @@ export default function ManageCandidate() {
               </Link>
             </div>
           ) : (
-            <div style={styles.assessmentsGrid}>
-              {assessments.map(assessment => {
-                const isProcessing = processingAssessment === assessment.assessment_id;
-                const classification = assessment.result ? getClassification(assessment.result.score, assessment.result.max_score) : null;
-                
-                return (
-                  <div key={assessment.id} style={styles.assessmentCard}>
-                    <div style={{
-                      ...styles.cardHeader,
-                      background: `linear-gradient(135deg, ${assessment.type_gradient_start}, ${assessment.type_gradient_end})`
-                    }}>
-                      <span style={styles.cardIcon}>{assessment.type_icon}</span>
-                      <span style={styles.cardTitle}>{assessment.assessment_title}</span>
-                      <span style={{
-                        ...styles.statusBadge,
-                        background: assessment.result ? '#E8F5E9' :
-                                   assessment.status === 'unblocked' ? '#E3F2FD' : '#FFF3E0',
-                        color: assessment.result ? '#2E7D32' :
-                               assessment.status === 'unblocked' ? '#1565C0' : '#F57C00'
-                      }}>
-                        {assessment.result ? '✓ Completed' : 
-                         assessment.status === 'unblocked' ? '🔓 Ready' : '🔒 Blocked'}
-                      </span>
-                    </div>
+            <div style={styles.tableContainer}>
+              <table style={styles.table}>
+                <thead>
+                  <tr style={styles.tableHeadRow}>
+                    <th style={styles.checkboxCell}></th>
+                    <th style={styles.tableHead}>Assessment</th>
+                    <th style={styles.tableHead}>Status</th>
+                    <th style={styles.tableHead}>Score</th>
+                    <th style={styles.tableHead}>Classification</th>
+                    <th style={styles.tableHead}>Time Limit</th>
+                    <th style={styles.tableHead}>Actions</th>
+                   </tr>
+                </thead>
+                <tbody>
+                  {assessments.map(assessment => {
+                    const isSelected = selectedAssessments.has(assessment.assessment_id);
+                    const isProcessing = processingIds.has(assessment.assessment_id);
+                    const classification = assessment.result ? getClassification(assessment.result.score, assessment.result.max_score) : null;
                     
-                    <div style={styles.cardBody}>
-                      {assessment.result ? (
-                        <div style={styles.resultContent}>
-                          <div style={styles.scoreCircle}>
-                            <span style={styles.scorePercent}>
-                              {Math.round((assessment.result.score / assessment.result.max_score) * 100)}%
+                    return (
+                      <tr key={assessment.id} style={styles.tableRow}>
+                        <td style={styles.checkboxCell}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleAssessmentSelection(assessment.assessment_id)}
+                            disabled={assessment.result !== null}
+                            style={styles.checkbox}
+                          />
+                        </td>
+                        <td style={styles.tableCell}>
+                          <div style={styles.assessmentInfo}>
+                            <div style={{
+                              ...styles.assessmentIcon,
+                              background: `linear-gradient(135deg, ${assessment.type_gradient_start}, ${assessment.type_gradient_end})`
+                            }}>
+                              {assessment.type_icon}
+                            </div>
+                            <div>
+                              <div style={styles.assessmentTitle}>{assessment.assessment_title}</div>
+                              <div style={styles.assessmentType}>{assessment.assessment_type_name}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={styles.tableCell}>
+                          <span style={{
+                            ...styles.statusBadge,
+                            background: assessment.result ? '#E8F5E9' :
+                                       assessment.status === 'unblocked' ? '#E3F2FD' : '#FFF3E0',
+                            color: assessment.result ? '#2E7D32' :
+                                   assessment.status === 'unblocked' ? '#1565C0' : '#F57C00'
+                          }}>
+                            {assessment.result ? '✓ Completed' : 
+                             assessment.status === 'unblocked' ? '🔓 Ready' : '🔒 Blocked'}
+                          </span>
+                        </td>
+                        <td style={styles.tableCell}>
+                          {assessment.result ? (
+                            <strong>{assessment.result.score}/{assessment.result.max_score}</strong>
+                          ) : (
+                            <span style={styles.notStarted}>—</span>
+                          )}
+                        </td>
+                        <td style={styles.tableCell}>
+                          {classification ? (
+                            <span style={{
+                              ...styles.classBadge,
+                              color: classification.color,
+                              background: `${classification.color}15`
+                            }}>
+                              {classification.label}
                             </span>
+                          ) : (
+                            <span style={styles.notStarted}>—</span>
+                          )}
+                        </td>
+                        <td style={styles.tableCell}>
+                          <span style={styles.timeLimit}>{assessment.time_limit_minutes} min</span>
+                        </td>
+                        <td style={styles.tableCell}>
+                          <div style={styles.actionButtons}>
+                            {assessment.result ? (
+                              <>
+                                <Link href={`/supervisor/${candidate.id}?assessment=${assessment.assessment_id}`} legacyBehavior>
+                                  <a style={styles.viewReportButtonSmall}>📄 Report</a>
+                                </Link>
+                                <button
+                                  onClick={() => handleReset(assessment.assessment_id, assessment.assessment_title)}
+                                  disabled={isProcessing}
+                                  style={styles.resetBtn}
+                                >
+                                  {isProcessing ? '⏳' : '🔄 Reset'}
+                                </button>
+                              </>
+                            ) : assessment.status === 'blocked' ? (
+                              <button
+                                onClick={() => setShowUnblockModal({
+                                  assessmentId: assessment.assessment_id,
+                                  assessmentTitle: assessment.assessment_title
+                                })}
+                                disabled={isProcessing}
+                                style={styles.unblockBtn}
+                              >
+                                {isProcessing ? '⏳' : '🔓 Unblock'}
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleBlock(assessment.assessment_id, assessment.assessment_title)}
+                                disabled={isProcessing}
+                                style={styles.blockBtn}
+                              >
+                                {isProcessing ? '⏳' : '🔒 Block'}
+                              </button>
+                            )}
                           </div>
-                          <div style={styles.resultDetails}>
-                            <div style={styles.resultRow}>
-                              <span>Score:</span>
-                              <strong>{assessment.result.score}/{assessment.result.max_score}</strong>
-                            </div>
-                            <div style={styles.resultRow}>
-                              <span>Classification:</span>
-                              <span style={{
-                                ...styles.classificationBadge,
-                                color: classification?.color,
-                                background: `${classification?.color}15`
-                              }}>
-                                {classification?.label}
-                              </span>
-                            </div>
-                            <div style={styles.resultRow}>
-                              <span>Completed:</span>
-                              <span>{formatDate(assessment.result.completed_at)}</span>
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={styles.pendingContent}>
-                          <div style={styles.pendingIcon}>📋</div>
-                          <div>
-                            <div style={styles.pendingTitle}>Not Started</div>
-                            <div style={styles.pendingSubtitle}>
-                              {assessment.status === 'unblocked' 
-                                ? 'Candidate can start this assessment when ready'
-                                : 'Assessment is blocked. Unblock to allow candidate to take it.'}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div style={styles.cardFooter}>
-                      {assessment.result ? (
-                        <>
-                          <Link href={`/supervisor/${candidate.id}?assessment=${assessment.assessment_id}`} legacyBehavior>
-                            <a style={styles.viewReportLink}>📄 View Full Report</a>
-                          </Link>
-                          <button
-                            onClick={() => handleReset(assessment.assessment_id, assessment.assessment_title)}
-                            disabled={isProcessing}
-                            style={styles.resetBtn}
-                          >
-                            {isProcessing ? '⏳' : '🔄 Reset'}
-                          </button>
-                        </>
-                      ) : assessment.status === 'blocked' ? (
-                        <button
-                          onClick={() => setShowUnblockModal({
-                            assessmentId: assessment.assessment_id,
-                            assessmentTitle: assessment.assessment_title
-                          })}
-                          disabled={isProcessing}
-                          style={styles.unblockBtn}
-                        >
-                          {isProcessing ? '⏳' : '🔓 Unblock'}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleBlock(assessment.assessment_id, assessment.assessment_title)}
-                          disabled={isProcessing}
-                          style={styles.blockBtn}
-                        >
-                          {isProcessing ? '⏳' : '🔒 Block'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
       </div>
 
-      {/* Unblock Modal */}
+      {/* Unblock Modal (Single) */}
       {showUnblockModal && (
         <div style={styles.modalOverlay}>
           <div style={styles.modal}>
@@ -609,10 +786,87 @@ export default function ManageCandidate() {
               <button onClick={() => setShowUnblockModal(null)} style={styles.cancelButton}>Cancel</button>
               <button 
                 onClick={() => handleUnblockWithTime(showUnblockModal.assessmentId, showUnblockModal.assessmentTitle)}
-                disabled={processingAssessment}
+                disabled={processingIds.has(showUnblockModal.assessmentId)}
                 style={styles.confirmButton}
               >
-                {processingAssessment ? 'Processing...' : 'Unblock Assessment'}
+                {processingIds.has(showUnblockModal.assessmentId) ? 'Processing...' : 'Unblock Assessment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Unblock Modal */}
+      {showBulkModal && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modal}>
+            <div style={styles.modalHeader}>
+              <span style={styles.modalIcon}>🔓</span>
+              <h3>Bulk Unblock Assessments</h3>
+              <button onClick={() => setShowBulkModal(false)} style={styles.closeButton}>✕</button>
+            </div>
+            
+            <div style={styles.modalBody}>
+              <p><strong>Candidate:</strong> {candidate.full_name}</p>
+              <p><strong>Assessments to unblock:</strong> {selectedAssessments.size}</p>
+              
+              <div style={styles.timeOptions}>
+                <h4>⏰ Time Options (for all selected)</h4>
+                
+                {[30, 60, 120].map(minutes => (
+                  <label key={minutes} style={styles.radioLabel}>
+                    <input
+                      type="radio"
+                      checked={!bulkResetFullTime && bulkTimeExtension === minutes}
+                      onChange={() => {
+                        setBulkResetFullTime(false);
+                        setBulkTimeExtension(minutes);
+                      }}
+                    />
+                    <div>
+                      <strong>Extend by {minutes} minutes</strong>
+                      <span>Add {minutes} minutes to remaining time</span>
+                    </div>
+                  </label>
+                ))}
+                
+                <label style={styles.radioLabel}>
+                  <input
+                    type="radio"
+                    checked={bulkResetFullTime}
+                    onChange={() => setBulkResetFullTime(true)}
+                  />
+                  <div>
+                    <strong>Reset to full time (3 hours)</strong>
+                    <span>Reset timer to 3 hours from now</span>
+                  </div>
+                </label>
+                
+                <label style={styles.radioLabel}>
+                  <input
+                    type="radio"
+                    checked={!bulkResetFullTime && bulkTimeExtension === 0}
+                    onChange={() => {
+                      setBulkResetFullTime(false);
+                      setBulkTimeExtension(0);
+                    }}
+                  />
+                  <div>
+                    <strong>No time change</strong>
+                    <span>Just unblock without changing time</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+            
+            <div style={styles.modalFooter}>
+              <button onClick={() => setShowBulkModal(false)} style={styles.cancelButton}>Cancel</button>
+              <button 
+                onClick={() => executeBulkAction('unblock')}
+                disabled={processingIds.size > 0}
+                style={styles.confirmButton}
+              >
+                {processingIds.size > 0 ? 'Processing...' : `Unblock ${selectedAssessments.size} Assessment(s)`}
               </button>
             </div>
           </div>
@@ -800,6 +1054,77 @@ const styles = {
     fontWeight: 700,
     color: '#0A1929'
   },
+  bulkBar: {
+    background: '#F8FAFC',
+    borderRadius: '12px',
+    padding: '12px 20px',
+    marginBottom: '20px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '12px',
+    border: '1px solid #E2E8F0'
+  },
+  bulkLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px'
+  },
+  bulkCheckbox: {
+    width: '18px',
+    height: '18px',
+    cursor: 'pointer'
+  },
+  bulkCount: {
+    fontSize: '14px',
+    fontWeight: 500,
+    color: '#0A1929'
+  },
+  bulkRight: {
+    display: 'flex',
+    gap: '10px'
+  },
+  bulkClearButton: {
+    padding: '6px 16px',
+    background: '#F1F5F9',
+    border: '1px solid #E2E8F0',
+    borderRadius: '6px',
+    fontSize: '12px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    ':hover': {
+      background: '#E2E8F0'
+    }
+  },
+  bulkUnblockButton: {
+    padding: '6px 16px',
+    background: '#2196F3',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    ':hover': {
+      background: '#1976D2'
+    }
+  },
+  bulkBlockButton: {
+    padding: '6px 16px',
+    background: '#FF9800',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    ':hover': {
+      background: '#F57C00'
+    }
+  },
   assessmentsSection: {
     background: 'white',
     borderRadius: '20px',
@@ -812,116 +1137,103 @@ const styles = {
     color: '#0A1929',
     margin: '0 0 20px 0'
   },
-  assessmentsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
-    gap: '20px'
+  tableContainer: {
+    overflowX: 'auto'
   },
-  assessmentCard: {
-    border: '1px solid #e2e8f0',
-    borderRadius: '16px',
-    overflow: 'hidden',
-    transition: 'all 0.2s',
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '14px'
+  },
+  tableHeadRow: {
+    borderBottom: '2px solid #E2E8F0',
+    background: '#F8FAFC'
+  },
+  tableHead: {
+    padding: '15px',
+    fontWeight: 600,
+    color: '#0A1929',
+    textAlign: 'left'
+  },
+  checkboxCell: {
+    width: '40px',
+    padding: '12px',
+    textAlign: 'center'
+  },
+  tableRow: {
+    borderBottom: '1px solid #E2E8F0',
+    transition: 'background 0.2s',
     ':hover': {
-      boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
-      transform: 'translateY(-2px)'
+      background: '#F8FAFC'
     }
   },
-  cardHeader: {
-    padding: '16px 20px',
-    color: 'white',
+  tableCell: {
+    padding: '12px',
+    verticalAlign: 'middle'
+  },
+  checkbox: {
+    width: '16px',
+    height: '16px',
+    cursor: 'pointer'
+  },
+  assessmentInfo: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    position: 'relative'
+    gap: '12px'
   },
-  cardIcon: {
-    fontSize: '24px'
+  assessmentIcon: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '18px',
+    color: 'white'
   },
-  cardTitle: {
-    fontSize: '16px',
+  assessmentTitle: {
+    fontSize: '14px',
     fontWeight: 600,
-    flex: 1
+    color: '#0A1929',
+    marginBottom: '2px'
+  },
+  assessmentType: {
+    fontSize: '11px',
+    color: '#64748B'
   },
   statusBadge: {
     padding: '4px 12px',
     borderRadius: '20px',
-    fontSize: '11px',
-    fontWeight: 500
+    fontSize: '12px',
+    fontWeight: 500,
+    display: 'inline-block'
   },
-  cardBody: {
-    padding: '20px',
-    background: '#f8fafc'
+  notStarted: {
+    color: '#94A3B8',
+    fontStyle: 'italic'
   },
-  resultContent: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '20px',
-    flexWrap: 'wrap'
-  },
-  scoreCircle: {
-    width: '80px',
-    height: '80px',
-    borderRadius: '50%',
-    background: 'linear-gradient(135deg, #0A1929, #1A2A3A)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: 'white'
-  },
-  scorePercent: {
-    fontSize: '20px',
-    fontWeight: 700
-  },
-  resultDetails: {
-    flex: 1
-  },
-  resultRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    padding: '6px 0',
-    fontSize: '13px',
-    borderBottom: '1px solid #e2e8f0'
-  },
-  classificationBadge: {
+  classBadge: {
     padding: '2px 8px',
     borderRadius: '12px',
     fontSize: '11px',
-    fontWeight: 500
+    fontWeight: 500,
+    display: 'inline-block'
   },
-  pendingContent: {
+  timeLimit: {
+    fontSize: '13px',
+    color: '#475569'
+  },
+  actionButtons: {
     display: 'flex',
-    alignItems: 'center',
-    gap: '16px'
+    gap: '8px'
   },
-  pendingIcon: {
-    fontSize: '40px',
-    opacity: 0.5
-  },
-  pendingTitle: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#0A1929',
-    marginBottom: '4px'
-  },
-  pendingSubtitle: {
-    fontSize: '12px',
-    color: '#64748b'
-  },
-  cardFooter: {
-    padding: '16px 20px',
-    borderTop: '1px solid #e2e8f0',
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '12px'
-  },
-  viewReportLink: {
+  viewReportButtonSmall: {
     background: '#0A1929',
     color: 'white',
+    padding: '6px 12px',
+    borderRadius: '6px',
     textDecoration: 'none',
-    padding: '8px 16px',
-    borderRadius: '8px',
-    fontSize: '13px',
+    fontSize: '11px',
     fontWeight: 500,
     transition: 'all 0.2s',
     ':hover': {
@@ -932,9 +1244,9 @@ const styles = {
     background: '#4CAF50',
     color: 'white',
     border: 'none',
-    padding: '8px 16px',
-    borderRadius: '8px',
-    fontSize: '13px',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    fontSize: '11px',
     fontWeight: 500,
     cursor: 'pointer',
     transition: 'all 0.2s',
@@ -946,9 +1258,9 @@ const styles = {
     background: '#FF9800',
     color: 'white',
     border: 'none',
-    padding: '8px 16px',
-    borderRadius: '8px',
-    fontSize: '13px',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    fontSize: '11px',
     fontWeight: 500,
     cursor: 'pointer',
     transition: 'all 0.2s',
@@ -960,9 +1272,9 @@ const styles = {
     background: '#2196F3',
     color: 'white',
     border: 'none',
-    padding: '8px 16px',
-    borderRadius: '8px',
-    fontSize: '13px',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    fontSize: '11px',
     fontWeight: 500,
     cursor: 'pointer',
     transition: 'all 0.2s',
@@ -984,7 +1296,6 @@ const styles = {
     textDecoration: 'none',
     borderRadius: '8px'
   },
-  // Modal Styles
   modalOverlay: {
     position: 'fixed',
     top: 0,
