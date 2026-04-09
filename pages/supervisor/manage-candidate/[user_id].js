@@ -86,7 +86,6 @@ export default function ManageCandidate() {
         debug.supervisorId = currentSupervisor.id;
         
         console.log("🔍 DEBUG - Fetching candidate data for user:", user_id);
-        console.log("🔍 DEBUG - Is Admin:", isAdmin);
         
         // Fetch candidate profile
         const { data: candidateData, error: candidateError } = await supabase
@@ -124,7 +123,7 @@ export default function ManageCandidate() {
           return;
         }
         
-        // Fetch assessment results - THIS IS THE KEY
+        // Fetch assessment results
         console.log("📊 Fetching assessment_results for user:", user_id);
         const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
@@ -137,7 +136,6 @@ export default function ManageCandidate() {
         }
         
         console.log("📊 Results data count:", resultsData?.length || 0);
-        console.log("📊 Results data:", resultsData);
         debug.resultsCount = resultsData?.length || 0;
         debug.results = resultsData;
         
@@ -154,7 +152,6 @@ export default function ManageCandidate() {
         });
         
         debug.resultsMapKeys = Object.keys(resultsMap);
-        console.log("📊 Results map keys:", Object.keys(resultsMap));
         
         // Fetch candidate assessments
         console.log("📊 Fetching candidate_assessments for user:", user_id);
@@ -198,7 +195,6 @@ export default function ManageCandidate() {
           const assessment = access.assessments;
           const typeData = assessment?.assessment_types;
           
-          // Determine status: completed if result exists, otherwise use access.status
           let status = access.status;
           if (result) {
             status = 'completed';
@@ -225,14 +221,8 @@ export default function ManageCandidate() {
         console.log("📊 Assessments with results:", assessmentsWithDetails.filter(a => a.result).length);
         debug.processedCount = assessmentsWithDetails.length;
         debug.completedCount = assessmentsWithDetails.filter(a => a.result).length;
-        debug.assessments = assessmentsWithDetails.map(a => ({
-          title: a.assessment_title,
-          status: a.status,
-          hasResult: !!a.result,
-          score: a.result?.score
-        }));
         
-        // Sort assessments: completed first, then by date
+        // Sort assessments
         assessmentsWithDetails.sort((a, b) => {
           if (a.result && !b.result) return -1;
           if (!a.result && b.result) return 1;
@@ -256,9 +246,6 @@ export default function ManageCandidate() {
     
     fetchCandidateData();
   }, [user_id, currentSupervisor, router]);
-
-  // Rest of your component functions (handleUnblockWithTime, handleReset, etc.) remain the same
-  // ... (keep all the existing handler functions)
 
   const handleUnblockWithTime = async (assessmentId, assessmentTitle) => {
     setProcessingIds(prev => new Set(prev).add(assessmentId));
@@ -669,7 +656,7 @@ export default function ManageCandidate() {
                     <th style={styles.tableHead}>Classification</th>
                     <th style={styles.tableHead}>Completed Date</th>
                     <th style={styles.tableHead}>Actions</th>
-                  </tr>
+                  </table>
                 </thead>
                 <tbody>
                   {assessments.map(assessment => {
@@ -778,7 +765,7 @@ export default function ManageCandidate() {
                             )}
                           </div>
                         </td>
-                      </table>
+                      </tr>
                     );
                   })}
                 </tbody>
