@@ -80,6 +80,7 @@ export default function ManageCandidate() {
       try {
         const isAdmin = currentSupervisor.role === 'admin';
         
+        // Fetch candidate profile
         const { data: candidateData, error: candidateError } = await supabase
           .from('candidate_profiles')
           .select(`
@@ -100,12 +101,14 @@ export default function ManageCandidate() {
         
         if (candidateError) throw candidateError;
         
+        // Check if supervisor has access to this candidate
         if (!isAdmin && candidateData.supervisor_id !== currentSupervisor.id) {
           router.push('/supervisor');
           return;
         }
         
-        const { data: resultsData } = await supabase
+        // Fetch assessment results - THIS IS THE KEY FIX
+        const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
           .select(`
             id,
@@ -113,16 +116,32 @@ export default function ManageCandidate() {
             total_score,
             max_score,
             percentage_score,
-            completed_at
+            completed_at,
+            assessment_type_id
           `)
           .eq('user_id', user_id);
-        
+
+        if (resultsError) {
+          console.error("Error fetching results:", resultsError);
+        }
+
+        // Create a map of results by assessment_id
         const resultsMap = {};
         resultsData?.forEach(result => {
-          resultsMap[result.assessment_id] = result;
+          resultsMap[result.assessment_id] = {
+            id: result.id,
+            score: result.total_score,
+            max_score: result.max_score,
+            percentage: result.percentage_score,
+            completed_at: result.completed_at
+          };
         });
         
-        const { data: accessData } = await supabase
+        console.log("Results found:", Object.keys(resultsMap).length);
+        console.log("Results map:", resultsMap);
+        
+        // Fetch candidate assessments
+        const { data: accessData, error: accessError } = await supabase
           .from('candidate_assessments')
           .select(`
             id,
@@ -148,10 +167,21 @@ export default function ManageCandidate() {
           `)
           .eq('user_id', user_id);
         
+        if (accessError) {
+          console.error("Error fetching access data:", accessError);
+        }
+        
+        // Combine assessments with results
         const assessmentsWithDetails = (accessData || []).map(access => {
           const result = resultsMap[access.assessment_id] || null;
           const assessment = access.assessments;
           const typeData = assessment?.assessment_types;
+          
+          // Determine status: completed if result exists, otherwise use access.status
+          let status = access.status;
+          if (result) {
+            status = 'completed';
+          }
           
           return {
             id: access.id,
@@ -162,32 +192,39 @@ export default function ManageCandidate() {
             type_icon: typeData?.icon || '📋',
             type_gradient_start: typeData?.gradient_start || '#667eea',
             type_gradient_end: typeData?.gradient_end || '#764ba2',
-            status: result ? 'completed' : access.status,
+            status: status,
             created_at: access.created_at,
             unblocked_at: access.unblocked_at,
             time_limit_minutes: access.time_limit_minutes || 180,
-            result: result ? {
-              id: result.id,
-              score: result.total_score,
-              max_score: result.max_score,
-              percentage: result.percentage_score,
-              completed_at: result.completed_at
-            } : null
+            result: result
           };
         });
         
+        // Sort assessments: completed first, then by date
         assessmentsWithDetails.sort((a, b) => {
+          // Completed assessments first
+          if (a.result && !b.result) return -1;
+          if (!a.result && b.result) return 1;
+          
+          // Then sort by completion date or creation date
           const dateA = a.result?.completed_at || a.created_at || 0;
           const dateB = b.result?.completed_at || b.created_at || 0;
           return new Date(dateB) - new Date(dateA);
         });
+        
+        console.log("Processed assessments:", assessmentsWithDetails.map(a => ({
+          title: a.assessment_title,
+          status: a.status,
+          hasResult: !!a.result,
+          score: a.result?.score
+        })));
         
         setCandidate(candidateData);
         setAssessments(assessmentsWithDetails);
         
       } catch (error) {
         console.error('Error fetching candidate:', error);
-        setMessage({ type: 'error', text: 'Failed to load candidate data' });
+        setMessage({ type: 'error', text: 'Failed to load candidate data: ' + error.message });
       } finally {
         setLoading(false);
       }
@@ -544,12 +581,7 @@ export default function ManageCandidate() {
               <span style={styles.bulkCount}>{selectedAssessments.size} selected</span>
             </div>
             <div style={styles.bulkRight}>
-              <button
-                onClick={clearSelection}
-                style={styles.bulkClearButton}
-              >
-                Clear
-              </button>
+              <button onClick={clearSelection} style={styles.bulkClearButton}>Clear</button>
               <button
                 onClick={handleBulkUnblock}
                 disabled={selectedAssessments.size === 0}
@@ -597,9 +629,9 @@ export default function ManageCandidate() {
                     <th style={styles.tableHead}>Status</th>
                     <th style={styles.tableHead}>Score</th>
                     <th style={styles.tableHead}>Classification</th>
-                    <th style={styles.tableHead}>Time Limit</th>
+                    <th style={styles.tableHead}>Completed Date</th>
                     <th style={styles.tableHead}>Actions</th>
-                   </tr>
+                  </tr>
                 </thead>
                 <tbody>
                   {assessments.map(assessment => {
@@ -665,7 +697,11 @@ export default function ManageCandidate() {
                           )}
                         </td>
                         <td style={styles.tableCell}>
-                          <span style={styles.timeLimit}>{assessment.time_limit_minutes} min</span>
+                          {assessment.result ? (
+                            <span style={styles.completedDate}>{formatDate(assessment.result.completed_at)}</span>
+                          ) : (
+                            <span style={styles.notStarted}>—</span>
+                          )}
                         </td>
                         <td style={styles.tableCell}>
                           <div style={styles.actionButtons}>
@@ -1219,8 +1255,8 @@ const styles = {
     fontWeight: 500,
     display: 'inline-block'
   },
-  timeLimit: {
-    fontSize: '13px',
+  completedDate: {
+    fontSize: '12px',
     color: '#475569'
   },
   actionButtons: {
