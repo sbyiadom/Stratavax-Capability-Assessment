@@ -631,9 +631,14 @@ export default function SupervisorDashboard() {
               <p style={styles.adminBadge}>Admin • Viewing all candidates</p>
             )}
           </div>
-          <button onClick={handleLogout} style={styles.logoutButton}>
-            Sign Out
-          </button>
+          <div style={styles.headerButtons}>
+            <Link href="/supervisor/batch-manage" legacyBehavior>
+              <a style={styles.batchManageButton}>📋 Batch Manage</a>
+            </Link>
+            <button onClick={handleLogout} style={styles.logoutButton}>
+              Sign Out
+            </button>
+          </div>
         </div>
 
         <div style={styles.statsGrid}>
@@ -777,7 +782,7 @@ export default function SupervisorDashboard() {
                     <th style={styles.tableHead}>Classification</th>
                     <th style={styles.tableHead}>Last Active</th>
                     <th style={styles.tableHead}>Actions</th>
-                    </tr>
+                  </tr>
                 </thead>
                 <tbody>
                   {filteredCandidates.map((candidate) => {
@@ -1068,7 +1073,7 @@ export default function SupervisorDashboard() {
                                     );
                                   })}
                               </div>
-                              </td>
+                            </td>
                             </tr>
                           )}
                       </React.Fragment>
@@ -1215,6 +1220,11 @@ const styles = {
     borderRadius: '16px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
   },
+  headerButtons: {
+    display: 'flex',
+    gap: '12px',
+    alignItems: 'center'
+  },
   title: {
     margin: 0,
     color: '#0A1929',
@@ -1231,6 +1241,24 @@ const styles = {
     color: '#4CAF50',
     fontSize: '12px',
     fontWeight: 600
+  },
+  batchManageButton: {
+    background: '#9C27B0',
+    color: 'white',
+    border: 'none',
+    padding: '10px 24px',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 600,
+    textDecoration: 'none',
+    display: 'inline-block',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      background: '#7B1FA2',
+      transform: 'translateY(-1px)',
+      boxShadow: '0 4px 12px rgba(156, 39, 176, 0.3)'
+    }
   },
   logoutButton: {
     background: '#F44336',
