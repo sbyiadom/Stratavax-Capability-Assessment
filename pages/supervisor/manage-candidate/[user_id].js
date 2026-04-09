@@ -17,6 +17,7 @@ export default function ManageCandidate() {
   const [timeExtension, setTimeExtension] = useState(30);
   const [resetFullTime, setResetFullTime] = useState(false);
   const [message, setMessage] = useState(null);
+  const [debugInfo, setDebugInfo] = useState({});
   
   // Bulk selection state
   const [selectedAssessments, setSelectedAssessments] = useState(new Set());
@@ -76,9 +77,16 @@ export default function ManageCandidate() {
     
     const fetchCandidateData = async () => {
       setLoading(true);
+      const debug = {};
       
       try {
         const isAdmin = currentSupervisor.role === 'admin';
+        debug.isAdmin = isAdmin;
+        debug.userId = user_id;
+        debug.supervisorId = currentSupervisor.id;
+        
+        console.log("🔍 DEBUG - Fetching candidate data for user:", user_id);
+        console.log("🔍 DEBUG - Is Admin:", isAdmin);
         
         // Fetch candidate profile
         const { data: candidateData, error: candidateError } = await supabase
@@ -99,32 +107,40 @@ export default function ManageCandidate() {
           .eq('id', user_id)
           .single();
         
-        if (candidateError) throw candidateError;
+        if (candidateError) {
+          console.error("❌ Candidate error:", candidateError);
+          debug.candidateError = candidateError.message;
+          throw candidateError;
+        }
+        
+        debug.candidateFound = !!candidateData;
+        console.log("✅ Candidate found:", candidateData?.full_name);
         
         // Check if supervisor has access to this candidate
         if (!isAdmin && candidateData.supervisor_id !== currentSupervisor.id) {
+          console.log("❌ Access denied - supervisor mismatch");
+          debug.accessDenied = true;
           router.push('/supervisor');
           return;
         }
         
-        // Fetch assessment results - THIS IS THE KEY FIX
+        // Fetch assessment results - THIS IS THE KEY
+        console.log("📊 Fetching assessment_results for user:", user_id);
         const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
-          .select(`
-            id,
-            assessment_id,
-            total_score,
-            max_score,
-            percentage_score,
-            completed_at,
-            assessment_type_id
-          `)
+          .select('*')
           .eq('user_id', user_id);
 
         if (resultsError) {
-          console.error("Error fetching results:", resultsError);
+          console.error("❌ Results error:", resultsError);
+          debug.resultsError = resultsError.message;
         }
-
+        
+        console.log("📊 Results data count:", resultsData?.length || 0);
+        console.log("📊 Results data:", resultsData);
+        debug.resultsCount = resultsData?.length || 0;
+        debug.results = resultsData;
+        
         // Create a map of results by assessment_id
         const resultsMap = {};
         resultsData?.forEach(result => {
@@ -137,10 +153,11 @@ export default function ManageCandidate() {
           };
         });
         
-        console.log("Results found:", Object.keys(resultsMap).length);
-        console.log("Results map:", resultsMap);
+        debug.resultsMapKeys = Object.keys(resultsMap);
+        console.log("📊 Results map keys:", Object.keys(resultsMap));
         
         // Fetch candidate assessments
+        console.log("📊 Fetching candidate_assessments for user:", user_id);
         const { data: accessData, error: accessError } = await supabase
           .from('candidate_assessments')
           .select(`
@@ -168,8 +185,12 @@ export default function ManageCandidate() {
           .eq('user_id', user_id);
         
         if (accessError) {
-          console.error("Error fetching access data:", accessError);
+          console.error("❌ Access error:", accessError);
+          debug.accessError = accessError.message;
         }
+        
+        console.log("📊 Access data count:", accessData?.length || 0);
+        debug.accessCount = accessData?.length || 0;
         
         // Combine assessments with results
         const assessmentsWithDetails = (accessData || []).map(access => {
@@ -200,30 +221,33 @@ export default function ManageCandidate() {
           };
         });
         
+        console.log("📊 Processed assessments count:", assessmentsWithDetails.length);
+        console.log("📊 Assessments with results:", assessmentsWithDetails.filter(a => a.result).length);
+        debug.processedCount = assessmentsWithDetails.length;
+        debug.completedCount = assessmentsWithDetails.filter(a => a.result).length;
+        debug.assessments = assessmentsWithDetails.map(a => ({
+          title: a.assessment_title,
+          status: a.status,
+          hasResult: !!a.result,
+          score: a.result?.score
+        }));
+        
         // Sort assessments: completed first, then by date
         assessmentsWithDetails.sort((a, b) => {
-          // Completed assessments first
           if (a.result && !b.result) return -1;
           if (!a.result && b.result) return 1;
-          
-          // Then sort by completion date or creation date
           const dateA = a.result?.completed_at || a.created_at || 0;
           const dateB = b.result?.completed_at || b.created_at || 0;
           return new Date(dateB) - new Date(dateA);
         });
         
-        console.log("Processed assessments:", assessmentsWithDetails.map(a => ({
-          title: a.assessment_title,
-          status: a.status,
-          hasResult: !!a.result,
-          score: a.result?.score
-        })));
-        
         setCandidate(candidateData);
         setAssessments(assessmentsWithDetails);
+        setDebugInfo(debug);
         
       } catch (error) {
-        console.error('Error fetching candidate:', error);
+        console.error('❌ Error fetching candidate:', error);
+        setDebugInfo({ ...debug, fatalError: error.message });
         setMessage({ type: 'error', text: 'Failed to load candidate data: ' + error.message });
       } finally {
         setLoading(false);
@@ -232,6 +256,9 @@ export default function ManageCandidate() {
     
     fetchCandidateData();
   }, [user_id, currentSupervisor, router]);
+
+  // Rest of your component functions (handleUnblockWithTime, handleReset, etc.) remain the same
+  // ... (keep all the existing handler functions)
 
   const handleUnblockWithTime = async (assessmentId, assessmentTitle) => {
     setProcessingIds(prev => new Set(prev).add(assessmentId));
@@ -348,7 +375,6 @@ export default function ManageCandidate() {
     }
   };
 
-  // Bulk actions
   const toggleAssessmentSelection = (assessmentId) => {
     const newSet = new Set(selectedAssessments);
     if (newSet.has(assessmentId)) {
@@ -533,6 +559,18 @@ export default function ManageCandidate() {
         {message && (
           <div style={message.type === 'success' ? styles.successMessage : styles.errorMessage}>
             {message.text}
+          </div>
+        )}
+
+        {/* Debug Info - REMOVE AFTER FIXING */}
+        {Object.keys(debugInfo).length > 0 && (
+          <div style={styles.debugPanel}>
+            <details>
+              <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>🔧 Debug Info (Click to expand)</summary>
+              <pre style={{ fontSize: '11px', overflow: 'auto', maxHeight: '300px' }}>
+                {JSON.stringify(debugInfo, null, 2)}
+              </pre>
+            </details>
           </div>
         )}
 
@@ -740,7 +778,7 @@ export default function ManageCandidate() {
                             )}
                           </div>
                         </td>
-                      </tr>
+                      </table>
                     );
                   })}
                 </tbody>
@@ -1062,6 +1100,16 @@ const styles = {
     borderRadius: '12px',
     marginBottom: '20px',
     fontSize: '14px'
+  },
+  debugPanel: {
+    background: '#1E1E1E',
+    color: '#D4D4D4',
+    padding: '15px',
+    borderRadius: '8px',
+    marginBottom: '20px',
+    fontSize: '12px',
+    fontFamily: 'monospace',
+    overflow: 'auto'
   },
   statsGrid: {
     display: 'grid',
