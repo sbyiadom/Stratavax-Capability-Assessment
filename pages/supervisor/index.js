@@ -782,7 +782,7 @@ export default function SupervisorDashboard() {
                     <th style={styles.tableHead}>Classification</th>
                     <th style={styles.tableHead}>Last Active</th>
                     <th style={styles.tableHead}>Actions</th>
-                  </table>
+                  </tr>
                 </thead>
                 <tbody>
                   {filteredCandidates.map((candidate) => {
@@ -953,36 +953,34 @@ export default function SupervisorDashboard() {
                                             </div>
                                             
                                             {assessment.result ? (
-                                              <>
-                                                <div style={styles.assessmentScoreSection}>
-                                                  <div style={styles.scoreCircle}>
-                                                    <span style={styles.scoreLarge}>
-                                                      {Math.round((assessment.result.score/assessment.result.max_score)*100)}%
-                                                    </span>
-                                                    <span style={styles.scoreLabel}>Overall</span>
+                                              <div style={styles.assessmentScoreSection}>
+                                                <div style={styles.scoreCircle}>
+                                                  <span style={styles.scoreLarge}>
+                                                    {Math.round((assessment.result.score/assessment.result.max_score)*100)}%
+                                                  </span>
+                                                  <span style={styles.scoreLabel}>Overall</span>
+                                                </div>
+                                                <div style={styles.scoreDetails}>
+                                                  <div style={styles.scoreRow}>
+                                                    <span>Score:</span>
+                                                    <strong>{assessment.result.score}/{assessment.result.max_score}</strong>
                                                   </div>
-                                                  <div style={styles.scoreDetails}>
-                                                    <div style={styles.scoreRow}>
-                                                      <span>Score:</span>
-                                                      <strong>{assessment.result.score}/{assessment.result.max_score}</strong>
-                                                    </div>
-                                                    <div style={styles.scoreRow}>
-                                                      <span>Classification:</span>
-                                                      <span style={{
-                                                        ...styles.classificationSmall,
-                                                        color: getClassification(assessment.result.score, assessment.result.max_score).color,
-                                                        background: `${getClassification(assessment.result.score, assessment.result.max_score).color}15`
-                                                      }}>
-                                                        {getClassification(assessment.result.score, assessment.result.max_score).label}
-                                                      </span>
-                                                    </div>
-                                                    <div style={styles.scoreRow}>
-                                                      <span>Completed:</span>
-                                                      <span>{formatDate(assessment.result.completed_at)}</span>
-                                                    </div>
+                                                  <div style={styles.scoreRow}>
+                                                    <span>Classification:</span>
+                                                    <span style={{
+                                                      ...styles.classificationSmall,
+                                                      color: getClassification(assessment.result.score, assessment.result.max_score).color,
+                                                      background: `${getClassification(assessment.result.score, assessment.result.max_score).color}15`
+                                                    }}>
+                                                      {getClassification(assessment.result.score, assessment.result.max_score).label}
+                                                    </span>
+                                                  </div>
+                                                  <div style={styles.scoreRow}>
+                                                    <span>Completed:</span>
+                                                    <span>{formatDate(assessment.result.completed_at)}</span>
                                                   </div>
                                                 </div>
-                                              </>
+                                              </div>
                                             ) : (
                                               <div style={styles.noScoreSection}>
                                                 <span style={styles.noScoreIcon}>📋</span>
