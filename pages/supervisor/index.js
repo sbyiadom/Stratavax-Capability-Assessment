@@ -782,7 +782,7 @@ export default function SupervisorDashboard() {
                     <th style={styles.tableHead}>Classification</th>
                     <th style={styles.tableHead}>Last Active</th>
                     <th style={styles.tableHead}>Actions</th>
-                  </tr>
+                  </table>
                 </thead>
                 <tbody>
                   {filteredCandidates.map((candidate) => {
@@ -875,19 +875,9 @@ export default function SupervisorDashboard() {
                           </td>
                           <td style={styles.tableCell}>
                             <div style={styles.actionButtons}>
-                              <Link href={`/supervisor/${candidate.id}`} legacyBehavior>
-                                <a style={styles.viewButton}>
-                                  📄 Report
-                                </a>
-                              </Link>
                               <Link href={`/supervisor/manage-candidate/${candidate.id}`} legacyBehavior>
-                                <a style={styles.manageButton}>
-                                  ⚙️ Manage
-                                </a>
-                              </Link>
-                              <Link href={`/supervisor/assign-assessment/${candidate.id}`} legacyBehavior>
-                                <a style={styles.assignButton}>
-                                  ➕ Assign
+                                <a style={styles.viewProfileButton}>
+                                  👤 View Profile
                                 </a>
                               </Link>
                             </div>
@@ -1074,8 +1064,8 @@ export default function SupervisorDashboard() {
                                   })}
                               </div>
                             </td>
-                            </tr>
-                          )}
+                          </tr>
+                        )}
                       </React.Fragment>
                     );
                   })}
@@ -1583,44 +1573,19 @@ const styles = {
     gap: '8px',
     flexWrap: 'wrap'
   },
-  viewButton: {
+  viewProfileButton: {
     background: '#0A1929',
     color: 'white',
-    padding: '6px 12px',
-    borderRadius: '6px',
+    padding: '8px 16px',
+    borderRadius: '8px',
     textDecoration: 'none',
-    fontSize: '12px',
+    fontSize: '13px',
     fontWeight: 500,
     transition: 'all 0.2s ease',
+    display: 'inline-block',
     ':hover': {
-      background: '#1A2A3A'
-    }
-  },
-  manageButton: {
-    background: '#9C27B0',
-    color: 'white',
-    padding: '6px 12px',
-    borderRadius: '6px',
-    textDecoration: 'none',
-    fontSize: '12px',
-    fontWeight: 500,
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#7B1FA2',
+      background: '#1A2A3A',
       transform: 'translateY(-1px)'
-    }
-  },
-  assignButton: {
-    background: '#4CAF50',
-    color: 'white',
-    padding: '6px 12px',
-    borderRadius: '6px',
-    textDecoration: 'none',
-    fontSize: '12px',
-    fontWeight: 500,
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#45a049'
     }
   },
   expandedRow: {
