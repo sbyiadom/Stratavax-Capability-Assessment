@@ -17,8 +17,6 @@ export default function ManageCandidate() {
   const [timeExtension, setTimeExtension] = useState(30);
   const [resetFullTime, setResetFullTime] = useState(false);
   const [message, setMessage] = useState(null);
-  const [debugInfo, setDebugInfo] = useState({});
-  
   const [selectedAssessments, setSelectedAssessments] = useState([]);
 
   // Authentication check
@@ -72,29 +70,14 @@ export default function ManageCandidate() {
     
     const fetchCandidateData = async () => {
       setLoading(true);
-      const debug = {};
       
       try {
         const isAdmin = currentSupervisor.role === 'admin';
-        debug.isAdmin = isAdmin;
-        debug.userId = user_id;
         
         // Fetch candidate profile
         const { data: candidateData, error: candidateError } = await supabase
           .from('candidate_profiles')
-          .select(`
-            id,
-            full_name,
-            email,
-            phone,
-            created_at,
-            supervisor_id,
-            supervisor:supervisor_id (
-              id,
-              full_name,
-              email
-            )
-          `)
+          .select('*')
           .eq('id', user_id)
           .single();
         
@@ -105,17 +88,31 @@ export default function ManageCandidate() {
           return;
         }
         
-        // Fetch assessment results
+        // Fetch supervisor name separately
+        let supervisorName = 'Unassigned';
+        if (candidateData.supervisor_id) {
+          const { data: supData } = await supabase
+            .from('supervisor_profiles')
+            .select('full_name')
+            .eq('id', candidateData.supervisor_id)
+            .single();
+          if (supData) supervisorName = supData.full_name;
+        }
+        
+        setCandidate({
+          ...candidateData,
+          supervisor_name: supervisorName
+        });
+        
+        // STEP 1: Fetch assessment results (completed assessments)
         const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
           .select('id, assessment_id, total_score, max_score, percentage_score, completed_at')
           .eq('user_id', user_id);
 
-        debug.resultsCount = resultsData?.length || 0;
-        debug.resultsError = resultsError?.message;
-        
-        console.log("📊 RESULTS DATA:", resultsData);
-        console.log("📊 RESULTS COUNT:", resultsData?.length);
+        if (resultsError) {
+          console.error("Error fetching results:", resultsError);
+        }
         
         // Create a map of results by assessment_id
         const resultsMap = {};
@@ -129,18 +126,24 @@ export default function ManageCandidate() {
           };
         });
         
-        // Fetch candidate assessments
+        // STEP 2: Fetch candidate assessments (assigned assessments) - SIMPLIFIED
         const { data: accessData, error: accessError } = await supabase
           .from('candidate_assessments')
-          .select(`
-            id,
-            assessment_id,
-            status,
-            created_at,
-            unblocked_at,
-            result_id,
-            time_limit_minutes,
-            assessments (
+          .select('id, assessment_id, status, created_at, unblocked_at, result_id, time_limit_minutes')
+          .eq('user_id', user_id);
+        
+        if (accessError) {
+          console.error("Error fetching access data:", accessError);
+        }
+        
+        // STEP 3: Fetch assessment details for each unique assessment_id
+        const uniqueAssessmentIds = [...new Set((accessData || []).map(a => a.assessment_id))];
+        const assessmentsMap = {};
+        
+        for (const assessmentId of uniqueAssessmentIds) {
+          const { data: assessmentData } = await supabase
+            .from('assessments')
+            .select(`
               id,
               title,
               description,
@@ -152,20 +155,19 @@ export default function ManageCandidate() {
                 gradient_start,
                 gradient_end
               )
-            )
-          `)
-          .eq('user_id', user_id);
+            `)
+            .eq('id', assessmentId)
+            .single();
+          
+          if (assessmentData) {
+            assessmentsMap[assessmentId] = assessmentData;
+          }
+        }
         
-        debug.accessCount = accessData?.length || 0;
-        debug.accessError = accessError?.message;
-        
-        console.log("📊 ACCESS DATA:", accessData);
-        console.log("📊 ACCESS COUNT:", accessData?.length);
-        
-        // Combine assessments with results
+        // Combine all data
         const assessmentsWithDetails = (accessData || []).map(access => {
           const result = resultsMap[access.assessment_id] || null;
-          const assessment = access.assessments;
+          const assessment = assessmentsMap[access.assessment_id];
           const typeData = assessment?.assessment_types;
           
           let displayStatus = access.status;
@@ -190,17 +192,19 @@ export default function ManageCandidate() {
           };
         });
         
-        debug.assessmentsWithDetailsCount = assessmentsWithDetails.length;
+        // Sort assessments
+        assessmentsWithDetails.sort((a, b) => {
+          if (a.result && !b.result) return -1;
+          if (!a.result && b.result) return 1;
+          const dateA = a.result?.completed_at || a.created_at || 0;
+          const dateB = b.result?.completed_at || b.created_at || 0;
+          return new Date(dateB) - new Date(dateA);
+        });
         
-        console.log("📊 FINAL ASSESSMENTS:", assessmentsWithDetails);
-        
-        setCandidate(candidateData);
         setAssessments(assessmentsWithDetails);
-        setDebugInfo(debug);
         
       } catch (error) {
         console.error('Error fetching candidate:', error);
-        setDebugInfo({ ...debug, error: error.message });
         setMessage({ type: 'error', text: 'Failed to load candidate data: ' + error.message });
       } finally {
         setLoading(false);
@@ -210,6 +214,7 @@ export default function ManageCandidate() {
     fetchCandidateData();
   }, [user_id, currentSupervisor, router]);
 
+  // Rest of the handlers remain the same...
   const handleUnblock = async (assessmentId, assessmentTitle) => {
     setProcessingId(assessmentId);
     
@@ -402,7 +407,7 @@ export default function ManageCandidate() {
               <p style={styles.email}>{candidate.email}</p>
               {candidate.phone && <p style={styles.phone}>📞 {candidate.phone}</p>}
               <p style={styles.supervisor}>
-                👤 Supervisor: {candidate.supervisor?.full_name || candidate.supervisor?.email || 'Unassigned'}
+                👤 Supervisor: {candidate.supervisor_name || 'Unassigned'}
               </p>
               <p style={styles.joined}>📅 Joined: {formatDate(candidate.created_at)}</p>
             </div>
@@ -415,16 +420,6 @@ export default function ManageCandidate() {
             {message.text}
           </div>
         )}
-
-        {/* DEBUG PANEL - Remove after fixing */}
-        <div style={styles.debugPanel}>
-          <details>
-            <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>🔧 Debug Info (Click to expand)</summary>
-            <pre style={{ fontSize: '11px', overflow: 'auto', maxHeight: '300px' }}>
-              {JSON.stringify(debugInfo, null, 2)}
-            </pre>
-          </details>
-        </div>
 
         {/* Stats Cards */}
         <div style={styles.statsGrid}>
@@ -876,16 +871,6 @@ const styles = {
     borderRadius: '12px',
     marginBottom: '20px',
     fontSize: '14px'
-  },
-  debugPanel: {
-    background: '#1E1E1E',
-    color: '#D4D4D4',
-    padding: '15px',
-    borderRadius: '8px',
-    marginBottom: '20px',
-    fontSize: '12px',
-    fontFamily: 'monospace',
-    overflow: 'auto'
   },
   statsGrid: {
     display: 'grid',
