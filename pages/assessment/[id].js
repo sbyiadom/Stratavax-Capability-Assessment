@@ -22,51 +22,64 @@ const formatTime = (seconds) => {
   return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-// ===== SIMPLIFIED ANTI-CHEAT (Only essential protections) =====
+// ===== SIMPLIFIED ANTI-CHEAT - ONLY COPY & SCREENSHOT PROTECTION =====
 const setupAntiCheat = () => {
   if (typeof window === 'undefined') return () => {};
 
-  // 1. Prevent right-click context menu
-  const preventContextMenu = (e) => {
+  // 1. Prevent copy
+  const preventCopy = (e) => {
     e.preventDefault();
+    const warning = document.createElement('div');
+    warning.style.cssText = `
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #f44336;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: bold;
+      z-index: 10000;
+      font-size: 14px;
+    `;
+    warning.textContent = '⚠️ Copying is not allowed during the assessment.';
+    document.body.appendChild(warning);
+    setTimeout(() => warning.remove(), 2000);
     return false;
   };
-  document.addEventListener('contextmenu', preventContextMenu);
-
-  // 2. Prevent copy/paste/cut
-  const preventCopy = (e) => e.preventDefault();
-  const preventPaste = (e) => e.preventDefault();
-  const preventCut = (e) => e.preventDefault();
   
-  document.addEventListener('copy', preventCopy);
-  document.addEventListener('paste', preventPaste);
-  document.addEventListener('cut', preventCut);
-
-  // 3. Prevent keyboard shortcuts (Ctrl+C, Ctrl+V, Ctrl+X, etc.)
-  const preventKeyboardShortcuts = (e) => {
-    // Block Ctrl/Cmd combinations for copy, paste, cut, print, save
-    if (e.ctrlKey || e.metaKey) {
-      const blockedKeys = ['c', 'C', 'v', 'V', 'x', 'X', 'p', 'P', 's', 'S', 'a', 'A', 'u', 'U', 'r', 'R'];
-      if (blockedKeys.includes(e.key)) {
-        e.preventDefault();
-        e.stopPropagation();
-        return false;
-      }
-    }
+  // 2. Prevent paste
+  const preventPaste = (e) => {
+    e.preventDefault();
+    const warning = document.createElement('div');
+    warning.style.cssText = `
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #f44336;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: bold;
+      z-index: 10000;
+      font-size: 14px;
+    `;
+    warning.textContent = '⚠️ Pasting is not allowed during the assessment.';
+    document.body.appendChild(warning);
+    setTimeout(() => warning.remove(), 2000);
+    return false;
   };
-  document.addEventListener('keydown', preventKeyboardShortcuts);
-
-  // 4. Prevent text selection
-  const disableSelection = (e) => {
+  
+  // 3. Prevent cut
+  const preventCut = (e) => {
     e.preventDefault();
     return false;
   };
-  document.addEventListener('selectstart', disableSelection);
-  document.addEventListener('dragstart', disableSelection);
-
-  // 5. Screen capture monitoring (detect when user tries to print/screenshot)
+  
+  // 4. Detect PrintScreen / Screenshot attempt
   const detectScreenCapture = (e) => {
-    // Detect PrintScreen key
     if (e.key === 'PrintScreen' || e.key === 'PrintScreen' || e.code === 'PrintScreen') {
       e.preventDefault();
       const warning = document.createElement('div');
@@ -77,21 +90,26 @@ const setupAntiCheat = () => {
         transform: translateX(-50%);
         background: #f44336;
         color: white;
-        padding: 12px 24px;
+        padding: 10px 20px;
         border-radius: 8px;
         font-weight: bold;
         z-index: 10000;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        font-size: 14px;
       `;
       warning.textContent = '⚠️ Screenshot capture is not allowed during the assessment.';
       document.body.appendChild(warning);
-      setTimeout(() => warning.remove(), 3000);
+      setTimeout(() => warning.remove(), 2000);
       return false;
     }
   };
+  
+  // Add event listeners
+  document.addEventListener('copy', preventCopy);
+  document.addEventListener('paste', preventPaste);
+  document.addEventListener('cut', preventCut);
   document.addEventListener('keydown', detectScreenCapture);
-
-  // Add CSS to prevent text selection and dragging
+  
+  // Add CSS to prevent text selection
   const style = document.createElement('style');
   style.textContent = `
     * {
@@ -99,29 +117,17 @@ const setupAntiCheat = () => {
       -moz-user-select: none !important;
       -ms-user-select: none !important;
       user-select: none !important;
-      -webkit-touch-callout: none !important;
-    }
-    
-    input, textarea, [contenteditable="true"] {
-      -webkit-user-select: auto !important;
-      -moz-user-select: auto !important;
-      -ms-user-select: auto !important;
-      user-select: auto !important;
     }
   `;
   document.head.appendChild(style);
 
-  console.log("🔒 Anti-cheat enabled: context menu, copy/paste, keyboard shortcuts, selection, screen capture");
+  console.log("🔒 Anti-cheat enabled: copy, paste, cut, screenshot protection only");
 
   // Return cleanup function
   return () => {
-    document.removeEventListener('contextmenu', preventContextMenu);
     document.removeEventListener('copy', preventCopy);
     document.removeEventListener('paste', preventPaste);
     document.removeEventListener('cut', preventCut);
-    document.removeEventListener('keydown', preventKeyboardShortcuts);
-    document.removeEventListener('selectstart', disableSelection);
-    document.removeEventListener('dragstart', disableSelection);
     document.removeEventListener('keydown', detectScreenCapture);
     document.head.removeChild(style);
   };
@@ -145,7 +151,7 @@ export default function AssessmentPage() {
   
   // Timer - Set to 3 hours (10800 seconds) for all assessments
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [timeLimit, setTimeLimit] = useState(10800); // 3 hours = 10800 seconds
+  const [timeLimit, setTimeLimit] = useState(10800);
   const [timeRemaining, setTimeRemaining] = useState(10800);
   
   // UI state
@@ -178,7 +184,6 @@ export default function AssessmentPage() {
   // Check if assessment is unblocked for this user
   const checkAssessmentAccess = async (userId, assessmentId) => {
     try {
-      // First check if already completed (can't retake)
       const completed = await isAssessmentCompleted(userId, assessmentId);
       if (completed) {
         setAlreadySubmitted(true);
@@ -186,7 +191,6 @@ export default function AssessmentPage() {
         return false;
       }
 
-      // Check if assessment is unblocked in candidate_assessments
       const { data, error } = await supabase
         .from('candidate_assessments')
         .select('status')
@@ -196,7 +200,6 @@ export default function AssessmentPage() {
 
       if (error) throw error;
 
-      // If no record found or status is not 'unblocked', deny access
       const hasAccess = data?.status === 'unblocked';
       
       if (!hasAccess) {
@@ -220,7 +223,6 @@ export default function AssessmentPage() {
       try {
         setLoading(true);
         
-        // Check user session
         const { data: { session: authSession } } = await supabase.auth.getSession();
         if (!authSession) {
           router.push("/login");
@@ -230,15 +232,13 @@ export default function AssessmentPage() {
 
         if (!assessmentId) return;
 
-        // FIRST: Check if user has access to this assessment
         const hasAccess = await checkAssessmentAccess(authSession.user.id, assessmentId);
         
         if (!hasAccess) {
           setLoading(false);
-          return; // Stop initialization, show access denied message
+          return;
         }
 
-        // Check if already completed (redundant but safe)
         const completed = await isAssessmentCompleted(authSession.user.id, assessmentId);
         if (completed) {
           setAlreadySubmitted(true);
@@ -246,15 +246,12 @@ export default function AssessmentPage() {
           return;
         }
 
-        // Load assessment details
         const assessmentData = await getAssessmentById(assessmentId);
         setAssessment(assessmentData);
         setAssessmentType(assessmentData?.assessment_type);
-        // Force 3 hours (10800 seconds) for all assessments
-        setTimeLimit(10800); // 3 hours = 10800 seconds
+        setTimeLimit(10800);
         setTimeRemaining(10800);
 
-        // Create or get session
         const sessionData = await createAssessmentSession(
           authSession.user.id,
           assessmentId,
@@ -262,32 +259,22 @@ export default function AssessmentPage() {
         );
         setSession(sessionData);
 
-        // Load saved progress
         const progress = await getProgress(authSession.user.id, assessmentId);
         if (progress) {
           setElapsedSeconds(progress.elapsed_seconds || 0);
         }
 
-        // Load UNIQUE questions
         console.log("🔍 Loading unique questions...");
         const uniqueQuestions = await getUniqueQuestions(assessmentId);
         console.log(`📊 Loaded ${uniqueQuestions?.length || 0} unique questions`);
         
-        if (uniqueQuestions && uniqueQuestions.length > 0) {
-          console.log("✅ First question sample:", uniqueQuestions[0]);
-        } else {
-          console.log("❌ No questions returned from getUniqueQuestions");
-        }
-        
         setQuestions(uniqueQuestions || []);
 
-        // Load saved responses
         if (sessionData?.id) {
           const responses = await getSessionResponses(sessionData.id);
           if (responses?.answerMap) {
             setAnswers(responses.answerMap);
             
-            // If we have a saved response, find the current question index
             if (progress?.last_question_id && uniqueQuestions?.length > 0) {
               const lastIndex = uniqueQuestions.findIndex(q => q.id === progress.last_question_id);
               if (lastIndex >= 0) setCurrentIndex(lastIndex);
@@ -446,7 +433,6 @@ export default function AssessmentPage() {
     console.log("Number of answers:", Object.keys(answers).length);
     console.log("Total questions:", questions.length);
 
-    // Check if all questions are answered
     const unansweredCount = questions.length - Object.keys(answers).length;
     if (unansweredCount > 0) {
       console.log(`⚠️ ${unansweredCount} questions unanswered`);
@@ -460,7 +446,6 @@ export default function AssessmentPage() {
     setShowSubmitModal(false);
 
     try {
-      // Save progress and timer
       await Promise.all([
         saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id),
         updateSessionTimer(session.id, elapsedSeconds)
@@ -468,19 +453,16 @@ export default function AssessmentPage() {
       
       console.log("📤 Calling submitAssessment with session:", session.id);
       
-      // Submit assessment
       const result = await submitAssessment(session.id);
       console.log("✅ Submit successful:", result);
       
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
       
-      // Cleanup anti-cheat before redirect
       if (antiCheatCleanup) {
         antiCheatCleanup();
       }
       
-      // Redirect
       setTimeout(() => {
         router.push('/candidate/dashboard');
       }, 2000);
@@ -509,7 +491,6 @@ export default function AssessmentPage() {
       console.log("No session, redirecting to login instead");
       router.push('/login');
     } else {
-      // Cleanup anti-cheat before navigating away
       if (antiCheatCleanup) {
         antiCheatCleanup();
       }
@@ -942,7 +923,7 @@ export default function AssessmentPage() {
   );
 }
 
-// Styles object
+// Styles object (keeping all existing styles)
 const styles = {
   loadingContainer: {
     minHeight: '100vh',
