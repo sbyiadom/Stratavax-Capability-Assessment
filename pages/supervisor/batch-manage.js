@@ -137,7 +137,11 @@ export default function BatchManageAssessments() {
               completed_at,
               unblocked_at,
               unblocked_by,
-              created_at
+              created_at,
+              result_id,
+              time_extension_minutes,
+              original_time_limit,
+              extended_until
             `)
             .in('user_id', candidateIds);
 
@@ -163,7 +167,7 @@ export default function BatchManageAssessments() {
     );
     
     if (!record) return "not_assigned";
-    if (record.status === "completed") return "completed";
+    if (record.status === "completed" || record.result_id) return "completed";
     if (record.status === "unblocked") return "unblocked";
     return "blocked";
   };
@@ -253,29 +257,48 @@ export default function BatchManageAssessments() {
         if (actionType === "assign_unblock") {
           // Assign and unblock (create if not exists, or update to unblocked)
           if (existing) {
-            // Update existing to unblocked
+            // Update existing to unblocked with time extension
+            const updateData = {
+              status: 'unblocked',
+              unblocked_by: currentSupervisor.id,
+              unblocked_at: new Date().toISOString()
+            };
+            
+            // Add time extension if specified
+            if (resetFullTime) {
+              updateData.time_extension_minutes = 180;
+              updateData.extended_until = new Date(Date.now() + 180 * 60000).toISOString();
+            } else if (timeExtension > 0) {
+              updateData.time_extension_minutes = (existing.time_extension_minutes || 0) + timeExtension;
+              updateData.extended_until = new Date(Date.now() + (existing.time_extension_minutes || 0 + timeExtension) * 60000).toISOString();
+            }
+            
             const { error } = await supabase
               .from('candidate_assessments')
-              .update({
-                status: 'unblocked',
-                unblocked_by: currentSupervisor.id,
-                unblocked_at: new Date().toISOString()
-              })
+              .update(updateData)
               .eq('id', existing.id);
             
             if (error) throw error;
           } else {
             // Create new record
+            const insertData = {
+              user_id: candidateId,
+              assessment_id: selectedAssessment.id,
+              status: 'unblocked',
+              unblocked_by: currentSupervisor.id,
+              unblocked_at: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+              original_time_limit: 180,
+              time_extension_minutes: resetFullTime ? 180 : timeExtension
+            };
+            
+            if (resetFullTime || timeExtension > 0) {
+              insertData.extended_until = new Date(Date.now() + (resetFullTime ? 180 : timeExtension) * 60000).toISOString();
+            }
+            
             const { error } = await supabase
               .from('candidate_assessments')
-              .insert({
-                user_id: candidateId,
-                assessment_id: selectedAssessment.id,
-                status: 'unblocked',
-                unblocked_by: currentSupervisor.id,
-                unblocked_at: new Date().toISOString(),
-                created_at: new Date().toISOString()
-              });
+              .insert(insertData);
             
             if (error) throw error;
           }
@@ -292,10 +315,12 @@ export default function BatchManageAssessments() {
             
             // Add time extension if specified
             if (resetFullTime) {
-              updateData.time_reset = true;
-              updateData.reset_at = new Date().toISOString();
+              updateData.time_extension_minutes = 180;
+              updateData.extended_until = new Date(Date.now() + 180 * 60000).toISOString();
             } else if (timeExtension > 0) {
-              updateData.time_extension_minutes = timeExtension;
+              const newExtension = (existing.time_extension_minutes || 0) + timeExtension;
+              updateData.time_extension_minutes = newExtension;
+              updateData.extended_until = new Date(Date.now() + newExtension * 60000).toISOString();
             }
             
             const { error } = await supabase
@@ -332,7 +357,8 @@ export default function BatchManageAssessments() {
                 user_id: candidateId,
                 assessment_id: selectedAssessment.id,
                 status: 'blocked',
-                created_at: new Date().toISOString()
+                created_at: new Date().toISOString(),
+                original_time_limit: 180
               });
             
             if (error) throw error;
@@ -350,7 +376,21 @@ export default function BatchManageAssessments() {
     const candidateIds = candidates.map(c => c.id);
     const { data: caData } = await supabase
       .from('candidate_assessments')
-      .select('*')
+      .select(`
+        id,
+        user_id,
+        assessment_id,
+        status,
+        score,
+        completed_at,
+        unblocked_at,
+        unblocked_by,
+        created_at,
+        result_id,
+        time_extension_minutes,
+        original_time_limit,
+        extended_until
+      `)
       .in('user_id', candidateIds);
     setCandidateAssessments(caData || []);
 
@@ -543,7 +583,7 @@ export default function BatchManageAssessments() {
               </button>
             </div>
 
-            {/* Time Options (only for Unblock action) */}
+            {/* Time Options (for unblock action) */}
             {showTimeOptions && (
               <div style={styles.timeOptionsSection}>
                 <h4 style={styles.timeTitle}>⏰ Time Options (for unblock)</h4>
@@ -662,8 +702,8 @@ export default function BatchManageAssessments() {
                     <tr>
                       <td colSpan="4" style={styles.emptyCell}>
                         No candidates found matching your criteria
-                      </td>
-                    </tr>
+                      <\/td>
+                    <\/tr>
                   ) : (
                     filteredCandidates.map(candidate => {
                       const status = getStatus(candidate.id, selectedAssessment.id);
@@ -679,7 +719,7 @@ export default function BatchManageAssessments() {
                               onChange={() => toggleCandidate(candidate.id)}
                               style={styles.checkbox}
                             />
-                          </td>
+                          <\/td>
                           <td style={styles.tableCell}>
                             <div style={styles.candidateInfo}>
                               <div style={styles.candidateAvatar}>
@@ -690,8 +730,8 @@ export default function BatchManageAssessments() {
                                 <div style={styles.candidateId}>ID: {candidate.id.substring(0, 8)}...</div>
                               </div>
                             </div>
-                          </td>
-                          <td style={styles.tableCell}>{candidate.email}</td>
+                          <\/td>
+                          <td style={styles.tableCell}>{candidate.email}<\/td>
                           <td style={styles.tableCell}>
                             <span style={{
                               ...styles.statusBadge,
@@ -700,13 +740,13 @@ export default function BatchManageAssessments() {
                             }}>
                               {statusBadge.text}
                             </span>
-                          </td>
-                        </tr>
+                          <\/td>
+                        <\/tr>
                       );
                     })
                   )}
                 </tbody>
-              </table>
+              <\/table>
             </div>
 
             {/* Selected Count & Action Button */}
@@ -784,10 +824,7 @@ const styles = {
     padding: '8px 16px',
     borderRadius: '20px',
     border: '1px solid #E2E8F0',
-    transition: 'all 0.2s',
-    ':hover': {
-      background: '#F8FAFC'
-    }
+    transition: 'all 0.2s'
   },
   title: {
     fontSize: '24px',
@@ -937,10 +974,7 @@ const styles = {
     border: '1px solid #E2E8F0',
     borderRadius: '8px',
     fontSize: '14px',
-    outline: 'none',
-    ':focus': {
-      borderColor: '#0A1929'
-    }
+    outline: 'none'
   },
   filterSelect: {
     padding: '10px 16px',
@@ -958,10 +992,7 @@ const styles = {
     borderRadius: '8px',
     fontSize: '14px',
     cursor: 'pointer',
-    transition: 'all 0.2s',
-    ':hover': {
-      background: '#1A2A3A'
-    }
+    transition: 'all 0.2s'
   },
   clearButton: {
     padding: '10px 20px',
@@ -971,10 +1002,7 @@ const styles = {
     borderRadius: '8px',
     fontSize: '14px',
     cursor: 'pointer',
-    transition: 'all 0.2s',
-    ':hover': {
-      background: '#E2E8F0'
-    }
+    transition: 'all 0.2s'
   },
   quickSelectBar: {
     display: 'flex',
@@ -998,10 +1026,7 @@ const styles = {
     borderRadius: '16px',
     fontSize: '12px',
     cursor: 'pointer',
-    transition: 'all 0.2s',
-    ':hover': {
-      background: '#E2E8F0'
-    }
+    transition: 'all 0.2s'
   },
   tableContainer: {
     overflowX: 'auto',
@@ -1030,10 +1055,7 @@ const styles = {
   },
   tableRow: {
     borderBottom: '1px solid #E2E8F0',
-    transition: 'background 0.2s',
-    ':hover': {
-      background: '#F8FAFC'
-    }
+    transition: 'background 0.2s'
   },
   tableCell: {
     padding: '15px'
@@ -1103,10 +1125,6 @@ const styles = {
     fontSize: '15px',
     fontWeight: 600,
     cursor: 'pointer',
-    transition: 'all 0.2s',
-    ':hover': {
-      transform: 'translateY(-1px)',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
-    }
+    transition: 'all 0.2s'
   }
 };
