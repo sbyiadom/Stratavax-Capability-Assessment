@@ -102,16 +102,27 @@ export default function ManageCandidate() {
           return;
         }
         
-        // Fetch assessment results
+        // Fetch assessment results (completed assessments)
         const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
-          .select('*')
+          .select(`
+            id,
+            assessment_id,
+            total_score,
+            max_score,
+            percentage_score,
+            completed_at
+          `)
           .eq('user_id', user_id);
 
         if (resultsError) {
           console.error("Error fetching results:", resultsError);
         }
         
+        console.log("Results found:", resultsData?.length || 0);
+        console.log("Results data:", resultsData);
+        
+        // Create a map of results by assessment_id
         const resultsMap = {};
         resultsData?.forEach(result => {
           resultsMap[result.assessment_id] = {
@@ -123,7 +134,7 @@ export default function ManageCandidate() {
           };
         });
         
-        // Fetch candidate assessments
+        // Fetch candidate assessments (assigned assessments)
         const { data: accessData, error: accessError } = await supabase
           .from('candidate_assessments')
           .select(`
@@ -154,14 +165,20 @@ export default function ManageCandidate() {
           console.error("Error fetching access data:", accessError);
         }
         
+        console.log("Access data found:", accessData?.length || 0);
+        console.log("Access data:", accessData);
+        
+        // Combine assessments with results
         const assessmentsWithDetails = (accessData || []).map(access => {
+          // Check if there's a result for this assessment
           const result = resultsMap[access.assessment_id] || null;
           const assessment = access.assessments;
           const typeData = assessment?.assessment_types;
           
-          let status = access.status;
-          if (result) {
-            status = 'completed';
+          // Determine status: completed if result exists OR status is 'completed'
+          let displayStatus = access.status;
+          if (result || access.status === 'completed') {
+            displayStatus = 'completed';
           }
           
           return {
@@ -173,7 +190,7 @@ export default function ManageCandidate() {
             type_icon: typeData?.icon || '📋',
             type_gradient_start: typeData?.gradient_start || '#667eea',
             type_gradient_end: typeData?.gradient_end || '#764ba2',
-            status: status,
+            status: displayStatus,
             created_at: access.created_at,
             unblocked_at: access.unblocked_at,
             time_limit_minutes: access.time_limit_minutes || 180,
@@ -181,6 +198,51 @@ export default function ManageCandidate() {
           };
         });
         
+        // Also add any results that don't have corresponding candidate_assessments
+        for (const [assessmentId, result] of Object.entries(resultsMap)) {
+          const existing = assessmentsWithDetails.find(a => a.assessment_id === assessmentId);
+          if (!existing) {
+            // Fetch assessment details for this result
+            const { data: assessmentData } = await supabase
+              .from('assessments')
+              .select(`
+                id,
+                title,
+                description,
+                assessment_type_id,
+                assessment_types (
+                  code,
+                  name,
+                  icon,
+                  gradient_start,
+                  gradient_end
+                )
+              `)
+              .eq('id', assessmentId)
+              .single();
+            
+            if (assessmentData) {
+              const typeData = assessmentData?.assessment_types;
+              assessmentsWithDetails.push({
+                id: `result-${result.id}`,
+                assessment_id: assessmentId,
+                assessment_title: assessmentData?.title || 'Unknown Assessment',
+                assessment_type: typeData?.code || 'general',
+                assessment_type_name: typeData?.name || 'General',
+                type_icon: typeData?.icon || '📋',
+                type_gradient_start: typeData?.gradient_start || '#667eea',
+                type_gradient_end: typeData?.gradient_end || '#764ba2',
+                status: 'completed',
+                created_at: result.completed_at,
+                unblocked_at: null,
+                time_limit_minutes: 180,
+                result: result
+              });
+            }
+          }
+        }
+        
+        // Sort assessments: completed first, then by date
         assessmentsWithDetails.sort((a, b) => {
           if (a.result && !b.result) return -1;
           if (!a.result && b.result) return 1;
@@ -188,6 +250,9 @@ export default function ManageCandidate() {
           const dateB = b.result?.completed_at || b.created_at || 0;
           return new Date(dateB) - new Date(dateA);
         });
+        
+        console.log("Final assessments count:", assessmentsWithDetails.length);
+        console.log("Final assessments:", assessmentsWithDetails);
         
         setCandidate(candidateData);
         setAssessments(assessmentsWithDetails);
@@ -342,9 +407,11 @@ export default function ManageCandidate() {
     });
   };
 
-  const completedCount = assessments.filter(a => a.result !== null).length;
+  const completedCount = assessments.filter(a => a.status === 'completed' || a.result !== null).length;
   const unblockedCount = assessments.filter(a => a.status === 'unblocked' && !a.result).length;
   const blockedCount = assessments.filter(a => a.status === 'blocked' && !a.result).length;
+
+  console.log("Stats:", { completedCount, unblockedCount, blockedCount, totalAssessments: assessments.length });
 
   if (loading) {
     return (
@@ -518,18 +585,18 @@ export default function ManageCandidate() {
                         <td style={styles.tableCell}>
                           <span style={{
                             ...styles.statusBadge,
-                            background: assessment.result ? '#E8F5E9' :
+                            background: assessment.status === 'completed' ? '#E8F5E9' :
                                        assessment.status === 'unblocked' ? '#E3F2FD' : '#FFF3E0',
-                            color: assessment.result ? '#2E7D32' :
+                            color: assessment.status === 'completed' ? '#2E7D32' :
                                    assessment.status === 'unblocked' ? '#1565C0' : '#F57C00'
                           }}>
-                            {assessment.result ? '✓ Completed' : 
+                            {assessment.status === 'completed' ? '✓ Completed' : 
                              assessment.status === 'unblocked' ? '🔓 Ready' : '🔒 Blocked'}
                           </span>
                         </td>
                         <td style={styles.tableCell}>
                           {assessment.result ? (
-                            <strong>{assessment.result.score}/{assessment.result.max_score}</strong>
+                            <strong>{assessment.result.score}/{assessment.result.max_score} ({Math.round((assessment.result.score/assessment.result.max_score)*100)}%)</strong>
                           ) : (
                             <span style={styles.notStarted}>—</span>
                           )}
@@ -591,7 +658,7 @@ export default function ManageCandidate() {
                             )}
                           </div>
                         </td>
-                      </tr>
+                       </tr>
                     );
                   })}
                 </tbody>
