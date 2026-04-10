@@ -138,10 +138,7 @@ export default function BatchManageAssessments() {
               unblocked_at,
               unblocked_by,
               created_at,
-              result_id,
-              time_extension_minutes,
-              original_time_limit,
-              extended_until
+              result_id
             `)
             .in('user_id', candidateIds);
 
@@ -257,48 +254,29 @@ export default function BatchManageAssessments() {
         if (actionType === "assign_unblock") {
           // Assign and unblock (create if not exists, or update to unblocked)
           if (existing) {
-            // Update existing to unblocked with time extension
-            const updateData = {
-              status: 'unblocked',
-              unblocked_by: currentSupervisor.id,
-              unblocked_at: new Date().toISOString()
-            };
-            
-            // Add time extension if specified
-            if (resetFullTime) {
-              updateData.time_extension_minutes = 180;
-              updateData.extended_until = new Date(Date.now() + 180 * 60000).toISOString();
-            } else if (timeExtension > 0) {
-              updateData.time_extension_minutes = (existing.time_extension_minutes || 0) + timeExtension;
-              updateData.extended_until = new Date(Date.now() + (existing.time_extension_minutes || 0 + timeExtension) * 60000).toISOString();
-            }
-            
+            // Update existing to unblocked
             const { error } = await supabase
               .from('candidate_assessments')
-              .update(updateData)
+              .update({
+                status: 'unblocked',
+                unblocked_by: currentSupervisor.id,
+                unblocked_at: new Date().toISOString()
+              })
               .eq('id', existing.id);
             
             if (error) throw error;
           } else {
             // Create new record
-            const insertData = {
-              user_id: candidateId,
-              assessment_id: selectedAssessment.id,
-              status: 'unblocked',
-              unblocked_by: currentSupervisor.id,
-              unblocked_at: new Date().toISOString(),
-              created_at: new Date().toISOString(),
-              original_time_limit: 180,
-              time_extension_minutes: resetFullTime ? 180 : timeExtension
-            };
-            
-            if (resetFullTime || timeExtension > 0) {
-              insertData.extended_until = new Date(Date.now() + (resetFullTime ? 180 : timeExtension) * 60000).toISOString();
-            }
-            
             const { error } = await supabase
               .from('candidate_assessments')
-              .insert(insertData);
+              .insert({
+                user_id: candidateId,
+                assessment_id: selectedAssessment.id,
+                status: 'unblocked',
+                unblocked_by: currentSupervisor.id,
+                unblocked_at: new Date().toISOString(),
+                created_at: new Date().toISOString()
+              });
             
             if (error) throw error;
           }
@@ -307,32 +285,20 @@ export default function BatchManageAssessments() {
         else if (actionType === "unblock") {
           // Just unblock (must exist)
           if (existing) {
-            const updateData = {
-              status: 'unblocked',
-              unblocked_by: currentSupervisor.id,
-              unblocked_at: new Date().toISOString()
-            };
-            
-            // Add time extension if specified
-            if (resetFullTime) {
-              updateData.time_extension_minutes = 180;
-              updateData.extended_until = new Date(Date.now() + 180 * 60000).toISOString();
-            } else if (timeExtension > 0) {
-              const newExtension = (existing.time_extension_minutes || 0) + timeExtension;
-              updateData.time_extension_minutes = newExtension;
-              updateData.extended_until = new Date(Date.now() + newExtension * 60000).toISOString();
-            }
-            
             const { error } = await supabase
               .from('candidate_assessments')
-              .update(updateData)
+              .update({
+                status: 'unblocked',
+                unblocked_by: currentSupervisor.id,
+                unblocked_at: new Date().toISOString()
+              })
               .eq('id', existing.id);
             
             if (error) throw error;
             successCount++;
           } else {
             errorCount++;
-            errors.push(`Candidate ${candidateId.substring(0,8)} - not assigned`);
+            errors.push(`Candidate not assigned`);
           }
         } 
         else if (actionType === "block") {
@@ -357,8 +323,7 @@ export default function BatchManageAssessments() {
                 user_id: candidateId,
                 assessment_id: selectedAssessment.id,
                 status: 'blocked',
-                created_at: new Date().toISOString(),
-                original_time_limit: 180
+                created_at: new Date().toISOString()
               });
             
             if (error) throw error;
@@ -386,10 +351,7 @@ export default function BatchManageAssessments() {
         unblocked_at,
         unblocked_by,
         created_at,
-        result_id,
-        time_extension_minutes,
-        original_time_limit,
-        extended_until
+        result_id
       `)
       .in('user_id', candidateIds);
     setCandidateAssessments(caData || []);
@@ -702,8 +664,8 @@ export default function BatchManageAssessments() {
                     <tr>
                       <td colSpan="4" style={styles.emptyCell}>
                         No candidates found matching your criteria
-                      <\/td>
-                    <\/tr>
+                      </td>
+                    </tr>
                   ) : (
                     filteredCandidates.map(candidate => {
                       const status = getStatus(candidate.id, selectedAssessment.id);
@@ -719,7 +681,7 @@ export default function BatchManageAssessments() {
                               onChange={() => toggleCandidate(candidate.id)}
                               style={styles.checkbox}
                             />
-                          <\/td>
+                          </td>
                           <td style={styles.tableCell}>
                             <div style={styles.candidateInfo}>
                               <div style={styles.candidateAvatar}>
@@ -730,8 +692,8 @@ export default function BatchManageAssessments() {
                                 <div style={styles.candidateId}>ID: {candidate.id.substring(0, 8)}...</div>
                               </div>
                             </div>
-                          <\/td>
-                          <td style={styles.tableCell}>{candidate.email}<\/td>
+                          </td>
+                          <td style={styles.tableCell}>{candidate.email}</td>
                           <td style={styles.tableCell}>
                             <span style={{
                               ...styles.statusBadge,
@@ -740,13 +702,13 @@ export default function BatchManageAssessments() {
                             }}>
                               {statusBadge.text}
                             </span>
-                          <\/td>
-                        <\/tr>
+                          </td>
+                        </tr>
                       );
                     })
                   )}
                 </tbody>
-              <\/table>
+              </table>
             </div>
 
             {/* Selected Count & Action Button */}
