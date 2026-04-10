@@ -126,10 +126,10 @@ export default function ManageCandidate() {
           };
         });
         
-        // STEP 2: Fetch candidate assessments (assigned assessments) - SIMPLIFIED
+        // STEP 2: Fetch candidate assessments (assigned assessments) - REMOVED time_limit_minutes
         const { data: accessData, error: accessError } = await supabase
           .from('candidate_assessments')
-          .select('id, assessment_id, status, created_at, unblocked_at, result_id, time_limit_minutes')
+          .select('id, assessment_id, status, created_at, unblocked_at, result_id')
           .eq('user_id', user_id);
         
         if (accessError) {
@@ -187,7 +187,7 @@ export default function ManageCandidate() {
             status: displayStatus,
             created_at: access.created_at,
             unblocked_at: access.unblocked_at,
-            time_limit_minutes: access.time_limit_minutes || 180,
+            time_limit_minutes: 180, // Default value
             result: result
           };
         });
@@ -214,7 +214,6 @@ export default function ManageCandidate() {
     fetchCandidateData();
   }, [user_id, currentSupervisor, router]);
 
-  // Rest of the handlers remain the same...
   const handleUnblock = async (assessmentId, assessmentTitle) => {
     setProcessingId(assessmentId);
     
