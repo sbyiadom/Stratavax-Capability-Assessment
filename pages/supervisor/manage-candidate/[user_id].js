@@ -105,22 +105,12 @@ export default function ManageCandidate() {
         // Fetch assessment results (completed assessments)
         const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
-          .select(`
-            id,
-            assessment_id,
-            total_score,
-            max_score,
-            percentage_score,
-            completed_at
-          `)
+          .select('id, assessment_id, total_score, max_score, percentage_score, completed_at')
           .eq('user_id', user_id);
 
         if (resultsError) {
           console.error("Error fetching results:", resultsError);
         }
-        
-        console.log("Results found:", resultsData?.length || 0);
-        console.log("Results data:", resultsData);
         
         // Create a map of results by assessment_id
         const resultsMap = {};
@@ -165,9 +155,6 @@ export default function ManageCandidate() {
           console.error("Error fetching access data:", accessError);
         }
         
-        console.log("Access data found:", accessData?.length || 0);
-        console.log("Access data:", accessData);
-        
         // Combine assessments with results
         const assessmentsWithDetails = (accessData || []).map(access => {
           // Check if there's a result for this assessment
@@ -175,7 +162,7 @@ export default function ManageCandidate() {
           const assessment = access.assessments;
           const typeData = assessment?.assessment_types;
           
-          // Determine status: completed if result exists OR status is 'completed'
+          // Determine status: completed if result exists OR if status is already 'completed'
           let displayStatus = access.status;
           if (result || access.status === 'completed') {
             displayStatus = 'completed';
@@ -250,9 +237,6 @@ export default function ManageCandidate() {
           const dateB = b.result?.completed_at || b.created_at || 0;
           return new Date(dateB) - new Date(dateA);
         });
-        
-        console.log("Final assessments count:", assessmentsWithDetails.length);
-        console.log("Final assessments:", assessmentsWithDetails);
         
         setCandidate(candidateData);
         setAssessments(assessmentsWithDetails);
@@ -407,11 +391,10 @@ export default function ManageCandidate() {
     });
   };
 
+  // CRITICAL FIX: Calculate stats based on actual results - this ensures dashboard and profile match
   const completedCount = assessments.filter(a => a.status === 'completed' || a.result !== null).length;
   const unblockedCount = assessments.filter(a => a.status === 'unblocked' && !a.result).length;
   const blockedCount = assessments.filter(a => a.status === 'blocked' && !a.result).length;
-
-  console.log("Stats:", { completedCount, unblockedCount, blockedCount, totalAssessments: assessments.length });
 
   if (loading) {
     return (
@@ -476,7 +459,7 @@ export default function ManageCandidate() {
           </div>
         )}
 
-        {/* Stats Cards */}
+        {/* Stats Cards - FIXED CALCULATION */}
         <div style={styles.statsGrid}>
           <div style={{...styles.statCard, background: 'linear-gradient(135deg, #0A1929, #1A2A3A)'}}>
             <span style={styles.statIcon}>📋</span>
@@ -556,6 +539,7 @@ export default function ManageCandidate() {
                     const isSelected = selectedAssessments.includes(assessment.assessment_id);
                     const isProcessing = processingId === assessment.assessment_id;
                     const classification = assessment.result ? getClassification(assessment.result.score, assessment.result.max_score) : null;
+                    const scorePercentage = assessment.result ? Math.round((assessment.result.score / assessment.result.max_score) * 100) : 0;
                     
                     return (
                       <tr key={assessment.id} style={styles.tableRow}>
@@ -596,7 +580,7 @@ export default function ManageCandidate() {
                         </td>
                         <td style={styles.tableCell}>
                           {assessment.result ? (
-                            <strong>{assessment.result.score}/{assessment.result.max_score} ({Math.round((assessment.result.score/assessment.result.max_score)*100)}%)</strong>
+                            <strong>{assessment.result.score}/{assessment.result.max_score} ({scorePercentage}%)</strong>
                           ) : (
                             <span style={styles.notStarted}>—</span>
                           )}
@@ -658,7 +642,7 @@ export default function ManageCandidate() {
                             )}
                           </div>
                         </td>
-                       </tr>
+                      </tr>
                     );
                   })}
                 </tbody>
