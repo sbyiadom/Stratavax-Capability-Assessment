@@ -1,6 +1,6 @@
 /**
  * COMPETENCY SCORING ENGINE
- * For MCQ-based assessments with different scoring per assessment type
+ * Enhanced with behavioral analytics integration and comprehensive recommendations
  */
 
 // Default competency weights per assessment type
@@ -29,7 +29,6 @@ export const assessmentCompetencyWeights = {
     'Problem Solving': 1.2,
     'Execution': 1.1
   },
-  // UPDATED: Personality assessment with 6 new traits
   'personality': {
     'Ownership': 1.3,
     'Collaboration': 1.2,
@@ -38,7 +37,6 @@ export const assessmentCompetencyWeights = {
     'Risk Tolerance': 1.1,
     'Structure': 1.0
   },
-  // NEW: Strategic Leadership Assessment with 7 dimensions
   'strategic_leadership': {
     'Vision / Strategy': 1.4,
     'People Leadership': 1.3,
@@ -84,24 +82,37 @@ export const assessmentCompetencyWeights = {
 // Classification thresholds
 export const competencyClassification = (percentage) => {
   if (percentage >= 80) return 'Strong';
-  if (percentage >= 55) return 'Moderate';
+  if (percentage >= 65) return 'Proficient';
+  if (percentage >= 50) return 'Developing';
   return 'Needs Development';
 };
 
 /**
- * Calculate competency scores from responses
+ * Calculate competency scores from responses with weighted scoring
  */
 export function calculateCompetencyScores(responses, questionCompetencies, assessmentType = 'general') {
+  console.log("🧠 Calculating competency scores for", assessmentType);
+  
+  if (!responses || responses.length === 0) {
+    console.log("⚠️ No responses provided for competency scoring");
+    return {};
+  }
+  
+  if (!questionCompetencies || questionCompetencies.length === 0) {
+    console.log("⚠️ No question-competency mappings found");
+    return {};
+  }
+  
   const competencyScores = {};
-
-  // Initialize with weights from assessment type
   const weights = assessmentCompetencyWeights[assessmentType] || assessmentCompetencyWeights.general;
 
   // Group responses by competency
   responses.forEach(response => {
     const questionId = response.question_id;
     const score = response.unique_answers?.score || 0;
-    const maxScore = 5; // 5 points per question
+    const maxScore = 5;
+    const timeSpent = response.time_spent_seconds || 0;
+    const timesChanged = response.times_changed || 0;
 
     // Find competencies for this question
     const qCompetencies = questionCompetencies.filter(qc => qc.question_id === questionId);
@@ -111,10 +122,7 @@ export function calculateCompetencyScores(responses, questionCompetencies, asses
       const competencyName = qc.competencies?.name || 'Unknown';
       const questionWeight = qc.weight || 1.0;
       
-      // Get assessment weight for this competency
       const assessmentWeight = weights[competencyName] || 1.0;
-      
-      // Combined weight
       const combinedWeight = questionWeight * assessmentWeight;
 
       if (!competencyScores[competencyId]) {
@@ -124,18 +132,31 @@ export function calculateCompetencyScores(responses, questionCompetencies, asses
           totalScore: 0,
           maxPossible: 0,
           questionCount: 0,
-          assessmentWeight
+          assessmentWeight,
+          // Behavioral metrics per competency
+          totalTimeSpent: 0,
+          totalChanges: 0,
+          responses: []
         };
       }
 
-      // Add weighted scores
       competencyScores[competencyId].totalScore += score * combinedWeight;
       competencyScores[competencyId].maxPossible += maxScore * combinedWeight;
       competencyScores[competencyId].questionCount += 1;
+      competencyScores[competencyId].totalTimeSpent += timeSpent;
+      competencyScores[competencyId].totalChanges += timesChanged;
+      competencyScores[competencyId].responses.push({
+        question_id: response.question_id,
+        score: score,
+        time_spent: timeSpent,
+        changed: timesChanged > 0,
+        answer_text: response.unique_answers?.answer_text,
+        question_text: response.unique_questions?.question_text
+      });
     });
   });
 
-  // Calculate percentages and classifications
+  // Calculate percentages and classifications with behavioral insights
   const results = {};
   Object.keys(competencyScores).forEach(compId => {
     const comp = competencyScores[compId];
@@ -144,6 +165,8 @@ export function calculateCompetencyScores(responses, questionCompetencies, asses
       : 0;
     
     const roundedPercentage = Math.round(percentage * 100) / 100;
+    const avgTimePerQuestion = comp.questionCount > 0 ? comp.totalTimeSpent / comp.questionCount : 0;
+    const avgChangesPerQuestion = comp.questionCount > 0 ? comp.totalChanges / comp.questionCount : 0;
     
     results[compId] = {
       id: compId,
@@ -153,17 +176,32 @@ export function calculateCompetencyScores(responses, questionCompetencies, asses
       percentage: roundedPercentage,
       questionCount: comp.questionCount,
       assessmentWeight: comp.assessmentWeight,
-      classification: competencyClassification(roundedPercentage)
+      classification: competencyClassification(roundedPercentage),
+      // Behavioral metrics
+      behavioral: {
+        totalTimeSpent: comp.totalTimeSpent,
+        avgTimePerQuestion: Math.round(avgTimePerQuestion),
+        totalChanges: comp.totalChanges,
+        avgChangesPerQuestion: Math.round(avgChangesPerQuestion * 100) / 100,
+        responses: comp.responses
+      },
+      gapToTarget: Math.max(0, 80 - roundedPercentage)
     };
   });
 
+  console.log(`✅ Calculated scores for ${Object.keys(results).length} competencies`);
   return results;
 }
 
 /**
- * Generate competency-based development recommendations
+ * Generate enhanced competency-based development recommendations
+ * Now includes behavioral insights integration
  */
-export function generateCompetencyRecommendations(competencyResults) {
+export function generateCompetencyRecommendations(competencyResults, behavioralMetrics = null) {
+  if (!competencyResults || Object.keys(competencyResults).length === 0) {
+    return [];
+  }
+  
   const recommendations = [];
   
   // Get competencies that need development (below 80%)
@@ -172,186 +210,336 @@ export function generateCompetencyRecommendations(competencyResults) {
     .sort((a, b) => a.percentage - b.percentage)
     .slice(0, 5);
   
-  // Development recommendation library
+  // Enhanced recommendation library with behavioral integration
   const recommendationLibrary = {
-    'Strategic Thinking': [
-      'Take a course on strategic planning and execution',
-      'Practice scenario planning exercises weekly',
-      'Shadow senior leaders during strategic planning sessions'
-    ],
-    'Emotional Intelligence': [
-      'Complete a 360-degree feedback assessment',
-      'Practice active listening in all conversations',
-      'Keep an emotion journal for 30 days'
-    ],
-    'Decision Making': [
-      'Use decision matrices for all major choices',
-      'Study decision-making frameworks',
-      'Practice risk assessment with case studies'
-    ],
-    'Communication': [
-      'Take a business writing or public speaking course',
-      'Join Toastmasters or similar group',
-      'Practice presenting to small groups weekly'
-    ],
-    'Adaptability': [
-      'Volunteer for cross-functional projects',
-      'Learn a new skill outside your comfort zone',
-      'Practice reframing challenges as opportunities'
-    ],
-    'Accountability': [
-      'Set public goals and track progress',
-      'Volunteer for task ownership on projects',
-      'Use project management tools consistently'
-    ],
-    'Cognitive Ability': [
-      'Practice logic puzzles and brain teasers',
-      'Take online courses in critical thinking',
-      'Read books on problem-solving methodologies'
-    ],
-    'Technical Knowledge': [
-      'Take technical courses relevant to your field',
-      'Pursue relevant certifications',
-      'Work on hands-on projects to apply knowledge'
-    ],
-    'Cultural Fit': [
-      'Learn about company values and mission',
-      'Participate in team-building activities',
-      'Understand organizational culture better'
-    ],
-    'Integrity': [
-      'Study ethical decision-making frameworks',
-      'Practice transparency in communications',
-      'Model integrity in all interactions'
-    ],
-    'Collaboration': [
-      'Seek opportunities for team projects',
-      'Practice active listening and empathy',
-      'Participate in cross-functional initiatives'
-    ],
-    'Resilience': [
-      'Practice stress management techniques',
-      'Develop a support network',
-      'Learn from setbacks and failures'
-    ],
-    'Vision': [
-      'Study your organization\'s long-term strategy',
-      'Practice articulating future possibilities',
-      'Develop a personal vision statement'
-    ],
-    'Execution': [
-      'Use project management methodologies',
-      'Set SMART goals and track progress',
-      'Break large projects into manageable tasks'
-    ],
-    'People Management': [
-      'Seek opportunities to mentor others',
-      'Take a course on people management',
-      'Practice giving constructive feedback'
-    ],
-    // NEW: Personality trait recommendations
-    'Ownership': [
-      'Take initiative on projects without being asked',
-      'Volunteer to lead a small team initiative',
-      'Practice owning mistakes and presenting lessons learned',
-      'Set personal goals and track progress publicly'
-    ],
-    'Action': [
-      'Practice making decisions with 80% of the information',
-      'Set time limits for decision-making',
-      'Volunteer for time-sensitive projects',
-      'Create action plans with clear deadlines'
-    ],
-    'Analysis': [
-      'Take a course in data analysis or critical thinking',
-      'Practice using decision matrices for important choices',
-      'Create structured problem-solving templates',
-      'Study root cause analysis methodologies'
-    ],
-    'Risk Tolerance': [
-      'Volunteer for pilot projects or experimental initiatives',
-      'Practice evaluating risks using structured frameworks',
-      'Participate in innovation workshops',
-      'Learn about calculated risk-taking in business contexts'
-    ],
-    'Structure': [
-      'Create personal work templates and processes',
-      'Study project management methodologies',
-      'Practice documenting procedures for repeatable tasks',
-      'Implement a personal organization system'
-    ],
-    // NEW: Strategic Leadership dimension recommendations
-    'Vision / Strategy': [
-      'Complete a strategic management certification program',
-      'Practice writing strategic memos and business cases',
-      'Participate in industry trend analysis exercises',
-      'Shadow senior leaders during strategic planning sessions',
-      'Read books on strategic thinking and competitive strategy'
-    ],
-    'People Leadership': [
-      'Take a leadership development program',
-      'Practice coaching conversations with team members',
-      'Lead a cross-functional team initiative',
-      'Complete 360-degree feedback and create action plan',
-      'Mentor junior colleagues or new team members'
-    ],
-    'Decision Making': [
-      'Study decision science and cognitive bias frameworks',
-      'Practice making decisions with limited information',
-      'Lead complex problem-solving workshops',
-      'Develop a personal decision-making framework',
-      'Analyze past decisions to identify improvement areas'
-    ],
-    'Accountability': [
-      'Take ownership of a high-visibility project',
-      'Create accountability systems for team initiatives',
-      'Practice transparent reporting of outcomes',
-      'Lead post-mortem analysis sessions',
-      'Set personal accountability goals with regular check-ins'
-    ],
-    'Emotional Intelligence': [
-      'Complete an emotional intelligence assessment',
-      'Practice empathy mapping and perspective-taking',
-      'Lead conflict resolution sessions',
-      'Develop self-regulation techniques',
-      'Seek feedback on interpersonal effectiveness'
-    ],
-    'Execution Drive': [
-      'Learn agile and project management methodologies',
-      'Lead time-sensitive initiatives with aggressive deadlines',
-      'Create and track execution metrics',
-      'Develop systems to overcome execution obstacles',
-      'Practice breaking large projects into milestone-based deliverables'
-    ],
-    'Ethics': [
-      'Complete ethics and compliance certification',
-      'Participate in ethical dilemma workshops',
-      'Create an ethical decision-making framework',
-      'Lead by example in ethical conduct',
-      'Study case studies of ethical leadership'
-    ]
+    'Strategic Thinking': {
+      critical: [
+        'Take a strategic management certification program',
+        'Practice writing strategic memos and business cases',
+        'Participate in industry trend analysis exercises',
+        'Shadow senior leaders during strategic planning sessions'
+      ],
+      developing: [
+        'Start with basic strategic frameworks (SWOT, PESTEL, Porter\'s Five Forces)',
+        'Read "Good Strategy Bad Strategy" by Richard Rumelt',
+        'Practice strategic thinking with case studies',
+        'Attend strategy workshops and seminars'
+      ],
+      proficient: [
+        'Lead strategic initiatives within your team',
+        'Mentor others in strategic thinking',
+        'Contribute to department-level strategy discussions',
+        'Develop strategic decision-making frameworks'
+      ]
+    },
+    'Emotional Intelligence': {
+      critical: [
+        'Complete a comprehensive EI assessment and coaching program',
+        'Practice daily self-reflection and emotion journaling',
+        'Take an interpersonal dynamics course',
+        'Work with a coach on empathy and relationship management'
+      ],
+      developing: [
+        'Practice active listening in all conversations',
+        'Seek 360-degree feedback on interpersonal skills',
+        'Read "Emotional Intelligence 2.0" by Bradberry',
+        'Take online EI courses on LinkedIn Learning'
+      ],
+      proficient: [
+        'Lead team-building activities',
+        'Mentor others on emotional intelligence',
+        'Help resolve team conflicts',
+        'Create psychological safety in your team'
+      ]
+    },
+    'Decision Making': {
+      critical: [
+        'Learn structured decision-making frameworks (RAPID, DACI)',
+        'Study cognitive biases and how to avoid them',
+        'Practice with business case studies',
+        'Take a decision science course'
+      ],
+      developing: [
+        'Use decision matrices for all major choices',
+        'Practice making decisions with 80% of information',
+        'Seek diverse perspectives before deciding',
+        'Track decision outcomes to learn from mistakes'
+      ],
+      proficient: [
+        'Lead complex decision-making processes',
+        'Mentor others on decision frameworks',
+        'Create decision templates for your team',
+        'Facilitate strategic decision workshops'
+      ]
+    },
+    'Communication': {
+      critical: [
+        'Take intensive business communication courses',
+        'Join Toastmasters and practice weekly',
+        'Work with a communication coach',
+        'Practice presentations with peer feedback'
+      ],
+      developing: [
+        'Take a business writing or public speaking course',
+        'Practice active listening techniques',
+        'Ask for feedback after presentations',
+        'Join a speaking club like Toastmasters'
+      ],
+      proficient: [
+        'Lead important client presentations',
+        'Mentor others on communication skills',
+        'Represent your team in cross-functional meetings',
+        'Write key business communications'
+      ]
+    },
+    'Ownership': {
+      critical: [
+        'Take initiative on projects without being asked',
+        'Volunteer to lead problem-solving efforts',
+        'Practice owning mistakes publicly',
+        'Set personal accountability metrics'
+      ],
+      developing: [
+        'Take on one extra responsibility per week',
+        'Complete tasks without being reminded',
+        'Volunteer for challenging assignments',
+        'Set and track personal goals'
+      ],
+      proficient: [
+        'Lead key initiatives independently',
+        'Mentor others on taking ownership',
+        'Drive accountability in your team',
+        'Champion continuous improvement'
+      ]
+    },
+    'Action': {
+      critical: [
+        'Practice making decisions with limited information',
+        'Set strict time limits for decision-making',
+        'Volunteer for time-sensitive projects',
+        'Create action plans with clear deadlines'
+      ],
+      developing: [
+        'Break large tasks into small actionable steps',
+        'Set daily completion goals',
+        'Use time-blocking techniques',
+        'Celebrate task completion'
+      ],
+      proficient: [
+        'Lead fast-paced initiatives',
+        'Drive execution in your team',
+        'Remove obstacles for others',
+        'Create systems for rapid action'
+      ]
+    },
+    'Analysis': {
+      critical: [
+        'Take advanced data analysis courses',
+        'Practice with complex business cases',
+        'Learn statistical thinking',
+        'Work with a mentor on analytical skills'
+      ],
+      developing: [
+        'Use structured problem-solving frameworks',
+        'Practice root cause analysis',
+        'Take a critical thinking course',
+        'Analyze case studies weekly'
+      ],
+      proficient: [
+        'Lead complex analytical projects',
+        'Mentor others on analytical thinking',
+        'Create analytical frameworks for your team',
+        'Drive data-informed decisions'
+      ]
+    }
   };
   
   developmentNeeds.forEach(need => {
     const competency = need.name;
-    const options = recommendationLibrary[competency] || [
-      `Focus on developing ${competency} through targeted training and practice`,
-      `Seek opportunities to apply and strengthen ${competency}`,
-      `Work with a mentor to develop ${competency} skills`
-    ];
+    const percentage = need.percentage;
+    const behavioral = need.behavioral;
     
-    // Pick a random recommendation
-    const recommendation = options[Math.floor(Math.random() * options.length)];
+    // Determine priority based on score and behavioral patterns
+    let priority = 'Medium';
+    if (percentage < 50) priority = 'Critical';
+    else if (percentage < 60) priority = 'High';
+    else if (percentage < 70) priority = 'Medium';
+    else priority = 'Low';
+    
+    // Adjust priority based on behavioral patterns
+    if (behavioral && behavioral.avgChangesPerQuestion > 2 && percentage < 70) {
+      priority = 'High'; // Changing answers frequently without improvement
+    }
+    if (behavioral && behavioral.avgTimePerQuestion > 90 && percentage < 70) {
+      priority = 'High'; // Spending too much time but still scoring low
+    }
+    
+    // Get recommendations based on proficiency level
+    let options = [];
+    if (percentage < 50) {
+      options = recommendationLibrary[competency]?.critical || [
+        `Intensive development needed in ${competency}. Start with foundational training.`,
+        `Work with a mentor to build basic ${competency} skills.`,
+        `Complete structured learning program for ${competency}.`
+      ];
+    } else if (percentage < 65) {
+      options = recommendationLibrary[competency]?.developing || [
+        `Focus on developing ${competency} through targeted training and practice.`,
+        `Seek opportunities to apply and strengthen ${competency}.`,
+        `Work with a mentor to develop ${competency} skills.`
+      ];
+    } else {
+      options = recommendationLibrary[competency]?.proficient || [
+        `Strengthen ${competency} through advanced training and challenging assignments.`,
+        `Mentor others to deepen your ${competency} expertise.`,
+        `Lead initiatives that require strong ${competency} skills.`
+      ];
+    }
+    
+    // Add behavioral insights to recommendation
+    let behavioralNote = '';
+    if (behavioral && behavioral.avgTimePerQuestion > 60) {
+      behavioralNote = ` Note: You spend significant time (${Math.round(behavioral.avgTimePerQuestion)}s avg) on questions in this area. Consider time management strategies.`;
+    }
+    if (behavioral && behavioral.avgChangesPerQuestion > 1) {
+      behavioralNote += ` You also change answers frequently in this area. Practice trusting your first instinct.`;
+    }
+    
+    const recommendation = options[Math.floor(Math.random() * options.length)] + behavioralNote;
     
     recommendations.push({
-      priority: need.percentage < 55 ? 'High' : 'Medium',
+      priority,
       competency,
-      currentScore: need.percentage,
+      currentScore: percentage,
+      gap: need.gapToTarget,
       recommendation,
-      action: `Focus on ${competency} development over the next 30-60 days`,
-      impact: `Improving ${competency} will enhance overall performance`
+      action: `Create a 30-60-90 day plan for ${competency} development`,
+      impact: `Improving ${competency} from ${percentage}% to 80%+ will enhance overall effectiveness by approximately 15-20%`,
+      behavioralInsights: behavioral ? {
+        avgTimePerQuestion: behavioral.avgTimePerQuestion,
+        totalChanges: behavioral.totalChanges,
+        avgChangesPerQuestion: behavioral.avgChangesPerQuestion
+      } : null
+    });
+  });
+  
+  // Add strength-based recommendations for top 3 competencies
+  const strengths = Object.values(competencyResults)
+    .filter(c => c.classification === 'Strong')
+    .sort((a, b) => b.percentage - a.percentage)
+    .slice(0, 3);
+  
+  strengths.forEach(strength => {
+    recommendations.push({
+      priority: 'Leverage',
+      competency: strength.name,
+      currentScore: strength.percentage,
+      recommendation: `Exceptional strength in ${strength.name} at ${strength.percentage}%. Leverage this by mentoring others and taking on challenging projects.`,
+      action: `Take on a mentorship role or lead a key initiative in ${strength.name}`,
+      impact: `Using this strength can accelerate team performance and career growth`,
+      isStrength: true
     });
   });
   
   return recommendations;
 }
+
+/**
+ * Get overall competency summary with behavioral context
+ */
+export const getCompetencySummary = (competencyResults, behavioralMetrics = null) => {
+  if (!competencyResults || Object.keys(competencyResults).length === 0) {
+    return null;
+  }
+  
+  const competencies = Object.values(competencyResults);
+  const strongCount = competencies.filter(c => c.percentage >= 80).length;
+  const proficientCount = competencies.filter(c => c.percentage >= 65 && c.percentage < 80).length;
+  const developingCount = competencies.filter(c => c.percentage >= 50 && c.percentage < 65).length;
+  const needsWorkCount = competencies.filter(c => c.percentage < 50).length;
+  const averageScore = competencies.reduce((sum, c) => sum + c.percentage, 0) / competencies.length;
+  
+  // Calculate behavioral averages across competencies
+  const avgTimeAcrossCompetencies = competencies.reduce((sum, c) => sum + (c.behavioral?.avgTimePerQuestion || 0), 0) / competencies.length;
+  const avgChangesAcrossCompetencies = competencies.reduce((sum, c) => sum + (c.behavioral?.avgChangesPerQuestion || 0), 0) / competencies.length;
+  
+  let overallAssessment = '';
+  let developmentUrgency = 'Low';
+  
+  if (averageScore >= 75) {
+    overallAssessment = 'Strong competency profile with multiple areas of expertise. Ready for increased responsibility.';
+    developmentUrgency = 'Low';
+  } else if (averageScore >= 60) {
+    overallAssessment = 'Solid competency foundation with clear development opportunities. Targeted growth will accelerate readiness.';
+    developmentUrgency = 'Medium';
+  } else if (averageScore >= 50) {
+    overallAssessment = 'Developing competency profile requiring focused attention on key areas. Structured development plan recommended.';
+    developmentUrgency = 'High';
+  } else {
+    overallAssessment = 'Significant competency development needed across multiple areas. Immediate intervention recommended.';
+    developmentUrgency = 'Critical';
+  }
+  
+  // Add behavioral context to assessment
+  if (avgTimeAcrossCompetencies > 60) {
+    overallAssessment += ' Response times indicate careful analysis, which may benefit from time management strategies.';
+  }
+  if (avgChangesAcrossCompetencies > 1.5) {
+    overallAssessment += ' Frequent answer changes suggest second-guessing; building confidence in initial responses could improve efficiency.';
+  }
+  
+  return {
+    totalCompetencies: competencies.length,
+    strongCount,
+    proficientCount,
+    developingCount,
+    needsWorkCount,
+    averageScore: Math.round(averageScore),
+    overallAssessment,
+    developmentUrgency,
+    behavioralContext: {
+      averageResponseTime: Math.round(avgTimeAcrossCompetencies),
+      averageAnswerChanges: Math.round(avgChangesAcrossCompetencies * 10) / 10
+    },
+    topStrengths: competencies.filter(c => c.percentage >= 75).sort((a, b) => b.percentage - a.percentage).slice(0, 3),
+    topDevelopmentNeeds: competencies.filter(c => c.percentage < 65).sort((a, b) => a.percentage - b.percentage).slice(0, 3),
+    recommendations: generateCompetencyRecommendations(competencyResults, behavioralMetrics)
+  };
+};
+
+/**
+ * Calculate confidence score based on answer patterns
+ */
+export const calculateCompetencyConfidence = (competencyResult) => {
+  if (!competencyResult || !competencyResult.behavioral) return 'Medium';
+  
+  const { avgTimePerQuestion, avgChangesPerQuestion, totalChanges } = competencyResult.behavioral;
+  const score = competencyResult.percentage;
+  
+  // High confidence indicators
+  if (score >= 80 && avgChangesPerQuestion < 0.5 && avgTimePerQuestion < 45) {
+    return 'High';
+  }
+  // Low confidence indicators
+  if (avgChangesPerQuestion > 2 || (score < 60 && avgTimePerQuestion > 60)) {
+    return 'Low';
+  }
+  // Mixed indicators
+  if (score >= 70 && avgChangesPerQuestion > 1) {
+    return 'Moderate - Second-guessing';
+  }
+  if (score < 60 && avgChangesPerQuestion < 0.5) {
+    return 'Moderate - Knowledge gap';
+  }
+  
+  return 'Moderate';
+};
+
+export default {
+  calculateCompetencyScores,
+  generateCompetencyRecommendations,
+  getCompetencySummary,
+  competencyClassification,
+  calculateCompetencyConfidence,
+  assessmentCompetencyWeights
+};
