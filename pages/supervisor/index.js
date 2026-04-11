@@ -778,7 +778,6 @@ export default function SupervisorDashboard() {
                     <th style={styles.tableHead}>Candidate</th>
                     <th style={styles.tableHead}>Contact</th>
                     <th style={styles.tableHead}>Assessments</th>
-                    <th style={styles.tableHead}>Latest Score</th>
                     <th style={styles.tableHead}>Classification</th>
                     <th style={styles.tableHead}>Last Active</th>
                     <th style={styles.tableHead}>Actions</th>
@@ -812,47 +811,24 @@ export default function SupervisorDashboard() {
                             {candidate.phone && <div style={styles.candidatePhone}>{candidate.phone}</div>}
                           </td>
                           <td style={styles.tableCell}>
-                            <div style={styles.assessmentSummary}>
-                              <div style={styles.summaryStats}>
-                                <span style={styles.summaryCompleted}>
-                                  <strong>{candidate.completedAssessments}</strong> completed
-                                </span>
-                                <span style={styles.summaryUnblocked}>
-                                  <strong>{candidate.unblockedAssessments}</strong> unblocked
-                                </span>
-                                <span style={styles.summaryBlocked}>
-                                  <strong>{candidate.blockedAssessments}</strong> blocked
-                                </span>
-                              </div>
-                              {candidate.assessments.length > 0 && (
-                                <button
-                                  onClick={() => toggleCandidateDetails(candidate.id)}
-                                  style={styles.viewAssessmentsButton}
-                                >
-                                  {isExpanded ? '▲ Hide Assessments' : '▼ View Assessments'}
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                          <td style={styles.tableCell}>
-                            {candidate.latestAssessment?.result ? (
-                              <span style={{
-                                ...styles.scoreBadge,
-                                background: percentage >= 85 ? '#E8F5E9' :
-                                           percentage >= 70 ? '#E3F2FD' :
-                                           percentage >= 55 ? '#FFF3E0' :
-                                           percentage >= 40 ? '#F3E5F5' :
-                                           '#FFEBEE',
-                                color: percentage >= 85 ? '#2E7D32' :
-                                      percentage >= 70 ? '#1565C0' :
-                                      percentage >= 55 ? '#F57C00' :
-                                      percentage >= 40 ? '#7B1FA2' :
-                                      '#C62828'
-                              }}>
-                                {latestScore}/{maxScore} ({percentage}%)
+                            <div style={styles.assessmentStatsInline}>
+                              <span style={styles.completedInline}>
+                                ✅ {candidate.completedAssessments} completed
                               </span>
-                            ) : (
-                              <span style={styles.noScore}>No completed assessments</span>
+                              <span style={styles.unblockedInline}>
+                                🔓 {candidate.unblockedAssessments} unblocked
+                              </span>
+                              <span style={styles.blockedInline}>
+                                🔒 {candidate.blockedAssessments} blocked
+                              </span>
+                            </div>
+                            {candidate.assessments.length > 0 && (
+                              <button
+                                onClick={() => toggleCandidateDetails(candidate.id)}
+                                style={styles.viewAssessmentsButton}
+                              >
+                                {isExpanded ? '▲ Hide Assessments' : '▼ View Assessments'}
+                              </button>
                             )}
                           </td>
                           <td style={styles.tableCell}>
@@ -886,7 +862,7 @@ export default function SupervisorDashboard() {
                         
                         {isExpanded && (
                           <tr style={styles.expandedRow}>
-                            <td colSpan="7" style={styles.expandedCell}>
+                            <td colSpan="6" style={styles.expandedCell}>
                               <div style={styles.assessmentsList}>
                                 <div style={styles.assessmentsListHeader}>
                                   <h4 style={styles.assessmentsListTitle}>Individual Assessments</h4>
@@ -1241,12 +1217,7 @@ const styles = {
     fontWeight: 600,
     textDecoration: 'none',
     display: 'inline-block',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#7B1FA2',
-      transform: 'translateY(-1px)',
-      boxShadow: '0 4px 12px rgba(156, 39, 176, 0.3)'
-    }
+    transition: 'all 0.2s ease'
   },
   logoutButton: {
     background: '#F44336',
@@ -1320,12 +1291,7 @@ const styles = {
     border: '1px solid #E2E8F0',
     borderRadius: '8px',
     fontSize: '14px',
-    outline: 'none',
-    transition: 'all 0.2s ease',
-    ':focus': {
-      borderColor: '#0A1929',
-      boxShadow: '0 0 0 3px rgba(10, 25, 41, 0.1)'
-    }
+    outline: 'none'
   },
   clearButton: {
     position: 'absolute',
@@ -1337,10 +1303,7 @@ const styles = {
     cursor: 'pointer',
     color: '#999',
     fontSize: '16px',
-    padding: '4px',
-    ':hover': {
-      color: '#F44336'
-    }
+    padding: '4px'
   },
   filterGroup: {
     display: 'flex',
@@ -1401,12 +1364,7 @@ const styles = {
     textDecoration: 'none',
     fontSize: '14px',
     fontWeight: 500,
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#1A2A3A',
-      transform: 'translateY(-1px)',
-      boxShadow: '0 4px 12px rgba(10, 25, 41, 0.3)'
-    }
+    transition: 'all 0.2s ease'
   },
   loadingState: {
     textAlign: 'center',
@@ -1430,7 +1388,7 @@ const styles = {
     width: '100%',
     borderCollapse: 'collapse',
     fontSize: '14px',
-    minWidth: '1200px'
+    minWidth: '1000px'
   },
   tableHeadRow: {
     borderBottom: '2px solid #0A1929',
@@ -1444,10 +1402,7 @@ const styles = {
   },
   tableRow: {
     borderBottom: '1px solid #E2E8F0',
-    transition: 'background 0.2s ease',
-    ':hover': {
-      background: '#F8FAFC'
-    }
+    transition: 'background 0.2s ease'
   },
   tableCell: {
     padding: '15px'
@@ -1488,17 +1443,13 @@ const styles = {
     fontSize: '12px',
     color: '#718096'
   },
-  assessmentSummary: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px'
-  },
-  summaryStats: {
+  assessmentStatsInline: {
     display: 'flex',
     gap: '15px',
-    flexWrap: 'wrap'
+    flexWrap: 'wrap',
+    marginBottom: '8px'
   },
-  summaryCompleted: {
+  completedInline: {
     fontSize: '13px',
     color: '#2E7D32',
     background: '#E8F5E9',
@@ -1508,7 +1459,7 @@ const styles = {
     alignItems: 'center',
     gap: '4px'
   },
-  summaryUnblocked: {
+  unblockedInline: {
     fontSize: '13px',
     color: '#1565C0',
     background: '#E3F2FD',
@@ -1518,7 +1469,7 @@ const styles = {
     alignItems: 'center',
     gap: '4px'
   },
-  summaryBlocked: {
+  blockedInline: {
     fontSize: '13px',
     color: '#F57C00',
     background: '#FFF3E0',
@@ -1537,23 +1488,7 @@ const styles = {
     color: '#0A1929',
     cursor: 'pointer',
     transition: 'all 0.2s ease',
-    width: 'fit-content',
-    ':hover': {
-      background: '#0A1929',
-      color: 'white'
-    }
-  },
-  scoreBadge: {
-    display: 'inline-block',
-    padding: '5px 12px',
-    borderRadius: '20px',
-    fontWeight: 600,
-    fontSize: '13px'
-  },
-  noScore: {
-    fontSize: '13px',
-    color: '#9E9E9E',
-    fontStyle: 'italic'
+    width: 'fit-content'
   },
   classificationBadge: {
     display: 'inline-block',
@@ -1580,11 +1515,7 @@ const styles = {
     fontSize: '13px',
     fontWeight: 500,
     transition: 'all 0.2s ease',
-    display: 'inline-block',
-    ':hover': {
-      background: '#1A2A3A',
-      transform: 'translateY(-1px)'
-    }
+    display: 'inline-block'
   },
   expandedRow: {
     background: '#F8FAFC'
@@ -1709,10 +1640,7 @@ const styles = {
     justifyContent: 'space-between',
     padding: '6px 0',
     borderBottom: '1px solid #E2E8F0',
-    fontSize: '13px',
-    '&:last-child': {
-      borderBottom: 'none'
-    }
+    fontSize: '13px'
   },
   classificationSmall: {
     padding: '2px 8px',
@@ -1756,11 +1684,7 @@ const styles = {
     fontSize: '12px',
     fontWeight: 500,
     transition: 'all 0.2s ease',
-    display: 'inline-block',
-    ':hover': {
-      background: '#1A2A3A',
-      transform: 'translateY(-1px)'
-    }
+    display: 'inline-block'
   },
   unblockButton: {
     padding: '8px 16px',
@@ -1771,11 +1695,7 @@ const styles = {
     fontSize: '12px',
     fontWeight: 500,
     cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#45a049',
-      transform: 'translateY(-1px)'
-    }
+    transition: 'all 0.2s ease'
   },
   blockButton: {
     padding: '8px 16px',
@@ -1786,11 +1706,7 @@ const styles = {
     fontSize: '12px',
     fontWeight: 500,
     cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#F57C00',
-      transform: 'translateY(-1px)'
-    }
+    transition: 'all 0.2s ease'
   },
   resetButton: {
     padding: '8px 16px',
@@ -1801,13 +1717,8 @@ const styles = {
     fontSize: '12px',
     fontWeight: 500,
     cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#1976D2',
-      transform: 'translateY(-1px)'
-    }
+    transition: 'all 0.2s ease'
   },
-  // Modal Styles
   modalOverlay: {
     position: 'fixed',
     top: 0,
@@ -1851,10 +1762,7 @@ const styles = {
     cursor: 'pointer',
     color: '#666',
     padding: '4px 8px',
-    borderRadius: '8px',
-    ':hover': {
-      background: '#e2e8f0'
-    }
+    borderRadius: '8px'
   },
   modalBody: {
     padding: '24px',
@@ -1873,10 +1781,7 @@ const styles = {
     background: '#f8fafc',
     borderRadius: '8px',
     cursor: 'pointer',
-    transition: 'all 0.2s',
-    ':hover': {
-      background: '#f1f5f9'
-    }
+    transition: 'all 0.2s'
   },
   noteBox: {
     marginTop: '20px',
@@ -1905,10 +1810,7 @@ const styles = {
     fontWeight: 500,
     cursor: 'pointer',
     color: '#475569',
-    transition: 'all 0.2s',
-    ':hover': {
-      background: '#e2e8f0'
-    }
+    transition: 'all 0.2s'
   },
   unblockButtonLarge: {
     padding: '10px 24px',
@@ -1919,10 +1821,6 @@ const styles = {
     fontSize: '14px',
     fontWeight: 600,
     cursor: 'pointer',
-    transition: 'all 0.2s',
-    ':hover': {
-      background: '#1976D2',
-      transform: 'translateY(-1px)'
-    }
+    transition: 'all 0.2s'
   }
 };
