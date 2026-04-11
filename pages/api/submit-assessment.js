@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { generatePersonalizedReport } from '../../utils/dynamicReportGenerator';
+import { calculateBehavioralMetrics } from '../../utils/behavioralAnalyzer';
 
-// Import competency functions - we'll create these next
+// Import competency functions
 import { 
   calculateCompetencyScores, 
   generateCompetencyRecommendations 
@@ -12,7 +13,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  console.log("📥 Submit API called with competency processing");
+  console.log("📥 Submit API called with behavioral analytics");
 
   try {
     const { sessionId, user_id, assessment_id } = req.body;
@@ -72,6 +73,9 @@ export default async function handler(req, res) {
       .select(`
         question_id,
         answer_id,
+        time_spent_seconds,
+        times_changed,
+        first_saved_at,
         unique_questions!inner (
           id,
           section,
@@ -158,6 +162,37 @@ export default async function handler(req, res) {
     }
     // ===== END COMPETENCY PROCESSING =====
 
+    // ===== BEHAVIORAL METRICS PROCESSING =====
+    console.log("🧠 Calculating behavioral metrics...");
+    let behavioralMetrics = null;
+    
+    try {
+      if (sessionId) {
+        behavioralMetrics = await calculateBehavioralMetrics(
+          sessionId,
+          userId,
+          assessmentId,
+          serviceClient
+        );
+        
+        if (behavioralMetrics) {
+          console.log("✅ Behavioral metrics calculated:", {
+            work_style: behavioralMetrics.work_style,
+            confidence_level: behavioralMetrics.confidence_level,
+            total_answer_changes: behavioralMetrics.total_answer_changes,
+            avg_response_time: behavioralMetrics.avg_response_time_seconds
+          });
+        } else {
+          console.log("⚠️ No behavioral metrics generated");
+        }
+      } else {
+        console.log("⚠️ No sessionId provided, skipping behavioral metrics");
+      }
+    } catch (behavioralError) {
+      console.error("Error calculating behavioral metrics:", behavioralError);
+    }
+    // ===== END BEHAVIORAL METRICS =====
+
     // Generate personalized report (your existing logic)
     const personalizedReport = generatePersonalizedReport(
       userId,
@@ -226,7 +261,7 @@ export default async function handler(req, res) {
       ...competencyRecommendations.map(r => r.recommendation)
     ];
 
-    // Prepare interpretations as a simple object
+    // Prepare interpretations with behavioral insights
     const interpretationsObj = {
       classification: personalizedReport.gradeInfo?.description || 
                      (personalizedReport.percentageScore >= 80 ? 'Elite Talent' :
@@ -242,6 +277,22 @@ export default async function handler(req, res) {
       competencyData: Object.keys(competencyResults).length > 0 ? {
         results: competencyResults,
         recommendations: competencyRecommendations
+      } : null,
+      
+      // Add behavioral insights to interpretations
+      behavioralInsights: behavioralMetrics ? {
+        work_style: behavioralMetrics.work_style,
+        confidence_level: behavioralMetrics.confidence_level,
+        attention_span: behavioralMetrics.attention_span,
+        decision_pattern: behavioralMetrics.decision_pattern,
+        avg_response_time: behavioralMetrics.avg_response_time_seconds,
+        total_answer_changes: behavioralMetrics.total_answer_changes,
+        improvement_rate: behavioralMetrics.improvement_rate,
+        first_instinct_accuracy: behavioralMetrics.first_instinct_accuracy,
+        revisit_rate: behavioralMetrics.revisit_rate,
+        fatigue_factor: behavioralMetrics.fatigue_factor,
+        recommended_support: behavioralMetrics.recommended_support,
+        development_focus_areas: behavioralMetrics.development_focus_areas
       } : null
     };
 
@@ -284,6 +335,10 @@ export default async function handler(req, res) {
         score: personalizedReport.totalScore,
         percentage: personalizedReport.percentageScore,
         classification: interpretationsObj.classification,
+        behavioralMetrics: behavioralMetrics ? {
+          work_style: behavioralMetrics.work_style,
+          confidence_level: behavioralMetrics.confidence_level
+        } : null,
         warning: "Score saved but detailed report failed to save: " + resultsError.message,
         message: "Assessment submitted successfully (score only)" 
       });
@@ -352,7 +407,12 @@ export default async function handler(req, res) {
       percentage: personalizedReport.percentageScore,
       classification: interpretationsObj.classification,
       competencyCount: Object.keys(competencyResults).length,
-      message: "Assessment submitted successfully with competency analysis" 
+      behavioralMetrics: behavioralMetrics ? {
+        work_style: behavioralMetrics.work_style,
+        confidence_level: behavioralMetrics.confidence_level,
+        recommended_support: behavioralMetrics.recommended_support
+      } : null,
+      message: "Assessment submitted successfully with behavioral analytics" 
     });
 
   } catch (err) {
