@@ -277,6 +277,30 @@ function CandidateReportComponent() {
 
   const handlePrint = () => window.print();
 
+  // Generate integrated executive summary with behavioral insights
+  const getIntegratedExecutiveSummary = () => {
+    const performanceText = report.executiveSummary.narrative.includes('General Assessment') 
+      ? report.executiveSummary.narrative.replace('General Assessment', assessmentDisplayName)
+      : report.executiveSummary.narrative;
+    
+    let behavioralText = '';
+    if (behavioralData) {
+      behavioralText = ` The candidate's ${behavioralData.work_style || 'balanced'} work style, ${behavioralData.confidence_level || 'moderate'} confidence level, and ${behavioralData.decision_pattern || 'deliberate'} decision pattern provide additional context. `;
+      if (behavioralData.avg_response_time) {
+        behavioralText += `With an average response time of ${behavioralData.avg_response_time} seconds and ${behavioralData.total_answer_changes || 0} answer changes, `;
+        if (behavioralData.improvement_rate > 70) {
+          behavioralText += `they demonstrate strong adaptability, learning from mistakes effectively.`;
+        } else if (behavioralData.first_instinct_accuracy > 80) {
+          behavioralText += `their first instinct accuracy is high, suggesting trusting initial responses could improve efficiency.`;
+        } else {
+          behavioralText += `they show a methodical approach, carefully considering each question.`;
+        }
+      }
+    }
+    
+    return performanceText + behavioralText;
+  };
+
   if (!authChecked || loading) {
     return (
       <div style={stylesModern.loadingContainer}>
@@ -313,8 +337,8 @@ function CandidateReportComponent() {
 
   return (
     <div style={stylesModern.pageContainer}>
-      {/* Header */}
-      <div style={stylesModern.header}>
+      {/* Animated Gradient Header */}
+      <div style={stylesModern.animatedHeader}>
         <div style={stylesModern.headerContent}>
           <div style={stylesModern.headerLeft}>
             <Link href="/supervisor" style={stylesModern.dashboardLink}>← Dashboard</Link>
@@ -335,18 +359,20 @@ function CandidateReportComponent() {
         </div>
       </div>
 
-      {/* Hero Section */}
-      <div style={stylesModern.hero}>
+      {/* Hero Section with Gradient */}
+      <div style={{...stylesModern.hero, background: `linear-gradient(135deg, ${percentageColor}15 0%, ${percentageColor}05 100%)`}}>
         <div style={stylesModern.heroContent}>
           <div style={stylesModern.candidateInfo}>
-            <div style={stylesModern.candidateAvatar}>{candidate.full_name?.charAt(0) || 'C'}</div>
+            <div style={{...stylesModern.candidateAvatar, background: `linear-gradient(135deg, ${percentageColor}, ${percentageColor}CC)`}}>
+              {candidate.full_name?.charAt(0) || 'C'}
+            </div>
             <div>
               <h1 style={stylesModern.candidateName}>{candidate.full_name}</h1>
               <p style={stylesModern.assessmentMeta}>{assessmentDisplayName} • Completed {new Date(selectedAssessment.completed_at).toLocaleDateString()}</p>
               {superAnalysis && <p style={stylesModern.profileId}>Profile ID: {superAnalysis.profileId}</p>}
             </div>
           </div>
-          <div style={stylesModern.scoreCard}>
+          <div style={{...stylesModern.scoreCard, background: `linear-gradient(135deg, ${percentageColor}10, white)`}}>
             <div style={stylesModern.scoreCircle}>
               <span style={{...stylesModern.scoreValue, color: percentageColor}}>{selectedAssessment.percentage}%</span>
               <span style={stylesModern.scoreLabel}>Overall Score</span>
@@ -362,7 +388,7 @@ function CandidateReportComponent() {
               </div>
               <div style={stylesModern.scoreDetailItem}>
                 <span style={stylesModern.scoreDetailLabel}>Classification</span>
-                <span style={{...stylesModern.classificationBadge, background: report.executiveSummary.classification === 'High Potential' ? '#E8F5E9' : report.executiveSummary.classification === 'Strong Performer' ? '#E3F2FD' : '#FFF3E0', color: report.executiveSummary.classification === 'High Potential' ? '#2E7D32' : report.executiveSummary.classification === 'Strong Performer' ? '#1565C0' : '#F57C00'}}>
+                <span style={{...stylesModern.classificationBadge, background: `${percentageColor}15`, color: percentageColor}}>
                   {report.executiveSummary.classification}
                 </span>
               </div>
@@ -371,13 +397,21 @@ function CandidateReportComponent() {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs with Animation */}
       <div style={stylesModern.tabsContainer}>
         <div style={stylesModern.tabsWrapper}>
           {tabs.map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{...stylesModern.tab, ...(activeTab === tab.id ? stylesModern.tabActive : {})}}>
+            <button 
+              key={tab.id} 
+              onClick={() => setActiveTab(tab.id)} 
+              style={{
+                ...stylesModern.tab, 
+                ...(activeTab === tab.id ? {...stylesModern.tabActive, borderBottomColor: percentageColor, color: percentageColor} : {})
+              }}
+            >
               <span style={stylesModern.tabIcon}>{tab.icon}</span>
               <span>{tab.label}</span>
+              {activeTab === tab.id && <span style={{...stylesModern.tabIndicator, background: percentageColor}} />}
             </button>
           ))}
         </div>
@@ -385,31 +419,35 @@ function CandidateReportComponent() {
 
       {/* Main Content */}
       <div style={stylesModern.mainContent}>
-        {/* Overview Tab */}
+        {/* Overview Tab - Integrated Performance + Behavioral */}
         {activeTab === 'overview' && (
           <div style={stylesModern.contentCard}>
+            {/* Executive Summary with Behavioral Integration */}
             <div style={stylesModern.executiveSummarySection}>
               <h2 style={stylesModern.sectionTitle}>Executive Summary</h2>
-              <p style={stylesModern.executiveText}>{report.executiveSummary.narrative.includes('General Assessment') ? report.executiveSummary.narrative.replace('General Assessment', assessmentDisplayName) : report.executiveSummary.narrative}</p>
-              <p style={stylesModern.executiveDesc}>{report.executiveSummary.classificationDescription}</p>
+              <div style={{...stylesModern.narrativeBox, borderLeftColor: percentageColor}}>
+                <p style={stylesModern.executiveText}>{getIntegratedExecutiveSummary()}</p>
+                <p style={stylesModern.executiveDesc}>{report.executiveSummary.classificationDescription}</p>
+              </div>
             </div>
 
+            {/* Quick Stats Grid - Colorful */}
             <div style={stylesModern.statsGrid}>
-              <div style={stylesModern.statCard}>
+              <div style={{...stylesModern.statCard, background: 'linear-gradient(135deg, #E8F5E9, #C8E6C9)'}}>
                 <span style={stylesModern.statIcon}>🎯</span>
                 <div>
                   <div style={stylesModern.statValue}>{competencyData.filter(c => c.percentage >= 70).length}</div>
                   <div style={stylesModern.statLabel}>Strengths</div>
                 </div>
               </div>
-              <div style={stylesModern.statCard}>
+              <div style={{...stylesModern.statCard, background: 'linear-gradient(135deg, #E3F2FD, #BBDEFB)'}}>
                 <span style={stylesModern.statIcon}>📈</span>
                 <div>
                   <div style={stylesModern.statValue}>{competencyData.filter(c => c.percentage >= 55 && c.percentage < 70).length}</div>
                   <div style={stylesModern.statLabel}>Developing</div>
                 </div>
               </div>
-              <div style={stylesModern.statCard}>
+              <div style={{...stylesModern.statCard, background: 'linear-gradient(135deg, #FFF3E0, #FFE0B2)'}}>
                 <span style={stylesModern.statIcon}>⚠️</span>
                 <div>
                   <div style={stylesModern.statValue}>{competencyData.filter(c => c.percentage < 55).length}</div>
@@ -417,7 +455,7 @@ function CandidateReportComponent() {
                 </div>
               </div>
               {behavioralData && (
-                <div style={stylesModern.statCard}>
+                <div style={{...stylesModern.statCard, background: 'linear-gradient(135deg, #F3E5F5, #E1BEE7)'}}>
                   <span style={stylesModern.statIcon}>🧠</span>
                   <div>
                     <div style={stylesModern.statValue}>{behavioralData.work_style?.split(' ')[0] || 'Balanced'}</div>
@@ -427,11 +465,29 @@ function CandidateReportComponent() {
               )}
             </div>
 
+            {/* Performance vs Behavior Insight Card */}
+            {behavioralData && (
+              <div style={{...stylesModern.insightCard, background: `linear-gradient(135deg, ${percentageColor}10, white)`, borderLeft: `4px solid ${percentageColor}`}}>
+                <div style={stylesModern.insightCardHeader}>
+                  <span style={stylesModern.insightCardIcon}>💡</span>
+                  <h4 style={stylesModern.insightCardTitle}>Performance & Behavior Correlation</h4>
+                </div>
+                <p style={stylesModern.insightCardText}>
+                  {candidate.full_name} achieved {selectedAssessment.percentage}% overall score with a {behavioralData.work_style?.toLowerCase() || 'balanced'} approach.
+                  {behavioralData.confidence_level === 'High' && ' Their high confidence aligns well with their performance, indicating self-assurance in their knowledge.'}
+                  {behavioralData.confidence_level === 'Low' && ' Despite their performance, confidence appears low, suggesting potential imposter syndrome or anxiety that may benefit from support.'}
+                  {behavioralData.total_answer_changes > 5 && ` With ${behavioralData.total_answer_changes} answer changes, they demonstrate thorough review habits.`}
+                  {behavioralData.first_instinct_accuracy > 80 && ` Their first instinct accuracy of ${behavioralData.first_instinct_accuracy}% suggests trusting initial responses could improve efficiency.`}
+                </p>
+              </div>
+            )}
+
+            {/* Strengths Section */}
             <div style={stylesModern.strengthsSection}>
               <h3 style={stylesModern.subsectionTitle}>🔷 Key Strengths</h3>
               <div style={stylesModern.strengthsGrid}>
                 {competencyData.filter(c => c.percentage >= 70).slice(0, 4).map((comp, idx) => (
-                  <div key={idx} style={stylesModern.strengthItem}>
+                  <div key={idx} style={{...stylesModern.strengthItem, background: 'linear-gradient(135deg, #F0F9F0, #E8F5E9)'}}>
                     <div style={stylesModern.strengthHeader}>
                       <span style={stylesModern.strengthName}>{comp.competencies.name}</span>
                       <span style={stylesModern.strengthScore}>{comp.percentage}%</span>
@@ -443,11 +499,12 @@ function CandidateReportComponent() {
               </div>
             </div>
 
+            {/* Development Areas Section */}
             <div style={stylesModern.weaknessesSection}>
               <h3 style={stylesModern.subsectionTitle}>⚠️ Development Areas</h3>
               <div style={stylesModern.weaknessesGrid}>
                 {competencyData.filter(c => c.percentage < 60).slice(0, 4).map((comp, idx) => (
-                  <div key={idx} style={stylesModern.weaknessItem}>
+                  <div key={idx} style={{...stylesModern.weaknessItem, background: 'linear-gradient(135deg, #FEF2F2, #FFEBEE)'}}>
                     <div style={stylesModern.weaknessHeader}>
                       <span style={stylesModern.weaknessName}>{comp.competencies.name}</span>
                       <span style={stylesModern.weaknessScore}>{comp.percentage}%</span>
@@ -462,13 +519,12 @@ function CandidateReportComponent() {
           </div>
         )}
 
-        {/* Score Breakdown Tab - With Table and Grid Cards */}
+        {/* Score Breakdown Tab */}
         {activeTab === 'breakdown' && (
           <div style={stylesModern.contentCard}>
             <h2 style={stylesModern.sectionTitle}>Score Breakdown by Category</h2>
             <p style={stylesModern.sectionDesc}>Detailed analysis of performance across all categories</p>
             
-            {/* Summary Table */}
             <div style={stylesModern.tableContainer}>
               <table style={stylesModern.dataTable}>
                 <thead>
@@ -506,7 +562,7 @@ function CandidateReportComponent() {
               </table>
             </div>
 
-            {/* Detailed Category Analysis - GRID LAYOUT (Side by Side) */}
+            {/* Detailed Category Analysis - Grid */}
             <div style={stylesModern.detailedAnalysisSection}>
               <h3 style={stylesModern.subsectionTitle}>📖 Detailed Category Analysis</h3>
               <p style={stylesModern.sectionDesc}>Each score tells a story about the candidate's capabilities</p>
@@ -515,7 +571,7 @@ function CandidateReportComponent() {
                 {Object.entries(detailedCategoryAnalysis).map(([category, data]) => {
                   const gradeInfo = data.grade;
                   return (
-                    <div key={category} style={{...stylesModern.analysisCard, borderTop: `4px solid ${gradeInfo.color}`}}>
+                    <div key={category} style={{...stylesModern.analysisCard, borderTop: `4px solid ${gradeInfo.color}`, background: `linear-gradient(135deg, white, ${gradeInfo.color}05)`}}>
                       <div style={stylesModern.analysisHeader}>
                         <div>
                           <span style={stylesModern.analysisCategory}>{category}</span>
@@ -557,7 +613,7 @@ function CandidateReportComponent() {
             <p style={stylesModern.sectionDesc}>Detailed breakdown of core competencies with narrative analysis</p>
             <div style={stylesModern.competenciesGrid}>
               {competencyData.map(comp => (
-                <div key={comp.id} style={{...stylesModern.competencyCard, borderLeft: `4px solid ${comp.classification === 'Strong' ? '#4CAF50' : comp.classification === 'Moderate' ? '#FF9800' : '#F44336'}`}}>
+                <div key={comp.id} style={{...stylesModern.competencyCard, borderLeft: `4px solid ${comp.classification === 'Strong' ? '#4CAF50' : comp.classification === 'Moderate' ? '#FF9800' : '#F44336'}`, background: `linear-gradient(135deg, white, ${comp.classification === 'Strong' ? '#E8F5E9' : comp.classification === 'Moderate' ? '#FFF3E0' : '#FFEBEE'})`}}>
                   <div style={stylesModern.competencyHeader}>
                     <div>
                       <div style={stylesModern.competencyName}>{comp.competencies.name}</div>
@@ -588,7 +644,7 @@ function CandidateReportComponent() {
             <p style={stylesModern.sectionDesc}>Based on assessment results and behavioral patterns</p>
             <div style={stylesModern.recommendationsList}>
               {report.recommendations.map((rec, idx) => (
-                <div key={idx} style={{...stylesModern.recommendationCard, borderLeft: `4px solid ${rec.priority === 'High' ? '#F44336' : rec.priority === 'Medium' ? '#FF9800' : '#4CAF50'}`}}>
+                <div key={idx} style={{...stylesModern.recommendationCard, borderLeft: `4px solid ${rec.priority === 'High' ? '#F44336' : rec.priority === 'Medium' ? '#FF9800' : '#4CAF50'}`, background: `linear-gradient(135deg, white, ${rec.priority === 'High' ? '#FEF2F2' : rec.priority === 'Medium' ? '#FFF3E0' : '#E8F5E9'})`}}>
                   <div style={stylesModern.recommendationHeader}>
                     <span style={{...stylesModern.recommendationPriority, background: rec.priority === 'High' ? '#FEF2F2' : rec.priority === 'Medium' ? '#FFF3E0' : '#E8F5E9', color: rec.priority === 'High' ? '#B91C1C' : rec.priority === 'Medium' ? '#F57C00' : '#2E7D32'}}>{rec.priority} Priority</span>
                     <span style={stylesModern.recommendationCategory}>{rec.category}</span>
@@ -613,14 +669,14 @@ function CandidateReportComponent() {
                 {competencyData.filter(c => c.percentage < 80).slice(0, 3).map((comp, idx) => {
                   const actions = getActionablePlan(comp.competencies.name, comp.percentage);
                   const priority = comp.percentage < 50 ? 'Critical' : comp.percentage < 65 ? 'High' : 'Medium';
-                  const timeframe = comp.percentage < 50 ? 'Week 1-4' : comp.percentage < 65 ? 'Week 1-6' : 'Week 1-8';
+                  const priorityColor = priority === 'Critical' ? '#F44336' : priority === 'High' ? '#FF9800' : '#2196F3';
                   
                   return (
-                    <div key={idx} style={stylesModern.planCard}>
+                    <div key={idx} style={{...stylesModern.planCard, borderLeft: `4px solid ${priorityColor}`, background: `linear-gradient(135deg, white, ${priorityColor}05)`}}>
                       <div style={stylesModern.planHeader}>
                         <div>
                           <span style={stylesModern.planArea}>{comp.competencies.name}</span>
-                          <span style={{...stylesModern.planPriority, background: priority === 'Critical' ? '#FEF2F2' : priority === 'High' ? '#FFF3E0' : '#E3F2FD', color: priority === 'Critical' ? '#B91C1C' : priority === 'High' ? '#F57C00' : '#1565C0'}}>
+                          <span style={{...stylesModern.planPriority, background: `${priorityColor}15`, color: priorityColor}}>
                             {priority} Priority
                           </span>
                         </div>
@@ -632,11 +688,11 @@ function CandidateReportComponent() {
                       </div>
                       
                       <div style={stylesModern.planGap}>
-                        <div style={{width: `${(comp.percentage / 80) * 100}%`, height: '8px', background: priority === 'Critical' ? '#F44336' : priority === 'High' ? '#FF9800' : '#2196F3', borderRadius: '4px'}} />
+                        <div style={{width: `${(comp.percentage / 80) * 100}%`, height: '8px', background: priorityColor, borderRadius: '4px'}} />
                       </div>
                       
                       <div style={stylesModern.planTimeframe}>
-                        <span>⏱️ Timeframe: {timeframe}</span>
+                        <span>⏱️ Timeframe: {comp.percentage < 50 ? 'Week 1-4' : comp.percentage < 65 ? 'Week 1-6' : 'Week 1-8'}</span>
                         <span>Gap: {comp.gap}% to target</span>
                       </div>
                       
@@ -709,7 +765,7 @@ function CandidateReportComponent() {
             <h2 style={stylesModern.sectionTitle}>🔮 Super Analysis</h2>
             <p style={stylesModern.sectionDesc}>Advanced 12-dimensional analysis combining competency, behavioral, and predictive insights</p>
             
-            <div style={stylesModern.superOverview}>
+            <div style={{...stylesModern.superOverview, background: `linear-gradient(135deg, ${percentageColor}, ${percentageColor}CC)`}}>
               <div style={stylesModern.superHeader}>
                 <span style={stylesModern.superIcon}>🌟</span>
                 <div>
@@ -871,13 +927,18 @@ function CandidateReportComponent() {
       </div>
 
       <style jsx>{`
-        @media print {
-          body { background: white; }
-          button { display: none; }
-        }
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
+        }
+        @keyframes gradientShift {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        @media print {
+          body { background: white; }
+          button { display: none; }
         }
       `}</style>
     </div>
@@ -894,22 +955,22 @@ const stylesModern = {
   emptyTitle: { fontSize: '20px', fontWeight: 600, color: '#0A1929', marginBottom: '10px' },
   emptyText: { fontSize: '14px', color: '#64748B', marginBottom: '20px' },
   backButton: { display: 'inline-block', padding: '10px 20px', background: '#0A1929', color: 'white', textDecoration: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 500 },
-  header: { background: 'white', borderBottom: '1px solid #E2E8F0', position: 'sticky', top: 0, zIndex: 100 },
+  animatedHeader: { background: 'linear-gradient(135deg, #0A1929, #1A2A3A, #0A1929)', backgroundSize: '200% 200%', animation: 'gradientShift 10s ease infinite', borderBottom: '1px solid rgba(255,255,255,0.1)', position: 'sticky', top: 0, zIndex: 100 },
   headerContent: { maxWidth: '1200px', margin: '0 auto', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' },
   headerLeft: { display: 'flex', alignItems: 'center', gap: '24px' },
-  dashboardLink: { color: '#64748B', textDecoration: 'none', fontSize: '14px' },
-  logo: { fontSize: '18px', fontWeight: 700, color: '#0A1929', letterSpacing: '1px' },
+  dashboardLink: { color: 'rgba(255,255,255,0.8)', textDecoration: 'none', fontSize: '14px', transition: 'color 0.2s' },
+  logo: { fontSize: '18px', fontWeight: 700, color: 'white', letterSpacing: '2px' },
   headerRight: { display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' },
-  assessmentSelect: { padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', background: 'white', cursor: 'pointer' },
-  printButton: { padding: '8px 16px', background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' },
-  hero: { background: 'white', borderBottom: '1px solid #E2E8F0' },
-  heroContent: { maxWidth: '1200px', margin: '0 auto', padding: '32px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '24px' },
+  assessmentSelect: { padding: '8px 12px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '13px', cursor: 'pointer' },
+  printButton: { padding: '8px 16px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '13px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.2s' },
+  hero: { padding: '32px 0', borderBottom: '1px solid #E2E8F0' },
+  heroContent: { maxWidth: '1200px', margin: '0 auto', padding: '0 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '24px' },
   candidateInfo: { display: 'flex', alignItems: 'center', gap: '20px' },
-  candidateAvatar: { width: '64px', height: '64px', borderRadius: '32px', background: 'linear-gradient(135deg, #0A1929, #1A2A3A)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px', fontWeight: 600 },
+  candidateAvatar: { width: '64px', height: '64px', borderRadius: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px', fontWeight: 600, color: 'white' },
   candidateName: { fontSize: '24px', fontWeight: 700, color: '#0A1929', marginBottom: '4px' },
   assessmentMeta: { fontSize: '14px', color: '#64748B' },
   profileId: { fontSize: '12px', color: '#94A3B8', marginTop: '4px' },
-  scoreCard: { display: 'flex', alignItems: 'center', gap: '24px', background: '#F8FAFC', padding: '16px 24px', borderRadius: '16px' },
+  scoreCard: { display: 'flex', alignItems: 'center', gap: '24px', padding: '16px 24px', borderRadius: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' },
   scoreCircle: { textAlign: 'center' },
   scoreValue: { fontSize: '36px', fontWeight: 700, display: 'block', lineHeight: 1 },
   scoreLabel: { fontSize: '11px', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' },
@@ -918,27 +979,34 @@ const stylesModern = {
   scoreDetailLabel: { display: 'block', fontSize: '11px', color: '#64748B', marginBottom: '4px', textTransform: 'uppercase' },
   scoreDetailValue: { fontSize: '16px', fontWeight: 600, color: '#0A1929' },
   classificationBadge: { padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, display: 'inline-block' },
-  tabsContainer: { borderBottom: '1px solid #E2E8F0', background: 'white' },
+  tabsContainer: { borderBottom: '1px solid #E2E8F0', background: 'white', position: 'sticky', top: '73px', zIndex: 99 },
   tabsWrapper: { maxWidth: '1200px', margin: '0 auto', padding: '0 24px', display: 'flex', gap: '8px', overflowX: 'auto' },
-  tab: { padding: '16px 20px', background: 'none', border: 'none', fontSize: '14px', fontWeight: 500, color: '#64748B', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '2px solid transparent' },
-  tabActive: { color: '#0A1929', borderBottomColor: '#0A1929' },
+  tab: { padding: '16px 20px', background: 'none', border: 'none', fontSize: '14px', fontWeight: 500, color: '#64748B', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', transition: 'all 0.2s' },
+  tabActive: { color: '#0A1929' },
+  tabIndicator: { position: 'absolute', bottom: '-1px', left: '20px', right: '20px', height: '2px', borderRadius: '1px' },
   tabIcon: { fontSize: '16px' },
   mainContent: { maxWidth: '1200px', margin: '0 auto', padding: '32px 24px' },
-  contentCard: { background: 'white', borderRadius: '16px', padding: '32px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #E2E8F0' },
+  contentCard: { background: 'white', borderRadius: '16px', padding: '32px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', border: '1px solid #E2E8F0' },
   sectionTitle: { fontSize: '20px', fontWeight: 600, color: '#0A1929', marginBottom: '8px' },
   sectionDesc: { fontSize: '14px', color: '#64748B', marginBottom: '24px' },
   subsectionTitle: { fontSize: '16px', fontWeight: 600, color: '#0A1929', marginBottom: '16px' },
   executiveSummarySection: { marginBottom: '32px' },
+  narrativeBox: { background: '#F8FAFC', padding: '24px', borderRadius: '12px', borderLeft: '6px solid', marginBottom: '20px' },
   executiveText: { fontSize: '16px', lineHeight: '1.6', color: '#2D3748', marginBottom: '16px' },
   executiveDesc: { fontSize: '14px', color: '#64748B', fontStyle: 'italic' },
+  insightCard: { padding: '20px', borderRadius: '12px', marginBottom: '32px' },
+  insightCardHeader: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' },
+  insightCardIcon: { fontSize: '24px' },
+  insightCardTitle: { fontSize: '16px', fontWeight: 600, color: '#0A1929', margin: 0 },
+  insightCardText: { fontSize: '14px', lineHeight: '1.6', color: '#2D3748', margin: 0 },
   statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '32px' },
-  statCard: { background: '#F8FAFC', padding: '16px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '12px', border: '1px solid #E2E8F0' },
+  statCard: { padding: '16px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '12px', border: '1px solid rgba(0,0,0,0.05)' },
   statIcon: { fontSize: '28px' },
   statValue: { fontSize: '24px', fontWeight: 700, color: '#0A1929' },
   statLabel: { fontSize: '12px', color: '#64748B' },
   strengthsSection: { marginBottom: '32px' },
   strengthsGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' },
-  strengthItem: { background: '#F0F9F0', padding: '16px', borderRadius: '12px', border: '1px solid #C6F6D5' },
+  strengthItem: { padding: '16px', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.05)' },
   strengthHeader: { display: 'flex', justifyContent: 'space-between', marginBottom: '8px' },
   strengthName: { fontSize: '14px', fontWeight: 600, color: '#0A5C2E' },
   strengthScore: { fontSize: '14px', fontWeight: 700, color: '#0A5C2E' },
@@ -946,7 +1014,7 @@ const stylesModern = {
   strengthNarrative: { fontSize: '12px', color: '#2F855A', marginTop: '8px', lineHeight: '1.5' },
   weaknessesSection: { marginBottom: '16px' },
   weaknessesGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' },
-  weaknessItem: { background: '#FEF2F2', padding: '16px', borderRadius: '12px', border: '1px solid #FEE2E2' },
+  weaknessItem: { padding: '16px', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.05)' },
   weaknessHeader: { display: 'flex', justifyContent: 'space-between', marginBottom: '8px' },
   weaknessName: { fontSize: '14px', fontWeight: 600, color: '#B91C1C' },
   weaknessScore: { fontSize: '14px', fontWeight: 700, color: '#B91C1C' },
@@ -965,7 +1033,7 @@ const stylesModern = {
   gradeBadge: { padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, display: 'inline-block' },
   detailedAnalysisSection: { marginTop: '32px' },
   analysisGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' },
-  analysisCard: { background: '#F8FAFC', borderRadius: '12px', padding: '20px', border: '1px solid #E2E8F0', transition: 'transform 0.2s, box-shadow 0.2s' },
+  analysisCard: { borderRadius: '12px', padding: '20px', border: '1px solid #E2E8F0', transition: 'transform 0.2s, box-shadow 0.2s' },
   analysisHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px', flexWrap: 'wrap', gap: '12px' },
   analysisCategory: { fontSize: '15px', fontWeight: 600, color: '#0A1929', display: 'block', marginBottom: '6px' },
   analysisGrade: { padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: 500, display: 'inline-block' },
@@ -979,7 +1047,7 @@ const stylesModern = {
   insightText: { fontSize: '12px', color: '#475569', flex: 1 },
   analysisGap: { display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#F57C00', paddingTop: '10px', borderTop: '1px solid #E2E8F0' },
   competenciesGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' },
-  competencyCard: { background: '#F8FAFC', padding: '20px', borderRadius: '12px', border: '1px solid #E2E8F0' },
+  competencyCard: { padding: '20px', borderRadius: '12px', border: '1px solid #E2E8F0' },
   competencyHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' },
   competencyName: { fontSize: '15px', fontWeight: 600, color: '#0A1929', marginBottom: '4px' },
   competencyCategory: { fontSize: '11px', color: '#64748B' },
@@ -988,14 +1056,14 @@ const stylesModern = {
   competencyNarrative: { fontSize: '12px', color: '#4A5568', lineHeight: '1.4', marginBottom: '8px' },
   competencyTarget: { fontSize: '11px', color: '#64748B', textAlign: 'right' },
   recommendationsList: { display: 'flex', flexDirection: 'column', gap: '16px' },
-  recommendationCard: { background: '#F8FAFC', padding: '20px', borderRadius: '12px', border: '1px solid #E2E8F0' },
+  recommendationCard: { padding: '20px', borderRadius: '12px', border: '1px solid #E2E8F0' },
   recommendationHeader: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' },
   recommendationPriority: { padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: 600 },
   recommendationCategory: { fontSize: '14px', fontWeight: 600, color: '#0A1929' },
   recommendationText: { fontSize: '14px', color: '#2D3748', lineHeight: '1.6', marginBottom: '12px' },
   recommendationAction: { fontSize: '13px', color: '#475569', marginBottom: '8px' },
   recommendationImpact: { fontSize: '13px', color: '#64748B' },
-  planCard: { background: '#F8FAFC', borderRadius: '12px', padding: '24px', marginBottom: '24px', border: '1px solid #E2E8F0' },
+  planCard: { padding: '24px', borderRadius: '12px', marginBottom: '24px', border: '1px solid #E2E8F0' },
   planHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' },
   planArea: { fontSize: '18px', fontWeight: 600, color: '#0A1929', display: 'block', marginBottom: '4px' },
   planPriority: { padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: 600, display: 'inline-block' },
@@ -1022,7 +1090,7 @@ const stylesModern = {
   noDevText: { fontSize: '14px', color: '#2E7D32', marginBottom: '16px' },
   noDevSubtext: { fontSize: '13px', color: '#64748B', marginBottom: '12px' },
   noDevList: { textAlign: 'left', display: 'inline-block', margin: '0 auto', color: '#4A5568', fontSize: '13px', lineHeight: '1.8' },
-  superOverview: { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '16px', padding: '24px', marginBottom: '24px', color: 'white' },
+  superOverview: { borderRadius: '16px', padding: '24px', marginBottom: '24px', color: 'white' },
   superHeader: { display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px' },
   superIcon: { fontSize: '48px' },
   superTitle: { fontSize: '20px', fontWeight: 600, marginBottom: '8px' },
