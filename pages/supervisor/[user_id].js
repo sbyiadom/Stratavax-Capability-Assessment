@@ -163,7 +163,6 @@ function CandidateReportComponent() {
       const report = generateStratavaxReport(user_id, assessmentTypeId, responsesData || [], candidateInfo.full_name, result.completed_at);
       setStratavaxReport(report);
 
-      // Generate detailed category analysis with narratives
       const detailedAnalysis = {};
       if (result.category_scores) {
         Object.entries(result.category_scores).forEach(([category, data]) => {
@@ -465,7 +464,7 @@ function CandidateReportComponent() {
           </div>
         )}
 
-        {/* Score Breakdown Tab - As a Table with Narrative */}
+        {/* Score Breakdown Tab */}
         {activeTab === 'breakdown' && (
           <div style={stylesModern.contentCard}>
             <h2 style={stylesModern.sectionTitle}>Score Breakdown by Category</h2>
@@ -508,7 +507,6 @@ function CandidateReportComponent() {
               </table>
             </div>
 
-            {/* Detailed Narrative Analysis for Each Category */}
             <div style={stylesModern.detailedAnalysisSection}>
               <h3 style={stylesModern.subsectionTitle}>📖 Detailed Category Analysis</h3>
               <p style={stylesModern.sectionDesc}>Each score tells a story about the candidate's capabilities</p>
@@ -599,90 +597,108 @@ function CandidateReportComponent() {
           </div>
         )}
 
-        {/* Development Plan Tab - NEW */}
+        {/* Development Plan Tab - FIXED */}
         {activeTab === 'development' && (
           <div style={stylesModern.contentCard}>
             <h2 style={stylesModern.sectionTitle}>📅 Personalized Development Plan</h2>
             <p style={stylesModern.sectionDesc}>A structured 90-day plan to help {candidate.full_name} improve in key areas</p>
             
-            {competencyData.filter(c => c.percentage < 70).slice(0, 3).map((comp, idx) => {
-              const actions = getActionablePlan(comp.competencies.name, comp.percentage);
-              const priority = comp.percentage < 50 ? 'Critical' : comp.percentage < 60 ? 'High' : 'Medium';
-              const timeframe = comp.percentage < 50 ? 'Week 1-4' : comp.percentage < 60 ? 'Week 1-6' : 'Week 1-8';
-              
-              return (
-                <div key={idx} style={stylesModern.planCard}>
-                  <div style={stylesModern.planHeader}>
-                    <div>
-                      <span style={stylesModern.planArea}>{comp.competencies.name}</span>
-                      <span style={{...stylesModern.planPriority, background: priority === 'Critical' ? '#FEF2F2' : priority === 'High' ? '#FFF3E0' : '#E3F2FD', color: priority === 'Critical' ? '#B91C1C' : priority === 'High' ? '#F57C00' : '#1565C0'}}>
-                        {priority} Priority
-                      </span>
+            {competencyData.filter(c => c.percentage < 80).length > 0 ? (
+              <>
+                {competencyData.filter(c => c.percentage < 80).slice(0, 3).map((comp, idx) => {
+                  const actions = getActionablePlan(comp.competencies.name, comp.percentage);
+                  const priority = comp.percentage < 50 ? 'Critical' : comp.percentage < 65 ? 'High' : 'Medium';
+                  const timeframe = comp.percentage < 50 ? 'Week 1-4' : comp.percentage < 65 ? 'Week 1-6' : 'Week 1-8';
+                  
+                  return (
+                    <div key={idx} style={stylesModern.planCard}>
+                      <div style={stylesModern.planHeader}>
+                        <div>
+                          <span style={stylesModern.planArea}>{comp.competencies.name}</span>
+                          <span style={{...stylesModern.planPriority, background: priority === 'Critical' ? '#FEF2F2' : priority === 'High' ? '#FFF3E0' : '#E3F2FD', color: priority === 'Critical' ? '#B91C1C' : priority === 'High' ? '#F57C00' : '#1565C0'}}>
+                            {priority} Priority
+                          </span>
+                        </div>
+                        <div style={stylesModern.planScore}>
+                          <span>Current: {comp.percentage}%</span>
+                          <span style={stylesModern.planArrow}>→</span>
+                          <span style={stylesModern.planTarget}>Target: 80%</span>
+                        </div>
+                      </div>
+                      
+                      <div style={stylesModern.planGap}>
+                        <div style={{width: `${(comp.percentage / 80) * 100}%`, height: '8px', background: priority === 'Critical' ? '#F44336' : priority === 'High' ? '#FF9800' : '#2196F3', borderRadius: '4px'}} />
+                      </div>
+                      
+                      <div style={stylesModern.planTimeframe}>
+                        <span>⏱️ Timeframe: {timeframe}</span>
+                        <span>Gap: {comp.gap}% to target</span>
+                      </div>
+                      
+                      <div style={stylesModern.planActions}>
+                        <h4 style={stylesModern.planActionsTitle}>📋 Action Items:</h4>
+                        <ul style={stylesModern.planActionsList}>
+                          {actions.map((action, actionIdx) => (
+                            <li key={actionIdx} style={stylesModern.planActionItem}>✓ {action}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      
+                      <div style={stylesModern.planMilestones}>
+                        <h4 style={stylesModern.planMilestonesTitle}>🎯 Milestones:</h4>
+                        <div style={stylesModern.planMilestonesGrid}>
+                          <div style={stylesModern.milestone}>
+                            <span style={stylesModern.milestoneWeek}>Week 2</span>
+                            <span>Complete initial assessment</span>
+                          </div>
+                          <div style={stylesModern.milestone}>
+                            <span style={stylesModern.milestoneWeek}>Week 4</span>
+                            <span>Demonstrate basic proficiency</span>
+                          </div>
+                          <div style={stylesModern.milestone}>
+                            <span style={stylesModern.milestoneWeek}>Week 8</span>
+                            <span>Apply in real scenarios</span>
+                          </div>
+                          <div style={stylesModern.milestone}>
+                            <span style={stylesModern.milestoneWeek}>Week 12</span>
+                            <span>Achieve target proficiency</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <div style={stylesModern.planScore}>
-                      <span>Current: {comp.percentage}%</span>
-                      <span style={stylesModern.planArrow}>→</span>
-                      <span style={stylesModern.planTarget}>Target: 80%</span>
-                    </div>
-                  </div>
-                  
-                  <div style={stylesModern.planGap}>
-                    <div style={{width: `${(comp.percentage / 80) * 100}%`, height: '8px', background: priority === 'Critical' ? '#F44336' : priority === 'High' ? '#FF9800' : '#2196F3', borderRadius: '4px'}} />
-                  </div>
-                  
-                  <div style={stylesModern.planTimeframe}>
-                    <span>⏱️ Timeframe: {timeframe}</span>
-                    <span>Gap: {comp.gap}% to target</span>
-                  </div>
-                  
-                  <div style={stylesModern.planActions}>
-                    <h4 style={stylesModern.planActionsTitle}>📋 Action Items:</h4>
-                    <ul style={stylesModern.planActionsList}>
-                      {actions.map((action, actionIdx) => (
-                        <li key={actionIdx} style={stylesModern.planActionItem}>✓ {action}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  
-                  <div style={stylesModern.planMilestones}>
-                    <h4 style={stylesModern.planMilestonesTitle}>🎯 Milestones:</h4>
-                    <div style={stylesModern.planMilestonesGrid}>
-                      <div style={stylesModern.milestone}>
-                        <span style={stylesModern.milestoneWeek}>Week 2</span>
-                        <span>Complete initial assessment</span>
-                      </div>
-                      <div style={stylesModern.milestone}>
-                        <span style={stylesModern.milestoneWeek}>Week 4</span>
-                        <span>Demonstrate basic proficiency</span>
-                      </div>
-                      <div style={stylesModern.milestone}>
-                        <span style={stylesModern.milestoneWeek}>Week 8</span>
-                        <span>Apply in real scenarios</span>
-                      </div>
-                      <div style={stylesModern.milestone}>
-                        <span style={stylesModern.milestoneWeek}>Week 12</span>
-                        <span>Achieve target proficiency</span>
-                      </div>
-                    </div>
-                  </div>
+                  );
+                })}
+                
+                <div style={stylesModern.planSummary}>
+                  <h4 style={stylesModern.planSummaryTitle}>📌 Summary of Development Focus</h4>
+                  <p>Based on the assessment results, {candidate.full_name} should focus on the following priority areas over the next 90 days:</p>
+                  <ul>
+                    {competencyData.filter(c => c.percentage < 80).slice(0, 3).map((comp, idx) => (
+                      <li key={idx}><strong>{comp.competencies.name}:</strong> Improve from {comp.percentage}% to 80% (gap of {comp.gap}%)</li>
+                    ))}
+                  </ul>
+                  <p style={stylesModern.planSummaryNote}>📅 Recommended check-in schedule: Every 2 weeks for first month, then monthly thereafter.</p>
+                  <p style={stylesModern.planSummaryNote}>🎯 Success metric: Achieve 80% or higher in all priority areas within 90 days.</p>
                 </div>
-              );
-            })}
-            
-            <div style={stylesModern.planSummary}>
-              <h4 style={stylesModern.planSummaryTitle}>📌 Summary of Development Focus</h4>
-              <p>Based on the assessment results, {candidate.full_name} should focus on the following priority areas over the next 90 days:</p>
-              <ul>
-                {competencyData.filter(c => c.percentage < 70).slice(0, 3).map((comp, idx) => (
-                  <li key={idx}><strong>{comp.competencies.name}:</strong> Improve from {comp.percentage}% to 80% (gap of {comp.gap}%)</li>
-                ))}
-              </ul>
-              <p style={stylesModern.planSummaryNote}>Regular check-ins and progress reviews are recommended every 2-4 weeks to ensure steady improvement.</p>
-            </div>
+              </>
+            ) : (
+              <div style={stylesModern.noDevelopmentNeeded}>
+                <div style={stylesModern.noDevIcon}>🏆</div>
+                <h3 style={stylesModern.noDevTitle}>Excellent Performance!</h3>
+                <p style={stylesModern.noDevText}>{candidate.full_name} has scored 80% or higher in all competency areas.</p>
+                <p style={stylesModern.noDevSubtext}>While no immediate development is required, we recommend:</p>
+                <ul style={stylesModern.noDevList}>
+                  <li>Leverage strengths by mentoring others</li>
+                  <li>Take on challenging projects to continue growth</li>
+                  <li>Consider advanced certifications in areas of expertise</li>
+                  <li>Share knowledge through team training sessions</li>
+                </ul>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Super Analysis Tab - Actually Super Now */}
+        {/* Super Analysis Tab */}
         {activeTab === 'super' && superAnalysis && (
           <div style={stylesModern.contentCard}>
             <h2 style={stylesModern.sectionTitle}>🔮 Super Analysis</h2>
@@ -717,7 +733,6 @@ function CandidateReportComponent() {
               </div>
             </div>
 
-            {/* Patterns Detected */}
             {superAnalysis.patterns.crossCategory.length > 0 && (
               <div style={stylesModern.patternsSection}>
                 <h4 style={stylesModern.patternsTitle}>🔍 Critical Patterns Detected</h4>
@@ -737,7 +752,6 @@ function CandidateReportComponent() {
               </div>
             )}
 
-            {/* Competitive Differentiators */}
             {superAnalysis.differentiators.length > 0 && (
               <div style={stylesModern.differentiatorsSection}>
                 <h4 style={stylesModern.differentiatorsTitle}>🏆 Competitive Differentiators</h4>
@@ -756,7 +770,6 @@ function CandidateReportComponent() {
               </div>
             )}
 
-            {/* Predictive Insights */}
             {superAnalysis.predictiveInsights.length > 0 && (
               <div style={stylesModern.predictiveSection}>
                 <h4 style={stylesModern.predictiveTitle}>🔮 Predictive Performance Insights</h4>
@@ -773,7 +786,6 @@ function CandidateReportComponent() {
               </div>
             )}
 
-            {/* Role Readiness */}
             <div style={stylesModern.readinessSection}>
               <h4 style={stylesModern.readinessTitle}>🎯 Role Readiness Assessment</h4>
               <div style={stylesModern.readinessGrid}>
@@ -816,7 +828,6 @@ function CandidateReportComponent() {
               </div>
             </div>
 
-            {/* Development Roadmap */}
             <div style={stylesModern.superRoadmap}>
               <h4 style={stylesModern.superRoadmapTitle}>🗺️ Development Roadmap</h4>
               {superAnalysis.developmentRoadmap.immediate.length > 0 && (
@@ -999,6 +1010,12 @@ const stylesModern = {
   planSummary: { background: '#F0F4F8', padding: '20px', borderRadius: '12px', marginTop: '24px' },
   planSummaryTitle: { fontSize: '16px', fontWeight: 600, color: '#0A1929', marginBottom: '12px' },
   planSummaryNote: { fontSize: '13px', color: '#64748B', marginTop: '12px', fontStyle: 'italic' },
+  noDevelopmentNeeded: { textAlign: 'center', padding: '48px 24px', background: '#F0F9F0', borderRadius: '16px', border: '1px solid #C6F6D5' },
+  noDevIcon: { fontSize: '64px', marginBottom: '20px' },
+  noDevTitle: { fontSize: '20px', fontWeight: 600, color: '#2E7D32', marginBottom: '12px' },
+  noDevText: { fontSize: '14px', color: '#2E7D32', marginBottom: '16px' },
+  noDevSubtext: { fontSize: '13px', color: '#64748B', marginBottom: '12px' },
+  noDevList: { textAlign: 'left', display: 'inline-block', margin: '0 auto', color: '#4A5568', fontSize: '13px', lineHeight: '1.8' },
   superOverview: { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '16px', padding: '24px', marginBottom: '24px', color: 'white' },
   superHeader: { display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px' },
   superIcon: { fontSize: '48px' },
