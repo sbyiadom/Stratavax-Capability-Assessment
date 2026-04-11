@@ -570,10 +570,77 @@ export async function getUniqueQuestions(assessmentId) {
 }
 
 /**
- * Save response for unique questions - FIXED VERSION
+ * Track when a question is first viewed
+ */
+export async function trackQuestionView(session_id, question_id, question_number) {
+  try {
+    const { data: existing } = await supabase
+      .from("question_timing")
+      .select("id, visit_count")
+      .eq("session_id", session_id)
+      .eq("question_id", question_id)
+      .maybeSingle();
+
+    if (existing) {
+      // Update existing record
+      await supabase
+        .from("question_timing")
+        .update({
+          visit_count: (existing.visit_count || 0) + 1,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", existing.id);
+    } else {
+      // Create new record
+      await supabase
+        .from("question_timing")
+        .insert({
+          session_id: session_id,
+          question_id: question_id,
+          question_number: question_number,
+          first_viewed_at: new Date().toISOString(),
+          visit_count: 1
+        });
+    }
+  } catch (error) {
+    console.error("Error tracking question view:", error);
+  }
+}
+
+/**
+ * Update question timing when answered
+ */
+async function updateQuestionTiming(session_id, question_id, isFirstAnswer) {
+  try {
+    const { data: timing } = await supabase
+      .from("question_timing")
+      .select("id, first_viewed_at")
+      .eq("session_id", session_id)
+      .eq("question_id", question_id)
+      .maybeSingle();
+
+    if (timing && timing.first_viewed_at) {
+      const timeSpent = Math.floor((Date.now() - new Date(timing.first_viewed_at).getTime()) / 1000);
+      
+      await supabase
+        .from("question_timing")
+        .update({
+          last_answered_at: new Date().toISOString(),
+          time_spent_seconds: timeSpent
+        })
+        .eq("id", timing.id);
+    }
+  } catch (error) {
+    console.error("Error updating question timing:", error);
+  }
+}
+
+/**
+ * Save response for unique questions - WITH BEHAVIORAL TRACKING
+ * Tracks time spent, answer changes, and navigation patterns
  */
 export async function saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id) {
-  console.log("💾 Saving unique response:", { session_id, user_id, question_id, answer_id });
+  console.log("💾 Saving unique response with behavioral tracking:", { session_id, user_id, question_id, answer_id });
   
   try {
     if (!session_id || !user_id || !assessment_id || !question_id || !answer_id) {
@@ -593,7 +660,7 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
     // First verify the session exists and is in progress
     const { data: session, error: sessionError } = await supabase
       .from('assessment_sessions')
-      .select('id, status')
+      .select('id, status, started_at')
       .eq('id', session_id)
       .eq('user_id', user_id)
       .single();
@@ -607,17 +674,87 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
       return { success: false, error: `Session is ${session.status}, cannot save responses` };
     }
 
+    // Get existing response to check if this is a change
+    const { data: existingResponse } = await supabase
+      .from("responses")
+      .select("id, answer_id, times_changed, first_saved_at")
+      .eq("session_id", session_id)
+      .eq("question_id", questionIdNum)
+      .maybeSingle();
+
+    const isNewResponse = !existingResponse;
+    const isAnswerChange = existingResponse && existingResponse.answer_id !== answerIdNum;
+    
+    // Calculate time spent on this question
+    let timeSpent = 0;
+    if (isNewResponse) {
+      // Get question timing record
+      const { data: timing } = await supabase
+        .from("question_timing")
+        .select("first_viewed_at")
+        .eq("session_id", session_id)
+        .eq("question_id", questionIdNum)
+        .maybeSingle();
+      
+      if (timing) {
+        timeSpent = Math.floor((Date.now() - new Date(timing.first_viewed_at).getTime()) / 1000);
+      }
+    }
+
+    // Prepare response data
+    const responseData = {
+      session_id: session_id,
+      user_id: user_id,
+      assessment_id: assessment_id,
+      question_id: questionIdNum,
+      answer_id: answerIdNum,
+      updated_at: new Date().toISOString()
+    };
+
+    if (isNewResponse) {
+      responseData.first_saved_at = new Date().toISOString();
+      responseData.time_spent_seconds = timeSpent;
+      responseData.times_changed = 0;
+      responseData.initial_answer_id = answerIdNum;
+    } else if (isAnswerChange) {
+      responseData.times_changed = (existingResponse.times_changed || 0) + 1;
+      
+      // Get the score of old and new answers to determine if improvement
+      const { data: oldAnswer } = await supabase
+        .from("unique_answers")
+        .select("score")
+        .eq("id", existingResponse.answer_id)
+        .single();
+      
+      const { data: newAnswer } = await supabase
+        .from("unique_answers")
+        .select("score")
+        .eq("id", answerIdNum)
+        .single();
+      
+      const scoreImproved = newAnswer?.score > oldAnswer?.score;
+      
+      // Record answer change in history
+      const { error: historyError } = await supabase
+        .from("answer_history")
+        .insert({
+          session_id: session_id,
+          question_id: questionIdNum,
+          old_answer_id: existingResponse.answer_id,
+          new_answer_id: answerIdNum,
+          changed_at: new Date().toISOString(),
+          score_improved: scoreImproved
+        });
+      
+      if (historyError) {
+        console.error("Error recording answer history:", historyError);
+      }
+    }
+
     // Save to responses table
     const { data, error } = await supabase
       .from("responses")
-      .upsert({
-        session_id: session_id,
-        user_id: user_id,
-        assessment_id: assessment_id,
-        question_id: questionIdNum,
-        answer_id: answerIdNum,
-        updated_at: new Date().toISOString()
-      }, {
+      .upsert(responseData, {
         onConflict: 'session_id,question_id'
       })
       .select();
@@ -627,8 +764,11 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
       return { success: false, error: error.message };
     }
 
-    console.log("✅ Unique response saved successfully");
-    return { success: true, data };
+    // Update question timing
+    await updateQuestionTiming(session_id, questionIdNum, isNewResponse);
+
+    console.log("✅ Response saved with behavioral tracking");
+    return { success: true, data, isNewResponse, isAnswerChange };
 
   } catch (error) {
     console.error("❌ Error in saveUniqueResponse:", error);
