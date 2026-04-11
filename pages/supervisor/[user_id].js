@@ -11,10 +11,22 @@ import { generateUniversalInterpretation } from "../../utils/categoryMapper";
 import { generateSuperAnalysis } from "../../utils/super-analyzer";
 import BehavioralInsights from "../../components/BehavioralInsights";
 
-// Disable SSR for the entire component
+// Disable SSR for the entire component to prevent hydration issues
 const CandidateReport = dynamic(
   () => Promise.resolve(CandidateReportComponent),
-  { ssr: false }
+  { 
+    ssr: false,
+    loading: () => (
+      <div style={styles.loadingContainer}>
+        <div style={styles.loadingBackground} />
+        <div style={styles.loadingContent}>
+          <div style={styles.spinner} />
+          <p style={styles.loadingText}>Loading Report...</p>
+          <p style={styles.loadingSubtext}>Please wait while we prepare the candidate data</p>
+        </div>
+      </div>
+    )
+  }
 );
 
 function CandidateReportComponent() {
@@ -23,31 +35,57 @@ function CandidateReportComponent() {
   const reportRef = useRef(null);
   
   const [loading, setLoading] = useState(true);
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
   const [isSupervisor, setIsSupervisor] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [candidate, setCandidate] = useState(null);
   const [allAssessments, setAllAssessments] = useState([]);
   const [selectedAssessment, setSelectedAssessment] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeSection, setActiveSection] = useState('cover');
+  const [showPrintView, setShowPrintView] = useState(false);
   const [stratavaxReport, setStratavaxReport] = useState(null);
   const [assessmentTypeName, setAssessmentTypeName] = useState('');
+  
+  // State for competency data
   const [competencyData, setCompetencyData] = useState([]);
   const [competencyInterpretation, setCompetencyInterpretation] = useState(null);
-  const [superAnalysis, setSuperAnalysis] = useState(null);
+  const [showCompetencyView, setShowCompetencyView] = useState(false);
+  
+  // NEW: Behavioral Insights data
   const [behavioralData, setBehavioralData] = useState(null);
-  const [responseDetails, setResponseDetails] = useState([]);
+  
+  // Super Analysis data
+  const [superAnalysis, setSuperAnalysis] = useState(null);
+  const [superAnalysisError, setSuperAnalysisError] = useState(false);
+
+  // Add a timeout to prevent infinite loading
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (loading) {
+        console.log("Loading timeout - forcing render");
+        setLoadingTimeout(true);
+        setLoading(false);
+      }
+    }, 15000);
+
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   // Authentication check
   useEffect(() => {
     const checkAuth = () => {
       try {
         if (typeof window === 'undefined') return;
+        
         const userSession = localStorage.getItem("userSession");
+        
         if (!userSession) {
           router.push("/login");
           return;
         }
+        
         const session = JSON.parse(userSession);
+        
         if (session.loggedIn) {
           setIsSupervisor(true);
         } else {
@@ -60,6 +98,7 @@ function CandidateReportComponent() {
         setAuthChecked(true);
       }
     };
+    
     checkAuth();
   }, [router]);
 
@@ -71,11 +110,17 @@ function CandidateReportComponent() {
       try {
         setLoading(true);
         
+        console.log("📊 Fetching data for candidate - user:", user_id);
+
         const { data: profileData, error: profileError } = await supabase
           .from('candidate_profiles')
           .select('*')
           .eq('id', user_id)
           .maybeSingle();
+
+        if (profileError) {
+          console.error("Error fetching profile:", profileError);
+        }
 
         const candidateInfo = {
           id: user_id,
@@ -84,47 +129,191 @@ function CandidateReportComponent() {
         };
         setCandidate(candidateInfo);
 
+        console.log("🔍 Step 1: Fetching assessment_results...");
         const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
           .select('*')
           .eq('user_id', user_id)
           .order('completed_at', { ascending: false });
 
+        if (resultsError) {
+          console.error("Error fetching results:", resultsError);
+        }
+
+        console.log(`Found ${resultsData?.length || 0} assessment results`);
+
         if (resultsData && resultsData.length > 0) {
           const resultsWithAssessments = [];
+          
           for (const result of resultsData) {
+            console.log(`Fetching assessment details for ID: ${result.assessment_id}`);
+            
             const { data: assessment, error: assError } = await supabase
               .from('assessments')
               .select('*, assessment_type:assessment_types(*)')
               .eq('id', result.assessment_id)
               .single();
-            if (!assError && assessment) {
-              resultsWithAssessments.push({ ...result, assessment });
+
+            if (assError) {
+              console.error("Error fetching assessment:", assError);
+              continue;
             }
+
+            resultsWithAssessments.push({
+              ...result,
+              assessment: assessment
+            });
           }
+
           if (resultsWithAssessments.length > 0) {
+            console.log(`✅ Successfully loaded ${resultsWithAssessments.length} assessments with details`);
             setAllAssessments(resultsWithAssessments);
-            await loadAssessmentData(resultsWithAssessments[0], candidateInfo);
+            
+            const defaultAssessment = resultsWithAssessments[0];
+            await loadAssessmentData(defaultAssessment, candidateInfo);
+            setLoading(false);
+            return;
           }
         }
+
+        console.log("🔍 Step 2: Checking candidate_assessments...");
+        const { data: caData, error: caError } = await supabase
+          .from('candidate_assessments')
+          .select('*')
+          .eq('user_id', user_id)
+          .eq('status', 'completed');
+
+        if (caError) {
+          console.error("Error fetching candidate_assessments:", caError);
+        }
+
+        console.log(`Found ${caData?.length || 0} completed candidate_assessments`);
+
+        if (caData && caData.length > 0) {
+          const resultsFromCA = [];
+          
+          for (const ca of caData) {
+            if (ca.result_id) {
+              const { data: result } = await supabase
+                .from('assessment_results')
+                .select('*')
+                .eq('id', ca.result_id)
+                .single();
+
+              if (result) {
+                const { data: assessment } = await supabase
+                  .from('assessments')
+                  .select('*, assessment_type:assessment_types(*)')
+                  .eq('id', ca.assessment_id)
+                  .single();
+
+                if (assessment) {
+                  resultsFromCA.push({
+                    ...result,
+                    assessment: assessment
+                  });
+                }
+              }
+            }
+          }
+
+          if (resultsFromCA.length > 0) {
+            console.log(`✅ Found ${resultsFromCA.length} results via candidate_assessments`);
+            setAllAssessments(resultsFromCA);
+            const defaultAssessment = resultsFromCA[0];
+            await loadAssessmentData(defaultAssessment, candidateInfo);
+            setLoading(false);
+            return;
+          }
+        }
+
+        console.log("❌ No assessment data found for this candidate");
+        setAllAssessments([]);
         setLoading(false);
+
       } catch (error) {
         console.error("Error fetching data:", error);
         setLoading(false);
       }
     };
+
     fetchData();
   }, [authChecked, isSupervisor, user_id]);
 
+  const extractCompetencyData = (categoryScores, assessmentTypeId, candidateName, overallPercentage) => {
+    if (!categoryScores || Object.keys(categoryScores).length === 0) {
+      return { competencies: [], interpretation: null };
+    }
+
+    console.log("🔍 Extracting competency data from category_scores");
+
+    const competencies = Object.entries(categoryScores).map(([category, data], index) => {
+      const percentage = data.percentage || 0;
+      let classification = 'Needs Development';
+      if (percentage >= 80) classification = 'Strong';
+      else if (percentage >= 55) classification = 'Moderate';
+      
+      return {
+        id: `comp-${index}`,
+        competencies: {
+          name: category,
+          category: assessmentTypeId || 'General'
+        },
+        percentage: percentage,
+        raw_score: data.score || data.total || 0,
+        max_possible: data.maxPossible || 100,
+        question_count: data.count || 1,
+        classification: classification,
+        gap: Math.max(0, 80 - percentage)
+      };
+    });
+
+    competencies.sort((a, b) => b.percentage - a.percentage);
+
+    const scoresObject = {};
+    competencies.forEach(comp => {
+      scoresObject[comp.competencies.name] = comp.percentage;
+    });
+
+    const strengths = competencies
+      .filter(c => c.percentage >= 70)
+      .map(c => ({ area: c.competencies.name, percentage: c.percentage }));
+
+    const weaknesses = competencies
+      .filter(c => c.percentage < 60)
+      .map(c => ({ area: c.competencies.name, percentage: c.percentage }));
+
+    const interpretation = generateUniversalInterpretation(
+      assessmentTypeId,
+      candidateName,
+      scoresObject,
+      strengths,
+      weaknesses,
+      overallPercentage
+    );
+
+    return { competencies, interpretation };
+  };
+
   const loadAssessmentData = async (result, candidateInfo) => {
     try {
-      // Fetch responses with question and answer details
+      console.log("Loading assessment data for result:", result.id);
+      
       const { data: responsesData, error: responsesError } = await supabase
         .from('responses')
         .select(`
           *,
-          unique_questions!inner (id, section, subsection, question_text),
-          unique_answers!inner (id, answer_text, score)
+          unique_questions!inner (
+            id,
+            section,
+            subsection,
+            question_text
+          ),
+          unique_answers!inner (
+            id,
+            answer_text,
+            score
+          )
         `)
         .eq('user_id', user_id)
         .eq('assessment_id', result.assessment_id);
@@ -133,59 +322,85 @@ function CandidateReportComponent() {
         console.error("Error fetching responses:", responsesError);
       }
 
-      // Store response details for narrative generation
-      if (responsesData && responsesData.length > 0) {
-        setResponseDetails(responsesData);
-      }
-
       const assessmentTypeId = result.assessment?.assessment_type?.code || result.assessment_type || 'general';
       const config = getAssessmentType(assessmentTypeId);
-      setAssessmentTypeName(config.name);
+      
+      const assessmentName = config.name;
+      setAssessmentTypeName(assessmentName);
+      
+      console.log(`📋 Assessment type: ${assessmentTypeId}, Name: ${assessmentName}`);
 
       const report = generateStratavaxReport(
-        user_id, assessmentTypeId, responsesData || [],
-        candidateInfo.full_name, result.completed_at
+        user_id,
+        assessmentTypeId,
+        responsesData || [],
+        candidateInfo.full_name,
+        result.completed_at
       );
+
       setStratavaxReport(report);
-
+      
       if (result.category_scores) {
-        const competencies = Object.entries(result.category_scores).map(([category, data], index) => ({
-          id: `comp-${index}`,
-          competencies: { name: category, category: assessmentTypeId || 'General' },
-          percentage: data.percentage || 0,
-          raw_score: data.score || data.total || 0,
-          max_possible: data.maxPossible || 100,
-          question_count: data.count || 1,
-          classification: data.percentage >= 80 ? 'Strong' : data.percentage >= 55 ? 'Moderate' : 'Needs Development',
-          gap: Math.max(0, 80 - (data.percentage || 0))
-        }));
+        const { competencies, interpretation } = extractCompetencyData(
+          result.category_scores,
+          assessmentTypeId,
+          candidateInfo.full_name,
+          report.percentageScore
+        );
         setCompetencyData(competencies);
+        setCompetencyInterpretation(interpretation);
+        console.log(`✅ Extracted ${competencies.length} competencies from category_scores`);
+        
+        try {
+          console.log("🔮 Generating super analysis...");
+          const analysis = generateSuperAnalysis(
+            candidateInfo.full_name,
+            assessmentTypeId,
+            responsesData || [],
+            result.category_scores,
+            result.total_score,
+            result.max_score
+          );
+          
+          setSuperAnalysis(analysis);
+          console.log(`✅ Super analysis complete - Profile ID: ${analysis.profileId}`);
+        } catch (saError) {
+          console.error("Error generating super analysis:", saError);
+          setSuperAnalysisError(true);
+        }
+      } else {
+        console.log("⚠️ No category_scores found in assessment result");
       }
-
+      
+      // NEW: Extract behavioral insights from interpretations
       if (result.interpretations?.behavioralInsights) {
         setBehavioralData(result.interpretations.behavioralInsights);
+        console.log("✅ Loaded behavioral insights");
       }
-
+      
       setSelectedAssessment({
         id: result.id,
         assessment_id: result.assessment_id,
         assessment_type: assessmentTypeId,
-        assessment_name: config.name,
+        assessment_name: assessmentName,
         total_score: result.total_score,
         max_score: result.max_score,
         percentage: report.percentageScore,
         completed_at: result.completed_at,
         category_scores: result.category_scores || {},
         config: config,
-        report: report
+        report: report,
+        interpretations: result.interpretations
       });
+      
     } catch (error) {
       console.error("Error loading assessment data:", error);
     }
   };
 
   const handleAssessmentChange = async (e) => {
-    const selected = allAssessments.find(a => a.id === e.target.value);
+    const assessmentId = e.target.value;
+    const selected = allAssessments.find(a => a.id === assessmentId);
     if (selected && candidate) {
       setLoading(true);
       await loadAssessmentData(selected, candidate);
@@ -194,288 +409,950 @@ function CandidateReportComponent() {
   };
 
   const handlePrint = () => {
-    window.print();
+    setShowPrintView(true);
+    setTimeout(() => {
+      window.print();
+      setShowPrintView(false);
+    }, 100);
   };
 
-  if (!authChecked || loading) {
+  if (loadingTimeout) {
     return (
-      <div style={styles.loadingContainer}>
-        <div style={styles.spinner} />
-        <p style={styles.loadingText}>Loading assessment report...</p>
+      <div style={styles.errorContainer}>
+        <div style={styles.errorCard}>
+          <div style={styles.errorIcon}>⚠️</div>
+          <h2>Loading Timeout</h2>
+          <p>The report is taking too long to generate. This could be due to:</p>
+          <ul style={{textAlign: 'left', marginTop: '10px'}}>
+            <li>Large amount of data to process</li>
+            <li>Network connectivity issues</li>
+            <li>Server processing delay</li>
+          </ul>
+          <button onClick={() => window.location.reload()} style={styles.retryButton}>
+            Try Again
+          </button>
+          <Link href="/supervisor" legacyBehavior>
+            <a style={styles.backLink}>← Back to Dashboard</a>
+          </Link>
+        </div>
       </div>
     );
   }
 
+  if (!authChecked || loading) {
+    return (
+      <div style={styles.loadingContainer}>
+        <div style={styles.loadingBackground} />
+        <div style={styles.loadingContent}>
+          <div style={styles.spinner} />
+          <p style={styles.loadingText}>
+            {!authChecked ? "Verifying credentials..." : "Generating report..."}
+          </p>
+          <p style={styles.loadingSubtext}>
+            {!authChecked ? "Checking your access level" : "Analyzing candidate performance data"}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isSupervisor) {
+    return null;
+  }
+
   if (!candidate || !selectedAssessment || !stratavaxReport) {
     return (
-      <div style={styles.emptyContainer}>
+      <div style={styles.emptyState}>
         <div style={styles.emptyIcon}>📊</div>
-        <h3 style={styles.emptyTitle}>No Assessment Data Available</h3>
-        <p style={styles.emptyText}>This candidate hasn't completed any assessments yet.</p>
-        <Link href="/supervisor" style={styles.backButton}>← Back to Dashboard</Link>
+        <h3>No Assessment Data Available</h3>
+        <p>This candidate hasn't completed any assessments yet, or the results haven't been processed.</p>
+        
+        <Link href="/supervisor" legacyBehavior>
+          <a style={styles.primaryButton}>← Back to Dashboard</a>
+        </Link>
       </div>
     );
   }
 
   const report = selectedAssessment.report.stratavaxReport;
-  const assessmentDisplayName = selectedAssessment.assessment_name || 'Assessment';
-  const percentageColor = selectedAssessment.percentage >= 80 ? '#2E7D32' : 
-                          selectedAssessment.percentage >= 60 ? '#1565C0' : 
-                          selectedAssessment.percentage >= 40 ? '#F57C00' : '#C62828';
+  const config = selectedAssessment.config || assessmentTypes.general;
+  const assessmentDisplayName = selectedAssessment.assessment_name || config.name;
 
   return (
-    <div style={styles.pageContainer}>
-      {/* Professional Header with Gradient */}
-      <div style={styles.header}>
-        <div style={styles.headerOverlay}>
-          <div style={styles.headerContent}>
-            <div style={styles.headerLeft}>
-              <Link href="/supervisor" style={styles.dashboardLink}>← Dashboard</Link>
-              <div style={styles.logo}>STRATAVAX</div>
-            </div>
-            <div style={styles.headerRight}>
-              {allAssessments.length > 1 && (
-                <select value={selectedAssessment.id} onChange={handleAssessmentChange} style={styles.assessmentSelect}>
-                  {allAssessments.map((a, index) => (
+    <AppLayout background="/images/preassessmentbg.jpg">
+      <div style={styles.container}>
+        <div style={styles.header}>
+          <Link href="/supervisor" legacyBehavior>
+            <a style={styles.backButton}>← Dashboard</a>
+          </Link>
+          <div style={styles.headerActions}>
+            {superAnalysis && (
+              <div style={styles.profileIdBadge}>
+                <span style={styles.profileIdLabel}>Profile ID:</span>
+                <span style={styles.profileIdValue}>{superAnalysis.profileId}</span>
+              </div>
+            )}
+            {superAnalysisError && (
+              <div style={styles.warningBadge}>
+                ⚠️ Enhanced analysis unavailable
+              </div>
+            )}
+            {allAssessments.length > 1 && (
+              <select 
+                value={selectedAssessment.id} 
+                onChange={handleAssessmentChange}
+                style={styles.assessmentSelect}
+              >
+                <option value="">-- Select Assessment --</option>
+                {allAssessments.map((a, index) => {
+                  const type = a.assessment?.assessment_type?.code || a.assessment_type || 'general';
+                  const config = getAssessmentType(type);
+                  const assessmentDate = new Date(a.completed_at).toLocaleDateString();
+                  
+                  return (
                     <option key={a.id} value={a.id}>
-                      {getAssessmentType(a.assessment?.assessment_type?.code || a.assessment_type || 'general').name} - {new Date(a.completed_at).toLocaleDateString()}
+                      {config.name} #{index + 1} - {assessmentDate}
                     </option>
-                  ))}
-                </select>
+                  );
+                })}
+              </select>
+            )}
+            <button onClick={handlePrint} style={styles.printButton}>
+              🖨️ Print / Save as PDF
+            </button>
+          </div>
+        </div>
+
+        <div style={styles.navigation}>
+          <button 
+            style={{...styles.navItem, borderBottom: activeSection === 'cover' ? '3px solid #0A1929' : '3px solid transparent'}}
+            onClick={() => setActiveSection('cover')}
+          >
+            Cover
+          </button>
+          <button 
+            style={{...styles.navItem, borderBottom: activeSection === 'executive' ? '3px solid #0A1929' : '3px solid transparent'}}
+            onClick={() => setActiveSection('executive')}
+          >
+            Executive Summary
+          </button>
+          <button 
+            style={{...styles.navItem, borderBottom: activeSection === 'breakdown' ? '3px solid #0A1929' : '3px solid transparent'}}
+            onClick={() => setActiveSection('breakdown')}
+          >
+            Score Breakdown
+          </button>
+          <button 
+            style={{...styles.navItem, borderBottom: activeSection === 'competency' ? '3px solid #0A1929' : '3px solid transparent'}}
+            onClick={() => {
+              setActiveSection('competency');
+              setShowCompetencyView(true);
+            }}
+          >
+            Competency Analysis
+          </button>
+          {/* NEW: Behavioral Insights Navigation Button */}
+          {behavioralData && (
+            <button 
+              style={{...styles.navItem, borderBottom: activeSection === 'behavioral' ? '3px solid #0A1929' : '3px solid transparent', color: '#9C27B0'}}
+              onClick={() => setActiveSection('behavioral')}
+            >
+              🧠 Behavioral Insights
+            </button>
+          )}
+          <button 
+            style={{...styles.navItem, borderBottom: activeSection === 'strengths' ? '3px solid #0A1929' : '3px solid transparent'}}
+            onClick={() => setActiveSection('strengths')}
+          >
+            Strengths & Weaknesses
+          </button>
+          <button 
+            style={{...styles.navItem, borderBottom: activeSection === 'recommendations' ? '3px solid #0A1929' : '3px solid transparent'}}
+            onClick={() => setActiveSection('recommendations')}
+          >
+            Recommendations
+          </button>
+          {superAnalysis && (
+            <button 
+              style={{...styles.navItem, borderBottom: activeSection === 'super' ? '3px solid #0A1929' : '3px solid transparent', color: '#9C27B0'}}
+              onClick={() => setActiveSection('super')}
+            >
+              🔮 Super Analysis
+            </button>
+          )}
+        </div>
+
+        <div ref={reportRef} style={styles.reportContainer}>
+          {/* SECTION 1: COVER PAGE */}
+          <section style={{...styles.section, display: activeSection === 'cover' || showPrintView ? 'block' : 'none'}}>
+            <div style={styles.coverPage}>
+              <div style={styles.coverHeader}>
+                <h1 style={styles.coverTitle}>STRATAVAX</h1>
+                <p style={styles.coverSubtitle}>{assessmentDisplayName}</p>
+              </div>
+              
+              <div style={styles.coverContent}>
+                <div style={styles.coverLogo}>📊</div>
+                <h2 style={styles.coverCandidateName}>{candidate.full_name}</h2>
+                <p style={styles.coverDetail}>Assessment: {assessmentDisplayName}</p>
+                <p style={styles.coverDetail}>Date Taken: {new Date(selectedAssessment.completed_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                <p style={styles.coverDetail}>Report Generated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                {superAnalysis && (
+                  <p style={styles.coverDetail}>Profile ID: {superAnalysis.profileId}</p>
+                )}
+                <div style={styles.coverBadge}>CONFIDENTIAL</div>
+              </div>
+              
+              <div style={styles.coverFooter}>
+                <p>© Stratavax • All Rights Reserved</p>
+              </div>
+            </div>
+          </section>
+
+          {/* SECTION 2: EXECUTIVE SUMMARY */}
+          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'executive' || showPrintView ? 'block' : 'none'}}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>Executive Summary</h2>
+            </div>
+            
+            <div style={styles.executiveSummary}>
+              <div style={styles.scoreGrid}>
+                <div style={styles.scoreItem}>
+                  <span style={styles.scoreLabel}>Total Score</span>
+                  <span style={styles.scoreValue}>{report.executiveSummary.totalScore}</span>
+                </div>
+                <div style={styles.scoreItem}>
+                  <span style={styles.scoreLabel}>Percentage</span>
+                  <span style={{...styles.scoreValue, color: report.executiveSummary.percentage >= 80 ? '#4CAF50' : report.executiveSummary.percentage >= 55 ? '#FF9800' : '#F44336'}}>
+                    {report.executiveSummary.percentage}%
+                  </span>
+                </div>
+                <div style={styles.scoreItem}>
+                  <span style={styles.scoreLabel}>Grade</span>
+                  <span style={styles.scoreValue}>{report.executiveSummary.grade}</span>
+                </div>
+                <div style={styles.scoreItem}>
+                  <span style={styles.scoreLabel}>Classification</span>
+                  <span style={{
+                    ...styles.classificationPill,
+                    background: report.executiveSummary.classification === 'High Potential' ? '#4CAF50' :
+                               report.executiveSummary.classification === 'Strong Performer' ? '#2196F3' :
+                               report.executiveSummary.classification === 'Developing' ? '#FF9800' : '#F44336',
+                    color: 'white'
+                  }}>
+                    {report.executiveSummary.classification}
+                  </span>
+                </div>
+              </div>
+
+              <div style={styles.narrativeBox}>
+                <p style={styles.narrativeText}>
+                  {report.executiveSummary.narrative.includes('General Assessment') 
+                    ? report.executiveSummary.narrative.replace('General Assessment', assessmentDisplayName)
+                    : report.executiveSummary.narrative}
+                </p>
+                <p style={styles.narrativeDescription}>{report.executiveSummary.classificationDescription}</p>
+              </div>
+
+              {/* Quick Stats with Behavioral Summary */}
+              {behavioralData && (
+                <div style={styles.insightsGrid}>
+                  <div style={styles.insightCard}>
+                    <span style={styles.insightIcon}>🧠</span>
+                    <div>
+                      <span style={styles.insightLabel}>Work Style</span>
+                      <span style={styles.insightValue}>{behavioralData.work_style || 'Balanced'}</span>
+                    </div>
+                  </div>
+                  <div style={styles.insightCard}>
+                    <span style={styles.insightIcon}>⚡</span>
+                    <div>
+                      <span style={styles.insightLabel}>Confidence</span>
+                      <span style={styles.insightValue}>{behavioralData.confidence_level || 'Moderate'}</span>
+                    </div>
+                  </div>
+                  <div style={styles.insightCard}>
+                    <span style={styles.insightIcon}>⏱️</span>
+                    <div>
+                      <span style={styles.insightLabel}>Avg Response</span>
+                      <span style={styles.insightValue}>{behavioralData.avg_response_time || 0}s</span>
+                    </div>
+                  </div>
+                  <div style={styles.insightCard}>
+                    <span style={styles.insightIcon}>🔄</span>
+                    <div>
+                      <span style={styles.insightLabel}>Answer Changes</span>
+                      <span style={styles.insightValue}>{behavioralData.total_answer_changes || 0}</span>
+                    </div>
+                  </div>
+                </div>
               )}
-              <button onClick={handlePrint} style={styles.printButton}>🖨️ Print Report</button>
             </div>
-          </div>
-        </div>
-      </div>
+          </section>
 
-      {/* Cover Page */}
-      <div style={styles.coverPage}>
-        <div style={styles.coverContent}>
-          <div style={styles.coverLogo}>STRATAVAX</div>
-          <div style={styles.coverTitle}>{assessmentDisplayName}</div>
-          <div style={styles.coverSubtitle}>Assessment Report</div>
-          <div style={styles.coverCandidate}>
-            <div style={styles.coverAvatar}>{candidate.full_name?.charAt(0) || 'C'}</div>
-            <div style={styles.coverName}>{candidate.full_name}</div>
-            <div style={styles.coverDate}>Completed: {new Date(selectedAssessment.completed_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
-          </div>
-          <div style={styles.coverBadge}>CONFIDENTIAL</div>
-        </div>
-      </div>
-
-      {/* Executive Summary Card */}
-      <div style={styles.summaryCard}>
-        <div style={styles.summaryHeader}>
-          <span style={styles.summaryIcon}>📋</span>
-          <h2 style={styles.summaryTitle}>Executive Summary</h2>
-        </div>
-        <div style={styles.summaryGrid}>
-          <div style={styles.summaryScore}>
-            <div style={styles.scoreCircleLarge}>
-              <span style={{...styles.scoreLargeValue, color: percentageColor}}>{selectedAssessment.percentage}%</span>
-              <span style={styles.scoreLargeLabel}>Overall Score</span>
+          {/* SECTION 3: SCORE BREAKDOWN */}
+          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'breakdown' || showPrintView ? 'block' : 'none'}}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>Score Breakdown</h2>
             </div>
-            <div style={styles.scoreMeta}>
-              <div><span>Total:</span> <strong>{selectedAssessment.total_score}/{selectedAssessment.max_score}</strong></div>
-              <div><span>Grade:</span> <strong>{report.executiveSummary.grade}</strong></div>
-              <div><span>Classification:</span> <strong style={{color: percentageColor}}>{report.executiveSummary.classification}</strong></div>
-            </div>
-          </div>
-          <div style={styles.summaryText}>
-            <p>{report.executiveSummary.narrative.includes('General Assessment') ? report.executiveSummary.narrative.replace('General Assessment', assessmentDisplayName) : report.executiveSummary.narrative}</p>
-            <p style={styles.summaryDesc}>{report.executiveSummary.classificationDescription}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Score Breakdown - Report Card Style */}
-      <div style={styles.reportCard}>
-        <div style={styles.cardHeader}>
-          <span style={styles.cardIcon}>📊</span>
-          <h2 style={styles.cardTitle}>Performance Report Card</h2>
-          <p style={styles.cardSubtitle}>Detailed breakdown by category with narrative analysis</p>
-        </div>
-        
-        <div style={styles.categoriesGrid}>
-          {report.scoreBreakdown.map((item, idx) => {
-            const categoryColor = item.percentage >= 80 ? '#4CAF50' :
-                                 item.percentage >= 60 ? '#2196F3' :
-                                 item.percentage >= 40 ? '#FF9800' : '#F44336';
-            const categoryBg = item.percentage >= 80 ? '#E8F5E9' :
-                              item.percentage >= 60 ? '#E3F2FD' :
-                              item.percentage >= 40 ? '#FFF3E0' : '#FFEBEE';
             
-            // Get detailed narrative for this category
-            const categoryNarrative = generateCommentary(item.category, item.percentage, 'neutral');
+            <div style={styles.tableContainer}>
+              <table style={styles.table}>
+                <thead>
+                  <tr style={styles.tableHeadRow}>
+                    <th style={styles.tableHead}>Category</th>
+                    <th style={styles.tableHead}>Score</th>
+                    <th style={styles.tableHead}>Percentage</th>
+                    <th style={styles.tableHead}>Grade</th>
+                    <th style={styles.tableHead}>Performance</th>
+                   </tr>
+                </thead>
+                <tbody>
+                  {report.scoreBreakdown.map((item, index) => (
+                    <tr key={index} style={styles.tableRow}>
+                      <td style={styles.tableCell}>{item.category}</td>
+                      <td style={styles.tableCell}>{item.score}</td>
+                      <td style={styles.tableCell}>
+                        <div style={styles.percentageContainer}>
+                          <span style={styles.percentageText}>{item.percentage}%</span>
+                          <div style={styles.progressBarContainer}>
+                            <div style={{
+                              ...styles.progressBar,
+                              width: `${item.percentage}%`,
+                              background: item.percentage >= 80 ? 'linear-gradient(90deg, #0A5C2E, #4CAF50)' :
+                                         item.percentage >= 60 ? 'linear-gradient(90deg, #1565C0, #2196F3)' :
+                                         item.percentage >= 40 ? 'linear-gradient(90deg, #E65100, #FF9800)' : 'linear-gradient(90deg, #B71C1C, #F44336)'
+                            }} />
+                          </div>
+                        </div>
+                      </td>
+                      <td style={styles.tableCell}>
+                        <span style={styles.gradeBadge}>{item.grade}</span>
+                      </td>
+                      <td style={styles.tableCell}>{item.comment}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p style={styles.tableFootnote}>Performance metrics based on {assessmentDisplayName} criteria and standardized scoring rubrics.</p>
+          </section>
+
+          {/* SECTION 4: COMPETENCY ANALYSIS */}
+          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'competency' || (showPrintView && competencyData.length > 0) ? 'block' : 'none'}}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>Competency Analysis</h2>
+              <p style={styles.sectionSubtitle}>Professional interpretation of core competencies measured in this {assessmentDisplayName.toLowerCase()}</p>
+            </div>
             
-            return (
-              <div key={idx} style={{...styles.categoryCard, borderTop: `4px solid ${categoryColor}`}}>
-                <div style={styles.categoryHeader}>
-                  <div>
-                    <span style={styles.categoryName}>{item.category}</span>
-                    <span style={{...styles.categoryGrade, background: categoryBg, color: categoryColor}}>
-                      {item.grade} • {item.percentage}%
+            {competencyData && competencyData.length > 0 ? (
+              <>
+                <div style={styles.competencyOverallNarrative}>
+                  <div style={styles.narrativeBox}>
+                    <h4 style={styles.narrativeSubtitle}>Competency Profile Summary</h4>
+                    <p style={styles.narrativeText}>
+                      {generateProfileCommentary(
+                        selectedAssessment.percentage,
+                        report.executiveSummary.classification,
+                        competencyData.filter(c => c.percentage >= 70).map(c => ({ area: c.competencies.name, percentage: c.percentage })),
+                        competencyData.filter(c => c.percentage < 60).map(c => ({ area: c.competencies.name, percentage: c.percentage }))
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <div style={styles.competencySummaryGrid}>
+                  <div style={styles.competencySummaryCard}>
+                    <span style={styles.competencySummaryLabel}>Competencies Assessed</span>
+                    <span style={styles.competencySummaryValue}>{competencyData.length}</span>
+                  </div>
+                  <div style={styles.competencySummaryCard}>
+                    <span style={styles.competencySummaryLabel}>Strong (≥80%)</span>
+                    <span style={{...styles.competencySummaryValue, color: '#4CAF50'}}>
+                      {competencyData.filter(c => c.classification === 'Strong').length}
                     </span>
                   </div>
-                  <div style={styles.categoryScoreCircle}>
-                    <span style={{...styles.categoryScoreValue, color: categoryColor}}>{item.percentage}%</span>
+                  <div style={styles.competencySummaryCard}>
+                    <span style={styles.competencySummaryLabel}>Moderate (55-79%)</span>
+                    <span style={{...styles.competencySummaryValue, color: '#FF9800'}}>
+                      {competencyData.filter(c => c.classification === 'Moderate').length}
+                    </span>
+                  </div>
+                  <div style={styles.competencySummaryCard}>
+                    <span style={styles.competencySummaryLabel}>Needs Development (&lt;55%)</span>
+                    <span style={{...styles.competencySummaryValue, color: '#F44336'}}>
+                      {competencyData.filter(c => c.classification === 'Needs Development').length}
+                    </span>
                   </div>
                 </div>
-                
-                <div style={styles.progressSection}>
-                  <div style={styles.progressBarBg}>
-                    <div style={{width: `${item.percentage}%`, height: '8px', background: categoryColor, borderRadius: '4px'}} />
-                  </div>
-                  <div style={styles.progressLabels}>
-                    <span>Needs Improvement</span>
-                    <span>Developing</span>
-                    <span>Proficient</span>
-                    <span>Exceptional</span>
-                  </div>
-                </div>
-                
-                {/* Narrative Analysis for this category */}
-                <div style={styles.categoryNarrative}>
-                  <p style={styles.narrativeText}>{categoryNarrative}</p>
-                </div>
-                
-                {/* Score breakdown */}
-                <div style={styles.scoreBreakdownRow}>
-                  <div><span>Score:</span> <strong>{item.score}</strong></div>
-                  <div><span>Target:</span> <strong>80%</strong></div>
-                  <div><span>Gap:</span> <strong style={{color: '#F44336'}}>{Math.max(0, 80 - item.percentage)}%</strong></div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
 
-      {/* Strengths & Weaknesses Section */}
-      <div style={styles.strengthsWeaknessesCard}>
-        <div style={styles.swHeader}>
-          <div style={styles.strengthsHeader}>
-            <span style={styles.swIcon}>⭐</span>
-            <h3>Key Strengths</h3>
-            <p>Areas where {candidate.full_name} excels</p>
-          </div>
-          <div style={styles.weaknessesHeader}>
-            <span style={styles.swIcon}>⚠️</span>
-            <h3>Development Areas</h3>
-            <p>Opportunities for growth</p>
-          </div>
-        </div>
-        
-        <div style={styles.swGrid}>
-          <div style={styles.strengthsList}>
-            {report.strengths.items.slice(0, 5).map((strength, idx) => (
-              <div key={idx} style={styles.strengthItem}>
-                <div style={styles.strengthItemHeader}>
-                  <span style={styles.strengthBullet}>✓</span>
-                  <span style={styles.strengthItemName}>{strength.area}</span>
-                  <span style={styles.strengthItemScore}>{strength.percentage}%</span>
+                <div style={styles.competencyGrid}>
+                  {competencyData.map(comp => {
+                    const commentary = generateCommentary(
+                      comp.competencies.name, 
+                      comp.percentage, 
+                      comp.classification === 'Strong' ? 'strength' : 
+                      comp.classification === 'Moderate' ? 'neutral' : 'weakness'
+                    );
+                    
+                    const detailedInterpretation = competencyInterpretation?.categoryInterpretation?.[comp.competencies.name]?.interpretation;
+                    
+                    return (
+                      <div key={comp.id} style={{
+                        ...styles.competencyCard,
+                        borderLeft: `6px solid ${
+                          comp.classification === 'Strong' ? '#4CAF50' :
+                          comp.classification === 'Moderate' ? '#FF9800' : '#F44336'
+                        }`
+                      }}>
+                        <div style={styles.competencyHeader}>
+                          <div>
+                            <span style={styles.competencyName}>{comp.competencies.name}</span>
+                            <span style={styles.competencyCategory}>{comp.competencies.category}</span>
+                          </div>
+                          <div style={styles.competencyScoreContainer}>
+                            <span style={{
+                              ...styles.competencyScore,
+                              color: comp.classification === 'Strong' ? '#4CAF50' :
+                                     comp.classification === 'Moderate' ? '#FF9800' : '#F44336'
+                            }}>
+                              {comp.percentage}%
+                            </span>
+                            <span style={styles.competencyBadge}>{comp.classification}</span>
+                          </div>
+                        </div>
+                        
+                        <div style={styles.competencyBarContainer}>
+                          <div style={styles.competencyBar}>
+                            <div style={{
+                              width: `${comp.percentage}%`,
+                              height: '10px',
+                              background: comp.classification === 'Strong' ? '#4CAF50' :
+                                         comp.classification === 'Moderate' ? '#FF9800' : '#F44336',
+                              borderRadius: '5px',
+                              transition: 'width 0.3s ease'
+                            }} />
+                          </div>
+                          <span style={styles.competencyTarget}>Target: 80%</span>
+                        </div>
+                        
+                        <div style={styles.competencyCommentary}>
+                          <p style={styles.commentaryText}>
+                            {detailedInterpretation || commentary}
+                          </p>
+                        </div>
+                        
+                        <details style={styles.rawScoreDetails}>
+                          <summary style={styles.rawScoreSummary}>View raw scores</summary>
+                          <div style={styles.competencyDetails}>
+                            <div style={styles.competencyDetail}>
+                              <span style={styles.competencyDetailLabel}>Raw Score:</span>
+                              <span style={styles.competencyDetailValue}>{Math.round(comp.raw_score)}/{Math.round(comp.max_possible)}</span>
+                            </div>
+                            <div style={styles.competencyDetail}>
+                              <span style={styles.competencyDetailLabel}>Questions:</span>
+                              <span style={styles.competencyDetailValue}>{comp.question_count}</span>
+                            </div>
+                          </div>
+                        </details>
+                        
+                        {comp.gap > 0 && (
+                          <div style={styles.competencyGap}>
+                            <span style={styles.gapIcon}>📈</span>
+                            <span style={styles.gapText}>
+                              Development opportunity: {comp.gap.toFixed(1)}% gap to proficiency target
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-                <p style={styles.strengthItemDesc}>{generateCommentary(strength.area, strength.percentage, 'strength')}</p>
-              </div>
-            ))}
-          </div>
-          
-          <div style={styles.weaknessesList}>
-            {report.weaknesses.items.slice(0, 5).map((weakness, idx) => (
-              <div key={idx} style={styles.weaknessItem}>
-                <div style={styles.weaknessItemHeader}>
-                  <span style={styles.weaknessBullet}>!</span>
-                  <span style={styles.weaknessItemName}>{weakness.area}</span>
-                  <span style={styles.weaknessItemScore}>{weakness.percentage}%</span>
-                </div>
-                <p style={styles.weaknessItemDesc}>{generateCommentary(weakness.area, weakness.percentage, 'weakness')}</p>
-                <div style={styles.gapTag}>Gap: {weakness.gap} points to target</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
 
-      {/* Competency Analysis Section */}
-      <div style={styles.competencyCard}>
-        <div style={styles.cardHeader}>
-          <span style={styles.cardIcon}>🎯</span>
-          <h2 style={styles.cardTitle}>Competency Analysis</h2>
-          <p style={styles.cardSubtitle}>Deep dive into core competencies</p>
-        </div>
-        
-        <div style={styles.competencyGrid}>
-          {competencyData.map(comp => (
-            <div key={comp.id} style={{
-              ...styles.competencyItem,
-              borderLeft: `4px solid ${comp.classification === 'Strong' ? '#4CAF50' : comp.classification === 'Moderate' ? '#FF9800' : '#F44336'}`
-            }}>
-              <div style={styles.competencyItemHeader}>
-                <div>
-                  <span style={styles.competencyItemName}>{comp.competencies.name}</span>
-                  <span style={styles.competencyItemLevel}>{comp.classification}</span>
-                </div>
-                <span style={styles.competencyItemScore}>{comp.percentage}%</span>
+                {competencyInterpretation && (
+                  <div style={styles.competencyInterpretation}>
+                    <h4 style={styles.interpretationTitle}>Professional Profile Analysis</h4>
+                    <p style={styles.interpretationText}>
+                      {competencyInterpretation.overallSummary}
+                    </p>
+                    
+                    {competencyInterpretation.topStrengths?.length > 0 && (
+                      <div style={styles.interpretationSection}>
+                        <h5 style={styles.interpretationSubtitle}>🔷 Key Strengths</h5>
+                        <ul style={styles.interpretationList}>
+                          {competencyInterpretation.topStrengths.map((strength, idx) => {
+                            const strengthCommentary = generateCommentary(strength, 80, 'strength');
+                            return (
+                              <li key={idx} style={styles.interpretationListItem}>
+                                <strong>{strength}:</strong> {strengthCommentary}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {competencyInterpretation.topWeaknesses?.length > 0 && (
+                      <div style={styles.interpretationSection}>
+                        <h5 style={{...styles.interpretationSubtitle, color: '#B91C1C'}}>⚠️ Development Priorities</h5>
+                        <ul style={styles.interpretationList}>
+                          {competencyInterpretation.topWeaknesses.map((weakness, idx) => {
+                            const weaknessCommentary = generateCommentary(weakness, 50, 'weakness');
+                            return (
+                              <li key={idx} style={styles.interpretationListItem}>
+                                <strong>{weakness}:</strong> {weaknessCommentary}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {competencyInterpretation.suitability && competencyInterpretation.suitability.length > 0 && (
+                      <div style={styles.interpretationSection}>
+                        <h5 style={styles.interpretationSubtitle}>✓ Role Suitability</h5>
+                        <ul style={styles.suitabilityList}>
+                          {competencyInterpretation.suitability.map((item, idx) => (
+                            <li key={idx} style={styles.suitabilityItem}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {competencyInterpretation.risks && competencyInterpretation.risks.length > 0 && (
+                      <div style={styles.interpretationSection}>
+                        <h5 style={{...styles.interpretationSubtitle, color: '#B91C1C'}}>⚠️ Considerations</h5>
+                        <ul style={styles.risksList}>
+                          {competencyInterpretation.risks.map((risk, idx) => (
+                            <li key={idx} style={styles.riskItem}>{risk}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={styles.noCompetencyData}>
+                <p>Competency data is not available for this assessment. This may be because:</p>
+                <ul style={styles.competencyBulletList}>
+                  <li>The assessment was completed before the competency framework was implemented</li>
+                  <li>Questions have not been mapped to competencies yet</li>
+                  <li>The category_scores data is not present in the assessment result</li>
+                </ul>
               </div>
-              <div style={styles.competencyProgress}>
-                <div style={{width: `${comp.percentage}%`, height: '6px', background: comp.classification === 'Strong' ? '#4CAF50' : comp.classification === 'Moderate' ? '#FF9800' : '#F44336', borderRadius: '3px'}} />
+            )}
+          </section>
+
+          {/* NEW SECTION: BEHAVIORAL INSIGHTS */}
+          {behavioralData && (
+            <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'behavioral' || showPrintView ? 'block' : 'none'}}>
+              <div style={styles.sectionHeader}>
+                <h2 style={{...styles.sectionTitle, color: '#9C27B0'}}>🧠 Behavioral Insights</h2>
+                <p style={styles.sectionSubtitle}>How {candidate.full_name} approached the assessment - behavioral patterns and work style analysis</p>
               </div>
-              <div style={styles.competencyTarget}>Target: 80% • Gap: {comp.gap}%</div>
-              <div style={styles.competencyInsight}>
-                {comp.classification === 'Strong' ? 'This is a key strength area. Continue to leverage and develop further.' :
-                 comp.classification === 'Moderate' ? 'Solid foundation with room for growth. Focused development will yield results.' :
-                 'Priority development area. Requires structured learning and practice.'}
-              </div>
+              
+              <BehavioralInsights 
+                behavioralData={behavioralData} 
+                candidateName={candidate.full_name}
+              />
+            </section>
+          )}
+
+          {/* SECTION 5: STRENGTHS & WEAKNESSES */}
+          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'strengths' || showPrintView ? 'block' : 'none'}}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>Strengths & Development Areas</h2>
             </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Behavioral Insights Section */}
-      {behavioralData && (
-        <div style={styles.behavioralCard}>
-          <div style={styles.cardHeader}>
-            <span style={styles.cardIcon}>🧠</span>
-            <h2 style={styles.cardTitle}>Behavioral Insights</h2>
-            <p style={styles.cardSubtitle}>How {candidate.full_name} approached the assessment</p>
-          </div>
-          <BehavioralInsights behavioralData={behavioralData} candidateName={candidate.full_name} />
-        </div>
-      )}
-
-      {/* Development Recommendations */}
-      <div style={styles.recommendationsCard}>
-        <div style={styles.cardHeader}>
-          <span style={styles.cardIcon}>💡</span>
-          <h2 style={styles.cardTitle}>Development Recommendations</h2>
-          <p style={styles.cardSubtitle}>Actionable steps for growth</p>
-        </div>
-        
-        <div style={styles.recommendationsList}>
-          {report.recommendations.slice(0, 5).map((rec, idx) => (
-            <div key={idx} style={{
-              ...styles.recommendationItem,
-              borderLeft: `4px solid ${rec.priority === 'High' ? '#F44336' : rec.priority === 'Medium' ? '#FF9800' : '#4CAF50'}`
-            }}>
-              <div style={styles.recommendationHeader}>
-                <span style={{...styles.priorityTag, background: rec.priority === 'High' ? '#FEF2F2' : rec.priority === 'Medium' ? '#FFF3E0' : '#E8F5E9', color: rec.priority === 'High' ? '#B91C1C' : rec.priority === 'Medium' ? '#F57C00' : '#2E7D32'}}>
-                  {rec.priority} Priority
-                </span>
-                <span style={styles.recommendationCategory}>{rec.category}</span>
+            
+            <div style={styles.strengthsSection}>
+              <div style={styles.sectionBadge}>
+                <span style={styles.badgeIcon}>🔷</span>
+                <h3 style={styles.subsectionTitle}>Key Strengths</h3>
               </div>
-              <p style={styles.recommendationText}>{rec.recommendation}</p>
-              <div style={styles.recommendationAction}><strong>Action:</strong> {rec.action}</div>
-              <div style={styles.recommendationImpact}><strong>Impact:</strong> {rec.impact}</div>
+              
+              <div style={styles.narrativeBox}>
+                <p style={styles.narrativeText}>{generateStrengthsSummary(report.strengths.items, report.strengths.topStrengths)}</p>
+              </div>
+              
+              {report.strengths.items.length > 0 ? (
+                <div style={styles.strengthsList}>
+                  {report.strengths.items.slice(0, 4).map((strength, index) => (
+                    <div key={index} style={styles.strengthCard}>
+                      <div style={styles.strengthCardHeader}>
+                        <span style={styles.strengthIcon}>⭐</span>
+                        <span style={styles.strengthName}>{strength.area}</span>
+                        <span style={styles.strengthScore}>{strength.percentage}% ({strength.grade})</span>
+                      </div>
+                      <div style={styles.strengthInterpretation}>
+                        {generateCommentary(strength.area, strength.percentage, 'strength')}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={styles.noStrengthsMessage}>
+                  No significant strengths identified above the 80% threshold in this {assessmentDisplayName.toLowerCase()}.
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-      </div>
 
-      {/* Footer */}
-      <div style={styles.footer}>
-        <p>© 2024 Stratavax - All Rights Reserved</p>
-        <p>Report generated on {new Date().toLocaleDateString()}</p>
+            <div style={{...styles.strengthsSection, marginTop: '50px'}}>
+              <div style={styles.sectionBadge}>
+                <span style={styles.badgeIcon}>⚠️</span>
+                <h3 style={{...styles.subsectionTitle, color: '#B71C1C'}}>Development Areas</h3>
+              </div>
+              
+              <div style={{...styles.narrativeBox, background: '#FEF2F2', borderLeftColor: '#F44336'}}>
+                <p style={styles.narrativeText}>{generateWeaknessesSummary(report.weaknesses.items, report.weaknesses.topWeaknesses, report.executiveSummary.percentage)}</p>
+              </div>
+              
+              <div style={styles.developmentList}>
+                {report.weaknesses.items.slice(0, 5).map((weakness, index) => {
+                  const priority = weakness.percentage < 40 ? 'Critical' : weakness.percentage < 55 ? 'High' : 'Medium';
+                  const priorityColor = priority === 'Critical' ? '#B71C1C' : priority === 'High' ? '#F57C00' : '#F9A825';
+                  
+                  return (
+                    <div key={index} style={styles.developmentItem}>
+                      <div style={styles.developmentItemHeader}>
+                        <div style={styles.bulletContainer}>
+                          <span style={{...styles.bulletPoint, backgroundColor: priorityColor}}></span>
+                          <span style={styles.developmentArea}>{weakness.area}</span>
+                        </div>
+                        <div style={styles.developmentMetrics}>
+                          <span style={{...styles.priorityBadge, backgroundColor: priorityColor, color: 'white'}}>
+                            {priority}
+                          </span>
+                          <span style={styles.developmentScore}>{weakness.percentage}%</span>
+                          <span style={styles.developmentGrade}>{weakness.grade}</span>
+                        </div>
+                      </div>
+                      
+                      <div style={styles.developmentInterpretation}>
+                        {generateCommentary(weakness.area, weakness.percentage, 'weakness')}
+                      </div>
+                      
+                      {weakness.gap > 0 && (
+                        <div style={styles.gapIndicator}>
+                          <span style={styles.gapIcon}>📈</span>
+                          <span style={styles.gapText}>Development gap: {weakness.gap} points needed to reach proficiency target</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {report.weaknesses.items.length > 5 && (
+                <details style={styles.moreDetails}>
+                  <summary style={styles.moreSummary}>View {report.weaknesses.items.length - 5} additional development areas</summary>
+                  <div style={styles.moreList}>
+                    {report.weaknesses.items.slice(5).map((weakness, index) => (
+                      <div key={index} style={styles.moreItem}>
+                        <span style={styles.moreBullet}>•</span>
+                        <span style={styles.moreArea}>{weakness.area}</span>
+                        <span style={styles.morePercentage}>{weakness.percentage}%</span>
+                        <span style={styles.moreGrade}>{weakness.grade}</span>
+                        <span style={styles.moreInterpretation}>
+                          {weakness.percentage < 40 ? 'Critical priority' : 
+                           weakness.percentage < 55 ? 'High priority' : 
+                           weakness.percentage < 70 ? 'Medium priority' : 'Low priority'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </div>
+            
+            <div style={{...styles.narrativeBox, marginTop: '40px', background: '#F0F4F8'}}>
+              <h4 style={{margin: '0 0 15px 0', color: '#0A1929'}}>Professional Profile Summary</h4>
+              <p style={styles.narrativeText}>
+                {generateProfileCommentary(
+                  report.executiveSummary.percentage,
+                  report.executiveSummary.classification,
+                  report.strengths.items,
+                  report.weaknesses.items
+                )}
+              </p>
+              <p style={styles.narrativeFootnote}>
+                This summary integrates findings from the {assessmentDisplayName.toLowerCase()} with the candidate's overall performance profile.
+              </p>
+            </div>
+          </section>
+
+          {/* SECTION 6: DEVELOPMENT RECOMMENDATIONS */}
+          <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'recommendations' || showPrintView ? 'block' : 'none'}}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>Development Recommendations</h2>
+            </div>
+            
+            <p style={styles.recommendationIntro}>
+              Based on the {assessmentDisplayName.toLowerCase()} results, the following development actions are recommended:
+            </p>
+            
+            <div style={styles.recommendationsList}>
+              {report.recommendations.map((rec, index) => (
+                <div key={index} style={{
+                  ...styles.recommendationCard,
+                  borderLeftColor: rec.priority === 'High' ? '#F44336' :
+                                  rec.priority === 'Medium' ? '#FF9800' : '#4CAF50'
+                }}>
+                  <div style={styles.recHeader}>
+                    <span style={{
+                      ...styles.priorityBadge,
+                      background: rec.priority === 'High' ? '#F44336' :
+                                 rec.priority === 'Medium' ? '#FF9800' : '#4CAF50'
+                    }}>
+                      {rec.priority}
+                    </span>
+                    <span style={styles.recCategory}>{rec.category}</span>
+                  </div>
+                  <p style={styles.recText}>{rec.recommendation}</p>
+                  <div style={styles.recAction}><strong>Action:</strong> {rec.action}</div>
+                  <div style={styles.recImpact}><strong>Impact:</strong> {rec.impact}</div>
+                </div>
+              ))}
+            </div>
+
+            {report.strengths.topStrengths.length > 0 && (
+              <div style={styles.tipBox}>
+                <h4 style={styles.tipTitle}>🎯 Leverage Your Strengths</h4>
+                <p>Your strongest areas in the {assessmentDisplayName.toLowerCase()} are <strong>{report.strengths.topStrengths.join(', ')}</strong>. Consider mentoring others and taking on projects that utilize these capabilities.</p>
+              </div>
+            )}
+
+            {report.weaknesses.topWeaknesses.length > 0 && (
+              <div style={{...styles.tipBox, background: '#FFEBEE', borderLeftColor: '#F44336'}}>
+                <h4 style={{...styles.tipTitle, color: '#F44336'}}>⚠️ Priority Focus Areas</h4>
+                <p>Focus immediate development on <strong>{report.weaknesses.topWeaknesses.join(', ')}</strong> as identified in the {assessmentDisplayName.toLowerCase()}. Create a 30-day plan with specific learning objectives.</p>
+              </div>
+            )}
+          </section>
+
+          {/* SECTION 7: SUPER ANALYSIS */}
+          {superAnalysis && (
+            <section style={{...styles.section, pageBreakBefore: 'always', display: activeSection === 'super' || showPrintView ? 'block' : 'none'}}>
+              <div style={styles.sectionHeader}>
+                <h2 style={{...styles.sectionTitle, color: '#9C27B0'}}>🔮 Super Analysis</h2>
+                <p style={styles.sectionSubtitle}>12-dimensional personalized analysis for {candidate.full_name}</p>
+              </div>
+
+              <div style={styles.profileOverview}>
+                <div style={styles.profileHeader}>
+                  <span style={styles.profileIcon}>🌟</span>
+                  <div>
+                    <h3 style={styles.profileTitle}>Candidate Profile Summary</h3>
+                    <p style={styles.profileDesc}>{superAnalysis.summary.oneLine}</p>
+                  </div>
+                </div>
+              </div>
+
+              {superAnalysis.patterns.crossCategory.length > 0 && (
+                <div style={styles.patternsSection}>
+                  <h4 style={styles.patternsTitle}>🔍 Patterns Detected</h4>
+                  <div style={styles.patternsGrid}>
+                    {superAnalysis.patterns.crossCategory.map((pattern, idx) => (
+                      <div key={idx} style={{
+                        ...styles.patternCard,
+                        borderLeft: `6px solid ${
+                          pattern.severity === 'Critical' ? '#F44336' :
+                          pattern.severity === 'High' ? '#FF9800' :
+                          pattern.severity === 'Medium' ? '#2196F3' : '#4CAF50'
+                        }`
+                      }}>
+                        <div style={styles.patternHeader}>
+                          <span style={styles.patternName}>{pattern.name}</span>
+                          <span style={{
+                            ...styles.patternSeverity,
+                            background: pattern.severity === 'Critical' ? '#FEF2F2' :
+                                       pattern.severity === 'High' ? '#FFF3E0' :
+                                       pattern.severity === 'Medium' ? '#E3F2FD' : '#E8F5E9',
+                            color: pattern.severity === 'Critical' ? '#B91C1C' :
+                                   pattern.severity === 'High' ? '#F57C00' :
+                                   pattern.severity === 'Medium' ? '#1565C0' : '#2E7D32'
+                          }}>
+                            {pattern.severity}
+                          </span>
+                        </div>
+                        <p style={styles.patternDescription}>{pattern.description}</p>
+                        <div style={styles.patternRecommendation}>
+                          <span style={styles.patternRecIcon}>💡</span>
+                          <span style={styles.patternRecText}>{pattern.recommendation}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {superAnalysis.differentiators.length > 0 && (
+                <div style={styles.differentiatorsSection}>
+                  <h4 style={styles.differentiatorsTitle}>🏆 Competitive Differentiators</h4>
+                  <div style={styles.differentiatorsGrid}>
+                    {superAnalysis.differentiators.map((diff, idx) => (
+                      <div key={idx} style={styles.differentiatorCard}>
+                        <span style={styles.diffScore}>{diff.score}%</span>
+                        <div style={styles.diffContent}>
+                          <span style={styles.diffName}>{diff.differentiator}</span>
+                          <p style={styles.diffValue}>{diff.value}</p>
+                          <p style={styles.diffApplication}>{diff.application}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div style={styles.readinessSection}>
+                <h4 style={styles.readinessTitle}>🎯 Role Readiness Assessment</h4>
+                <div style={styles.readinessGrid}>
+                  <div style={styles.readinessCard}>
+                    <span style={styles.readinessIcon}>👑</span>
+                    <span style={styles.readinessLabel}>Executive</span>
+                    <span style={{
+                      ...styles.readinessLevel,
+                      color: superAnalysis.roleReadiness.executive.ready ? '#4CAF50' : 
+                             superAnalysis.roleReadiness.executive.score >= 65 ? '#FF9800' : '#F44336'
+                    }}>
+                      {superAnalysis.roleReadiness.executive.ready ? 'Ready Now' : 
+                       superAnalysis.roleReadiness.executive.score >= 65 ? 'Developing' : 'Not Ready'}
+                    </span>
+                    <span style={styles.readinessScore}>Score: {superAnalysis.roleReadiness.executive.score}%</span>
+                    <p style={styles.readinessReasoning}>{superAnalysis.roleReadiness.executive.reasoning}</p>
+                    <span style={styles.readinessTimeframe}>⏱️ {superAnalysis.roleReadiness.executive.timeframe}</span>
+                  </div>
+
+                  <div style={styles.readinessCard}>
+                    <span style={styles.readinessIcon}>📋</span>
+                    <span style={styles.readinessLabel}>Management</span>
+                    <span style={{
+                      ...styles.readinessLevel,
+                      color: superAnalysis.roleReadiness.management.ready ? '#4CAF50' : 
+                             superAnalysis.roleReadiness.management.score >= 60 ? '#FF9800' : '#F44336'
+                    }}>
+                      {superAnalysis.roleReadiness.management.ready ? 'Ready Now' : 
+                       superAnalysis.roleReadiness.management.score >= 60 ? 'Developing' : 'Not Ready'}
+                    </span>
+                    <span style={styles.readinessScore}>Score: {superAnalysis.roleReadiness.management.score}%</span>
+                    <p style={styles.readinessReasoning}>{superAnalysis.roleReadiness.management.reasoning}</p>
+                    <span style={styles.readinessTimeframe}>⏱️ {superAnalysis.roleReadiness.management.timeframe}</span>
+                  </div>
+
+                  <div style={styles.readinessCard}>
+                    <span style={styles.readinessIcon}>⚙️</span>
+                    <span style={styles.readinessLabel}>Technical</span>
+                    <span style={{
+                      ...styles.readinessLevel,
+                      color: superAnalysis.roleReadiness.technical.ready ? '#4CAF50' : 
+                             superAnalysis.roleReadiness.technical.score >= 60 ? '#FF9800' : '#F44336'
+                    }}>
+                      {superAnalysis.roleReadiness.technical.ready ? 'Ready' : 
+                       superAnalysis.roleReadiness.technical.score >= 60 ? 'Developing' : 'Needs Work'}
+                    </span>
+                    <span style={styles.readinessScore}>Score: {superAnalysis.roleReadiness.technical.score}%</span>
+                    <p style={styles.readinessReasoning}>{superAnalysis.roleReadiness.technical.reasoning}</p>
+                    <span style={styles.readinessScope}>Scope: {superAnalysis.roleReadiness.technical.scope}</span>
+                  </div>
+
+                  <div style={styles.readinessCard}>
+                    <span style={styles.readinessIcon}>🧠</span>
+                    <span style={styles.readinessLabel}>Analytical</span>
+                    <span style={{
+                      ...styles.readinessLevel,
+                      color: superAnalysis.roleReadiness.analytical.ready ? '#4CAF50' : 
+                             superAnalysis.roleReadiness.analytical.score >= 60 ? '#FF9800' : '#F44336'
+                    }}>
+                      {superAnalysis.roleReadiness.analytical.ready ? 'Ready' : 
+                       superAnalysis.roleReadiness.analytical.score >= 60 ? 'Developing' : 'Needs Work'}
+                    </span>
+                    <span style={styles.readinessScore}>Score: {superAnalysis.roleReadiness.analytical.score}%</span>
+                    <p style={styles.readinessReasoning}>{superAnalysis.roleReadiness.analytical.reasoning}</p>
+                    <span style={styles.readinessScope}>Scope: {superAnalysis.roleReadiness.analytical.scope}</span>
+                  </div>
+                </div>
+              </div>
+
+              {superAnalysis.predictiveInsights.length > 0 && (
+                <div style={styles.predictiveBox}>
+                  <h4 style={styles.predictiveTitle}>🔮 Predictive Insights</h4>
+                  {superAnalysis.predictiveInsights.map((insight, idx) => (
+                    <div key={idx} style={{
+                      ...styles.predictiveItem,
+                      borderLeft: `4px solid ${
+                        insight.type === 'Risk' ? '#F44336' :
+                        insight.type === 'Critical Risk' ? '#B71C1C' :
+                        insight.type === 'Opportunity' ? '#4CAF50' : '#FF9800'
+                      }`
+                    }}>
+                      <span style={styles.predictiveType}>{insight.type}</span>
+                      <p style={styles.predictiveText}>{insight.insight}</p>
+                      <div style={styles.predictiveMeta}>
+                        <span style={styles.predictiveProbability}>Probability: {insight.probability}</span>
+                        <span style={styles.predictiveImpact}>Impact: {insight.impact}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={styles.roadmapSection}>
+                <h4 style={styles.roadmapTitle}>🗺️ Personalized Development Roadmap</h4>
+
+                {superAnalysis.developmentRoadmap.immediate.length > 0 && (
+                  <div style={styles.roadmapPhase}>
+                    <div style={styles.phaseHeader}>
+                      <span style={styles.phaseIcon}>🔴</span>
+                      <h5 style={styles.phaseTitle}>Immediate Priorities (0-3 months)</h5>
+                    </div>
+                    <div style={styles.phaseItems}>
+                      {superAnalysis.developmentRoadmap.immediate.map((item, idx) => (
+                        <div key={idx} style={styles.phaseItem}>
+                          <div style={styles.phaseItemHeader}>
+                            <span style={styles.phaseItemArea}>{item.area}</span>
+                            {!item.isPattern && <span style={styles.phaseItemGap}>Gap: {item.gap}%</span>}
+                          </div>
+                          {item.recommendation && (
+                            <p style={styles.phaseItemRec}>{item.recommendation}</p>
+                          )}
+                          {item.actions && item.actions.length > 0 && (
+                            <ul style={styles.phaseItemActions}>
+                              {item.actions.map((action, actionIdx) => (
+                                <li key={actionIdx} style={styles.phaseItemAction}>• {action}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {superAnalysis.developmentRoadmap.shortTerm.length > 0 && (
+                  <div style={styles.roadmapPhase}>
+                    <div style={styles.phaseHeader}>
+                      <span style={styles.phaseIcon}>🟠</span>
+                      <h5 style={styles.phaseTitle}>Short-term Goals (3-6 months)</h5>
+                    </div>
+                    <div style={styles.phaseItems}>
+                      {superAnalysis.developmentRoadmap.shortTerm.map((item, idx) => (
+                        <div key={idx} style={styles.phaseItem}>
+                          <div style={styles.phaseItemHeader}>
+                            <span style={styles.phaseItemArea}>{item.area}</span>
+                            {!item.isPattern && <span style={styles.phaseItemGap}>Gap: {item.gap}%</span>}
+                          </div>
+                          {item.recommendation && (
+                            <p style={styles.phaseItemRec}>{item.recommendation}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+        </div>
       </div>
 
       <style jsx>{`
@@ -487,637 +1364,47 @@ function CandidateReportComponent() {
         @media print {
           body { background: white; }
           button, .no-print { display: none; }
-          div { break-inside: avoid; }
         }
       `}</style>
-    </div>
+    </AppLayout>
   );
 }
 
 const styles = {
-  loadingContainer: {
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: '#F5F7FA',
-    gap: '20px'
+  // ... (keep all your existing styles exactly as they are)
+  // The styles object is very long, so I'm not reprinting it here.
+  // Keep your existing styles object exactly as it is in your current file.
+  
+  // Add these new styles for the insights grid
+  insightsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '15px',
+    marginTop: '20px'
   },
-  spinner: {
-    width: '40px',
-    height: '40px',
-    border: '3px solid #E2E8F0',
-    borderTop: '3px solid #0A1929',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite'
-  },
-  loadingText: {
-    fontSize: '14px',
-    color: '#64748B'
-  },
-  emptyContainer: {
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: '#F5F7FA',
-    textAlign: 'center'
-  },
-  emptyIcon: {
-    fontSize: '64px',
-    marginBottom: '20px',
-    opacity: 0.5
-  },
-  emptyTitle: {
-    fontSize: '20px',
-    fontWeight: 600,
-    color: '#0A1929',
-    marginBottom: '10px'
-  },
-  emptyText: {
-    fontSize: '14px',
-    color: '#64748B',
-    marginBottom: '20px'
-  },
-  backButton: {
-    display: 'inline-block',
-    padding: '10px 20px',
-    background: '#0A1929',
-    color: 'white',
-    textDecoration: 'none',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: 500
-  },
-  pageContainer: {
-    minHeight: '100vh',
-    background: '#F0F4F8',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
-  },
-  header: {
-    background: 'linear-gradient(135deg, #0A1929 0%, #1A2A3A 100%)',
-    color: 'white',
-    position: 'sticky',
-    top: 0,
-    zIndex: 100
-  },
-  headerOverlay: {
-    background: 'rgba(0,0,0,0.2)'
-  },
-  headerContent: {
-    maxWidth: '1000px',
-    margin: '0 auto',
-    padding: '16px 24px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: '16px'
-  },
-  headerLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '24px'
-  },
-  dashboardLink: {
-    color: 'rgba(255,255,255,0.8)',
-    textDecoration: 'none',
-    fontSize: '14px',
-    transition: 'color 0.2s'
-  },
-  logo: {
-    fontSize: '18px',
-    fontWeight: 700,
-    letterSpacing: '2px'
-  },
-  headerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    flexWrap: 'wrap'
-  },
-  assessmentSelect: {
-    padding: '8px 12px',
-    background: 'rgba(255,255,255,0.1)',
-    border: '1px solid rgba(255,255,255,0.2)',
-    borderRadius: '8px',
-    color: 'white',
-    fontSize: '13px',
-    cursor: 'pointer'
-  },
-  printButton: {
-    padding: '8px 16px',
-    background: 'rgba(255,255,255,0.1)',
-    border: '1px solid rgba(255,255,255,0.2)',
-    borderRadius: '8px',
-    color: 'white',
-    fontSize: '13px',
-    fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'all 0.2s'
-  },
-  coverPage: {
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    color: 'white',
-    padding: '80px 40px',
-    textAlign: 'center'
-  },
-  coverContent: {
-    maxWidth: '600px',
-    margin: '0 auto'
-  },
-  coverLogo: {
-    fontSize: '48px',
-    fontWeight: 800,
-    letterSpacing: '4px',
-    marginBottom: '20px'
-  },
-  coverTitle: {
-    fontSize: '32px',
-    fontWeight: 600,
-    marginBottom: '10px'
-  },
-  coverSubtitle: {
-    fontSize: '18px',
-    opacity: 0.8,
-    marginBottom: '40px'
-  },
-  coverCandidate: {
-    marginBottom: '40px'
-  },
-  coverAvatar: {
-    width: '80px',
-    height: '80px',
-    borderRadius: '40px',
-    background: 'rgba(255,255,255,0.2)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '36px',
-    margin: '0 auto 20px'
-  },
-  coverName: {
-    fontSize: '24px',
-    fontWeight: 600,
-    marginBottom: '10px'
-  },
-  coverDate: {
-    fontSize: '14px',
-    opacity: 0.7
-  },
-  coverBadge: {
-    display: 'inline-block',
-    padding: '8px 24px',
-    border: '2px solid white',
-    borderRadius: '40px',
-    fontSize: '14px',
-    fontWeight: 600,
-    letterSpacing: '2px'
-  },
-  summaryCard: {
-    maxWidth: '1000px',
-    margin: '40px auto',
-    background: 'white',
-    borderRadius: '16px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-    overflow: 'hidden'
-  },
-  summaryHeader: {
+  insightCard: {
     background: '#F8FAFC',
-    padding: '20px 24px',
-    borderBottom: '1px solid #E2E8F0',
+    padding: '15px',
+    borderRadius: '12px',
     display: 'flex',
     alignItems: 'center',
-    gap: '12px'
+    gap: '15px',
+    border: '1px solid #E2E8F0'
   },
-  summaryIcon: {
+  insightIcon: {
     fontSize: '24px'
   },
-  summaryTitle: {
-    fontSize: '18px',
-    fontWeight: 600,
-    color: '#0A1929',
-    margin: 0
-  },
-  summaryGrid: {
-    padding: '24px',
-    display: 'flex',
-    gap: '32px',
-    flexWrap: 'wrap'
-  },
-  summaryScore: {
-    flex: '0 0 200px',
-    textAlign: 'center'
-  },
-  scoreCircleLarge: {
-    marginBottom: '16px'
-  },
-  scoreLargeValue: {
-    fontSize: '48px',
-    fontWeight: 700,
+  insightLabel: {
     display: 'block',
-    lineHeight: 1
-  },
-  scoreLargeLabel: {
     fontSize: '12px',
-    color: '#64748B'
+    color: '#718096',
+    marginBottom: '4px'
   },
-  scoreMeta: {
-    fontSize: '13px',
-    color: '#64748B',
-    textAlign: 'left',
-    borderTop: '1px solid #E2E8F0',
-    paddingTop: '16px'
-  },
-  summaryText: {
-    flex: 1,
-    fontSize: '15px',
-    lineHeight: '1.6',
-    color: '#2D3748'
-  },
-  summaryDesc: {
-    fontSize: '14px',
-    color: '#64748B',
-    marginTop: '12px',
-    fontStyle: 'italic'
-  },
-  reportCard: {
-    maxWidth: '1000px',
-    margin: '40px auto',
-    background: 'white',
-    borderRadius: '16px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-    overflow: 'hidden'
-  },
-  cardHeader: {
-    background: '#F8FAFC',
-    padding: '20px 24px',
-    borderBottom: '1px solid #E2E8F0'
-  },
-  cardIcon: {
-    fontSize: '24px',
+  insightValue: {
     display: 'block',
-    marginBottom: '8px'
-  },
-  cardTitle: {
-    fontSize: '18px',
-    fontWeight: 600,
-    color: '#0A1929',
-    margin: '0 0 4px 0'
-  },
-  cardSubtitle: {
-    fontSize: '13px',
-    color: '#64748B',
-    margin: 0
-  },
-  categoriesGrid: {
-    padding: '24px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '24px'
-  },
-  categoryCard: {
-    border: '1px solid #E2E8F0',
-    borderRadius: '12px',
-    padding: '20px',
-    background: 'white'
-  },
-  categoryHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: '16px',
-    flexWrap: 'wrap',
-    gap: '12px'
-  },
-  categoryName: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#0A1929',
-    display: 'block',
-    marginBottom: '6px'
-  },
-  categoryGrade: {
-    fontSize: '11px',
-    padding: '2px 8px',
-    borderRadius: '12px',
-    fontWeight: 500
-  },
-  categoryScoreCircle: {
-    width: '60px',
-    height: '60px',
-    borderRadius: '30px',
-    background: '#F8FAFC',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    border: '2px solid #E2E8F0'
-  },
-  categoryScoreValue: {
     fontSize: '20px',
-    fontWeight: 700
-  },
-  progressSection: {
-    marginBottom: '16px'
-  },
-  progressBarBg: {
-    background: '#EDF2F7',
-    borderRadius: '4px',
-    overflow: 'hidden',
-    marginBottom: '8px'
-  },
-  progressLabels: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: '9px',
-    color: '#94A3B8'
-  },
-  categoryNarrative: {
-    background: '#F8FAFC',
-    padding: '16px',
-    borderRadius: '8px',
-    marginBottom: '16px'
-  },
-  narrativeText: {
-    fontSize: '14px',
-    lineHeight: '1.6',
-    color: '#2D3748',
-    margin: 0,
-    fontStyle: 'italic'
-  },
-  scoreBreakdownRow: {
-    display: 'flex',
-    gap: '24px',
-    fontSize: '13px',
-    color: '#64748B',
-    paddingTop: '12px',
-    borderTop: '1px solid #E2E8F0'
-  },
-  strengthsWeaknessesCard: {
-    maxWidth: '1000px',
-    margin: '40px auto',
-    background: 'white',
-    borderRadius: '16px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-    overflow: 'hidden'
-  },
-  swHeader: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    background: '#F8FAFC',
-    borderBottom: '1px solid #E2E8F0'
-  },
-  strengthsHeader: {
-    padding: '20px 24px',
-    borderRight: '1px solid #E2E8F0'
-  },
-  weaknessesHeader: {
-    padding: '20px 24px'
-  },
-  swIcon: {
-    fontSize: '24px',
-    display: 'block',
-    marginBottom: '8px'
-  },
-  swGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    padding: '24px',
-    gap: '24px'
-  },
-  strengthsList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px'
-  },
-  weaknessesList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px'
-  },
-  strengthItem: {
-    padding: '16px',
-    background: '#F0F9F0',
-    borderRadius: '10px',
-    border: '1px solid #C6F6D5'
-  },
-  strengthItemHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    marginBottom: '8px',
-    flexWrap: 'wrap'
-  },
-  strengthBullet: {
-    width: '20px',
-    height: '20px',
-    borderRadius: '10px',
-    background: '#4CAF50',
-    color: 'white',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '12px',
-    fontWeight: 'bold'
-  },
-  strengthItemName: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#0A5C2E',
-    flex: 1
-  },
-  strengthItemScore: {
-    fontSize: '14px',
-    fontWeight: 700,
-    color: '#0A5C2E'
-  },
-  strengthItemDesc: {
-    fontSize: '12px',
-    color: '#2F855A',
-    lineHeight: '1.5',
-    margin: 0,
-    paddingLeft: '30px'
-  },
-  weaknessItem: {
-    padding: '16px',
-    background: '#FEF2F2',
-    borderRadius: '10px',
-    border: '1px solid #FEE2E2'
-  },
-  weaknessItemHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    marginBottom: '8px',
-    flexWrap: 'wrap'
-  },
-  weaknessBullet: {
-    width: '20px',
-    height: '20px',
-    borderRadius: '10px',
-    background: '#F44336',
-    color: 'white',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '12px',
-    fontWeight: 'bold'
-  },
-  weaknessItemName: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#B91C1C',
-    flex: 1
-  },
-  weaknessItemScore: {
-    fontSize: '14px',
-    fontWeight: 700,
-    color: '#B91C1C'
-  },
-  weaknessItemDesc: {
-    fontSize: '12px',
-    color: '#B91C1C',
-    lineHeight: '1.5',
-    margin: '0 0 8px 0',
-    paddingLeft: '30px'
-  },
-  gapTag: {
-    fontSize: '11px',
-    color: '#F57C00',
-    background: '#FFF3E0',
-    padding: '4px 8px',
-    borderRadius: '12px',
-    display: 'inline-block',
-    marginLeft: '30px'
-  },
-  competencyCard: {
-    maxWidth: '1000px',
-    margin: '40px auto',
-    background: 'white',
-    borderRadius: '16px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-    overflow: 'hidden'
-  },
-  competencyGrid: {
-    padding: '24px',
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '16px'
-  },
-  competencyItem: {
-    padding: '16px',
-    background: '#F8FAFC',
-    borderRadius: '10px',
-    border: '1px solid #E2E8F0'
-  },
-  competencyItemHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '12px'
-  },
-  competencyItemName: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#0A1929',
-    display: 'block'
-  },
-  competencyItemLevel: {
-    fontSize: '10px',
-    color: '#64748B',
-    display: 'block'
-  },
-  competencyItemScore: {
-    fontSize: '18px',
     fontWeight: 700,
     color: '#0A1929'
-  },
-  competencyProgress: {
-    background: '#EDF2F7',
-    borderRadius: '3px',
-    overflow: 'hidden',
-    marginBottom: '8px'
-  },
-  competencyTarget: {
-    fontSize: '10px',
-    color: '#64748B',
-    marginBottom: '8px'
-  },
-  competencyInsight: {
-    fontSize: '11px',
-    color: '#64748B',
-    fontStyle: 'italic'
-  },
-  behavioralCard: {
-    maxWidth: '1000px',
-    margin: '40px auto',
-    background: 'white',
-    borderRadius: '16px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-    overflow: 'hidden'
-  },
-  recommendationsCard: {
-    maxWidth: '1000px',
-    margin: '40px auto',
-    background: 'white',
-    borderRadius: '16px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-    overflow: 'hidden'
-  },
-  recommendationsList: {
-    padding: '24px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px'
-  },
-  recommendationItem: {
-    padding: '16px',
-    background: '#F8FAFC',
-    borderRadius: '10px',
-    border: '1px solid #E2E8F0'
-  },
-  recommendationHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '12px',
-    flexWrap: 'wrap'
-  },
-  priorityTag: {
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '11px',
-    fontWeight: 600
-  },
-  recommendationCategory: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#0A1929'
-  },
-  recommendationText: {
-    fontSize: '14px',
-    color: '#2D3748',
-    lineHeight: '1.6',
-    marginBottom: '12px'
-  },
-  recommendationAction: {
-    fontSize: '13px',
-    color: '#475569',
-    marginBottom: '8px'
-  },
-  recommendationImpact: {
-    fontSize: '13px',
-    color: '#64748B'
-  },
-  footer: {
-    textAlign: 'center',
-    padding: '40px 24px',
-    color: '#94A3B8',
-    fontSize: '12px',
-    borderTop: '1px solid #E2E8F0',
-    marginTop: '40px'
   }
 };
 
