@@ -38,9 +38,7 @@ function CandidateReportComponent() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (loading) {
-        setLoading(false);
-      }
+      if (loading) setLoading(false);
     }, 15000);
     return () => clearTimeout(timer);
   }, [loading]);
@@ -212,15 +210,15 @@ function CandidateReportComponent() {
   };
 
   const getGradeFromPercentage = (percentage) => {
-    if (percentage >= 90) return { letter: 'A', color: '#2E7D32', description: 'Exceptional' };
-    if (percentage >= 80) return { letter: 'B', color: '#4CAF50', description: 'Strong' };
-    if (percentage >= 70) return { letter: 'C', color: '#2196F3', description: 'Good' };
-    if (percentage >= 60) return { letter: 'D', color: '#FF9800', description: 'Developing' };
-    return { letter: 'F', color: '#F44336', description: 'Needs Improvement' };
+    if (percentage >= 90) return { letter: 'A+', color: '#2E7D32', bg: '#E8F5E9', description: 'Exceptional' };
+    if (percentage >= 80) return { letter: 'A', color: '#4CAF50', bg: '#E8F5E9', description: 'Excellent' };
+    if (percentage >= 70) return { letter: 'B', color: '#2196F3', bg: '#E3F2FD', description: 'Good' };
+    if (percentage >= 60) return { letter: 'C', color: '#FF9800', bg: '#FFF3E0', description: 'Developing' };
+    if (percentage >= 50) return { letter: 'D', color: '#F57C00', bg: '#FFF3E0', description: 'Below Average' };
+    return { letter: 'F', color: '#F44336', bg: '#FFEBEE', description: 'Needs Improvement' };
   };
 
   const getDevelopmentRecommendation = (category, percentage) => {
-    const gap = 80 - percentage;
     if (percentage >= 80) {
       return `Continue to leverage ${category} as a key strength. Consider mentoring others in this area.`;
     } else if (percentage >= 70) {
@@ -464,12 +462,13 @@ function CandidateReportComponent() {
           </div>
         )}
 
-        {/* Score Breakdown Tab */}
+        {/* Score Breakdown Tab - With Table and Grid Cards */}
         {activeTab === 'breakdown' && (
           <div style={stylesModern.contentCard}>
             <h2 style={stylesModern.sectionTitle}>Score Breakdown by Category</h2>
             <p style={stylesModern.sectionDesc}>Detailed analysis of performance across all categories</p>
             
+            {/* Summary Table */}
             <div style={stylesModern.tableContainer}>
               <table style={stylesModern.dataTable}>
                 <thead>
@@ -507,40 +506,46 @@ function CandidateReportComponent() {
               </table>
             </div>
 
+            {/* Detailed Category Analysis - GRID LAYOUT (Side by Side) */}
             <div style={stylesModern.detailedAnalysisSection}>
               <h3 style={stylesModern.subsectionTitle}>📖 Detailed Category Analysis</h3>
               <p style={stylesModern.sectionDesc}>Each score tells a story about the candidate's capabilities</p>
               
-              {Object.entries(detailedCategoryAnalysis).map(([category, data]) => (
-                <div key={category} style={stylesModern.analysisCard}>
-                  <div style={stylesModern.analysisHeader}>
-                    <div>
-                      <span style={stylesModern.analysisCategory}>{category}</span>
-                      <span style={{...stylesModern.analysisGrade, background: data.grade.color + '15', color: data.grade.color}}>
-                        {data.grade.letter} - {data.grade.description}
-                      </span>
+              <div style={stylesModern.analysisGrid}>
+                {Object.entries(detailedCategoryAnalysis).map(([category, data]) => {
+                  const gradeInfo = data.grade;
+                  return (
+                    <div key={category} style={{...stylesModern.analysisCard, borderTop: `4px solid ${gradeInfo.color}`}}>
+                      <div style={stylesModern.analysisHeader}>
+                        <div>
+                          <span style={stylesModern.analysisCategory}>{category}</span>
+                          <span style={{...stylesModern.analysisGrade, background: gradeInfo.bg, color: gradeInfo.color}}>
+                            {gradeInfo.letter} - {gradeInfo.description}
+                          </span>
+                        </div>
+                        <div style={stylesModern.analysisScore}>
+                          <span style={{...stylesModern.analysisScoreValue, color: gradeInfo.color}}>{data.percentage}%</span>
+                          <span style={stylesModern.analysisScoreLabel}>{data.score}/{data.maxPossible}</span>
+                        </div>
+                      </div>
+                      <div style={stylesModern.analysisProgress}>
+                        <div style={{width: `${data.percentage}%`, height: '8px', background: gradeInfo.color, borderRadius: '4px'}} />
+                      </div>
+                      <p style={stylesModern.analysisNarrative}>{data.narrative}</p>
+                      <div style={stylesModern.analysisInsight}>
+                        <span style={stylesModern.insightIcon}>💡</span>
+                        <span style={stylesModern.insightText}>{data.recommendation}</span>
+                      </div>
+                      {data.gap > 0 && (
+                        <div style={stylesModern.analysisGap}>
+                          <span>📊 Gap to target: {data.gap}%</span>
+                          <span>Target: 80%</span>
+                        </div>
+                      )}
                     </div>
-                    <div style={stylesModern.analysisScore}>
-                      <span style={stylesModern.analysisScoreValue}>{data.percentage}%</span>
-                      <span style={stylesModern.analysisScoreLabel}>{data.score}/{data.maxPossible}</span>
-                    </div>
-                  </div>
-                  <div style={stylesModern.analysisProgress}>
-                    <div style={{width: `${data.percentage}%`, height: '8px', background: data.grade.color, borderRadius: '4px'}} />
-                  </div>
-                  <p style={stylesModern.analysisNarrative}>{data.narrative}</p>
-                  <div style={stylesModern.analysisInsight}>
-                    <span style={stylesModern.insightIcon}>💡</span>
-                    <span style={stylesModern.insightText}>{data.recommendation}</span>
-                  </div>
-                  {data.gap > 0 && (
-                    <div style={stylesModern.analysisGap}>
-                      <span>📊 Gap to target: {data.gap}%</span>
-                      <span>Target: 80%</span>
-                    </div>
-                  )}
-                </div>
-              ))}
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
@@ -597,7 +602,7 @@ function CandidateReportComponent() {
           </div>
         )}
 
-        {/* Development Plan Tab - FIXED */}
+        {/* Development Plan Tab */}
         {activeTab === 'development' && (
           <div style={stylesModern.contentCard}>
             <h2 style={stylesModern.sectionTitle}>📅 Personalized Development Plan</h2>
@@ -959,19 +964,20 @@ const stylesModern = {
   tableProgressText: { fontSize: '13px', fontWeight: 500, minWidth: '40px' },
   gradeBadge: { padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, display: 'inline-block' },
   detailedAnalysisSection: { marginTop: '32px' },
-  analysisCard: { background: '#F8FAFC', borderRadius: '12px', padding: '20px', marginBottom: '16px', border: '1px solid #E2E8F0' },
+  analysisGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' },
+  analysisCard: { background: '#F8FAFC', borderRadius: '12px', padding: '20px', border: '1px solid #E2E8F0', transition: 'transform 0.2s, box-shadow 0.2s' },
   analysisHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px', flexWrap: 'wrap', gap: '12px' },
-  analysisCategory: { fontSize: '16px', fontWeight: 600, color: '#0A1929', display: 'block', marginBottom: '6px' },
-  analysisGrade: { padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 500, display: 'inline-block' },
+  analysisCategory: { fontSize: '15px', fontWeight: 600, color: '#0A1929', display: 'block', marginBottom: '6px' },
+  analysisGrade: { padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: 500, display: 'inline-block' },
   analysisScore: { textAlign: 'right' },
-  analysisScoreValue: { fontSize: '28px', fontWeight: 700, color: '#0A1929', display: 'block', lineHeight: 1 },
-  analysisScoreLabel: { fontSize: '11px', color: '#64748B' },
-  analysisProgress: { background: '#EDF2F7', borderRadius: '4px', overflow: 'hidden', marginBottom: '16px' },
-  analysisNarrative: { fontSize: '14px', lineHeight: '1.6', color: '#2D3748', marginBottom: '12px' },
-  analysisInsight: { display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: '#F1F5F9', borderRadius: '8px', marginBottom: '12px' },
+  analysisScoreValue: { fontSize: '24px', fontWeight: 700, display: 'block', lineHeight: 1 },
+  analysisScoreLabel: { fontSize: '10px', color: '#64748B' },
+  analysisProgress: { background: '#EDF2F7', borderRadius: '4px', overflow: 'hidden', marginBottom: '12px' },
+  analysisNarrative: { fontSize: '13px', lineHeight: '1.5', color: '#2D3748', marginBottom: '12px' },
+  analysisInsight: { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', background: '#F1F5F9', borderRadius: '8px', marginBottom: '12px' },
   insightIcon: { fontSize: '14px' },
-  insightText: { fontSize: '13px', color: '#475569', flex: 1 },
-  analysisGap: { display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#F57C00', paddingTop: '12px', borderTop: '1px solid #E2E8F0' },
+  insightText: { fontSize: '12px', color: '#475569', flex: 1 },
+  analysisGap: { display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#F57C00', paddingTop: '10px', borderTop: '1px solid #E2E8F0' },
   competenciesGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' },
   competencyCard: { background: '#F8FAFC', padding: '20px', borderRadius: '12px', border: '1px solid #E2E8F0' },
   competencyHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' },
@@ -979,7 +985,7 @@ const stylesModern = {
   competencyCategory: { fontSize: '11px', color: '#64748B' },
   competencyScore: { fontSize: '22px', fontWeight: 700, color: '#0A1929' },
   competencyBar: { background: '#EDF2F7', borderRadius: '3px', overflow: 'hidden', marginBottom: '8px' },
-  competencyNarrative: { fontSize: '13px', color: '#4A5568', lineHeight: '1.5', marginBottom: '8px' },
+  competencyNarrative: { fontSize: '12px', color: '#4A5568', lineHeight: '1.4', marginBottom: '8px' },
   competencyTarget: { fontSize: '11px', color: '#64748B', textAlign: 'right' },
   recommendationsList: { display: 'flex', flexDirection: 'column', gap: '16px' },
   recommendationCard: { background: '#F8FAFC', padding: '20px', borderRadius: '12px', border: '1px solid #E2E8F0' },
