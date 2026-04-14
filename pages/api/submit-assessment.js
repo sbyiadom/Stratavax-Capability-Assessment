@@ -69,6 +69,44 @@ export default async function handler(req, res) {
 
     console.log("📊 Processing for user:", userId, "assessment:", assessmentId, "session:", activeSessionId);
 
+    // ===== CRITICAL FIX: CHECK FOR VIOLATIONS BEFORE PROCESSING =====
+    const { data: sessionData, error: sessionError } = await serviceClient
+      .from('assessment_sessions')
+      .select('violation_count, auto_submitted, answered_questions, total_questions, status')
+      .eq('id', activeSessionId)
+      .single();
+
+    if (sessionError) {
+      console.error("❌ Error fetching session:", sessionError);
+    }
+
+    // If violations exceed limit (3), reject the submission
+    if (sessionData && sessionData.violation_count >= 3) {
+      console.log(`⚠️ Auto-submit rejected: ${sessionData.violation_count} violations detected`);
+      
+      // Update session as auto-submitted due to violations
+      await serviceClient
+        .from('assessment_sessions')
+        .update({
+          status: 'completed',
+          auto_submitted: true,
+          auto_submit_reason: `Auto-submitted due to ${sessionData.violation_count} rule violations. Only ${sessionData.answered_questions || 0} of ${sessionData.total_questions || 100} questions completed.`,
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', activeSessionId);
+      
+      // DO NOT create assessment_results - return error
+      return res.status(400).json({
+        success: false,
+        error: 'assessment_invalid_violations',
+        message: `Assessment auto-submitted due to ${sessionData.violation_count} rule violations. This result is invalid. Please contact your supervisor.`,
+        violation_count: sessionData.violation_count,
+        answered_questions: sessionData.answered_questions || 0,
+        total_questions: sessionData.total_questions || 100
+      });
+    }
+    // ===== END VIOLATION CHECK =====
+
     // Get all responses with full question and answer details
     const { data: responses, error: responsesError } = await userClient
       .from('responses')
@@ -121,6 +159,7 @@ export default async function handler(req, res) {
       console.error("❌ Assessment error:", assessmentError);
     }
 
+    const assessmentTypeId = assessment?.assessment_type_id;
     const assessmentType = assessment?.assessment_type?.code || 'general';
 
     // Get candidate name for the report
@@ -137,10 +176,57 @@ export default async function handler(req, res) {
       candidateName = profileData.email.split('@')[0];
     }
 
+    // ===== CRITICAL FIX: CALCULATE TRUE MAX SCORE FROM ALL QUESTIONS =====
+    async function getAssessmentTrueMaxScore(assessmentTypeId) {
+      // Get all questions for this assessment type
+      const { data: questions, error } = await serviceClient
+        .from('unique_questions')
+        .select(`
+          id,
+          unique_answers (score)
+        `)
+        .eq('assessment_type_id', assessmentTypeId);
+      
+      if (error || !questions) {
+        console.error("Error getting questions:", error);
+        return null;
+      }
+      
+      let totalMaxScore = 0;
+      for (const question of questions) {
+        // Find the highest score among answers for this question
+        const answerScores = (question.unique_answers || []).map(a => a.score || 0);
+        const maxAnswerScore = answerScores.length > 0 ? Math.max(...answerScores) : 5;
+        totalMaxScore += maxAnswerScore;
+      }
+      
+      return totalMaxScore;
+    }
+
+    // Calculate total earned score from actual answer scores
+    let totalEarnedScore = 0;
+    for (const response of responses) {
+      const answerScore = response.unique_answers?.score || 0;
+      totalEarnedScore += answerScore;
+    }
+
+    // Get the TRUE maximum score for the full assessment
+    const trueMaxScore = await getAssessmentTrueMaxScore(assessmentTypeId);
+    
+    if (!trueMaxScore) {
+      console.error("❌ Failed to calculate true max score");
+      return res.status(500).json({ error: "Failed to calculate assessment max score" });
+    }
+
+    // Calculate percentage based on FULL assessment, not just answered questions
+    const percentageScore = (totalEarnedScore / trueMaxScore) * 100;
+    
+    console.log(`📊 Score calculation: Earned=${totalEarnedScore}, TrueMax=${trueMaxScore}, Percentage=${percentageScore}%`);
+    console.log(`📊 Questions answered: ${responses.length}, Total questions in assessment: ${trueMaxScore / 5}`);
+
     // ===== COMPETENCY PROCESSING =====
     console.log("🧠 Processing competency scores...");
     
-    // Get question-competency mappings (if they exist)
     const { data: questionCompetencies, error: qcError } = await serviceClient
       .from('question_competencies')
       .select(`
@@ -154,167 +240,41 @@ export default async function handler(req, res) {
     let competencyRecommendations = [];
 
     if (questionCompetencies && questionCompetencies.length > 0 && !qcError) {
-      // Calculate competency scores
       competencyResults = calculateCompetencyScores(responses, questionCompetencies, assessmentType);
-      
-      // Generate competency-based recommendations
       competencyRecommendations = generateCompetencyRecommendations(competencyResults);
-      
       console.log(`✅ Processed ${Object.keys(competencyResults).length} competencies`);
     } else {
-      console.log("⚠️ No question-competency mappings found, skipping competency processing");
+      console.log("⚠️ No question-competency mappings found");
     }
     // ===== END COMPETENCY PROCESSING =====
 
-    // ===== BEHAVIORAL METRICS PROCESSING - FIXED =====
+    // ===== BEHAVIORAL METRICS PROCESSING =====
     console.log("🧠 Calculating behavioral metrics...");
     let behavioralMetrics = null;
     
     try {
-      // Ensure we have a session ID for behavioral tracking
-      if (!activeSessionId) {
-        // Try to get session from responses
-        const sessionFromResponses = responses.find(r => r.session_id);
-        if (sessionFromResponses?.session_id) {
-          activeSessionId = sessionFromResponses.session_id;
-          console.log("📌 Using session_id from responses:", activeSessionId);
-        } else {
-          // Generate a session ID if none exists
-          activeSessionId = crypto.randomUUID ? crypto.randomUUID() : 
-            `${Date.now()}-${userId}-${assessmentId}`;
-          console.log("📌 Generated new session_id:", activeSessionId);
-          
-          // Update responses with this session ID
-          const { error: updateError } = await serviceClient
-            .from('responses')
-            .update({ session_id: activeSessionId })
-            .eq('user_id', userId)
-            .eq('assessment_id', assessmentId);
-            
-          if (updateError) {
-            console.error("❌ Failed to update responses with session_id:", updateError);
-          }
-        }
-      }
-      
-      // Ensure timing tables exist (create if not)
-      await ensureBehavioralTables(serviceClient);
-      
-      // Extract timing data from responses
-      const timingData = extractTimingFromResponses(responses);
-      if (timingData && timingData.length > 0) {
-        console.log(`📊 Found ${timingData.length} timing records from responses`);
+      if (activeSessionId) {
+        behavioralMetrics = await calculateBehavioralMetrics(
+          activeSessionId,
+          userId,
+          assessmentId,
+          serviceClient
+        );
         
-        // Save to question_timing table
-        for (const timing of timingData) {
-          await serviceClient
-            .from('question_timing')
-            .upsert({
-              session_id: activeSessionId,
-              question_id: timing.question_id,
-              question_number: timing.question_number,
-              time_spent_seconds: timing.time_spent_seconds,
-              visit_count: timing.visit_count || 1,
-              skipped: timing.skipped || false,
-              first_viewed_at: timing.first_viewed_at,
-              last_answered_at: timing.last_answered_at,
-              user_id: userId,
-              assessment_id: assessmentId
-            }, {
-              onConflict: 'session_id, question_id'
-            });
-        }
-        console.log(`✅ Saved ${timingData.length} timing records`);
-      }
-      
-      // Extract answer history from responses with times_changed
-      const answerHistoryData = extractAnswerHistoryFromResponses(responses, userId, assessmentId);
-      if (answerHistoryData && answerHistoryData.length > 0) {
-        for (const history of answerHistoryData) {
-          await serviceClient
-            .from('answer_history')
-            .insert({
-              session_id: activeSessionId,
-              question_id: history.question_id,
-              previous_answer_id: history.previous_answer_id,
-              new_answer_id: history.new_answer_id,
-              score_improved: history.score_improved,
-              changed_at: history.changed_at,
-              user_id: userId,
-              assessment_id: assessmentId
-            });
-        }
-        console.log(`✅ Saved ${answerHistoryData.length} answer history records`);
-      }
-      
-      // Now calculate behavioral metrics
-      behavioralMetrics = await calculateBehavioralMetrics(
-        activeSessionId,
-        userId,
-        assessmentId,
-        serviceClient
-      );
-      
-      if (behavioralMetrics) {
-        console.log("✅ Behavioral metrics calculated:", {
-          work_style: behavioralMetrics.work_style,
-          confidence_level: behavioralMetrics.confidence_level,
-          total_answer_changes: behavioralMetrics.total_answer_changes,
-          avg_response_time: behavioralMetrics.avg_response_time_seconds
-        });
-        
-        // Save behavioral metrics to dedicated table
-        const { error: metricsSaveError } = await serviceClient
-          .from('behavioral_metrics')
-          .upsert({
-            user_id: userId,
-            assessment_id: assessmentId,
-            session_id: activeSessionId,
-            avg_response_time_seconds: behavioralMetrics.avg_response_time_seconds,
-            median_response_time_seconds: behavioralMetrics.median_response_time_seconds,
-            fastest_response_seconds: behavioralMetrics.fastest_response_seconds,
-            slowest_response_seconds: behavioralMetrics.slowest_response_seconds,
-            total_time_spent_seconds: behavioralMetrics.total_time_spent_seconds,
-            time_variance: behavioralMetrics.time_variance,
-            total_answer_changes: behavioralMetrics.total_answer_changes || 0,
-            avg_changes_per_question: behavioralMetrics.avg_changes_per_question || 0,
-            improvement_rate: behavioralMetrics.improvement_rate || 0,
-            first_instinct_accuracy: behavioralMetrics.first_instinct_accuracy || 0,
-            total_question_visits: behavioralMetrics.total_question_visits || responses.length,
-            revisit_rate: behavioralMetrics.revisit_rate || 0,
-            skipped_questions: behavioralMetrics.skipped_questions || 0,
-            linearity_score: behavioralMetrics.linearity_score || 100,
-            first_half_avg_time: behavioralMetrics.first_half_avg_time || 0,
-            second_half_avg_time: behavioralMetrics.second_half_avg_time || 0,
-            fatigue_factor: behavioralMetrics.fatigue_factor || 0,
-            work_style: behavioralMetrics.work_style || 'Balanced',
-            confidence_level: behavioralMetrics.confidence_level || 'Moderate',
-            attention_span: behavioralMetrics.attention_span || 'Consistent',
-            decision_pattern: behavioralMetrics.decision_pattern || 'Deliberate',
-            recommended_support: behavioralMetrics.recommended_support || '',
-            development_focus_areas: behavioralMetrics.development_focus_areas || [],
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }, {
-            onConflict: 'user_id, assessment_id, session_id'
+        if (behavioralMetrics) {
+          console.log("✅ Behavioral metrics calculated:", {
+            work_style: behavioralMetrics.work_style,
+            confidence_level: behavioralMetrics.confidence_level,
+            total_answer_changes: behavioralMetrics.total_answer_changes
           });
-          
-        if (metricsSaveError) {
-          console.error("❌ Error saving behavioral metrics:", metricsSaveError);
-        } else {
-          console.log("✅ Behavioral metrics saved to dedicated table");
         }
-      } else {
-        console.log("⚠️ No behavioral metrics generated - creating fallback data");
-        behavioralMetrics = createFallbackBehavioralMetrics(responses);
       }
     } catch (behavioralError) {
-      console.error("❌ Error calculating behavioral metrics:", behavioralError);
-      behavioralMetrics = createFallbackBehavioralMetrics(responses);
+      console.error("Error calculating behavioral metrics:", behavioralError);
     }
-    // ===== END BEHAVIORAL METRICS PROCESSING =====
+    // ===== END BEHAVIORAL METRICS =====
 
-    // Generate personalized report (your existing logic)
+    // Generate personalized report
     const personalizedReport = generatePersonalizedReport(
       userId,
       assessmentType,
@@ -323,13 +283,13 @@ export default async function handler(req, res) {
     );
 
     console.log("✅ Personalized report generated");
-    console.log("📊 Total score:", personalizedReport.totalScore, "Percentage:", personalizedReport.percentageScore);
+    console.log("📊 Total score:", totalEarnedScore, "Percentage:", percentageScore);
 
     // Determine risk level and readiness
-    const riskLevel = personalizedReport.percentageScore < 40 ? 'high' : 
-                     personalizedReport.percentageScore < 60 ? 'medium' : 'low';
-    const readiness = personalizedReport.percentageScore >= 70 ? 'ready' : 
-                     personalizedReport.percentageScore >= 50 ? 'development_needed' : 'not_ready';
+    const riskLevel = percentageScore < 40 ? 'high' : 
+                     percentageScore < 60 ? 'medium' : 'low';
+    const readiness = percentageScore >= 70 ? 'ready' : 
+                     percentageScore >= 50 ? 'development_needed' : 'not_ready';
 
     // Update session to completed
     if (activeSessionId) {
@@ -337,7 +297,9 @@ export default async function handler(req, res) {
         .from('assessment_sessions')
         .update({ 
           status: 'completed',
-          completed_at: new Date().toISOString()
+          completed_at: new Date().toISOString(),
+          answered_questions: responses.length,
+          total_questions: trueMaxScore / 5  // Each question max is 5 points
         })
         .eq('id', activeSessionId);
 
@@ -356,7 +318,7 @@ export default async function handler(req, res) {
         assessment_id: assessmentId,
         session_id: activeSessionId,
         status: 'completed',
-        score: personalizedReport.totalScore,
+        score: totalEarnedScore,
         completed_at: new Date().toISOString()
       }, { 
         onConflict: 'user_id, assessment_id' 
@@ -368,7 +330,7 @@ export default async function handler(req, res) {
       console.log("✅ Candidate assessments updated");
     }
 
-    // Prepare strengths and weaknesses as simple arrays of strings
+    // Prepare strengths and weaknesses
     const strengthsArray = personalizedReport.strengths.map(s => 
       `${s.area} (${s.percentage}%)`
     );
@@ -376,67 +338,54 @@ export default async function handler(req, res) {
       `${w.area} (${w.percentage}%)`
     );
 
-    // Prepare recommendations as a simple array of strings
+    // Prepare recommendations
     const recommendationsArray = [
       ...personalizedReport.recommendations,
       ...competencyRecommendations.map(r => r.recommendation)
     ];
 
-    // Prepare interpretations with behavioral insights - FIXED with proper fallbacks
+    // Prepare interpretations with behavioral insights
     const interpretationsObj = {
       classification: personalizedReport.gradeInfo?.description || 
-                     (personalizedReport.percentageScore >= 80 ? 'Elite Talent' :
-                      personalizedReport.percentageScore >= 60 ? 'High Potential' :
-                      personalizedReport.percentageScore >= 40 ? 'Developing Talent' :
+                     (percentageScore >= 80 ? 'Elite Talent' :
+                      percentageScore >= 60 ? 'High Potential' :
+                      percentageScore >= 40 ? 'Developing Talent' :
                       'Needs Improvement'),
       executiveSummary: personalizedReport.executiveSummary,
       overallProfile: personalizedReport.overallProfile,
       overallTraits: personalizedReport.overallTraits || [],
-      summary: `Overall performance: ${personalizedReport.percentageScore}%`,
+      summary: `Overall performance: ${Math.round(percentageScore)}%`,
       
-      // Add competency data to interpretations
       competencyData: Object.keys(competencyResults).length > 0 ? {
         results: competencyResults,
         recommendations: competencyRecommendations
       } : null,
       
-      // Add behavioral insights to interpretations - FIXED with complete data
-      behavioralInsights: {
-        // Core metrics
-        work_style: behavioralMetrics?.work_style || calculateWorkStyleFromResponses(responses),
-        confidence_level: behavioralMetrics?.confidence_level || calculateConfidenceFromResponses(responses),
-        attention_span: behavioralMetrics?.attention_span || 'Consistent',
-        decision_pattern: behavioralMetrics?.decision_pattern || 'Deliberate',
-        
-        // Timing metrics
-        avg_response_time: behavioralMetrics?.avg_response_time_seconds || calculateAvgResponseTime(responses),
-        fastest_response: behavioralMetrics?.fastest_response_seconds || calculateFastestResponse(responses),
-        slowest_response: behavioralMetrics?.slowest_response_seconds || calculateSlowestResponse(responses),
-        total_time_spent: behavioralMetrics?.total_time_spent_seconds || calculateTotalTime(responses),
-        
-        // Answer behavior metrics
-        total_answer_changes: behavioralMetrics?.total_answer_changes || calculateTotalAnswerChanges(responses),
-        question_revisit_rate: behavioralMetrics?.revisit_rate || calculateRevisitRate(responses),
-        first_instinct_accuracy: behavioralMetrics?.first_instinct_accuracy || calculateFirstInstinctAccuracy(responses),
-        improvement_rate: behavioralMetrics?.improvement_rate || calculateImprovementRate(responses),
-        
-        // Fatigue metrics
-        fatigue_factor: behavioralMetrics?.fatigue_factor || calculateFatigueFromResponses(responses),
-        
-        // Support recommendations
-        recommended_support: behavioralMetrics?.recommended_support || generateDefaultSupportRecommendation(responses),
-        development_focus_areas: behavioralMetrics?.development_focus_areas || generateDefaultFocusAreas(responses)
-      }
+      behavioralInsights: behavioralMetrics ? {
+        work_style: behavioralMetrics.work_style,
+        confidence_level: behavioralMetrics.confidence_level,
+        attention_span: behavioralMetrics.attention_span,
+        decision_pattern: behavioralMetrics.decision_pattern,
+        avg_response_time: behavioralMetrics.avg_response_time_seconds,
+        total_answer_changes: behavioralMetrics.total_answer_changes,
+        improvement_rate: behavioralMetrics.improvement_rate,
+        first_instinct_accuracy: behavioralMetrics.first_instinct_accuracy,
+        revisit_rate: behavioralMetrics.revisit_rate,
+        fatigue_factor: behavioralMetrics.fatigue_factor,
+        recommended_support: behavioralMetrics.recommended_support,
+        development_focus_areas: behavioralMetrics.development_focus_areas
+      } : null
     };
 
-    // Prepare the data for assessment_results
+    // Prepare the data for assessment_results with CORRECT max_score
     const resultData = {
       user_id: userId,
       assessment_id: assessmentId,
       session_id: activeSessionId,
-      assessment_type_id: assessment?.assessment_type_id || null,
-      total_score: personalizedReport.totalScore,
-      max_score: personalizedReport.maxScore,
+      assessment_type_id: assessmentTypeId,
+      total_score: totalEarnedScore,
+      max_score: trueMaxScore,  // Use FULL assessment max score
+      percentage_score: percentageScore,
       category_scores: personalizedReport.categoryScores,
       interpretations: interpretationsObj,
       strengths: strengthsArray,
@@ -444,10 +393,11 @@ export default async function handler(req, res) {
       recommendations: recommendationsArray,
       risk_level: riskLevel,
       readiness: readiness,
+      is_valid: true,  // Mark as valid since no violations
       completed_at: new Date().toISOString()
     };
 
-    console.log("📦 Inserting into assessment_results...");
+    console.log("📦 Inserting into assessment_results with max_score:", trueMaxScore);
 
     // Save to assessment_results
     const { data: insertedData, error: resultsError } = await serviceClient
@@ -456,30 +406,19 @@ export default async function handler(req, res) {
       .select();
 
     if (resultsError) {
-      console.error("❌ Results error - Full details:", {
-        message: resultsError.message,
-        code: resultsError.code,
-        details: resultsError.details,
-        hint: resultsError.hint
-      });
+      console.error("❌ Results error:", resultsError);
       
       return res.status(200).json({ 
         success: true,
-        score: personalizedReport.totalScore,
-        percentage: personalizedReport.percentageScore,
+        score: totalEarnedScore,
+        percentage: percentageScore,
         classification: interpretationsObj.classification,
-        behavioralMetrics: behavioralMetrics ? {
-          work_style: behavioralMetrics.work_style,
-          confidence_level: behavioralMetrics.confidence_level,
-          avg_response_time: behavioralMetrics.avg_response_time_seconds,
-          total_answer_changes: behavioralMetrics.total_answer_changes
-        } : interpretationsObj.behavioralInsights,
         warning: "Score saved but detailed report failed to save: " + resultsError.message,
         message: "Assessment submitted successfully (score only)" 
       });
     }
 
-    // ===== Save competency scores to database =====
+    // Save competency scores to database
     if (Object.keys(competencyResults).length > 0) {
       console.log("💾 Saving competency scores...");
       
@@ -509,13 +448,10 @@ export default async function handler(req, res) {
         console.log(`✅ Saved ${competencyInserts.length} competency scores`);
       }
     }
-    // ===== END SAVE COMPETENCY SCORES =====
 
     console.log("✅ Results inserted successfully:", insertedData);
 
     // Create notification for supervisor
-    console.log("📋 Creating notification for supervisor...");
-
     if (profileData?.created_by) {
       const { error: notifError } = await serviceClient
         .from('supervisor_notifications')
@@ -524,7 +460,7 @@ export default async function handler(req, res) {
           user_id: userId,
           assessment_id: assessmentId,
           result_id: insertedData?.[0]?.id,
-          message: `${profileData.full_name || profileData.email || 'Candidate'} completed ${assessment?.title || 'an assessment'}`,
+          message: `${profileData.full_name || profileData.email || 'Candidate'} completed ${assessment?.title || 'an assessment'} with ${Math.round(percentageScore)}%`,
           status: 'unread',
           created_at: new Date().toISOString()
         });
@@ -538,18 +474,16 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ 
       success: true,
-      score: personalizedReport.totalScore,
-      percentage: personalizedReport.percentageScore,
+      score: totalEarnedScore,
+      percentage: Math.round(percentageScore),
+      max_score: trueMaxScore,
       classification: interpretationsObj.classification,
       competencyCount: Object.keys(competencyResults).length,
-      behavioralMetrics: {
-        work_style: interpretationsObj.behavioralInsights.work_style,
-        confidence_level: interpretationsObj.behavioralInsights.confidence_level,
-        avg_response_time: interpretationsObj.behavioralInsights.avg_response_time,
-        total_answer_changes: interpretationsObj.behavioralInsights.total_answer_changes,
-        recommended_support: interpretationsObj.behavioralInsights.recommended_support
-      },
-      message: "Assessment submitted successfully with behavioral analytics" 
+      behavioralMetrics: behavioralMetrics ? {
+        work_style: behavioralMetrics.work_style,
+        confidence_level: behavioralMetrics.confidence_level
+      } : null,
+      message: "Assessment submitted successfully with correct scoring" 
     });
 
   } catch (err) {
@@ -560,185 +494,4 @@ export default async function handler(req, res) {
       stack: err.stack
     });
   }
-}
-
-// ===== HELPER FUNCTIONS FOR BEHAVIORAL DATA EXTRACTION =====
-
-async function ensureBehavioralTables(supabaseClient) {
-  // Check if tables exist (this is a lightweight check)
-  // In production, you'd run migrations instead
-  console.log("🔧 Ensuring behavioral tables exist...");
-  // Tables should be created via migrations - this is just a check
-}
-
-function extractTimingFromResponses(responses) {
-  if (!responses || responses.length === 0) return [];
-  
-  return responses.map((response, index) => ({
-    question_id: response.question_id,
-    question_number: index + 1,
-    time_spent_seconds: response.time_spent_seconds || 30, // Default 30s if not captured
-    visit_count: (response.times_changed || 0) + 1,
-    skipped: false,
-    first_viewed_at: response.first_saved_at || new Date().toISOString(),
-    last_answered_at: new Date().toISOString()
-  }));
-}
-
-function extractAnswerHistoryFromResponses(responses, userId, assessmentId) {
-  if (!responses || responses.length === 0) return [];
-  
-  const history = [];
-  for (const response of responses) {
-    if (response.initial_answer_id && response.initial_answer_id !== response.answer_id) {
-      history.push({
-        question_id: response.question_id,
-        previous_answer_id: response.initial_answer_id,
-        new_answer_id: response.answer_id,
-        score_improved: null, // Would need original scores to calculate
-        changed_at: response.first_saved_at || new Date().toISOString()
-      });
-    }
-  }
-  return history;
-}
-
-function calculateAvgResponseTime(responses) {
-  const times = responses.map(r => r.time_spent_seconds).filter(t => t && t > 0);
-  if (times.length === 0) return 30; // Default
-  return Math.round(times.reduce((a, b) => a + b, 0) / times.length);
-}
-
-function calculateFastestResponse(responses) {
-  const times = responses.map(r => r.time_spent_seconds).filter(t => t && t > 0);
-  if (times.length === 0) return 5;
-  return Math.min(...times);
-}
-
-function calculateSlowestResponse(responses) {
-  const times = responses.map(r => r.time_spent_seconds).filter(t => t && t > 0);
-  if (times.length === 0) return 60;
-  return Math.max(...times);
-}
-
-function calculateTotalTime(responses) {
-  const times = responses.map(r => r.time_spent_seconds).filter(t => t && t > 0);
-  if (times.length === 0) return responses.length * 30;
-  return times.reduce((a, b) => a + b, 0);
-}
-
-function calculateTotalAnswerChanges(responses) {
-  return responses.reduce((sum, r) => sum + (r.times_changed || 0), 0);
-}
-
-function calculateRevisitRate(responses) {
-  const totalChanges = calculateTotalAnswerChanges(responses);
-  if (responses.length === 0) return 0;
-  return Math.round((totalChanges / responses.length) * 100);
-}
-
-function calculateFirstInstinctAccuracy(responses) {
-  // Simplified - would need actual answer scores for accuracy
-  const unchanged = responses.filter(r => !r.initial_answer_id || r.initial_answer_id === r.answer_id).length;
-  if (responses.length === 0) return 0;
-  return Math.round((unchanged / responses.length) * 100);
-}
-
-function calculateImprovementRate(responses) {
-  // Simplified - would need score comparison
-  return 50; // Default
-}
-
-function calculateFatigueFromResponses(responses) {
-  const times = responses.map(r => r.time_spent_seconds).filter(t => t && t > 0);
-  if (times.length < 4) return 0;
-  
-  const midPoint = Math.floor(times.length / 2);
-  const firstHalf = times.slice(0, midPoint);
-  const secondHalf = times.slice(midPoint);
-  
-  const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
-  const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
-  
-  return Math.round(secondAvg - firstAvg);
-}
-
-function calculateWorkStyleFromResponses(responses) {
-  const avgTime = calculateAvgResponseTime(responses);
-  const changes = calculateTotalAnswerChanges(responses);
-  
-  if (avgTime < 15 && changes < 3) return "Quick Decision Maker";
-  if (avgTime > 45 && changes > 5) return "Methodical Analyst";
-  if (changes > 8) return "Anxious Reviser";
-  if (changes > 3) return "Strategic Reviewer";
-  if (avgTime < 25) return "Fast-paced / Decisive";
-  if (avgTime > 50) return "Methodical / Deliberate";
-  return "Balanced";
-}
-
-function calculateConfidenceFromResponses(responses) {
-  const avgTime = calculateAvgResponseTime(responses);
-  const changes = calculateTotalAnswerChanges(responses);
-  
-  if (avgTime < 20 && changes < 2) return "High";
-  if (changes > 5) return "Low";
-  if (changes > 2) return "Moderate";
-  return "Moderate";
-}
-
-function createFallbackBehavioralMetrics(responses) {
-  return {
-    work_style: calculateWorkStyleFromResponses(responses),
-    confidence_level: calculateConfidenceFromResponses(responses),
-    attention_span: "Consistent",
-    decision_pattern: "Deliberate",
-    avg_response_time_seconds: calculateAvgResponseTime(responses),
-    fastest_response_seconds: calculateFastestResponse(responses),
-    slowest_response_seconds: calculateSlowestResponse(responses),
-    total_time_spent_seconds: calculateTotalTime(responses),
-    time_variance: 0,
-    total_answer_changes: calculateTotalAnswerChanges(responses),
-    avg_changes_per_question: calculateTotalAnswerChanges(responses) / (responses.length || 1),
-    improvement_rate: calculateImprovementRate(responses),
-    first_instinct_accuracy: calculateFirstInstinctAccuracy(responses),
-    total_question_visits: responses.length,
-    revisit_rate: calculateRevisitRate(responses),
-    skipped_questions: 0,
-    linearity_score: 100,
-    first_half_avg_time: 0,
-    second_half_avg_time: 0,
-    fatigue_factor: calculateFatigueFromResponses(responses),
-    recommended_support: generateDefaultSupportRecommendation(responses),
-    development_focus_areas: generateDefaultFocusAreas(responses)
-  };
-}
-
-function generateDefaultSupportRecommendation(responses) {
-  const workStyle = calculateWorkStyleFromResponses(responses);
-  
-  switch (workStyle) {
-    case "Quick Decision Maker":
-      return "Encourage reviewing answers before submitting. Provide time management guidance to balance speed with accuracy.";
-    case "Methodical Analyst":
-      return "Provide clear time expectations. Consider extended time if needed for complex assessments.";
-    case "Anxious Reviser":
-      return "Build confidence through practice assessments. Provide positive reinforcement.";
-    default:
-      return "Provide balanced support with regular check-ins on progress.";
-  }
-}
-
-function generateDefaultFocusAreas(responses) {
-  const workStyle = calculateWorkStyleFromResponses(responses);
-  const baseAreas = ["Consistent performance", "Regular feedback"];
-  
-  if (workStyle === "Quick Decision Maker") {
-    baseAreas.push("Review habits", "Quality verification");
-  } else if (workStyle === "Methodical Analyst") {
-    baseAreas.push("Time management", "Efficiency techniques");
-  } else if (workStyle === "Anxious Reviser") {
-    baseAreas.push("Confidence building", "Trusting first instincts");
-  }
-  
-  return baseAreas;
 }
