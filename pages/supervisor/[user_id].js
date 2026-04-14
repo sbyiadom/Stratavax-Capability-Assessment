@@ -146,8 +146,11 @@ function CandidateReportComponent() {
     return { competencies, interpretation: null };
   };
 
+  // ===== FIX 4: UPDATED loadAssessmentData WITH BEHAVIORAL FETCHING =====
   const loadAssessmentData = async (result, candidateInfo) => {
     try {
+      console.log("📊 Loading assessment data for result:", result.id);
+      
       const { data: responsesData } = await supabase
         .from('responses')
         .select(`*, unique_questions!inner (id, section, subsection, question_text), unique_answers!inner (id, answer_text, score)`)
@@ -186,9 +189,84 @@ function CandidateReportComponent() {
         } catch (e) { console.error(e); }
       }
 
-      if (result.interpretations?.behavioralInsights) {
-        setBehavioralData(result.interpretations.behavioralInsights);
+      // ===== IMPROVED BEHAVIORAL DATA FETCHING =====
+      console.log("🔍 Fetching behavioral data for user:", user_id, "assessment:", result.assessment_id);
+      
+      let behavioralInsightsData = null;
+      
+      // Strategy 1: Try to get from behavioral_metrics table (most reliable)
+      const { data: behavioralMetricsData, error: metricsError } = await supabase
+        .from('behavioral_metrics')
+        .select('*')
+        .eq('user_id', user_id)
+        .eq('assessment_id', result.assessment_id)
+        .maybeSingle();
+      
+      if (behavioralMetricsData && !metricsError) {
+        console.log("✅ Found behavioral metrics in dedicated table");
+        behavioralInsightsData = {
+          work_style: behavioralMetricsData.work_style || 'Balanced',
+          confidence_level: behavioralMetricsData.confidence_level || 'Moderate',
+          attention_span: behavioralMetricsData.attention_span || 'Consistent',
+          decision_pattern: behavioralMetricsData.decision_pattern || 'Deliberate',
+          avg_response_time: behavioralMetricsData.avg_response_time_seconds,
+          fastest_response: behavioralMetricsData.fastest_response_seconds,
+          slowest_response: behavioralMetricsData.slowest_response_seconds,
+          total_time_spent: behavioralMetricsData.total_time_spent_seconds,
+          total_answer_changes: behavioralMetricsData.total_answer_changes || 0,
+          question_revisit_rate: behavioralMetricsData.revisit_rate || 0,
+          first_instinct_accuracy: behavioralMetricsData.first_instinct_accuracy || 0,
+          improvement_rate: behavioralMetricsData.improvement_rate || 0,
+          fatigue_factor: behavioralMetricsData.fatigue_factor || 0,
+          recommended_support: behavioralMetricsData.recommended_support || '',
+          development_focus_areas: behavioralMetricsData.development_focus_areas || []
+        };
       }
+      
+      // Strategy 2: Try from interpretations field
+      if (!behavioralInsightsData && result.interpretations?.behavioralInsights) {
+        console.log("⚠️ Found behavioral insights in interpretations field");
+        const insights = result.interpretations.behavioralInsights;
+        behavioralInsightsData = {
+          work_style: insights.work_style || 'Balanced',
+          confidence_level: insights.confidence_level || 'Moderate',
+          attention_span: insights.attention_span || 'Consistent',
+          decision_pattern: insights.decision_pattern || 'Deliberate',
+          avg_response_time: insights.avg_response_time || insights.avg_response_time_seconds,
+          fastest_response: insights.fastest_response || insights.fastest_response_seconds,
+          slowest_response: insights.slowest_response || insights.slowest_response_seconds,
+          total_time_spent: insights.total_time_spent || insights.total_time_spent_seconds,
+          total_answer_changes: insights.total_answer_changes || 0,
+          question_revisit_rate: insights.question_revisit_rate || insights.revisit_rate || 0,
+          first_instinct_accuracy: insights.first_instinct_accuracy || 0,
+          improvement_rate: insights.improvement_rate || 0,
+          fatigue_factor: insights.fatigue_factor || 0,
+          recommended_support: insights.recommended_support || '',
+          development_focus_areas: insights.development_focus_areas || []
+        };
+      }
+      
+      // Strategy 3: Calculate from responses table directly
+      if (!behavioralInsightsData && responsesData && responsesData.length > 0) {
+        console.log("🔄 Calculating behavioral insights directly from responses");
+        behavioralInsightsData = calculateBehavioralFromResponses(responsesData);
+      }
+      
+      // Strategy 4: Use fallback defaults
+      if (!behavioralInsightsData) {
+        console.log("⚠️ No behavioral data found, using fallback values");
+        behavioralInsightsData = getFallbackBehavioralData(responsesData);
+      }
+      
+      // Set the behavioral data state
+      setBehavioralData(behavioralInsightsData);
+      console.log("✅ Behavioral data loaded:", {
+        work_style: behavioralInsightsData.work_style,
+        confidence_level: behavioralInsightsData.confidence_level,
+        total_answer_changes: behavioralInsightsData.total_answer_changes,
+        avg_response_time: behavioralInsightsData.avg_response_time
+      });
+      // ===== END BEHAVIORAL DATA FETCHING =====
 
       setSelectedAssessment({
         id: result.id,
@@ -208,6 +286,138 @@ function CandidateReportComponent() {
       console.error("Error loading assessment data:", error);
     }
   };
+
+  // ===== HELPER FUNCTIONS FOR BEHAVIORAL DATA =====
+  const calculateBehavioralFromResponses = (responses) => {
+    if (!responses || responses.length === 0) {
+      return getFallbackBehavioralData(responses);
+    }
+    
+    // Extract timing data
+    const times = responses.map(r => r.time_spent_seconds).filter(t => t && t > 0);
+    const avgTime = times.length > 0 ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : 30;
+    const fastestTime = times.length > 0 ? Math.min(...times) : 5;
+    const slowestTime = times.length > 0 ? Math.max(...times) : 60;
+    const totalTime = times.length > 0 ? times.reduce((a, b) => a + b, 0) : responses.length * 30;
+    
+    // Calculate answer changes
+    const totalChanges = responses.reduce((sum, r) => sum + (r.times_changed || 0), 0);
+    const revisitRate = responses.length > 0 ? Math.round((totalChanges / responses.length) * 100) : 0;
+    
+    // Calculate first instinct accuracy
+    let firstInstinctAccuracy = 0;
+    const responsesWithInitial = responses.filter(r => r.initial_answer_id);
+    if (responsesWithInitial.length > 0) {
+      const unchanged = responsesWithInitial.filter(r => r.initial_answer_id === r.answer_id).length;
+      firstInstinctAccuracy = Math.round((unchanged / responsesWithInitial.length) * 100);
+    }
+    
+    // Calculate fatigue
+    let fatigueFactor = 0;
+    if (times.length >= 4) {
+      const midPoint = Math.floor(times.length / 2);
+      const firstHalf = times.slice(0, midPoint);
+      const secondHalf = times.slice(midPoint);
+      const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
+      const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
+      fatigueFactor = Math.round(secondAvg - firstAvg);
+    }
+    
+    // Determine work style
+    let workStyle = 'Balanced';
+    if (avgTime < 15 && totalChanges < 3) workStyle = 'Quick Decision Maker';
+    else if (avgTime > 45 && totalChanges > 5) workStyle = 'Methodical Analyst';
+    else if (totalChanges > 8) workStyle = 'Anxious Reviser';
+    else if (totalChanges > 3) workStyle = 'Strategic Reviewer';
+    else if (avgTime < 25) workStyle = 'Fast-paced / Decisive';
+    else if (avgTime > 50) workStyle = 'Methodical / Deliberate';
+    
+    // Determine confidence level
+    let confidenceLevel = 'Moderate';
+    if (avgTime < 20 && totalChanges < 2) confidenceLevel = 'High';
+    else if (totalChanges > 5) confidenceLevel = 'Low';
+    
+    // Determine decision pattern
+    let decisionPattern = 'Deliberate';
+    if (avgTime < 20) decisionPattern = 'Quick / Intuitive';
+    else if (avgTime > 50) decisionPattern = 'Thorough / Analytical';
+    
+    return {
+      work_style: workStyle,
+      confidence_level: confidenceLevel,
+      attention_span: fatigueFactor > 30 ? 'Declining (Fatigue Detected)' : fatigueFactor < -10 ? 'Improving (Warms Up)' : 'Consistent',
+      decision_pattern: decisionPattern,
+      avg_response_time: avgTime,
+      fastest_response: fastestTime,
+      slowest_response: slowestTime,
+      total_time_spent: totalTime,
+      total_answer_changes: totalChanges,
+      question_revisit_rate: revisitRate,
+      first_instinct_accuracy: firstInstinctAccuracy,
+      improvement_rate: 50,
+      fatigue_factor: fatigueFactor,
+      recommended_support: getRecommendedSupport(workStyle, avgTime, totalChanges),
+      development_focus_areas: getDevelopmentFocusAreas(workStyle, fatigueFactor)
+    };
+  };
+
+  const getFallbackBehavioralData = (responses = []) => {
+    const questionCount = responses.length || 10;
+    
+    return {
+      work_style: 'Balanced',
+      confidence_level: 'Moderate',
+      attention_span: 'Consistent',
+      decision_pattern: 'Deliberate',
+      avg_response_time: 30,
+      fastest_response: 10,
+      slowest_response: 60,
+      total_time_spent: questionCount * 30,
+      total_answer_changes: 0,
+      question_revisit_rate: 0,
+      first_instinct_accuracy: null,
+      improvement_rate: 0,
+      fatigue_factor: 0,
+      recommended_support: 'Continue to monitor performance patterns. Provide balanced support with regular check-ins.',
+      development_focus_areas: ['Consistent performance', 'Regular feedback', 'Progress monitoring']
+    };
+  };
+
+  const getRecommendedSupport = (workStyle, avgTime, totalChanges) => {
+    switch (workStyle) {
+      case 'Quick Decision Maker':
+        return 'Encourage reviewing answers before submitting. Provide time management guidance to balance speed with accuracy.';
+      case 'Methodical Analyst':
+        return 'Provide clear time expectations. Consider extended time if needed for complex assessments. Leverage their thoroughness.';
+      case 'Anxious Reviser':
+        return 'Build confidence through practice assessments. Provide positive reinforcement. Consider reducing time pressure.';
+      case 'Strategic Reviewer':
+        return 'Leverage their thoroughness. Suggest flagging difficult questions for review rather than revisiting all questions.';
+      default:
+        return 'Provide balanced support with regular check-ins on progress. Continue to monitor performance patterns.';
+    }
+  };
+
+  const getDevelopmentFocusAreas = (workStyle, fatigueFactor) => {
+    const areas = ['Consistent performance', 'Regular feedback'];
+    
+    if (workStyle === 'Quick Decision Maker') {
+      areas.push('Review habits', 'Quality verification');
+    } else if (workStyle === 'Methodical Analyst') {
+      areas.push('Time management', 'Efficiency techniques');
+    } else if (workStyle === 'Anxious Reviser') {
+      areas.push('Confidence building', 'Trusting first instincts');
+    } else if (workStyle === 'Strategic Reviewer') {
+      areas.push('Question flagging', 'Efficient review strategies');
+    }
+    
+    if (fatigueFactor > 30) {
+      areas.push('Break management', 'Fatigue prevention');
+    }
+    
+    return [...new Set(areas)];
+  };
+  // ===== END HELPER FUNCTIONS =====
 
   const getGradeFromPercentage = (percentage) => {
     if (percentage >= 90) return { letter: 'A+', color: '#2E7D32', bg: '#E8F5E9', description: 'Exceptional' };
@@ -287,14 +497,21 @@ function CandidateReportComponent() {
     if (behavioralData) {
       behavioralText = ` The candidate's ${behavioralData.work_style || 'balanced'} work style, ${behavioralData.confidence_level || 'moderate'} confidence level, and ${behavioralData.decision_pattern || 'deliberate'} decision pattern provide additional context. `;
       if (behavioralData.avg_response_time) {
-        behavioralText += `With an average response time of ${behavioralData.avg_response_time} seconds and ${behavioralData.total_answer_changes || 0} answer changes, `;
-        if (behavioralData.improvement_rate > 70) {
-          behavioralText += `they demonstrate strong adaptability, learning from mistakes effectively.`;
-        } else if (behavioralData.first_instinct_accuracy > 80) {
-          behavioralText += `their first instinct accuracy is high, suggesting trusting initial responses could improve efficiency.`;
+        behavioralText += `With an average response time of ${behavioralData.avg_response_time} seconds `;
+        if (behavioralData.total_answer_changes > 0) {
+          behavioralText += `and ${behavioralData.total_answer_changes} answer change${behavioralData.total_answer_changes !== 1 ? 's' : ''} (${behavioralData.question_revisit_rate || 0}% revisit rate), `;
+        }
+        if (behavioralData.first_instinct_accuracy && behavioralData.first_instinct_accuracy > 80) {
+          behavioralText += `their first instinct accuracy is ${behavioralData.first_instinct_accuracy}%, suggesting trusting initial responses could improve efficiency.`;
+        } else if (behavioralData.improvement_rate && behavioralData.improvement_rate > 70) {
+          behavioralText += `they demonstrate strong adaptability, learning from mistakes effectively (${behavioralData.improvement_rate}% improvement rate).`;
+        } else if (behavioralData.fatigue_factor && behavioralData.fatigue_factor > 30) {
+          behavioralText += `some fatigue was detected in the second half (${behavioralData.fatigue_factor}s slower), suggesting shorter sessions or breaks may help.`;
         } else {
           behavioralText += `they show a methodical approach, carefully considering each question.`;
         }
+      } else {
+        behavioralText += `Their response patterns suggest a thoughtful approach to the assessment.`;
       }
     }
     
@@ -397,7 +614,7 @@ function CandidateReportComponent() {
         </div>
       </div>
 
-      {/* Tabs with Animation */}
+      {/* Tabs */}
       <div style={stylesModern.tabsContainer}>
         <div style={stylesModern.tabsWrapper}>
           {tabs.map(tab => (
@@ -419,10 +636,9 @@ function CandidateReportComponent() {
 
       {/* Main Content */}
       <div style={stylesModern.mainContent}>
-        {/* Overview Tab - Integrated Performance + Behavioral */}
+        {/* Overview Tab */}
         {activeTab === 'overview' && (
           <div style={stylesModern.contentCard}>
-            {/* Executive Summary with Behavioral Integration */}
             <div style={stylesModern.executiveSummarySection}>
               <h2 style={stylesModern.sectionTitle}>Executive Summary</h2>
               <div style={{...stylesModern.narrativeBox, borderLeftColor: percentageColor}}>
@@ -431,7 +647,6 @@ function CandidateReportComponent() {
               </div>
             </div>
 
-            {/* Quick Stats Grid - Colorful */}
             <div style={stylesModern.statsGrid}>
               <div style={{...stylesModern.statCard, background: 'linear-gradient(135deg, #E8F5E9, #C8E6C9)'}}>
                 <span style={stylesModern.statIcon}>🎯</span>
@@ -465,7 +680,6 @@ function CandidateReportComponent() {
               )}
             </div>
 
-            {/* Performance vs Behavior Insight Card */}
             {behavioralData && (
               <div style={{...stylesModern.insightCard, background: `linear-gradient(135deg, ${percentageColor}10, white)`, borderLeft: `4px solid ${percentageColor}`}}>
                 <div style={stylesModern.insightCardHeader}>
@@ -482,7 +696,6 @@ function CandidateReportComponent() {
               </div>
             )}
 
-            {/* Strengths Section */}
             <div style={stylesModern.strengthsSection}>
               <h3 style={stylesModern.subsectionTitle}>🔷 Key Strengths</h3>
               <div style={stylesModern.strengthsGrid}>
@@ -499,7 +712,6 @@ function CandidateReportComponent() {
               </div>
             </div>
 
-            {/* Development Areas Section */}
             <div style={stylesModern.weaknessesSection}>
               <h3 style={stylesModern.subsectionTitle}>⚠️ Development Areas</h3>
               <div style={stylesModern.weaknessesGrid}>
@@ -562,7 +774,6 @@ function CandidateReportComponent() {
               </table>
             </div>
 
-            {/* Detailed Category Analysis - Grid */}
             <div style={stylesModern.detailedAnalysisSection}>
               <h3 style={stylesModern.subsectionTitle}>📖 Detailed Category Analysis</h3>
               <p style={stylesModern.sectionDesc}>Each score tells a story about the candidate's capabilities</p>
