@@ -35,6 +35,8 @@ function CandidateReportComponent() {
   const [superAnalysis, setSuperAnalysis] = useState(null);
   const [behavioralData, setBehavioralData] = useState(null);
   const [detailedCategoryAnalysis, setDetailedCategoryAnalysis] = useState({});
+  const [isInvalidResult, setIsInvalidResult] = useState(false);
+  const [invalidReason, setInvalidReason] = useState('');
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -86,6 +88,7 @@ function CandidateReportComponent() {
         };
         setCandidate(candidateInfo);
 
+        // Only fetch valid assessment results (is_valid = true or null for backward compatibility)
         const { data: resultsData } = await supabase
           .from('assessment_results')
           .select('*')
@@ -95,6 +98,12 @@ function CandidateReportComponent() {
         if (resultsData && resultsData.length > 0) {
           const resultsWithAssessments = [];
           for (const result of resultsData) {
+            // Skip invalid results
+            if (result.is_valid === false) {
+              console.log("Skipping invalid assessment result:", result.id);
+              continue;
+            }
+            
             const { data: assessment } = await supabase
               .from('assessments')
               .select('*, assessment_type:assessment_types(*)')
@@ -146,165 +155,21 @@ function CandidateReportComponent() {
     return { competencies, interpretation: null };
   };
 
-  // ===== FIX 4: UPDATED loadAssessmentData WITH BEHAVIORAL FETCHING =====
-  const loadAssessmentData = async (result, candidateInfo) => {
-    try {
-      console.log("📊 Loading assessment data for result:", result.id);
-      
-      const { data: responsesData } = await supabase
-        .from('responses')
-        .select(`*, unique_questions!inner (id, section, subsection, question_text), unique_answers!inner (id, answer_text, score)`)
-        .eq('user_id', user_id)
-        .eq('assessment_id', result.assessment_id);
-
-      const assessmentTypeId = result.assessment?.assessment_type?.code || result.assessment_type || 'general';
-      const config = getAssessmentType(assessmentTypeId);
-      setAssessmentTypeName(config.name);
-
-      const report = generateStratavaxReport(user_id, assessmentTypeId, responsesData || [], candidateInfo.full_name, result.completed_at);
-      setStratavaxReport(report);
-
-      const detailedAnalysis = {};
-      if (result.category_scores) {
-        Object.entries(result.category_scores).forEach(([category, data]) => {
-          const percentage = data.percentage || 0;
-          detailedAnalysis[category] = {
-            score: data.score || data.total || 0,
-            maxPossible: data.maxPossible || 100,
-            percentage: percentage,
-            grade: getGradeFromPercentage(percentage),
-            narrative: generateCommentary(category, percentage, percentage >= 70 ? 'strength' : percentage < 55 ? 'weakness' : 'neutral'),
-            recommendation: getDevelopmentRecommendation(category, percentage),
-            gap: Math.max(0, 80 - percentage)
-          };
-        });
-        setDetailedCategoryAnalysis(detailedAnalysis);
-        
-        const { competencies } = extractCompetencyData(result.category_scores, assessmentTypeId, candidateInfo.full_name, report.percentageScore);
-        setCompetencyData(competencies);
-        
-        try {
-          const analysis = generateSuperAnalysis(candidateInfo.full_name, assessmentTypeId, responsesData || [], result.category_scores, result.total_score, result.max_score);
-          setSuperAnalysis(analysis);
-        } catch (e) { console.error(e); }
-      }
-
-      // ===== IMPROVED BEHAVIORAL DATA FETCHING =====
-      console.log("🔍 Fetching behavioral data for user:", user_id, "assessment:", result.assessment_id);
-      
-      let behavioralInsightsData = null;
-      
-      // Strategy 1: Try to get from behavioral_metrics table (most reliable)
-      const { data: behavioralMetricsData, error: metricsError } = await supabase
-        .from('behavioral_metrics')
-        .select('*')
-        .eq('user_id', user_id)
-        .eq('assessment_id', result.assessment_id)
-        .maybeSingle();
-      
-      if (behavioralMetricsData && !metricsError) {
-        console.log("✅ Found behavioral metrics in dedicated table");
-        behavioralInsightsData = {
-          work_style: behavioralMetricsData.work_style || 'Balanced',
-          confidence_level: behavioralMetricsData.confidence_level || 'Moderate',
-          attention_span: behavioralMetricsData.attention_span || 'Consistent',
-          decision_pattern: behavioralMetricsData.decision_pattern || 'Deliberate',
-          avg_response_time: behavioralMetricsData.avg_response_time_seconds,
-          fastest_response: behavioralMetricsData.fastest_response_seconds,
-          slowest_response: behavioralMetricsData.slowest_response_seconds,
-          total_time_spent: behavioralMetricsData.total_time_spent_seconds,
-          total_answer_changes: behavioralMetricsData.total_answer_changes || 0,
-          question_revisit_rate: behavioralMetricsData.revisit_rate || 0,
-          first_instinct_accuracy: behavioralMetricsData.first_instinct_accuracy || 0,
-          improvement_rate: behavioralMetricsData.improvement_rate || 0,
-          fatigue_factor: behavioralMetricsData.fatigue_factor || 0,
-          recommended_support: behavioralMetricsData.recommended_support || '',
-          development_focus_areas: behavioralMetricsData.development_focus_areas || []
-        };
-      }
-      
-      // Strategy 2: Try from interpretations field
-      if (!behavioralInsightsData && result.interpretations?.behavioralInsights) {
-        console.log("⚠️ Found behavioral insights in interpretations field");
-        const insights = result.interpretations.behavioralInsights;
-        behavioralInsightsData = {
-          work_style: insights.work_style || 'Balanced',
-          confidence_level: insights.confidence_level || 'Moderate',
-          attention_span: insights.attention_span || 'Consistent',
-          decision_pattern: insights.decision_pattern || 'Deliberate',
-          avg_response_time: insights.avg_response_time || insights.avg_response_time_seconds,
-          fastest_response: insights.fastest_response || insights.fastest_response_seconds,
-          slowest_response: insights.slowest_response || insights.slowest_response_seconds,
-          total_time_spent: insights.total_time_spent || insights.total_time_spent_seconds,
-          total_answer_changes: insights.total_answer_changes || 0,
-          question_revisit_rate: insights.question_revisit_rate || insights.revisit_rate || 0,
-          first_instinct_accuracy: insights.first_instinct_accuracy || 0,
-          improvement_rate: insights.improvement_rate || 0,
-          fatigue_factor: insights.fatigue_factor || 0,
-          recommended_support: insights.recommended_support || '',
-          development_focus_areas: insights.development_focus_areas || []
-        };
-      }
-      
-      // Strategy 3: Calculate from responses table directly
-      if (!behavioralInsightsData && responsesData && responsesData.length > 0) {
-        console.log("🔄 Calculating behavioral insights directly from responses");
-        behavioralInsightsData = calculateBehavioralFromResponses(responsesData);
-      }
-      
-      // Strategy 4: Use fallback defaults
-      if (!behavioralInsightsData) {
-        console.log("⚠️ No behavioral data found, using fallback values");
-        behavioralInsightsData = getFallbackBehavioralData(responsesData);
-      }
-      
-      // Set the behavioral data state
-      setBehavioralData(behavioralInsightsData);
-      console.log("✅ Behavioral data loaded:", {
-        work_style: behavioralInsightsData.work_style,
-        confidence_level: behavioralInsightsData.confidence_level,
-        total_answer_changes: behavioralInsightsData.total_answer_changes,
-        avg_response_time: behavioralInsightsData.avg_response_time
-      });
-      // ===== END BEHAVIORAL DATA FETCHING =====
-
-      setSelectedAssessment({
-        id: result.id,
-        assessment_id: result.assessment_id,
-        assessment_type: assessmentTypeId,
-        assessment_name: config.name,
-        total_score: result.total_score,
-        max_score: result.max_score,
-        percentage: report.percentageScore,
-        completed_at: result.completed_at,
-        category_scores: result.category_scores || {},
-        config: config,
-        report: report,
-        interpretations: result.interpretations
-      });
-    } catch (error) {
-      console.error("Error loading assessment data:", error);
-    }
-  };
-
-  // ===== HELPER FUNCTIONS FOR BEHAVIORAL DATA =====
+  // Helper function to calculate behavioral metrics from responses
   const calculateBehavioralFromResponses = (responses) => {
     if (!responses || responses.length === 0) {
       return getFallbackBehavioralData(responses);
     }
     
-    // Extract timing data
     const times = responses.map(r => r.time_spent_seconds).filter(t => t && t > 0);
     const avgTime = times.length > 0 ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : 30;
     const fastestTime = times.length > 0 ? Math.min(...times) : 5;
     const slowestTime = times.length > 0 ? Math.max(...times) : 60;
     const totalTime = times.length > 0 ? times.reduce((a, b) => a + b, 0) : responses.length * 30;
     
-    // Calculate answer changes
     const totalChanges = responses.reduce((sum, r) => sum + (r.times_changed || 0), 0);
     const revisitRate = responses.length > 0 ? Math.round((totalChanges / responses.length) * 100) : 0;
     
-    // Calculate first instinct accuracy
     let firstInstinctAccuracy = 0;
     const responsesWithInitial = responses.filter(r => r.initial_answer_id);
     if (responsesWithInitial.length > 0) {
@@ -312,7 +177,6 @@ function CandidateReportComponent() {
       firstInstinctAccuracy = Math.round((unchanged / responsesWithInitial.length) * 100);
     }
     
-    // Calculate fatigue
     let fatigueFactor = 0;
     if (times.length >= 4) {
       const midPoint = Math.floor(times.length / 2);
@@ -323,7 +187,6 @@ function CandidateReportComponent() {
       fatigueFactor = Math.round(secondAvg - firstAvg);
     }
     
-    // Determine work style
     let workStyle = 'Balanced';
     if (avgTime < 15 && totalChanges < 3) workStyle = 'Quick Decision Maker';
     else if (avgTime > 45 && totalChanges > 5) workStyle = 'Methodical Analyst';
@@ -332,12 +195,10 @@ function CandidateReportComponent() {
     else if (avgTime < 25) workStyle = 'Fast-paced / Decisive';
     else if (avgTime > 50) workStyle = 'Methodical / Deliberate';
     
-    // Determine confidence level
     let confidenceLevel = 'Moderate';
     if (avgTime < 20 && totalChanges < 2) confidenceLevel = 'High';
     else if (totalChanges > 5) confidenceLevel = 'Low';
     
-    // Determine decision pattern
     let decisionPattern = 'Deliberate';
     if (avgTime < 20) decisionPattern = 'Quick / Intuitive';
     else if (avgTime > 50) decisionPattern = 'Thorough / Analytical';
@@ -417,7 +278,162 @@ function CandidateReportComponent() {
     
     return [...new Set(areas)];
   };
-  // ===== END HELPER FUNCTIONS =====
+
+  const loadAssessmentData = async (result, candidateInfo) => {
+    try {
+      console.log("📊 Loading assessment data for result:", result.id);
+      
+      // Check if result is invalid
+      if (result.is_valid === false) {
+        console.log("⚠️ This assessment result is invalid:", result.validation_note);
+        setIsInvalidResult(true);
+        setInvalidReason(result.validation_note || 'This assessment was auto-submitted due to rule violations and is not considered valid.');
+      } else {
+        setIsInvalidResult(false);
+        setInvalidReason('');
+      }
+      
+      const { data: responsesData } = await supabase
+        .from('responses')
+        .select(`*, unique_questions!inner (id, section, subsection, question_text), unique_answers!inner (id, answer_text, score)`)
+        .eq('user_id', user_id)
+        .eq('assessment_id', result.assessment_id);
+
+      const assessmentTypeId = result.assessment?.assessment_type?.code || result.assessment_type || 'general';
+      const config = getAssessmentType(assessmentTypeId);
+      setAssessmentTypeName(config.name);
+
+      const report = generateStratavaxReport(user_id, assessmentTypeId, responsesData || [], candidateInfo.full_name, result.completed_at);
+      setStratavaxReport(report);
+
+      const detailedAnalysis = {};
+      if (result.category_scores) {
+        Object.entries(result.category_scores).forEach(([category, data]) => {
+          const percentage = data.percentage || 0;
+          detailedAnalysis[category] = {
+            score: data.score || data.total || 0,
+            maxPossible: data.maxPossible || 100,
+            percentage: percentage,
+            grade: getGradeFromPercentage(percentage),
+            narrative: generateCommentary(category, percentage, percentage >= 70 ? 'strength' : percentage < 55 ? 'weakness' : 'neutral'),
+            recommendation: getDevelopmentRecommendation(category, percentage),
+            gap: Math.max(0, 80 - percentage)
+          };
+        });
+        setDetailedCategoryAnalysis(detailedAnalysis);
+        
+        const { competencies } = extractCompetencyData(result.category_scores, assessmentTypeId, candidateInfo.full_name, report.percentageScore);
+        setCompetencyData(competencies);
+        
+        try {
+          const analysis = generateSuperAnalysis(candidateInfo.full_name, assessmentTypeId, responsesData || [], result.category_scores, result.total_score, result.max_score);
+          setSuperAnalysis(analysis);
+        } catch (e) { console.error(e); }
+      }
+
+      // ===== BEHAVIORAL DATA FETCHING =====
+      console.log("🔍 Fetching behavioral data for user:", user_id, "assessment:", result.assessment_id);
+      
+      let behavioralInsightsData = null;
+      
+      // Strategy 1: Try to get from behavioral_metrics table
+      const { data: behavioralMetricsData, error: metricsError } = await supabase
+        .from('behavioral_metrics')
+        .select('*')
+        .eq('user_id', user_id)
+        .eq('assessment_id', result.assessment_id)
+        .maybeSingle();
+      
+      if (behavioralMetricsData && !metricsError) {
+        console.log("✅ Found behavioral metrics in dedicated table");
+        behavioralInsightsData = {
+          work_style: behavioralMetricsData.work_style || 'Balanced',
+          confidence_level: behavioralMetricsData.confidence_level || 'Moderate',
+          attention_span: behavioralMetricsData.attention_span || 'Consistent',
+          decision_pattern: behavioralMetricsData.decision_pattern || 'Deliberate',
+          avg_response_time: behavioralMetricsData.avg_response_time_seconds,
+          fastest_response: behavioralMetricsData.fastest_response_seconds,
+          slowest_response: behavioralMetricsData.slowest_response_seconds,
+          total_time_spent: behavioralMetricsData.total_time_spent_seconds,
+          total_answer_changes: behavioralMetricsData.total_answer_changes || 0,
+          question_revisit_rate: behavioralMetricsData.revisit_rate || 0,
+          first_instinct_accuracy: behavioralMetricsData.first_instinct_accuracy || 0,
+          improvement_rate: behavioralMetricsData.improvement_rate || 0,
+          fatigue_factor: behavioralMetricsData.fatigue_factor || 0,
+          recommended_support: behavioralMetricsData.recommended_support || '',
+          development_focus_areas: behavioralMetricsData.development_focus_areas || []
+        };
+      }
+      
+      // Strategy 2: Try from interpretations field
+      if (!behavioralInsightsData && result.interpretations?.behavioralInsights) {
+        console.log("⚠️ Found behavioral insights in interpretations field");
+        const insights = result.interpretations.behavioralInsights;
+        behavioralInsightsData = {
+          work_style: insights.work_style || 'Balanced',
+          confidence_level: insights.confidence_level || 'Moderate',
+          attention_span: insights.attention_span || 'Consistent',
+          decision_pattern: insights.decision_pattern || 'Deliberate',
+          avg_response_time: insights.avg_response_time || insights.avg_response_time_seconds,
+          fastest_response: insights.fastest_response || insights.fastest_response_seconds,
+          slowest_response: insights.slowest_response || insights.slowest_response_seconds,
+          total_time_spent: insights.total_time_spent || insights.total_time_spent_seconds,
+          total_answer_changes: insights.total_answer_changes || 0,
+          question_revisit_rate: insights.question_revisit_rate || insights.revisit_rate || 0,
+          first_instinct_accuracy: insights.first_instinct_accuracy || 0,
+          improvement_rate: insights.improvement_rate || 0,
+          fatigue_factor: insights.fatigue_factor || 0,
+          recommended_support: insights.recommended_support || '',
+          development_focus_areas: insights.development_focus_areas || []
+        };
+      }
+      
+      // Strategy 3: Calculate from responses table directly
+      if (!behavioralInsightsData && responsesData && responsesData.length > 0) {
+        console.log("🔄 Calculating behavioral insights directly from responses");
+        behavioralInsightsData = calculateBehavioralFromResponses(responsesData);
+      }
+      
+      // Strategy 4: Use fallback defaults
+      if (!behavioralInsightsData) {
+        console.log("⚠️ No behavioral data found, using fallback values");
+        behavioralInsightsData = getFallbackBehavioralData(responsesData);
+      }
+      
+      // Add invalid flag to behavioral data if needed
+      if (result.is_valid === false) {
+        behavioralInsightsData.is_valid = false;
+        behavioralInsightsData.validation_note = result.validation_note;
+      }
+      
+      setBehavioralData(behavioralInsightsData);
+      console.log("✅ Behavioral data loaded:", {
+        work_style: behavioralInsightsData.work_style,
+        confidence_level: behavioralInsightsData.confidence_level,
+        total_answer_changes: behavioralInsightsData.total_answer_changes,
+        avg_response_time: behavioralInsightsData.avg_response_time
+      });
+
+      setSelectedAssessment({
+        id: result.id,
+        assessment_id: result.assessment_id,
+        assessment_type: assessmentTypeId,
+        assessment_name: config.name,
+        total_score: result.total_score,
+        max_score: result.max_score,
+        percentage: report.percentageScore,
+        completed_at: result.completed_at,
+        category_scores: result.category_scores || {},
+        config: config,
+        report: report,
+        interpretations: result.interpretations,
+        is_valid: result.is_valid !== false,
+        validation_note: result.validation_note
+      });
+    } catch (error) {
+      console.error("Error loading assessment data:", error);
+    }
+  };
 
   const getGradeFromPercentage = (percentage) => {
     if (percentage >= 90) return { letter: 'A+', color: '#2E7D32', bg: '#E8F5E9', description: 'Exceptional' };
@@ -489,12 +505,14 @@ function CandidateReportComponent() {
 
   // Generate integrated executive summary with behavioral insights
   const getIntegratedExecutiveSummary = () => {
+    if (!report || !report.executiveSummary) return "Loading...";
+    
     const performanceText = report.executiveSummary.narrative.includes('General Assessment') 
       ? report.executiveSummary.narrative.replace('General Assessment', assessmentDisplayName)
       : report.executiveSummary.narrative;
     
     let behavioralText = '';
-    if (behavioralData) {
+    if (behavioralData && !behavioralData.is_valid === false) {
       behavioralText = ` The candidate's ${behavioralData.work_style || 'balanced'} work style, ${behavioralData.confidence_level || 'moderate'} confidence level, and ${behavioralData.decision_pattern || 'deliberate'} decision pattern provide additional context. `;
       if (behavioralData.avg_response_time) {
         behavioralText += `With an average response time of ${behavioralData.avg_response_time} seconds `;
@@ -532,7 +550,7 @@ function CandidateReportComponent() {
       <div style={stylesModern.emptyContainer}>
         <div style={stylesModern.emptyIcon}>📊</div>
         <h3 style={stylesModern.emptyTitle}>No Assessment Data Available</h3>
-        <p style={stylesModern.emptyText}>This candidate hasn't completed any assessments yet.</p>
+        <p style={stylesModern.emptyText}>This candidate hasn't completed any valid assessments yet.</p>
         <Link href="/supervisor" style={stylesModern.backButton}>← Back to Dashboard</Link>
       </div>
     );
@@ -541,12 +559,13 @@ function CandidateReportComponent() {
   const report = selectedAssessment.report.stratavaxReport;
   const assessmentDisplayName = selectedAssessment.assessment_name || 'Assessment';
   const percentageColor = selectedAssessment.percentage >= 80 ? '#2E7D32' : selectedAssessment.percentage >= 60 ? '#1565C0' : selectedAssessment.percentage >= 40 ? '#F57C00' : '#C62828';
+  const isValidResult = selectedAssessment.is_valid !== false;
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: '📋' },
     { id: 'breakdown', label: 'Score Breakdown', icon: '📊' },
     { id: 'competencies', label: 'Competencies', icon: '🎯' },
-    ...(behavioralData ? [{ id: 'behavioral', label: 'Behavioral Insights', icon: '🧠' }] : []),
+    ...(behavioralData && behavioralData.work_style !== 'Assessment Invalid' ? [{ id: 'behavioral', label: 'Behavioral Insights', icon: '🧠' }] : []),
     { id: 'recommendations', label: 'Recommendations', icon: '💡' },
     { id: 'development', label: 'Development Plan', icon: '📅' },
     ...(superAnalysis ? [{ id: 'super', label: 'Super Analysis', icon: '🔮' }] : [])
@@ -614,7 +633,34 @@ function CandidateReportComponent() {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Invalid Result Warning Banner */}
+      {!isValidResult && (
+        <div style={{
+          maxWidth: '1200px',
+          margin: '20px auto 0',
+          padding: '0 24px'
+        }}>
+          <div style={{
+            background: '#FFF3E0',
+            borderLeft: '4px solid #F44336',
+            padding: '16px 20px',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px'
+          }}>
+            <span style={{ fontSize: '24px' }}>⚠️</span>
+            <div>
+              <strong style={{ color: '#C62828' }}>Invalid Assessment Result</strong>
+              <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#E65100' }}>
+                {selectedAssessment.validation_note || 'This assessment was auto-submitted due to rule violations and is not considered valid.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabs with Animation */}
       <div style={stylesModern.tabsContainer}>
         <div style={stylesModern.tabsWrapper}>
           {tabs.map(tab => (
@@ -669,7 +715,7 @@ function CandidateReportComponent() {
                   <div style={stylesModern.statLabel}>Needs Work</div>
                 </div>
               </div>
-              {behavioralData && (
+              {behavioralData && behavioralData.work_style !== 'Assessment Invalid' && (
                 <div style={{...stylesModern.statCard, background: 'linear-gradient(135deg, #F3E5F5, #E1BEE7)'}}>
                   <span style={stylesModern.statIcon}>🧠</span>
                   <div>
@@ -680,7 +726,7 @@ function CandidateReportComponent() {
               )}
             </div>
 
-            {behavioralData && (
+            {behavioralData && behavioralData.work_style !== 'Assessment Invalid' && (
               <div style={{...stylesModern.insightCard, background: `linear-gradient(135deg, ${percentageColor}10, white)`, borderLeft: `4px solid ${percentageColor}`}}>
                 <div style={stylesModern.insightCardHeader}>
                   <span style={stylesModern.insightCardIcon}>💡</span>
@@ -842,7 +888,7 @@ function CandidateReportComponent() {
         )}
 
         {/* Behavioral Insights Tab */}
-        {activeTab === 'behavioral' && behavioralData && (
+        {activeTab === 'behavioral' && behavioralData && behavioralData.work_style !== 'Assessment Invalid' && (
           <div style={stylesModern.contentCard}>
             <BehavioralInsights behavioralData={behavioralData} candidateName={candidate.full_name} />
           </div>
