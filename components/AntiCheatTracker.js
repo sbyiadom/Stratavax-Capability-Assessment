@@ -62,6 +62,17 @@ export function useAntiCheatTracking(sessionId, userId, assessmentId, isActive) 
     }
   };
 
+  // Detect DevTools opening
+  const detectDevTools = () => {
+    const start = performance.now();
+    debugger;
+    const end = performance.now();
+    // If debugger pauses execution (DevTools open), time difference will be > 100ms
+    if (end - start > 100) {
+      logViolation('DevTools opened');
+    }
+  };
+
   useEffect(() => {
     if (!isActive) return;
 
@@ -86,42 +97,86 @@ export function useAntiCheatTracking(sessionId, userId, assessmentId, isActive) 
       return false;
     };
 
-    // Detect tab switch
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        logViolation('Tab switch');
-      }
-    };
+    // ===== TAB SWITCHING DETECTION REMOVED =====
+    // The following code is intentionally omitted:
+    // const handleVisibilityChange = () => { ... };
 
-    // Detect PrintScreen
+    // Detect PrintScreen and DevTools shortcuts
     const handleKeyDown = (e) => {
+      // PrintScreen detection
       if (e.key === 'PrintScreen') {
         e.preventDefault();
         logViolation('Screenshot attempt');
         return false;
       }
+      
+      // DevTools detection - F12
+      if (e.key === 'F12') {
+        e.preventDefault();
+        logViolation('DevTools attempt (F12)');
+        return false;
+      }
+      
+      // DevTools detection - Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C
+      if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) {
+        e.preventDefault();
+        logViolation('DevTools attempt (Ctrl+Shift+I/J/C)');
+        return false;
+      }
+      
+      // View source detection - Ctrl+U
+      if (e.ctrlKey && e.key === 'u') {
+        e.preventDefault();
+        logViolation('View source attempt');
+        return false;
+      }
     };
 
-    // Detect right-click
+    // Prevent right-click
     const handleContextMenu = (e) => {
       e.preventDefault();
       logViolation('Right-click attempt');
       return false;
     };
 
+    // Periodic DevTools detection (checks every 5 seconds)
+    const devToolsInterval = setInterval(() => {
+      if (!isActive) return;
+      
+      // Method 1: Check window size difference (DevTools opens as separate window)
+      const widthDiff = window.outerWidth - window.innerWidth;
+      const heightDiff = window.outerHeight - window.innerHeight;
+      
+      // If DevTools is open as a separate window, dimensions will change significantly
+      if (widthDiff > 200 || heightDiff > 200) {
+        logViolation('DevTools detected (window resize)');
+      }
+      
+      // Method 2: Check element inspection via debugger
+      const before = performance.now();
+      debugger;
+      const after = performance.now();
+      if (after - before > 100) {
+        logViolation('DevTools detected (debugger pause)');
+      }
+    }, 5000);
+
     // Add event listeners
     document.addEventListener('copy', handleCopy);
     document.addEventListener('paste', handlePaste);
     document.addEventListener('cut', handleCut);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    // Tab switching event listener REMOVED
+    // document.addEventListener('visibilitychange', handleVisibilityChange);
     document.addEventListener('keydown', handleKeyDown);
     document.addEventListener('contextmenu', handleContextMenu);
 
-    // Add CSS to prevent selection
+    // Add CSS to prevent text selection
     const style = document.createElement('style');
     style.textContent = `
       * {
         -webkit-user-select: none !important;
+        -moz-user-select: none !important;
+        -ms-user-select: none !important;
         user-select: none !important;
       }
     `;
@@ -131,12 +186,16 @@ export function useAntiCheatTracking(sessionId, userId, assessmentId, isActive) 
       document.removeEventListener('copy', handleCopy);
       document.removeEventListener('paste', handlePaste);
       document.removeEventListener('cut', handleCut);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      // Tab switching event listener REMOVED
+      // document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('contextmenu', handleContextMenu);
       document.head.removeChild(style);
+      clearInterval(devToolsInterval);
     };
   }, [isActive, sessionId]);
 
   return { violationCount: violationCountRef.current };
 }
+
+export default useAntiCheatTracking;
