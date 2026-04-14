@@ -72,7 +72,7 @@ function AssessmentContent() {
   const [showViolationWarning, setShowViolationWarning] = useState(false);
   const [violationMessage, setViolationMessage] = useState('');
 
-  // ===== ANTI-CHEAT / VIOLATION TRACKING =====
+  // ===== ANTI-CHEAT / VIOLATION TRACKING (NO TAB SWITCHING) =====
   const showViolationWarningMessage = (message) => {
     setViolationMessage(message);
     setShowViolationWarning(true);
@@ -109,7 +109,6 @@ function AssessmentContent() {
       showViolationWarningMessage(`Maximum violations reached. Assessment will be submitted.`);
       setIsAutoSubmitting(true);
       
-      // Wait 2 seconds then auto-submit
       setTimeout(async () => {
         await handleAutoSubmitDueToViolations();
       }, 2000);
@@ -131,7 +130,6 @@ function AssessmentContent() {
       // Call submit API which will reject due to violations
       const result = await submitAssessment(session.id);
       
-      // This should not happen - API should reject
       console.log("Unexpected success:", result);
       
     } catch (error) {
@@ -159,7 +157,7 @@ function AssessmentContent() {
     }
   };
 
-  // Setup anti-cheat event listeners
+  // Setup anti-cheat event listeners (NO TAB SWITCHING)
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session) return;
 
@@ -181,22 +179,36 @@ function AssessmentContent() {
       return false;
     };
 
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        logViolation('Tab switch');
-      }
-    };
+    // ===== TAB SWITCHING DETECTION REMOVED =====
+    // The following code is intentionally omitted:
+    // const handleVisibilityChange = () => { ... };
 
     const handleKeyDown = (e) => {
+      // PrintScreen detection
       if (e.key === 'PrintScreen') {
         e.preventDefault();
         logViolation('Screenshot attempt');
         return false;
       }
-      // Detect DevTools shortcuts
-      if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C'))) {
+      
+      // DevTools detection - F12
+      if (e.key === 'F12') {
+        e.preventDefault();
+        logViolation('DevTools attempt (F12)');
+        return false;
+      }
+      
+      // DevTools detection - Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C
+      if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) {
         e.preventDefault();
         logViolation('DevTools attempt');
+        return false;
+      }
+      
+      // View source detection - Ctrl+U
+      if (e.ctrlKey && e.key === 'u') {
+        e.preventDefault();
+        logViolation('View source attempt');
         return false;
       }
     };
@@ -207,11 +219,33 @@ function AssessmentContent() {
       return false;
     };
 
+    // Periodic DevTools detection
+    const devToolsInterval = setInterval(() => {
+      if (!sessionIdRef.current) return;
+      
+      // Method 1: Check window size difference
+      const widthDiff = window.outerWidth - window.innerWidth;
+      const heightDiff = window.outerHeight - window.innerHeight;
+      
+      if (widthDiff > 200 || heightDiff > 200) {
+        logViolation('DevTools detected');
+      }
+      
+      // Method 2: Debugger pause detection
+      const before = performance.now();
+      debugger;
+      const after = performance.now();
+      if (after - before > 100) {
+        logViolation('DevTools detected');
+      }
+    }, 5000);
+
     // Add event listeners
     document.addEventListener('copy', handleCopy);
     document.addEventListener('paste', handlePaste);
     document.addEventListener('cut', handleCut);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    // Tab switching event listener REMOVED
+    // document.addEventListener('visibilitychange', handleVisibilityChange);
     document.addEventListener('keydown', handleKeyDown);
     document.addEventListener('contextmenu', handleContextMenu);
 
@@ -229,10 +263,12 @@ function AssessmentContent() {
       document.removeEventListener('copy', handleCopy);
       document.removeEventListener('paste', handlePaste);
       document.removeEventListener('cut', handleCut);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      // Tab switching event listener REMOVED
+      // document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('contextmenu', handleContextMenu);
       document.head.removeChild(style);
+      clearInterval(devToolsInterval);
     };
   }, [loading, alreadySubmitted, accessDenied, session]);
 
