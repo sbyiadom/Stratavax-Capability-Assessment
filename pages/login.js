@@ -3,7 +3,8 @@ import { useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { supabase } from "../supabase/client";
-import AppLayout from "../components/AppLayout";
+// IMPORTANT: Use a PublicLayout WITHOUT sidebar, NOT AppLayout
+import PublicLayout from "../components/PublicLayout";
 
 export default function Login() {
   const router = useRouter();
@@ -184,7 +185,6 @@ export default function Login() {
     }
   };
 
-  // NEW: Handle password reset
   const handleResetPassword = async (e) => {
     e.preventDefault();
     setResetLoading(true);
@@ -207,7 +207,6 @@ export default function Login() {
           type: 'success', 
           text: `✅ Password reset successfully!\n\nTemporary password: Temp123!\n\nPlease log in with this temporary password and change it immediately in your Profile settings.` 
         });
-        // Clear email field after 3 seconds
         setTimeout(() => {
           setShowResetModal(false);
           setResetEmail("");
@@ -227,7 +226,7 @@ export default function Login() {
   };
 
   return (
-    <AppLayout background="/images/login-bg.jpg">
+    <PublicLayout background="/images/login-bg.jpg">
       <div style={{
         backgroundColor: "rgba(255,255,255,0.95)",
         padding: 40,
@@ -384,7 +383,7 @@ export default function Login() {
           </button>
         </form>
 
-        {/* NEW: Forgot Password Link */}
+        {/* Forgot Password Link - NO Sign Out button here */}
         <div style={{ 
           marginTop: "15px", 
           textAlign: "center"
@@ -425,7 +424,7 @@ export default function Login() {
         </div>
       </div>
 
-      {/* NEW: Reset Password Modal */}
+      {/* Reset Password Modal - same as before */}
       {showResetModal && (
         <div style={{
           position: 'fixed',
@@ -555,6 +554,6 @@ export default function Login() {
           </div>
         </div>
       )}
-    </AppLayout>
+    </PublicLayout>
   );
 }
