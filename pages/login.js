@@ -13,7 +13,6 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [loginMode, setLoginMode] = useState('candidate');
   
-  // Forgot Password State
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetMessage, setResetMessage] = useState(null);
@@ -25,8 +24,6 @@ export default function Login() {
     setLoading(true);
 
     try {
-      console.log('🔵 Candidate login attempt for:', email);
-      
       const { data, error } = await supabase.auth.signInWithPassword({ 
         email, 
         password 
@@ -36,7 +33,6 @@ export default function Login() {
         throw new Error("Invalid email or password");
       }
 
-      // Ensure user metadata has role
       if (data.user.user_metadata?.role !== 'candidate') {
         await supabase.auth.updateUser({
           data: { role: 'candidate' }
@@ -55,7 +51,6 @@ export default function Login() {
       };
       
       localStorage.setItem("userSession", JSON.stringify(sessionData));
-      console.log('✅ Candidate logged in, redirecting to dashboard');
       router.push('/candidate/dashboard');
 
     } catch (err) {
@@ -71,69 +66,31 @@ export default function Login() {
     setLoading(true);
 
     try {
-      console.log('🟠 Supervisor login attempt for:', email);
-      
       const { data, error } = await supabase.auth.signInWithPassword({ 
         email, 
         password 
       });
 
       if (error || !data.user) {
-        console.error('Auth error:', error);
         throw new Error("Invalid email or password");
       }
 
-      console.log('✅ Auth successful, user ID:', data.user.id);
-
       let supervisor = null;
-      let queryError = null;
       
-      try {
-        const result = await supabase
-          .from('supervisor_profiles')
-          .select('*')
-          .eq('id', data.user.id);
-        
-        supervisor = result.data;
-        queryError = result.error;
-        
-        console.log('📊 Query result:', { 
-          data: supervisor, 
-          error: queryError,
-          status: result.status,
-          statusText: result.statusText
-        });
-        
-      } catch (queryErr) {
-        console.error('💥 Query exception:', queryErr);
-        throw new Error(`Database query failed: ${queryErr.message}`);
-      }
-
-      if (queryError) {
-        console.error('❌ Supervisor query error details:', queryError);
-        
-        if (queryError.code === '42P01') {
-          throw new Error("Supervisor table does not exist");
-        } else if (queryError.code === '42501' || queryError.message?.includes('permission')) {
-          throw new Error("Permission denied - check RLS policies");
-        } else {
-          throw new Error(`Database error: ${queryError.message}`);
-        }
-      }
+      const result = await supabase
+        .from('supervisor_profiles')
+        .select('*')
+        .eq('id', data.user.id);
+      
+      supervisor = result.data;
 
       if (!supervisor || supervisor.length === 0) {
-        console.log('❌ No supervisor found with ID:', data.user.id);
-        
-        console.log('🔍 Trying fallback search by email...');
-        const { data: byEmail, error: emailError } = await supabase
+        const { data: byEmail } = await supabase
           .from('supervisor_profiles')
           .select('*')
           .eq('email', email);
         
-        console.log('📊 Email search result:', { data: byEmail, error: emailError });
-        
         if (byEmail && byEmail.length > 0) {
-          console.log('✅ Found supervisor by email:', byEmail[0]);
           supervisor = byEmail;
         } else {
           await supabase.auth.signOut();
@@ -142,12 +99,6 @@ export default function Login() {
       }
 
       const supervisorData = supervisor[0];
-      console.log('✅ Supervisor found:', { 
-        id: supervisorData.id,
-        email: supervisorData.email,
-        role: supervisorData.role,
-        name: supervisorData.full_name 
-      });
 
       await supabase.auth.updateUser({
         data: { 
@@ -168,7 +119,6 @@ export default function Login() {
       };
       
       localStorage.setItem("userSession", JSON.stringify(sessionData));
-      console.log('✅ Session stored, redirecting based on role:', sessionData.role);
 
       if (supervisorData.role === 'admin') {
         router.push('/admin');
@@ -177,14 +127,12 @@ export default function Login() {
       }
 
     } catch (err) {
-      console.error('🔴 Login error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle password reset
   const handleResetPassword = async (e) => {
     e.preventDefault();
     setResetLoading(true);
@@ -205,9 +153,8 @@ export default function Login() {
       if (data.success) {
         setResetMessage({ 
           type: 'success', 
-          text: `✅ Password reset successfully!\n\nTemporary password: Temp123!\n\nPlease log in with this temporary password and change it immediately in your Profile settings.` 
+          text: `✅ Password reset successfully!\n\nTemporary password: Temp123!\n\nPlease log in with this temporary password and change it immediately.` 
         });
-        // Clear email field after 6 seconds
         setTimeout(() => {
           setShowResetModal(false);
           setResetEmail("");
@@ -229,199 +176,361 @@ export default function Login() {
   return (
     <AppLayout background="/images/login-bg.jpg" showNavigation={false}>
       <div style={{
-        backgroundColor: "rgba(255,255,255,0.95)",
-        padding: 40,
-        borderRadius: 16,
-        width: 380,
-        margin: "auto",
-        boxShadow: "0 10px 30px rgba(0,0,0,0.15)"
+        display: 'flex',
+        minHeight: '100vh',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px'
       }}>
-        <div style={{ marginBottom: 10, textAlign: "center" }}>
-          <h1 style={{ 
-            marginBottom: 5, 
-            color: "#1565c0",
-            fontSize: "28px"
-          }}>
-            🏢 Stratavax
-          </h1>
-          <p style={{ 
-            color: "#666", 
-            fontSize: "16px",
-            margin: 0
-          }}>
-            Talent Assessment Portal
-          </p>
-        </div>
-
-        {/* Mode Toggle */}
+        {/* Left Column - Platform Information */}
         <div style={{
+          flex: 1,
+          maxWidth: '500px',
+          marginRight: '60px',
           display: 'flex',
-          gap: '10px',
-          marginBottom: '20px',
-          borderRadius: '8px',
-          background: '#f0f0f0',
-          padding: '4px'
+          flexDirection: 'column',
+          gap: '32px'
         }}>
-          <button
-            onClick={() => setLoginMode('candidate')}
-            style={{
-              flex: 1,
-              padding: '10px',
-              border: 'none',
-              borderRadius: '6px',
-              background: loginMode === 'candidate' ? '#4CAF50' : 'transparent',
-              color: loginMode === 'candidate' ? 'white' : '#666',
-              cursor: 'pointer',
-              fontWeight: '600',
-              transition: 'all 0.3s'
-            }}
-          >
-            👤 Candidate
-          </button>
-          <button
-            onClick={() => setLoginMode('supervisor')}
-            style={{
-              flex: 1,
-              padding: '10px',
-              border: 'none',
-              borderRadius: '6px',
-              background: loginMode === 'supervisor' ? '#1565c0' : 'transparent',
-              color: loginMode === 'supervisor' ? 'white' : '#666',
-              cursor: 'pointer',
-              fontWeight: '600',
-              transition: 'all 0.3s'
-            }}
-          >
-            👑 Supervisor
-          </button>
-        </div>
-
-        {error && (
-          <div style={{
-            backgroundColor: "#ffebee",
-            color: "#c62828",
-            padding: "12px",
-            borderRadius: "8px",
-            marginBottom: "20px",
-            fontSize: "14px"
-          }}>
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={loginMode === 'candidate' ? handleCandidateLogin : handleSupervisorLogin}>
-          <div style={{ textAlign: "left", marginBottom: "15px" }}>
-            <label style={{
-              display: "block",
-              marginBottom: "8px",
-              fontWeight: "600",
-              color: "#333",
-              fontSize: "14px"
+          {/* Brand */}
+          <div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              marginBottom: '24px'
             }}>
-              Email
-            </label>
-            <input
-              type="email"
-              placeholder="Enter your email"
-              value={email}
-              required
-              onChange={(e) => setEmail(e.target.value)}
-              style={{ 
-                width: "100%", 
-                padding: 12,
-                borderRadius: 8, 
-                border: "2px solid #ddd",
-                fontSize: "16px",
-                boxSizing: "border-box"
-              }}
-            />
-          </div>
-
-          <div style={{ textAlign: "left", marginBottom: "20px" }}>
-            <label style={{
-              display: "block",
-              marginBottom: "8px",
-              fontWeight: "600",
-              color: "#333",
-              fontSize: "14px"
-            }}>
-              Password
-            </label>
-            <input
-              type="password"
-              placeholder="Enter your password"
-              value={password}
-              required
-              onChange={(e) => setPassword(e.target.value)}
-              style={{ 
-                width: "100%", 
-                padding: 12,
-                borderRadius: 8, 
-                border: "2px solid #ddd",
-                fontSize: "16px",
-                boxSizing: "border-box"
-              }}
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: "100%",
-              padding: 15,
-              background: loading ? "#ccc" : (loginMode === 'candidate' ? "#4CAF50" : "#1565c0"),
-              color: "#fff",
-              border: "none",
-              borderRadius: 8,
-              cursor: loading ? "not-allowed" : "pointer",
-              fontWeight: "bold",
-              fontSize: "16px",
-              transition: "background 0.3s"
-            }}
-          >
-            {loading ? "Logging in..." : `Login as ${loginMode === 'candidate' ? 'Candidate' : 'Supervisor'}`}
-          </button>
-        </form>
-
-        {/* Forgot Password Link */}
-        <div style={{ 
-          marginTop: "15px", 
-          textAlign: "center"
-        }}>
-          <button
-            onClick={() => setShowResetModal(true)}
-            style={{
-              background: "none",
-              border: "none",
-              color: "#1565c0",
-              cursor: "pointer",
-              fontSize: "14px",
-              textDecoration: "underline"
-            }}
-          >
-            Forgot Password?
-          </button>
-        </div>
-
-        <div style={{ 
-          marginTop: "20px", 
-          fontSize: "14px", 
-          color: "#666",
-          textAlign: "center"
-        }}>
-          <p style={{ margin: 0 }}>
-            Don't have an account?{" "}
-            <Link href="/register" legacyBehavior>
-              <a style={{ 
-                color: "#1565c0", 
-                textDecoration: "none",
-                fontWeight: "500"
+              <div style={{
+                width: '48px',
+                height: '48px',
+                background: 'linear-gradient(135deg, #1565c0 0%, #0A1929 100%)',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '26px'
               }}>
-                Register here
-              </a>
-            </Link>
-          </p>
+                🏢
+              </div>
+              <div>
+                <h1 style={{
+                  fontSize: '28px',
+                  fontWeight: '700',
+                  margin: 0,
+                  color: '#0A1929'
+                }}>
+                  Stratavax
+                </h1>
+                <p style={{ margin: '4px 0 0', color: '#64748B', fontSize: '13px' }}>
+                  Talent Assessment Platform
+                </p>
+              </div>
+            </div>
+            
+            <h2 style={{
+              fontSize: '34px',
+              fontWeight: '800',
+              margin: '0 0 16px',
+              lineHeight: 1.2,
+              color: '#0A1929'
+            }}>
+              Professional Skills<br />Assessment Platform
+            </h2>
+            <p style={{
+              fontSize: '16px',
+              color: '#475569',
+              lineHeight: 1.6,
+              marginBottom: '8px'
+            }}>
+              Stratavax provides comprehensive skill assessment tools for candidates 
+              and powerful analytics for supervisors to track organizational talent.
+            </p>
+          </div>
+
+          {/* Platform Features - Truthful descriptions */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, 1fr)',
+            gap: '16px'
+          }}>
+            <div style={{
+              padding: '16px',
+              background: 'white',
+              borderRadius: '12px',
+              border: '1px solid #e2e8f0'
+            }}>
+              <div style={{ fontSize: '22px', marginBottom: '8px' }}>📋</div>
+              <h4 style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '600', color: '#0A1929' }}>Skill Assessments</h4>
+              <p style={{ margin: 0, fontSize: '12px', color: '#64748B' }}>Role-specific evaluation tests</p>
+            </div>
+            <div style={{
+              padding: '16px',
+              background: 'white',
+              borderRadius: '12px',
+              border: '1px solid #e2e8f0'
+            }}>
+              <div style={{ fontSize: '22px', marginBottom: '8px' }}/>📊
+              <h4 style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '600', color: '#0A1929' }}>Real-time Results</h4>
+              <p style={{ margin: 0, fontSize: '12px', color: '#64748B' }}>Instant performance feedback</p>
+            </div>
+            <div style={{
+              padding: '16px',
+              background: 'white',
+              borderRadius: '12px',
+              border: '1px solid #e2e8f0'
+            }}>
+              <div style={{ fontSize: '22px', marginBottom: '8px' }}>📈</div>
+              <h4 style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '600', color: '#0A1929' }}>Progress Analytics</h4>
+              <p style={{ margin: 0, fontSize: '12px', color: '#64748B' }}>Track improvement over time</p>
+            </div>
+            <div style={{
+              padding: '16px',
+              background: 'white',
+              borderRadius: '12px',
+              border: '1px solid #e2e8f0'
+            }}>
+              <div style={{ fontSize: '22px', marginBottom: '8px' }}>🏅</div>
+              <h4 style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '600', color: '#0A1929' }}>Certificates</h4>
+              <p style={{ margin: 0, fontSize: '12px', color: '#64748B' }}>Verified achievement badges</p>
+            </div>
+          </div>
+
+          {/* Trust indicators - Only what's actually true */}
+          <div style={{
+            background: '#F8FAFC',
+            borderRadius: '12px',
+            padding: '16px 20px',
+            borderLeft: '4px solid #1565c0'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+              <span style={{ fontSize: '20px' }}>✓</span>
+              <span style={{ fontWeight: '600', color: '#0A1929', fontSize: '14px' }}>Secure & Private</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+              <span style={{ fontSize: '20px' }}>✓</span>
+              <span style={{ fontWeight: '600', color: '#0A1929', fontSize: '14px' }}>Role-Based Access Control</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '20px' }}>✓</span>
+              <span style={{ fontWeight: '600', color: '#0A1929', fontSize: '14px' }}>Enterprise-Grade Security</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column - Login Form */}
+        <div style={{
+          width: '450px',
+          backgroundColor: "white",
+          borderRadius: '20px',
+          padding: '40px',
+          boxShadow: "0 20px 40px rgba(0,0,0,0.1)",
+          border: '1px solid #e2e8f0'
+        }}>
+          <div style={{ textAlign: "center", marginBottom: "28px" }}>
+            <h2 style={{ 
+              marginBottom: "8px", 
+              color: "#0A1929",
+              fontSize: "26px",
+              fontWeight: "700"
+            }}>
+              Welcome Back
+            </h2>
+            <p style={{ 
+              color: "#64748B", 
+              fontSize: "14px",
+              margin: 0
+            }}>
+              Sign in to access your account
+            </p>
+          </div>
+
+          {/* Mode Toggle */}
+          <div style={{
+            display: 'flex',
+            gap: '8px',
+            marginBottom: '28px',
+            borderRadius: '12px',
+            background: '#F1F5F9',
+            padding: '4px'
+          }}>
+            <button
+              onClick={() => setLoginMode('candidate')}
+              style={{
+                flex: 1,
+                padding: '10px',
+                border: 'none',
+                borderRadius: '8px',
+                background: loginMode === 'candidate' ? 'white' : 'transparent',
+                color: loginMode === 'candidate' ? '#1565c0' : '#64748b',
+                cursor: 'pointer',
+                fontWeight: '500',
+                fontSize: '14px',
+                transition: 'all 0.2s',
+                boxShadow: loginMode === 'candidate' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              }}
+            >
+              🎓 Candidate Access
+            </button>
+            <button
+              onClick={() => setLoginMode('supervisor')}
+              style={{
+                flex: 1,
+                padding: '10px',
+                border: 'none',
+                borderRadius: '8px',
+                background: loginMode === 'supervisor' ? 'white' : 'transparent',
+                color: loginMode === 'supervisor' ? '#1565c0' : '#64748b',
+                cursor: 'pointer',
+                fontWeight: '500',
+                fontSize: '14px',
+                transition: 'all 0.2s',
+                boxShadow: loginMode === 'supervisor' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              }}
+            >
+              👔 Supervisor Portal
+            </button>
+          </div>
+
+          {error && (
+            <div style={{
+              backgroundColor: "#FEF2F2",
+              color: "#991B1B",
+              padding: "12px",
+              borderRadius: "10px",
+              marginBottom: "20px",
+              fontSize: "13px",
+              border: "1px solid #FEE2E2"
+            }}>
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={loginMode === 'candidate' ? handleCandidateLogin : handleSupervisorLogin}>
+            <div style={{ marginBottom: "20px" }}>
+              <label style={{
+                display: "block",
+                marginBottom: "8px",
+                fontWeight: "500",
+                color: "#0A1929",
+                fontSize: "13px"
+              }}>
+                Email Address
+              </label>
+              <input
+                type="email"
+                placeholder="name@company.com"
+                value={email}
+                required
+                onChange={(e) => setEmail(e.target.value)}
+                style={{ 
+                  width: "100%", 
+                  padding: "12px 14px",
+                  borderRadius: "10px", 
+                  border: "1px solid #CBD5E1",
+                  fontSize: "14px",
+                  boxSizing: "border-box",
+                  transition: "all 0.2s",
+                  outline: "none"
+                }}
+                onFocus={(e) => e.target.style.borderColor = "#1565c0"}
+                onBlur={(e) => e.target.style.borderColor = "#CBD5E1"}
+              />
+            </div>
+
+            <div style={{ marginBottom: "22px" }}>
+              <label style={{
+                display: "block",
+                marginBottom: "8px",
+                fontWeight: "500",
+                color: "#0A1929",
+                fontSize: "13px"
+              }}>
+                Password
+              </label>
+              <input
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                required
+                onChange={(e) => setPassword(e.target.value)}
+                style={{ 
+                  width: "100%", 
+                  padding: "12px 14px",
+                  borderRadius: "10px", 
+                  border: "1px solid #CBD5E1",
+                  fontSize: "14px",
+                  boxSizing: "border-box",
+                  transition: "all 0.2s",
+                  outline: "none"
+                }}
+                onFocus={(e) => e.target.style.borderColor = "#1565c0"}
+                onBlur={(e) => e.target.style.borderColor = "#CBD5E1"}
+              />
+            </div>
+
+            <div style={{ marginBottom: "24px", textAlign: "right" }}>
+              <button
+                type="button"
+                onClick={() => setShowResetModal(true)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#1565c0",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                  fontWeight: "500"
+                }}
+              >
+                Forgot password?
+              </button>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                width: "100%",
+                padding: "14px",
+                background: loading ? "#94A3B8" : "#1565c0",
+                color: "#fff",
+                border: "none",
+                borderRadius: "10px",
+                cursor: loading ? "not-allowed" : "pointer",
+                fontWeight: "600",
+                fontSize: "15px",
+                transition: "background 0.2s"
+              }}
+              onMouseEnter={(e) => {
+                if (!loading) e.target.style.background = "#0A1929";
+              }}
+              onMouseLeave={(e) => {
+                if (!loading) e.target.style.background = "#1565c0";
+              }}
+            >
+              {loading ? "Signing in..." : "Sign In"}
+            </button>
+          </form>
+
+          <div style={{ 
+            marginTop: "24px", 
+            fontSize: "13px", 
+            color: "#64748B",
+            textAlign: "center",
+            paddingTop: "20px",
+            borderTop: "1px solid #E2E8F0"
+          }}>
+            <p style={{ margin: 0 }}>
+              Don't have an account?{" "}
+              <Link href="/register" legacyBehavior>
+                <a style={{ 
+                  color: "#1565c0", 
+                  textDecoration: "none",
+                  fontWeight: "600"
+                }}>
+                  Contact your administrator
+                </a>
+              </Link>
+            </p>
+          </div>
         </div>
       </div>
 
@@ -437,8 +546,7 @@ export default function Login() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 1000,
-          backdropFilter: 'blur(5px)'
+          zIndex: 1000
         }}>
           <div style={{
             background: 'white',
@@ -446,8 +554,7 @@ export default function Login() {
             padding: '32px',
             width: '100%',
             maxWidth: '400px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
-            margin: '20px'
+            boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
           }}>
             <div style={{
               display: 'flex',
@@ -486,9 +593,9 @@ export default function Login() {
                 <label style={{
                   display: 'block',
                   marginBottom: '8px',
-                  fontWeight: '600',
-                  color: '#333',
-                  fontSize: '14px'
+                  fontWeight: '500',
+                  color: '#0A1929',
+                  fontSize: '13px'
                 }}>
                   Email Address
                 </label>
@@ -499,13 +606,16 @@ export default function Login() {
                   style={{
                     width: '100%',
                     padding: '12px',
-                    border: '2px solid #ddd',
+                    border: '1px solid #CBD5E1',
                     borderRadius: '8px',
-                    fontSize: '16px',
-                    boxSizing: 'border-box'
+                    fontSize: '14px',
+                    boxSizing: 'border-box',
+                    outline: 'none'
                   }}
                   placeholder="Enter your email address"
                   required
+                  onFocus={(e) => e.target.style.borderColor = "#1565c0"}
+                  onBlur={(e) => e.target.style.borderColor = "#CBD5E1"}
                 />
               </div>
 
@@ -516,9 +626,9 @@ export default function Login() {
                   fontSize: '13px',
                   marginBottom: '16px',
                   whiteSpace: 'pre-line',
-                  background: resetMessage.type === 'success' ? '#dcfce7' : '#fee2e2',
-                  color: resetMessage.type === 'success' ? '#166534' : '#991b1b',
-                  border: `1px solid ${resetMessage.type === 'success' ? '#86efac' : '#fecaca'}`
+                  background: resetMessage.type === 'success' ? '#F0FDF4' : '#FEF2F2',
+                  color: resetMessage.type === 'success' ? '#166534' : '#991B1B',
+                  border: `1px solid ${resetMessage.type === 'success' ? '#BBF7D0' : '#FEE2E2'}`
                 }}>
                   {resetMessage.text}
                 </div>
@@ -530,16 +640,16 @@ export default function Login() {
                 style={{
                   width: '100%',
                   padding: '12px',
-                  background: resetLoading ? '#ccc' : '#2563EB',
+                  background: resetLoading ? '#94A3B8' : '#1565c0',
                   color: 'white',
                   border: 'none',
                   borderRadius: '8px',
                   fontSize: '14px',
-                  fontWeight: '600',
+                  fontWeight: '500',
                   cursor: resetLoading ? 'not-allowed' : 'pointer'
                 }}
               >
-                {resetLoading ? 'Resetting...' : 'Reset Password'}
+                {resetLoading ? 'Sending...' : 'Send Reset Link'}
               </button>
             </form>
             
@@ -549,8 +659,8 @@ export default function Login() {
               color: '#64748B',
               textAlign: 'center'
             }}>
-              <p>A temporary password will be set to: <strong>Temp123!</strong></p>
-              <p>After logging in, go to Profile → Change Password to set a new password.</p>
+              Temporary password: <strong>Temp123!</strong><br />
+              Change it after logging in.
             </div>
           </div>
         </div>
