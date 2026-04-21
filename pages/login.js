@@ -228,204 +228,287 @@ export default function Login() {
 
   return (
     <AppLayout background="/images/login-bg.jpg" showNavigation={false}>
+      {/* Glassmorphism Container - Centers the card */}
       <div style={{
-        backgroundColor: "rgba(255,255,255,0.95)",
-        padding: 40,
-        borderRadius: 16,
-        width: 380,
-        margin: "auto",
-        boxShadow: "0 10px 30px rgba(0,0,0,0.15)"
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+        background: 'rgba(0, 0, 0, 0.3)'
       }}>
-        <div style={{ marginBottom: 10, textAlign: "center" }}>
-          <h1 style={{ 
-            marginBottom: 5, 
-            color: "#1565c0",
-            fontSize: "28px"
-          }}>
-            🏢 Stratavax
-          </h1>
-          <p style={{ 
-            color: "#666", 
-            fontSize: "16px",
-            margin: 0
-          }}>
-            Talent Assessment Portal
-          </p>
-        </div>
-
-        {/* Mode Toggle */}
+        
+        {/* Glass Card */}
         <div style={{
-          display: 'flex',
-          gap: '10px',
-          marginBottom: '20px',
-          borderRadius: '8px',
-          background: '#f0f0f0',
-          padding: '4px'
+          backgroundColor: "rgba(255, 255, 255, 0.15)",
+          backdropFilter: "blur(20px)",
+          padding: "48px 40px",
+          borderRadius: "24px",
+          width: "420px",
+          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2)",
+          border: "1px solid rgba(255, 255, 255, 0.2)",
+          transition: "transform 0.3s ease"
         }}>
-          <button
-            onClick={() => setLoginMode('candidate')}
-            style={{
-              flex: 1,
-              padding: '10px',
-              border: 'none',
-              borderRadius: '6px',
-              background: loginMode === 'candidate' ? '#4CAF50' : 'transparent',
-              color: loginMode === 'candidate' ? 'white' : '#666',
-              cursor: 'pointer',
-              fontWeight: '600',
-              transition: 'all 0.3s'
-            }}
-          >
-            👤 Candidate
-          </button>
-          <button
-            onClick={() => setLoginMode('supervisor')}
-            style={{
-              flex: 1,
-              padding: '10px',
-              border: 'none',
-              borderRadius: '6px',
-              background: loginMode === 'supervisor' ? '#1565c0' : 'transparent',
-              color: loginMode === 'supervisor' ? 'white' : '#666',
-              cursor: 'pointer',
-              fontWeight: '600',
-              transition: 'all 0.3s'
-            }}
-          >
-            👑 Supervisor
-          </button>
-        </div>
+          
+          <div style={{ marginBottom: 24, textAlign: "center" }}>
+            <div style={{
+              width: "64px",
+              height: "64px",
+              background: "linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.5) 100%)",
+              borderRadius: "18px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 16px",
+              fontSize: "32px",
+              boxShadow: "0 8px 16px rgba(0,0,0,0.1)"
+            }}>
+              🏢
+            </div>
+            <h1 style={{ 
+              marginBottom: 8, 
+              color: "white",
+              fontSize: "28px",
+              fontWeight: "700",
+              letterSpacing: "-0.5px"
+            }}>
+              Stratavax
+            </h1>
+            <p style={{ 
+              color: "rgba(255,255,255,0.7)", 
+              fontSize: "13px",
+              margin: 0,
+              letterSpacing: "0.5px"
+            }}>
+              Talent Assessment Portal
+            </p>
+          </div>
 
-        {error && (
+          {/* Mode Toggle - Glass Style */}
           <div style={{
-            backgroundColor: "#ffebee",
-            color: "#c62828",
-            padding: "12px",
-            borderRadius: "8px",
-            marginBottom: "20px",
-            fontSize: "14px"
+            display: 'flex',
+            gap: '10px',
+            marginBottom: '24px',
+            borderRadius: '14px',
+            background: 'rgba(0, 0, 0, 0.25)',
+            padding: '5px'
           }}>
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={loginMode === 'candidate' ? handleCandidateLogin : handleSupervisorLogin}>
-          <div style={{ textAlign: "left", marginBottom: "15px" }}>
-            <label style={{
-              display: "block",
-              marginBottom: "8px",
-              fontWeight: "600",
-              color: "#333",
-              fontSize: "14px"
-            }}>
-              Email
-            </label>
-            <input
-              type="email"
-              placeholder="Enter your email"
-              value={email}
-              required
-              onChange={(e) => setEmail(e.target.value)}
-              style={{ 
-                width: "100%", 
-                padding: 12,
-                borderRadius: 8, 
-                border: "2px solid #ddd",
-                fontSize: "16px",
-                boxSizing: "border-box"
+            <button
+              onClick={() => setLoginMode('candidate')}
+              style={{
+                flex: 1,
+                padding: '12px',
+                border: 'none',
+                borderRadius: '10px',
+                background: loginMode === 'candidate' ? 'rgba(255,255,255,0.95)' : 'transparent',
+                color: loginMode === 'candidate' ? '#1a1a2e' : 'rgba(255,255,255,0.8)',
+                cursor: 'pointer',
+                fontWeight: '600',
+                fontSize: '14px',
+                transition: 'all 0.3s ease'
               }}
-            />
-          </div>
-
-          <div style={{ textAlign: "left", marginBottom: "20px" }}>
-            <label style={{
-              display: "block",
-              marginBottom: "8px",
-              fontWeight: "600",
-              color: "#333",
-              fontSize: "14px"
-            }}>
-              Password
-            </label>
-            <input
-              type="password"
-              placeholder="Enter your password"
-              value={password}
-              required
-              onChange={(e) => setPassword(e.target.value)}
-              style={{ 
-                width: "100%", 
-                padding: 12,
-                borderRadius: 8, 
-                border: "2px solid #ddd",
-                fontSize: "16px",
-                boxSizing: "border-box"
+            >
+              👤 Candidate
+            </button>
+            <button
+              onClick={() => setLoginMode('supervisor')}
+              style={{
+                flex: 1,
+                padding: '12px',
+                border: 'none',
+                borderRadius: '10px',
+                background: loginMode === 'supervisor' ? 'rgba(255,255,255,0.95)' : 'transparent',
+                color: loginMode === 'supervisor' ? '#1a1a2e' : 'rgba(255,255,255,0.8)',
+                cursor: 'pointer',
+                fontWeight: '600',
+                fontSize: '14px',
+                transition: 'all 0.3s ease'
               }}
-            />
+            >
+              👑 Supervisor
+            </button>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: "100%",
-              padding: 15,
-              background: loading ? "#ccc" : (loginMode === 'candidate' ? "#4CAF50" : "#1565c0"),
-              color: "#fff",
-              border: "none",
-              borderRadius: 8,
-              cursor: loading ? "not-allowed" : "pointer",
-              fontWeight: "bold",
-              fontSize: "16px",
-              transition: "background 0.3s"
-            }}
-          >
-            {loading ? "Logging in..." : `Login as ${loginMode === 'candidate' ? 'Candidate' : 'Supervisor'}`}
-          </button>
-        </form>
+          {error && (
+            <div style={{
+              backgroundColor: "rgba(239, 68, 68, 0.2)",
+              backdropFilter: "blur(10px)",
+              color: "#fee2e2",
+              padding: "12px 16px",
+              borderRadius: "12px",
+              marginBottom: "20px",
+              fontSize: "13px",
+              border: "1px solid rgba(239, 68, 68, 0.3)",
+              textAlign: "center"
+            }}>
+              {error}
+            </div>
+          )}
 
-        {/* Forgot Password Link */}
-        <div style={{ 
-          marginTop: "15px", 
-          textAlign: "center"
-        }}>
-          <button
-            onClick={() => setShowResetModal(true)}
-            style={{
-              background: "none",
-              border: "none",
-              color: "#1565c0",
-              cursor: "pointer",
-              fontSize: "14px",
-              textDecoration: "underline"
-            }}
-          >
-            Forgot Password?
-          </button>
-        </div>
-
-        <div style={{ 
-          marginTop: "20px", 
-          fontSize: "14px", 
-          color: "#666",
-          textAlign: "center"
-        }}>
-          <p style={{ margin: 0 }}>
-            Don't have an account?{" "}
-            <Link href="/register" legacyBehavior>
-              <a style={{ 
-                color: "#1565c0", 
-                textDecoration: "none",
-                fontWeight: "500"
+          <form onSubmit={loginMode === 'candidate' ? handleCandidateLogin : handleSupervisorLogin}>
+            <div style={{ textAlign: "left", marginBottom: "18px" }}>
+              <label style={{
+                display: "block",
+                marginBottom: "8px",
+                fontWeight: "500",
+                color: "rgba(255,255,255,0.9)",
+                fontSize: "13px"
               }}>
-                Register here
-              </a>
-            </Link>
-          </p>
+                Email
+              </label>
+              <input
+                type="email"
+                placeholder="Enter your email"
+                value={email}
+                required
+                onChange={(e) => setEmail(e.target.value)}
+                style={{ 
+                  width: "100%", 
+                  padding: "14px 16px",
+                  borderRadius: "14px", 
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  background: "rgba(255, 255, 255, 0.1)",
+                  fontSize: "14px",
+                  color: "white",
+                  boxSizing: "border-box",
+                  transition: "all 0.3s ease",
+                  outline: "none"
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = "rgba(255,255,255,0.5)";
+                  e.target.style.background = "rgba(255, 255, 255, 0.15)";
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = "rgba(255,255,255,0.2)";
+                  e.target.style.background = "rgba(255, 255, 255, 0.1)";
+                }}
+              />
+            </div>
+
+            <div style={{ textAlign: "left", marginBottom: "22px" }}>
+              <label style={{
+                display: "block",
+                marginBottom: "8px",
+                fontWeight: "500",
+                color: "rgba(255,255,255,0.9)",
+                fontSize: "13px"
+              }}>
+                Password
+              </label>
+              <input
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                required
+                onChange={(e) => setPassword(e.target.value)}
+                style={{ 
+                  width: "100%", 
+                  padding: "14px 16px",
+                  borderRadius: "14px", 
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  background: "rgba(255, 255, 255, 0.1)",
+                  fontSize: "14px",
+                  color: "white",
+                  boxSizing: "border-box",
+                  transition: "all 0.3s ease",
+                  outline: "none"
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = "rgba(255,255,255,0.5)";
+                  e.target.style.background = "rgba(255, 255, 255, 0.15)";
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = "rgba(255,255,255,0.2)";
+                  e.target.style.background = "rgba(255, 255, 255, 0.1)";
+                }}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                width: "100%",
+                padding: "14px",
+                background: loading 
+                  ? "rgba(255,255,255,0.3)" 
+                  : "linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%)",
+                color: "#1a1a2e",
+                border: "none",
+                borderRadius: "14px",
+                cursor: loading ? "not-allowed" : "pointer",
+                fontWeight: "700",
+                fontSize: "15px",
+                transition: "all 0.3s ease"
+              }}
+              onMouseEnter={(e) => {
+                if (!loading) {
+                  e.target.style.transform = "translateY(-2px)";
+                  e.target.style.boxShadow = "0 8px 20px rgba(0,0,0,0.2)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!loading) {
+                  e.target.style.transform = "translateY(0)";
+                  e.target.style.boxShadow = "none";
+                }
+              }}
+            >
+              {loading ? "Logging in..." : `Login as ${loginMode === 'candidate' ? 'Candidate' : 'Supervisor'}`}
+            </button>
+          </form>
+
+          {/* Forgot Password Link */}
+          <div style={{ 
+            marginTop: "20px", 
+            textAlign: "center"
+          }}>
+            <button
+              onClick={() => setShowResetModal(true)}
+              style={{
+                background: "none",
+                border: "none",
+                color: "rgba(255,255,255,0.7)",
+                cursor: "pointer",
+                fontSize: "13px",
+                transition: "color 0.2s"
+              }}
+              onMouseEnter={(e) => e.target.style.color = "white"}
+              onMouseLeave={(e) => e.target.style.color = "rgba(255,255,255,0.7)"}
+            >
+              Forgot Password?
+            </button>
+          </div>
+
+          <div style={{ 
+            marginTop: "24px", 
+            fontSize: "13px", 
+            color: "rgba(255,255,255,0.5)",
+            textAlign: "center",
+            paddingTop: "20px",
+            borderTop: "1px solid rgba(255,255,255,0.1)"
+          }}>
+            <p style={{ margin: 0 }}>
+              Don't have an account?{" "}
+              <Link href="/register" legacyBehavior>
+                <a style={{ 
+                  color: "white", 
+                  textDecoration: "none",
+                  fontWeight: "600"
+                }}>
+                  Register here
+                </a>
+              </Link>
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Reset Password Modal */}
+      {/* Reset Password Modal - Glass Style */}
       {showResetModal && (
         <div style={{
           position: 'fixed',
@@ -433,32 +516,33 @@ export default function Login() {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.5)',
+          background: 'rgba(0,0,0,0.6)',
+          backdropFilter: 'blur(12px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 1000,
-          backdropFilter: 'blur(5px)'
+          zIndex: 1000
         }}>
           <div style={{
-            background: 'white',
-            borderRadius: '16px',
+            background: 'rgba(30, 30, 40, 0.95)',
+            backdropFilter: 'blur(20px)',
+            borderRadius: '24px',
             padding: '32px',
             width: '100%',
             maxWidth: '400px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
-            margin: '20px'
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
+            border: '1px solid rgba(255,255,255,0.2)'
           }}>
             <div style={{
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: '20px'
+              marginBottom: '24px'
             }}>
               <h3 style={{
-                fontSize: '20px',
-                fontWeight: '600',
-                color: '#0A1929',
+                fontSize: '22px',
+                fontWeight: '700',
+                color: 'white',
                 margin: 0
               }}>
                 Reset Password
@@ -470,11 +554,23 @@ export default function Login() {
                   setResetMessage(null);
                 }}
                 style={{
-                  background: 'none',
+                  background: 'rgba(255,255,255,0.1)',
                   border: 'none',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '10px',
                   fontSize: '20px',
                   cursor: 'pointer',
-                  color: '#64748B'
+                  color: 'rgba(255,255,255,0.7)',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = 'rgba(255,255,255,0.2)';
+                  e.target.style.color = 'white';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = 'rgba(255,255,255,0.1)';
+                  e.target.style.color = 'rgba(255,255,255,0.7)';
                 }}
               >
                 ✕
@@ -482,13 +578,13 @@ export default function Login() {
             </div>
             
             <form onSubmit={handleResetPassword}>
-              <div style={{ marginBottom: '20px' }}>
+              <div style={{ marginBottom: '24px' }}>
                 <label style={{
                   display: 'block',
                   marginBottom: '8px',
-                  fontWeight: '600',
-                  color: '#333',
-                  fontSize: '14px'
+                  fontWeight: '500',
+                  color: 'rgba(255,255,255,0.9)',
+                  fontSize: '13px'
                 }}>
                   Email Address
                 </label>
@@ -498,27 +594,33 @@ export default function Login() {
                   onChange={(e) => setResetEmail(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '12px',
-                    border: '2px solid #ddd',
-                    borderRadius: '8px',
-                    fontSize: '16px',
-                    boxSizing: 'border-box'
+                    padding: '14px',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: '14px',
+                    fontSize: '14px',
+                    boxSizing: 'border-box',
+                    outline: 'none',
+                    background: 'rgba(255,255,255,0.1)',
+                    color: 'white',
+                    transition: 'all 0.2s'
                   }}
                   placeholder="Enter your email address"
                   required
+                  onFocus={(e) => e.target.style.borderColor = "rgba(255,255,255,0.5)"}
+                  onBlur={(e) => e.target.style.borderColor = "rgba(255,255,255,0.2)"}
                 />
               </div>
 
               {resetMessage && (
                 <div style={{
                   padding: '12px',
-                  borderRadius: '8px',
+                  borderRadius: '12px',
                   fontSize: '13px',
-                  marginBottom: '16px',
+                  marginBottom: '20px',
                   whiteSpace: 'pre-line',
-                  background: resetMessage.type === 'success' ? '#dcfce7' : '#fee2e2',
-                  color: resetMessage.type === 'success' ? '#166534' : '#991b1b',
-                  border: `1px solid ${resetMessage.type === 'success' ? '#86efac' : '#fecaca'}`
+                  background: resetMessage.type === 'success' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                  color: resetMessage.type === 'success' ? '#bbf7d0' : '#fecaca',
+                  border: `1px solid ${resetMessage.type === 'success' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
                 }}>
                   {resetMessage.text}
                 </div>
@@ -529,14 +631,15 @@ export default function Login() {
                 disabled={resetLoading}
                 style={{
                   width: '100%',
-                  padding: '12px',
-                  background: resetLoading ? '#ccc' : '#2563EB',
-                  color: 'white',
+                  padding: '14px',
+                  background: resetLoading ? 'rgba(255,255,255,0.2)' : 'linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%)',
+                  color: '#1a1a2e',
                   border: 'none',
-                  borderRadius: '8px',
+                  borderRadius: '14px',
                   fontSize: '14px',
                   fontWeight: '600',
-                  cursor: resetLoading ? 'not-allowed' : 'pointer'
+                  cursor: resetLoading ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s'
                 }}
               >
                 {resetLoading ? 'Resetting...' : 'Reset Password'}
@@ -546,10 +649,10 @@ export default function Login() {
             <div style={{
               marginTop: '16px',
               fontSize: '12px',
-              color: '#64748B',
+              color: 'rgba(255,255,255,0.5)',
               textAlign: 'center'
             }}>
-              <p>A temporary password will be set to: <strong>Temp123!</strong></p>
+              <p>A temporary password will be set to: <strong style={{ color: 'white' }}>Temp123!</strong></p>
               <p>After logging in, go to Profile → Change Password to set a new password.</p>
             </div>
           </div>
