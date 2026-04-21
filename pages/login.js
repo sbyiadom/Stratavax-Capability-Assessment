@@ -12,6 +12,8 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [loginMode, setLoginMode] = useState('candidate');
+  
+  // Forgot Password State
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetMessage, setResetMessage] = useState(null);
@@ -23,6 +25,8 @@ export default function Login() {
     setLoading(true);
 
     try {
+      console.log('🔵 Candidate login attempt for:', email);
+      
       const { data, error } = await supabase.auth.signInWithPassword({ 
         email, 
         password 
@@ -32,6 +36,7 @@ export default function Login() {
         throw new Error("Invalid email or password");
       }
 
+      // Ensure user metadata has role
       if (data.user.user_metadata?.role !== 'candidate') {
         await supabase.auth.updateUser({
           data: { role: 'candidate' }
@@ -50,6 +55,7 @@ export default function Login() {
       };
       
       localStorage.setItem("userSession", JSON.stringify(sessionData));
+      console.log('✅ Candidate logged in, redirecting to dashboard');
       router.push('/candidate/dashboard');
 
     } catch (err) {
@@ -65,31 +71,69 @@ export default function Login() {
     setLoading(true);
 
     try {
+      console.log('🟠 Supervisor login attempt for:', email);
+      
       const { data, error } = await supabase.auth.signInWithPassword({ 
         email, 
         password 
       });
 
       if (error || !data.user) {
+        console.error('Auth error:', error);
         throw new Error("Invalid email or password");
       }
 
+      console.log('✅ Auth successful, user ID:', data.user.id);
+
       let supervisor = null;
+      let queryError = null;
       
-      const result = await supabase
-        .from('supervisor_profiles')
-        .select('*')
-        .eq('id', data.user.id);
-      
-      supervisor = result.data;
+      try {
+        const result = await supabase
+          .from('supervisor_profiles')
+          .select('*')
+          .eq('id', data.user.id);
+        
+        supervisor = result.data;
+        queryError = result.error;
+        
+        console.log('📊 Query result:', { 
+          data: supervisor, 
+          error: queryError,
+          status: result.status,
+          statusText: result.statusText
+        });
+        
+      } catch (queryErr) {
+        console.error('💥 Query exception:', queryErr);
+        throw new Error(`Database query failed: ${queryErr.message}`);
+      }
+
+      if (queryError) {
+        console.error('❌ Supervisor query error details:', queryError);
+        
+        if (queryError.code === '42P01') {
+          throw new Error("Supervisor table does not exist");
+        } else if (queryError.code === '42501' || queryError.message?.includes('permission')) {
+          throw new Error("Permission denied - check RLS policies");
+        } else {
+          throw new Error(`Database error: ${queryError.message}`);
+        }
+      }
 
       if (!supervisor || supervisor.length === 0) {
-        const { data: byEmail } = await supabase
+        console.log('❌ No supervisor found with ID:', data.user.id);
+        
+        console.log('🔍 Trying fallback search by email...');
+        const { data: byEmail, error: emailError } = await supabase
           .from('supervisor_profiles')
           .select('*')
           .eq('email', email);
         
+        console.log('📊 Email search result:', { data: byEmail, error: emailError });
+        
         if (byEmail && byEmail.length > 0) {
+          console.log('✅ Found supervisor by email:', byEmail[0]);
           supervisor = byEmail;
         } else {
           await supabase.auth.signOut();
@@ -98,6 +142,12 @@ export default function Login() {
       }
 
       const supervisorData = supervisor[0];
+      console.log('✅ Supervisor found:', { 
+        id: supervisorData.id,
+        email: supervisorData.email,
+        role: supervisorData.role,
+        name: supervisorData.full_name 
+      });
 
       await supabase.auth.updateUser({
         data: { 
@@ -118,6 +168,7 @@ export default function Login() {
       };
       
       localStorage.setItem("userSession", JSON.stringify(sessionData));
+      console.log('✅ Session stored, redirecting based on role:', sessionData.role);
 
       if (supervisorData.role === 'admin') {
         router.push('/admin');
@@ -126,12 +177,14 @@ export default function Login() {
       }
 
     } catch (err) {
+      console.error('🔴 Login error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
+  // Handle password reset
   const handleResetPassword = async (e) => {
     e.preventDefault();
     setResetLoading(true);
@@ -152,8 +205,9 @@ export default function Login() {
       if (data.success) {
         setResetMessage({ 
           type: 'success', 
-          text: `✅ Password reset successfully!\n\nTemporary password: Temp123!\n\nPlease log in with this temporary password and change it immediately.` 
+          text: `✅ Password reset successfully!\n\nTemporary password: Temp123!\n\nPlease log in with this temporary password and change it immediately in your Profile settings.` 
         });
+        // Clear email field after 6 seconds
         setTimeout(() => {
           setShowResetModal(false);
           setResetEmail("");
@@ -175,456 +229,199 @@ export default function Login() {
   return (
     <AppLayout background="/images/login-bg.jpg" showNavigation={false}>
       <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
-        overflowY: 'auto',
-        background: 'rgba(0, 0, 0, 0.3)'
+        backgroundColor: "rgba(255,255,255,0.95)",
+        padding: 40,
+        borderRadius: 16,
+        width: 380,
+        margin: "auto",
+        boxShadow: "0 10px 30px rgba(0,0,0,0.15)"
       }}>
-        
-        {/* Single Glass Card */}
+        <div style={{ marginBottom: 10, textAlign: "center" }}>
+          <h1 style={{ 
+            marginBottom: 5, 
+            color: "#1565c0",
+            fontSize: "28px"
+          }}>
+            🏢 Stratavax
+          </h1>
+          <p style={{ 
+            color: "#666", 
+            fontSize: "16px",
+            margin: 0
+          }}>
+            Talent Assessment Portal
+          </p>
+        </div>
+
+        {/* Mode Toggle */}
         <div style={{
-          maxWidth: '520px',
-          width: '100%',
-          background: 'rgba(18, 24, 38, 0.92)',
-          backdropFilter: 'blur(16px)',
-          borderRadius: '28px',
-          padding: '48px 40px',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-          transition: 'transform 0.3s ease'
+          display: 'flex',
+          gap: '10px',
+          marginBottom: '20px',
+          borderRadius: '8px',
+          background: '#f0f0f0',
+          padding: '4px'
         }}>
-          
-          {/* Logo & Brand */}
-          <div style={{
-            textAlign: 'center',
-            marginBottom: '24px'
-          }}>
-            <div style={{
-              width: '64px',
-              height: '64px',
-              background: 'linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%)',
-              borderRadius: '18px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 16px',
-              fontSize: '32px',
-              boxShadow: '0 10px 20px -5px rgba(59, 130, 246, 0.3)'
-            }}>
-              🏢
-            </div>
-            <h1 style={{
-              fontSize: '28px',
-              fontWeight: '700',
-              margin: 0,
-              color: 'white',
-              letterSpacing: '-0.5px'
-            }}>
-              StrataVax
-            </h1>
-            <p style={{
-              fontSize: '11px',
-              color: 'rgba(255,255,255,0.5)',
-              margin: '6px 0 0',
-              letterSpacing: '1px',
-              textTransform: 'uppercase'
-            }}>
-              Talent Assessment Platform
-            </p>
-          </div>
-
-          {/* Mission Statement */}
-          <div style={{
-            textAlign: 'center',
-            marginBottom: '24px',
-            padding: '0 8px'
-          }}>
-            <h2 style={{
-              fontSize: '20px',
+          <button
+            onClick={() => setLoginMode('candidate')}
+            style={{
+              flex: 1,
+              padding: '10px',
+              border: 'none',
+              borderRadius: '6px',
+              background: loginMode === 'candidate' ? '#4CAF50' : 'transparent',
+              color: loginMode === 'candidate' ? 'white' : '#666',
+              cursor: 'pointer',
               fontWeight: '600',
-              margin: '0 0 10px',
-              background: 'linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.7) 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent'
-            }}>
-              Empowering Talent Through Assessment
-            </h2>
-            <p style={{
-              fontSize: '13px',
-              lineHeight: 1.5,
-              color: 'rgba(255,255,255,0.7)',
-              margin: 0
-            }}>
-              Human capital is the bedrock of any organisation. 
-              The right people in the right roles delivering the right outputs.
-            </p>
-          </div>
+              transition: 'all 0.3s'
+            }}
+          >
+            👤 Candidate
+          </button>
+          <button
+            onClick={() => setLoginMode('supervisor')}
+            style={{
+              flex: 1,
+              padding: '10px',
+              border: 'none',
+              borderRadius: '6px',
+              background: loginMode === 'supervisor' ? '#1565c0' : 'transparent',
+              color: loginMode === 'supervisor' ? 'white' : '#666',
+              cursor: 'pointer',
+              fontWeight: '600',
+              transition: 'all 0.3s'
+            }}
+          >
+            👑 Supervisor
+          </button>
+        </div>
 
-          {/* Trust Stats Row - Inspired by Evalex */}
+        {error && (
           <div style={{
-            display: 'flex',
-            justifyContent: 'space-around',
-            gap: '16px',
-            marginBottom: '28px',
-            padding: '16px 0',
-            borderTop: '1px solid rgba(255,255,255,0.08)',
-            borderBottom: '1px solid rgba(255,255,255,0.08)'
+            backgroundColor: "#ffebee",
+            color: "#c62828",
+            padding: "12px",
+            borderRadius: "8px",
+            marginBottom: "20px",
+            fontSize: "14px"
           }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ 
-                fontSize: '22px', 
-                fontWeight: '700', 
-                background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent'
-              }}>
-                95%
-              </div>
-              <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', marginTop: '4px' }}>
-                Client Satisfaction
-              </div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ 
-                fontSize: '22px', 
-                fontWeight: '700',
-                background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent'
-              }}>
-                83%
-              </div>
-              <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', marginTop: '4px' }}>
-                Prediction Accuracy
-              </div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ 
-                fontSize: '22px', 
-                fontWeight: '700',
-                background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent'
-              }}>
-                35+
-              </div>
-              <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', marginTop: '4px' }}>
-                Years of Excellence
-              </div>
-            </div>
+            {error}
           </div>
+        )}
 
-          {/* Features Row - Compact */}
-          <div style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '10px',
-            marginBottom: '28px',
-            justifyContent: 'center'
-          }}>
-            {[
-              { icon: "📋", text: "Skill Assessments" },
-              { icon: "📊", text: "Real-time Results" },
-              { icon: "📈", text: "Progress Analytics" },
-              { icon: "🏅", text: "Certifications" }
-            ].map((feature, index) => (
-              <div
-                key={index}
-                style={{
-                  flex: '1',
-                  minWidth: '100px',
-                  padding: '10px 12px',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  textAlign: 'center',
-                  transition: 'all 0.2s ease',
-                  cursor: 'pointer'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                }}
-              >
-                <div style={{ fontSize: '20px', marginBottom: '4px' }}>{feature.icon}</div>
-                <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.8)' }}>{feature.text}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Divider */}
-          <div style={{
-            height: '1px',
-            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent)',
-            marginBottom: '28px'
-          }} />
-
-          {/* Welcome Back */}
-          <div style={{ textAlign: "center", marginBottom: "24px" }}>
-            <h3 style={{ 
-              marginBottom: "6px", 
-              color: "white",
-              fontSize: "22px",
-              fontWeight: "600"
+        <form onSubmit={loginMode === 'candidate' ? handleCandidateLogin : handleSupervisorLogin}>
+          <div style={{ textAlign: "left", marginBottom: "15px" }}>
+            <label style={{
+              display: "block",
+              marginBottom: "8px",
+              fontWeight: "600",
+              color: "#333",
+              fontSize: "14px"
             }}>
-              Welcome Back
-            </h3>
-            <p style={{ 
-              color: "rgba(255,255,255,0.6)", 
-              fontSize: "13px",
-              margin: 0
+              Email
+            </label>
+            <input
+              type="email"
+              placeholder="Enter your email"
+              value={email}
+              required
+              onChange={(e) => setEmail(e.target.value)}
+              style={{ 
+                width: "100%", 
+                padding: 12,
+                borderRadius: 8, 
+                border: "2px solid #ddd",
+                fontSize: "16px",
+                boxSizing: "border-box"
+              }}
+            />
+          </div>
+
+          <div style={{ textAlign: "left", marginBottom: "20px" }}>
+            <label style={{
+              display: "block",
+              marginBottom: "8px",
+              fontWeight: "600",
+              color: "#333",
+              fontSize: "14px"
             }}>
-              Sign in to access your account
-            </p>
+              Password
+            </label>
+            <input
+              type="password"
+              placeholder="Enter your password"
+              value={password}
+              required
+              onChange={(e) => setPassword(e.target.value)}
+              style={{ 
+                width: "100%", 
+                padding: 12,
+                borderRadius: 8, 
+                border: "2px solid #ddd",
+                fontSize: "16px",
+                boxSizing: "border-box"
+              }}
+            />
           </div>
 
-          {/* Mode Toggle */}
-          <div style={{
-            display: 'flex',
-            gap: '10px',
-            marginBottom: '24px',
-            borderRadius: '14px',
-            background: 'rgba(0, 0, 0, 0.3)',
-            padding: '5px'
-          }}>
-            <button
-              onClick={() => setLoginMode('candidate')}
-              style={{
-                flex: 1,
-                padding: '12px',
-                border: 'none',
-                borderRadius: '10px',
-                background: loginMode === 'candidate' 
-                  ? 'linear-gradient(135deg, #3B82F6, #8B5CF6)' 
-                  : 'transparent',
-                color: loginMode === 'candidate' ? 'white' : 'rgba(255,255,255,0.6)',
-                cursor: 'pointer',
-                fontWeight: '600',
-                fontSize: '14px',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              🎓 Candidate
-            </button>
-            <button
-              onClick={() => setLoginMode('supervisor')}
-              style={{
-                flex: 1,
-                padding: '12px',
-                border: 'none',
-                borderRadius: '10px',
-                background: loginMode === 'supervisor' 
-                  ? 'linear-gradient(135deg, #3B82F6, #8B5CF6)' 
-                  : 'transparent',
-                color: loginMode === 'supervisor' ? 'white' : 'rgba(255,255,255,0.6)',
-                cursor: 'pointer',
-                fontWeight: '600',
-                fontSize: '14px',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              👔 Administrator
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              width: "100%",
+              padding: 15,
+              background: loading ? "#ccc" : (loginMode === 'candidate' ? "#4CAF50" : "#1565c0"),
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              cursor: loading ? "not-allowed" : "pointer",
+              fontWeight: "bold",
+              fontSize: "16px",
+              transition: "background 0.3s"
+            }}
+          >
+            {loading ? "Logging in..." : `Login as ${loginMode === 'candidate' ? 'Candidate' : 'Supervisor'}`}
+          </button>
+        </form>
 
-          {error && (
-            <div style={{
-              backgroundColor: "rgba(239, 68, 68, 0.15)",
-              color: "#fecaca",
-              padding: "12px 16px",
-              borderRadius: "12px",
-              marginBottom: "20px",
-              fontSize: "13px",
-              border: "1px solid rgba(239, 68, 68, 0.3)",
-              textAlign: "center"
-            }}>
-              {error}
-            </div>
-          )}
+        {/* Forgot Password Link */}
+        <div style={{ 
+          marginTop: "15px", 
+          textAlign: "center"
+        }}>
+          <button
+            onClick={() => setShowResetModal(true)}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#1565c0",
+              cursor: "pointer",
+              fontSize: "14px",
+              textDecoration: "underline"
+            }}
+          >
+            Forgot Password?
+          </button>
+        </div>
 
-          <form onSubmit={loginMode === 'candidate' ? handleCandidateLogin : handleSupervisorLogin}>
-            {/* Email Field */}
-            <div style={{ marginBottom: "18px" }}>
-              <label style={{
-                display: "block",
-                marginBottom: "8px",
-                fontWeight: "500",
-                color: "rgba(255,255,255,0.8)",
-                fontSize: "13px"
+        <div style={{ 
+          marginTop: "20px", 
+          fontSize: "14px", 
+          color: "#666",
+          textAlign: "center"
+        }}>
+          <p style={{ margin: 0 }}>
+            Don't have an account?{" "}
+            <Link href="/register" legacyBehavior>
+              <a style={{ 
+                color: "#1565c0", 
+                textDecoration: "none",
+                fontWeight: "500"
               }}>
-                Email Address
-              </label>
-              <input
-                type="email"
-                placeholder="name@company.com"
-                value={email}
-                required
-                onChange={(e) => setEmail(e.target.value)}
-                style={{ 
-                  width: "100%", 
-                  padding: "14px 16px",
-                  borderRadius: "14px", 
-                  border: "1px solid rgba(255,255,255,0.15)",
-                  background: "rgba(255, 255, 255, 0.08)",
-                  fontSize: "14px",
-                  color: "white",
-                  boxSizing: "border-box",
-                  transition: "all 0.2s ease",
-                  outline: "none"
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = "#3B82F6";
-                  e.target.style.background = "rgba(255, 255, 255, 0.12)";
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = "rgba(255,255,255,0.15)";
-                  e.target.style.background = "rgba(255, 255, 255, 0.08)";
-                }}
-              />
-            </div>
-
-            {/* Password Field */}
-            <div style={{ marginBottom: "18px" }}>
-              <label style={{
-                display: "block",
-                marginBottom: "8px",
-                fontWeight: "500",
-                color: "rgba(255,255,255,0.8)",
-                fontSize: "13px"
-              }}>
-                Password
-              </label>
-              <input
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                required
-                onChange={(e) => setPassword(e.target.value)}
-                style={{ 
-                  width: "100%", 
-                  padding: "14px 16px",
-                  borderRadius: "14px", 
-                  border: "1px solid rgba(255,255,255,0.15)",
-                  background: "rgba(255, 255, 255, 0.08)",
-                  fontSize: "14px",
-                  color: "white",
-                  boxSizing: "border-box",
-                  transition: "all 0.2s ease",
-                  outline: "none"
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = "#3B82F6";
-                  e.target.style.background = "rgba(255, 255, 255, 0.12)";
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = "rgba(255,255,255,0.15)";
-                  e.target.style.background = "rgba(255, 255, 255, 0.08)";
-                }}
-              />
-            </div>
-
-            {/* Forgot Password */}
-            <div style={{ marginBottom: "24px", textAlign: "right" }}>
-              <button
-                type="button"
-                onClick={() => setShowResetModal(true)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "rgba(255,255,255,0.5)",
-                  cursor: "pointer",
-                  fontSize: "13px",
-                  transition: "color 0.2s"
-                }}
-                onMouseEnter={(e) => e.target.style.color = "#3B82F6"}
-                onMouseLeave={(e) => e.target.style.color = "rgba(255,255,255,0.5)"}
-              >
-                Forgot password?
-              </button>
-            </div>
-
-            {/* Sign In Button */}
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                width: "100%",
-                padding: "14px",
-                background: loading 
-                  ? "rgba(59, 130, 246, 0.5)" 
-                  : "linear-gradient(135deg, #3B82F6, #8B5CF6)",
-                color: "white",
-                border: "none",
-                borderRadius: "14px",
-                cursor: loading ? "not-allowed" : "pointer",
-                fontWeight: "600",
-                fontSize: "15px",
-                transition: "all 0.2s ease"
-              }}
-              onMouseEnter={(e) => {
-                if (!loading) {
-                  e.target.style.transform = "translateY(-1px)";
-                  e.target.style.boxShadow = "0 8px 20px -5px rgba(59, 130, 246, 0.4)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!loading) {
-                  e.target.style.transform = "translateY(0)";
-                  e.target.style.boxShadow = "none";
-                }
-              }}
-            >
-              {loading ? "Signing in..." : "Sign In"}
-            </button>
-          </form>
-
-          {/* Footer */}
-          <div style={{ 
-            marginTop: "24px", 
-            fontSize: "12px", 
-            color: "rgba(255,255,255,0.4)",
-            textAlign: "center"
-          }}>
-            <p style={{ margin: 0 }}>
-              Need an account?{" "}
-              <Link href="/register" legacyBehavior>
-                <a style={{ 
-                  color: "#3B82F6", 
-                  textDecoration: "none",
-                  fontWeight: "500"
-                }}>
-                  Contact your administrator
-                </a>
-              </Link>
-            </p>
-          </div>
-
-          {/* Trust Badge - Small */}
-          <div style={{
-            marginTop: "20px",
-            textAlign: "center",
-            fontSize: "10px",
-            color: "rgba(255,255,255,0.3)",
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '12px'
-          }}>
-            <span>✓ Secure & Private</span>
-            <span>✓ Enterprise Security</span>
-            <span>✓ Role-Based Access</span>
-          </div>
+                Register here
+              </a>
+            </Link>
+          </p>
         </div>
       </div>
 
@@ -636,29 +433,34 @@ export default function Login() {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.7)',
-          backdropFilter: 'blur(8px)',
+          background: 'rgba(0,0,0,0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 1000
+          zIndex: 1000,
+          backdropFilter: 'blur(5px)'
         }}>
           <div style={{
-            background: 'rgba(18, 24, 38, 0.95)',
-            backdropFilter: 'blur(16px)',
-            borderRadius: '24px',
+            background: 'white',
+            borderRadius: '16px',
             padding: '32px',
             width: '100%',
             maxWidth: '400px',
-            border: '1px solid rgba(255,255,255,0.1)'
+            boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+            margin: '20px'
           }}>
             <div style={{
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: '24px'
+              marginBottom: '20px'
             }}>
-              <h3 style={{ fontSize: '22px', fontWeight: '600', color: 'white', margin: 0 }}>
+              <h3 style={{
+                fontSize: '20px',
+                fontWeight: '600',
+                color: '#0A1929',
+                margin: 0
+              }}>
                 Reset Password
               </h3>
               <button
@@ -668,14 +470,11 @@ export default function Login() {
                   setResetMessage(null);
                 }}
                 style={{
-                  background: 'rgba(255,255,255,0.1)',
+                  background: 'none',
                   border: 'none',
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '10px',
-                  fontSize: '18px',
+                  fontSize: '20px',
                   cursor: 'pointer',
-                  color: 'rgba(255,255,255,0.7)'
+                  color: '#64748B'
                 }}
               >
                 ✕
@@ -683,13 +482,13 @@ export default function Login() {
             </div>
             
             <form onSubmit={handleResetPassword}>
-              <div style={{ marginBottom: '24px' }}>
+              <div style={{ marginBottom: '20px' }}>
                 <label style={{
                   display: 'block',
                   marginBottom: '8px',
-                  fontWeight: '500',
-                  color: 'rgba(255,255,255,0.8)',
-                  fontSize: '13px'
+                  fontWeight: '600',
+                  color: '#333',
+                  fontSize: '14px'
                 }}>
                   Email Address
                 </label>
@@ -699,14 +498,11 @@ export default function Login() {
                   onChange={(e) => setResetEmail(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '14px',
-                    border: '1px solid rgba(255,255,255,0.15)',
-                    borderRadius: '14px',
-                    background: 'rgba(255,255,255,0.08)',
-                    color: 'white',
-                    fontSize: '14px',
-                    boxSizing: 'border-box',
-                    outline: 'none'
+                    padding: '12px',
+                    border: '2px solid #ddd',
+                    borderRadius: '8px',
+                    fontSize: '16px',
+                    boxSizing: 'border-box'
                   }}
                   placeholder="Enter your email address"
                   required
@@ -716,12 +512,13 @@ export default function Login() {
               {resetMessage && (
                 <div style={{
                   padding: '12px',
-                  borderRadius: '12px',
+                  borderRadius: '8px',
                   fontSize: '13px',
-                  marginBottom: '20px',
-                  background: resetMessage.type === 'success' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                  color: resetMessage.type === 'success' ? '#bbf7d0' : '#fecaca',
-                  border: `1px solid ${resetMessage.type === 'success' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                  marginBottom: '16px',
+                  whiteSpace: 'pre-line',
+                  background: resetMessage.type === 'success' ? '#dcfce7' : '#fee2e2',
+                  color: resetMessage.type === 'success' ? '#166534' : '#991b1b',
+                  border: `1px solid ${resetMessage.type === 'success' ? '#86efac' : '#fecaca'}`
                 }}>
                   {resetMessage.text}
                 </div>
@@ -732,27 +529,28 @@ export default function Login() {
                 disabled={resetLoading}
                 style={{
                   width: '100%',
-                  padding: '14px',
-                  background: resetLoading ? 'rgba(59, 130, 246, 0.5)' : 'linear-gradient(135deg, #3B82F6, #8B5CF6)',
+                  padding: '12px',
+                  background: resetLoading ? '#ccc' : '#2563EB',
                   color: 'white',
                   border: 'none',
-                  borderRadius: '14px',
+                  borderRadius: '8px',
                   fontSize: '14px',
                   fontWeight: '600',
                   cursor: resetLoading ? 'not-allowed' : 'pointer'
                 }}
               >
-                {resetLoading ? 'Sending...' : 'Send Reset Link'}
+                {resetLoading ? 'Resetting...' : 'Reset Password'}
               </button>
             </form>
             
             <div style={{
               marginTop: '16px',
               fontSize: '12px',
-              color: 'rgba(255,255,255,0.4)',
+              color: '#64748B',
               textAlign: 'center'
             }}>
-              Temporary password: <span style={{ color: '#3B82F6' }}>Temp123!</span>
+              <p>A temporary password will be set to: <strong>Temp123!</strong></p>
+              <p>After logging in, go to Profile → Change Password to set a new password.</p>
             </div>
           </div>
         </div>
