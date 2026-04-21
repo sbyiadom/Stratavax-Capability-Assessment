@@ -180,7 +180,8 @@ export default function Login() {
         minHeight: '100vh',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '20px'
+        padding: '20px',
+        backdropFilter: 'blur(2px)'
       }}>
         {/* Left Column - Platform Information */}
         <div style={{
@@ -191,8 +192,14 @@ export default function Login() {
           flexDirection: 'column',
           gap: '32px'
         }}>
-          {/* Brand */}
-          <div>
+          {/* Brand - Transparent */}
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.85)',
+            backdropFilter: 'blur(20px)',
+            borderRadius: '20px',
+            padding: '24px',
+            border: '1px solid rgba(255, 255, 255, 0.3)'
+          }}>
             <div style={{
               display: 'flex',
               alignItems: 'center',
@@ -220,14 +227,14 @@ export default function Login() {
                 }}>
                   Stratavax
                 </h1>
-                <p style={{ margin: '4px 0 0', color: '#64748B', fontSize: '13px' }}>
+                <p style={{ margin: '4px 0 0', color: '#475569', fontSize: '13px' }}>
                   Talent Assessment Platform
                 </p>
               </div>
             </div>
             
             <h2 style={{
-              fontSize: '34px',
+              fontSize: '32px',
               fontWeight: '800',
               margin: '0 0 16px',
               lineHeight: 1.2,
@@ -236,7 +243,7 @@ export default function Login() {
               Professional Skills<br />Assessment Platform
             </h2>
             <p style={{
-              fontSize: '16px',
+              fontSize: '15px',
               color: '#475569',
               lineHeight: 1.6,
               marginBottom: '8px'
@@ -246,66 +253,114 @@ export default function Login() {
             </p>
           </div>
 
-          {/* Platform Features - Truthful descriptions */}
+          {/* Platform Features - Transparent Cards */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(2, 1fr)',
             gap: '16px'
           }}>
             <div style={{
-              padding: '16px',
-              background: 'white',
-              borderRadius: '12px',
-              border: '1px solid #e2e8f0'
+              padding: '20px',
+              background: 'rgba(255, 255, 255, 0.75)',
+              backdropFilter: 'blur(15px)',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.3)',
+              transition: 'transform 0.2s, background 0.2s',
+              cursor: 'pointer'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.9)';
+              e.currentTarget.style.transform = 'translateY(-4px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.75)';
+              e.currentTarget.style.transform = 'translateY(0)';
             }}>
-              <div style={{ fontSize: '22px', marginBottom: '8px' }}>📋</div>
-              <h4 style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '600', color: '#0A1929' }}>Skill Assessments</h4>
+              <div style={{ fontSize: '28px', marginBottom: '10px' }}>📋</div>
+              <h4 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: '600', color: '#0A1929' }}>Skill Assessments</h4>
               <p style={{ margin: 0, fontSize: '12px', color: '#64748B' }}>Role-specific evaluation tests</p>
             </div>
+            
             <div style={{
-              padding: '16px',
-              background: 'white',
-              borderRadius: '12px',
-              border: '1px solid #e2e8f0'
+              padding: '20px',
+              background: 'rgba(255, 255, 255, 0.75)',
+              backdropFilter: 'blur(15px)',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.3)',
+              transition: 'transform 0.2s, background 0.2s',
+              cursor: 'pointer'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.9)';
+              e.currentTarget.style.transform = 'translateY(-4px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.75)';
+              e.currentTarget.style.transform = 'translateY(0)';
             }}>
-              <div style={{ fontSize: '22px', marginBottom: '8px' }}/>📊
-              <h4 style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '600', color: '#0A1929' }}>Real-time Results</h4>
+              <div style={{ fontSize: '28px', marginBottom: '10px' }}>📊</div>
+              <h4 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: '600', color: '#0A1929' }}>Real-time Results</h4>
               <p style={{ margin: 0, fontSize: '12px', color: '#64748B' }}>Instant performance feedback</p>
             </div>
+            
             <div style={{
-              padding: '16px',
-              background: 'white',
-              borderRadius: '12px',
-              border: '1px solid #e2e8f0'
+              padding: '20px',
+              background: 'rgba(255, 255, 255, 0.75)',
+              backdropFilter: 'blur(15px)',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.3)',
+              transition: 'transform 0.2s, background 0.2s',
+              cursor: 'pointer'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.9)';
+              e.currentTarget.style.transform = 'translateY(-4px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.75)';
+              e.currentTarget.style.transform = 'translateY(0)';
             }}>
-              <div style={{ fontSize: '22px', marginBottom: '8px' }}>📈</div>
-              <h4 style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '600', color: '#0A1929' }}>Progress Analytics</h4>
+              <div style={{ fontSize: '28px', marginBottom: '10px' }}>📈</div>
+              <h4 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: '600', color: '#0A1929' }}>Progress Analytics</h4>
               <p style={{ margin: 0, fontSize: '12px', color: '#64748B' }}>Track improvement over time</p>
             </div>
+            
             <div style={{
-              padding: '16px',
-              background: 'white',
-              borderRadius: '12px',
-              border: '1px solid #e2e8f0'
+              padding: '20px',
+              background: 'rgba(255, 255, 255, 0.75)',
+              backdropFilter: 'blur(15px)',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.3)',
+              transition: 'transform 0.2s, background 0.2s',
+              cursor: 'pointer'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.9)';
+              e.currentTarget.style.transform = 'translateY(-4px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.75)';
+              e.currentTarget.style.transform = 'translateY(0)';
             }}>
-              <div style={{ fontSize: '22px', marginBottom: '8px' }}>🏅</div>
-              <h4 style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '600', color: '#0A1929' }}>Certificates</h4>
+              <div style={{ fontSize: '28px', marginBottom: '10px' }}>🏅</div>
+              <h4 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: '600', color: '#0A1929' }}>Certificates</h4>
               <p style={{ margin: 0, fontSize: '12px', color: '#64748B' }}>Verified achievement badges</p>
             </div>
           </div>
 
-          {/* Trust indicators - Only what's actually true */}
+          {/* Trust indicators - Transparent */}
           <div style={{
-            background: '#F8FAFC',
-            borderRadius: '12px',
-            padding: '16px 20px',
-            borderLeft: '4px solid #1565c0'
+            background: 'rgba(255, 255, 255, 0.7)',
+            backdropFilter: 'blur(15px)',
+            borderRadius: '16px',
+            padding: '20px',
+            border: '1px solid rgba(255, 255, 255, 0.3)'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
               <span style={{ fontSize: '20px' }}>✓</span>
               <span style={{ fontWeight: '600', color: '#0A1929', fontSize: '14px' }}>Secure & Private</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
               <span style={{ fontSize: '20px' }}>✓</span>
               <span style={{ fontWeight: '600', color: '#0A1929', fontSize: '14px' }}>Role-Based Access Control</span>
             </div>
@@ -316,20 +371,21 @@ export default function Login() {
           </div>
         </div>
 
-        {/* Right Column - Login Form */}
+        {/* Right Column - Login Form (Transparent) */}
         <div style={{
           width: '450px',
-          backgroundColor: "white",
-          borderRadius: '20px',
+          background: 'rgba(255, 255, 255, 0.9)',
+          backdropFilter: 'blur(20px)',
+          borderRadius: '24px',
           padding: '40px',
           boxShadow: "0 20px 40px rgba(0,0,0,0.1)",
-          border: '1px solid #e2e8f0'
+          border: '1px solid rgba(255, 255, 255, 0.4)'
         }}>
           <div style={{ textAlign: "center", marginBottom: "28px" }}>
             <h2 style={{ 
               marginBottom: "8px", 
               color: "#0A1929",
-              fontSize: "26px",
+              fontSize: "28px",
               fontWeight: "700"
             }}>
               Welcome Back
@@ -343,14 +399,15 @@ export default function Login() {
             </p>
           </div>
 
-          {/* Mode Toggle */}
+          {/* Mode Toggle - Transparent */}
           <div style={{
             display: 'flex',
             gap: '8px',
             marginBottom: '28px',
             borderRadius: '12px',
-            background: '#F1F5F9',
-            padding: '4px'
+            background: 'rgba(241, 245, 249, 0.7)',
+            padding: '4px',
+            backdropFilter: 'blur(5px)'
           }}>
             <button
               onClick={() => setLoginMode('candidate')}
@@ -359,13 +416,13 @@ export default function Login() {
                 padding: '10px',
                 border: 'none',
                 borderRadius: '8px',
-                background: loginMode === 'candidate' ? 'white' : 'transparent',
+                background: loginMode === 'candidate' ? 'rgba(255, 255, 255, 0.95)' : 'transparent',
                 color: loginMode === 'candidate' ? '#1565c0' : '#64748b',
                 cursor: 'pointer',
                 fontWeight: '500',
                 fontSize: '14px',
                 transition: 'all 0.2s',
-                boxShadow: loginMode === 'candidate' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                boxShadow: loginMode === 'candidate' ? '0 2px 8px rgba(0,0,0,0.05)' : 'none'
               }}
             >
               🎓 Candidate Access
@@ -377,13 +434,13 @@ export default function Login() {
                 padding: '10px',
                 border: 'none',
                 borderRadius: '8px',
-                background: loginMode === 'supervisor' ? 'white' : 'transparent',
+                background: loginMode === 'supervisor' ? 'rgba(255, 255, 255, 0.95)' : 'transparent',
                 color: loginMode === 'supervisor' ? '#1565c0' : '#64748b',
                 cursor: 'pointer',
                 fontWeight: '500',
                 fontSize: '14px',
                 transition: 'all 0.2s',
-                boxShadow: loginMode === 'supervisor' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                boxShadow: loginMode === 'supervisor' ? '0 2px 8px rgba(0,0,0,0.05)' : 'none'
               }}
             >
               👔 Supervisor Portal
@@ -392,13 +449,14 @@ export default function Login() {
 
           {error && (
             <div style={{
-              backgroundColor: "#FEF2F2",
+              backgroundColor: "rgba(254, 226, 226, 0.9)",
+              backdropFilter: "blur(10px)",
               color: "#991B1B",
               padding: "12px",
               borderRadius: "10px",
               marginBottom: "20px",
               fontSize: "13px",
-              border: "1px solid #FEE2E2"
+              border: "1px solid rgba(254, 202, 202, 0.5)"
             }}>
               {error}
             </div>
@@ -425,14 +483,21 @@ export default function Login() {
                   width: "100%", 
                   padding: "12px 14px",
                   borderRadius: "10px", 
-                  border: "1px solid #CBD5E1",
+                  border: "1px solid rgba(203, 213, 225, 0.5)",
+                  background: "rgba(255, 255, 255, 0.8)",
                   fontSize: "14px",
                   boxSizing: "border-box",
                   transition: "all 0.2s",
                   outline: "none"
                 }}
-                onFocus={(e) => e.target.style.borderColor = "#1565c0"}
-                onBlur={(e) => e.target.style.borderColor = "#CBD5E1"}
+                onFocus={(e) => {
+                  e.target.style.borderColor = "#1565c0";
+                  e.target.style.background = "rgba(255, 255, 255, 0.95)";
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = "rgba(203, 213, 225, 0.5)";
+                  e.target.style.background = "rgba(255, 255, 255, 0.8)";
+                }}
               />
             </div>
 
@@ -456,14 +521,21 @@ export default function Login() {
                   width: "100%", 
                   padding: "12px 14px",
                   borderRadius: "10px", 
-                  border: "1px solid #CBD5E1",
+                  border: "1px solid rgba(203, 213, 225, 0.5)",
+                  background: "rgba(255, 255, 255, 0.8)",
                   fontSize: "14px",
                   boxSizing: "border-box",
                   transition: "all 0.2s",
                   outline: "none"
                 }}
-                onFocus={(e) => e.target.style.borderColor = "#1565c0"}
-                onBlur={(e) => e.target.style.borderColor = "#CBD5E1"}
+                onFocus={(e) => {
+                  e.target.style.borderColor = "#1565c0";
+                  e.target.style.background = "rgba(255, 255, 255, 0.95)";
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = "rgba(203, 213, 225, 0.5)";
+                  e.target.style.background = "rgba(255, 255, 255, 0.8)";
+                }}
               />
             </div>
 
@@ -490,14 +562,15 @@ export default function Login() {
               style={{
                 width: "100%",
                 padding: "14px",
-                background: loading ? "#94A3B8" : "#1565c0",
+                background: loading ? "rgba(148, 163, 184, 0.8)" : "#1565c0",
                 color: "#fff",
                 border: "none",
                 borderRadius: "10px",
                 cursor: loading ? "not-allowed" : "pointer",
                 fontWeight: "600",
                 fontSize: "15px",
-                transition: "background 0.2s"
+                transition: "all 0.2s",
+                backdropFilter: "blur(5px)"
               }}
               onMouseEnter={(e) => {
                 if (!loading) e.target.style.background = "#0A1929";
@@ -516,7 +589,7 @@ export default function Login() {
             color: "#64748B",
             textAlign: "center",
             paddingTop: "20px",
-            borderTop: "1px solid #E2E8F0"
+            borderTop: "1px solid rgba(226, 232, 240, 0.5)"
           }}>
             <p style={{ margin: 0 }}>
               Don't have an account?{" "}
@@ -534,7 +607,7 @@ export default function Login() {
         </div>
       </div>
 
-      {/* Reset Password Modal */}
+      {/* Reset Password Modal - Transparent */}
       {showResetModal && (
         <div style={{
           position: 'fixed',
@@ -542,19 +615,22 @@ export default function Login() {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.5)',
+          background: 'rgba(0,0,0,0.4)',
+          backdropFilter: 'blur(8px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 1000
         }}>
           <div style={{
-            background: 'white',
-            borderRadius: '16px',
+            background: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(20px)',
+            borderRadius: '20px',
             padding: '32px',
             width: '100%',
             maxWidth: '400px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+            boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+            border: '1px solid rgba(255, 255, 255, 0.4)'
           }}>
             <div style={{
               display: 'flex',
@@ -563,8 +639,8 @@ export default function Login() {
               marginBottom: '20px'
             }}>
               <h3 style={{
-                fontSize: '20px',
-                fontWeight: '600',
+                fontSize: '22px',
+                fontWeight: '700',
                 color: '#0A1929',
                 margin: 0
               }}>
@@ -579,7 +655,7 @@ export default function Login() {
                 style={{
                   background: 'none',
                   border: 'none',
-                  fontSize: '20px',
+                  fontSize: '24px',
                   cursor: 'pointer',
                   color: '#64748B'
                 }}
@@ -606,29 +682,31 @@ export default function Login() {
                   style={{
                     width: '100%',
                     padding: '12px',
-                    border: '1px solid #CBD5E1',
-                    borderRadius: '8px',
+                    border: '1px solid rgba(203, 213, 225, 0.5)',
+                    borderRadius: '10px',
                     fontSize: '14px',
                     boxSizing: 'border-box',
-                    outline: 'none'
+                    outline: 'none',
+                    background: 'rgba(255, 255, 255, 0.8)'
                   }}
                   placeholder="Enter your email address"
                   required
                   onFocus={(e) => e.target.style.borderColor = "#1565c0"}
-                  onBlur={(e) => e.target.style.borderColor = "#CBD5E1"}
+                  onBlur={(e) => e.target.style.borderColor = "rgba(203, 213, 225, 0.5)"}
                 />
               </div>
 
               {resetMessage && (
                 <div style={{
                   padding: '12px',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
                   fontSize: '13px',
                   marginBottom: '16px',
                   whiteSpace: 'pre-line',
-                  background: resetMessage.type === 'success' ? '#F0FDF4' : '#FEF2F2',
+                  background: resetMessage.type === 'success' ? 'rgba(240, 253, 244, 0.9)' : 'rgba(254, 242, 242, 0.9)',
                   color: resetMessage.type === 'success' ? '#166534' : '#991B1B',
-                  border: `1px solid ${resetMessage.type === 'success' ? '#BBF7D0' : '#FEE2E2'}`
+                  border: `1px solid ${resetMessage.type === 'success' ? 'rgba(187, 247, 208, 0.5)' : 'rgba(254, 226, 226, 0.5)'}`,
+                  backdropFilter: 'blur(10px)'
                 }}>
                   {resetMessage.text}
                 </div>
@@ -640,13 +718,20 @@ export default function Login() {
                 style={{
                   width: '100%',
                   padding: '12px',
-                  background: resetLoading ? '#94A3B8' : '#1565c0',
+                  background: resetLoading ? 'rgba(148, 163, 184, 0.8)' : '#1565c0',
                   color: 'white',
                   border: 'none',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
                   fontSize: '14px',
-                  fontWeight: '500',
-                  cursor: resetLoading ? 'not-allowed' : 'pointer'
+                  fontWeight: '600',
+                  cursor: resetLoading ? 'not-allowed' : 'pointer',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  if (!resetLoading) e.target.style.background = "#0A1929";
+                }}
+                onMouseLeave={(e) => {
+                  if (!resetLoading) e.target.style.background = "#1565c0";
                 }}
               >
                 {resetLoading ? 'Sending...' : 'Send Reset Link'}
