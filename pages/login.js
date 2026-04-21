@@ -1,5 +1,5 @@
 // pages/login.js
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { supabase } from "../supabase/client";
@@ -12,11 +12,27 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [loginMode, setLoginMode] = useState('candidate');
+  const [focusedField, setFocusedField] = useState(null);
+  const [backgroundIndex, setBackgroundIndex] = useState(0);
   
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetMessage, setResetMessage] = useState(null);
   const [resetLoading, setResetLoading] = useState(false);
+
+  // Rotating background images
+  const backgrounds = [
+    "/images/login-bg-1.jpg",
+    "/images/login-bg-2.jpg",
+    "/images/login-bg-3.jpg"
+  ];
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setBackgroundIndex((prev) => (prev + 1) % backgrounds.length);
+    }, 8000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleCandidateLogin = async (e) => {
     e.preventDefault();
@@ -174,440 +190,421 @@ export default function Login() {
   };
 
   return (
-    <AppLayout background="/images/login-bg.jpg" showNavigation={false}>
+    <AppLayout background={backgrounds[backgroundIndex]} showNavigation={false}>
       <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'linear-gradient(135deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.3) 100%)',
+        backdropFilter: 'blur(2px)',
         display: 'flex',
-        minHeight: '100vh',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '20px',
-        backdropFilter: 'blur(2px)'
+        overflowY: 'auto'
       }}>
-        {/* Left Column - Platform Information */}
+        
+        {/* Two-Column Layout */}
         <div style={{
-          flex: 1,
-          maxWidth: '500px',
-          marginRight: '60px',
           display: 'flex',
-          flexDirection: 'column',
-          gap: '32px'
+          maxWidth: '1100px',
+          width: '100%',
+          gap: '30px',
+          flexWrap: 'wrap',
+          justifyContent: 'center'
         }}>
-          {/* Brand - Transparent */}
+          
+          {/* LEFT COLUMN - Mission & Features (Glass) */}
           <div style={{
-            background: 'rgba(255, 255, 255, 0.85)',
+            flex: 1,
+            minWidth: '280px',
+            maxWidth: '450px',
+            background: 'rgba(255, 255, 255, 0.08)',
             backdropFilter: 'blur(20px)',
-            borderRadius: '20px',
-            padding: '24px',
-            border: '1px solid rgba(255, 255, 255, 0.3)'
+            borderRadius: '32px',
+            padding: '40px',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
           }}>
+            
+            {/* Logo */}
             <div style={{
               display: 'flex',
               alignItems: 'center',
               gap: '12px',
-              marginBottom: '24px'
+              marginBottom: '32px'
             }}>
               <div style={{
                 width: '48px',
                 height: '48px',
-                background: 'linear-gradient(135deg, #1565c0 0%, #0A1929 100%)',
-                borderRadius: '12px',
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.5) 100%)',
+                borderRadius: '14px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '26px'
+                fontSize: '24px'
               }}>
                 🏢
               </div>
               <div>
                 <h1 style={{
-                  fontSize: '28px',
+                  fontSize: '24px',
                   fontWeight: '700',
                   margin: 0,
-                  color: '#0A1929'
+                  color: 'white',
+                  letterSpacing: '-0.5px'
                 }}>
                   Stratavax
                 </h1>
-                <p style={{ margin: '4px 0 0', color: '#475569', fontSize: '13px' }}>
-                  Talent Assessment Platform
+                <p style={{
+                  fontSize: '11px',
+                  color: 'rgba(255,255,255,0.5)',
+                  margin: '4px 0 0',
+                  letterSpacing: '0.5px'
+                }}>
+                  TALENT ASSESSMENT PLATFORM
                 </p>
               </div>
             </div>
-            
-            <h2 style={{
-              fontSize: '32px',
-              fontWeight: '800',
-              margin: '0 0 16px',
-              lineHeight: 1.2,
-              color: '#0A1929'
-            }}>
-              Professional Skills<br />Assessment Platform
-            </h2>
-            <p style={{
-              fontSize: '15px',
-              color: '#475569',
-              lineHeight: 1.6,
-              marginBottom: '8px'
-            }}>
-              Stratavax provides comprehensive skill assessment tools for candidates 
-              and powerful analytics for supervisors to track organizational talent.
-            </p>
-          </div>
 
-          {/* Platform Features - Transparent Cards */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, 1fr)',
-            gap: '16px'
-          }}>
-            <div style={{
-              padding: '20px',
-              background: 'rgba(255, 255, 255, 0.75)',
-              backdropFilter: 'blur(15px)',
-              borderRadius: '16px',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              transition: 'transform 0.2s, background 0.2s',
-              cursor: 'pointer'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.9)';
-              e.currentTarget.style.transform = 'translateY(-4px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.75)';
-              e.currentTarget.style.transform = 'translateY(0)';
-            }}>
-              <div style={{ fontSize: '28px', marginBottom: '10px' }}>📋</div>
-              <h4 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: '600', color: '#0A1929' }}>Skill Assessments</h4>
-              <p style={{ margin: 0, fontSize: '12px', color: '#64748B' }}>Role-specific evaluation tests</p>
-            </div>
-            
-            <div style={{
-              padding: '20px',
-              background: 'rgba(255, 255, 255, 0.75)',
-              backdropFilter: 'blur(15px)',
-              borderRadius: '16px',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              transition: 'transform 0.2s, background 0.2s',
-              cursor: 'pointer'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.9)';
-              e.currentTarget.style.transform = 'translateY(-4px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.75)';
-              e.currentTarget.style.transform = 'translateY(0)';
-            }}>
-              <div style={{ fontSize: '28px', marginBottom: '10px' }}>📊</div>
-              <h4 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: '600', color: '#0A1929' }}>Real-time Results</h4>
-              <p style={{ margin: 0, fontSize: '12px', color: '#64748B' }}>Instant performance feedback</p>
-            </div>
-            
-            <div style={{
-              padding: '20px',
-              background: 'rgba(255, 255, 255, 0.75)',
-              backdropFilter: 'blur(15px)',
-              borderRadius: '16px',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              transition: 'transform 0.2s, background 0.2s',
-              cursor: 'pointer'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.9)';
-              e.currentTarget.style.transform = 'translateY(-4px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.75)';
-              e.currentTarget.style.transform = 'translateY(0)';
-            }}>
-              <div style={{ fontSize: '28px', marginBottom: '10px' }}>📈</div>
-              <h4 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: '600', color: '#0A1929' }}>Progress Analytics</h4>
-              <p style={{ margin: 0, fontSize: '12px', color: '#64748B' }}>Track improvement over time</p>
-            </div>
-            
-            <div style={{
-              padding: '20px',
-              background: 'rgba(255, 255, 255, 0.75)',
-              backdropFilter: 'blur(15px)',
-              borderRadius: '16px',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              transition: 'transform 0.2s, background 0.2s',
-              cursor: 'pointer'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.9)';
-              e.currentTarget.style.transform = 'translateY(-4px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.75)';
-              e.currentTarget.style.transform = 'translateY(0)';
-            }}>
-              <div style={{ fontSize: '28px', marginBottom: '10px' }}>🏅</div>
-              <h4 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: '600', color: '#0A1929' }}>Certificates</h4>
-              <p style={{ margin: 0, fontSize: '12px', color: '#64748B' }}>Verified achievement badges</p>
-            </div>
-          </div>
-
-          {/* Trust indicators - Transparent */}
-          <div style={{
-            background: 'rgba(255, 255, 255, 0.7)',
-            backdropFilter: 'blur(15px)',
-            borderRadius: '16px',
-            padding: '20px',
-            border: '1px solid rgba(255, 255, 255, 0.3)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-              <span style={{ fontSize: '20px' }}>✓</span>
-              <span style={{ fontWeight: '600', color: '#0A1929', fontSize: '14px' }}>Secure & Private</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-              <span style={{ fontSize: '20px' }}>✓</span>
-              <span style={{ fontWeight: '600', color: '#0A1929', fontSize: '14px' }}>Role-Based Access Control</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ fontSize: '20px' }}>✓</span>
-              <span style={{ fontWeight: '600', color: '#0A1929', fontSize: '14px' }}>Enterprise-Grade Security</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column - Login Form (Transparent) */}
-        <div style={{
-          width: '450px',
-          background: 'rgba(255, 255, 255, 0.9)',
-          backdropFilter: 'blur(20px)',
-          borderRadius: '24px',
-          padding: '40px',
-          boxShadow: "0 20px 40px rgba(0,0,0,0.1)",
-          border: '1px solid rgba(255, 255, 255, 0.4)'
-        }}>
-          <div style={{ textAlign: "center", marginBottom: "28px" }}>
-            <h2 style={{ 
-              marginBottom: "8px", 
-              color: "#0A1929",
-              fontSize: "28px",
-              fontWeight: "700"
-            }}>
-              Welcome Back
-            </h2>
-            <p style={{ 
-              color: "#64748B", 
-              fontSize: "14px",
-              margin: 0
-            }}>
-              Sign in to access your account
-            </p>
-          </div>
-
-          {/* Mode Toggle - Transparent */}
-          <div style={{
-            display: 'flex',
-            gap: '8px',
-            marginBottom: '28px',
-            borderRadius: '12px',
-            background: 'rgba(241, 245, 249, 0.7)',
-            padding: '4px',
-            backdropFilter: 'blur(5px)'
-          }}>
-            <button
-              onClick={() => setLoginMode('candidate')}
-              style={{
-                flex: 1,
-                padding: '10px',
-                border: 'none',
-                borderRadius: '8px',
-                background: loginMode === 'candidate' ? 'rgba(255, 255, 255, 0.95)' : 'transparent',
-                color: loginMode === 'candidate' ? '#1565c0' : '#64748b',
-                cursor: 'pointer',
-                fontWeight: '500',
-                fontSize: '14px',
-                transition: 'all 0.2s',
-                boxShadow: loginMode === 'candidate' ? '0 2px 8px rgba(0,0,0,0.05)' : 'none'
-              }}
-            >
-              🎓 Candidate Access
-            </button>
-            <button
-              onClick={() => setLoginMode('supervisor')}
-              style={{
-                flex: 1,
-                padding: '10px',
-                border: 'none',
-                borderRadius: '8px',
-                background: loginMode === 'supervisor' ? 'rgba(255, 255, 255, 0.95)' : 'transparent',
-                color: loginMode === 'supervisor' ? '#1565c0' : '#64748b',
-                cursor: 'pointer',
-                fontWeight: '500',
-                fontSize: '14px',
-                transition: 'all 0.2s',
-                boxShadow: loginMode === 'supervisor' ? '0 2px 8px rgba(0,0,0,0.05)' : 'none'
-              }}
-            >
-              👔 Supervisor Portal
-            </button>
-          </div>
-
-          {error && (
-            <div style={{
-              backgroundColor: "rgba(254, 226, 226, 0.9)",
-              backdropFilter: "blur(10px)",
-              color: "#991B1B",
-              padding: "12px",
-              borderRadius: "10px",
-              marginBottom: "20px",
-              fontSize: "13px",
-              border: "1px solid rgba(254, 202, 202, 0.5)"
-            }}>
-              {error}
-            </div>
-          )}
-
-          <form onSubmit={loginMode === 'candidate' ? handleCandidateLogin : handleSupervisorLogin}>
-            <div style={{ marginBottom: "20px" }}>
-              <label style={{
-                display: "block",
-                marginBottom: "8px",
-                fontWeight: "500",
-                color: "#0A1929",
-                fontSize: "13px"
+            {/* Mission Statement */}
+            <div style={{ marginBottom: '32px' }}>
+              <h2 style={{
+                fontSize: '28px',
+                fontWeight: '700',
+                margin: '0 0 16px',
+                lineHeight: 1.2,
+                background: 'linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.8) 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent'
               }}>
-                Email Address
-              </label>
-              <input
-                type="email"
-                placeholder="name@company.com"
-                value={email}
-                required
-                onChange={(e) => setEmail(e.target.value)}
-                style={{ 
-                  width: "100%", 
-                  padding: "12px 14px",
-                  borderRadius: "10px", 
-                  border: "1px solid rgba(203, 213, 225, 0.5)",
-                  background: "rgba(255, 255, 255, 0.8)",
-                  fontSize: "14px",
-                  boxSizing: "border-box",
-                  transition: "all 0.2s",
-                  outline: "none"
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = "#1565c0";
-                  e.target.style.background = "rgba(255, 255, 255, 0.95)";
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = "rgba(203, 213, 225, 0.5)";
-                  e.target.style.background = "rgba(255, 255, 255, 0.8)";
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: "22px" }}>
-              <label style={{
-                display: "block",
-                marginBottom: "8px",
-                fontWeight: "500",
-                color: "#0A1929",
-                fontSize: "13px"
+                Empowering Talent<br />Through Assessment
+              </h2>
+              <p style={{
+                fontSize: '15px',
+                lineHeight: 1.6,
+                color: 'rgba(255,255,255,0.8)',
+                margin: 0
               }}>
-                Password
-              </label>
-              <input
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                required
-                onChange={(e) => setPassword(e.target.value)}
-                style={{ 
-                  width: "100%", 
-                  padding: "12px 14px",
-                  borderRadius: "10px", 
-                  border: "1px solid rgba(203, 213, 225, 0.5)",
-                  background: "rgba(255, 255, 255, 0.8)",
-                  fontSize: "14px",
-                  boxSizing: "border-box",
-                  transition: "all 0.2s",
-                  outline: "none"
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = "#1565c0";
-                  e.target.style.background = "rgba(255, 255, 255, 0.95)";
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = "rgba(203, 213, 225, 0.5)";
-                  e.target.style.background = "rgba(255, 255, 255, 0.8)";
-                }}
-              />
+                Stratavax provides comprehensive skill assessment tools for candidates 
+                and powerful analytics for supervisors to track and develop organizational talent.
+              </p>
             </div>
 
-            <div style={{ marginBottom: "24px", textAlign: "right" }}>
+            {/* Feature Highlights - Interactive Glass Cards */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: '12px',
+              marginBottom: '32px'
+            }}>
+              {[
+                { icon: "📋", title: "Skill Assessments", desc: "Role-specific evaluation" },
+                { icon: "📊", title: "Real-time Results", desc: "Instant performance data" },
+                { icon: "📈", title: "Progress Analytics", desc: "Track improvement" },
+                { icon: "🏅", title: "Certifications", desc: "Verified achievements" }
+              ].map((feature, index) => (
+                <div
+                  key={index}
+                  style={{
+                    padding: '16px',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: '16px',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    cursor: 'pointer'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)';
+                    e.currentTarget.style.transform = 'translateY(-4px)';
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                  }}
+                >
+                  <div style={{ fontSize: '28px', marginBottom: '8px' }}>{feature.icon}</div>
+                  <h4 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: '600', color: 'white' }}>
+                    {feature.title}
+                  </h4>
+                  <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.6)' }}>
+                    {feature.desc}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {/* Trust Indicators */}
+            <div style={{
+              display: 'flex',
+              gap: '16px',
+              paddingTop: '16px',
+              borderTop: '1px solid rgba(255,255,255,0.1)'
+            }}>
+              {[
+                { text: "Secure & Private" },
+                { text: "Role-Based Access" },
+                { text: "Enterprise Security" }
+              ].map((item, index) => (
+                <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '12px', color: '#4ade80' }}>✓</span>
+                  <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)' }}>{item.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* RIGHT COLUMN - Login Form (Glass) */}
+          <div style={{
+            width: '420px',
+            background: 'rgba(255, 255, 255, 0.08)',
+            backdropFilter: 'blur(20px)',
+            borderRadius: '32px',
+            padding: '40px',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+          }}>
+            
+            {/* Welcome Header */}
+            <div style={{ textAlign: "center", marginBottom: "32px" }}>
+              <h2 style={{ 
+                marginBottom: "8px", 
+                color: "white",
+                fontSize: "26px",
+                fontWeight: "600",
+                letterSpacing: "-0.3px"
+              }}>
+                Welcome Back
+              </h2>
+              <p style={{ 
+                color: "rgba(255,255,255,0.7)", 
+                fontSize: "14px",
+                margin: 0
+              }}>
+                Sign in to access your account
+              </p>
+            </div>
+
+            {/* Mode Toggle */}
+            <div style={{
+              display: 'flex',
+              gap: '8px',
+              marginBottom: '32px',
+              borderRadius: '14px',
+              background: 'rgba(0, 0, 0, 0.25)',
+              padding: '4px'
+            }}>
               <button
-                type="button"
-                onClick={() => setShowResetModal(true)}
+                onClick={() => setLoginMode('candidate')}
                 style={{
-                  background: "none",
-                  border: "none",
-                  color: "#1565c0",
-                  cursor: "pointer",
-                  fontSize: "13px",
-                  fontWeight: "500"
+                  flex: 1,
+                  padding: '12px',
+                  border: 'none',
+                  borderRadius: '10px',
+                  background: loginMode === 'candidate' ? 'rgba(255, 255, 255, 0.95)' : 'transparent',
+                  color: loginMode === 'candidate' ? '#1a1a2e' : 'rgba(255,255,255,0.7)',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  transition: 'all 0.3s ease'
                 }}
               >
-                Forgot password?
+                🎓 Candidate
+              </button>
+              <button
+                onClick={() => setLoginMode('supervisor')}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  border: 'none',
+                  borderRadius: '10px',
+                  background: loginMode === 'supervisor' ? 'rgba(255, 255, 255, 0.95)' : 'transparent',
+                  color: loginMode === 'supervisor' ? '#1a1a2e' : 'rgba(255,255,255,0.7)',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  transition: 'all 0.3s ease'
+                }}
+              >
+                👔 Administrator
               </button>
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                width: "100%",
-                padding: "14px",
-                background: loading ? "rgba(148, 163, 184, 0.8)" : "#1565c0",
-                color: "#fff",
-                border: "none",
-                borderRadius: "10px",
-                cursor: loading ? "not-allowed" : "pointer",
-                fontWeight: "600",
-                fontSize: "15px",
-                transition: "all 0.2s",
-                backdropFilter: "blur(5px)"
-              }}
-              onMouseEnter={(e) => {
-                if (!loading) e.target.style.background = "#0A1929";
-              }}
-              onMouseLeave={(e) => {
-                if (!loading) e.target.style.background = "#1565c0";
-              }}
-            >
-              {loading ? "Signing in..." : "Sign In"}
-            </button>
-          </form>
+            {error && (
+              <div style={{
+                backgroundColor: "rgba(239, 68, 68, 0.2)",
+                backdropFilter: "blur(10px)",
+                color: "#fee2e2",
+                padding: "12px 16px",
+                borderRadius: "12px",
+                marginBottom: "24px",
+                fontSize: "13px",
+                border: "1px solid rgba(239, 68, 68, 0.3)",
+                textAlign: "center"
+              }}>
+                {error}
+              </div>
+            )}
 
-          <div style={{ 
-            marginTop: "24px", 
-            fontSize: "13px", 
-            color: "#64748B",
-            textAlign: "center",
-            paddingTop: "20px",
-            borderTop: "1px solid rgba(226, 232, 240, 0.5)"
-          }}>
-            <p style={{ margin: 0 }}>
-              Don't have an account?{" "}
-              <Link href="/register" legacyBehavior>
-                <a style={{ 
-                  color: "#1565c0", 
-                  textDecoration: "none",
-                  fontWeight: "600"
+            <form onSubmit={loginMode === 'candidate' ? handleCandidateLogin : handleSupervisorLogin}>
+              {/* Email Field */}
+              <div style={{ marginBottom: "20px" }}>
+                <label style={{
+                  display: "block",
+                  marginBottom: "8px",
+                  fontWeight: "500",
+                  color: "rgba(255,255,255,0.9)",
+                  fontSize: "13px"
                 }}>
-                  Contact your administrator
-                </a>
-              </Link>
-            </p>
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  placeholder="name@company.com"
+                  value={email}
+                  required
+                  onChange={(e) => setEmail(e.target.value)}
+                  onFocus={() => setFocusedField('email')}
+                  onBlur={() => setFocusedField(null)}
+                  style={{ 
+                    width: "100%", 
+                    padding: "14px 16px",
+                    borderRadius: "14px", 
+                    border: focusedField === 'email' 
+                      ? "1px solid rgba(255,255,255,0.5)" 
+                      : "1px solid rgba(255,255,255,0.2)",
+                    background: "rgba(255, 255, 255, 0.1)",
+                    fontSize: "14px",
+                    color: "white",
+                    boxSizing: "border-box",
+                    transition: "all 0.3s ease",
+                    outline: "none"
+                  }}
+                />
+              </div>
+
+              {/* Password Field */}
+              <div style={{ marginBottom: "24px" }}>
+                <label style={{
+                  display: "block",
+                  marginBottom: "8px",
+                  fontWeight: "500",
+                  color: "rgba(255,255,255,0.9)",
+                  fontSize: "13px"
+                }}>
+                  Password
+                </label>
+                <input
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  required
+                  onChange={(e) => setPassword(e.target.value)}
+                  onFocus={() => setFocusedField('password')}
+                  onBlur={() => setFocusedField(null)}
+                  style={{ 
+                    width: "100%", 
+                    padding: "14px 16px",
+                    borderRadius: "14px", 
+                    border: focusedField === 'password' 
+                      ? "1px solid rgba(255,255,255,0.5)" 
+                      : "1px solid rgba(255,255,255,0.2)",
+                    background: "rgba(255, 255, 255, 0.1)",
+                    fontSize: "14px",
+                    color: "white",
+                    boxSizing: "border-box",
+                    transition: "all 0.3s ease",
+                    outline: "none"
+                  }}
+                />
+              </div>
+
+              {/* Forgot Password */}
+              <div style={{ marginBottom: "28px", textAlign: "right" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowResetModal(true)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "rgba(255,255,255,0.6)",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    transition: "color 0.2s"
+                  }}
+                  onMouseEnter={(e) => e.target.style.color = "white"}
+                  onMouseLeave={(e) => e.target.style.color = "rgba(255,255,255,0.6)"}
+                >
+                  Forgot password?
+                </button>
+              </div>
+
+              {/* Sign In Button */}
+              <button
+                type="submit"
+                disabled={loading}
+                style={{
+                  width: "100%",
+                  padding: "14px",
+                  background: loading 
+                    ? "rgba(255,255,255,0.3)" 
+                    : "linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%)",
+                  color: "#1a1a2e",
+                  border: "none",
+                  borderRadius: "14px",
+                  cursor: loading ? "not-allowed" : "pointer",
+                  fontWeight: "700",
+                  fontSize: "15px",
+                  transition: "all 0.3s ease"
+                }}
+                onMouseEnter={(e) => {
+                  if (!loading) {
+                    e.target.style.transform = "translateY(-2px)";
+                    e.target.style.boxShadow = "0 8px 20px rgba(0,0,0,0.2)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!loading) {
+                    e.target.style.transform = "translateY(0)";
+                    e.target.style.boxShadow = "none";
+                  }
+                }}
+              >
+                {loading ? "Signing in..." : "Sign In"}
+              </button>
+            </form>
+
+            {/* Footer */}
+            <div style={{ 
+              marginTop: "32px", 
+              fontSize: "13px", 
+              color: "rgba(255,255,255,0.5)",
+              textAlign: "center",
+              paddingTop: "20px",
+              borderTop: "1px solid rgba(255,255,255,0.1)"
+            }}>
+              <p style={{ margin: 0 }}>
+                Need an account?{" "}
+                <Link href="/register" legacyBehavior>
+                  <a style={{ 
+                    color: "white", 
+                    textDecoration: "none",
+                    fontWeight: "600"
+                  }}>
+                    Contact administrator
+                  </a>
+                </Link>
+              </p>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Reset Password Modal - Transparent */}
+      {/* Reset Password Modal */}
       {showResetModal && (
         <div style={{
           position: 'fixed',
@@ -615,35 +612,29 @@ export default function Login() {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.4)',
-          backdropFilter: 'blur(8px)',
+          background: 'rgba(0,0,0,0.6)',
+          backdropFilter: 'blur(12px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 1000
         }}>
           <div style={{
-            background: 'rgba(255, 255, 255, 0.95)',
+            background: 'rgba(30, 30, 40, 0.95)',
             backdropFilter: 'blur(20px)',
-            borderRadius: '20px',
+            borderRadius: '24px',
             padding: '32px',
             width: '100%',
-            maxWidth: '400px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
-            border: '1px solid rgba(255, 255, 255, 0.4)'
+            maxWidth: '420px',
+            border: '1px solid rgba(255,255,255,0.2)'
           }}>
             <div style={{
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: '20px'
+              marginBottom: '24px'
             }}>
-              <h3 style={{
-                fontSize: '22px',
-                fontWeight: '700',
-                color: '#0A1929',
-                margin: 0
-              }}>
+              <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'white', margin: 0 }}>
                 Reset Password
               </h3>
               <button
@@ -653,11 +644,14 @@ export default function Login() {
                   setResetMessage(null);
                 }}
                 style={{
-                  background: 'none',
+                  background: 'rgba(255,255,255,0.1)',
                   border: 'none',
-                  fontSize: '24px',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '10px',
+                  fontSize: '20px',
                   cursor: 'pointer',
-                  color: '#64748B'
+                  color: 'rgba(255,255,255,0.7)'
                 }}
               >
                 ✕
@@ -665,12 +659,12 @@ export default function Login() {
             </div>
             
             <form onSubmit={handleResetPassword}>
-              <div style={{ marginBottom: '20px' }}>
+              <div style={{ marginBottom: '24px' }}>
                 <label style={{
                   display: 'block',
                   marginBottom: '8px',
                   fontWeight: '500',
-                  color: '#0A1929',
+                  color: 'rgba(255,255,255,0.9)',
                   fontSize: '13px'
                 }}>
                   Email Address
@@ -681,32 +675,29 @@ export default function Login() {
                   onChange={(e) => setResetEmail(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '12px',
-                    border: '1px solid rgba(203, 213, 225, 0.5)',
-                    borderRadius: '10px',
+                    padding: '14px',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: '14px',
+                    background: 'rgba(255,255,255,0.1)',
+                    color: 'white',
                     fontSize: '14px',
                     boxSizing: 'border-box',
-                    outline: 'none',
-                    background: 'rgba(255, 255, 255, 0.8)'
+                    outline: 'none'
                   }}
                   placeholder="Enter your email address"
                   required
-                  onFocus={(e) => e.target.style.borderColor = "#1565c0"}
-                  onBlur={(e) => e.target.style.borderColor = "rgba(203, 213, 225, 0.5)"}
                 />
               </div>
 
               {resetMessage && (
                 <div style={{
                   padding: '12px',
-                  borderRadius: '10px',
+                  borderRadius: '12px',
                   fontSize: '13px',
-                  marginBottom: '16px',
-                  whiteSpace: 'pre-line',
-                  background: resetMessage.type === 'success' ? 'rgba(240, 253, 244, 0.9)' : 'rgba(254, 242, 242, 0.9)',
-                  color: resetMessage.type === 'success' ? '#166534' : '#991B1B',
-                  border: `1px solid ${resetMessage.type === 'success' ? 'rgba(187, 247, 208, 0.5)' : 'rgba(254, 226, 226, 0.5)'}`,
-                  backdropFilter: 'blur(10px)'
+                  marginBottom: '20px',
+                  background: resetMessage.type === 'success' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                  color: resetMessage.type === 'success' ? '#bbf7d0' : '#fecaca',
+                  border: `1px solid ${resetMessage.type === 'success' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
                 }}>
                   {resetMessage.text}
                 </div>
@@ -717,21 +708,14 @@ export default function Login() {
                 disabled={resetLoading}
                 style={{
                   width: '100%',
-                  padding: '12px',
-                  background: resetLoading ? 'rgba(148, 163, 184, 0.8)' : '#1565c0',
-                  color: 'white',
+                  padding: '14px',
+                  background: resetLoading ? 'rgba(255,255,255,0.2)' : 'linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%)',
+                  color: '#1a1a2e',
                   border: 'none',
-                  borderRadius: '10px',
+                  borderRadius: '14px',
                   fontSize: '14px',
                   fontWeight: '600',
-                  cursor: resetLoading ? 'not-allowed' : 'pointer',
-                  transition: 'background 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  if (!resetLoading) e.target.style.background = "#0A1929";
-                }}
-                onMouseLeave={(e) => {
-                  if (!resetLoading) e.target.style.background = "#1565c0";
+                  cursor: resetLoading ? 'not-allowed' : 'pointer'
                 }}
               >
                 {resetLoading ? 'Sending...' : 'Send Reset Link'}
@@ -741,11 +725,10 @@ export default function Login() {
             <div style={{
               marginTop: '16px',
               fontSize: '12px',
-              color: '#64748B',
+              color: 'rgba(255,255,255,0.5)',
               textAlign: 'center'
             }}>
-              Temporary password: <strong>Temp123!</strong><br />
-              Change it after logging in.
+              Temporary password: <strong style={{ color: 'white' }}>Temp123!</strong>
             </div>
           </div>
         </div>
