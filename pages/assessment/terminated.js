@@ -80,6 +80,7 @@ export default function TerminatedPage() {
             <li>❌ Right-click / context menu</li>
             <li>❌ DevTools / inspect element</li>
           </ul>
+          <p style={styles.note}>Note: Tab switching is allowed and does not count as a violation.</p>
         </div>
 
         <div style={styles.actionButtons}>
@@ -244,11 +245,17 @@ const styles = {
     marginBottom: '12px',
   },
   list: {
-    margin: 0,
+    margin: '0 0 8px 0',
     paddingLeft: '20px',
     color: '#475569',
     fontSize: '13px',
     lineHeight: '1.8',
+  },
+  note: {
+    fontSize: '11px',
+    color: '#64748B',
+    margin: '8px 0 0 0',
+    fontStyle: 'italic',
   },
   actionButtons: {
     display: 'flex',
