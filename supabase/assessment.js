@@ -107,7 +107,7 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
       return existing;
     }
 
-    // Check if there's a completed session (for reference)
+    // Check if there's a completed session
     const { data: completed } = await supabase
       .from('assessment_sessions')
       .select('*')
@@ -133,9 +133,20 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
       throw assessmentError;
     }
 
-    // Force 3 hours (180 minutes) for all assessments
-    const timeLimit = 180; // 3 hours in minutes
+    // Get total questions count
+    const { data: questions, error: questionsError } = await supabase
+      .from('unique_questions')
+      .select('id', { count: 'exact' })
+      .eq('assessment_type_id', assessment.assessment_type_id);
 
+    if (questionsError) {
+      console.error("Error fetching question count:", questionsError);
+    }
+
+    const totalQuestions = questions?.length || 0;
+
+    // 3 hours time limit
+    const timeLimit = 180; // minutes
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + timeLimit);
 
@@ -150,6 +161,8 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
         started_at: new Date().toISOString(),
         expires_at: expiresAt.toISOString(),
         time_spent_seconds: 0,
+        total_questions: totalQuestions,
+        answered_questions: 0,
         violation_count: 0,
         copy_paste_count: 0,
         right_click_count: 0,
@@ -255,7 +268,7 @@ export async function getSessionResponses(sessionId) {
   }
 }
 
-// ===== SUBMIT ASSESSMENT - Calls the correct API endpoint =====
+// Submit Assessment
 export async function submitAssessment(sessionId) {
   try {
     console.log("📤 Submitting assessment for session:", sessionId);
@@ -298,9 +311,8 @@ export async function submitAssessment(sessionId) {
     if (!response.ok) {
       console.error("❌ API error:", result);
       
-      // Handle specific error types
-      if (result.error === 'assessment_invalid_violations') {
-        throw new Error('assessment_invalid_violations');
+      if (result.error === 'incomplete_assessment') {
+        throw new Error('incomplete_assessment');
       }
       if (result.error === 'already_submitted') {
         throw new Error('already_submitted');
@@ -395,7 +407,6 @@ export async function getOrCreateCandidateProfile(userId, email, fullName) {
 // Progress Tracking
 export async function saveProgress(sessionId, userId, assessmentId, elapsedSeconds, lastQuestionId) {
   try {
-    // First save to assessment_progress
     const { error: progressError } = await supabase
       .from('assessment_progress')
       .upsert({
@@ -414,7 +425,6 @@ export async function saveProgress(sessionId, userId, assessmentId, elapsedSecon
       return false;
     }
     
-    // Also update session timer
     await updateSessionTimer(sessionId, elapsedSeconds);
     
     return true;
@@ -448,7 +458,6 @@ export async function getProgress(userId, assessmentId) {
 // Completion Checking
 export async function isAssessmentCompleted(userId, assessmentId) {
   try {
-    // Check in candidate_assessments first
     const { data, error } = await supabase
       .from('candidate_assessments')
       .select('id, status')
@@ -466,7 +475,6 @@ export async function isAssessmentCompleted(userId, assessmentId) {
       return true;
     }
 
-    // If not found, check assessment_sessions
     const { data: sessionData, error: sessionError } = await supabase
       .from('assessment_sessions')
       .select('id')
@@ -487,10 +495,7 @@ export async function isAssessmentCompleted(userId, assessmentId) {
   }
 }
 
-/**
- * Get unique questions for any assessment type - COMPLETELY RANDOMIZED
- * Both questions and answers are randomized for each candidate
- */
+// Get unique questions
 export async function getUniqueQuestions(assessmentId) {
   try {
     console.log("🔍 Fetching unique questions for assessment:", assessmentId);
@@ -500,7 +505,6 @@ export async function getUniqueQuestions(assessmentId) {
       return [];
     }
 
-    // First get the assessment to know its type
     const { data: assessment, error: aError } = await supabase
       .from('assessments')
       .select('assessment_type_id, title')
@@ -514,7 +518,6 @@ export async function getUniqueQuestions(assessmentId) {
 
     console.log("📊 Assessment type ID:", assessment.assessment_type_id);
 
-    // Get all unique questions for this assessment type with their answers
     const { data: questions, error: qError } = await supabase
       .from('unique_questions')
       .select(`
@@ -538,18 +541,15 @@ export async function getUniqueQuestions(assessmentId) {
     }
 
     if (!questions || questions.length === 0) {
-      console.log("⚠️ No unique questions found for assessment type ID:", assessment.assessment_type_id);
+      console.log("⚠️ No unique questions found");
       return [];
     }
 
     console.log(`✅ Found ${questions.length} unique questions`);
 
-    // SHUFFLE THE QUESTIONS ORDER first
     const shuffledQuestions = shuffleArray(questions);
 
-    // Then format each question with randomized answers
     const formattedQuestions = shuffledQuestions.map((q, index) => {
-      // Get all answers for this question
       const answers = (q.unique_answers || []).map(a => ({
         id: a.id,
         answer_text: a.answer_text,
@@ -557,7 +557,6 @@ export async function getUniqueQuestions(assessmentId) {
         display_order: a.display_order
       }));
 
-      // SHUFFLE the answers randomly
       const shuffledAnswers = shuffleArray(answers);
 
       return {
@@ -570,8 +569,7 @@ export async function getUniqueQuestions(assessmentId) {
       };
     });
 
-    console.log(`✅ Returning ${formattedQuestions.length} randomized questions with randomized answers`);
-    
+    console.log(`✅ Returning ${formattedQuestions.length} randomized questions`);
     return formattedQuestions;
 
   } catch (error) {
@@ -580,9 +578,7 @@ export async function getUniqueQuestions(assessmentId) {
   }
 }
 
-/**
- * Track when a question is first viewed
- */
+// Track question view
 export async function trackQuestionView(session_id, question_id, question_number) {
   try {
     const { data: existing } = await supabase
@@ -616,10 +612,8 @@ export async function trackQuestionView(session_id, question_id, question_number
   }
 }
 
-/**
- * Update question timing when answered
- */
-async function updateQuestionTiming(session_id, question_id, isFirstAnswer) {
+// Update question timing
+async function updateQuestionTiming(session_id, question_id) {
   try {
     const { data: timing } = await supabase
       .from("question_timing")
@@ -644,11 +638,9 @@ async function updateQuestionTiming(session_id, question_id, isFirstAnswer) {
   }
 }
 
-/**
- * Save response for unique questions - WITH BEHAVIORAL TRACKING
- */
+// Save unique response
 export async function saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id) {
-  console.log("💾 Saving unique response with behavioral tracking:", { session_id, user_id, question_id, answer_id });
+  console.log("💾 Saving unique response:", { session_id, user_id, question_id, answer_id });
   
   try {
     if (!session_id || !user_id || !assessment_id || !question_id || !answer_id) {
@@ -656,7 +648,6 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
       return { success: false, error: "Missing required fields" };
     }
 
-    // Convert IDs to proper types
     const questionIdNum = parseInt(question_id, 10);
     const answerIdNum = parseInt(answer_id, 10);
 
@@ -665,10 +656,9 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
       return { success: false, error: "Invalid ID format" };
     }
 
-    // First verify the session exists and is in progress
     const { data: session, error: sessionError } = await supabase
       .from('assessment_sessions')
-      .select('id, status, started_at')
+      .select('id, status')
       .eq('id', session_id)
       .eq('user_id', user_id)
       .single();
@@ -682,10 +672,9 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
       return { success: false, error: `Session is ${session.status}, cannot save responses` };
     }
 
-    // Get existing response to check if this is a change
     const { data: existingResponse } = await supabase
       .from("responses")
-      .select("id, answer_id, times_changed, first_saved_at")
+      .select("id, answer_id, times_changed")
       .eq("session_id", session_id)
       .eq("question_id", questionIdNum)
       .maybeSingle();
@@ -693,7 +682,6 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
     const isNewResponse = !existingResponse;
     const isAnswerChange = existingResponse && existingResponse.answer_id !== answerIdNum;
     
-    // Calculate time spent on this question
     let timeSpent = 0;
     if (isNewResponse) {
       const { data: timing } = await supabase
@@ -708,7 +696,6 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
       }
     }
 
-    // Prepare response data
     const responseData = {
       session_id: session_id,
       user_id: user_id,
@@ -726,7 +713,6 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
     } else if (isAnswerChange) {
       responseData.times_changed = (existingResponse.times_changed || 0) + 1;
       
-      // Get the score of old and new answers to determine if improvement
       const { data: oldAnswer } = await supabase
         .from("unique_answers")
         .select("score")
@@ -741,7 +727,6 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
       
       const scoreImproved = newAnswer?.score > oldAnswer?.score;
       
-      // Record answer change in history
       await supabase
         .from("answer_history")
         .insert({
@@ -754,7 +739,6 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
         });
     }
 
-    // Save to responses table
     const { data, error } = await supabase
       .from("responses")
       .upsert(responseData, {
@@ -767,10 +751,20 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
       return { success: false, error: error.message };
     }
 
-    // Update question timing
-    await updateQuestionTiming(session_id, questionIdNum, isNewResponse);
+    // Update answered questions count in session
+    const { count: responseCount } = await supabase
+      .from('responses')
+      .select('id', { count: 'exact', head: true })
+      .eq('session_id', session_id);
 
-    console.log("✅ Response saved with behavioral tracking");
+    await supabase
+      .from('assessment_sessions')
+      .update({ answered_questions: responseCount })
+      .eq('id', session_id);
+
+    await updateQuestionTiming(session_id, questionIdNum);
+
+    console.log("✅ Response saved");
     return { success: true, data, isNewResponse, isAnswerChange };
 
   } catch (error) {
@@ -779,8 +773,7 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
   }
 }
 
-// ========== LEGACY FUNCTIONS (for backward compatibility) ==========
-
+// Legacy functions
 export async function getRandomizedQuestions(candidateId, assessmentId) {
   console.log("⚠️ getRandomizedQuestions is deprecated, using getUniqueQuestions");
   return getUniqueQuestions(assessmentId);
