@@ -66,8 +66,8 @@ export default function TerminatedPage() {
           <div>
             <strong>Invalid Result</strong>
             <p style={styles.warningText}>
-              This assessment result is <strong>INVALID</strong> and will not appear in your reports.
-              Your supervisor has been notified of these violations.
+              This assessment result is <strong>INVALID</strong> because it was auto-submitted due to rule violations.
+              Your supervisor has been notified.
             </p>
           </div>
         </div>
@@ -80,7 +80,16 @@ export default function TerminatedPage() {
             <li>❌ Right-click / context menu</li>
             <li>❌ DevTools / inspect element</li>
           </ul>
-          <p style={styles.note}>Note: Tab switching is allowed and does not count as a violation.</p>
+          <p style={styles.note}>
+            ℹ️ Note: Tab switching is allowed and does NOT count as a violation.
+          </p>
+        </div>
+
+        <div style={styles.infoBox}>
+          <p style={styles.infoText}>
+            Your score has been calculated based only on the questions you answered.
+            Unanswered questions received 0 points.
+          </p>
         </div>
 
         <div style={styles.actionButtons}>
@@ -235,7 +244,7 @@ const styles = {
     background: '#F8FAFC',
     padding: '16px',
     borderRadius: '12px',
-    marginBottom: '24px',
+    marginBottom: '16px',
     border: '1px solid #E2E8F0',
   },
   listTitle: {
@@ -256,6 +265,18 @@ const styles = {
     color: '#64748B',
     margin: '8px 0 0 0',
     fontStyle: 'italic',
+  },
+  infoBox: {
+    background: '#E3F2FD',
+    padding: '12px 16px',
+    borderRadius: '12px',
+    marginBottom: '24px',
+    border: '1px solid #BBDEFB',
+  },
+  infoText: {
+    fontSize: '12px',
+    color: '#1565C0',
+    margin: 0,
   },
   actionButtons: {
     display: 'flex',
