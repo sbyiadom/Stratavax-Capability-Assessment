@@ -1,5 +1,4 @@
-// supabase/assessment.js - FIXED submitAssessment function
-
+// supabase/assessment.js
 import { supabase } from './client';
 
 // Fisher-Yates shuffle algorithm for true randomness
@@ -140,7 +139,7 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + timeLimit);
 
-    // Create new session
+    // Create new session with violation counters
     const { data, error } = await supabase
       .from('assessment_sessions')
       .insert({
@@ -256,7 +255,7 @@ export async function getSessionResponses(sessionId) {
   }
 }
 
-// ===== FIXED SUBMIT ASSESSMENT - CORRECT API ENDPOINT =====
+// ===== SUBMIT ASSESSMENT - Calls the correct API endpoint =====
 export async function submitAssessment(sessionId) {
   try {
     console.log("📤 Submitting assessment for session:", sessionId);
@@ -266,21 +265,15 @@ export async function submitAssessment(sessionId) {
       throw new Error("No active session");
     }
 
-    // First verify the session exists and get user/assessment info
     const { data: assessmentSession, error: sessionError } = await supabase
       .from('assessment_sessions')
-      .select('user_id, assessment_id, violation_count, status')
+      .select('user_id, assessment_id')
       .eq('id', sessionId)
       .single();
 
     if (sessionError) {
       console.error("❌ Error fetching assessment session:", sessionError);
       throw new Error("Could not verify session");
-    }
-
-    // Check if already submitted
-    if (assessmentSession.status === 'completed') {
-      throw new Error("already_submitted");
     }
 
     const submissionData = {
@@ -291,8 +284,7 @@ export async function submitAssessment(sessionId) {
 
     console.log("📦 Submitting with data:", submissionData);
 
-    // FIXED: Use the correct API endpoint
-    const response = await fetch('/api/assessment/submit', {
+    const response = await fetch('/api/submit-assessment', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -580,11 +572,6 @@ export async function getUniqueQuestions(assessmentId) {
 
     console.log(`✅ Returning ${formattedQuestions.length} randomized questions with randomized answers`);
     
-    // Log first question to show randomization worked
-    if (formattedQuestions.length > 0) {
-      console.log("Sample first question ID:", formattedQuestions[0].id);
-    }
-    
     return formattedQuestions;
 
   } catch (error) {
@@ -606,7 +593,6 @@ export async function trackQuestionView(session_id, question_id, question_number
       .maybeSingle();
 
     if (existing) {
-      // Update existing record
       await supabase
         .from("question_timing")
         .update({
@@ -615,7 +601,6 @@ export async function trackQuestionView(session_id, question_id, question_number
         })
         .eq("id", existing.id);
     } else {
-      // Create new record
       await supabase
         .from("question_timing")
         .insert({
@@ -661,7 +646,6 @@ async function updateQuestionTiming(session_id, question_id, isFirstAnswer) {
 
 /**
  * Save response for unique questions - WITH BEHAVIORAL TRACKING
- * Tracks time spent, answer changes, and navigation patterns
  */
 export async function saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id) {
   console.log("💾 Saving unique response with behavioral tracking:", { session_id, user_id, question_id, answer_id });
@@ -712,7 +696,6 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
     // Calculate time spent on this question
     let timeSpent = 0;
     if (isNewResponse) {
-      // Get question timing record
       const { data: timing } = await supabase
         .from("question_timing")
         .select("first_viewed_at")
@@ -759,7 +742,7 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
       const scoreImproved = newAnswer?.score > oldAnswer?.score;
       
       // Record answer change in history
-      const { error: historyError } = await supabase
+      await supabase
         .from("answer_history")
         .insert({
           session_id: session_id,
@@ -769,10 +752,6 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
           changed_at: new Date().toISOString(),
           score_improved: scoreImproved
         });
-      
-      if (historyError) {
-        console.error("Error recording answer history:", historyError);
-      }
     }
 
     // Save to responses table
