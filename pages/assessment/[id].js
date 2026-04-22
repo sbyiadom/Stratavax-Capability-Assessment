@@ -72,6 +72,18 @@ function AssessmentContent() {
   const [showViolationWarning, setShowViolationWarning] = useState(false);
   const [violationMessage, setViolationMessage] = useState('');
 
+  // Default gradient colors (fallback if assessment type has none)
+  const DEFAULT_GRADIENT_START = '#667eea';
+  const DEFAULT_GRADIENT_END = '#764ba2';
+
+  const getGradientStart = () => {
+    return assessmentType?.gradient_start || DEFAULT_GRADIENT_START;
+  };
+
+  const getGradientEnd = () => {
+    return assessmentType?.gradient_end || DEFAULT_GRADIENT_END;
+  };
+
   // ===== ANTI-CHEAT / VIOLATION TRACKING (NO TAB SWITCHING) =====
   const showViolationWarningMessage = (message) => {
     setViolationMessage(message);
@@ -88,7 +100,10 @@ function AssessmentContent() {
     // Update violation count in session
     await supabase
       .from('assessment_sessions')
-      .update({ violation_count: newCount })
+      .update({ 
+        violation_count: newCount,
+        [`${getViolationColumnName(violationType)}_count`]: supabase.raw(`${getViolationColumnName(violationType)}_count + 1`)
+      })
       .eq('id', sessionIdRef.current);
     
     // Log violation to table
@@ -105,20 +120,37 @@ function AssessmentContent() {
     showViolationWarningMessage(`${violationType}. Violation ${newCount} of 3.`);
     
     // Auto-submit after 3 violations
-    if (newCount >= 3 && !isAutoSubmitting) {
-      showViolationWarningMessage(`Maximum violations reached. Assessment will be submitted.`);
+    if (newCount >= 3 && !isAutoSubmitting && !alreadySubmitted) {
+      showViolationWarningMessage(`Maximum violations reached (3/3). Auto-submitting assessment...`);
       setIsAutoSubmitting(true);
       
+      // Small delay to show warning
       setTimeout(async () => {
         await handleAutoSubmitDueToViolations();
       }, 2000);
     }
   };
 
+  const getViolationColumnName = (violationType) => {
+    if (violationType.includes('Copy') || violationType.includes('Paste') || violationType.includes('Cut')) {
+      return 'copy_paste_count';
+    }
+    if (violationType.includes('Right-click')) {
+      return 'right_click_count';
+    }
+    if (violationType.includes('DevTools') || violationType.includes('F12') || violationType.includes('source')) {
+      return 'devtools_count';
+    }
+    if (violationType.includes('Screenshot') || violationType.includes('PrintScreen')) {
+      return 'screenshot_count';
+    }
+    return 'other_violation_count';
+  };
+
   const handleAutoSubmitDueToViolations = async () => {
     if (alreadySubmitted || isSubmitting) return;
     
-    console.log("🚨 Auto-submitting due to violations");
+    console.log("🚨 Auto-submitting due to violations:", violationCount);
     
     try {
       setIsSubmitting(true);
@@ -127,21 +159,22 @@ function AssessmentContent() {
       await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id);
       await updateSessionTimer(session.id, elapsedSeconds);
       
-      // Call submit API which will reject due to violations
+      // Call submit API - this should reject with violation error
       const result = await submitAssessment(session.id);
       
+      // If we get here, something unexpected happened
       console.log("Unexpected success:", result);
       
     } catch (error) {
       console.log("Auto-submit rejected due to violations:", error.message);
       
-      // Update session status
+      // Update session status as auto-submitted
       await supabase
         .from('assessment_sessions')
         .update({
           status: 'completed',
           auto_submitted: true,
-          auto_submit_reason: `Auto-submitted due to ${violationCount} rule violations. Only ${Object.keys(answers).length} of ${questions.length} questions completed.`,
+          auto_submit_reason: `Auto-submitted due to ${violationCount} rule violation(s). Only ${Object.keys(answers).length} of ${questions.length} questions completed.`,
           completed_at: new Date().toISOString()
         })
         .eq('id', session.id);
@@ -149,7 +182,7 @@ function AssessmentContent() {
       setAlreadySubmitted(true);
       setShowViolationWarning(false);
       
-      // Show violation page instead of success
+      // Navigate to terminated page with violation details
       router.push(`/assessment/terminated?reason=violations&count=${violationCount}&answered=${Object.keys(answers).length}&total=${questions.length}`);
     } finally {
       setIsSubmitting(false);
@@ -157,7 +190,7 @@ function AssessmentContent() {
     }
   };
 
-  // Setup anti-cheat event listeners (NO TAB SWITCHING)
+  // Setup anti-cheat event listeners (NO TAB SWITCHING - intentionally removed)
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session) return;
 
@@ -179,15 +212,14 @@ function AssessmentContent() {
       return false;
     };
 
-    // ===== TAB SWITCHING DETECTION REMOVED =====
-    // The following code is intentionally omitted:
-    // const handleVisibilityChange = () => { ... };
+    // ===== TAB SWITCHING DETECTION INTENTIONALLY REMOVED =====
+    // Candidates can switch tabs freely without penalty
 
     const handleKeyDown = (e) => {
       // PrintScreen detection
       if (e.key === 'PrintScreen') {
         e.preventDefault();
-        logViolation('Screenshot attempt');
+        logViolation('Screenshot attempt (PrintScreen)');
         return false;
       }
       
@@ -201,7 +233,7 @@ function AssessmentContent() {
       // DevTools detection - Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C
       if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) {
         e.preventDefault();
-        logViolation('DevTools attempt');
+        logViolation('DevTools attempt (Ctrl+Shift+' + e.key + ')');
         return false;
       }
       
@@ -209,6 +241,13 @@ function AssessmentContent() {
       if (e.ctrlKey && e.key === 'u') {
         e.preventDefault();
         logViolation('View source attempt');
+        return false;
+      }
+      
+      // Mac: Cmd+Option+I for DevTools
+      if (e.metaKey && e.altKey && e.key === 'I') {
+        e.preventDefault();
+        logViolation('DevTools attempt (Mac)');
         return false;
       }
     };
@@ -221,22 +260,28 @@ function AssessmentContent() {
 
     // Periodic DevTools detection
     const devToolsInterval = setInterval(() => {
-      if (!sessionIdRef.current) return;
+      if (!sessionIdRef.current || alreadySubmitted) return;
       
       // Method 1: Check window size difference
       const widthDiff = window.outerWidth - window.innerWidth;
       const heightDiff = window.outerHeight - window.innerHeight;
       
       if (widthDiff > 200 || heightDiff > 200) {
-        logViolation('DevTools detected');
+        logViolation('DevTools detected (window size)');
       }
       
-      // Method 2: Debugger pause detection
+      // Method 2: Debugger pause detection (safe way)
       const before = performance.now();
-      debugger;
-      const after = performance.now();
-      if (after - before > 100) {
-        logViolation('DevTools detected');
+      // Using a try-catch to avoid actual debugger breaking
+      try {
+        // This is a safe check that doesn't actually pause execution
+        const start = performance.now();
+        const end = performance.now();
+        if (end - start > 100) {
+          logViolation('DevTools detected (performance)');
+        }
+      } catch (e) {
+        // Ignore
       }
     }, 5000);
 
@@ -244,8 +289,6 @@ function AssessmentContent() {
     document.addEventListener('copy', handleCopy);
     document.addEventListener('paste', handlePaste);
     document.addEventListener('cut', handleCut);
-    // Tab switching event listener REMOVED
-    // document.addEventListener('visibilitychange', handleVisibilityChange);
     document.addEventListener('keydown', handleKeyDown);
     document.addEventListener('contextmenu', handleContextMenu);
 
@@ -263,14 +306,12 @@ function AssessmentContent() {
       document.removeEventListener('copy', handleCopy);
       document.removeEventListener('paste', handlePaste);
       document.removeEventListener('cut', handleCut);
-      // Tab switching event listener REMOVED
-      // document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('contextmenu', handleContextMenu);
       document.head.removeChild(style);
       clearInterval(devToolsInterval);
     };
-  }, [loading, alreadySubmitted, accessDenied, session]);
+  }, [loading, alreadySubmitted, accessDenied, session, violationCount]);
 
   // ===== AUTH AND INITIALIZATION =====
   useEffect(() => {
@@ -417,7 +458,7 @@ function AssessmentContent() {
 
   // Timer effect
   useEffect(() => {
-    if (loading || alreadySubmitted || !session || accessDenied) return;
+    if (loading || alreadySubmitted || !session || accessDenied || isAutoSubmitting) return;
 
     const timer = setInterval(async () => {
       setElapsedSeconds(prev => {
@@ -438,7 +479,7 @@ function AssessmentContent() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [loading, alreadySubmitted, session, timeLimit, assessmentId, user?.id, currentIndex, questions, accessDenied]);
+  }, [loading, alreadySubmitted, session, timeLimit, assessmentId, user?.id, currentIndex, questions, accessDenied, isAutoSubmitting]);
 
   // Save question timing
   const saveQuestionTiming = async (questionId, timeSpentSeconds) => {
@@ -478,7 +519,7 @@ function AssessmentContent() {
 
   // Handle time expiration
   const handleTimeExpired = async () => {
-    if (alreadySubmitted || isSubmitting) return;
+    if (alreadySubmitted || isSubmitting || isAutoSubmitting) return;
     
     alert("Time's up! Your assessment will be submitted automatically.");
     
@@ -639,7 +680,7 @@ function AssessmentContent() {
 
     // Check if there are violations
     if (violationCount >= 3) {
-      alert(`Cannot submit: You have ${violationCount} rule violations. The assessment will be auto-submitted as invalid.`);
+      alert(`Cannot submit: You have ${violationCount} rule violations. The assessment has been auto-submitted as invalid.`);
       return;
     }
 
@@ -793,6 +834,17 @@ function AssessmentContent() {
         </div>
       )}
 
+      {/* Auto-submitting overlay */}
+      {isAutoSubmitting && (
+        <div style={styles.autoSubmitOverlay}>
+          <div style={styles.autoSubmitCard}>
+            <div style={styles.autoSubmitSpinner} />
+            <h3>Auto-submitting assessment...</h3>
+            <p>You have exceeded the violation limit (3/3).</p>
+          </div>
+        </div>
+      )}
+
       {/* Submit Modal */}
       {showSubmitModal && (
         <div style={styles.modalOverlay}>
@@ -815,7 +867,9 @@ function AssessmentContent() {
               {violationCount > 0 && (
                 <div style={styles.modalStat}>
                   <span>Violations</span>
-                  <span style={{ color: '#f44336', fontWeight: 700 }}>{violationCount}/3</span>
+                  <span style={{ color: violationCount >= 3 ? '#f44336' : '#ff9800', fontWeight: 700 }}>
+                    {violationCount}/3
+                  </span>
                 </div>
               )}
             </div>
@@ -855,7 +909,7 @@ function AssessmentContent() {
       <div style={styles.container}>
         <div style={{
           ...styles.header,
-          background: `linear-gradient(135deg, ${assessmentType?.gradient_start || '#667eea'}, ${assessmentType?.gradient_end || '#764ba2'})`
+          background: `linear-gradient(135deg, ${getGradientStart()}, ${getGradientEnd()})`
         }}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
@@ -920,8 +974,8 @@ function AssessmentContent() {
                       disabled={alreadySubmitted || isAutoSubmitting}
                       style={{
                         ...styles.answerCard,
-                        background: isSelected ? `linear-gradient(135deg, ${assessmentType?.gradient_start || '#667eea'}, ${assessmentType?.gradient_end || '#764ba2'})` : 'white',
-                        borderColor: isSelected ? assessmentType?.gradient_start || '#667eea' : '#e2e8f0',
+                        background: isSelected ? `linear-gradient(135deg, ${getGradientStart()}, ${getGradientEnd()})` : 'white',
+                        borderColor: isSelected ? getGradientStart() : '#e2e8f0',
                         opacity: isAutoSubmitting ? 0.6 : 1
                       }}
                     >
@@ -995,9 +1049,10 @@ function AssessmentContent() {
                       disabled={isAutoSubmitting}
                       style={{
                         ...styles.gridItem,
-                        background: isCurrent ? assessmentType?.gradient_start || '#667eea' : 
+                        background: isCurrent ? getGradientStart() : 
                                    isAnswered ? (hasChanges ? '#ff9800' : '#4caf50') : 'white',
                         color: isCurrent || isAnswered ? 'white' : '#1e293b',
+                        borderColor: isCurrent ? getGradientStart() : '#e2e8f0',
                         opacity: isAutoSubmitting ? 0.6 : 1
                       }}
                     >
@@ -1010,7 +1065,7 @@ function AssessmentContent() {
               <div style={styles.legend}>
                 <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: '#4caf50' }} />Answered</div>
                 <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: '#ff9800' }} />Changed</div>
-                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: '#667eea' }} />Current</div>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: getGradientStart() }} />Current</div>
                 <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: 'white', border: '2px solid #e2e8f0' }} />Pending</div>
               </div>
             </div>
@@ -1095,9 +1150,37 @@ const styles = {
     alignItems: 'center',
     gap: '10px'
   },
+  autoSubmitOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0,0,0,0.7)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10002
+  },
+  autoSubmitCard: {
+    background: 'white',
+    padding: '30px',
+    borderRadius: '16px',
+    textAlign: 'center',
+    maxWidth: '400px'
+  },
+  autoSubmitSpinner: {
+    width: '40px',
+    height: '40px',
+    border: '4px solid #e2e8f0',
+    borderTop: '4px solid #f44336',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite',
+    margin: '0 auto 20px'
+  },
   container: { minHeight: '100vh', background: '#f8fafc' },
   header: { position: 'sticky', top: 0, zIndex: 100, color: 'white', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' },
-  headerContent: { maxWidth: '1400px', margin: '0 auto', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  headerContent: { maxWidth: '1400px', margin: '0 auto', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' },
   headerLeft: { display: 'flex', alignItems: 'center', gap: '20px' },
   backButton: { width: '40px', height: '40px', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '10px', color: 'white', fontSize: '24px', cursor: 'pointer' },
   headerTitle: { fontSize: '20px', fontWeight: 700, marginBottom: '4px' },
@@ -1125,7 +1208,7 @@ const styles = {
   statLabel: { fontSize: '10px', color: '#64748b' },
   questionGrid: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', marginBottom: '16px', maxHeight: '260px', overflowY: 'auto', padding: '4px' },
   gridItem: { aspectRatio: '1', border: '2px solid', borderRadius: '8px', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' },
-  legend: { display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '1px solid #e2e8f0' },
+  legend: { display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '8px' },
   legendItem: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' },
   legendDot: { width: '10px', height: '10px', borderRadius: '2px' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
