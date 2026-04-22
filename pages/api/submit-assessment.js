@@ -1,25 +1,16 @@
+// pages/api/submit-assessment.js
 import { createClient } from '@supabase/supabase-js';
-import { generatePersonalizedReport } from '../../utils/dynamicReportGenerator';
-import { calculateBehavioralMetrics } from '../../utils/behavioralAnalyzer';
-
-// Import competency functions
-import { 
-  calculateCompetencyScores, 
-  generateCompetencyRecommendations 
-} from '../../utils/competencyScoring';
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  console.log("📥 Submit API called with behavioral analytics");
-
   try {
     const { sessionId, user_id, assessment_id } = req.body;
     
-    if (!sessionId && (!user_id || !assessment_id)) {
-      return res.status(400).json({ error: "Missing required fields" });
+    if (!sessionId) {
+      return res.status(400).json({ error: "Missing sessionId" });
     }
 
     const authHeader = req.headers.authorization;
@@ -28,114 +19,64 @@ export default async function handler(req, res) {
     }
 
     const token = authHeader.replace('Bearer ', '');
-
-    const userClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
-      }
-    );
-
+    
     const serviceClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    let userId = user_id;
-    let assessmentId = assessment_id;
-    let activeSessionId = sessionId;
+    console.log("📤 Processing submission for session:", sessionId);
 
-    if (sessionId && !userId) {
-      const { data: session, error: sessionError } = await serviceClient
-        .from('assessment_sessions')
-        .select('user_id, assessment_id')
-        .eq('id', sessionId)
-        .single();
-
-      if (sessionError || !session) {
-        console.error("❌ Session error:", sessionError);
-        return res.status(404).json({ error: "Session not found" });
-      }
-
-      userId = session.user_id;
-      assessmentId = session.assessment_id;
-      activeSessionId = sessionId;
-    }
-
-    console.log("📊 Processing for user:", userId, "assessment:", assessmentId, "session:", activeSessionId);
-
-    // ===== CRITICAL FIX: CHECK FOR VIOLATIONS BEFORE PROCESSING =====
-    const { data: sessionData, error: sessionError } = await serviceClient
+    // Get session with violation info
+    const { data: session, error: sessionError } = await serviceClient
       .from('assessment_sessions')
-      .select('violation_count, auto_submitted, answered_questions, total_questions, status')
-      .eq('id', activeSessionId)
+      .select(`
+        id,
+        user_id,
+        assessment_id,
+        violation_count,
+        auto_submitted,
+        answered_questions,
+        total_questions,
+        status,
+        copy_paste_count,
+        right_click_count,
+        devtools_count,
+        screenshot_count
+      `)
+      .eq('id', sessionId)
       .single();
 
-    if (sessionError) {
-      console.error("❌ Error fetching session:", sessionError);
+    if (sessionError || !session) {
+      console.error("❌ Session error:", sessionError);
+      return res.status(404).json({ error: "Session not found" });
     }
 
-    // If violations exceed limit (3), reject the submission
-    if (sessionData && sessionData.violation_count >= 3) {
-      console.log(`⚠️ Auto-submit rejected: ${sessionData.violation_count} violations detected`);
-      
-      await serviceClient
-        .from('assessment_sessions')
-        .update({
-          status: 'completed',
-          auto_submitted: true,
-          auto_submit_reason: `Auto-submitted due to ${sessionData.violation_count} rule violations. Only ${sessionData.answered_questions || 0} of ${sessionData.total_questions || 100} questions completed.`,
-          completed_at: new Date().toISOString()
-        })
-        .eq('id', activeSessionId);
-      
-      return res.status(400).json({
-        success: false,
-        error: 'assessment_invalid_violations',
-        message: `Assessment auto-submitted due to ${sessionData.violation_count} rule violations. This result is invalid. Please contact your supervisor.`,
-        violation_count: sessionData.violation_count,
-        answered_questions: sessionData.answered_questions || 0,
-        total_questions: sessionData.total_questions || 100
-      });
+    // Check if already submitted
+    if (session.status === 'completed') {
+      console.log("⚠️ Session already completed");
+      return res.status(400).json({ error: "already_submitted" });
     }
 
-    // Get all responses with full question and answer details
-    const { data: responses, error: responsesError } = await userClient
+    const violationCount = session.violation_count || 0;
+    const MAX_VIOLATIONS = 3;
+    const isAutoSubmitted = violationCount >= MAX_VIOLATIONS;
+
+    console.log(`📊 Violations: ${violationCount}/${MAX_VIOLATIONS}, Auto-submit: ${isAutoSubmitted}`);
+
+    // Get all responses for this session
+    const { data: responses, error: responsesError } = await serviceClient
       .from('responses')
       .select(`
         question_id,
         answer_id,
-        time_spent_seconds,
-        times_changed,
-        first_saved_at,
-        initial_answer_id,
-        session_id,
-        unique_questions!inner (
-          id,
-          section,
-          subsection,
-          question_text
-        ),
-        unique_answers!inner (
-          id,
-          score,
-          answer_text
-        )
+        unique_answers!inner (score)
       `)
-      .eq('user_id', userId)
-      .eq('assessment_id', assessmentId);
+      .eq('session_id', sessionId);
 
     if (responsesError) {
       console.error("❌ Responses error:", responsesError);
-      return res.status(500).json({ 
-        error: "Failed to fetch responses",
-        message: responsesError.message 
-      });
+      return res.status(500).json({ error: "Failed to fetch responses" });
     }
 
     if (!responses || responses.length === 0) {
@@ -145,43 +86,27 @@ export default async function handler(req, res) {
 
     console.log(`✅ Found ${responses.length} responses`);
 
-    // Get assessment type for the result
+    // Get assessment type for max score calculation
     const { data: assessment, error: assessmentError } = await serviceClient
       .from('assessments')
-      .select('assessment_type_id, assessment_type:assessment_types(code), title')
-      .eq('id', assessmentId)
+      .select('assessment_type_id')
+      .eq('id', session.assessment_id)
       .single();
 
     if (assessmentError) {
       console.error("❌ Assessment error:", assessmentError);
+      return res.status(500).json({ error: "Failed to fetch assessment" });
     }
 
-    const assessmentTypeId = assessment?.assessment_type_id;
-    const assessmentType = assessment?.assessment_type?.code || 'general';
-
-    // Get candidate name for the report
-    let candidateName = 'Candidate';
-    const { data: profileData } = await serviceClient
-      .from('candidate_profiles')
-      .select('full_name, email, created_by')
-      .eq('id', userId)
-      .single();
-
-    if (profileData?.full_name) {
-      candidateName = profileData.full_name;
-    } else if (profileData?.email) {
-      candidateName = profileData.email.split('@')[0];
-    }
-
-    // ===== FIXED: Calculate TRUE MAX SCORE with proper error handling =====
-    async function getAssessmentTrueMaxScore(assessmentTypeId) {
+    // ===== CRITICAL FIX: Calculate max score properly =====
+    async function calculateMaxScore(assessmentTypeId) {
       if (!assessmentTypeId) {
         console.error("❌ No assessment_type_id provided");
-        return null;
+        return 0;
       }
       
       // Get all questions for this assessment type
-      const { data: questions, error } = await serviceClient
+      const { data: questions, error: questionsError } = await serviceClient
         .from('unique_questions')
         .select(`
           id,
@@ -189,33 +114,31 @@ export default async function handler(req, res) {
         `)
         .eq('assessment_type_id', assessmentTypeId);
       
-      if (error) {
-        console.error("❌ Error getting questions:", error);
-        return null;
+      if (questionsError) {
+        console.error("❌ Error fetching questions:", questionsError);
+        return 0;
       }
       
       if (!questions || questions.length === 0) {
         console.error("❌ No questions found for assessment_type_id:", assessmentTypeId);
-        return null;
+        return 0;
       }
       
       console.log(`📊 Found ${questions.length} total questions for max score calculation`);
       
-      let totalMaxScore = 0;
+      let maxScore = 0;
       let questionsWithNoAnswers = 0;
       
       for (const question of questions) {
-        // Find the highest score among answers for this question
-        const answerScores = (question.unique_answers || []).map(a => a.score || 0);
+        const scores = (question.unique_answers || []).map(a => a.score || 0);
         
-        if (answerScores.length === 0) {
+        if (scores.length === 0) {
           questionsWithNoAnswers++;
-          // Default to 5 points if no answers found
-          totalMaxScore += 5;
+          maxScore += 5; // Default 5 points per question
           console.warn(`⚠️ Question ${question.id} has no answers, defaulting to 5 points`);
         } else {
-          const maxAnswerScore = Math.max(...answerScores);
-          totalMaxScore += maxAnswerScore;
+          const questionMax = Math.max(...scores);
+          maxScore += questionMax;
         }
       }
       
@@ -223,344 +146,169 @@ export default async function handler(req, res) {
         console.warn(`⚠️ ${questionsWithNoAnswers} questions had no answers, using default 5 points each`);
       }
       
-      console.log(`📊 Calculated true max score: ${totalMaxScore} from ${questions.length} questions`);
-      
-      return totalMaxScore;
+      console.log(`📊 Calculated max score: ${maxScore}`);
+      return maxScore;
     }
 
-    // Calculate total earned score from actual answer scores
-    let totalEarnedScore = 0;
-    let questionsWithZeroScore = 0;
+    let trueMaxScore = await calculateMaxScore(assessment.assessment_type_id);
     
+    // Fallback if calculation failed
+    if (!trueMaxScore || trueMaxScore === 0) {
+      console.warn("⚠️ Max score calculation failed, using fallback");
+      const totalQuestions = session.total_questions || 100;
+      trueMaxScore = totalQuestions * 5;
+      console.log(`📊 Fallback max score: ${trueMaxScore}`);
+    }
+
+    // Calculate earned score
+    let totalScore = 0;
     for (const response of responses) {
-      const answerScore = response.unique_answers?.score || 0;
-      totalEarnedScore += answerScore;
-      if (answerScore === 0) {
-        questionsWithZeroScore++;
-      }
-    }
-    
-    console.log(`📊 Total earned score: ${totalEarnedScore}, Questions with zero score: ${questionsWithZeroScore}`);
-
-    // Get the TRUE maximum score for the full assessment
-    let trueMaxScore = await getAssessmentTrueMaxScore(assessmentTypeId);
-    
-    // FALLBACK: If trueMaxScore calculation fails, calculate from responses
-    if (!trueMaxScore || trueMaxScore === 0) {
-      console.warn("⚠️ True max score calculation failed, using fallback method");
-      
-      // Fallback: Calculate max score from all possible answers for answered questions
-      let fallbackMaxScore = 0;
-      for (const response of responses) {
-        // Get all answers for this question to find max possible score
-        const { data: questionAnswers } = await serviceClient
-          .from('unique_answers')
-          .select('score')
-          .eq('question_id', response.question_id);
-        
-        if (questionAnswers && questionAnswers.length > 0) {
-          const maxScore = Math.max(...questionAnswers.map(a => a.score || 0));
-          fallbackMaxScore += maxScore;
-        } else {
-          fallbackMaxScore += 5; // Default 5 points per question
-        }
-      }
-      
-      trueMaxScore = fallbackMaxScore;
-      console.log(`📊 Fallback max score: ${trueMaxScore} from ${responses.length} questions`);
-    }
-    
-    // Final validation - ensure max_score is not zero
-    if (!trueMaxScore || trueMaxScore === 0) {
-      console.error("❌ CRITICAL: Failed to calculate max score even with fallback");
-      
-      // ULTIMATE FALLBACK: Use responses count * 5
-      trueMaxScore = responses.length * 5;
-      console.log(`📊 Ultimate fallback max score: ${trueMaxScore} (${responses.length} questions × 5 points)`);
+      totalScore += response.unique_answers?.score || 0;
     }
 
-    // Calculate percentage based on FULL assessment
-    let percentageScore = 0;
+    // Calculate percentage based on TRUE max score
+    let percentage = 0;
     if (trueMaxScore > 0) {
-      percentageScore = (totalEarnedScore / trueMaxScore) * 100;
-    } else {
-      console.error("❌ trueMaxScore is still 0, cannot calculate percentage");
-      percentageScore = 0;
-    }
-    
-    console.log(`📊 FINAL SCORES: Earned=${totalEarnedScore}, TrueMax=${trueMaxScore}, Percentage=${percentageScore.toFixed(2)}%`);
-    console.log(`📊 Questions answered: ${responses.length}, Est. total questions: ${Math.round(trueMaxScore / 5)}`);
-
-    // ===== COMPETENCY PROCESSING =====
-    console.log("🧠 Processing competency scores...");
-    
-    const { data: questionCompetencies, error: qcError } = await serviceClient
-      .from('question_competencies')
-      .select(`
-        question_id,
-        competency_id,
-        weight,
-        competencies(name)
-      `);
-
-    let competencyResults = {};
-    let competencyRecommendations = [];
-
-    if (questionCompetencies && questionCompetencies.length > 0 && !qcError) {
-      competencyResults = calculateCompetencyScores(responses, questionCompetencies, assessmentType);
-      competencyRecommendations = generateCompetencyRecommendations(competencyResults);
-      console.log(`✅ Processed ${Object.keys(competencyResults).length} competencies`);
-    } else {
-      console.log("⚠️ No question-competency mappings found");
+      percentage = (totalScore / trueMaxScore) * 100;
     }
 
-    // ===== BEHAVIORAL METRICS PROCESSING =====
-    console.log("🧠 Calculating behavioral metrics...");
-    let behavioralMetrics = null;
-    
-    try {
-      if (activeSessionId) {
-        behavioralMetrics = await calculateBehavioralMetrics(
-          activeSessionId,
-          userId,
-          assessmentId,
-          serviceClient
-        );
-        
-        if (behavioralMetrics) {
-          console.log("✅ Behavioral metrics calculated:", {
-            work_style: behavioralMetrics.work_style,
-            confidence_level: behavioralMetrics.confidence_level,
-            total_answer_changes: behavioralMetrics.total_answer_changes
-          });
-        }
-      }
-    } catch (behavioralError) {
-      console.error("Error calculating behavioral metrics:", behavioralError);
-    }
+    console.log(`📊 Score: ${totalScore}/${trueMaxScore} = ${percentage.toFixed(2)}%`);
+    console.log(`📊 Violations: ${violationCount}/${MAX_VIOLATIONS}`);
 
-    // Generate personalized report
-    const personalizedReport = generatePersonalizedReport(
-      userId,
-      assessmentType,
-      responses,
-      candidateName
-    );
-
-    console.log("✅ Personalized report generated");
-
-    // Determine risk level and readiness
-    const riskLevel = percentageScore < 40 ? 'high' : 
-                     percentageScore < 60 ? 'medium' : 'low';
-    const readiness = percentageScore >= 70 ? 'ready' : 
-                     percentageScore >= 50 ? 'development_needed' : 'not_ready';
+    // Determine if result is valid
+    const isValid = violationCount < MAX_VIOLATIONS;
 
     // Update session to completed
-    if (activeSessionId) {
-      const { error: sessionUpdateError } = await serviceClient
-        .from('assessment_sessions')
-        .update({ 
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          answered_questions: responses.length,
-          total_questions: Math.round(trueMaxScore / 5)
-        })
-        .eq('id', activeSessionId);
-
-      if (sessionUpdateError) {
-        console.error("❌ Session update error:", sessionUpdateError);
-      } else {
-        console.log("✅ Session updated");
-      }
-    }
-
-    // Save to candidate_assessments
-    const { error: candidateError } = await serviceClient
-      .from('candidate_assessments')
-      .upsert({
-        user_id: userId,
-        assessment_id: assessmentId,
-        session_id: activeSessionId,
+    const { error: updateError } = await serviceClient
+      .from('assessment_sessions')
+      .update({
         status: 'completed',
-        score: totalEarnedScore,
-        max_score: trueMaxScore,
-        percentage: percentageScore,
-        completed_at: new Date().toISOString()
-      }, { 
-        onConflict: 'user_id, assessment_id' 
-      });
+        completed_at: new Date().toISOString(),
+        auto_submitted: isAutoSubmitted,
+        auto_submit_reason: isAutoSubmitted ? `Auto-submitted due to ${violationCount} violation(s)` : null,
+        answered_questions: responses.length,
+        total_questions: trueMaxScore / 5
+      })
+      .eq('id', sessionId);
 
-    if (candidateError) {
-      console.error("❌ Candidate error:", candidateError);
+    if (updateError) {
+      console.error("❌ Session update error:", updateError);
     } else {
-      console.log("✅ Candidate assessments updated");
+      console.log("✅ Session updated");
     }
 
-    // Prepare strengths and weaknesses
-    const strengthsArray = personalizedReport.strengths?.map(s => 
-      `${s.area} (${s.percentage}%)`
-    ) || [];
-    
-    const weaknessesArray = personalizedReport.weaknesses?.map(w => 
-      `${w.area} (${w.percentage}%)`
-    ) || [];
-
-    // Prepare recommendations
-    const recommendationsArray = [
-      ...(personalizedReport.recommendations || []),
-      ...competencyRecommendations.map(r => r.recommendation)
-    ];
-
-    // Prepare interpretations with behavioral insights
-    const interpretationsObj = {
-      classification: personalizedReport.gradeInfo?.description || 
-                     (percentageScore >= 80 ? 'Elite Talent' :
-                      percentageScore >= 60 ? 'High Potential' :
-                      percentageScore >= 40 ? 'Developing Talent' :
-                      'Needs Improvement'),
-      executiveSummary: personalizedReport.executiveSummary || "Assessment completed successfully.",
-      overallProfile: personalizedReport.overallProfile || "Profile generated based on assessment responses.",
-      overallTraits: personalizedReport.overallTraits || [],
-      summary: `Overall performance: ${Math.round(percentageScore)}%`,
-      
-      competencyData: Object.keys(competencyResults).length > 0 ? {
-        results: competencyResults,
-        recommendations: competencyRecommendations
-      } : null,
-      
-      behavioralInsights: behavioralMetrics ? {
-        work_style: behavioralMetrics.work_style,
-        confidence_level: behavioralMetrics.confidence_level,
-        attention_span: behavioralMetrics.attention_span,
-        decision_pattern: behavioralMetrics.decision_pattern,
-        avg_response_time: behavioralMetrics.avg_response_time_seconds,
-        total_answer_changes: behavioralMetrics.total_answer_changes,
-        improvement_rate: behavioralMetrics.improvement_rate,
-        first_instinct_accuracy: behavioralMetrics.first_instinct_accuracy,
-        revisit_rate: behavioralMetrics.revisit_rate,
-        fatigue_factor: behavioralMetrics.fatigue_factor,
-        recommended_support: behavioralMetrics.recommended_support,
-        development_focus_areas: behavioralMetrics.development_focus_areas
-      } : null
-    };
-
-    // Prepare the data for assessment_results with CORRECT max_score
+    // Save results
     const resultData = {
-      user_id: userId,
-      assessment_id: assessmentId,
-      session_id: activeSessionId,
-      assessment_type_id: assessmentTypeId,
-      total_score: totalEarnedScore,
+      user_id: session.user_id,
+      assessment_id: session.assessment_id,
+      session_id: sessionId,
+      total_score: totalScore,
       max_score: trueMaxScore,
-      percentage_score: percentageScore,
-      category_scores: personalizedReport.categoryScores || {},
-      interpretations: interpretationsObj,
-      strengths: strengthsArray,
-      weaknesses: weaknessesArray,
-      recommendations: recommendationsArray,
-      risk_level: riskLevel,
-      readiness: readiness,
-      is_valid: true,
+      percentage_score: percentage,
+      is_valid: isValid,
+      is_auto_submitted: isAutoSubmitted,
+      violation_count: violationCount,
+      violation_details: {
+        copy_paste: session.copy_paste_count || 0,
+        right_clicks: session.right_click_count || 0,
+        devtools: session.devtools_count || 0,
+        screenshots: session.screenshot_count || 0
+      },
       completed_at: new Date().toISOString()
     };
 
-    console.log("📦 Inserting into assessment_results with max_score:", trueMaxScore);
+    console.log("📦 Saving assessment results:", resultData);
 
-    // Save to assessment_results
-    const { data: insertedData, error: resultsError } = await serviceClient
+    const { data: result, error: resultError } = await serviceClient
       .from('assessment_results')
-      .insert([resultData])
-      .select();
+      .insert(resultData)
+      .select()
+      .single();
 
-    if (resultsError) {
-      console.error("❌ Results error:", resultsError);
-      
-      // Return success anyway since we have the score
-      return res.status(200).json({ 
+    if (resultError) {
+      console.error("❌ Result save error:", resultError);
+      // Still return success since we have the score
+      return res.status(200).json({
         success: true,
-        score: totalEarnedScore,
+        score: totalScore,
         max_score: trueMaxScore,
-        percentage: Math.round(percentageScore),
-        classification: interpretationsObj.classification,
-        warning: "Score saved but detailed report failed to save: " + resultsError.message,
-        message: "Assessment submitted successfully (score only)" 
+        percentage: Math.round(percentage),
+        isAutoSubmitted: isAutoSubmitted,
+        violationCount: violationCount,
+        warning: "Score saved but detailed results had issues",
+        message: isAutoSubmitted 
+          ? `Assessment auto-submitted due to ${violationCount} violation(s)`
+          : "Assessment submitted successfully"
       });
     }
 
-    // Save competency scores to database
-    if (Object.keys(competencyResults).length > 0) {
-      console.log("💾 Saving competency scores...");
-      
-      const competencyInserts = [];
-      Object.values(competencyResults).forEach(comp => {
-        competencyInserts.push({
-          candidate_id: userId,
-          assessment_id: assessmentId,
-          competency_id: comp.id,
-          raw_score: comp.rawScore,
-          max_possible: comp.maxPossible,
-          percentage: comp.percentage,
-          classification: comp.classification,
-          question_count: comp.questionCount
-        });
-      });
-      
-      const { error: compInsertError } = await serviceClient
-        .from('candidate_competency_scores')
-        .upsert(competencyInserts, { 
-          onConflict: 'candidate_id, assessment_id, competency_id' 
-        });
-      
-      if (compInsertError) {
-        console.error("❌ Error saving competency scores:", compInsertError);
-      } else {
-        console.log(`✅ Saved ${competencyInserts.length} competency scores`);
-      }
+    console.log("✅ Results saved successfully");
+
+    // Update candidate_assessments
+    const { error: candidateError } = await serviceClient
+      .from('candidate_assessments')
+      .update({
+        status: 'completed',
+        score: totalScore,
+        max_score: trueMaxScore,
+        percentage: percentage,
+        completed_at: new Date().toISOString()
+      })
+      .eq('user_id', session.user_id)
+      .eq('assessment_id', session.assessment_id);
+
+    if (candidateError) {
+      console.error("❌ Candidate assessment update error:", candidateError);
     }
 
-    console.log("✅ Results inserted successfully:", insertedData);
+    // Get candidate name for notification
+    const { data: profile } = await serviceClient
+      .from('candidate_profiles')
+      .select('full_name, email, created_by')
+      .eq('id', session.user_id)
+      .single();
 
-    // Create notification for supervisor
-    if (profileData?.created_by) {
-      const { error: notifError } = await serviceClient
+    // Create notification for supervisor if there are violations
+    if (profile?.created_by && violationCount > 0) {
+      const notificationMessage = isAutoSubmitted
+        ? `⚠️ ${profile.full_name || profile.email || 'Candidate'} was AUTO-SUBMITTED due to ${violationCount}/3 violations. Score: ${Math.round(percentage)}%`
+        : `⚠️ ${profile.full_name || profile.email || 'Candidate'} completed assessment with ${violationCount} violation(s). Score: ${Math.round(percentage)}%`;
+      
+      await serviceClient
         .from('supervisor_notifications')
         .insert({
-          supervisor_id: profileData.created_by,
-          user_id: userId,
-          assessment_id: assessmentId,
-          result_id: insertedData?.[0]?.id,
-          message: `${profileData.full_name || profileData.email || 'Candidate'} completed ${assessment?.title || 'an assessment'} with ${Math.round(percentageScore)}%`,
+          supervisor_id: profile.created_by,
+          user_id: session.user_id,
+          assessment_id: session.assessment_id,
+          result_id: result.id,
+          message: notificationMessage,
           status: 'unread',
+          priority: isAutoSubmitted ? 'high' : 'normal',
           created_at: new Date().toISOString()
         });
-
-      if (notifError) {
-        console.error("❌ Failed to create notification:", notifError);
-      } else {
-        console.log("✅ Notification created for supervisor:", profileData.created_by);
-      }
+      
+      console.log("✅ Notification sent to supervisor");
     }
 
-    return res.status(200).json({ 
+    // Return success response
+    return res.status(200).json({
       success: true,
-      score: totalEarnedScore,
+      result_id: result.id,
+      score: totalScore,
       max_score: trueMaxScore,
-      percentage: Math.round(percentageScore),
-      classification: interpretationsObj.classification,
-      competencyCount: Object.keys(competencyResults).length,
-      behavioralMetrics: behavioralMetrics ? {
-        work_style: behavioralMetrics.work_style,
-        confidence_level: behavioralMetrics.confidence_level
-      } : null,
-      message: "Assessment submitted successfully with correct scoring" 
+      percentage: Math.round(percentage),
+      isAutoSubmitted: isAutoSubmitted,
+      violationCount: violationCount,
+      message: isAutoSubmitted 
+        ? `⚠️ Assessment auto-submitted due to ${violationCount} violation(s). Score: ${Math.round(percentage)}%`
+        : `✅ Assessment submitted successfully! Score: ${Math.round(percentage)}%`
     });
 
   } catch (err) {
     console.error("❌ Fatal error:", err);
     return res.status(500).json({ 
       error: "server_error", 
-      message: err.message,
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      message: err.message 
     });
   }
 }
