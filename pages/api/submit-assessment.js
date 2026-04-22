@@ -18,8 +18,6 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "No authorization token" });
     }
 
-    const token = authHeader.replace('Bearer ', '');
-    
     const serviceClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -60,9 +58,9 @@ export default async function handler(req, res) {
 
     const violationCount = session.violation_count || 0;
     const MAX_VIOLATIONS = 3;
-    const isAutoSubmitted = violationCount >= MAX_VIOLATIONS;
+    const isAutoSubmit = violationCount >= MAX_VIOLATIONS;
 
-    console.log(`📊 Violations: ${violationCount}/${MAX_VIOLATIONS}, Auto-submit: ${isAutoSubmitted}`);
+    console.log(`📊 Violations: ${violationCount}/${MAX_VIOLATIONS}, Auto-submit: ${isAutoSubmit}`);
 
     // Get all responses for this session
     const { data: responses, error: responsesError } = await serviceClient
@@ -79,14 +77,9 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Failed to fetch responses" });
     }
 
-    if (!responses || responses.length === 0) {
-      console.error("❌ No responses found");
-      return res.status(400).json({ error: "No responses found" });
-    }
+    const answeredCount = responses?.length || 0;
 
-    console.log(`✅ Found ${responses.length} responses`);
-
-    // Get assessment type for max score calculation
+    // Get assessment type
     const { data: assessment, error: assessmentError } = await serviceClient
       .from('assessments')
       .select('assessment_type_id')
@@ -98,14 +91,40 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Failed to fetch assessment" });
     }
 
-    // ===== CRITICAL FIX: Calculate max score properly =====
-    async function calculateMaxScore(assessmentTypeId) {
+    // Get total number of questions in this assessment
+    const { data: allQuestions, error: questionsError } = await serviceClient
+      .from('unique_questions')
+      .select('id', { count: 'exact' })
+      .eq('assessment_type_id', assessment.assessment_type_id);
+
+    if (questionsError) {
+      console.error("❌ Error getting question count:", questionsError);
+    }
+
+    const totalQuestions = allQuestions?.length || session.total_questions || 0;
+
+    console.log(`📊 Answered: ${answeredCount}, Total Questions: ${totalQuestions}`);
+
+    // ===== VALIDATION: Must answer ALL questions unless auto-submit =====
+    if (!isAutoSubmit && answeredCount < totalQuestions) {
+      console.log(`❌ Submission rejected: ${totalQuestions - answeredCount} unanswered questions`);
+      return res.status(400).json({
+        success: false,
+        error: 'incomplete_assessment',
+        message: `Please answer all questions before submitting. ${totalQuestions - answeredCount} question(s) remaining.`,
+        unanswered_count: totalQuestions - answeredCount,
+        total_questions: totalQuestions,
+        answered_count: answeredCount
+      });
+    }
+
+    // ===== CALCULATE TOTAL POSSIBLE MAX SCORE (if all questions answered correctly) =====
+    async function calculateTotalPossibleMaxScore(assessmentTypeId) {
       if (!assessmentTypeId) {
         console.error("❌ No assessment_type_id provided");
         return 0;
       }
       
-      // Get all questions for this assessment type
       const { data: questions, error: questionsError } = await serviceClient
         .from('unique_questions')
         .select(`
@@ -114,69 +133,47 @@ export default async function handler(req, res) {
         `)
         .eq('assessment_type_id', assessmentTypeId);
       
-      if (questionsError) {
+      if (questionsError || !questions) {
         console.error("❌ Error fetching questions:", questionsError);
         return 0;
       }
       
-      if (!questions || questions.length === 0) {
-        console.error("❌ No questions found for assessment_type_id:", assessmentTypeId);
-        return 0;
-      }
-      
-      console.log(`📊 Found ${questions.length} total questions for max score calculation`);
-      
-      let maxScore = 0;
-      let questionsWithNoAnswers = 0;
+      let totalMaxScore = 0;
       
       for (const question of questions) {
         const scores = (question.unique_answers || []).map(a => a.score || 0);
-        
-        if (scores.length === 0) {
-          questionsWithNoAnswers++;
-          maxScore += 5; // Default 5 points per question
-          console.warn(`⚠️ Question ${question.id} has no answers, defaulting to 5 points`);
+        if (scores.length > 0) {
+          const maxScoreForQuestion = Math.max(...scores);
+          totalMaxScore += maxScoreForQuestion;
         } else {
-          const questionMax = Math.max(...scores);
-          maxScore += questionMax;
+          console.error(`❌ Question ${question.id} has no answers! This is a data issue.`);
+          totalMaxScore += 5;
         }
       }
       
-      if (questionsWithNoAnswers > 0) {
-        console.warn(`⚠️ ${questionsWithNoAnswers} questions had no answers, using default 5 points each`);
-      }
-      
-      console.log(`📊 Calculated max score: ${maxScore}`);
-      return maxScore;
+      console.log(`📊 Total possible max score (all questions correct): ${totalMaxScore}`);
+      return totalMaxScore;
     }
 
-    let trueMaxScore = await calculateMaxScore(assessment.assessment_type_id);
+    const totalPossibleMaxScore = await calculateTotalPossibleMaxScore(assessment.assessment_type_id);
     
-    // Fallback if calculation failed
-    if (!trueMaxScore || trueMaxScore === 0) {
-      console.warn("⚠️ Max score calculation failed, using fallback");
-      const totalQuestions = session.total_questions || 100;
-      trueMaxScore = totalQuestions * 5;
-      console.log(`📊 Fallback max score: ${trueMaxScore}`);
-    }
-
-    // Calculate earned score
-    let totalScore = 0;
+    // Calculate earned score from answered questions ONLY (unanswered = 0 points)
+    let earnedScore = 0;
     for (const response of responses) {
-      totalScore += response.unique_answers?.score || 0;
+      earnedScore += response.unique_answers?.score || 0;
     }
 
-    // Calculate percentage based on TRUE max score
+    // Calculate percentage based on earned score vs TOTAL possible max score
     let percentage = 0;
-    if (trueMaxScore > 0) {
-      percentage = (totalScore / trueMaxScore) * 100;
+    if (totalPossibleMaxScore > 0) {
+      percentage = (earnedScore / totalPossibleMaxScore) * 100;
     }
 
-    console.log(`📊 Score: ${totalScore}/${trueMaxScore} = ${percentage.toFixed(2)}%`);
-    console.log(`📊 Violations: ${violationCount}/${MAX_VIOLATIONS}`);
+    console.log(`📊 Earned Score: ${earnedScore}, Total Possible Max: ${totalPossibleMaxScore}, Percentage: ${percentage.toFixed(2)}%`);
+    console.log(`📊 Answered: ${answeredCount}/${totalQuestions} questions`);
 
-    // Determine if result is valid
-    const isValid = violationCount < MAX_VIOLATIONS;
+    // Determine if result is valid (only valid if normal submission with all questions answered)
+    const isValid = !isAutoSubmit && answeredCount === totalQuestions;
 
     // Update session to completed
     const { error: updateError } = await serviceClient
@@ -184,10 +181,10 @@ export default async function handler(req, res) {
       .update({
         status: 'completed',
         completed_at: new Date().toISOString(),
-        auto_submitted: isAutoSubmitted,
-        auto_submit_reason: isAutoSubmitted ? `Auto-submitted due to ${violationCount} violation(s)` : null,
-        answered_questions: responses.length,
-        total_questions: Math.round(trueMaxScore / 5)
+        auto_submitted: isAutoSubmit,
+        auto_submit_reason: isAutoSubmit ? `Auto-submitted due to ${violationCount} violation(s). Only ${answeredCount} of ${totalQuestions} questions answered.` : null,
+        answered_questions: answeredCount,
+        total_questions: totalQuestions
       })
       .eq('id', sessionId);
 
@@ -202,11 +199,14 @@ export default async function handler(req, res) {
       user_id: session.user_id,
       assessment_id: session.assessment_id,
       session_id: sessionId,
-      total_score: totalScore,
-      max_score: trueMaxScore,
+      total_score: earnedScore,
+      max_score: totalPossibleMaxScore,
       percentage_score: percentage,
+      answered_questions: answeredCount,
+      total_questions: totalQuestions,
       is_valid: isValid,
-      is_auto_submitted: isAutoSubmitted,
+      is_auto_submitted: isAutoSubmit,
+      auto_submit_reason: isAutoSubmit ? `Auto-submitted due to ${violationCount} violation(s). Only ${answeredCount} of ${totalQuestions} questions answered.` : null,
       violation_count: violationCount,
       violation_details: {
         copy_paste: session.copy_paste_count || 0,
@@ -227,18 +227,9 @@ export default async function handler(req, res) {
 
     if (resultError) {
       console.error("❌ Result save error:", resultError);
-      // Still return success since we have the score
-      return res.status(200).json({
-        success: true,
-        score: totalScore,
-        max_score: trueMaxScore,
-        percentage: Math.round(percentage),
-        isAutoSubmitted: isAutoSubmitted,
-        violationCount: violationCount,
-        warning: "Score saved but detailed results had issues",
-        message: isAutoSubmitted 
-          ? `⚠️ Assessment auto-submitted due to ${violationCount} violation(s). Score: ${Math.round(percentage)}%`
-          : `✅ Assessment submitted successfully! Score: ${Math.round(percentage)}%`
+      return res.status(500).json({ 
+        error: "failed_to_save_results", 
+        message: resultError.message 
       });
     }
 
@@ -249,8 +240,8 @@ export default async function handler(req, res) {
       .from('candidate_assessments')
       .update({
         status: 'completed',
-        score: totalScore,
-        max_score: trueMaxScore,
+        score: earnedScore,
+        max_score: totalPossibleMaxScore,
         percentage: percentage,
         completed_at: new Date().toISOString()
       })
@@ -268,11 +259,11 @@ export default async function handler(req, res) {
       .eq('id', session.user_id)
       .single();
 
-    // Create notification for supervisor if there are violations
-    if (profile?.created_by && violationCount > 0) {
-      const notificationMessage = isAutoSubmitted
-        ? `⚠️ ${profile.full_name || profile.email || 'Candidate'} was AUTO-SUBMITTED due to ${violationCount}/3 violations. Score: ${Math.round(percentage)}%`
-        : `⚠️ ${profile.full_name || profile.email || 'Candidate'} completed assessment with ${violationCount} violation(s). Score: ${Math.round(percentage)}%`;
+    // Create notification for supervisor
+    if (profile?.created_by) {
+      const notificationMessage = isAutoSubmit
+        ? `⚠️ ${profile.full_name || profile.email || 'Candidate'} was AUTO-SUBMITTED due to ${violationCount}/3 violations. Answered: ${answeredCount}/${totalQuestions}. Score: ${Math.round(percentage)}%`
+        : `✅ ${profile.full_name || profile.email || 'Candidate'} completed assessment. Score: ${Math.round(percentage)}%`;
       
       await serviceClient
         .from('supervisor_notifications')
@@ -283,7 +274,7 @@ export default async function handler(req, res) {
           result_id: result.id,
           message: notificationMessage,
           status: 'unread',
-          priority: isAutoSubmitted ? 'high' : 'normal',
+          priority: isAutoSubmit ? 'high' : 'normal',
           created_at: new Date().toISOString()
         });
       
@@ -294,13 +285,15 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       result_id: result.id,
-      score: totalScore,
-      max_score: trueMaxScore,
+      score: earnedScore,
+      max_score: totalPossibleMaxScore,
       percentage: Math.round(percentage),
-      isAutoSubmitted: isAutoSubmitted,
+      answered_questions: answeredCount,
+      total_questions: totalQuestions,
+      isAutoSubmitted: isAutoSubmit,
       violationCount: violationCount,
-      message: isAutoSubmitted 
-        ? `⚠️ Assessment auto-submitted due to ${violationCount} violation(s). Score: ${Math.round(percentage)}%`
+      message: isAutoSubmit 
+        ? `⚠️ Assessment auto-submitted due to ${violationCount} violation(s). Score calculated on ${answeredCount} of ${totalQuestions} questions.`
         : `✅ Assessment submitted successfully! Score: ${Math.round(percentage)}%`
     });
 
