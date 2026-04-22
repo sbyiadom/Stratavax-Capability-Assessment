@@ -1,3 +1,5 @@
+// supabase/assessment.js - FIXED submitAssessment function
+
 import { supabase } from './client';
 
 // Fisher-Yates shuffle algorithm for true randomness
@@ -149,6 +151,11 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
         started_at: new Date().toISOString(),
         expires_at: expiresAt.toISOString(),
         time_spent_seconds: 0,
+        violation_count: 0,
+        copy_paste_count: 0,
+        right_click_count: 0,
+        devtools_count: 0,
+        screenshot_count: 0,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
@@ -198,7 +205,8 @@ export async function updateSessionTimer(sessionId, elapsedSeconds) {
     const { error } = await supabase
       .from('assessment_sessions')
       .update({ 
-        time_spent_seconds: elapsedSeconds
+        time_spent_seconds: elapsedSeconds,
+        updated_at: new Date().toISOString()
       })
       .eq('id', sessionId);
 
@@ -248,7 +256,7 @@ export async function getSessionResponses(sessionId) {
   }
 }
 
-// Submit Assessment - OPTIMIZED for speed
+// ===== FIXED SUBMIT ASSESSMENT - CORRECT API ENDPOINT =====
 export async function submitAssessment(sessionId) {
   try {
     console.log("📤 Submitting assessment for session:", sessionId);
@@ -258,15 +266,21 @@ export async function submitAssessment(sessionId) {
       throw new Error("No active session");
     }
 
+    // First verify the session exists and get user/assessment info
     const { data: assessmentSession, error: sessionError } = await supabase
       .from('assessment_sessions')
-      .select('user_id, assessment_id')
+      .select('user_id, assessment_id, violation_count, status')
       .eq('id', sessionId)
       .single();
 
     if (sessionError) {
       console.error("❌ Error fetching assessment session:", sessionError);
       throw new Error("Could not verify session");
+    }
+
+    // Check if already submitted
+    if (assessmentSession.status === 'completed') {
+      throw new Error("already_submitted");
     }
 
     const submissionData = {
@@ -277,7 +291,8 @@ export async function submitAssessment(sessionId) {
 
     console.log("📦 Submitting with data:", submissionData);
 
-    const response = await fetch('/api/submit-assessment', {
+    // FIXED: Use the correct API endpoint
+    const response = await fetch('/api/assessment/submit', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -290,6 +305,15 @@ export async function submitAssessment(sessionId) {
     
     if (!response.ok) {
       console.error("❌ API error:", result);
+      
+      // Handle specific error types
+      if (result.error === 'assessment_invalid_violations') {
+        throw new Error('assessment_invalid_violations');
+      }
+      if (result.error === 'already_submitted') {
+        throw new Error('already_submitted');
+      }
+      
       throw new Error(result.message || result.error || 'Submission failed');
     }
     
@@ -429,7 +453,7 @@ export async function getProgress(userId, assessmentId) {
   }
 }
 
-// Completion Checking - FIXED VERSION
+// Completion Checking
 export async function isAssessmentCompleted(userId, assessmentId) {
   try {
     // Check in candidate_assessments first
