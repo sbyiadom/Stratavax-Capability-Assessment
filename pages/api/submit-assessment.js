@@ -187,7 +187,7 @@ export default async function handler(req, res) {
         auto_submitted: isAutoSubmitted,
         auto_submit_reason: isAutoSubmitted ? `Auto-submitted due to ${violationCount} violation(s)` : null,
         answered_questions: responses.length,
-        total_questions: trueMaxScore / 5
+        total_questions: Math.round(trueMaxScore / 5)
       })
       .eq('id', sessionId);
 
@@ -237,8 +237,8 @@ export default async function handler(req, res) {
         violationCount: violationCount,
         warning: "Score saved but detailed results had issues",
         message: isAutoSubmitted 
-          ? `Assessment auto-submitted due to ${violationCount} violation(s)`
-          : "Assessment submitted successfully"
+          ? `⚠️ Assessment auto-submitted due to ${violationCount} violation(s). Score: ${Math.round(percentage)}%`
+          : `✅ Assessment submitted successfully! Score: ${Math.round(percentage)}%`
       });
     }
 
