@@ -1,3 +1,4 @@
+// pages/assessment/terminated.js
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -66,7 +67,7 @@ export default function TerminatedPage() {
             <strong>Invalid Result</strong>
             <p style={styles.warningText}>
               This assessment result is <strong>INVALID</strong> and will not appear in your reports.
-              Your supervisor has been notified of this violation.
+              Your supervisor has been notified of these violations.
             </p>
           </div>
         </div>
@@ -75,7 +76,6 @@ export default function TerminatedPage() {
           <h4 style={styles.listTitle}>Violations detected:</h4>
           <ul style={styles.list}>
             <li>❌ Copy/Paste attempts</li>
-            <li>❌ Tab switching</li>
             <li>❌ Screenshot attempts</li>
             <li>❌ Right-click / context menu</li>
             <li>❌ DevTools / inspect element</li>
