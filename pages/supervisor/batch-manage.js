@@ -183,6 +183,23 @@ export default function BatchManageAssessments() {
     }
   };
 
+  // Get assessment colors based on type code
+  const getAssessmentColors = (assessmentTypeCode) => {
+    const colors = {
+      'leadership': { gradient_start: '#7c3aed', gradient_end: '#5b21b6' },
+      'cognitive': { gradient_start: '#0891b2', gradient_end: '#0e7490' },
+      'technical': { gradient_start: '#dc2626', gradient_end: '#991b1b' },
+      'personality': { gradient_start: '#0d9488', gradient_end: '#115e59' },
+      'performance': { gradient_start: '#ea580c', gradient_end: '#c2410c' },
+      'behavioral': { gradient_start: '#9333ea', gradient_end: '#6b21a5' },
+      'cultural': { gradient_start: '#059669', gradient_end: '#047857' },
+      'general': { gradient_start: '#607D8B', gradient_end: '#455A64' },
+      'strategic_leadership': { gradient_start: '#1E3A8A', gradient_end: '#5B21B6' },
+      'manufacturing_baseline': { gradient_start: '#2E7D32', gradient_end: '#1B5E20' }
+    };
+    return colors[assessmentTypeCode] || colors.general;
+  };
+
   // Toggle candidate selection
   const toggleCandidate = (candidateId) => {
     const newSet = new Set(selectedCandidates);
@@ -252,9 +269,7 @@ export default function BatchManageAssessments() {
         );
 
         if (actionType === "assign_unblock") {
-          // Assign and unblock (create if not exists, or update to unblocked)
           if (existing) {
-            // Update existing to unblocked
             const { error } = await supabase
               .from('candidate_assessments')
               .update({
@@ -266,7 +281,6 @@ export default function BatchManageAssessments() {
             
             if (error) throw error;
           } else {
-            // Create new record
             const { error } = await supabase
               .from('candidate_assessments')
               .insert({
@@ -283,7 +297,6 @@ export default function BatchManageAssessments() {
           successCount++;
         } 
         else if (actionType === "unblock") {
-          // Just unblock (must exist)
           if (existing) {
             const { error } = await supabase
               .from('candidate_assessments')
@@ -302,7 +315,6 @@ export default function BatchManageAssessments() {
           }
         } 
         else if (actionType === "block") {
-          // Block access
           if (existing) {
             const { error } = await supabase
               .from('candidate_assessments')
@@ -316,7 +328,6 @@ export default function BatchManageAssessments() {
             if (error) throw error;
             successCount++;
           } else {
-            // Create blocked record
             const { error } = await supabase
               .from('candidate_assessments')
               .insert({
@@ -405,9 +416,10 @@ export default function BatchManageAssessments() {
 
   const assessmentColors = (assessment) => {
     const type = assessment?.assessment_types;
+    const colors = getAssessmentColors(type?.code);
     return {
-      gradient: `linear-gradient(135deg, ${type?.gradient_start || '#667eea'}, ${type?.gradient_end || '#764ba2'})`,
-      color: type?.gradient_start || '#667eea'
+      gradient: `linear-gradient(135deg, ${colors.gradient_start}, ${colors.gradient_end})`,
+      color: colors.gradient_start
     };
   };
 
@@ -664,8 +676,8 @@ export default function BatchManageAssessments() {
                     <tr>
                       <td colSpan="4" style={styles.emptyCell}>
                         No candidates found matching your criteria
-                      </td>
-                    </tr>
+                       </td>
+                     </tr>
                   ) : (
                     filteredCandidates.map(candidate => {
                       const status = getStatus(candidate.id, selectedAssessment.id);
@@ -681,7 +693,7 @@ export default function BatchManageAssessments() {
                               onChange={() => toggleCandidate(candidate.id)}
                               style={styles.checkbox}
                             />
-                          </td>
+                           </td>
                           <td style={styles.tableCell}>
                             <div style={styles.candidateInfo}>
                               <div style={styles.candidateAvatar}>
@@ -692,7 +704,7 @@ export default function BatchManageAssessments() {
                                 <div style={styles.candidateId}>ID: {candidate.id.substring(0, 8)}...</div>
                               </div>
                             </div>
-                          </td>
+                           </td>
                           <td style={styles.tableCell}>{candidate.email}</td>
                           <td style={styles.tableCell}>
                             <span style={{
@@ -702,13 +714,13 @@ export default function BatchManageAssessments() {
                             }}>
                               {statusBadge.text}
                             </span>
-                          </td>
-                        </tr>
+                           </td>
+                         </tr>
                       );
                     })
                   )}
                 </tbody>
-              </table>
+               </table>
             </div>
 
             {/* Selected Count & Action Button */}
