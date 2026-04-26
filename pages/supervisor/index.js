@@ -28,7 +28,6 @@ export default function SupervisorDashboard() {
   const [timeExtension, setTimeExtension] = useState(30);
   const [resetFullTime, setResetFullTime] = useState(false);
 
-  // Load state from URL on mount
   useEffect(() => {
     const { expanded, search, filterType, filterStatus: status } = router.query;
     if (expanded) setExpandedCandidate(expanded);
@@ -37,7 +36,6 @@ export default function SupervisorDashboard() {
     if (status && status !== 'all') setFilterStatus(status);
   }, [router.query]);
 
-  // Update URL when filters change
   useEffect(() => {
     const query = {};
     if (expandedCandidate) query.expanded = expandedCandidate;
@@ -48,7 +46,6 @@ export default function SupervisorDashboard() {
     router.replace({ pathname: router.pathname, query }, undefined, { shallow: true });
   }, [expandedCandidate, searchTerm, selectedAssessmentType, filterStatus]);
 
-  // Authentication check
   useEffect(() => {
     const checkAuth = async () => {
       if (typeof window !== 'undefined') {
@@ -133,7 +130,6 @@ export default function SupervisorDashboard() {
     };
   }, [router]);
 
-  // Fetch data
   useEffect(() => {
     if (!currentSupervisor) return;
 
@@ -166,7 +162,6 @@ export default function SupervisorDashboard() {
         const processedCandidates = await Promise.all(
           (candidatesData || []).map(async (candidate) => {
             
-            // FIXED: Removed is_auto_submitted and violation_count (columns don't exist)
             const { data: resultsData, error: resultsError } = await supabase
               .from('assessment_results')
               .select(`
@@ -230,16 +225,27 @@ export default function SupervisorDashboard() {
             const assessmentsWithDetails = (accessData || []).map(access => {
               const result = resultsMap[access.assessment_id] || null;
               
-              if (result && !access.result_id) {
+              // CRITICAL FIX: Use result existence to determine status, not access.status
+              let displayStatus = access.status;
+              if (result || access.result_id) {
+                displayStatus = 'completed';
+              } else if (access.status === 'unblocked') {
+                displayStatus = 'unblocked';
+              } else {
+                displayStatus = 'blocked';
+              }
+              
+              // Update the database if status is incorrect
+              if (result && access.status !== 'completed') {
                 supabase
                   .from('candidate_assessments')
                   .update({ 
-                    result_id: result.id, 
-                    status: 'completed' 
+                    status: 'completed',
+                    result_id: result.id
                   })
                   .eq('id', access.id)
                   .then(({ error }) => {
-                    if (error) console.error('Error updating result_id:', error);
+                    if (error) console.error('Error updating status:', error);
                   });
               }
 
@@ -256,7 +262,8 @@ export default function SupervisorDashboard() {
                 type_icon: typeData?.icon || '📋',
                 type_gradient_start: typeData?.gradient_start || '#667eea',
                 type_gradient_end: typeData?.gradient_end || '#764ba2',
-                status: result ? 'completed' : access.status,
+                status: displayStatus,
+                original_status: access.status,
                 created_at: access.created_at,
                 unblocked_at: access.unblocked_at,
                 result: result ? {
@@ -354,7 +361,6 @@ export default function SupervisorDashboard() {
     fetchData();
   }, [currentSupervisor]);
 
-  // Filter function
   useEffect(() => {
     let filtered = [...candidates];
     
@@ -802,7 +808,7 @@ export default function SupervisorDashboard() {
                                 <div style={styles.candidateId}>ID: {candidate.id.substring(0, 8)}...</div>
                               </div>
                             </div>
-                          </td>
+                          </tr>
                           <td style={styles.tableCell}>
                             <div style={styles.candidateEmail}>{candidate.email}</div>
                             {candidate.phone && <div style={styles.candidatePhone}>{candidate.phone}</div>}
@@ -999,7 +1005,7 @@ export default function SupervisorDashboard() {
                     );
                   })}
                 </tbody>
-              </table>
+              <tr>
             </div>
           )}
         </div>
