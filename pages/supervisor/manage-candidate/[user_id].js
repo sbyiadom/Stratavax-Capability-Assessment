@@ -191,7 +191,6 @@ export default function ManageCandidate() {
             status: displayStatus,
             created_at: access.created_at,
             unblocked_at: access.unblocked_at,
-            time_limit_minutes: 180,
             result: result
           };
         });
@@ -513,7 +512,7 @@ export default function ManageCandidate() {
                     <th style={styles.tableHead}>Classification</th>
                     <th style={styles.tableHead}>Completed Date</th>
                     <th style={styles.tableHead}>Actions</th>
-                  </tr>
+                  </table>
                 </thead>
                 <tbody>
                   {assessments.map((assessment) => {
@@ -633,11 +632,11 @@ export default function ManageCandidate() {
                             )}
                           </div>
                         </td>
-                      </table>
+                      </tr>
                     );
                   })}
                 </tbody>
-              </table>
+               </table>
             </div>
           )}
         </div>
@@ -660,50 +659,22 @@ export default function ManageCandidate() {
               <div style={styles.timeOptions}>
                 <h4>⏰ Time Options</h4>
                 
-                <label style={styles.radioLabel}>
-                  <input
-                    type="radio"
-                    checked={!resetFullTime && timeExtension === 30}
-                    onChange={() => {
-                      setResetFullTime(false);
-                      setTimeExtension(30);
-                    }}
-                  />
-                  <div>
-                    <strong>Extend by 30 minutes</strong>
-                    <span>Add 30 minutes to remaining time</span>
-                  </div>
-                </label>
-                
-                <label style={styles.radioLabel}>
-                  <input
-                    type="radio"
-                    checked={!resetFullTime && timeExtension === 60}
-                    onChange={() => {
-                      setResetFullTime(false);
-                      setTimeExtension(60);
-                    }}
-                  />
-                  <div>
-                    <strong>Extend by 60 minutes</strong>
-                    <span>Add 60 minutes to remaining time</span>
-                  </div>
-                </label>
-                
-                <label style={styles.radioLabel}>
-                  <input
-                    type="radio"
-                    checked={!resetFullTime && timeExtension === 120}
-                    onChange={() => {
-                      setResetFullTime(false);
-                      setTimeExtension(120);
-                    }}
-                  />
-                  <div>
-                    <strong>Extend by 120 minutes</strong>
-                    <span>Add 120 minutes to remaining time</span>
-                  </div>
-                </label>
+                {[30, 60, 120].map(minutes => (
+                  <label key={minutes} style={styles.radioLabel}>
+                    <input
+                      type="radio"
+                      checked={!resetFullTime && timeExtension === minutes}
+                      onChange={() => {
+                        setResetFullTime(false);
+                        setTimeExtension(minutes);
+                      }}
+                    />
+                    <div>
+                      <strong>Extend by {minutes} minutes</strong>
+                      <span>Add {minutes} minutes to remaining time</span>
+                    </div>
+                  </label>
+                ))}
                 
                 <label style={styles.radioLabel}>
                   <input
