@@ -297,16 +297,16 @@ export const generateManufacturingProfileCommentary = (percentage, categories) =
   
   if (safetyScore < 50) {
     const templates = [
-      `Safety awareness is the most critical concern in this profile at ${safetyScore}%. Before any production responsibilities, the candidate requires comprehensive safety training and close supervision. This must be the highest priority development area.`,
+      `Safety awareness is the most critical concern in this profile. Before any production responsibilities, the candidate requires comprehensive safety training and close supervision. This must be the highest priority development area.`,
       
-      `This profile highlights safety as a significant gap. The candidate's ${safetyScore}% score in safety awareness indicates insufficient understanding of PPE requirements and safety protocols—an immediate development priority.`
+      `This profile highlights safety as a significant gap. The candidate's score in safety awareness indicates insufficient understanding of PPE requirements and safety protocols—an immediate development priority.`
     ];
     return templates[Math.floor(Math.random() * templates.length)];
   }
   
   if (techScore < 50) {
     const templates = [
-      `Technical fundamentals require significant development at ${techScore}%. The candidate needs foundational training in equipment operation and maintenance principles before independent production work.`,
+      `Technical fundamentals require significant development. The candidate needs foundational training in equipment operation and maintenance principles before independent production work.`,
       
       `This profile shows technical knowledge as a primary development need. Structured training in core manufacturing concepts will be essential to build baseline competence.`
     ];
