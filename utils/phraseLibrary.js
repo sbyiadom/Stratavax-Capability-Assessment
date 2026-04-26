@@ -1,5 +1,5 @@
 /**
- * STRATAVAX PHRASE LIBRARY - ENHANCED EDITION
+ * STRATAVAX PHRASE LIBRARY - ENHANCELED EDITION
  * Rich, varied phrases for all assessment types to ensure uniqueness
  * Now with 20+ options per category for maximum dynamism
  * Over 200 unique phrases in total!
@@ -117,6 +117,34 @@ export const strengthPhrases = {
     "exhibits efficient process management in {{area}}",
     "showcases masterful equipment optimization in {{area}}",
     "reveals profound technical insight in {{area}}"
+  ],
+  
+  // ===== NEW: Manufacturing Baseline specific phrases =====
+  manufacturing: [
+    "demonstrates solid understanding of maintenance principles in {{area}}",
+    "exhibits strong foundational knowledge of production equipment in {{area}}",
+    "shows good grasp of safety protocols in {{area}}",
+    "reveals practical troubleshooting capability in {{area}}",
+    "displays methodical approach to problem-solving in {{area}}",
+    "showcases attention to quality standards in {{area}}",
+    "demonstrates reliable equipment handling skills in {{area}}",
+    "exhibits understanding of production line flow in {{area}}",
+    "shows competence in numerical reasoning for production in {{area}}",
+    "reveals good awareness of safety requirements in {{area}}",
+    "possesses solid foundation in technical fundamentals in {{area}}",
+    "demonstrates ability to follow procedures reliably in {{area}}",
+    "exhibits understanding of preventive maintenance in {{area}}",
+    "showcases attention to detail in quality control in {{area}}",
+    "reveals good grasp of production metrics in {{area}}",
+    "displays responsible approach to workplace safety in {{area}}",
+    "demonstrates solid analytical thinking for manufacturing in {{area}}",
+    "exhibits strong foundational skills for production roles in {{area}}",
+    "shows promise in technical problem-solving in {{area}}",
+    "possesses good understanding of production processes in {{area}}",
+    "demonstrates reliable work ethic in {{area}}",
+    "exhibits ability to learn manufacturing concepts in {{area}}",
+    "showcases potential for growth in production environment in {{area}}",
+    "reveals solid baseline competency for manufacturing in {{area}}"
   ],
   
   // Emotional intelligence phrases
@@ -374,6 +402,30 @@ export const weaknessPhrases = {
     "has room to develop technical depth in {{area}}",
     "may need additional troubleshooting practice in {{area}}",
     "would be enhanced by equipment training in {{area}}"
+  ],
+  
+  // ===== NEW: Manufacturing Baseline specific weakness phrases =====
+  manufacturing: [
+    "would benefit from foundational training in {{area}}",
+    "presents opportunity to build basic manufacturing knowledge in {{area}}",
+    "could strengthen through hands-on practice in {{area}}",
+    "would gain from structured learning in production {{area}}",
+    "has potential to develop foundational {{area}} skills",
+    "may need additional guidance in {{area}} for role readiness",
+    "would be enhanced by on-the-job training in {{area}}",
+    "shows gaps in {{area}} that require attention",
+    "could benefit from apprenticeship in {{area}}",
+    "has opportunity to develop baseline {{area}} competence",
+    "would benefit from safety refresher training in {{area}}",
+    "presents opportunity to strengthen {{area}} fundamentals",
+    "could improve through structured manufacturing orientation in {{area}}",
+    "would gain from shadowing experienced operators in {{area}}",
+    "has potential to build {{area}} capability through guided practice",
+    "may need focused development to establish {{area}} proficiency",
+    "would be improved by targeted training in {{area}}",
+    "shows developing {{area}} that needs reinforcement",
+    "could benefit from manufacturing fundamentals course in {{area}}",
+    "presents opportunity to build solid {{area}} foundation"
   ],
   
   // Emotional intelligence phrases
@@ -735,6 +787,12 @@ export const areaDescriptors = {
   'Communication & Influence': ['persuasive ability', 'influencing skills', 'stakeholder communication', 'persuasion', 'influence tactics', 'stakeholder engagement', 'persuasive communication', 'influential presence', 'advocacy skills', 'persuasive impact'],
   'People Management': ['team leadership', 'coaching ability', 'talent development', 'staff management', 'team guidance', 'employee development', 'people leadership', 'team building', 'staff development', 'personnel management'],
   
+  // Manufacturing Baseline specific descriptors
+  'Technical Fundamentals': ['maintenance principles', 'sensor functions', 'motor operation', 'pneumatic systems', 'equipment knowledge', 'mechanical basics', 'technical foundation', 'production equipment', 'system understanding', 'operational basics'],
+  'Troubleshooting': ['problem diagnosis', 'conveyor issues', 'filler problems', 'labeler alignment', 'jam resolution', 'fault finding', 'diagnostic skill', 'issue identification', 'root cause analysis', 'problem resolution'],
+  'Numerical Aptitude': ['production calculations', 'efficiency math', 'rate calculation', 'percentage work', 'numerical reasoning', 'data interpretation', 'quantity math', 'production metrics', 'mathematical accuracy', 'calculation ability'],
+  'Safety & Work Ethic': ['PPE compliance', 'safety protocols', 'injury prevention', 'hazard awareness', 'workplace safety', 'SOP adherence', 'professional conduct', 'teamwork', 'ethical behavior', 'reliability'],
+  
   // UPDATED: New Personality Traits
   'Ownership': ['accountability', 'initiative', 'responsibility', 'follow-through', 'reliability', 'commitment', 'dependability', 'ownership mindset', 'drive', 'self-direction'],
   'Collaboration': ['teamwork', 'cooperation', 'consensus-building', 'partnership', 'collegiality', 'coordination', 'alliance-building', 'team orientation', 'interpersonal effectiveness', 'collective success'],
@@ -758,8 +816,16 @@ export const getStrengthPhrase = (area, category = 'default') => {
   // Determine which phrase set to use based on area keywords
   let phraseSet = 'default';
   
-  // Check for new personality traits first
-  if (area === 'Ownership' || area === 'Accountability') {
+  // Check for manufacturing baseline specific areas first
+  if (area === 'Technical Fundamentals' || area === 'Maintenance Principles' || area === 'Equipment Knowledge') {
+    phraseSet = 'manufacturing';
+  } else if (area === 'Troubleshooting' || area === 'Problem Diagnosis' || area === 'Fault Finding') {
+    phraseSet = 'manufacturing';
+  } else if (area === 'Numerical Aptitude' || area === 'Production Calculations' || area === 'Efficiency Math') {
+    phraseSet = 'manufacturing';
+  } else if (area === 'Safety & Work Ethic' || area === 'PPE Compliance' || area === 'Safety Protocols') {
+    phraseSet = 'manufacturing';
+  } else if (area === 'Ownership' || area === 'Accountability') {
     phraseSet = 'personality';
   } else if (area === 'Collaboration' || area === 'Teamwork') {
     phraseSet = 'personality';
@@ -797,8 +863,16 @@ export const getWeaknessPhrase = (area, category = 'default') => {
   // Similar logic for weakness phrases
   let phraseSet = 'default';
   
-  // Check for new personality traits first
-  if (area === 'Ownership' || area === 'Accountability') {
+  // Check for manufacturing baseline specific areas first
+  if (area === 'Technical Fundamentals' || area === 'Maintenance Principles' || area === 'Equipment Knowledge') {
+    phraseSet = 'manufacturing';
+  } else if (area === 'Troubleshooting' || area === 'Problem Diagnosis' || area === 'Fault Finding') {
+    phraseSet = 'manufacturing';
+  } else if (area === 'Numerical Aptitude' || area === 'Production Calculations' || area === 'Efficiency Math') {
+    phraseSet = 'manufacturing';
+  } else if (area === 'Safety & Work Ethic' || area === 'PPE Compliance' || area === 'Safety Protocols') {
+    phraseSet = 'manufacturing';
+  } else if (area === 'Ownership' || area === 'Accountability') {
     phraseSet = 'personality';
   } else if (area === 'Collaboration' || area === 'Teamwork') {
     phraseSet = 'personality';
