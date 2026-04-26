@@ -591,6 +591,7 @@ const getSuitabilityAndRisks = (scores) => {
   }
   if (numericalAptitude < 40) {
     risks.push('Numeracy concerns - may struggle with production tracking and quality documentation');
+  }
 
   // Risks based on weaknesses
   if (cognitive < 50) {
