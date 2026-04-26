@@ -271,11 +271,55 @@ export const assessmentTypes = {
       { id: 'conduct', name: 'Professional Conduct', maxScore: 50 }
     ],
     weightage: 'All cultural fit dimensions equally weighted'
+  },
+
+  // NEW: Manufacturing Baseline Assessment for New Hires
+  'manufacturing_baseline': {
+    id: 'manufacturing_baseline',
+    name: 'Manufacturing Baseline Assessment',
+    description: 'Entry-level assessment for new manufacturing hires covering technical fundamentals, troubleshooting basics, numerical aptitude, and workplace safety.',
+    icon: '🏭',
+    gradient_start: '#2E7D32',
+    gradient_end: '#1B5E20',
+    categories: [
+      { id: 'technical_fundamentals', name: 'Technical Fundamentals', maxScore: 20, description: 'Basic knowledge of maintenance, sensors, motors, pneumatics, and mechanical systems' },
+      { id: 'troubleshooting', name: 'Troubleshooting', maxScore: 25, description: 'Problem identification, conveyor issues, filler problems, labeler alignment, jams' },
+      { id: 'numerical_aptitude', name: 'Numerical Aptitude', maxScore: 25, description: 'Math calculations, percentages, sequences, ratios, and production rates' },
+      { id: 'safety_attitude', name: 'Safety & Work Ethic', maxScore: 30, description: 'PPE, safety reporting, SOP compliance, teamwork, and ethical behavior' }
+    ],
+    weightage: 'Each category contributes to total score based on question count',
+    passThreshold: 70,
+    timeLimit: 180,
+    totalQuestions: 100,
+    descriptionDetailed: 'The Manufacturing Baseline Assessment evaluates foundational knowledge required for new manufacturing hires. Topics include basic equipment understanding, common troubleshooting, numerical reasoning, and workplace safety. This assessment is designed for entry-level manufacturing positions to establish a baseline of technical and safety competency.',
+    whatItMeasures: {
+      technical_fundamentals: 'Measures basic understanding of maintenance practices, sensor functions, motor operation, pneumatic systems, lubrication principles, and mechanical components.',
+      troubleshooting: 'Evaluates ability to identify common production issues, diagnose conveyor problems, resolve filler and labeler malfunctions, handle bottle jams, and respond to sensor and PLC faults.',
+      numerical_aptitude: 'Assesses mathematical ability including calculations, percentages, sequences, ratios, efficiency calculations, and production rate determination.',
+      safety_attitude: 'Evaluates knowledge of PPE requirements, safety reporting protocols, compliance with SOPs, teamwork capabilities, ethical judgment, and professional conduct.'
+    },
+    targetAudience: 'Entry-level manufacturing new hires, production associates, line operators, and maintenance trainees',
+    recommendedFor: [
+      'Production Line Operators',
+      'Manufacturing Associates',
+      'Quality Control Technicians',
+      'Maintenance Trainees',
+      'Packaging Operators',
+      'Filling Line Operators'
+    ]
   }
 };
 
 export const getAssessmentType = (typeId) => {
   return assessmentTypes[typeId] || assessmentTypes.general;
+};
+
+export const getManufacturingBaselineCategories = () => {
+  return assessmentTypes.manufacturing_baseline?.categories || [];
+};
+
+export const getManufacturingBaselineInfo = () => {
+  return assessmentTypes.manufacturing_baseline || null;
 };
 
 export const getPersonalityTraits = () => {
