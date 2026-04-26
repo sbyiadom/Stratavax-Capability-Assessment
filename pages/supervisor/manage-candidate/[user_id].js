@@ -74,7 +74,6 @@ export default function ManageCandidate() {
       try {
         const isAdmin = currentSupervisor.role === 'admin';
         
-        // Fetch candidate profile
         const { data: candidateData, error: candidateError } = await supabase
           .from('candidate_profiles')
           .select('*')
@@ -88,7 +87,6 @@ export default function ManageCandidate() {
           return;
         }
         
-        // Fetch supervisor name separately
         let supervisorName = 'Unassigned';
         if (candidateData.supervisor_id) {
           const { data: supData } = await supabase
@@ -104,7 +102,6 @@ export default function ManageCandidate() {
           supervisor_name: supervisorName
         });
         
-        // STEP 1: Fetch assessment results (completed assessments)
         const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
           .select('id, assessment_id, total_score, max_score, percentage_score, completed_at, is_valid, is_auto_submitted, violation_count')
@@ -114,7 +111,6 @@ export default function ManageCandidate() {
           console.error("Error fetching results:", resultsError);
         }
         
-        // Create a map of results by assessment_id
         const resultsMap = {};
         resultsData?.forEach(result => {
           resultsMap[result.assessment_id] = {
@@ -129,7 +125,6 @@ export default function ManageCandidate() {
           };
         });
         
-        // STEP 2: Fetch candidate assessments (assigned assessments)
         const { data: accessData, error: accessError } = await supabase
           .from('candidate_assessments')
           .select('id, assessment_id, status, created_at, unblocked_at, result_id')
@@ -139,7 +134,6 @@ export default function ManageCandidate() {
           console.error("Error fetching access data:", accessError);
         }
         
-        // STEP 3: Fetch assessment details for each unique assessment_id
         const uniqueAssessmentIds = [...new Set((accessData || []).map(a => a.assessment_id))];
         const assessmentsMap = {};
         
@@ -168,7 +162,6 @@ export default function ManageCandidate() {
           }
         }
         
-        // Combine all data
         const assessmentsWithDetails = (accessData || []).map(access => {
           const result = resultsMap[access.assessment_id] || null;
           const assessment = assessmentsMap[access.assessment_id];
@@ -195,7 +188,6 @@ export default function ManageCandidate() {
           };
         });
         
-        // Sort assessments
         assessmentsWithDetails.sort((a, b) => {
           if (a.result && !b.result) return -1;
           if (!a.result && b.result) return 1;
@@ -348,7 +340,7 @@ export default function ManageCandidate() {
   };
 
   const getAssessmentBadgeStyle = (assessmentType) => {
-    const styles = {
+    const badgeStyles = {
       leadership: { background: '#E3F2FD', color: '#1565C0' },
       cognitive: { background: '#E8F5E9', color: '#2E7D32' },
       technical: { background: '#FFEBEE', color: '#C62828' },
@@ -360,7 +352,7 @@ export default function ManageCandidate() {
       strategic_leadership: { background: '#E8EAF6', color: '#283593' },
       manufacturing_baseline: { background: '#E8F5E9', color: '#2E7D32' }
     };
-    return styles[assessmentType] || styles.general;
+    return badgeStyles[assessmentType] || badgeStyles.general;
   };
 
   const formatDate = (dateString) => {
@@ -501,7 +493,7 @@ export default function ManageCandidate() {
               </Link>
             </div>
           ) : (
-            <div style={styles.tableContainer}>
+            <div style={styles.tableWrapper}>
               <table style={styles.table}>
                 <thead>
                   <tr style={styles.tableHeadRow}>
@@ -598,7 +590,7 @@ export default function ManageCandidate() {
                         <td style={styles.tableCell}>
                           <div style={styles.actionButtons}>
                             {assessment.result ? (
-                              <>
+                              <React.Fragment>
                                 <Link href={`/supervisor/${candidate.id}?assessment=${assessment.assessment_id}`} legacyBehavior>
                                   <a style={styles.viewReportButtonSmall}>📄 Report</a>
                                 </Link>
@@ -609,7 +601,7 @@ export default function ManageCandidate() {
                                 >
                                   {isProcessing ? '⏳' : '🔄 Reset'}
                                 </button>
-                              </>
+                              </React.Fragment>
                             ) : assessment.status === 'blocked' ? (
                               <button
                                 onClick={() => setShowUnblockModal({
@@ -636,7 +628,7 @@ export default function ManageCandidate() {
                     );
                   })}
                 </tbody>
-               </table>
+              </table>
             </div>
           )}
         </div>
@@ -659,22 +651,50 @@ export default function ManageCandidate() {
               <div style={styles.timeOptions}>
                 <h4>⏰ Time Options</h4>
                 
-                {[30, 60, 120].map(minutes => (
-                  <label key={minutes} style={styles.radioLabel}>
-                    <input
-                      type="radio"
-                      checked={!resetFullTime && timeExtension === minutes}
-                      onChange={() => {
-                        setResetFullTime(false);
-                        setTimeExtension(minutes);
-                      }}
-                    />
-                    <div>
-                      <strong>Extend by {minutes} minutes</strong>
-                      <span>Add {minutes} minutes to remaining time</span>
-                    </div>
-                  </label>
-                ))}
+                <label style={styles.radioLabel}>
+                  <input
+                    type="radio"
+                    checked={!resetFullTime && timeExtension === 30}
+                    onChange={() => {
+                      setResetFullTime(false);
+                      setTimeExtension(30);
+                    }}
+                  />
+                  <div>
+                    <strong>Extend by 30 minutes</strong>
+                    <span>Add 30 minutes to remaining time</span>
+                  </div>
+                </label>
+                
+                <label style={styles.radioLabel}>
+                  <input
+                    type="radio"
+                    checked={!resetFullTime && timeExtension === 60}
+                    onChange={() => {
+                      setResetFullTime(false);
+                      setTimeExtension(60);
+                    }}
+                  />
+                  <div>
+                    <strong>Extend by 60 minutes</strong>
+                    <span>Add 60 minutes to remaining time</span>
+                  </div>
+                </label>
+                
+                <label style={styles.radioLabel}>
+                  <input
+                    type="radio"
+                    checked={!resetFullTime && timeExtension === 120}
+                    onChange={() => {
+                      setResetFullTime(false);
+                      setTimeExtension(120);
+                    }}
+                  />
+                  <div>
+                    <strong>Extend by 120 minutes</strong>
+                    <span>Add 120 minutes to remaining time</span>
+                  </div>
+                </label>
                 
                 <label style={styles.radioLabel}>
                   <input
@@ -951,13 +971,14 @@ const styles = {
     color: '#0A1929',
     margin: '0 0 20px 0'
   },
-  tableContainer: {
+  tableWrapper: {
     overflowX: 'auto'
   },
   table: {
     width: '100%',
     borderCollapse: 'collapse',
-    fontSize: '14px'
+    fontSize: '14px',
+    minWidth: '800px'
   },
   tableHeadRow: {
     borderBottom: '2px solid #E2E8F0',
@@ -975,8 +996,7 @@ const styles = {
     textAlign: 'center'
   },
   tableRow: {
-    borderBottom: '1px solid #E2E8F0',
-    transition: 'background 0.2s'
+    borderBottom: '1px solid #E2E8F0'
   },
   tableCell: {
     padding: '12px',
@@ -1038,7 +1058,8 @@ const styles = {
   },
   actionButtons: {
     display: 'flex',
-    gap: '8px'
+    gap: '8px',
+    flexWrap: 'wrap'
   },
   viewReportButtonSmall: {
     background: '#0A1929',
@@ -1048,7 +1069,7 @@ const styles = {
     textDecoration: 'none',
     fontSize: '11px',
     fontWeight: 500,
-    transition: 'all 0.2s'
+    display: 'inline-block'
   },
   unblockBtn: {
     background: '#4CAF50',
@@ -1058,8 +1079,7 @@ const styles = {
     borderRadius: '6px',
     fontSize: '11px',
     fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'all 0.2s'
+    cursor: 'pointer'
   },
   blockBtn: {
     background: '#FF9800',
@@ -1069,8 +1089,7 @@ const styles = {
     borderRadius: '6px',
     fontSize: '11px',
     fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'all 0.2s'
+    cursor: 'pointer'
   },
   resetBtn: {
     background: '#2196F3',
@@ -1080,8 +1099,7 @@ const styles = {
     borderRadius: '6px',
     fontSize: '11px',
     fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'all 0.2s'
+    cursor: 'pointer'
   },
   emptyState: {
     textAlign: 'center',
@@ -1108,8 +1126,7 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
-    padding: '20px',
-    backdropFilter: 'blur(5px)'
+    padding: '20px'
   },
   modal: {
     background: 'white',
@@ -1158,8 +1175,7 @@ const styles = {
     marginBottom: '8px',
     background: '#f8fafc',
     borderRadius: '8px',
-    cursor: 'pointer',
-    transition: 'all 0.2s'
+    cursor: 'pointer'
   },
   noteBox: {
     marginTop: '20px',
@@ -1187,8 +1203,7 @@ const styles = {
     fontSize: '14px',
     fontWeight: 500,
     cursor: 'pointer',
-    color: '#475569',
-    transition: 'all 0.2s'
+    color: '#475569'
   },
   confirmButton: {
     padding: '10px 24px',
@@ -1198,7 +1213,6 @@ const styles = {
     borderRadius: '8px',
     fontSize: '14px',
     fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.2s'
+    cursor: 'pointer'
   }
 };
