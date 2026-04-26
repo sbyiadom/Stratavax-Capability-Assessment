@@ -1,3 +1,4 @@
+// pages/supervisor/dashboard.js
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -166,6 +167,7 @@ export default function SupervisorDashboard() {
         const processedCandidates = await Promise.all(
           (candidatesData || []).map(async (candidate) => {
             
+            // FIXED: Removed assessment_type_id from select (doesn't exist in assessment_results)
             const { data: resultsData, error: resultsError } = await supabase
               .from('assessment_results')
               .select(`
@@ -175,7 +177,9 @@ export default function SupervisorDashboard() {
                 max_score,
                 percentage_score,
                 completed_at,
-                assessment_type_id
+                is_valid,
+                is_auto_submitted,
+                violation_count
               `)
               .eq('user_id', candidate.id);
 
@@ -202,6 +206,7 @@ export default function SupervisorDashboard() {
                   description,
                   assessment_type_id,
                   assessment_types (
+                    id,
                     code,
                     name,
                     icon,
@@ -238,6 +243,7 @@ export default function SupervisorDashboard() {
                 assessment_id: access.assessment_id,
                 assessment_title: assessment?.title || 'Unknown Assessment',
                 assessment_type: typeData?.code || 'general',
+                assessment_type_id: typeData?.id || null,
                 assessment_type_name: typeData?.name || 'General',
                 type_icon: typeData?.icon || '📋',
                 type_gradient_start: typeData?.gradient_start || '#667eea',
@@ -250,7 +256,10 @@ export default function SupervisorDashboard() {
                   score: result.total_score,
                   max_score: result.max_score,
                   percentage: result.percentage_score,
-                  completed_at: result.completed_at
+                  completed_at: result.completed_at,
+                  is_valid: result.is_valid,
+                  is_auto_submitted: result.is_auto_submitted,
+                  violation_count: result.violation_count
                 } : null
               };
             });
@@ -723,7 +732,7 @@ export default function SupervisorDashboard() {
             >
               {assessmentTypes.map(type => (
                 <option key={type} value={type}>
-                  {type === 'all' ? 'All Assessments' : type.charAt(0).toUpperCase() + type.slice(1)}
+                  {type === 'all' ? 'All Assessments' : type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
                 </option>
               ))}
             </select>
@@ -781,7 +790,7 @@ export default function SupervisorDashboard() {
                     <th style={styles.tableHead}>Classification</th>
                     <th style={styles.tableHead}>Last Active</th>
                     <th style={styles.tableHead}>Actions</th>
-                  </tr>
+                  </td>
                 </thead>
                 <tbody>
                   {filteredCandidates.map((candidate) => {
@@ -805,11 +814,11 @@ export default function SupervisorDashboard() {
                                 <div style={styles.candidateId}>ID: {candidate.id.substring(0, 8)}...</div>
                               </div>
                             </div>
-                          </td>
+                           </td>
                           <td style={styles.tableCell}>
                             <div style={styles.candidateEmail}>{candidate.email}</div>
                             {candidate.phone && <div style={styles.candidatePhone}>{candidate.phone}</div>}
-                          </td>
+                           </td>
                           <td style={styles.tableCell}>
                             <div style={styles.assessmentStatsInline}>
                               <span style={styles.completedInline}>
@@ -830,7 +839,7 @@ export default function SupervisorDashboard() {
                                 {isExpanded ? '▲ Hide Assessments' : '▼ View Assessments'}
                               </button>
                             )}
-                          </td>
+                           </td>
                           <td style={styles.tableCell}>
                             <span style={{
                               ...styles.classificationBadge,
@@ -840,7 +849,7 @@ export default function SupervisorDashboard() {
                             }}>
                               {classification.label}
                             </span>
-                          </td>
+                           </td>
                           <td style={styles.tableCell}>
                             <span style={styles.date}>
                               {candidate.latestAssessment?.result 
@@ -848,7 +857,7 @@ export default function SupervisorDashboard() {
                                 : 'Never'
                               }
                             </span>
-                          </td>
+                           </td>
                           <td style={styles.tableCell}>
                             <div style={styles.actionButtons}>
                               <Link href={`/supervisor/manage-candidate/${candidate.id}`} legacyBehavior>
@@ -857,7 +866,7 @@ export default function SupervisorDashboard() {
                                 </a>
                               </Link>
                             </div>
-                          </td>
+                           </td>
                         </tr>
                         
                         {isExpanded && (
@@ -918,10 +927,12 @@ export default function SupervisorDashboard() {
                                                 background: assessment.assessment_type === 'leadership' ? '#E3F2FD' :
                                                            assessment.assessment_type === 'cognitive' ? '#E8F5E9' :
                                                            assessment.assessment_type === 'technical' ? '#FFEBEE' :
+                                                           assessment.assessment_type === 'manufacturing_baseline' ? '#E8F5E9' :
                                                            '#F1F5F9',
                                                 color: assessment.assessment_type === 'leadership' ? '#1565C0' :
                                                        assessment.assessment_type === 'cognitive' ? '#2E7D32' :
                                                        assessment.assessment_type === 'technical' ? '#C62828' :
+                                                       assessment.assessment_type === 'manufacturing_baseline' ? '#2E7D32' :
                                                        '#37474F'
                                               }}>
                                                 {assessment.assessment_type_name}
@@ -955,6 +966,12 @@ export default function SupervisorDashboard() {
                                                     <span>Completed:</span>
                                                     <span>{formatDate(assessment.result.completed_at)}</span>
                                                   </div>
+                                                  {assessment.result.is_auto_submitted && (
+                                                    <div style={styles.scoreRow}>
+                                                      <span>Warning:</span>
+                                                      <span style={{ color: '#F44336' }}>Auto-submitted due to violations ({assessment.result.violation_count}/3)</span>
+                                                    </div>
+                                                  )}
                                                 </div>
                                               </div>
                                             ) : (
