@@ -1,4 +1,3 @@
-// pages/supervisor/dashboard.js
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -167,7 +166,6 @@ export default function SupervisorDashboard() {
         const processedCandidates = await Promise.all(
           (candidatesData || []).map(async (candidate) => {
             
-            // FIXED: Removed assessment_type_id from select (doesn't exist in assessment_results)
             const { data: resultsData, error: resultsError } = await supabase
               .from('assessment_results')
               .select(`
@@ -407,7 +405,6 @@ export default function SupervisorDashboard() {
         message += result.hasExistingProgress ? 'They can continue where they left off.' : 'They can start a new session.';
         alert(message);
         
-        // Update local state
         setCandidates(prev => prev.map(c => {
           if (c.id === candidateId) {
             const updatedAssessments = c.assessments.map(a => {
@@ -495,7 +492,6 @@ export default function SupervisorDashboard() {
 
       alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}. It is now BLOCKED.`);
       
-      // Update local state
       setCandidates(prev => prev.map(c => {
         if (c.id === candidateId) {
           const updatedAssessments = c.assessments.map(a => {
@@ -548,7 +544,6 @@ export default function SupervisorDashboard() {
 
       alert(`🔒 "${assessmentTitle}" blocked for ${candidateName}.`);
       
-      // Update local state
       setCandidates(prev => prev.map(c => {
         if (c.id === candidateId) {
           const updatedAssessments = c.assessments.map(a => {
@@ -790,7 +785,7 @@ export default function SupervisorDashboard() {
                     <th style={styles.tableHead}>Classification</th>
                     <th style={styles.tableHead}>Last Active</th>
                     <th style={styles.tableHead}>Actions</th>
-                  </td>
+                  </tr>
                 </thead>
                 <tbody>
                   {filteredCandidates.map((candidate) => {
@@ -814,11 +809,11 @@ export default function SupervisorDashboard() {
                                 <div style={styles.candidateId}>ID: {candidate.id.substring(0, 8)}...</div>
                               </div>
                             </div>
-                           </td>
+                          </td>
                           <td style={styles.tableCell}>
                             <div style={styles.candidateEmail}>{candidate.email}</div>
                             {candidate.phone && <div style={styles.candidatePhone}>{candidate.phone}</div>}
-                           </td>
+                          </td>
                           <td style={styles.tableCell}>
                             <div style={styles.assessmentStatsInline}>
                               <span style={styles.completedInline}>
