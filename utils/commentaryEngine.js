@@ -272,7 +272,7 @@ export const generateProfileCommentary = (percentage, classification, strengths,
     
     `At ${percentage}%, the candidate shows substantial gaps that need immediate attention. A comprehensive development plan with clear milestones and regular progress monitoring is essential.`,
     
-      `The profile reveals critical development needs across multiple areas. Intensive support and structured learning experiences are required to build fundamental competence.`
+    `The profile reveals critical development needs across multiple areas. Intensive support and structured learning experiences are required to build fundamental competence.`
   ];
   
   return templates[Math.floor(Math.random() * templates.length)];
@@ -280,16 +280,13 @@ export const generateProfileCommentary = (percentage, classification, strengths,
 
 // ===== MANUFACTURING-SPECIFIC PROFILE COMMENTARY =====
 
-export const generateManufacturingProfileCommentary = (percentage, categories) => {
+const generateManufacturingProfileCommentaryFn = (percentage, categories) => {
   const safetyScore = categories['Safety & Work Ethic'] || 0;
   const techScore = categories['Technical Fundamentals'] || 0;
-  const troubleshootingScore = categories['Troubleshooting'] || 0;
-  const numericalScore = categories['Numerical Aptitude'] || 0;
   
   if (percentage >= 80 && safetyScore >= 80 && techScore >= 70) {
     const templates = [
-      `This candidate demonstrates strong readiness for manufacturing roles. With exceptional safety awareness and solid technical fundamentals, they are well-prepared for production environments. Their troubleshooting capability suggests ability to handle common line issues independently.`,
-      
+      `This candidate demonstrates strong readiness for manufacturing roles. With exceptional safety awareness and solid technical fundamentals, they are well-prepared for production environments.`,
       `The profile indicates strong manufacturing baseline competence. The candidate combines good technical knowledge with excellent safety consciousness—essential qualities for production success.`
     ];
     return templates[Math.floor(Math.random() * templates.length)];
@@ -297,8 +294,7 @@ export const generateManufacturingProfileCommentary = (percentage, categories) =
   
   if (safetyScore < 50) {
     const templates = [
-      `Safety awareness is the most critical concern in this profile. Before any production responsibilities, the candidate requires comprehensive safety training and close supervision. This must be the highest priority development area.`,
-      
+      `Safety awareness is the most critical concern in this profile. Before any production responsibilities, the candidate requires comprehensive safety training and close supervision.`,
       `This profile highlights safety as a significant gap. The candidate's score in safety awareness indicates insufficient understanding of PPE requirements and safety protocols—an immediate development priority.`
     ];
     return templates[Math.floor(Math.random() * templates.length)];
@@ -307,15 +303,13 @@ export const generateManufacturingProfileCommentary = (percentage, categories) =
   if (techScore < 50) {
     const templates = [
       `Technical fundamentals require significant development. The candidate needs foundational training in equipment operation and maintenance principles before independent production work.`,
-      
       `This profile shows technical knowledge as a primary development need. Structured training in core manufacturing concepts will be essential to build baseline competence.`
     ];
     return templates[Math.floor(Math.random() * templates.length)];
   }
   
   const templates = [
-    `This candidate shows foundational readiness for manufacturing environments. With a ${percentage}% overall score, they have established baseline knowledge while demonstrating clear development areas. Targeted training in technical fundamentals and troubleshooting will accelerate their readiness.`,
-    
+    `This candidate shows foundational readiness for manufacturing environments. With a ${percentage}% overall score, they have established baseline knowledge while demonstrating clear development areas.`,
     `The profile reveals a developing manufacturing baseline. The candidate meets minimum requirements in some areas but would benefit from structured training to build competence in others.`
   ];
   
@@ -365,5 +359,5 @@ export const generateCommentary = (area, percentage, type = 'weakness', assessme
   }
 };
 
-// Export additional manufacturing-specific function
-export { generateManufacturingProfileCommentary };
+// Export manufacturing-specific function
+export const generateManufacturingProfileCommentary = generateManufacturingProfileCommentaryFn;
