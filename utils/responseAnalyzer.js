@@ -84,6 +84,66 @@ const generateInsight = (category, questionText, answerText, score) => {
 const generateUniqueSummary = (category, data, percentage) => {
   const { highScoreCount, lowScoreCount, questionCount } = data;
   
+  // Manufacturing baseline specific summaries
+  if (category === 'Safety & Work Ethic') {
+    if (highScoreCount === questionCount) {
+      return `Exemplary safety awareness demonstrated across all ${questionCount} questions. Candidate shows strong understanding of PPE, safety protocols, and professional conduct.`;
+    } else if (highScoreCount > questionCount / 2) {
+      return `Good safety awareness with ${highScoreCount} out of ${questionCount} responses showing strong understanding. Some reinforcement needed in specific areas.`;
+    } else if (lowScoreCount === questionCount) {
+      return `Critical safety concerns identified. All ${questionCount} responses show significant gaps in safety knowledge. Immediate training required.`;
+    } else if (lowScoreCount > questionCount / 2) {
+      return `Safety knowledge needs significant improvement. ${lowScoreCount} out of ${questionCount} responses indicate gaps in understanding. Priority training recommended.`;
+    } else if (percentage >= 60) {
+      return `Adequate safety awareness with some areas needing reinforcement. Focus on specific safety protocols identified.`;
+    } else {
+      return `Below expected safety knowledge. Structured safety training and close supervision recommended.`;
+    }
+  }
+  
+  if (category === 'Technical Fundamentals') {
+    if (highScoreCount === questionCount) {
+      return `Strong technical foundation demonstrated. Candidate shows excellent understanding of maintenance principles, sensor functions, and mechanical systems.`;
+    } else if (highScoreCount > questionCount / 2) {
+      return `Solid technical understanding with ${highScoreCount} out of ${questionCount} responses showing good grasp of fundamentals.`;
+    } else if (lowScoreCount === questionCount) {
+      return `Critical gaps in technical fundamentals. Complete foundational training needed before independent equipment work.`;
+    } else if (lowScoreCount > questionCount / 2) {
+      return `Technical knowledge needs significant development. Hands-on training and equipment familiarization recommended.`;
+    } else {
+      return `Developing technical understanding with areas needing focused training. Structured learning program recommended.`;
+    }
+  }
+  
+  if (category === 'Troubleshooting') {
+    if (highScoreCount === questionCount) {
+      return `Exceptional diagnostic ability. Candidate demonstrates systematic problem-solving across all scenarios.`;
+    } else if (highScoreCount > questionCount / 2) {
+      return `Good troubleshooting capability with ${highScoreCount} out of ${questionCount} responses showing strong diagnostic thinking.`;
+    } else if (lowScoreCount === questionCount) {
+      return `Critical gaps in problem-solving ability. Structured training in diagnostic methodologies urgent.`;
+    } else if (lowScoreCount > questionCount / 2) {
+      return `Troubleshooting skills need significant development. Focus on root cause analysis and diagnostic frameworks.`;
+    } else {
+      return `Developing diagnostic ability. Practice with structured problem-solving approaches recommended.`;
+    }
+  }
+  
+  if (category === 'Numerical Aptitude') {
+    if (highScoreCount === questionCount) {
+      return `Strong numerical reasoning demonstrated. Candidate handles production calculations and data interpretation effectively.`;
+    } else if (highScoreCount > questionCount / 2) {
+      return `Good numerical ability with ${highScoreCount} out of ${questionCount} responses showing strong calculation skills.`;
+    } else if (lowScoreCount === questionCount) {
+      return `Critical numeracy gaps identified. Immediate foundational math training required.`;
+    } else if (lowScoreCount > questionCount / 2) {
+      return `Numerical skills need significant development. Focus on production math and data interpretation.`;
+    } else {
+      return `Developing numerical ability. Practice with production calculations and metrics recommended.`;
+    }
+  }
+  
+  // Original logic for other categories
   if (highScoreCount === questionCount) {
     return `Exceptional performance in ${category}. All ${questionCount} responses demonstrated mastery level understanding.`;
   } else if (highScoreCount > questionCount / 2) {
@@ -104,6 +164,36 @@ export const getCategorySpecificRecommendations = (category, data) => {
   const weakAreas = questionDetails.filter(q => q.score <= 2);
   
   const recommendations = {
+    // Manufacturing baseline specific recommendations
+    'Safety & Work Ethic': [
+      'Complete OSHA or equivalent safety certification',
+      'Participate in hands-on PPE training and safety drills',
+      'Study company safety policies and incident response procedures',
+      'Work with a safety mentor for guided practice',
+      'Complete hazard recognition and risk assessment training'
+    ],
+    'Technical Fundamentals': [
+      'Complete foundational equipment operation training',
+      'Study maintenance principles and preventive maintenance schedules',
+      'Practice sensor calibration and basic diagnostics',
+      'Work with a technical mentor on equipment familiarization',
+      'Complete hands-on training for core manufacturing systems'
+    ],
+    'Troubleshooting': [
+      'Complete structured problem-solving training (e.g., PDCA, DMAIC)',
+      'Practice root cause analysis on common production issues',
+      'Study equipment fault codes and diagnostic procedures',
+      'Work with a senior technician on troubleshooting scenarios',
+      'Complete simulation-based troubleshooting exercises'
+    ],
+    'Numerical Aptitude': [
+      'Complete production math and calculation training',
+      'Practice efficiency calculations and metric reporting',
+      'Study quality control documentation and data entry',
+      'Work with a mentor on production tracking systems',
+      'Complete basic numeracy refresher course'
+    ],
+    // Existing recommendations
     'Leadership & Management': [
       'Complete a leadership fundamentals course focusing on team development',
       'Practice giving constructive feedback in low-stakes situations',
