@@ -108,7 +108,13 @@ export default function CandidateDashboard() {
       'Decision-Making',
       'FBA',
       'Leadership'
-    ]
+    ],
+    'manufacturing_baseline': [
+      '🔧 Technical Fundamentals (Maintenance, Sensors, Motors, Pneumatics)',
+      '⚙️ Troubleshooting (Conveyors, Fillers, Labelers, Jams)',
+      '📊 Numerical Aptitude (Math, Percentages, Sequences, Ratios)',
+      '🛡️ Safety & Work Ethic (PPE, Reporting, SOP, Teamwork)'
+    ],
   };
 
   // ===== PROFESSIONAL COLORS FOR EACH ASSESSMENT TYPE =====
@@ -166,10 +172,16 @@ export default function CandidateDashboard() {
       color: '#9333ea',
       light: '#f3e8ff',
       border: '1px solid #9333ea20'
-    }
+    },
+    'manufacturing_baseline': {
+      gradient: 'linear-gradient(135deg, #2E7D32 0%, #1B5E20 100%)',
+      color: '#2E7D32',
+      light: '#E8F5E9',
+      border: '1px solid #2E7D3220'
+    },
   };
 
-  // Assessment types to exclude
+  // Assessment types to exclude (only the old manufacturing, new one is included)
   const excludedTypes = ['manufacturing'];
 
   useEffect(() => {
@@ -266,7 +278,7 @@ export default function CandidateDashboard() {
         const transformedTypes = filteredData.map(type => ({
           id: type.code,
           label: type.name,
-          shortLabel: type.code.charAt(0).toUpperCase() + type.code.slice(1),
+          shortLabel: type.code === 'manufacturing_baseline' ? 'Mfg Baseline' : (type.code.charAt(0).toUpperCase() + type.code.slice(1)),
           description: type.description || `${type.name} assessment`,
           longDescription: type.description || `Comprehensive assessment of your ${type.name.toLowerCase()} capabilities.`,
           icon: type.icon || '📋',
@@ -372,7 +384,7 @@ export default function CandidateDashboard() {
   const getAssessmentScore = (assessmentId) => {
     const completed = completedAssessments.find(a => a.assessment_id === assessmentId);
     const assessment = assessments.find(a => a.id === assessmentId);
-    const maxScore = assessment?.assessment_type?.max_score || 500;
+    const maxScore = assessment?.assessment_type?.max_score || 100;
     return completed?.score ? Math.round((completed.score / maxScore) * 100) : null;
   };
 
@@ -435,7 +447,6 @@ export default function CandidateDashboard() {
               <span style={styles.headerSubtitle}>Assessment Portal</span>
             </div>
             <div style={styles.headerRight}>
-              {/* NEW: Profile Settings Button */}
               <Link href="/candidate/profile" legacyBehavior>
                 <a style={styles.profileButton}>
                   👤 Profile
