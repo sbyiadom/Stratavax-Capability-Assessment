@@ -4,7 +4,22 @@
  * Every report is guaranteed to be different
  */
 
-import { gradeScale as baseGradeScale } from './dynamicReportGenerator';
+// ===== LOCAL GRADE SCALE (replaces dynamicReportGenerator import) =====
+const baseGradeScale = [
+  { grade: 'A+', min: 95, max: 100, description: 'Exceptional' },
+  { grade: 'A', min: 90, max: 94, description: 'Excellent' },
+  { grade: 'A-', min: 85, max: 89, description: 'Very Good' },
+  { grade: 'B+', min: 80, max: 84, description: 'Good' },
+  { grade: 'B', min: 75, max: 79, description: 'Satisfactory' },
+  { grade: 'B-', min: 70, max: 74, description: 'Adequate' },
+  { grade: 'C+', min: 65, max: 69, description: 'Developing' },
+  { grade: 'C', min: 60, max: 64, description: 'Basic Competency' },
+  { grade: 'C-', min: 55, max: 59, description: 'Minimum Competency' },
+  { grade: 'D+', min: 50, max: 54, description: 'Below Expectations' },
+  { grade: 'D', min: 40, max: 49, description: 'Significant Gaps' },
+  { grade: 'F', min: 0, max: 39, description: 'Unsatisfactory' }
+];
+
 import { 
   getStrengthPhrase, 
   getWeaknessPhrase, 
