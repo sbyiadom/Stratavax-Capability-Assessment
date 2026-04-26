@@ -26,6 +26,13 @@ const formatTime = (seconds) => {
   return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
+// ===== CHECK IF QUESTION HAS MULTIPLE CORRECT ANSWERS =====
+const isMultipleCorrectQuestion = (question) => {
+  if (!question?.answers) return false;
+  const correctAnswers = question.answers.filter(a => a.score === 1);
+  return correctAnswers.length > 1;
+};
+
 function AssessmentContent() {
   const router = useRouter();
   const { id: assessmentId } = router.query;
@@ -39,6 +46,7 @@ function AssessmentContent() {
   
   // Assessment state
   const [currentIndex, setCurrentIndex] = useState(0);
+  // NEW: Store answers as arrays for multiple-select support
   const [answers, setAnswers] = useState({});
   const [initialAnswers, setInitialAnswers] = useState({});
   const [answerChangeCount, setAnswerChangeCount] = useState({});
@@ -84,6 +92,20 @@ function AssessmentContent() {
     return assessmentType?.gradient_end || DEFAULT_GRADIENT_END;
   };
 
+  // ===== HELPER: Get selected answer IDs for a question (always returns array) =====
+  const getSelectedAnswersForQuestion = (questionId) => {
+    const selected = answers[questionId];
+    if (Array.isArray(selected)) return selected;
+    if (selected) return [selected];
+    return [];
+  };
+
+  // ===== HELPER: Check if a specific answer is selected =====
+  const isAnswerSelected = (questionId, answerId) => {
+    const selected = getSelectedAnswersForQuestion(questionId);
+    return selected.includes(answerId);
+  };
+
   // ===== ANTI-CHEAT / VIOLATION TRACKING (NO TAB SWITCHING) =====
   const showViolationWarningMessage = (message) => {
     setViolationMessage(message);
@@ -97,16 +119,11 @@ function AssessmentContent() {
     const newCount = violationCount + 1;
     setViolationCount(newCount);
     
-    // Update violation count in session
     await supabase
       .from('assessment_sessions')
-      .update({ 
-        violation_count: newCount,
-        [`${getViolationColumnName(violationType)}_count`]: supabase.raw(`${getViolationColumnName(violationType)}_count + 1`)
-      })
+      .update({ violation_count: newCount })
       .eq('id', sessionIdRef.current);
     
-    // Log violation to table
     await supabase
       .from('assessment_violations')
       .insert({
@@ -116,35 +133,15 @@ function AssessmentContent() {
         violation_type: violationType
       });
     
-    // Show warning
     showViolationWarningMessage(`${violationType}. Violation ${newCount} of 3.`);
     
-    // Auto-submit after 3 violations
     if (newCount >= 3 && !isAutoSubmitting && !alreadySubmitted) {
       showViolationWarningMessage(`Maximum violations reached (3/3). Auto-submitting assessment...`);
       setIsAutoSubmitting(true);
-      
-      // Small delay to show warning
       setTimeout(async () => {
         await handleAutoSubmitDueToViolations();
       }, 2000);
     }
-  };
-
-  const getViolationColumnName = (violationType) => {
-    if (violationType.includes('Copy') || violationType.includes('Paste') || violationType.includes('Cut')) {
-      return 'copy_paste_count';
-    }
-    if (violationType.includes('Right-click')) {
-      return 'right_click_count';
-    }
-    if (violationType.includes('DevTools') || violationType.includes('F12') || violationType.includes('source')) {
-      return 'devtools_count';
-    }
-    if (violationType.includes('Screenshot') || violationType.includes('PrintScreen')) {
-      return 'screenshot_count';
-    }
-    return 'other_violation_count';
   };
 
   const handleAutoSubmitDueToViolations = async () => {
@@ -154,21 +151,12 @@ function AssessmentContent() {
     
     try {
       setIsSubmitting(true);
-      
-      // Save final progress
       await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id);
       await updateSessionTimer(session.id, elapsedSeconds);
-      
-      // Call submit API - this should reject with violation error
       const result = await submitAssessment(session.id);
-      
-      // If we get here, something unexpected happened
       console.log("Unexpected success:", result);
-      
     } catch (error) {
       console.log("Auto-submit rejected due to violations:", error.message);
-      
-      // Update session status as auto-submitted
       await supabase
         .from('assessment_sessions')
         .update({
@@ -181,8 +169,6 @@ function AssessmentContent() {
       
       setAlreadySubmitted(true);
       setShowViolationWarning(false);
-      
-      // Navigate to terminated page with violation details
       router.push(`/assessment/terminated?reason=violations&count=${violationCount}&answered=${Object.keys(answers).length}&total=${questions.length}`);
     } finally {
       setIsSubmitting(false);
@@ -190,7 +176,7 @@ function AssessmentContent() {
     }
   };
 
-  // Setup anti-cheat event listeners (NO TAB SWITCHING - intentionally removed)
+  // Setup anti-cheat event listeners
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session) return;
 
@@ -212,39 +198,27 @@ function AssessmentContent() {
       return false;
     };
 
-    // ===== TAB SWITCHING DETECTION INTENTIONALLY REMOVED =====
-    // Candidates can switch tabs freely without penalty
-
     const handleKeyDown = (e) => {
-      // PrintScreen detection
       if (e.key === 'PrintScreen') {
         e.preventDefault();
         logViolation('Screenshot attempt (PrintScreen)');
         return false;
       }
-      
-      // DevTools detection - F12
       if (e.key === 'F12') {
         e.preventDefault();
         logViolation('DevTools attempt (F12)');
         return false;
       }
-      
-      // DevTools detection - Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C
       if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) {
         e.preventDefault();
         logViolation('DevTools attempt (Ctrl+Shift+' + e.key + ')');
         return false;
       }
-      
-      // View source detection - Ctrl+U
       if (e.ctrlKey && e.key === 'u') {
         e.preventDefault();
         logViolation('View source attempt');
         return false;
       }
-      
-      // Mac: Cmd+Option+I for DevTools
       if (e.metaKey && e.altKey && e.key === 'I') {
         e.preventDefault();
         logViolation('DevTools attempt (Mac)');
@@ -258,48 +232,23 @@ function AssessmentContent() {
       return false;
     };
 
-    // Periodic DevTools detection
     const devToolsInterval = setInterval(() => {
       if (!sessionIdRef.current || alreadySubmitted) return;
-      
-      // Method 1: Check window size difference
       const widthDiff = window.outerWidth - window.innerWidth;
       const heightDiff = window.outerHeight - window.innerHeight;
-      
       if (widthDiff > 200 || heightDiff > 200) {
         logViolation('DevTools detected (window size)');
       }
-      
-      // Method 2: Debugger pause detection (safe way)
-      const before = performance.now();
-      // Using a try-catch to avoid actual debugger breaking
-      try {
-        // This is a safe check that doesn't actually pause execution
-        const start = performance.now();
-        const end = performance.now();
-        if (end - start > 100) {
-          logViolation('DevTools detected (performance)');
-        }
-      } catch (e) {
-        // Ignore
-      }
     }, 5000);
 
-    // Add event listeners
     document.addEventListener('copy', handleCopy);
     document.addEventListener('paste', handlePaste);
     document.addEventListener('cut', handleCut);
     document.addEventListener('keydown', handleKeyDown);
     document.addEventListener('contextmenu', handleContextMenu);
 
-    // Add CSS to prevent selection
     const style = document.createElement('style');
-    style.textContent = `
-      * {
-        -webkit-user-select: none !important;
-        user-select: none !important;
-      }
-    `;
+    style.textContent = `* { -webkit-user-select: none !important; user-select: none !important; }`;
     document.head.appendChild(style);
 
     return () => {
@@ -345,11 +294,9 @@ function AssessmentContent() {
       if (error) throw error;
 
       const hasAccess = data?.status === 'unblocked';
-      
       if (!hasAccess) {
         setAccessDenied(true);
       }
-      
       setAccessChecked(true);
       return hasAccess;
 
@@ -377,7 +324,6 @@ function AssessmentContent() {
         if (!assessmentId) return;
 
         const hasAccess = await checkAssessmentAccess(authSession.user.id, assessmentId);
-        
         if (!hasAccess) {
           setLoading(false);
           return;
@@ -419,7 +365,18 @@ function AssessmentContent() {
         if (sessionData?.id) {
           const responses = await getSessionResponses(sessionData.id);
           if (responses?.answerMap) {
-            setAnswers(responses.answerMap);
+            // Convert stored answers back to appropriate format
+            const formattedAnswers = {};
+            Object.entries(responses.answerMap).forEach(([qId, answer]) => {
+              // Check if answer contains comma (multiple answers stored as comma-separated)
+              if (typeof answer === 'string' && answer.includes(',')) {
+                formattedAnswers[qId] = answer.split(',').map(id => parseInt(id));
+              } else {
+                formattedAnswers[qId] = parseInt(answer);
+              }
+            });
+            setAnswers(formattedAnswers);
+            
             if (responses.initialAnswerMap) {
               setInitialAnswers(responses.initialAnswerMap);
             }
@@ -431,7 +388,6 @@ function AssessmentContent() {
           }
         }
         
-        // Get existing violation count
         const { data: sessionViolations } = await supabase
           .from('assessment_sessions')
           .select('violation_count')
@@ -554,42 +510,70 @@ function AssessmentContent() {
       .eq('id', sessionIdRef.current);
   };
 
-  // Handle answer selection
-  const handleAnswerSelect = async (questionId, answerId) => {
+  // ===== HANDLE ANSWER SELECTION (SUPPORTS MULTIPLE-SELECT) =====
+  const handleAnswerSelect = async (questionId, answerId, isMultipleCorrect) => {
     if (alreadySubmitted || !session || !questionId || !answerId || accessDenied || isAutoSubmitting) return;
 
     const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
-    const previousAnswer = answers[questionId];
-    const isAnswerChange = previousAnswer && previousAnswer !== answerId;
-    const isFirstAnswer = !previousAnswer;
+    let newSelectedAnswers;
+    let isAnswerChange = false;
+    let isFirstAnswer = false;
+    
+    if (isMultipleCorrect) {
+      // Multiple-select: toggle the answer in the array
+      const currentSelected = getSelectedAnswersForQuestion(questionId);
+      
+      if (currentSelected.includes(answerId)) {
+        // Remove if already selected
+        newSelectedAnswers = currentSelected.filter(id => id !== answerId);
+      } else {
+        // Add if not selected
+        newSelectedAnswers = [...currentSelected, answerId];
+      }
+      
+      isAnswerChange = currentSelected.length !== newSelectedAnswers.length || 
+                       !currentSelected.every(id => newSelectedAnswers.includes(id));
+      isFirstAnswer = currentSelected.length === 0 && newSelectedAnswers.length > 0;
+    } else {
+      // Single-select: just set the answer
+      const previousAnswer = answers[questionId];
+      newSelectedAnswers = answerId;
+      isAnswerChange = previousAnswer && previousAnswer !== answerId;
+      isFirstAnswer = !previousAnswer;
+    }
     
     const currentChangeCount = answerChangeCount[questionId] || 0;
     const newChangeCount = isAnswerChange ? currentChangeCount + 1 : currentChangeCount;
     
     let initialAnswerId = initialAnswers[questionId];
     if (isFirstAnswer) {
-      initialAnswerId = answerId;
-      setInitialAnswers(prev => ({ ...prev, [questionId]: answerId }));
+      initialAnswerId = isMultipleCorrect ? newSelectedAnswers : answerId;
+      setInitialAnswers(prev => ({ ...prev, [questionId]: initialAnswerId }));
     }
     
     if (isAnswerChange) {
       setAnswerChangeCount(prev => ({ ...prev, [questionId]: newChangeCount }));
     }
 
-    setAnswers(prev => ({ ...prev, [questionId]: answerId }));
+    setAnswers(prev => ({ ...prev, [questionId]: newSelectedAnswers }));
     setSaveStatus(prev => ({ ...prev, [questionId]: 'saving' }));
 
     try {
+      // Convert answer to string for storage (comma-separated for multiple)
+      const answerToStore = Array.isArray(newSelectedAnswers) 
+        ? newSelectedAnswers.join(',') 
+        : newSelectedAnswers;
+      
       const result = await saveUniqueResponse(
         session.id,
         user.id,
         assessmentId,
         questionId,
-        answerId,
+        answerToStore,
         {
           time_spent_seconds: timeSpentSeconds,
           times_changed: newChangeCount,
-          initial_answer_id: initialAnswerId,
+          initial_answer_id: Array.isArray(initialAnswerId) ? initialAnswerId.join(',') : initialAnswerId,
           is_answer_change: isAnswerChange
         }
       );
@@ -678,7 +662,6 @@ function AssessmentContent() {
   const handleSubmit = async () => {
     if (!session || alreadySubmitted || accessDenied || isAutoSubmitting) return;
 
-    // Check if there are violations
     if (violationCount >= 3) {
       alert(`Cannot submit: You have ${violationCount} rule violations. The assessment has been auto-submitted as invalid.`);
       return;
@@ -736,7 +719,7 @@ function AssessmentContent() {
   };
 
   const handleBackClick = async () => {
-    router.push('/assessment/pre');
+    router.push('/candidate/dashboard');
   };
 
   const totalAnswered = Object.keys(answers || {}).length;
@@ -748,6 +731,7 @@ function AssessmentContent() {
   const isTimeCritical = timePercentage > 90;
 
   const currentQuestion = questions[currentIndex] || {};
+  const isMultipleCorrect = isMultipleCorrectQuestion(currentQuestion);
 
   // Loading state
   if (loading) {
@@ -918,6 +902,7 @@ function AssessmentContent() {
                 <div style={styles.headerTitle}>{assessment?.title}</div>
                 <div style={styles.headerMeta}>
                   Question {currentIndex + 1} of {questions.length} • {currentQuestion?.section || 'General'}
+                  {isMultipleCorrect && <span style={{ marginLeft: '10px', color: '#ff9800', fontSize: '12px' }}>(Select all that apply)</span>}
                 </div>
               </div>
             </div>
@@ -964,13 +949,13 @@ function AssessmentContent() {
 
               <div style={styles.answersContainer}>
                 {currentQuestion?.answers?.map((answer, index) => {
-                  const isSelected = answers[currentQuestion.id] === answer.id;
+                  const isSelected = isAnswerSelected(currentQuestion.id, answer.id);
                   const optionLetter = String.fromCharCode(65 + index);
 
                   return (
                     <button
                       key={answer.id}
-                      onClick={() => handleAnswerSelect(currentQuestion.id, answer.id)}
+                      onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)}
                       disabled={alreadySubmitted || isAutoSubmitting}
                       style={{
                         ...styles.answerCard,
@@ -988,11 +973,18 @@ function AssessmentContent() {
                       </div>
                       <span style={{ color: isSelected ? 'white' : '#1e293b' }}>
                         {answer.answer_text}
+                        {isMultipleCorrect && isSelected && <span style={{ marginLeft: '8px', fontSize: '12px' }}>✓</span>}
                       </span>
                     </button>
                   );
                 })}
               </div>
+
+              {isMultipleCorrect && (
+                <div style={styles.multipleHint}>
+                  💡 This question has multiple correct answers. Select all that apply.
+                </div>
+              )}
 
               <div style={styles.navigation}>
                 <button onClick={handlePrevious} disabled={currentIndex === 0 || isAutoSubmitting} style={{
@@ -1038,7 +1030,8 @@ function AssessmentContent() {
 
               <div style={styles.questionGrid}>
                 {questions.map((q, index) => {
-                  const isAnswered = answers[q.id];
+                  const isAnswered = answers[q.id] !== undefined && 
+                    (Array.isArray(answers[q.id]) ? answers[q.id].length > 0 : answers[q.id] !== null);
                   const isCurrent = index === currentIndex;
                   const hasChanges = answerChangeCount[q.id] > 0;
 
@@ -1196,6 +1189,7 @@ const styles = {
   answersContainer: { display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' },
   answerCard: { padding: '12px 16px', border: '2px solid', borderRadius: '12px', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '12px', transition: 'all 0.2s' },
   answerLetter: { width: '28px', height: '28px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 700 },
+  multipleHint: { padding: '10px 16px', background: '#E3F2FD', borderRadius: '8px', fontSize: '13px', color: '#1565C0', marginBottom: '16px' },
   navigation: { display: 'flex', justifyContent: 'space-between', gap: '12px', marginTop: '8px' },
   navButton: { padding: '10px 20px', borderRadius: '10px', fontSize: '14px', fontWeight: 600, border: '2px solid #667eea', background: 'white', color: '#667eea', cursor: 'pointer' },
   nextButton: { padding: '10px 20px', borderRadius: '10px', fontSize: '14px', fontWeight: 600, border: 'none', background: 'linear-gradient(135deg, #667eea, #764ba2)', color: 'white', cursor: 'pointer' },
