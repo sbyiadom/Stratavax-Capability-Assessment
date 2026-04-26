@@ -37,6 +37,7 @@ function CandidateReportComponent() {
   const [detailedCategoryAnalysis, setDetailedCategoryAnalysis] = useState({});
   const [isInvalidResult, setIsInvalidResult] = useState(false);
   const [invalidReason, setInvalidReason] = useState('');
+  const [questionResponses, setQuestionResponses] = useState([]); // For multiple-select display
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -88,7 +89,7 @@ function CandidateReportComponent() {
         };
         setCandidate(candidateInfo);
 
-        // Only fetch valid assessment results (is_valid = true or null for backward compatibility)
+        // Fetch all valid assessment results (include manufacturing_baseline)
         const { data: resultsData } = await supabase
           .from('assessment_results')
           .select('*')
@@ -98,11 +99,8 @@ function CandidateReportComponent() {
         if (resultsData && resultsData.length > 0) {
           const resultsWithAssessments = [];
           for (const result of resultsData) {
-            // Skip invalid results
-            if (result.is_valid === false) {
-              console.log("Skipping invalid assessment result:", result.id);
-              continue;
-            }
+            // Skip invalid results if flagged (but keep for display with warning)
+            // We still show them but with invalid banner
             
             const { data: assessment } = await supabase
               .from('assessments')
@@ -126,6 +124,29 @@ function CandidateReportComponent() {
     };
     fetchData();
   }, [authChecked, isSupervisor, user_id]);
+
+  // Helper function to check if question has multiple correct answers
+  const isMultipleCorrectQuestion = (questionId, responses) => {
+    const response = responses.find(r => r.question_id === questionId);
+    if (!response || !response.answer_id) return false;
+    // If answer_id is a string containing commas, it's multiple answers
+    return typeof response.answer_id === 'string' && response.answer_id.includes(',');
+  };
+
+  // Helper to get selected answer texts for a question
+  const getSelectedAnswerTexts = (questionId, responses, answersMap) => {
+    const response = responses.find(r => r.question_id === questionId);
+    if (!response || !response.answer_id) return [];
+    
+    let answerIds = [];
+    if (typeof response.answer_id === 'string' && response.answer_id.includes(',')) {
+      answerIds = response.answer_id.split(',').map(id => parseInt(id, 10));
+    } else {
+      answerIds = [parseInt(response.answer_id, 10)];
+    }
+    
+    return answerIds.map(id => answersMap[id]?.answer_text || `Answer ${id}`).filter(Boolean);
+  };
 
   const extractCompetencyData = (categoryScores, assessmentTypeId, candidateName, overallPercentage) => {
     if (!categoryScores || Object.keys(categoryScores).length === 0) {
@@ -293,11 +314,24 @@ function CandidateReportComponent() {
         setInvalidReason('');
       }
       
+      // Fetch responses with question and answer details
       const { data: responsesData } = await supabase
         .from('responses')
         .select(`*, unique_questions!inner (id, section, subsection, question_text), unique_answers!inner (id, answer_text, score)`)
         .eq('user_id', user_id)
         .eq('assessment_id', result.assessment_id);
+      
+      setQuestionResponses(responsesData || []);
+      
+      // Build answers map for display
+      const answersMap = {};
+      if (responsesData) {
+        responsesData.forEach(r => {
+          if (r.unique_answers) {
+            answersMap[r.unique_answers.id] = r.unique_answers;
+          }
+        });
+      }
 
       const assessmentTypeId = result.assessment?.assessment_type?.code || result.assessment_type || 'general';
       const config = getAssessmentType(assessmentTypeId);
@@ -503,7 +537,16 @@ function CandidateReportComponent() {
 
   const handlePrint = () => window.print();
 
-  // Generate integrated executive summary with behavioral insights
+  // Get assessment-specific theme color
+  const getAssessmentThemeColor = () => {
+    if (selectedAssessment?.assessment_type === 'manufacturing_baseline') {
+      return '#2E7D32'; // Green for manufacturing baseline
+    }
+    const percentage = selectedAssessment?.percentage || 0;
+    return percentage >= 80 ? '#2E7D32' : percentage >= 60 ? '#1565C0' : percentage >= 40 ? '#F57C00' : '#C62828';
+  };
+
+  // Get integrated executive summary with behavioral insights
   const getIntegratedExecutiveSummary = () => {
     if (!stratavaxReport || !stratavaxReport.stratavaxReport || !stratavaxReport.stratavaxReport.executiveSummary) {
       return "Loading assessment data...";
@@ -561,7 +604,8 @@ function CandidateReportComponent() {
 
   const report = selectedAssessment.report.stratavaxReport;
   const assessmentDisplayName = selectedAssessment.assessment_name || 'Assessment';
-  const percentageColor = selectedAssessment.percentage >= 80 ? '#2E7D32' : selectedAssessment.percentage >= 60 ? '#1565C0' : selectedAssessment.percentage >= 40 ? '#F57C00' : '#C62828';
+  const themeColor = getAssessmentThemeColor();
+  const percentageColor = themeColor;
   const isValidResult = selectedAssessment.is_valid !== false;
 
   const tabs = [
@@ -571,13 +615,14 @@ function CandidateReportComponent() {
     ...(behavioralData && behavioralData.work_style !== 'Assessment Invalid' ? [{ id: 'behavioral', label: 'Behavioral Insights', icon: '🧠' }] : []),
     { id: 'recommendations', label: 'Recommendations', icon: '💡' },
     { id: 'development', label: 'Development Plan', icon: '📅' },
-    ...(superAnalysis ? [{ id: 'super', label: 'Super Analysis', icon: '🔮' }] : [])
+    ...(superAnalysis ? [{ id: 'super', label: 'Super Analysis', icon: '🔮' }] : []),
+    { id: 'responses', label: 'Question Responses', icon: '📝' } // New tab for detailed responses
   ];
 
   return (
     <div style={stylesModern.pageContainer}>
-      {/* Animated Gradient Header */}
-      <div style={stylesModern.animatedHeader}>
+      {/* Animated Gradient Header with assessment-specific color */}
+      <div style={{...stylesModern.animatedHeader, background: `linear-gradient(135deg, ${themeColor} 0%, ${themeColor}CC 100%)`}}>
         <div style={stylesModern.headerContent}>
           <div style={stylesModern.headerLeft}>
             <Link href="/supervisor" style={stylesModern.dashboardLink}>← Dashboard</Link>
@@ -598,11 +643,11 @@ function CandidateReportComponent() {
         </div>
       </div>
 
-      {/* Hero Section with Gradient */}
-      <div style={{...stylesModern.hero, background: `linear-gradient(135deg, ${percentageColor}15 0%, ${percentageColor}05 100%)`}}>
+      {/* Hero Section with Theme Color */}
+      <div style={{...stylesModern.hero, background: `linear-gradient(135deg, ${themeColor}08 0%, ${themeColor}04 100%)`}}>
         <div style={stylesModern.heroContent}>
           <div style={stylesModern.candidateInfo}>
-            <div style={{...stylesModern.candidateAvatar, background: `linear-gradient(135deg, ${percentageColor}, ${percentageColor}CC)`}}>
+            <div style={{...stylesModern.candidateAvatar, background: `linear-gradient(135deg, ${themeColor}, ${themeColor}CC)`}}>
               {candidate.full_name?.charAt(0) || 'C'}
             </div>
             <div>
@@ -611,9 +656,9 @@ function CandidateReportComponent() {
               {superAnalysis && <p style={stylesModern.profileId}>Profile ID: {superAnalysis.profileId}</p>}
             </div>
           </div>
-          <div style={{...stylesModern.scoreCard, background: `linear-gradient(135deg, ${percentageColor}10, white)`}}>
+          <div style={{...stylesModern.scoreCard, background: `linear-gradient(135deg, ${themeColor}10, white)`}}>
             <div style={stylesModern.scoreCircle}>
-              <span style={{...stylesModern.scoreValue, color: percentageColor}}>{selectedAssessment.percentage}%</span>
+              <span style={{...stylesModern.scoreValue, color: themeColor}}>{selectedAssessment.percentage}%</span>
               <span style={stylesModern.scoreLabel}>Overall Score</span>
             </div>
             <div style={stylesModern.scoreDetails}>
@@ -627,7 +672,7 @@ function CandidateReportComponent() {
               </div>
               <div style={stylesModern.scoreDetailItem}>
                 <span style={stylesModern.scoreDetailLabel}>Classification</span>
-                <span style={{...stylesModern.classificationBadge, background: `${percentageColor}15`, color: percentageColor}}>
+                <span style={{...stylesModern.classificationBadge, background: `${themeColor}15`, color: themeColor}}>
                   {report.executiveSummary.classification}
                 </span>
               </div>
@@ -672,12 +717,12 @@ function CandidateReportComponent() {
               onClick={() => setActiveTab(tab.id)} 
               style={{
                 ...stylesModern.tab, 
-                ...(activeTab === tab.id ? {...stylesModern.tabActive, borderBottomColor: percentageColor, color: percentageColor} : {})
+                ...(activeTab === tab.id ? {...stylesModern.tabActive, borderBottomColor: themeColor, color: themeColor} : {})
               }}
             >
               <span style={stylesModern.tabIcon}>{tab.icon}</span>
               <span>{tab.label}</span>
-              {activeTab === tab.id && <span style={{...stylesModern.tabIndicator, background: percentageColor}} />}
+              {activeTab === tab.id && <span style={{...stylesModern.tabIndicator, background: themeColor}} />}
             </button>
           ))}
         </div>
@@ -690,7 +735,7 @@ function CandidateReportComponent() {
           <div style={stylesModern.contentCard}>
             <div style={stylesModern.executiveSummarySection}>
               <h2 style={stylesModern.sectionTitle}>Executive Summary</h2>
-              <div style={{...stylesModern.narrativeBox, borderLeftColor: percentageColor}}>
+              <div style={{...stylesModern.narrativeBox, borderLeftColor: themeColor}}>
                 <p style={stylesModern.executiveText}>{getIntegratedExecutiveSummary()}</p>
                 <p style={stylesModern.executiveDesc}>{report.executiveSummary.classificationDescription}</p>
               </div>
@@ -730,7 +775,7 @@ function CandidateReportComponent() {
             </div>
 
             {behavioralData && behavioralData.work_style !== 'Assessment Invalid' && (
-              <div style={{...stylesModern.insightCard, background: `linear-gradient(135deg, ${percentageColor}10, white)`, borderLeft: `4px solid ${percentageColor}`}}>
+              <div style={{...stylesModern.insightCard, background: `linear-gradient(135deg, ${themeColor}10, white)`, borderLeft: `4px solid ${themeColor}`}}>
                 <div style={stylesModern.insightCardHeader}>
                   <span style={stylesModern.insightCardIcon}>💡</span>
                   <h4 style={stylesModern.insightCardTitle}>Performance & Behavior Correlation</h4>
@@ -795,7 +840,7 @@ function CandidateReportComponent() {
                     <th style={stylesModern.tableHeader}>Percentage</th>
                     <th style={stylesModern.tableHeader}>Grade</th>
                     <th style={stylesModern.tableHeader}>Performance</th>
-                   </tr>
+                  </tr>
                 </thead>
                 <tbody>
                   {report.scoreBreakdown.map((item, idx) => {
@@ -1025,7 +1070,7 @@ function CandidateReportComponent() {
             <h2 style={stylesModern.sectionTitle}>🔮 Super Analysis</h2>
             <p style={stylesModern.sectionDesc}>Advanced 12-dimensional analysis combining competency, behavioral, and predictive insights</p>
             
-            <div style={{...stylesModern.superOverview, background: `linear-gradient(135deg, ${percentageColor}, ${percentageColor}CC)`}}>
+            <div style={{...stylesModern.superOverview, background: `linear-gradient(135deg, ${themeColor}, ${themeColor}CC)`}}>
               <div style={stylesModern.superHeader}>
                 <span style={stylesModern.superIcon}>🌟</span>
                 <div>
@@ -1179,6 +1224,59 @@ function CandidateReportComponent() {
                       </li>
                     ))}
                   </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Question Responses Tab - NEW for multiple-select display */}
+        {activeTab === 'responses' && (
+          <div style={stylesModern.contentCard}>
+            <h2 style={stylesModern.sectionTitle}>📝 Detailed Question Responses</h2>
+            <p style={stylesModern.sectionDesc}>Review all answers provided by the candidate, including multiple-select questions</p>
+            
+            <div style={stylesModern.responsesContainer}>
+              {questionResponses.length === 0 ? (
+                <p>No response data available.</p>
+              ) : (
+                <div style={stylesModern.responsesList}>
+                  {questionResponses.map((response, idx) => {
+                    const isMultiple = isMultipleCorrectQuestion(response.question_id, questionResponses);
+                    let selectedAnswers = [];
+                    
+                    if (isMultiple && response.answer_id && response.answer_id.includes(',')) {
+                      const answerIds = response.answer_id.split(',').map(id => parseInt(id, 10));
+                      selectedAnswers = answerIds.map(id => response.unique_answers?.answer_text || `Answer ${id}`);
+                    } else {
+                      selectedAnswers = [response.unique_answers?.answer_text || response.answer_id];
+                    }
+                    
+                    return (
+                      <div key={idx} style={stylesModern.responseCard}>
+                        <div style={stylesModern.responseHeader}>
+                          <span style={stylesModern.responseNumber}>Q{idx + 1}</span>
+                          <span style={stylesModern.responseSection}>{response.unique_questions?.section || 'General'}</span>
+                          {isMultiple && <span style={stylesModern.multipleBadge}>Multiple Correct</span>}
+                        </div>
+                        <div style={stylesModern.responseQuestion}>{response.unique_questions?.question_text || 'Question text not available'}</div>
+                        <div style={stylesModern.responseAnswers}>
+                          <strong>Selected Answer{selectedAnswers.length > 1 ? 's' : ''}:</strong>
+                          <ul style={stylesModern.responseAnswersList}>
+                            {selectedAnswers.map((answer, aidx) => (
+                              <li key={aidx} style={stylesModern.responseAnswerItem}>✓ {answer}</li>
+                            ))}
+                          </ul>
+                        </div>
+                        {response.time_spent_seconds > 0 && (
+                          <div style={stylesModern.responseMeta}>
+                            Time spent: {response.time_spent_seconds} seconds
+                            {response.times_changed > 0 && ` • Changed answer ${response.times_changed} time${response.times_changed !== 1 ? 's' : ''}`}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1400,7 +1498,20 @@ const stylesModern = {
   superPhaseIcon: { fontSize: '16px' },
   superPhaseTitle: { fontSize: '14px', fontWeight: 600, color: '#0A1929' },
   superPhaseList: { margin: 0, paddingLeft: '26px' },
-  superPhaseItem: { fontSize: '13px', color: '#4A5568', marginBottom: '8px', lineHeight: '1.5' }
+  superPhaseItem: { fontSize: '13px', color: '#4A5568', marginBottom: '8px', lineHeight: '1.5' },
+  // New styles for Question Responses tab
+  responsesContainer: { marginTop: '16px' },
+  responsesList: { display: 'flex', flexDirection: 'column', gap: '16px' },
+  responseCard: { padding: '20px', borderRadius: '12px', border: '1px solid #E2E8F0', background: 'white', transition: 'box-shadow 0.2s' },
+  responseHeader: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' },
+  responseNumber: { fontSize: '14px', fontWeight: 700, color: '#0A1929', background: '#F1F5F9', padding: '4px 10px', borderRadius: '20px' },
+  responseSection: { fontSize: '12px', color: '#64748B', background: '#F8FAFC', padding: '4px 10px', borderRadius: '20px' },
+  multipleBadge: { fontSize: '11px', fontWeight: 600, color: '#2E7D32', background: '#E8F5E9', padding: '4px 10px', borderRadius: '20px' },
+  responseQuestion: { fontSize: '15px', fontWeight: 500, color: '#0A1929', marginBottom: '12px', lineHeight: '1.5' },
+  responseAnswers: { marginBottom: '8px', fontSize: '13px' },
+  responseAnswersList: { margin: '4px 0 0 20px', padding: 0 },
+  responseAnswerItem: { fontSize: '13px', color: '#2E7D32', marginBottom: '4px' },
+  responseMeta: { fontSize: '11px', color: '#94A3B8', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #E2E8F0' }
 };
 
 export default CandidateReport;
