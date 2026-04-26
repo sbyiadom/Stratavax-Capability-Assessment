@@ -435,6 +435,43 @@ assessmentTemplates['cultural'] = {
   }
 };
 
+// ===== NEW: Manufacturing Baseline Assessment Template =====
+assessmentTemplates['manufacturing_baseline'] = {
+  name: 'Manufacturing Baseline Assessment',
+  icon: '🏭',
+  strengths: {
+    'Technical Fundamentals': 'solid grasp of maintenance principles, sensor functions, motor operation, and pneumatic systems',
+    'Troubleshooting': 'effective diagnostic approach to conveyor issues, filler problems, labeler alignment, and jam resolution',
+    'Numerical Aptitude': 'strong mathematical reasoning, calculation accuracy, and production rate comprehension',
+    'Safety & Work Ethic': 'excellent safety awareness, PPE compliance, SOP adherence, and professional conduct'
+  },
+  weaknesses: {
+    'Technical Fundamentals': 'gaps in foundational technical knowledge requiring reinforcement',
+    'Troubleshooting': 'developing diagnostic skills that would benefit from structured problem-solving training',
+    'Numerical Aptitude': 'numerical reasoning gaps that could impact production calculations and efficiency tracking',
+    'Safety & Work Ethic': 'safety awareness or work ethic concepts needing reinforcement through training'
+  },
+  narrativeTemplates: {
+    executiveIntro: (name, classification) => {
+      const intros = [
+        `${name} completed the Manufacturing Baseline Assessment with the following results:`,
+        `The manufacturing readiness profile for ${name} reveals:`,
+        `Analysis of ${name}'s foundational manufacturing knowledge indicates:`,
+        `${name}'s baseline manufacturing assessment yields the following insights:`,
+        `Evaluation of ${name}'s production readiness shows:`
+      ];
+      return intros[Math.floor(Math.random() * intros.length)];
+    }
+  },
+  // Manufacturing-specific role readiness descriptions
+  roleReadiness: {
+    'Production Line Operator': 'Direct production role requiring strong technical fundamentals and safety awareness',
+    'Quality Control Technician': 'Role focused on product quality requiring attention to detail and analytical thinking',
+    'Maintenance Trainee': 'Entry-level maintenance role building on technical fundamentals',
+    'Packaging Operator': 'Packaging-focused role emphasizing efficiency and process adherence'
+  }
+};
+
 // ========== SECTION 3: ENHANCED NARRATIVE ENGINE ==========
 
 /**
