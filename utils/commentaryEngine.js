@@ -4,6 +4,62 @@
  * Each commentary is unique and reads like a consultant wrote it
  */
 
+// ===== MANUFACTURING-SPECIFIC COMMENTARY =====
+
+const getManufacturingCriticalGapCommentary = (area, percentage) => {
+  const templates = {
+    'Technical Fundamentals': [
+      `Technical Fundamentals at ${percentage}% indicates a critical gap in foundational manufacturing knowledge. Without immediate intervention, this candidate will struggle with basic equipment operation and maintenance concepts. Priority training in core maintenance principles, sensor functions, and motor operation is essential.`,
+      `The ${percentage}% score in Technical Fundamentals represents a significant barrier to production readiness. The candidate requires intensive foundational training before being placed in roles requiring equipment interaction.`
+    ],
+    'Troubleshooting': [
+      `Troubleshooting capability at ${percentage}% is critically low. The candidate shows limited ability to diagnose production issues, which will lead to extended downtime when problems occur. Structured training in systematic problem-solving and diagnostic approaches is urgently needed.`,
+      `At ${percentage}%, the candidate lacks the diagnostic skills necessary for independent problem resolution. Close supervision and guided troubleshooting practice are essential for development.`
+    ],
+    'Numerical Aptitude': [
+      `Numerical Aptitude at ${percentage}% presents a significant challenge for production roles requiring calculations, reporting, and data interpretation. Foundational numeracy training should be prioritized before placing the candidate in roles with quantitative demands.`,
+      `The ${percentage}% score indicates the candidate would struggle with production metrics, efficiency calculations, and quality documentation. Basic math skills need immediate attention.`
+    ],
+    'Safety & Work Ethic': [
+      `Safety awareness at ${percentage}% is critically low and represents an immediate concern for manufacturing environments. Comprehensive safety training and close supervision are non-negotiable before the candidate can work independently.`,
+      `At ${percentage}%, the candidate shows insufficient understanding of workplace safety requirements. This gap must be addressed before any production responsibilities can be assigned.`
+    ]
+  };
+  
+  const areaTemplates = templates[area];
+  if (areaTemplates && areaTemplates.length > 0) {
+    return areaTemplates[Math.floor(Math.random() * areaTemplates.length)];
+  }
+  return criticalGapCommentary(area, percentage);
+};
+
+const getManufacturingStrengthCommentary = (area, percentage) => {
+  const templates = {
+    'Technical Fundamentals': [
+      `Technical Fundamentals at ${percentage}% demonstrates strong foundational knowledge. The candidate shows good understanding of maintenance principles, equipment operation, and system functions—making them well-suited for production roles.`,
+      `The ${percentage}% score in Technical Fundamentals indicates solid mechanical aptitude. This strength provides a reliable foundation for equipment handling and basic troubleshooting.`
+    ],
+    'Troubleshooting': [
+      `Troubleshooting capability at ${percentage}% is a notable strength. The candidate demonstrates systematic problem-solving skills that will help minimize production interruptions when issues arise.`,
+      `At ${percentage}%, the candidate shows strong diagnostic ability. This strength positions them to handle common production issues independently and support others in problem resolution.`
+    ],
+    'Numerical Aptitude': [
+      `Numerical Aptitude at ${percentage}% is a clear strength. The candidate can confidently handle production calculations, quality metrics, and efficiency reporting—valuable skills for manufacturing roles.`,
+      `The ${percentage}% score indicates strong quantitative ability. The candidate will be effective in roles requiring data tracking, production reporting, and numerical analysis.`
+    ],
+    'Safety & Work Ethic': [
+      `Safety awareness at ${percentage}% is exceptional. The candidate demonstrates strong understanding of PPE requirements, safety protocols, and professional conduct—essential qualities for manufacturing environments.`,
+      `At ${percentage}%, the candidate shows excellent safety consciousness. This strength provides confidence in their ability to work safely and serve as a safety role model.`
+    ]
+  };
+  
+  const areaTemplates = templates[area];
+  if (areaTemplates && areaTemplates.length > 0) {
+    return areaTemplates[Math.floor(Math.random() * areaTemplates.length)];
+  }
+  return strengthCommentary(area, percentage);
+};
+
 // ===== SCORE-BASED COMMENTARY TEMPLATES =====
 
 const criticalGapCommentary = (area, percentage) => {
@@ -216,7 +272,51 @@ export const generateProfileCommentary = (percentage, classification, strengths,
     
     `At ${percentage}%, the candidate shows substantial gaps that need immediate attention. A comprehensive development plan with clear milestones and regular progress monitoring is essential.`,
     
-    `The profile reveals critical development needs across multiple areas. Intensive support and structured learning experiences are required to build fundamental competence.`
+      `The profile reveals critical development needs across multiple areas. Intensive support and structured learning experiences are required to build fundamental competence.`
+  ];
+  
+  return templates[Math.floor(Math.random() * templates.length)];
+};
+
+// ===== MANUFACTURING-SPECIFIC PROFILE COMMENTARY =====
+
+export const generateManufacturingProfileCommentary = (percentage, categories) => {
+  const safetyScore = categories['Safety & Work Ethic'] || 0;
+  const techScore = categories['Technical Fundamentals'] || 0;
+  const troubleshootingScore = categories['Troubleshooting'] || 0;
+  const numericalScore = categories['Numerical Aptitude'] || 0;
+  
+  if (percentage >= 80 && safetyScore >= 80 && techScore >= 70) {
+    const templates = [
+      `This candidate demonstrates strong readiness for manufacturing roles. With exceptional safety awareness and solid technical fundamentals, they are well-prepared for production environments. Their troubleshooting capability suggests ability to handle common line issues independently.`,
+      
+      `The profile indicates strong manufacturing baseline competence. The candidate combines good technical knowledge with excellent safety consciousness—essential qualities for production success.`
+    ];
+    return templates[Math.floor(Math.random() * templates.length)];
+  }
+  
+  if (safetyScore < 50) {
+    const templates = [
+      `Safety awareness is the most critical concern in this profile at ${safetyScore}%. Before any production responsibilities, the candidate requires comprehensive safety training and close supervision. This must be the highest priority development area.`,
+      
+      `This profile highlights safety as a significant gap. The candidate's ${safetyScore}% score in safety awareness indicates insufficient understanding of PPE requirements and safety protocols—an immediate development priority.`
+    ];
+    return templates[Math.floor(Math.random() * templates.length)];
+  }
+  
+  if (techScore < 50) {
+    const templates = [
+      `Technical fundamentals require significant development at ${techScore}%. The candidate needs foundational training in equipment operation and maintenance principles before independent production work.`,
+      
+      `This profile shows technical knowledge as a primary development need. Structured training in core manufacturing concepts will be essential to build baseline competence.`
+    ];
+    return templates[Math.floor(Math.random() * templates.length)];
+  }
+  
+  const templates = [
+    `This candidate shows foundational readiness for manufacturing environments. With a ${percentage}% overall score, they have established baseline knowledge while demonstrating clear development areas. Targeted training in technical fundamentals and troubleshooting will accelerate their readiness.`,
+    
+    `The profile reveals a developing manufacturing baseline. The candidate meets minimum requirements in some areas but would benefit from structured training to build competence in others.`
   ];
   
   return templates[Math.floor(Math.random() * templates.length)];
@@ -224,17 +324,46 @@ export const generateProfileCommentary = (percentage, classification, strengths,
 
 // ===== MAIN EXPORT FUNCTION =====
 
-export const generateCommentary = (area, percentage, type = 'weakness') => {
+export const generateCommentary = (area, percentage, type = 'weakness', assessmentType = null) => {
+  // Check if this is a manufacturing baseline assessment
+  const isManufacturing = assessmentType === 'manufacturing_baseline' || 
+                          area === 'Technical Fundamentals' || 
+                          area === 'Troubleshooting' || 
+                          area === 'Numerical Aptitude' || 
+                          area === 'Safety & Work Ethic';
+  
   if (type === 'strength') {
-    if (percentage >= 90) return exceptionalCommentary(area, percentage);
-    if (percentage >= 80) return strengthCommentary(area, percentage);
+    if (percentage >= 90) {
+      if (isManufacturing) return getManufacturingStrengthCommentary(area, percentage);
+      return exceptionalCommentary(area, percentage);
+    }
+    if (percentage >= 80) {
+      if (isManufacturing) return getManufacturingStrengthCommentary(area, percentage);
+      return strengthCommentary(area, percentage);
+    }
+    if (isManufacturing && (area === 'Safety & Work Ethic' || area === 'Technical Fundamentals')) {
+      return getManufacturingStrengthCommentary(area, percentage);
+    }
     return proficientCommentary(area, percentage);
   } else {
-    if (percentage < 30) return criticalGapCommentary(area, percentage);
-    if (percentage < 40) return significantGapCommentary(area, percentage);
-    if (percentage < 50) return developingCommentary(area, percentage);
+    if (percentage < 30) {
+      if (isManufacturing) return getManufacturingCriticalGapCommentary(area, percentage);
+      return criticalGapCommentary(area, percentage);
+    }
+    if (percentage < 40) {
+      if (isManufacturing && area === 'Safety & Work Ethic') return getManufacturingCriticalGapCommentary(area, percentage);
+      return significantGapCommentary(area, percentage);
+    }
+    if (percentage < 50) {
+      if (isManufacturing) return getManufacturingCriticalGapCommentary(area, percentage);
+      return developingCommentary(area, percentage);
+    }
     if (percentage < 60) return approachingProficiencyCommentary(area, percentage);
     if (percentage < 70) return proficientCommentary(area, percentage);
+    if (isManufacturing) return getManufacturingStrengthCommentary(area, percentage);
     return strengthCommentary(area, percentage);
   }
 };
+
+// Export additional manufacturing-specific function
+export { generateManufacturingProfileCommentary };
