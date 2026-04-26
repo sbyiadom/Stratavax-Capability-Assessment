@@ -225,12 +225,14 @@ export default function SupervisorDashboard() {
             const assessmentsWithDetails = (accessData || []).map(access => {
               const result = resultsMap[access.assessment_id] || null;
               
-              // CRITICAL FIX: Use result existence to determine status, not access.status
+              // Determine display status based on result existence
               let displayStatus = access.status;
               if (result || access.result_id) {
                 displayStatus = 'completed';
               } else if (access.status === 'unblocked') {
                 displayStatus = 'unblocked';
+              } else if (access.status === 'blocked') {
+                displayStatus = 'blocked';
               } else {
                 displayStatus = 'blocked';
               }
@@ -263,7 +265,6 @@ export default function SupervisorDashboard() {
                 type_gradient_start: typeData?.gradient_start || '#667eea',
                 type_gradient_end: typeData?.gradient_end || '#764ba2',
                 status: displayStatus,
-                original_status: access.status,
                 created_at: access.created_at,
                 unblocked_at: access.unblocked_at,
                 result: result ? {
@@ -461,49 +462,17 @@ export default function SupervisorDashboard() {
     setProcessingAssessment({ candidateId, assessmentId });
 
     try {
-      const { error: responsesError } = await supabase
-        .from('responses')
-        .delete()
-        .eq('user_id', candidateId)
-        .eq('assessment_id', assessmentId);
-
-      if (responsesError) throw new Error("Failed to delete responses: " + responsesError.message);
-
-      const { error: sessionsError } = await supabase
-        .from('assessment_sessions')
-        .delete()
-        .eq('user_id', candidateId)
-        .eq('assessment_id', assessmentId);
-
-      if (sessionsError) throw new Error("Failed to delete sessions: " + sessionsError.message);
-
-      const { error: resultsError } = await supabase
-        .from('assessment_results')
-        .delete()
-        .eq('user_id', candidateId)
-        .eq('assessment_id', assessmentId);
-
-      if (resultsError) throw new Error("Failed to delete results: " + resultsError.message);
-
-      const { error: updateError } = await supabase
-        .from('candidate_assessments')
-        .update({ 
-          status: 'blocked',
-          unblocked_by: null,
-          unblocked_at: null,
-          result_id: null
-        })
-        .eq('user_id', candidateId)
-        .eq('assessment_id', assessmentId);
-
-      if (updateError) throw new Error("Failed to update assessment status: " + updateError.message);
-
+      await supabase.from('responses').delete().eq('user_id', candidateId).eq('assessment_id', assessmentId);
+      await supabase.from('assessment_sessions').delete().eq('user_id', candidateId).eq('assessment_id', assessmentId);
+      await supabase.from('assessment_results').delete().eq('user_id', candidateId).eq('assessment_id', assessmentId);
+      await supabase.from('assessment_progress').delete().eq('user_id', candidateId).eq('assessment_id', assessmentId);
+      
       await supabase
-        .from('assessment_progress')
-        .delete()
+        .from('candidate_assessments')
+        .update({ status: 'blocked', unblocked_at: null, result_id: null })
         .eq('user_id', candidateId)
         .eq('assessment_id', assessmentId);
-
+      
       alert(`✅ "${assessmentTitle}" reset successfully for ${candidateName}. It is now BLOCKED.`);
       
       setCandidates(prev => prev.map(c => {
@@ -545,17 +514,12 @@ export default function SupervisorDashboard() {
     setProcessingAssessment({ candidateId, assessmentId });
 
     try {
-      const { error } = await supabase
+      await supabase
         .from('candidate_assessments')
-        .update({
-          status: 'blocked',
-          updated_at: new Date().toISOString()
-        })
+        .update({ status: 'blocked', updated_at: new Date().toISOString() })
         .eq('user_id', candidateId)
         .eq('assessment_id', assessmentId);
-
-      if (error) throw error;
-
+      
       alert(`🔒 "${assessmentTitle}" blocked for ${candidateName}.`);
       
       setCandidates(prev => prev.map(c => {
@@ -645,17 +609,13 @@ export default function SupervisorDashboard() {
           <div>
             <h1 style={styles.title}>Supervisor Dashboard</h1>
             <p style={styles.welcome}>Welcome back, <strong>{currentSupervisor.name || currentSupervisor.email}</strong></p>
-            {currentSupervisor.role === 'admin' && (
-              <p style={styles.adminBadge}>Admin • Viewing all candidates</p>
-            )}
+            {currentSupervisor.role === 'admin' && <p style={styles.adminBadge}>Admin • Viewing all candidates</p>}
           </div>
           <div style={styles.headerButtons}>
             <Link href="/supervisor/batch-manage" legacyBehavior>
               <a style={styles.batchManageButton}>📋 Batch Manage</a>
             </Link>
-            <button onClick={handleLogout} style={styles.logoutButton}>
-              Sign Out
-            </button>
+            <button onClick={handleLogout} style={styles.logoutButton}>Sign Out</button>
           </div>
         </div>
 
@@ -711,9 +671,7 @@ export default function SupervisorDashboard() {
               onChange={(e) => setSearchTerm(e.target.value)}
               style={styles.searchInput}
             />
-            {searchTerm && (
-              <button onClick={() => setSearchTerm('')} style={styles.clearButton}>✕</button>
-            )}
+            {searchTerm && <button onClick={() => setSearchTerm('')} style={styles.clearButton}>✕</button>}
           </div>
           
           <div style={styles.filterGroup}>
@@ -738,9 +696,7 @@ export default function SupervisorDashboard() {
           <div style={styles.tableHeader}>
             <h2 style={styles.tableTitle}>
               My Assigned Candidates 
-              {filteredCandidates.length !== candidates.length && (
-                <span style={styles.filterCount}> ({filteredCandidates.length} of {candidates.length})</span>
-              )}
+              {filteredCandidates.length !== candidates.length && <span style={styles.filterCount}> ({filteredCandidates.length} of {candidates.length})</span>}
             </h2>
             <Link href="/supervisor/add-candidate" legacyBehavior>
               <a style={styles.addButton}>+ Add New Candidate</a>
@@ -800,15 +756,13 @@ export default function SupervisorDashboard() {
                         <tr style={styles.tableRow}>
                           <td style={styles.tableCell}>
                             <div style={styles.candidateInfo}>
-                              <div style={styles.candidateAvatar}>
-                                {candidate.full_name?.charAt(0) || 'C'}
-                              </div>
+                              <div style={styles.candidateAvatar}>{candidate.full_name?.charAt(0) || 'C'}</div>
                               <div>
                                 <div style={styles.candidateName}>{candidate.full_name}</div>
                                 <div style={styles.candidateId}>ID: {candidate.id.substring(0, 8)}...</div>
                               </div>
                             </div>
-                          </tr>
+                          </td>
                           <td style={styles.tableCell}>
                             <div style={styles.candidateEmail}>{candidate.email}</div>
                             {candidate.phone && <div style={styles.candidatePhone}>{candidate.phone}</div>}
@@ -837,9 +791,7 @@ export default function SupervisorDashboard() {
                           </td>
                           <td style={styles.tableCell}>
                             <span style={styles.date}>
-                              {candidate.latestAssessment?.result 
-                                ? formatDate(candidate.latestAssessment.result.completed_at)
-                                : 'Never'}
+                              {candidate.latestAssessment?.result ? formatDate(candidate.latestAssessment.result.completed_at) : 'Never'}
                             </span>
                           </td>
                           <td style={styles.tableCell}>
@@ -919,9 +871,7 @@ export default function SupervisorDashboard() {
                                             {assessment.result ? (
                                               <div style={styles.assessmentScoreSection}>
                                                 <div style={styles.scoreCircle}>
-                                                  <span style={styles.scoreLarge}>
-                                                    {Math.round((assessment.result.score/assessment.result.max_score)*100)}%
-                                                  </span>
+                                                  <span style={styles.scoreLarge}>{Math.round((assessment.result.score/assessment.result.max_score)*100)}%</span>
                                                   <span style={styles.scoreLabel}>Overall</span>
                                                 </div>
                                                 <div style={styles.scoreDetails}>
@@ -962,7 +912,7 @@ export default function SupervisorDashboard() {
                                         </div>
                                         <div style={styles.assessmentItemActions}>
                                           {assessment.result ? (
-                                            <>
+                                            <React.Fragment>
                                               <Link href={`/supervisor/${candidate.id}?assessment=${assessment.assessment_id}`} legacyBehavior>
                                                 <a style={styles.viewFullReportButton}>📄 View Full Report</a>
                                               </Link>
@@ -972,7 +922,7 @@ export default function SupervisorDashboard() {
                                                 style={{ ...styles.resetButton, opacity: isProcessingThis ? 0.5 : 1, cursor: isProcessingThis ? 'not-allowed' : 'pointer' }}>
                                                 {isProcessingThis ? '⏳' : '🔄 Reset'}
                                               </button>
-                                            </>
+                                            </React.Fragment>
                                           ) : assessment.status === 'blocked' ? (
                                             <button
                                               onClick={() => setShowUnblockModal({
@@ -999,13 +949,13 @@ export default function SupervisorDashboard() {
                                   })}
                               </div>
                             </td>
-                          </tr>
+                          </table>
                         )}
                       </React.Fragment>
                     );
                   })}
                 </tbody>
-              <tr>
+              </table>
             </div>
           )}
         </div>
