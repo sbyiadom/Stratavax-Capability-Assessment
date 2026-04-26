@@ -145,7 +145,7 @@ export default function AssignAssessment() {
             toAdd.map(assessmentId => ({
               user_id: candidateId,
               assessment_id: assessmentId,
-              status: 'blocked', // IMPORTANT: Default to BLOCKED, not pending
+              status: 'blocked',
               created_at: new Date().toISOString()
             }))
           );
@@ -173,6 +173,24 @@ export default function AssignAssessment() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Get assessment colors based on type code
+  const getAssessmentColors = (assessmentTypeCode) => {
+    const colors = {
+      'leadership': { bg: '#E3F2FD', color: '#1565C0' },
+      'cognitive': { bg: '#E8F5E9', color: '#2E7D32' },
+      'technical': { bg: '#FFEBEE', color: '#C62828' },
+      'personality': { bg: '#F3E5F5', color: '#7B1FA2' },
+      'performance': { bg: '#FFF3E0', color: '#EF6C00' },
+      'behavioral': { bg: '#E0F2F1', color: '#00695C' },
+      'cultural': { bg: '#F1F5F9', color: '#37474F' },
+      'general': { bg: '#F1F5F9', color: '#37474F' },
+      'manufacturing': { bg: '#E8F5E9', color: '#2E7D32' },
+      'manufacturing_baseline': { bg: '#E8F5E9', color: '#2E7D32' },
+      'strategic_leadership': { bg: '#EDE7F6', color: '#4527A0' }
+    };
+    return colors[assessmentTypeCode] || colors.general;
   };
 
   if (!currentSupervisor || loading) {
@@ -248,17 +266,8 @@ export default function AssignAssessment() {
 
           <div style={styles.assessmentsGrid}>
             {assessments.map(assessment => {
-              const assessmentType = assessment.assessment_type?.code || 'general';
-              const colors = {
-                'leadership': { bg: '#E3F2FD', color: '#1565C0' },
-                'cognitive': { bg: '#E8F5E9', color: '#2E7D32' },
-                'technical': { bg: '#FFEBEE', color: '#C62828' },
-                'personality': { bg: '#F3E5F5', color: '#7B1FA2' },
-                'performance': { bg: '#FFF3E0', color: '#EF6C00' },
-                'behavioral': { bg: '#E0F2F1', color: '#00695C' },
-                'cultural': { bg: '#F1F5F9', color: '#37474F' }
-              }[assessmentType] || { bg: '#F1F5F9', color: '#37474F' };
-
+              const assessmentTypeCode = assessment.assessment_type?.code || 'general';
+              const colors = getAssessmentColors(assessmentTypeCode);
               const isSelected = selectedAssessments[assessment.id]?.selected;
               const currentStatus = selectedAssessments[assessment.id]?.status;
 
@@ -399,11 +408,7 @@ const styles = {
     padding: '8px 16px',
     borderRadius: '20px',
     border: '1px solid #0A1929',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#0A1929',
-      color: 'white'
-    }
+    transition: 'all 0.2s ease'
   },
   title: {
     margin: 0,
@@ -601,11 +606,7 @@ const styles = {
     fontSize: '15px',
     fontWeight: 600,
     cursor: 'pointer',
-    textDecoration: 'none',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#CBD5E0'
-    }
+    textDecoration: 'none'
   },
   saveButton: {
     padding: '12px 30px',
@@ -615,12 +616,6 @@ const styles = {
     borderRadius: '8px',
     fontSize: '15px',
     fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#1A2A3A',
-      transform: 'translateY(-1px)',
-      boxShadow: '0 4px 12px rgba(10,25,41,0.3)'
-    }
+    cursor: 'pointer'
   }
 };
