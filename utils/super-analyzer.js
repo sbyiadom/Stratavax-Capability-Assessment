@@ -115,7 +115,7 @@ export const generateSuperAnalysis = (
     const categoryResponses = responseInsights[category] || {};
     
     // Identify behavioral patterns
-    const behavioralPattern = identifyBehavioralPattern(category, percentage, psychometric);
+    const behavioralPattern = identifyBehavioralPattern(category, percentage, psychometric, assessmentType);
     
     // Calculate trajectory
     const trajectory = calculateTrajectory(category, percentage, psychometric);
@@ -132,7 +132,7 @@ export const generateSuperAnalysis = (
       
       // Multi-source commentary (unique to this candidate)
       commentary: {
-        primary: commentaryFromMapper || generateCommentary(category, percentage, isStrength ? 'strength' : 'weakness'),
+        primary: commentaryFromMapper || generateCommentary(category, percentage, isStrength ? 'strength' : 'weakness', assessmentType),
         phraseBased: phraseBasedCommentary,
         professional: commentaryFromProfessional,
         responseBased: categoryResponses.insights || []
@@ -167,7 +167,7 @@ export const generateSuperAnalysis = (
   });
 
   // ===== DIMENSION 7: CROSS-CATEGORY PATTERN ANALYSIS =====
-  const patterns = identifyCrossCategoryPatterns(categoryScores, psychometric, professional);
+  const patterns = identifyCrossCategoryPatterns(categoryScores, psychometric, professional, assessmentType);
 
   // ===== DIMENSION 8: ROLE READINESS WITH MULTI-FACTOR ASSESSMENT =====
   const roleReadiness = assessMultiFactorRoleReadiness(
@@ -175,14 +175,16 @@ export const generateSuperAnalysis = (
     psychometric,
     patterns,
     totalScore,
-    maxScore
+    maxScore,
+    assessmentType
   );
 
   // ===== DIMENSION 9: PREDICTIVE PERFORMANCE INSIGHTS =====
   const predictiveInsights = generatePredictiveInsights(
     categoryScores,
     psychometric,
-    patterns
+    patterns,
+    assessmentType
   );
 
   // ===== DIMENSION 10: COMPETITIVE DIFFERENTIATORS =====
@@ -339,7 +341,29 @@ const extractActions = (recommendation) => {
   return recommendation.split('. ').filter(a => a.length > 10).slice(0, 3);
 };
 
-const identifyBehavioralPattern = (category, percentage, psychometric) => {
+const identifyBehavioralPattern = (category, percentage, psychometric, assessmentType) => {
+  // Manufacturing baseline specific patterns
+  if (assessmentType === 'manufacturing_baseline') {
+    if (category === 'Safety & Work Ethic' && percentage < 60) {
+      return 'Safety awareness needs reinforcement - requires structured safety training and close supervision';
+    }
+    if (category === 'Technical Fundamentals' && percentage < 60) {
+      return 'Technical foundation gaps - would benefit from hands-on training and equipment familiarization';
+    }
+    if (category === 'Troubleshooting' && percentage < 60) {
+      return 'Problem-solving approach needs development - systematic diagnostic training recommended';
+    }
+    if (category === 'Numerical Aptitude' && percentage < 60) {
+      return 'Numerical reasoning gaps - may struggle with production metrics and quality documentation';
+    }
+    if (category === 'Safety & Work Ethic' && percentage >= 80) {
+      return 'Exemplary safety awareness - can serve as safety role model for peers';
+    }
+    if (category === 'Technical Fundamentals' && percentage >= 80) {
+      return 'Strong technical foundation - ready for independent equipment operation';
+    }
+  }
+  
   if (category.includes('Cognitive') && percentage < 60) {
     return 'May struggle with complex analysis - benefits from structured frameworks';
   }
@@ -365,10 +389,83 @@ const calculateTrajectory = (category, percentage, psychometric) => {
   return 'Requires foundational development';
 };
 
-const identifyCrossCategoryPatterns = (categoryScores, psychometric, professional) => {
+const identifyCrossCategoryPatterns = (categoryScores, psychometric, professional, assessmentType) => {
   const patterns = [];
   const categories = Object.keys(categoryScores);
   
+  // ===== MANUFACTURING BASELINE SPECIFIC PATTERNS =====
+  if (assessmentType === 'manufacturing_baseline') {
+    const hasSafety = categories.some(c => c.includes('Safety') || c.includes('Work Ethic'));
+    const hasTech = categories.some(c => c.includes('Technical') || c.includes('Fundamentals'));
+    const hasTroubleshooting = categories.some(c => c.includes('Troubleshooting'));
+    const hasNumerical = categories.some(c => c.includes('Numerical') || c.includes('Aptitude'));
+    
+    const safetyCategory = categories.find(c => c.includes('Safety') || c.includes('Work Ethic'));
+    const techCategory = categories.find(c => c.includes('Technical') || c.includes('Fundamentals'));
+    const troubleshootingCategory = categories.find(c => c.includes('Troubleshooting'));
+    const numericalCategory = categories.find(c => c.includes('Numerical') || c.includes('Aptitude'));
+    
+    // Safety-Technical mismatch pattern
+    if (safetyCategory && techCategory) {
+      const safetyScore = categoryScores[safetyCategory].percentage;
+      const techScore = categoryScores[techCategory].percentage;
+      
+      if (safetyScore >= 80 && techScore < 60) {
+        patterns.push({
+          name: 'Safety-Aware but Technically Limited',
+          severity: 'Medium',
+          description: 'Strong safety awareness but gaps in technical fundamentals may limit independent equipment operation.',
+          recommendation: 'Build technical knowledge through hands-on training while maintaining safety focus.'
+        });
+      } else if (safetyScore < 50 && techScore >= 70) {
+        patterns.push({
+          name: 'Technical-Safety Imbalance',
+          severity: 'High',
+          description: 'Good technical skills but safety awareness requires immediate attention.',
+          recommendation: 'Prioritize safety training before independent work assignments.'
+        });
+      }
+    }
+    
+    // Troubleshooting-Numerical pattern
+    if (troubleshootingCategory && numericalCategory) {
+      const troubleshootingScore = categoryScores[troubleshootingCategory].percentage;
+      const numericalScore = categoryScores[numericalCategory].percentage;
+      
+      if (troubleshootingScore >= 70 && numericalScore < 60) {
+        patterns.push({
+          name: 'Diagnostic-Numerical Gap',
+          severity: 'Medium',
+          description: 'Good diagnostic ability but struggles with quantitative aspects of production monitoring.',
+          recommendation: 'Focus on building numerical confidence through production math practice.'
+        });
+      }
+    }
+    
+    // Production Readiness pattern
+    if (safetyCategory && techCategory && troubleshootingCategory) {
+      const safetyScore = categoryScores[safetyCategory].percentage;
+      const techScore = categoryScores[techCategory].percentage;
+      const troubleshootingScore = categoryScores[troubleshootingCategory].percentage;
+      
+      if (safetyScore >= 70 && techScore >= 70 && troubleshootingScore >= 60) {
+        patterns.push({
+          name: 'Production Ready',
+          severity: 'Positive',
+          description: 'Demonstrates readiness for independent production roles with balanced capabilities.',
+          recommendation: 'Ready for line operations with standard supervision.'
+        });
+      } else if (safetyScore < 60 || techScore < 60) {
+        patterns.push({
+          name: 'Production Readiness Gap',
+          severity: 'Critical',
+          description: 'Significant gaps in core manufacturing competencies require foundational development.',
+          recommendation: 'Structured training program needed before production assignment.'
+        });
+      }
+    }
+  }
+
   // Check for leadership pattern
   const hasLeadership = categories.some(c => c.includes('Leadership') || c.includes('Management'));
   const hasCognitive = categories.some(c => c.includes('Cognitive') || c.includes('Reasoning'));
@@ -471,33 +568,84 @@ const identifyCrossCategoryPatterns = (categoryScores, psychometric, professiona
   
   // Check for performance pattern
   const hasPerformance = categories.some(c => c.includes('Performance') || c.includes('Productivity'));
-  const hasConscientiousness = categories.some(c => c.includes('Conscientiousness'));
   
-  if (hasPerformance && hasConscientiousness) {
+  if (hasPerformance) {
     const perfCategory = categories.find(c => c.includes('Performance') || c.includes('Productivity'));
-    const conscCategory = categories.find(c => c.includes('Conscientiousness'));
     
-    if (perfCategory && conscCategory) {
+    if (perfCategory) {
       const perfScore = categoryScores[perfCategory].percentage;
-      const conscScore = categoryScores[conscCategory].percentage;
       
-      if (perfScore < 60 && conscScore >= 70) {
+      if (perfScore < 50) {
         patterns.push({
-          name: 'Performance-Conscientiousness Gap',
-          severity: 'Medium',
-          description: 'Strong work ethic and organization but performance metrics below expectations.',
-          recommendation: 'Identify barriers to performance despite strong work habits.'
+          name: 'Performance Concern',
+          severity: 'Critical',
+          description: 'Performance metrics significantly below expectations across key areas.',
+          recommendation: 'Immediate intervention required with structured performance improvement plan.'
+        });
+      } else if (perfScore < 60) {
+        patterns.push({
+          name: 'Performance Gap',
+          severity: 'High',
+          description: 'Performance below expected levels in critical areas.',
+          recommendation: 'Targeted development plan with clear metrics and regular feedback cycles.'
         });
       }
     }
   }
   
+  // Add strength patterns
+  const strengths = Object.values(categoryScores).filter(s => s.percentage >= 80).length;
+  if (strengths >= 3) {
+    patterns.push({
+      name: 'Multiple Strengths',
+      severity: 'Positive',
+      description: `Demonstrates ${strengths} areas of strong performance that can be leveraged for development.`,
+      recommendation: 'Use strengths as foundation for building weaker areas through applied learning.'
+    });
+  }
+  
   return patterns;
 };
 
-const assessMultiFactorRoleReadiness = (categoryScores, psychometric, patterns, totalScore, maxScore) => {
+const assessMultiFactorRoleReadiness = (categoryScores, psychometric, patterns, totalScore, maxScore, assessmentType) => {
   const percentage = Math.round((totalScore / maxScore) * 100);
   
+  // Manufacturing baseline specific readiness
+  if (assessmentType === 'manufacturing_baseline') {
+    const safetyScore = categoryScores['Safety & Work Ethic']?.percentage || 0;
+    const techScore = categoryScores['Technical Fundamentals']?.percentage || 0;
+    const troubleshootingScore = categoryScores['Troubleshooting']?.percentage || 0;
+    
+    const hasCriticalPattern = patterns.some(p => p.severity === 'Critical');
+    
+    return {
+      production: {
+        ready: safetyScore >= 70 && techScore >= 60 && !hasCriticalPattern,
+        score: Math.round((safetyScore + techScore + troubleshootingScore) / 3),
+        reasoning: safetyScore >= 70 && techScore >= 60 ? 'Safety-aware with adequate technical foundation' :
+                   safetyScore < 60 ? 'Safety concerns prevent production readiness' :
+                   'Technical gaps need addressing before production assignment',
+        supervision: safetyScore >= 70 && techScore >= 70 ? 'Standard' :
+                     safetyScore >= 60 && techScore >= 60 ? 'Increased' : 'Close',
+        priority: safetyScore < 60 ? 'Immediate safety training' :
+                  techScore < 60 ? 'Technical fundamentals training' : 'Ready'
+      },
+      quality: {
+        ready: troubleshootingScore >= 60 && percentage >= 60,
+        score: Math.round((troubleshootingScore + percentage) / 2),
+        reasoning: troubleshootingScore >= 60 ? 'Adequate problem-solving for quality roles' : 'Diagnostic skills need development',
+        scope: troubleshootingScore >= 70 ? 'Independent quality monitoring' : 'Supervised quality checks'
+      },
+      maintenance: {
+        ready: techScore >= 70 && troubleshootingScore >= 60,
+        score: Math.round((techScore + troubleshootingScore) / 2),
+        reasoning: techScore >= 70 ? 'Strong technical foundation for maintenance track' : 'Technical fundamentals need strengthening',
+        timeframe: techScore >= 70 ? 'Ready for maintenance training' : '6-12 months foundational development'
+      }
+    };
+  }
+  
+  // Original readiness assessment for other types
   // Technical roles
   const technicalScore = Object.entries(categoryScores)
     .filter(([c]) => c.includes('Technical') || c.includes('Manufacturing') || c.includes('Equipment') || c.includes('Mechanical'))
@@ -595,8 +743,41 @@ const assessMultiFactorRoleReadiness = (categoryScores, psychometric, patterns, 
   };
 };
 
-const generatePredictiveInsights = (categoryScores, psychometric, patterns) => {
+const generatePredictiveInsights = (categoryScores, psychometric, patterns, assessmentType) => {
   const insights = [];
+  
+  // Manufacturing baseline specific insights
+  if (assessmentType === 'manufacturing_baseline') {
+    const safetyScore = categoryScores['Safety & Work Ethic']?.percentage || 0;
+    const techScore = categoryScores['Technical Fundamentals']?.percentage || 0;
+    
+    if (safetyScore < 60) {
+      insights.push({
+        type: 'Risk',
+        insight: 'Safety awareness below threshold - significant risk in manufacturing environments without intervention',
+        probability: 'High',
+        impact: 'May lead to safety incidents or compliance issues without immediate training'
+      });
+    }
+    
+    if (techScore >= 70 && safetyScore >= 70) {
+      insights.push({
+        type: 'Opportunity',
+        insight: 'Strong safety and technical foundation - ready for accelerated production roles',
+        probability: 'High',
+        impact: 'Can progress quickly to independent line operations'
+      });
+    }
+    
+    if (techScore < 50) {
+      insights.push({
+        type: 'Development Needed',
+        insight: 'Technical fundamentals significantly below baseline - will require extended training period',
+        probability: 'High',
+        impact: 'Expect 3-6 months of structured training before independent work'
+      });
+    }
+  }
   
   // Look for high-risk patterns
   const criticalPatterns = patterns.filter(p => p.severity === 'Critical');
@@ -728,6 +909,31 @@ const identifyCompetitiveDifferentiators = (categoryScores, psychometric, patter
           differentiator: 'Combines leadership capability with strong emotional intelligence',
           value: 'Ideal for people management roles requiring empathy and team building',
           application: 'Can build strong teams and navigate complex interpersonal dynamics'
+        });
+      }
+    }
+  }
+  
+  // Manufacturing baseline specific differentiators
+  const hasSafetyAndTech = 
+    Object.keys(categoryScores).some(c => c.includes('Safety')) && 
+    Object.keys(categoryScores).some(c => c.includes('Technical'));
+  
+  if (hasSafetyAndTech) {
+    const safetyCategory = Object.keys(categoryScores).find(c => c.includes('Safety'));
+    const techCategory = Object.keys(categoryScores).find(c => c.includes('Technical'));
+    
+    if (safetyCategory && techCategory) {
+      const safetyScore = categoryScores[safetyCategory].percentage;
+      const techScore = categoryScores[techCategory].percentage;
+      
+      if (safetyScore >= 80 && techScore >= 80) {
+        differentiators.push({
+          category: 'Safety-Tech Excellence',
+          score: Math.round((safetyScore + techScore) / 2),
+          differentiator: 'Exceptional combination of safety awareness and technical competence',
+          value: 'Rare and valuable for manufacturing leadership or training roles',
+          application: 'Can serve as safety champion and technical mentor'
         });
       }
     }
