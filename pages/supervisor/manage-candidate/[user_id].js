@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../../components/AppLayout";
@@ -474,14 +474,14 @@ export default function ManageCandidate() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', minWidth: '800px' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid #E2E8F0', background: '#F8FAFC' }}>
-                    <th style={{ width: '40px', padding: '15px', textAlign: 'center' }}></th>
+                    <th style={{ width: '40px', padding: '15px', textAlign: 'center' }}> </th>
                     <th style={{ padding: '15px', fontWeight: 600, color: '#0A1929', textAlign: 'left' }}>Assessment</th>
                     <th style={{ padding: '15px', fontWeight: 600, color: '#0A1929', textAlign: 'left' }}>Status</th>
                     <th style={{ padding: '15px', fontWeight: 600, color: '#0A1929', textAlign: 'left' }}>Score</th>
                     <th style={{ padding: '15px', fontWeight: 600, color: '#0A1929', textAlign: 'left' }}>Classification</th>
                     <th style={{ padding: '15px', fontWeight: 600, color: '#0A1929', textAlign: 'left' }}>Completed Date</th>
                     <th style={{ padding: '15px', fontWeight: 600, color: '#0A1929', textAlign: 'left' }}>Actions</th>
-                  </table>
+                  </tr>
                 </thead>
                 <tbody>
                   {assessments.map((assessment) => {
@@ -538,7 +538,7 @@ export default function ManageCandidate() {
                           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                             {isCompleted ? (
                               <>
-                                <Link href={`/supervisor/${candidate.id}?assessment=${assessment.assessment_id}`} style={{ background: '#0A1929', color: 'white', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontSize: '11px', fontWeight: 500 }}>
+                                <Link href={`/supervisor/${candidate.id}?assessment=${assessment.assessment_id}`} style={{ background: '#0A1929', color: 'white', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontSize: '11px', fontWeight: 500, display: 'inline-block' }}>
                                   📄 Report
                                 </Link>
                                 <button onClick={() => handleReset(assessment.assessment_id, assessment.assessment_title)} disabled={isProcessing} style={{ background: '#2196F3', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 500, cursor: 'pointer' }}>
