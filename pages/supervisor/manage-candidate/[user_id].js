@@ -107,7 +107,7 @@ export default function ManageCandidate() {
         // STEP 1: Fetch assessment results (completed assessments)
         const { data: resultsData, error: resultsError } = await supabase
           .from('assessment_results')
-          .select('id, assessment_id, total_score, max_score, percentage_score, completed_at')
+          .select('id, assessment_id, total_score, max_score, percentage_score, completed_at, is_valid, is_auto_submitted, violation_count')
           .eq('user_id', user_id);
 
         if (resultsError) {
@@ -122,11 +122,14 @@ export default function ManageCandidate() {
             score: result.total_score,
             max_score: result.max_score,
             percentage: result.percentage_score,
-            completed_at: result.completed_at
+            completed_at: result.completed_at,
+            is_valid: result.is_valid,
+            is_auto_submitted: result.is_auto_submitted,
+            violation_count: result.violation_count
           };
         });
         
-        // STEP 2: Fetch candidate assessments (assigned assessments) - REMOVED time_limit_minutes
+        // STEP 2: Fetch candidate assessments (assigned assessments)
         const { data: accessData, error: accessError } = await supabase
           .from('candidate_assessments')
           .select('id, assessment_id, status, created_at, unblocked_at, result_id')
@@ -149,6 +152,7 @@ export default function ManageCandidate() {
               description,
               assessment_type_id,
               assessment_types (
+                id,
                 code,
                 name,
                 icon,
@@ -187,7 +191,7 @@ export default function ManageCandidate() {
             status: displayStatus,
             created_at: access.created_at,
             unblocked_at: access.unblocked_at,
-            time_limit_minutes: 180, // Default value
+            time_limit_minutes: 180,
             result: result
           };
         });
@@ -342,6 +346,22 @@ export default function ManageCandidate() {
     if (percentage >= 55) return { label: "Developing", color: "#FF9800" };
     if (percentage >= 40) return { label: "At Risk", color: "#F57C00" };
     return { label: "High Risk", color: "#F44336" };
+  };
+
+  const getAssessmentBadgeStyle = (assessmentType) => {
+    const styles = {
+      leadership: { background: '#E3F2FD', color: '#1565C0' },
+      cognitive: { background: '#E8F5E9', color: '#2E7D32' },
+      technical: { background: '#FFEBEE', color: '#C62828' },
+      general: { background: '#F1F5F9', color: '#37474F' },
+      personality: { background: '#E8EAF6', color: '#3949AB' },
+      cultural: { background: '#FFF8E1', color: '#F57F17' },
+      performance: { background: '#FFF3E0', color: '#E65100' },
+      behavioral: { background: '#F3E5F5', color: '#7B1FA2' },
+      strategic_leadership: { background: '#E8EAF6', color: '#283593' },
+      manufacturing_baseline: { background: '#E8F5E9', color: '#2E7D32' }
+    };
+    return styles[assessmentType] || styles.general;
   };
 
   const formatDate = (dateString) => {
@@ -501,6 +521,7 @@ export default function ManageCandidate() {
                     const isProcessing = processingId === assessment.assessment_id;
                     const classification = assessment.result ? getClassification(assessment.result.score, assessment.result.max_score) : null;
                     const scorePercentage = assessment.result ? Math.round((assessment.result.score / assessment.result.max_score) * 100) : 0;
+                    const badgeStyle = getAssessmentBadgeStyle(assessment.assessment_type);
                     
                     return (
                       <tr key={assessment.id} style={styles.tableRow}>
@@ -523,7 +544,9 @@ export default function ManageCandidate() {
                             </div>
                             <div>
                               <div style={styles.assessmentTitle}>{assessment.assessment_title}</div>
-                              <div style={styles.assessmentType}>{assessment.assessment_type_name}</div>
+                              <div style={{...styles.assessmentType, ...badgeStyle}}>
+                                {assessment.assessment_type_name}
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -541,7 +564,14 @@ export default function ManageCandidate() {
                         </td>
                         <td style={styles.tableCell}>
                           {assessment.result ? (
-                            <strong>{assessment.result.score}/{assessment.result.max_score} ({scorePercentage}%)</strong>
+                            <div>
+                              <strong>{assessment.result.score}/{assessment.result.max_score} ({scorePercentage}%)</strong>
+                              {assessment.result.is_auto_submitted && (
+                                <div style={{ fontSize: '10px', color: '#F44336', marginTop: '2px' }}>
+                                  ⚠️ Auto-submitted ({assessment.result.violation_count}/3 violations)
+                                </div>
+                              )}
+                            </div>
                           ) : (
                             <span style={styles.notStarted}>—</span>
                           )}
@@ -603,7 +633,7 @@ export default function ManageCandidate() {
                             )}
                           </div>
                         </td>
-                      </tr>
+                      </table>
                     );
                   })}
                 </tbody>
@@ -1009,7 +1039,9 @@ const styles = {
   },
   assessmentType: {
     fontSize: '11px',
-    color: '#64748B'
+    padding: '2px 8px',
+    borderRadius: '12px',
+    display: 'inline-block'
   },
   statusBadge: {
     padding: '4px 12px',
