@@ -95,6 +95,42 @@ const categoryInterpretations = {
   },
 
   // ============================================
+  // MANUFACTURING BASELINE ASSESSMENT CATEGORIES
+  // ============================================
+  
+  'Technical Fundamentals': {
+    excellent: 'Exceptional foundational technical knowledge. Demonstrates strong understanding of maintenance principles, sensor functions, motor operation, and pneumatic systems. Ready for advanced technical roles.',
+    good: 'Solid grasp of technical fundamentals. Understands core maintenance concepts, basic equipment operation, and system principles. Can handle standard technical tasks with minimal supervision.',
+    average: 'Adequate technical foundation. Knows basic concepts but may need reinforcement in areas like sensor calibration, motor diagnostics, or pneumatic troubleshooting. Would benefit from structured technical training.',
+    below_average: 'Technical fundamentals need development. Shows gaps in understanding of basic maintenance, equipment functions, or system principles. Requires foundational technical training and hands-on practice.',
+    poor: 'Significant gaps in technical fundamentals. Struggles with basic equipment understanding and maintenance concepts. Intensive foundational training required before independent technical work.'
+  },
+  
+  'Troubleshooting': {
+    excellent: 'Exceptional diagnostic and problem-solving abilities. Systematically identifies root causes, resolves production issues efficiently, and prevents recurrence. Strong analytical approach to line problems.',
+    good: 'Good troubleshooting skills. Effectively diagnoses common production issues like conveyor jams, filler problems, and labeler misalignment. Can resolve most line problems independently.',
+    average: 'Adequate troubleshooting capability. Can identify basic issues but may need guidance with complex problems. Would benefit from structured problem-solving frameworks and diagnostic practice.',
+    below_average: 'Troubleshooting skills need development. Struggles with systematic problem diagnosis and may miss root causes. Requires training in fault-finding methodologies and diagnostic tools.',
+    poor: 'Poor troubleshooting ability. Difficulty identifying production issues or determining root causes. Significant development needed in diagnostic thinking and problem resolution.'
+  },
+  
+  'Numerical Aptitude': {
+    excellent: 'Exceptional numerical reasoning ability. Performs calculations accurately, understands production metrics, and analyzes efficiency data effectively. Excellent quantitative foundation.',
+    good: 'Strong numerical aptitude. Handles production calculations, percentage work, rate calculations, and data interpretation well. Can track and report production metrics accurately.',
+    average: 'Adequate numerical skills. Performs basic calculations correctly but may struggle with complex formulas or rapid mental math. Would benefit from practice with production-related math.',
+    below_average: 'Numerical skills need development. Shows difficulty with calculations, percentages, or data interpretation. Requires basic numeracy training and practice with production math.',
+    poor: 'Poor numerical aptitude. Significant challenges with basic calculations and number concepts. Intensive foundational math training required for production roles.'
+  },
+  
+  'Safety & Work Ethic': {
+    excellent: 'Exemplary safety awareness and professional conduct. Consistently follows PPE requirements, safety protocols, and standard operating procedures. Strong team player with excellent reliability.',
+    good: 'Good safety awareness and work ethic. Generally follows safety protocols, uses appropriate PPE, and adheres to procedures. Reliable team member with professional conduct.',
+    average: 'Adequate safety and work ethic understanding. Follows basic safety rules but may need reminders on specific protocols. Would benefit from safety refresher training and SOP reinforcement.',
+    below_average: 'Safety awareness or work ethic needs improvement. May overlook safety protocols or show inconsistent adherence to procedures. Requires focused training on safety standards and professional expectations.',
+    poor: 'Significant safety or conduct concerns. Shows poor understanding of safety requirements or demonstrates unreliable work habits. Immediate intervention needed to address foundational safety knowledge.'
+  },
+
+  // ============================================
   // NEW PERSONALITY TRAITS (6 Traits)
   // ============================================
   
@@ -484,6 +520,12 @@ const getSuitabilityAndRisks = (scores) => {
   const ei = scores['Emotional Intelligence'] || 0;
   const communication = scores['Communication'] || 0;
   
+  // Manufacturing baseline specific
+  const techFundamentals = scores['Technical Fundamentals'] || 0;
+  const troubleshooting = scores['Troubleshooting'] || 0;
+  const numericalAptitude = scores['Numerical Aptitude'] || 0;
+  const safetyWorkEthic = scores['Safety & Work Ethic'] || 0;
+  
   // New personality traits
   const ownership = scores['Ownership'] || 0;
   const collaboration = scores['Collaboration'] || 0;
@@ -491,6 +533,20 @@ const getSuitabilityAndRisks = (scores) => {
   const analysis = scores['Analysis'] || 0;
   const riskTolerance = scores['Risk Tolerance'] || 0;
   const structure = scores['Structure'] || 0;
+
+  // Manufacturing Baseline specific suitability
+  if (techFundamentals >= 70 && troubleshooting >= 60) {
+    suitability.push('Strong foundation for production operator or maintenance roles');
+  }
+  if (safetyWorkEthic >= 70) {
+    suitability.push('Demonstrates strong safety awareness and work ethic - essential for manufacturing environments');
+  }
+  if (numericalAptitude >= 70 && troubleshooting >= 60) {
+    suitability.push('Well-suited for quality control or production monitoring roles');
+  }
+  if (techFundamentals >= 60 && safetyWorkEthic >= 60) {
+    suitability.push('Suitable for entry-level production or assembly positions');
+  }
 
   // Suitability based on strengths
   if (leadership >= 70 && cognitive >= 70 && ei >= 60) {
@@ -522,6 +578,19 @@ const getSuitabilityAndRisks = (scores) => {
   if (riskTolerance >= 70 && action >= 60) {
     suitability.push('Good fit for innovation-focused and fast-paced environments');
   }
+
+  // Manufacturing Baseline specific risks
+  if (safetyWorkEthic < 50) {
+    risks.push('Safety awareness concerns - requires immediate training and close supervision');
+  }
+  if (techFundamentals < 50) {
+    risks.push('Limited technical foundation - may struggle with basic equipment operation');
+  }
+  if (troubleshooting < 40) {
+    risks.push('Poor problem-solving ability - production interruptions may be frequent without support');
+  }
+  if (numericalAptitude < 40) {
+    risks.push('Numeracy concerns - may struggle with production tracking and quality documentation');
 
   // Risks based on weaknesses
   if (cognitive < 50) {
