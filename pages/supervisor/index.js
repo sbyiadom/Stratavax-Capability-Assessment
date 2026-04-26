@@ -166,6 +166,7 @@ export default function SupervisorDashboard() {
         const processedCandidates = await Promise.all(
           (candidatesData || []).map(async (candidate) => {
             
+            // FIXED: Removed is_auto_submitted and violation_count (columns don't exist)
             const { data: resultsData, error: resultsError } = await supabase
               .from('assessment_results')
               .select(`
@@ -175,17 +176,24 @@ export default function SupervisorDashboard() {
                 max_score,
                 percentage_score,
                 completed_at,
-                is_valid,
-                is_auto_submitted,
-                violation_count
+                is_valid
               `)
               .eq('user_id', candidate.id);
 
-            if (resultsError) throw resultsError;
+            if (resultsError) {
+              console.error("Results error for candidate", candidate.id, resultsError);
+            }
 
             const resultsMap = {};
             resultsData?.forEach(result => {
-              resultsMap[result.assessment_id] = result;
+              resultsMap[result.assessment_id] = {
+                id: result.id,
+                score: result.total_score,
+                max_score: result.max_score,
+                percentage: result.percentage_score,
+                completed_at: result.completed_at,
+                is_valid: result.is_valid
+              };
             });
 
             const { data: accessData, error: accessError } = await supabase
@@ -215,7 +223,9 @@ export default function SupervisorDashboard() {
               `)
               .eq('user_id', candidate.id);
 
-            if (accessError) throw accessError;
+            if (accessError) {
+              console.error("Access error for candidate", candidate.id, accessError);
+            }
 
             const assessmentsWithDetails = (accessData || []).map(access => {
               const result = resultsMap[access.assessment_id] || null;
@@ -251,13 +261,11 @@ export default function SupervisorDashboard() {
                 unblocked_at: access.unblocked_at,
                 result: result ? {
                   id: result.id,
-                  score: result.total_score,
+                  score: result.score,
                   max_score: result.max_score,
-                  percentage: result.percentage_score,
+                  percentage: result.percentage,
                   completed_at: result.completed_at,
-                  is_valid: result.is_valid,
-                  is_auto_submitted: result.is_auto_submitted,
-                  violation_count: result.violation_count
+                  is_valid: result.is_valid
                 } : null
               };
             });
@@ -687,7 +695,6 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        {/* Search and Filter Bar */}
         <div style={styles.searchFilterBar}>
           <div style={styles.searchContainer}>
             <span style={styles.searchIcon}>🔍</span>
@@ -699,32 +706,19 @@ export default function SupervisorDashboard() {
               style={styles.searchInput}
             />
             {searchTerm && (
-              <button 
-                onClick={() => setSearchTerm('')} 
-                style={styles.clearButton}
-              >
-                ✕
-              </button>
+              <button onClick={() => setSearchTerm('')} style={styles.clearButton}>✕</button>
             )}
           </div>
           
           <div style={styles.filterGroup}>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              style={styles.filterSelect}
-            >
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={styles.filterSelect}>
               <option value="all">All Status</option>
               <option value="completed">Completed Only</option>
               <option value="unblocked">Unblocked Only</option>
               <option value="blocked">Blocked Only</option>
             </select>
             
-            <select
-              value={selectedAssessmentType}
-              onChange={(e) => setSelectedAssessmentType(e.target.value)}
-              style={styles.filterSelect}
-            >
+            <select value={selectedAssessmentType} onChange={(e) => setSelectedAssessmentType(e.target.value)} style={styles.filterSelect}>
               {assessmentTypes.map(type => (
                 <option key={type} value={type}>
                   {type === 'all' ? 'All Assessments' : type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
@@ -768,8 +762,7 @@ export default function SupervisorDashboard() {
                     setFilterStatus('all');
                     setSelectedAssessmentType('all');
                   }}
-                  style={styles.clearFiltersButton}
-                >
+                  style={styles.clearFiltersButton}>
                   Clear All Filters
                 </button>
               )}
@@ -816,25 +809,16 @@ export default function SupervisorDashboard() {
                           </td>
                           <td style={styles.tableCell}>
                             <div style={styles.assessmentStatsInline}>
-                              <span style={styles.completedInline}>
-                                ✅ {candidate.completedAssessments} completed
-                              </span>
-                              <span style={styles.unblockedInline}>
-                                🔓 {candidate.unblockedAssessments} unblocked
-                              </span>
-                              <span style={styles.blockedInline}>
-                                🔒 {candidate.blockedAssessments} blocked
-                              </span>
+                              <span style={styles.completedInline}>✅ {candidate.completedAssessments} completed</span>
+                              <span style={styles.unblockedInline}>🔓 {candidate.unblockedAssessments} unblocked</span>
+                              <span style={styles.blockedInline}>🔒 {candidate.blockedAssessments} blocked</span>
                             </div>
                             {candidate.assessments.length > 0 && (
-                              <button
-                                onClick={() => toggleCandidateDetails(candidate.id)}
-                                style={styles.viewAssessmentsButton}
-                              >
+                              <button onClick={() => toggleCandidateDetails(candidate.id)} style={styles.viewAssessmentsButton}>
                                 {isExpanded ? '▲ Hide Assessments' : '▼ View Assessments'}
                               </button>
                             )}
-                           </td>
+                          </td>
                           <td style={styles.tableCell}>
                             <span style={{
                               ...styles.classificationBadge,
@@ -844,24 +828,21 @@ export default function SupervisorDashboard() {
                             }}>
                               {classification.label}
                             </span>
-                           </td>
+                          </td>
                           <td style={styles.tableCell}>
                             <span style={styles.date}>
                               {candidate.latestAssessment?.result 
                                 ? formatDate(candidate.latestAssessment.result.completed_at)
-                                : 'Never'
-                              }
+                                : 'Never'}
                             </span>
-                           </td>
+                          </td>
                           <td style={styles.tableCell}>
                             <div style={styles.actionButtons}>
                               <Link href={`/supervisor/manage-candidate/${candidate.id}`} legacyBehavior>
-                                <a style={styles.viewProfileButton}>
-                                  👤 View Profile
-                                </a>
+                                <a style={styles.viewProfileButton}>👤 View Profile</a>
                               </Link>
                             </div>
-                           </td>
+                          </td>
                         </tr>
                         
                         {isExpanded && (
@@ -874,8 +855,7 @@ export default function SupervisorDashboard() {
                                     <select
                                       value={candidate.selectedAssessmentType || candidate.assessments[0]?.assessment_type}
                                       onChange={(e) => handleAssessmentDropdownChange(candidate.id, e.target.value)}
-                                      style={styles.assessmentDropdown}
-                                    >
+                                      style={styles.assessmentDropdown}>
                                       {candidate.assessments.map(assessment => (
                                         <option key={assessment.assessment_id} value={assessment.assessment_type}>
                                           {assessment.assessment_type_name} 
@@ -888,15 +868,13 @@ export default function SupervisorDashboard() {
                                   )}
                                 </div>
                                 
-                                {/* Show only the selected assessment */}
                                 {candidate.assessments
                                   .filter(assessment => {
                                     const selectedType = candidate.selectedAssessmentType || candidate.assessments[0]?.assessment_type;
                                     return assessment.assessment_type === selectedType;
                                   })
                                   .map((assessment) => {
-                                    const isProcessingThis = isProcessing && 
-                                      processingAssessment?.assessmentId === assessment.assessment_id;
+                                    const isProcessingThis = isProcessing && processingAssessment?.assessmentId === assessment.assessment_id;
 
                                     return (
                                       <div key={assessment.id} style={{
@@ -914,9 +892,7 @@ export default function SupervisorDashboard() {
                                           </div>
                                           <div style={styles.assessmentDetails}>
                                             <div style={styles.assessmentHeader}>
-                                              <span style={styles.assessmentItemTitle}>
-                                                {assessment.assessment_title}
-                                              </span>
+                                              <span style={styles.assessmentItemTitle}>{assessment.assessment_title}</span>
                                               <span style={{
                                                 ...styles.assessmentTypeBadge,
                                                 background: assessment.assessment_type === 'leadership' ? '#E3F2FD' :
@@ -961,12 +937,6 @@ export default function SupervisorDashboard() {
                                                     <span>Completed:</span>
                                                     <span>{formatDate(assessment.result.completed_at)}</span>
                                                   </div>
-                                                  {assessment.result.is_auto_submitted && (
-                                                    <div style={styles.scoreRow}>
-                                                      <span>Warning:</span>
-                                                      <span style={{ color: '#F44336' }}>Auto-submitted due to violations ({assessment.result.violation_count}/3)</span>
-                                                    </div>
-                                                  )}
                                                 </div>
                                               </div>
                                             ) : (
@@ -988,24 +958,12 @@ export default function SupervisorDashboard() {
                                           {assessment.result ? (
                                             <>
                                               <Link href={`/supervisor/${candidate.id}?assessment=${assessment.assessment_id}`} legacyBehavior>
-                                                <a style={styles.viewFullReportButton}>
-                                                  📄 View Full Report
-                                                </a>
+                                                <a style={styles.viewFullReportButton}>📄 View Full Report</a>
                                               </Link>
                                               <button
-                                                onClick={() => handleResetAssessment(
-                                                  candidate.id,
-                                                  assessment.assessment_id,
-                                                  assessment.assessment_title,
-                                                  candidate.full_name
-                                                )}
+                                                onClick={() => handleResetAssessment(candidate.id, assessment.assessment_id, assessment.assessment_title, candidate.full_name)}
                                                 disabled={isProcessingThis}
-                                                style={{
-                                                  ...styles.resetButton,
-                                                  opacity: isProcessingThis ? 0.5 : 1,
-                                                  cursor: isProcessingThis ? 'not-allowed' : 'pointer'
-                                                }}
-                                              >
+                                                style={{ ...styles.resetButton, opacity: isProcessingThis ? 0.5 : 1, cursor: isProcessingThis ? 'not-allowed' : 'pointer' }}>
                                                 {isProcessingThis ? '⏳' : '🔄 Reset'}
                                               </button>
                                             </>
@@ -1018,29 +976,14 @@ export default function SupervisorDashboard() {
                                                 assessmentTitle: assessment.assessment_title
                                               })}
                                               disabled={isProcessingThis}
-                                              style={{
-                                                ...styles.unblockButton,
-                                                opacity: isProcessingThis ? 0.5 : 1,
-                                                cursor: isProcessingThis ? 'not-allowed' : 'pointer'
-                                              }}
-                                            >
+                                              style={{ ...styles.unblockButton, opacity: isProcessingThis ? 0.5 : 1, cursor: isProcessingThis ? 'not-allowed' : 'pointer' }}>
                                               {isProcessingThis ? '⏳' : '🔓 Unblock'}
                                             </button>
                                           ) : (
                                             <button
-                                              onClick={() => handleBlockAssessment(
-                                                candidate.id,
-                                                candidate.full_name,
-                                                assessment.assessment_id,
-                                                assessment.assessment_title
-                                              )}
+                                              onClick={() => handleBlockAssessment(candidate.id, candidate.full_name, assessment.assessment_id, assessment.assessment_title)}
                                               disabled={isProcessingThis}
-                                              style={{
-                                                ...styles.blockButton,
-                                                opacity: isProcessingThis ? 0.5 : 1,
-                                                cursor: isProcessingThis ? 'not-allowed' : 'pointer'
-                                              }}
-                                            >
+                                              style={{ ...styles.blockButton, opacity: isProcessingThis ? 0.5 : 1, cursor: isProcessingThis ? 'not-allowed' : 'pointer' }}>
                                               {isProcessingThis ? '⏳' : '🔒 Block'}
                                             </button>
                                           )}
@@ -1062,7 +1005,6 @@ export default function SupervisorDashboard() {
         </div>
       </div>
 
-      {/* Unblock Modal with Time Options */}
       {showUnblockModal && (
         <div style={styles.modalOverlay}>
           <div style={styles.unblockModal}>
@@ -1081,46 +1023,19 @@ export default function SupervisorDashboard() {
                 
                 {[30, 60, 120].map(minutes => (
                   <label key={minutes} style={styles.radioLabel}>
-                    <input
-                      type="radio"
-                      checked={!resetFullTime && timeExtension === minutes}
-                      onChange={() => {
-                        setResetFullTime(false);
-                        setTimeExtension(minutes);
-                      }}
-                    />
-                    <div>
-                      <strong>Extend by {minutes} minutes</strong>
-                      <span>Add {minutes} minutes to remaining time</span>
-                    </div>
+                    <input type="radio" checked={!resetFullTime && timeExtension === minutes} onChange={() => { setResetFullTime(false); setTimeExtension(minutes); }} />
+                    <div><strong>Extend by {minutes} minutes</strong><span>Add {minutes} minutes to remaining time</span></div>
                   </label>
                 ))}
                 
                 <label style={styles.radioLabel}>
-                  <input
-                    type="radio"
-                    checked={resetFullTime}
-                    onChange={() => setResetFullTime(true)}
-                  />
-                  <div>
-                    <strong>Reset to full time (3 hours)</strong>
-                    <span>Reset timer to 3 hours from now</span>
-                  </div>
+                  <input type="radio" checked={resetFullTime} onChange={() => setResetFullTime(true)} />
+                  <div><strong>Reset to full time (3 hours)</strong><span>Reset timer to 3 hours from now</span></div>
                 </label>
                 
                 <label style={styles.radioLabel}>
-                  <input
-                    type="radio"
-                    checked={!resetFullTime && timeExtension === 0}
-                    onChange={() => {
-                      setResetFullTime(false);
-                      setTimeExtension(0);
-                    }}
-                  />
-                  <div>
-                    <strong>No time change</strong>
-                    <span>Just unblock without changing time</span>
-                  </div>
+                  <input type="radio" checked={!resetFullTime && timeExtension === 0} onChange={() => { setResetFullTime(false); setTimeExtension(0); }} />
+                  <div><strong>No time change</strong><span>Just unblock without changing time</span></div>
                 </label>
               </div>
               
@@ -1131,9 +1046,7 @@ export default function SupervisorDashboard() {
             </div>
             
             <div style={styles.modalFooter}>
-              <button onClick={() => setShowUnblockModal(null)} style={styles.cancelButton}>
-                Cancel
-              </button>
+              <button onClick={() => setShowUnblockModal(null)} style={styles.cancelButton}>Cancel</button>
               <button 
                 onClick={() => handleUnblockAssessmentWithTime(
                   showUnblockModal.candidateId,
@@ -1142,8 +1055,7 @@ export default function SupervisorDashboard() {
                   showUnblockModal.assessmentTitle
                 )}
                 disabled={processingAssessment}
-                style={styles.unblockButtonLarge}
-              >
+                style={styles.unblockButtonLarge}>
                 {processingAssessment ? 'Processing...' : 'Unblock Assessment'}
               </button>
             </div>
@@ -1228,8 +1140,7 @@ const styles = {
     fontSize: '14px',
     fontWeight: 600,
     textDecoration: 'none',
-    display: 'inline-block',
-    transition: 'all 0.2s ease'
+    display: 'inline-block'
   },
   logoutButton: {
     background: '#F44336',
@@ -1239,8 +1150,7 @@ const styles = {
     borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '14px',
-    fontWeight: 600,
-    transition: 'all 0.2s ease'
+    fontWeight: 600
   },
   statsGrid: {
     display: 'grid',
@@ -1375,8 +1285,7 @@ const styles = {
     borderRadius: '8px',
     textDecoration: 'none',
     fontSize: '14px',
-    fontWeight: 500,
-    transition: 'all 0.2s ease'
+    fontWeight: 500
   },
   loadingState: {
     textAlign: 'center',
@@ -1413,8 +1322,7 @@ const styles = {
     textAlign: 'left'
   },
   tableRow: {
-    borderBottom: '1px solid #E2E8F0',
-    transition: 'background 0.2s ease'
+    borderBottom: '1px solid #E2E8F0'
   },
   tableCell: {
     padding: '15px'
@@ -1499,7 +1407,6 @@ const styles = {
     fontSize: '11px',
     color: '#0A1929',
     cursor: 'pointer',
-    transition: 'all 0.2s ease',
     width: 'fit-content'
   },
   classificationBadge: {
@@ -1526,7 +1433,6 @@ const styles = {
     textDecoration: 'none',
     fontSize: '13px',
     fontWeight: 500,
-    transition: 'all 0.2s ease',
     display: 'inline-block'
   },
   expandedRow: {
@@ -1695,7 +1601,6 @@ const styles = {
     textDecoration: 'none',
     fontSize: '12px',
     fontWeight: 500,
-    transition: 'all 0.2s ease',
     display: 'inline-block'
   },
   unblockButton: {
@@ -1706,8 +1611,7 @@ const styles = {
     borderRadius: '6px',
     fontSize: '12px',
     fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease'
+    cursor: 'pointer'
   },
   blockButton: {
     padding: '8px 16px',
@@ -1717,8 +1621,7 @@ const styles = {
     borderRadius: '6px',
     fontSize: '12px',
     fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease'
+    cursor: 'pointer'
   },
   resetButton: {
     padding: '8px 16px',
@@ -1728,8 +1631,7 @@ const styles = {
     borderRadius: '6px',
     fontSize: '12px',
     fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease'
+    cursor: 'pointer'
   },
   modalOverlay: {
     position: 'fixed',
@@ -1742,8 +1644,7 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
-    padding: '20px',
-    backdropFilter: 'blur(5px)'
+    padding: '20px'
   },
   unblockModal: {
     background: 'white',
@@ -1792,8 +1693,7 @@ const styles = {
     marginBottom: '8px',
     background: '#f8fafc',
     borderRadius: '8px',
-    cursor: 'pointer',
-    transition: 'all 0.2s'
+    cursor: 'pointer'
   },
   noteBox: {
     marginTop: '20px',
@@ -1821,8 +1721,7 @@ const styles = {
     fontSize: '14px',
     fontWeight: 500,
     cursor: 'pointer',
-    color: '#475569',
-    transition: 'all 0.2s'
+    color: '#475569'
   },
   unblockButtonLarge: {
     padding: '10px 24px',
@@ -1832,7 +1731,6 @@ const styles = {
     borderRadius: '8px',
     fontSize: '14px',
     fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.2s'
+    cursor: 'pointer'
   }
 };
