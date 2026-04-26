@@ -62,13 +62,17 @@ export default async function handler(req, res) {
 
     console.log(`📊 Violations: ${violationCount}/${MAX_VIOLATIONS}, Auto-submit: ${isAutoSubmit}`);
 
-    // Get all responses for this session
+    // Get all responses for this session with full answer details
     const { data: responses, error: responsesError } = await serviceClient
       .from('responses')
       .select(`
         question_id,
         answer_id,
-        unique_answers!inner (score)
+        unique_questions!inner (
+          id,
+          question_text,
+          unique_answers (id, score)
+        )
       `)
       .eq('session_id', sessionId);
 
@@ -91,17 +95,20 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Failed to fetch assessment" });
     }
 
-    // Get total number of questions in this assessment
-    const { data: allQuestions, error: questionsError } = await serviceClient
+    // Get all questions for this assessment type (to know max score per question)
+    const { data: allQuestionsData, error: questionsError } = await serviceClient
       .from('unique_questions')
-      .select('id', { count: 'exact' })
+      .select(`
+        id,
+        unique_answers (id, score)
+      `)
       .eq('assessment_type_id', assessment.assessment_type_id);
 
     if (questionsError) {
-      console.error("❌ Error getting question count:", questionsError);
+      console.error("❌ Error getting questions:", questionsError);
     }
 
-    const totalQuestions = allQuestions?.length || session.total_questions || 0;
+    const totalQuestions = allQuestionsData?.length || session.total_questions || 0;
 
     console.log(`📊 Answered: ${answeredCount}, Total Questions: ${totalQuestions}`);
 
@@ -118,49 +125,88 @@ export default async function handler(req, res) {
       });
     }
 
-    // ===== CALCULATE TOTAL POSSIBLE MAX SCORE (if all questions answered correctly) =====
-    async function calculateTotalPossibleMaxScore(assessmentTypeId) {
-      if (!assessmentTypeId) {
-        console.error("❌ No assessment_type_id provided");
-        return 0;
-      }
+    // ===== BUILD QUESTION METADATA =====
+    // Map question_id to its correct answers and max possible points
+    const questionMetadata = {};
+    for (const question of (allQuestionsData || [])) {
+      const answers = question.unique_answers || [];
+      const correctAnswerIds = answers.filter(a => a.score === 1).map(a => a.id);
+      const questionMaxPoints = correctAnswerIds.length > 0 ? 1 : 1; // Each question worth 1 point max
       
-      const { data: questions, error: questionsError } = await serviceClient
-        .from('unique_questions')
-        .select(`
-          id,
-          unique_answers (score)
-        `)
-        .eq('assessment_type_id', assessmentTypeId);
-      
-      if (questionsError || !questions) {
-        console.error("❌ Error fetching questions:", questionsError);
-        return 0;
-      }
-      
-      let totalMaxScore = 0;
-      
-      for (const question of questions) {
-        const scores = (question.unique_answers || []).map(a => a.score || 0);
-        if (scores.length > 0) {
-          const maxScoreForQuestion = Math.max(...scores);
-          totalMaxScore += maxScoreForQuestion;
-        } else {
-          console.error(`❌ Question ${question.id} has no answers! This is a data issue.`);
-          totalMaxScore += 5;
-        }
-      }
-      
-      console.log(`📊 Total possible max score (all questions correct): ${totalMaxScore}`);
-      return totalMaxScore;
+      questionMetadata[question.id] = {
+        correctAnswerIds,
+        maxPoints: questionMaxPoints,
+        isMultipleCorrect: correctAnswerIds.length > 1
+      };
     }
 
-    const totalPossibleMaxScore = await calculateTotalPossibleMaxScore(assessment.assessment_type_id);
-    
-    // Calculate earned score from answered questions ONLY (unanswered = 0 points)
+    // ===== CALCULATE TOTAL POSSIBLE MAX SCORE =====
+    // Each question is worth 1 point max (regardless of how many correct answers)
+    const totalPossibleMaxScore = totalQuestions;
+
+    // ===== CALCULATE EARNED SCORE WITH CORRECT MULTIPLE-SELECT LOGIC =====
     let earnedScore = 0;
+    
+    // Group responses by question (since a question can have multiple answers in the same response row)
+    // We need to handle the fact that answer_id might be a comma-separated string
+    const responsesByQuestion = {};
+    
     for (const response of responses) {
-      earnedScore += response.unique_answers?.score || 0;
+      const questionId = response.question_id;
+      let answerIds = [];
+      
+      // Handle answer_id - could be single or comma-separated
+      if (typeof response.answer_id === 'string' && response.answer_id.includes(',')) {
+        answerIds = response.answer_id.split(',').map(id => parseInt(id, 10));
+      } else {
+        answerIds = [parseInt(response.answer_id, 10)];
+      }
+      
+      if (!responsesByQuestion[questionId]) {
+        responsesByQuestion[questionId] = [];
+      }
+      responsesByQuestion[questionId].push(...answerIds);
+    }
+
+    // Now calculate score for each question
+    for (const [questionId, selectedAnswerIds] of Object.entries(responsesByQuestion)) {
+      const metadata = questionMetadata[questionId];
+      if (!metadata) {
+        console.warn(`⚠️ No metadata found for question ${questionId}`);
+        continue;
+      }
+      
+      const { correctAnswerIds, isMultipleCorrect } = metadata;
+      
+      let questionScore = 0;
+      
+      if (isMultipleCorrect) {
+        // For multiple-select: must select ALL correct answers to get 1 point
+        const hasAllCorrect = correctAnswerIds.every(correctId => 
+          selectedAnswerIds.includes(correctId)
+        );
+        const hasNoExtraIncorrect = selectedAnswerIds.every(selectedId => 
+          correctAnswerIds.includes(selectedId)
+        );
+        
+        if (hasAllCorrect && hasNoExtraIncorrect) {
+          questionScore = 1;
+        } else {
+          questionScore = 0;
+        }
+        console.log(`📊 Question ${questionId} (multiple): Selected ${selectedAnswerIds.join(',')}, Correct ${correctAnswerIds.join(',')}, Score: ${questionScore}`);
+      } else {
+        // For single-select: just check if selected answer is correct
+        const selectedAnswer = selectedAnswerIds[0];
+        if (correctAnswerIds.includes(selectedAnswer)) {
+          questionScore = 1;
+        } else {
+          questionScore = 0;
+        }
+        console.log(`📊 Question ${questionId} (single): Selected ${selectedAnswer}, Correct ${correctAnswerIds[0]}, Score: ${questionScore}`);
+      }
+      
+      earnedScore += questionScore;
     }
 
     // Calculate percentage based on earned score vs TOTAL possible max score
@@ -169,7 +215,7 @@ export default async function handler(req, res) {
       percentage = (earnedScore / totalPossibleMaxScore) * 100;
     }
 
-    console.log(`📊 Earned Score: ${earnedScore}, Total Possible Max: ${totalPossibleMaxScore}, Percentage: ${percentage.toFixed(2)}%`);
+    console.log(`📊 Earned Score: ${earnedScore}/${totalPossibleMaxScore}, Percentage: ${percentage.toFixed(2)}%`);
     console.log(`📊 Answered: ${answeredCount}/${totalQuestions} questions`);
 
     // Determine if result is valid (only valid if normal submission with all questions answered)
