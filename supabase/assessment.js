@@ -233,7 +233,7 @@ export async function updateSessionTimer(sessionId, elapsedSeconds) {
   }
 }
 
-// Get session responses
+// Get session responses (UPDATED to handle comma-separated answers)
 export async function getSessionResponses(sessionId) {
   try {
     console.log("Fetching responses for session:", sessionId);
@@ -253,14 +253,17 @@ export async function getSessionResponses(sessionId) {
     }
 
     const answerMap = {};
+    const initialAnswerMap = {};
+    
     data?.forEach(r => {
       if (r?.question_id) {
+        // Store answer as-is (could be string with commas for multiple answers)
         answerMap[r.question_id] = r.answer_id;
       }
     });
     
     console.log(`Found ${data?.length || 0} responses`);
-    return { answerMap, count: data?.length || 0 };
+    return { answerMap, initialAnswerMap, count: data?.length || 0 };
     
   } catch (error) {
     console.error("Error in getSessionResponses:", error);
@@ -638,9 +641,9 @@ async function updateQuestionTiming(session_id, question_id) {
   }
 }
 
-// Save unique response
-export async function saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id) {
-  console.log("💾 Saving unique response:", { session_id, user_id, question_id, answer_id });
+// Save unique response (UPDATED to support multiple-select answers)
+export async function saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id, metadata = {}) {
+  console.log("💾 Saving unique response:", { session_id, user_id, question_id, answer_id, metadata });
   
   try {
     if (!session_id || !user_id || !assessment_id || !question_id || !answer_id) {
@@ -649,11 +652,39 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
     }
 
     const questionIdNum = parseInt(question_id, 10);
-    const answerIdNum = parseInt(answer_id, 10);
-
-    if (isNaN(questionIdNum) || isNaN(answerIdNum)) {
-      console.error("❌ Invalid ID format");
-      return { success: false, error: "Invalid ID format" };
+    
+    // Handle answer_id - could be a single ID (number) or comma-separated string (for multiple answers)
+    let answerToStore;
+    let answerIdsArray = [];
+    
+    if (typeof answer_id === 'string' && answer_id.includes(',')) {
+      // Multiple answers: store as comma-separated string
+      answerToStore = answer_id;
+      answerIdsArray = answer_id.split(',').map(id => parseInt(id, 10));
+    } else if (typeof answer_id === 'string' && !isNaN(parseInt(answer_id, 10))) {
+      // String but single number
+      const singleAnswerId = parseInt(answer_id, 10);
+      answerToStore = singleAnswerId;
+      answerIdsArray = [singleAnswerId];
+    } else if (typeof answer_id === 'number') {
+      // Number
+      answerToStore = answer_id;
+      answerIdsArray = [answer_id];
+    } else {
+      console.error("❌ Invalid answer_id type:", typeof answer_id);
+      return { success: false, error: "Invalid answer ID format" };
+    }
+    
+    if (isNaN(questionIdNum)) {
+      console.error("❌ Invalid question ID format");
+      return { success: false, error: "Invalid question ID format" };
+    }
+    
+    // Validate answer IDs
+    const validAnswerIds = answerIdsArray.filter(id => !isNaN(id));
+    if (validAnswerIds.length === 0) {
+      console.error("❌ No valid answer IDs");
+      return { success: false, error: "Invalid answer ID format" };
     }
 
     const { data: session, error: sessionError } = await supabase
@@ -674,13 +705,20 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
 
     const { data: existingResponse } = await supabase
       .from("responses")
-      .select("id, answer_id, times_changed")
+      .select("id, answer_id, times_changed, initial_answer_id")
       .eq("session_id", session_id)
       .eq("question_id", questionIdNum)
       .maybeSingle();
 
     const isNewResponse = !existingResponse;
-    const isAnswerChange = existingResponse && existingResponse.answer_id !== answerIdNum;
+    
+    // Check if answer changed (for single or multiple answers)
+    let isAnswerChange = false;
+    if (!isNewResponse) {
+      const oldAnswerStr = existingResponse.answer_id ? existingResponse.answer_id.toString() : '';
+      const newAnswerStr = answerToStore.toString();
+      isAnswerChange = oldAnswerStr !== newAnswerStr;
+    }
     
     let timeSpent = 0;
     if (isNewResponse) {
@@ -691,9 +729,11 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
         .eq("question_id", questionIdNum)
         .maybeSingle();
       
-      if (timing) {
+      if (timing && timing.first_viewed_at) {
         timeSpent = Math.floor((Date.now() - new Date(timing.first_viewed_at).getTime()) / 1000);
       }
+    } else if (metadata.time_spent_seconds) {
+      timeSpent = metadata.time_spent_seconds;
     }
 
     const responseData = {
@@ -701,7 +741,7 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
       user_id: user_id,
       assessment_id: assessment_id,
       question_id: questionIdNum,
-      answer_id: answerIdNum,
+      answer_id: answerToStore.toString(), // Store as string to support comma-separated values
       updated_at: new Date().toISOString()
     };
 
@@ -709,33 +749,20 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
       responseData.first_saved_at = new Date().toISOString();
       responseData.time_spent_seconds = timeSpent;
       responseData.times_changed = 0;
-      responseData.initial_answer_id = answerIdNum;
+      responseData.initial_answer_id = answerToStore.toString();
     } else if (isAnswerChange) {
-      responseData.times_changed = (existingResponse.times_changed || 0) + 1;
+      const newChangeCount = (existingResponse.times_changed || 0) + 1;
+      responseData.times_changed = newChangeCount;
       
-      const { data: oldAnswer } = await supabase
-        .from("unique_answers")
-        .select("score")
-        .eq("id", existingResponse.answer_id)
-        .single();
-      
-      const { data: newAnswer } = await supabase
-        .from("unique_answers")
-        .select("score")
-        .eq("id", answerIdNum)
-        .single();
-      
-      const scoreImproved = newAnswer?.score > oldAnswer?.score;
-      
+      // Log answer change in history
       await supabase
         .from("answer_history")
         .insert({
           session_id: session_id,
           question_id: questionIdNum,
           old_answer_id: existingResponse.answer_id,
-          new_answer_id: answerIdNum,
-          changed_at: new Date().toISOString(),
-          score_improved: scoreImproved
+          new_answer_id: answerToStore.toString(),
+          changed_at: new Date().toISOString()
         });
     }
 
@@ -764,7 +791,7 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
 
     await updateQuestionTiming(session_id, questionIdNum);
 
-    console.log("✅ Response saved");
+    console.log("✅ Response saved successfully");
     return { success: true, data, isNewResponse, isAnswerChange };
 
   } catch (error) {
