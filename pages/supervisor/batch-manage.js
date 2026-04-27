@@ -28,8 +28,21 @@ export default function BatchManageAssessments() {
   const [resetFullTime, setResetFullTime] = useState(false);
   const [showTimeOptions, setShowTimeOptions] = useState(false);
   
+  // Scheduling options (NEW)
+  const [enableScheduling, setEnableScheduling] = useState(false);
+  const [scheduledStart, setScheduledStart] = useState('');
+  const [scheduledEnd, setScheduledEnd] = useState('');
+  const [minDateTime, setMinDateTime] = useState('');
+  
   // UI state
   const [message, setMessage] = useState({ type: "", text: "" });
+
+  // Set minimum date/time for scheduling (can't schedule in the past)
+  useEffect(() => {
+    const now = new Date();
+    const localNow = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+    setMinDateTime(localNow.toISOString().slice(0, 16));
+  }, []);
 
   // Authentication check
   useEffect(() => {
@@ -84,7 +97,6 @@ export default function BatchManageAssessments() {
       try {
         setLoading(true);
         
-        // Fetch all active assessments
         const { data: assessmentsData, error: assessmentsError } = await supabase
           .from('assessments')
           .select(`
@@ -107,7 +119,6 @@ export default function BatchManageAssessments() {
         if (assessmentsError) throw assessmentsError;
         setAssessments(assessmentsData || []);
 
-        // Fetch candidates assigned to this supervisor
         const { data: candidatesData, error: candidatesError } = await supabase
           .from('candidate_profiles')
           .select(`
@@ -123,7 +134,6 @@ export default function BatchManageAssessments() {
         if (candidatesError) throw candidatesError;
         setCandidates(candidatesData || []);
 
-        // Fetch all candidate_assessments for these candidates
         if (candidatesData && candidatesData.length > 0) {
           const candidateIds = candidatesData.map(c => c.id);
           const { data: caData, error: caError } = await supabase
@@ -138,7 +148,10 @@ export default function BatchManageAssessments() {
               unblocked_at,
               unblocked_by,
               created_at,
-              result_id
+              result_id,
+              is_scheduled,
+              scheduled_start,
+              scheduled_end
             `)
             .in('user_id', candidateIds);
 
@@ -157,7 +170,6 @@ export default function BatchManageAssessments() {
     fetchData();
   }, [currentSupervisor]);
 
-  // Get status for a specific candidate and assessment
   const getStatus = (candidateId, assessmentId) => {
     const record = candidateAssessments.find(
       ca => ca.user_id === candidateId && ca.assessment_id === assessmentId
@@ -166,24 +178,25 @@ export default function BatchManageAssessments() {
     if (!record) return "not_assigned";
     if (record.status === "completed" || record.result_id) return "completed";
     if (record.status === "unblocked") return "unblocked";
+    if (record.status === "scheduled") return "scheduled";
     return "blocked";
   };
 
-  // Get status badge style
   const getStatusBadge = (status) => {
     switch(status) {
       case "unblocked":
-        return { text: "✅ Ready", color: "#2E7D32", bg: "#E8F5E9" };
+        return { text: "Ready", color: "#2E7D32", bg: "#E8F5E9" };
       case "blocked":
-        return { text: "🔒 Blocked", color: "#F57C00", bg: "#FFF3E0" };
+        return { text: "Blocked", color: "#F57C00", bg: "#FFF3E0" };
       case "completed":
-        return { text: "✓ Completed", color: "#1565C0", bg: "#E3F2FD" };
+        return { text: "Completed", color: "#1565C0", bg: "#E3F2FD" };
+      case "scheduled":
+        return { text: "Scheduled", color: "#6A1B9A", bg: "#F3E5F5" };
       default:
-        return { text: "❌ Not Assigned", color: "#9E9E9E", bg: "#F5F5F5" };
+        return { text: "Not Assigned", color: "#9E9E9E", bg: "#F5F5F5" };
     }
   };
 
-  // Get assessment colors based on type code
   const getAssessmentColors = (assessmentTypeCode) => {
     const colors = {
       'leadership': { gradient_start: '#7c3aed', gradient_end: '#5b21b6' },
@@ -200,7 +213,6 @@ export default function BatchManageAssessments() {
     return colors[assessmentTypeCode] || colors.general;
   };
 
-  // Toggle candidate selection
   const toggleCandidate = (candidateId) => {
     const newSet = new Set(selectedCandidates);
     if (newSet.has(candidateId)) {
@@ -211,14 +223,12 @@ export default function BatchManageAssessments() {
     setSelectedCandidates(newSet);
   };
 
-  // Select all filtered candidates
   const selectAll = () => {
     const newSet = new Set();
     filteredCandidates.forEach(c => newSet.add(c.id));
     setSelectedCandidates(newSet);
   };
 
-  // Select only candidates with specific status
   const selectByStatus = (status) => {
     const newSet = new Set();
     filteredCandidates.forEach(candidate => {
@@ -229,12 +239,10 @@ export default function BatchManageAssessments() {
     setSelectedCandidates(newSet);
   };
 
-  // Clear all selections
   const clearAll = () => {
     setSelectedCandidates(new Set());
   };
 
-  // Execute action on selected candidates
   const executeAction = async () => {
     if (!selectedAssessment) {
       setMessage({ type: "error", text: "Please select an assessment first" });
@@ -249,6 +257,7 @@ export default function BatchManageAssessments() {
     let actionText = "";
     if (actionType === "assign_unblock") actionText = "ASSIGN & UNBLOCK";
     else if (actionType === "unblock") actionText = "UNBLOCK";
+    else if (actionType === "schedule") actionText = "SCHEDULE";
     else actionText = "BLOCK";
     
     const confirmMessage = `Are you sure you want to ${actionText} "${selectedAssessment.title}" for ${selectedCandidates.size} candidate(s)?`;
@@ -278,7 +287,6 @@ export default function BatchManageAssessments() {
                 unblocked_at: new Date().toISOString()
               })
               .eq('id', existing.id);
-            
             if (error) throw error;
           } else {
             const { error } = await supabase
@@ -291,11 +299,41 @@ export default function BatchManageAssessments() {
                 unblocked_at: new Date().toISOString(),
                 created_at: new Date().toISOString()
               });
-            
             if (error) throw error;
           }
           successCount++;
         } 
+        else if (actionType === "schedule") {
+          if (!enableScheduling || !scheduledStart || !scheduledEnd) {
+            throw new Error("Please set start and end times for scheduling");
+          }
+          
+          const assessmentData = {
+            user_id: candidateId,
+            assessment_id: selectedAssessment.id,
+            status: 'scheduled',
+            is_scheduled: true,
+            scheduled_start: new Date(scheduledStart).toISOString(),
+            scheduled_end: new Date(scheduledEnd).toISOString(),
+            scheduled_by: currentSupervisor.id,
+            scheduled_at: new Date().toISOString(),
+            created_at: new Date().toISOString()
+          };
+          
+          if (existing) {
+            const { error } = await supabase
+              .from('candidate_assessments')
+              .update(assessmentData)
+              .eq('id', existing.id);
+            if (error) throw error;
+          } else {
+            const { error } = await supabase
+              .from('candidate_assessments')
+              .insert(assessmentData);
+            if (error) throw error;
+          }
+          successCount++;
+        }
         else if (actionType === "unblock") {
           if (existing) {
             const { error } = await supabase
@@ -306,7 +344,6 @@ export default function BatchManageAssessments() {
                 unblocked_at: new Date().toISOString()
               })
               .eq('id', existing.id);
-            
             if (error) throw error;
             successCount++;
           } else {
@@ -324,7 +361,6 @@ export default function BatchManageAssessments() {
                 unblocked_at: null
               })
               .eq('id', existing.id);
-            
             if (error) throw error;
             successCount++;
           } else {
@@ -336,7 +372,6 @@ export default function BatchManageAssessments() {
                 status: 'blocked',
                 created_at: new Date().toISOString()
               });
-            
             if (error) throw error;
             successCount++;
           }
@@ -348,7 +383,6 @@ export default function BatchManageAssessments() {
       }
     }
 
-    // Refresh data
     const candidateIds = candidates.map(c => c.id);
     const { data: caData } = await supabase
       .from('candidate_assessments')
@@ -362,7 +396,10 @@ export default function BatchManageAssessments() {
         unblocked_at,
         unblocked_by,
         created_at,
-        result_id
+        result_id,
+        is_scheduled,
+        scheduled_start,
+        scheduled_end
       `)
       .in('user_id', candidateIds);
     setCandidateAssessments(caData || []);
@@ -386,14 +423,11 @@ export default function BatchManageAssessments() {
     setTimeout(() => setMessage({ type: "", text: "" }), 5000);
   };
 
-  // Filter candidates by search term and status
   const filteredCandidates = candidates.filter(candidate => {
-    // Search filter
     const matchesSearch = searchTerm === "" || 
       candidate.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       candidate.email?.toLowerCase().includes(searchTerm.toLowerCase());
     
-    // Status filter
     let matchesStatus = true;
     if (statusFilter !== "all" && selectedAssessment) {
       const status = getStatus(candidate.id, selectedAssessment.id);
@@ -423,6 +457,11 @@ export default function BatchManageAssessments() {
     };
   };
 
+  const formatDateTime = (dateString) => {
+    if (!dateString) return 'Not set';
+    return new Date(dateString).toLocaleString();
+  };
+
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
       <div style={styles.container}>
@@ -431,17 +470,16 @@ export default function BatchManageAssessments() {
             <Link href="/supervisor" style={styles.backButton}>
               ← Back to Dashboard
             </Link>
-            <h1 style={styles.title}>📋 Batch Assessment Manager</h1>
+            <h1 style={styles.title}>Batch Assessment Manager</h1>
             <div style={styles.headerRight}>
               <span style={styles.supervisorBadge}>
-                👑 {currentSupervisor?.name}
+                {currentSupervisor?.name}
               </span>
             </div>
           </div>
-          <p style={styles.subtitle}>Assign, unblock, or block assessments for multiple candidates at once</p>
+          <p style={styles.subtitle}>Assign, schedule, unblock, or block assessments for multiple candidates at once</p>
         </div>
 
-        {/* Message */}
         {message.text && (
           <div style={{
             ...styles.message,
@@ -468,6 +506,9 @@ export default function BatchManageAssessments() {
                     setSelectedAssessment(assessment);
                     setSelectedCandidates(new Set());
                     setMessage({ type: "", text: "" });
+                    setEnableScheduling(false);
+                    setScheduledStart('');
+                    setScheduledEnd('');
                   }}
                   style={{
                     ...styles.assessmentCard,
@@ -503,6 +544,7 @@ export default function BatchManageAssessments() {
                 onClick={() => {
                   setActionType("assign_unblock");
                   setShowTimeOptions(false);
+                  setEnableScheduling(false);
                 }}
                 style={{
                   ...styles.actionCard,
@@ -513,15 +555,36 @@ export default function BatchManageAssessments() {
                 <span style={styles.actionIcon}>📝</span>
                 <div>
                   <div style={styles.actionTitle}>Assign & Unblock</div>
-                  <div style={styles.actionDesc}>Give access to take assessment (creates new if not exists)</div>
+                  <div style={styles.actionDesc}>Give immediate access to take assessment</div>
                 </div>
                 {actionType === "assign_unblock" && <span style={styles.checkmark}>✓</span>}
               </button>
 
               <button
                 onClick={() => {
+                  setActionType("schedule");
+                  setShowTimeOptions(false);
+                  setEnableScheduling(true);
+                }}
+                style={{
+                  ...styles.actionCard,
+                  background: actionType === "schedule" ? '#F3E5F5' : 'white',
+                  border: actionType === "schedule" ? '2px solid #9C27B0' : '1px solid #E2E8F0'
+                }}
+              >
+                <span style={styles.actionIcon}>📅</span>
+                <div>
+                  <div style={styles.actionTitle}>Schedule Assessment</div>
+                  <div style={styles.actionDesc}>Set start and end time for all candidates</div>
+                </div>
+                {actionType === "schedule" && <span style={styles.checkmark}>✓</span>}
+              </button>
+
+              <button
+                onClick={() => {
                   setActionType("unblock");
                   setShowTimeOptions(true);
+                  setEnableScheduling(false);
                 }}
                 style={{
                   ...styles.actionCard,
@@ -541,6 +604,7 @@ export default function BatchManageAssessments() {
                 onClick={() => {
                   setActionType("block");
                   setShowTimeOptions(false);
+                  setEnableScheduling(false);
                 }}
                 style={{
                   ...styles.actionCard,
@@ -557,10 +621,49 @@ export default function BatchManageAssessments() {
               </button>
             </div>
 
-            {/* Time Options (for unblock action) */}
+            {/* Scheduling Options */}
+            {actionType === "schedule" && enableScheduling && (
+              <div style={styles.schedulingSection}>
+                <h4 style={styles.timeTitle}>Schedule Assessment Window</h4>
+                <div style={styles.schedulingGrid}>
+                  <div style={styles.dateTimeGroup}>
+                    <label style={styles.label}>Start Date & Time</label>
+                    <input
+                      type="datetime-local"
+                      value={scheduledStart}
+                      onChange={(e) => setScheduledStart(e.target.value)}
+                      min={minDateTime}
+                      required
+                      style={styles.dateTimeInput}
+                    />
+                    <p style={styles.hint}>Assessment becomes available at this time</p>
+                  </div>
+                  
+                  <div style={styles.dateTimeGroup}>
+                    <label style={styles.label}>End Date & Time</label>
+                    <input
+                      type="datetime-local"
+                      value={scheduledEnd}
+                      onChange={(e) => setScheduledEnd(e.target.value)}
+                      min={scheduledStart || minDateTime}
+                      required
+                      style={styles.dateTimeInput}
+                    />
+                    <p style={styles.hint}>Assessment expires at this time</p>
+                  </div>
+                </div>
+                
+                <div style={styles.scheduleInfo}>
+                  <span style={styles.scheduleInfoIcon}>⏰</span>
+                  <span>All candidates will be able to take this assessment only between the scheduled times. The 3-hour timer will start when each candidate begins.</span>
+                </div>
+              </div>
+            )}
+
+            {/* Time Options for unblock */}
             {showTimeOptions && (
               <div style={styles.timeOptionsSection}>
-                <h4 style={styles.timeTitle}>⏰ Time Options (for unblock)</h4>
+                <h4 style={styles.timeTitle}>Time Options (for unblock)</h4>
                 <div style={styles.timeGrid}>
                   <label style={styles.timeOption}>
                     <input
@@ -627,7 +730,6 @@ export default function BatchManageAssessments() {
               3. Select Candidates for "{selectedAssessment.title}"
             </h2>
             
-            {/* Filters */}
             <div style={styles.filtersBar}>
               <input
                 type="text"
@@ -644,6 +746,7 @@ export default function BatchManageAssessments() {
                 <option value="all">All Status</option>
                 <option value="unblocked">Ready</option>
                 <option value="blocked">Blocked</option>
+                <option value="scheduled">Scheduled</option>
                 <option value="completed">Completed</option>
                 <option value="not_assigned">Not Assigned</option>
               </select>
@@ -651,16 +754,15 @@ export default function BatchManageAssessments() {
               <button onClick={clearAll} style={styles.clearButton}>Clear All</button>
             </div>
 
-            {/* Quick Select by Status */}
             <div style={styles.quickSelectBar}>
               <span style={styles.quickSelectLabel}>Quick select:</span>
               <button onClick={() => selectByStatus("not_assigned")} style={styles.quickSelectBtn}>Not Assigned</button>
               <button onClick={() => selectByStatus("blocked")} style={styles.quickSelectBtn}>Blocked</button>
+              <button onClick={() => selectByStatus("scheduled")} style={styles.quickSelectBtn}>Scheduled</button>
               <button onClick={() => selectByStatus("unblocked")} style={styles.quickSelectBtn}>Ready</button>
               <button onClick={() => selectByStatus("completed")} style={styles.quickSelectBtn}>Completed</button>
             </div>
 
-            {/* Candidates Table */}
             <div style={styles.tableContainer}>
               <table style={styles.table}>
                 <thead>
@@ -676,8 +778,8 @@ export default function BatchManageAssessments() {
                     <tr>
                       <td colSpan="4" style={styles.emptyCell}>
                         No candidates found matching your criteria
-                       </td>
-                     </tr>
+                      </td>
+                    </tr>
                   ) : (
                     filteredCandidates.map(candidate => {
                       const status = getStatus(candidate.id, selectedAssessment.id);
@@ -693,7 +795,7 @@ export default function BatchManageAssessments() {
                               onChange={() => toggleCandidate(candidate.id)}
                               style={styles.checkbox}
                             />
-                           </td>
+                          </td>
                           <td style={styles.tableCell}>
                             <div style={styles.candidateInfo}>
                               <div style={styles.candidateAvatar}>
@@ -704,7 +806,7 @@ export default function BatchManageAssessments() {
                                 <div style={styles.candidateId}>ID: {candidate.id.substring(0, 8)}...</div>
                               </div>
                             </div>
-                           </td>
+                          </td>
                           <td style={styles.tableCell}>{candidate.email}</td>
                           <td style={styles.tableCell}>
                             <span style={{
@@ -714,34 +816,44 @@ export default function BatchManageAssessments() {
                             }}>
                               {statusBadge.text}
                             </span>
-                           </td>
-                         </tr>
+                          </td>
+                        </tr>
                       );
                     })
                   )}
                 </tbody>
-               </table>
+              </table>
             </div>
 
-            {/* Selected Count & Action Button */}
+            {actionType === "schedule" && enableScheduling && scheduledStart && scheduledEnd && (
+              <div style={styles.scheduleSummary}>
+                <strong>Schedule Summary:</strong>
+                <div>Start: {formatDateTime(scheduledStart)}</div>
+                <div>End: {formatDateTime(scheduledEnd)}</div>
+                <div>Candidates: {selectedCandidates.size} selected</div>
+              </div>
+            )}
+
             <div style={styles.actionBar}>
               <div style={styles.selectedCount}>
                 {selectedCandidates.size} candidate(s) selected
               </div>
               <button
                 onClick={executeAction}
-                disabled={processing || selectedCandidates.size === 0}
+                disabled={processing || selectedCandidates.size === 0 || (actionType === "schedule" && (!scheduledStart || !scheduledEnd))}
                 style={{
                   ...styles.executeButton,
-                  opacity: processing || selectedCandidates.size === 0 ? 0.6 : 1,
-                  cursor: processing || selectedCandidates.size === 0 ? 'not-allowed' : 'pointer',
+                  opacity: processing || selectedCandidates.size === 0 || (actionType === "schedule" && (!scheduledStart || !scheduledEnd)) ? 0.6 : 1,
+                  cursor: processing || selectedCandidates.size === 0 || (actionType === "schedule" && (!scheduledStart || !scheduledEnd)) ? 'not-allowed' : 'pointer',
                   background: actionType === 'assign_unblock' ? '#4CAF50' :
+                             actionType === 'schedule' ? '#9C27B0' :
                              actionType === 'unblock' ? '#2196F3' : '#F44336'
                 }}
               >
                 {processing ? 'Processing...' : 
-                  actionType === 'assign_unblock' ? '📝 Assign & Unblock Selected' :
-                  actionType === 'unblock' ? '🔓 Unblock Selected' : '🔒 Block Selected'}
+                  actionType === 'assign_unblock' ? 'Assign & Unblock Selected' :
+                  actionType === 'schedule' ? 'Schedule Selected' :
+                  actionType === 'unblock' ? 'Unblock Selected' : 'Block Selected'}
               </button>
             </div>
           </div>
@@ -883,7 +995,7 @@ const styles = {
   },
   actionGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
+    gridTemplateColumns: 'repeat(4, 1fr)',
     gap: '15px',
     marginBottom: '20px'
   },
@@ -909,6 +1021,62 @@ const styles = {
   actionDesc: {
     fontSize: '12px',
     color: '#64748B'
+  },
+  schedulingSection: {
+    marginTop: '20px',
+    padding: '20px',
+    background: '#F8FAFC',
+    borderRadius: '12px',
+    border: '1px solid #E2E8F0'
+  },
+  schedulingGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '20px',
+    marginBottom: '16px'
+  },
+  dateTimeGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  label: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#0A1929'
+  },
+  dateTimeInput: {
+    padding: '10px 12px',
+    border: '1px solid #CBD5E1',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontFamily: 'inherit'
+  },
+  hint: {
+    fontSize: '11px',
+    color: '#64748B',
+    margin: 0
+  },
+  scheduleInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '12px',
+    background: '#E3F2FD',
+    borderRadius: '8px',
+    fontSize: '13px',
+    color: '#1565C0'
+  },
+  scheduleInfoIcon: {
+    fontSize: '18px'
+  },
+  scheduleSummary: {
+    marginTop: '16px',
+    padding: '12px 16px',
+    background: '#F3E5F5',
+    borderRadius: '8px',
+    fontSize: '13px',
+    color: '#6A1B9A'
   },
   timeOptionsSection: {
     marginTop: '20px',
@@ -965,8 +1133,7 @@ const styles = {
     border: 'none',
     borderRadius: '8px',
     fontSize: '14px',
-    cursor: 'pointer',
-    transition: 'all 0.2s'
+    cursor: 'pointer'
   },
   clearButton: {
     padding: '10px 20px',
@@ -975,8 +1142,7 @@ const styles = {
     border: '1px solid #E2E8F0',
     borderRadius: '8px',
     fontSize: '14px',
-    cursor: 'pointer',
-    transition: 'all 0.2s'
+    cursor: 'pointer'
   },
   quickSelectBar: {
     display: 'flex',
@@ -999,8 +1165,7 @@ const styles = {
     border: '1px solid #E2E8F0',
     borderRadius: '16px',
     fontSize: '12px',
-    cursor: 'pointer',
-    transition: 'all 0.2s'
+    cursor: 'pointer'
   },
   tableContainer: {
     overflowX: 'auto',
@@ -1028,8 +1193,7 @@ const styles = {
     textAlign: 'center'
   },
   tableRow: {
-    borderBottom: '1px solid #E2E8F0',
-    transition: 'background 0.2s'
+    borderBottom: '1px solid #E2E8F0'
   },
   tableCell: {
     padding: '15px'
@@ -1098,7 +1262,6 @@ const styles = {
     borderRadius: '10px',
     fontSize: '15px',
     fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.2s'
+    cursor: 'pointer'
   }
 };
