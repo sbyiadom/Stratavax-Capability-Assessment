@@ -28,11 +28,12 @@ export default function BatchManageAssessments() {
   const [resetFullTime, setResetFullTime] = useState(false);
   const [showTimeOptions, setShowTimeOptions] = useState(false);
   
-  // Scheduling options (NEW)
+  // Scheduling options
   const [enableScheduling, setEnableScheduling] = useState(false);
   const [scheduledStart, setScheduledStart] = useState('');
   const [scheduledEnd, setScheduledEnd] = useState('');
   const [minDateTime, setMinDateTime] = useState('');
+  const [sendingEmails, setSendingEmails] = useState(false);
   
   // UI state
   const [message, setMessage] = useState({ type: "", text: "" });
@@ -243,6 +244,68 @@ export default function BatchManageAssessments() {
     setSelectedCandidates(new Set());
   };
 
+  const sendScheduleEmail = async (candidate, assessmentTitle, scheduledStart, scheduledEnd) => {
+    try {
+      const formatDateTime = (dateString) => {
+        return new Date(dateString).toLocaleString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      };
+
+      const startFormatted = formatDateTime(scheduledStart);
+      const endFormatted = formatDateTime(scheduledEnd);
+
+      // Create notification in database (will be shown in candidate's dashboard)
+      await supabase
+        .from('candidate_notifications')
+        .insert({
+          candidate_id: candidate.id,
+          assessment_id: selectedAssessment.id,
+          type: 'assessment_scheduled',
+          title: 'Assessment Scheduled',
+          message: `Your assessment "${assessmentTitle}" has been scheduled. Available from ${startFormatted} to ${endFormatted}.`,
+          scheduled_start: scheduledStart,
+          scheduled_end: scheduledEnd,
+          created_at: new Date().toISOString(),
+          is_read: false
+        });
+
+      // Try to send email if email service is configured
+      try {
+        const emailResponse = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: candidate.email,
+            subject: `Assessment Scheduled: ${assessmentTitle}`,
+            type: 'scheduled',
+            candidateName: candidate.full_name || candidate.email.split('@')[0],
+            assessmentTitle: assessmentTitle,
+            scheduledStart: scheduledStart,
+            scheduledEnd: scheduledEnd,
+            supervisorName: currentSupervisor.name || currentSupervisor.email
+          })
+        });
+        
+        if (!emailResponse.ok) {
+          console.log('Email service not configured - notification saved in dashboard');
+        }
+      } catch (emailError) {
+        console.log('Email sending failed, but database notification saved');
+      }
+      
+      return true;
+    } catch (error) {
+      console.error(`Failed to send notification to ${candidate.email}:`, error);
+      return false;
+    }
+  };
+
   const executeAction = async () => {
     if (!selectedAssessment) {
       setMessage({ type: "error", text: "Please select an assessment first" });
@@ -270,9 +333,11 @@ export default function BatchManageAssessments() {
     let successCount = 0;
     let errorCount = 0;
     const errors = [];
+    const scheduledCandidates = [];
 
     for (const candidateId of selectedCandidates) {
       try {
+        const candidate = candidates.find(c => c.id === candidateId);
         const existing = candidateAssessments.find(
           ca => ca.user_id === candidateId && ca.assessment_id === selectedAssessment.id
         );
@@ -333,6 +398,10 @@ export default function BatchManageAssessments() {
             if (error) throw error;
           }
           successCount++;
+          
+          if (candidate && candidate.email) {
+            scheduledCandidates.push(candidate);
+          }
         }
         else if (actionType === "unblock") {
           if (existing) {
@@ -383,6 +452,7 @@ export default function BatchManageAssessments() {
       }
     }
 
+    // Refresh data
     const candidateIds = candidates.map(c => c.id);
     const { data: caData } = await supabase
       .from('candidate_assessments')
@@ -404,23 +474,51 @@ export default function BatchManageAssessments() {
       .in('user_id', candidateIds);
     setCandidateAssessments(caData || []);
 
-    setSelectedCandidates(new Set());
-    
-    let messageText = `✅ ${successCount} successful`;
-    if (errorCount > 0) {
-      messageText += `, ❌ ${errorCount} failed`;
+    // Send emails to scheduled candidates (run in background)
+    if (actionType === "schedule" && scheduledCandidates.length > 0) {
+      setSendingEmails(true);
+      let emailSuccessCount = 0;
+      
+      for (const candidate of scheduledCandidates) {
+        const emailSent = await sendScheduleEmail(
+          candidate,
+          selectedAssessment.title,
+          scheduledStart,
+          scheduledEnd
+        );
+        if (emailSent) emailSuccessCount++;
+      }
+      
+      setSendingEmails(false);
+      setMessage({ 
+        type: "success", 
+        text: `✅ ${successCount} assessment(s) scheduled successfully!\n📧 Notifications sent to ${emailSuccessCount} candidate(s).\n📅 Schedule: ${new Date(scheduledStart).toLocaleString()} to ${new Date(scheduledEnd).toLocaleString()}`
+      });
+    } else {
+      let messageText = `✅ ${successCount} successful`;
+      if (errorCount > 0) {
+        messageText += `, ❌ ${errorCount} failed`;
+      }
+      if (errors.length > 0 && errors.length <= 2) {
+        messageText += `\n\nDetails: ${errors.join(', ')}`;
+      }
+      setMessage({ 
+        type: successCount > 0 ? "success" : "error", 
+        text: messageText 
+      });
     }
-    if (errors.length > 0 && errors.length <= 2) {
-      messageText += `\n\nDetails: ${errors.join(', ')}`;
-    }
-    
-    setMessage({ 
-      type: successCount > 0 ? "success" : "error", 
-      text: messageText 
-    });
 
+    setSelectedCandidates(new Set());
     setProcessing(false);
-    setTimeout(() => setMessage({ type: "", text: "" }), 5000);
+    
+    // Reset scheduling fields after action
+    if (actionType === "schedule") {
+      setEnableScheduling(false);
+      setScheduledStart('');
+      setScheduledEnd('');
+    }
+    
+    setTimeout(() => setMessage({ type: "", text: "" }), 8000);
   };
 
   const filteredCandidates = candidates.filter(candidate => {
@@ -655,7 +753,7 @@ export default function BatchManageAssessments() {
                 
                 <div style={styles.scheduleInfo}>
                   <span style={styles.scheduleInfoIcon}>⏰</span>
-                  <span>All candidates will be able to take this assessment only between the scheduled times. The 3-hour timer will start when each candidate begins.</span>
+                  <span>All candidates will be able to take this assessment only between the scheduled times. The 3-hour timer will start when each candidate begins. Notifications will be sent to candidates via email and dashboard.</span>
                 </div>
               </div>
             )}
@@ -827,10 +925,19 @@ export default function BatchManageAssessments() {
 
             {actionType === "schedule" && enableScheduling && scheduledStart && scheduledEnd && (
               <div style={styles.scheduleSummary}>
-                <strong>Schedule Summary:</strong>
+                <strong>📅 Schedule Summary:</strong>
                 <div>Start: {formatDateTime(scheduledStart)}</div>
                 <div>End: {formatDateTime(scheduledEnd)}</div>
                 <div>Candidates: {selectedCandidates.size} selected</div>
+                <div style={{ marginTop: '8px', fontSize: '12px', color: '#6A1B9A' }}>
+                  ✉️ Notifications will be sent to all selected candidates
+                </div>
+              </div>
+            )}
+
+            {sendingEmails && (
+              <div style={styles.sendingIndicator}>
+                <span>📧 Sending email notifications...</span>
               </div>
             )}
 
@@ -1077,6 +1184,15 @@ const styles = {
     borderRadius: '8px',
     fontSize: '13px',
     color: '#6A1B9A'
+  },
+  sendingIndicator: {
+    marginTop: '16px',
+    padding: '10px',
+    background: '#FFF3E0',
+    borderRadius: '8px',
+    fontSize: '13px',
+    color: '#F57C00',
+    textAlign: 'center'
   },
   timeOptionsSection: {
     marginTop: '20px',
