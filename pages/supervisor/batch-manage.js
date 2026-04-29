@@ -260,7 +260,8 @@ export default function BatchManageAssessments() {
       const startFormatted = formatDateTime(scheduledStart);
       const endFormatted = formatDateTime(scheduledEnd);
 
-      const { error } = await supabase
+      // Save notification to database
+      const { error: dbError } = await supabase
         .from('candidate_notifications')
         .insert({
           candidate_id: candidate.id,
@@ -274,8 +275,8 @@ export default function BatchManageAssessments() {
           is_read: false
         });
 
-      if (error) {
-        console.error('Failed to save notification:', error);
+      if (dbError) {
+        console.error('Failed to save notification:', dbError);
         return false;
       }
       return true;
@@ -733,7 +734,7 @@ export default function BatchManageAssessments() {
                 
                 <div style={styles.scheduleInfo}>
                   <span style={styles.scheduleInfoIcon}>📢</span>
-                  <span>Candidates will receive a notification in their dashboard when scheduled. They will see an alert bell icon with the schedule details.</span>
+                  <span>Candidates will receive a notification in their dashboard when scheduled.</span>
                 </div>
               </div>
             )}
@@ -849,7 +850,7 @@ export default function BatchManageAssessments() {
                     <th style={styles.tableHead}>Candidate</th>
                     <th style={styles.tableHead}>Email</th>
                     <th style={styles.tableHead}>Current Status</th>
-                  </td>
+                   </tr>
                 </thead>
                 <tbody>
                   {filteredCandidates.length === 0 ? (
