@@ -86,7 +86,7 @@ export default async function handler(req, res) {
     // Get assessment type
     const { data: assessment, error: assessmentError } = await serviceClient
       .from('assessments')
-      .select('assessment_type_id')
+      .select('assessment_type_id, title')
       .eq('id', session.assessment_id)
       .single();
 
@@ -94,6 +94,10 @@ export default async function handler(req, res) {
       console.error("❌ Assessment error:", assessmentError);
       return res.status(500).json({ error: "Failed to fetch assessment" });
     }
+
+    // Determine if this is Manufacturing Baseline (assessment_type_id = 19)
+    const isBaseline = assessment.assessment_type_id === 19;
+    console.log(`📊 Assessment: ${assessment.title}, isBaseline: ${isBaseline}`);
 
     // Get all questions for this assessment type (to know max score per question)
     const { data: allQuestionsData, error: questionsError } = await serviceClient
@@ -125,30 +129,61 @@ export default async function handler(req, res) {
       });
     }
 
-    // ===== BUILD QUESTION METADATA =====
-    // Map question_id to its correct answers and max possible points
+    // ===== BUILD QUESTION METADATA BASED ON ASSESSMENT TYPE =====
     const questionMetadata = {};
+    
     for (const question of (allQuestionsData || [])) {
       const answers = question.unique_answers || [];
-      const correctAnswerIds = answers.filter(a => a.score === 1).map(a => a.id);
-      const questionMaxPoints = correctAnswerIds.length > 0 ? 1 : 1; // Each question worth 1 point max
       
-      questionMetadata[question.id] = {
-        correctAnswerIds,
-        maxPoints: questionMaxPoints,
-        isMultipleCorrect: correctAnswerIds.length > 1
-      };
+      if (isBaseline) {
+        // BASELINE LOGIC: Look for answers with score === 1 (correct answers)
+        const correctAnswerIds = answers.filter(a => a.score === 1).map(a => a.id);
+        
+        questionMetadata[question.id] = {
+          correctAnswerIds,
+          isMultipleCorrect: correctAnswerIds.length > 1,
+          answerScores: null
+        };
+        
+        console.log(`📚 Baseline Question ${question.id}: ${correctAnswerIds.length} correct answers`);
+      } else {
+        // OTHER 9 ASSESSMENTS: Store all answers with their scores
+        const answerScores = {};
+        let maxScore = 0;
+        
+        for (const answer of answers) {
+          const score = answer.score || 0;
+          answerScores[answer.id] = score;
+          if (score > maxScore) maxScore = score;
+        }
+        
+        questionMetadata[question.id] = {
+          answerScores,
+          maxScore,
+          isMultipleCorrect: false,
+          correctAnswerIds: null
+        };
+      }
     }
 
     // ===== CALCULATE TOTAL POSSIBLE MAX SCORE =====
-    // Each question is worth 1 point max (regardless of how many correct answers)
-    const totalPossibleMaxScore = totalQuestions;
-
-    // ===== CALCULATE EARNED SCORE WITH CORRECT MULTIPLE-SELECT LOGIC =====
-    let earnedScore = 0;
+    let totalPossibleMaxScore = 0;
     
-    // Group responses by question (since a question can have multiple answers in the same response row)
-    // We need to handle the fact that answer_id might be a comma-separated string
+    if (isBaseline) {
+      // Baseline: Each question worth 1 point max
+      totalPossibleMaxScore = totalQuestions;
+    } else {
+      // Other assessments: Sum of highest possible score per question
+      for (const question of (allQuestionsData || [])) {
+        const answers = question.unique_answers || [];
+        const maxScoreForQuestion = Math.max(...answers.map(a => a.score || 0));
+        totalPossibleMaxScore += maxScoreForQuestion;
+      }
+    }
+    
+    console.log(`📊 Total possible max score: ${totalPossibleMaxScore}`);
+
+    // ===== GROUP RESPONSES BY QUESTION =====
     const responsesByQuestion = {};
     
     for (const response of responses) {
@@ -168,7 +203,9 @@ export default async function handler(req, res) {
       responsesByQuestion[questionId].push(...answerIds);
     }
 
-    // Now calculate score for each question
+    // ===== CALCULATE EARNED SCORE =====
+    let earnedScore = 0;
+    
     for (const [questionId, selectedAnswerIds] of Object.entries(responsesByQuestion)) {
       const metadata = questionMetadata[questionId];
       if (!metadata) {
@@ -176,34 +213,46 @@ export default async function handler(req, res) {
         continue;
       }
       
-      const { correctAnswerIds, isMultipleCorrect } = metadata;
-      
       let questionScore = 0;
       
-      if (isMultipleCorrect) {
-        // For multiple-select: must select ALL correct answers to get 1 point
-        const hasAllCorrect = correctAnswerIds.every(correctId => 
-          selectedAnswerIds.includes(correctId)
-        );
-        const hasNoExtraIncorrect = selectedAnswerIds.every(selectedId => 
-          correctAnswerIds.includes(selectedId)
-        );
+      if (isBaseline) {
+        // BASELINE LOGIC: Must select ALL correct answers to get 1 point
+        const { correctAnswerIds, isMultipleCorrect } = metadata;
         
-        if (hasAllCorrect && hasNoExtraIncorrect) {
-          questionScore = 1;
-        } else {
+        if (!correctAnswerIds || correctAnswerIds.length === 0) {
+          console.warn(`⚠️ Baseline Question ${questionId} has no correct answers defined`);
           questionScore = 0;
+        } else if (isMultipleCorrect) {
+          // Multiple correct answers: must select ALL and ONLY correct answers
+          const hasAllCorrect = correctAnswerIds.every(correctId => 
+            selectedAnswerIds.includes(correctId)
+          );
+          const hasNoExtraIncorrect = selectedAnswerIds.every(selectedId => 
+            correctAnswerIds.includes(selectedId)
+          );
+          
+          if (hasAllCorrect && hasNoExtraIncorrect) {
+            questionScore = 1;
+          }
+          console.log(`📊 Baseline Q${questionId} (multiple): Selected [${selectedAnswerIds.join(',')}], Correct [${correctAnswerIds.join(',')}], Score: ${questionScore}`);
+        } else {
+          // Single correct answer for Baseline
+          const selectedAnswer = selectedAnswerIds[0];
+          if (correctAnswerIds.includes(selectedAnswer)) {
+            questionScore = 1;
+          }
+          console.log(`📊 Baseline Q${questionId} (single): Selected ${selectedAnswer}, Correct ${correctAnswerIds[0]}, Score: ${questionScore}`);
         }
-        console.log(`📊 Question ${questionId} (multiple): Selected ${selectedAnswerIds.join(',')}, Correct ${correctAnswerIds.join(',')}, Score: ${questionScore}`);
       } else {
-        // For single-select: just check if selected answer is correct
-        const selectedAnswer = selectedAnswerIds[0];
-        if (correctAnswerIds.includes(selectedAnswer)) {
-          questionScore = 1;
-        } else {
-          questionScore = 0;
+        // OTHER 9 ASSESSMENTS: Sum the scores of selected answers
+        const { answerScores } = metadata;
+        
+        for (const answerId of selectedAnswerIds) {
+          const score = answerScores[answerId] || 0;
+          questionScore += score;
         }
-        console.log(`📊 Question ${questionId} (single): Selected ${selectedAnswer}, Correct ${correctAnswerIds[0]}, Score: ${questionScore}`);
+        
+        console.log(`📊 Standard Q${questionId}: Selected [${selectedAnswerIds.join(',')}], Score: ${questionScore}`);
       }
       
       earnedScore += questionScore;
@@ -215,8 +264,7 @@ export default async function handler(req, res) {
       percentage = (earnedScore / totalPossibleMaxScore) * 100;
     }
 
-    console.log(`📊 Earned Score: ${earnedScore}/${totalPossibleMaxScore}, Percentage: ${percentage.toFixed(2)}%`);
-    console.log(`📊 Answered: ${answeredCount}/${totalQuestions} questions`);
+    console.log(`📊 Final Score: ${earnedScore}/${totalPossibleMaxScore} (${percentage.toFixed(2)}%)`);
 
     // Determine if result is valid (only valid if normal submission with all questions answered)
     const isValid = !isAutoSubmit && answeredCount === totalQuestions;
