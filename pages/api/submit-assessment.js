@@ -258,13 +258,22 @@ export default async function handler(req, res) {
       earnedScore += questionScore;
     }
 
-    // Calculate percentage based on earned score vs TOTAL possible max score
+    // ===== CALCULATE PERCENTAGE - ENSURE VALID NUMBER =====
     let percentage = 0;
-    if (totalPossibleMaxScore > 0) {
+    if (totalPossibleMaxScore > 0 && earnedScore > 0) {
       percentage = (earnedScore / totalPossibleMaxScore) * 100;
     }
+    
+    // Force percentage to be a valid number
+    percentage = Number(percentage);
+    if (isNaN(percentage) || !isFinite(percentage)) {
+      percentage = 0;
+    }
+    
+    // Round to 2 decimal places
+    percentage = Math.round(percentage * 100) / 100;
 
-    console.log(`📊 Final Score: ${earnedScore}/${totalPossibleMaxScore} (${percentage.toFixed(2)}%)`);
+    console.log(`📊 Final Score: ${earnedScore}/${totalPossibleMaxScore} (${percentage}%)`);
 
     // Determine if result is valid (only valid if normal submission with all questions answered)
     const isValid = !isAutoSubmit && answeredCount === totalQuestions;
@@ -288,20 +297,20 @@ export default async function handler(req, res) {
       console.log("✅ Session updated");
     }
 
-    // Save results
+    // ===== SAVE RESULTS WITH PROPER DATA TYPES =====
     const resultData = {
       user_id: session.user_id,
       assessment_id: session.assessment_id,
       session_id: sessionId,
-      total_score: earnedScore,
-      max_score: totalPossibleMaxScore,
-      percentage_score: percentage,
-      answered_questions: answeredCount,
-      total_questions: totalQuestions,
-      is_valid: isValid,
-      is_auto_submitted: isAutoSubmit,
+      total_score: Number(earnedScore) || 0,
+      max_score: Number(totalPossibleMaxScore) || 0,
+      percentage_score: percentage,  // Now guaranteed to be a valid number
+      answered_questions: Number(answeredCount) || 0,
+      total_questions: Number(totalQuestions) || 0,
+      is_valid: Boolean(isValid),
+      is_auto_submitted: Boolean(isAutoSubmit),
       auto_submit_reason: isAutoSubmit ? `Auto-submitted due to ${violationCount} violation(s). Only ${answeredCount} of ${totalQuestions} questions answered.` : null,
-      violation_count: violationCount,
+      violation_count: Number(violationCount) || 0,
       violation_details: {
         copy_paste: session.copy_paste_count || 0,
         right_clicks: session.right_click_count || 0,
@@ -311,7 +320,7 @@ export default async function handler(req, res) {
       completed_at: new Date().toISOString()
     };
 
-    console.log("📦 Saving assessment results:", resultData);
+    console.log("📦 Saving assessment results:", JSON.stringify(resultData, null, 2));
 
     const { data: result, error: resultError } = await serviceClient
       .from('assessment_results')
@@ -334,8 +343,8 @@ export default async function handler(req, res) {
       .from('candidate_assessments')
       .update({
         status: 'completed',
-        score: earnedScore,
-        max_score: totalPossibleMaxScore,
+        score: Number(earnedScore) || 0,
+        max_score: Number(totalPossibleMaxScore) || 0,
         percentage: percentage,
         completed_at: new Date().toISOString()
       })
@@ -379,13 +388,13 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       result_id: result.id,
-      score: earnedScore,
-      max_score: totalPossibleMaxScore,
+      score: Number(earnedScore) || 0,
+      max_score: Number(totalPossibleMaxScore) || 0,
       percentage: Math.round(percentage),
-      answered_questions: answeredCount,
-      total_questions: totalQuestions,
-      isAutoSubmitted: isAutoSubmit,
-      violationCount: violationCount,
+      answered_questions: Number(answeredCount) || 0,
+      total_questions: Number(totalQuestions) || 0,
+      isAutoSubmitted: Boolean(isAutoSubmit),
+      violationCount: Number(violationCount) || 0,
       message: isAutoSubmit 
         ? `⚠️ Assessment auto-submitted due to ${violationCount} violation(s). Score calculated on ${answeredCount} of ${totalQuestions} questions.`
         : `✅ Assessment submitted successfully! Score: ${Math.round(percentage)}%`
