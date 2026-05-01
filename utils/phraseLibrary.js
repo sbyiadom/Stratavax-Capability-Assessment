@@ -1,942 +1,522 @@
+// utils/phraseLibrary.js
+
 /**
- * STRATAVAX PHRASE LIBRARY - ENHANCELED EDITION
- * Rich, varied phrases for all assessment types to ensure uniqueness
- * Now with 20+ options per category for maximum dynamism
- * Over 200 unique phrases in total!
+ * PHRASE LIBRARY
+ *
+ * Shared professional wording library for assessment reports.
+ *
+ * Corrected version:
+ * - Avoids Math.random()
+ * - Uses deterministic phrase selection
+ * - Supports all assessment types
+ * - Uses cautious supervisor-friendly language
+ * - Avoids overclaiming
+ * - Keeps flexible exports for existing report utilities
  */
 
-// ===== STRENGTH PHRASES =====
-export const strengthPhrases = {
-  // General cognitive phrases
-  cognitive: [
-    "demonstrates exceptional analytical capability in {{area}}",
-    "shows strong cognitive processing in {{area}}",
-    "exhibits sharp mental agility in {{area}}",
-    "performs with notable intellectual precision in {{area}}",
-    "displays superior reasoning abilities in {{area}}",
-    "showcases impressive mental flexibility in {{area}}",
-    "reveals strong problem-solving aptitude in {{area}}",
-    "demonstrates keen intellectual insight in {{area}}",
-    "exhibits robust analytical thinking in {{area}}",
-    "shows advanced cognitive maturity in {{area}}",
-    "possesses remarkable intellectual depth in {{area}}",
-    "demonstrates exceptional mental acuity in {{area}}",
-    "exhibits sophisticated analytical capabilities in {{area}}",
-    "showcases brilliant cognitive agility in {{area}}",
-    "reveals outstanding intellectual horsepower in {{area}}",
-    "displays masterful analytical reasoning in {{area}}",
-    "demonstrates superior mental processing speed in {{area}}",
-    "exhibits exceptional pattern recognition in {{area}}",
-    "shows remarkable intellectual versatility in {{area}}",
-    "possesses keen analytical instincts in {{area}}",
-    "demonstrates outstanding critical thinking in {{area}}",
-    "exhibits brilliant strategic cognition in {{area}}",
-    "showcases exceptional mental stamina in {{area}}",
-    "reveals profound analytical depth in {{area}}"
+const normalizeText = (value) => {
+  if (value === null || value === undefined) return "";
+
+  return String(value)
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'");
+};
+
+const safeNumber = (value, fallback = 0) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+};
+
+const createHash = (input) => {
+  const text = String(input || "");
+  let hash = 0;
+
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash << 5) - hash + text.charCodeAt(index);
+    hash |= 0;
+  }
+
+  return Math.abs(hash);
+};
+
+/**
+ * Deterministic phrase selector.
+ *
+ * Same input seed = same selected phrase.
+ * This prevents reports changing on every refresh.
+ */
+export const selectPhrase = (phrases = [], seed = "") => {
+  if (!Array.isArray(phrases) || phrases.length === 0) return "";
+
+  const index = createHash(seed) % phrases.length;
+  return phrases[index];
+};
+
+export const replaceVariables = (template = "", variables = {}) => {
+  let output = String(template || "");
+
+  Object.entries(variables || {}).forEach(([key, value]) => {
+    output = output.replace(new RegExp(`{{${key}}}`, "g"), value);
+  });
+
+  return output;
+};
+
+// ======================================================
+// GENERAL REPORT PHRASES
+// ======================================================
+
+export const generalReportPhrases = {
+  evidenceBased: [
+    "Assessment evidence suggests {{statement}}.",
+    "The response pattern indicates {{statement}}.",
+    "The available assessment data points to {{statement}}.",
+    "Based on the recorded responses, {{statement}}."
   ],
-  
-  // Leadership phrases
-  leadership: [
-    "demonstrates compelling leadership presence in {{area}}",
-    "exhibits natural authority and vision in {{area}}",
-    "shows exceptional people guidance in {{area}}",
-    "reveals strong strategic orientation in {{area}}",
-    "displays remarkable team inspiration in {{area}}",
-    "showcases effective decision-making in {{area}}",
-    "demonstrates authentic leadership qualities in {{area}}",
-    "exhibits confident direction-setting in {{area}}",
-    "shows mature judgment in {{area}}",
-    "reveals strong capacity to influence in {{area}}",
-    "possesses commanding executive presence in {{area}}",
-    "demonstrates visionary leadership in {{area}}",
-    "exhibits exceptional team building in {{area}}",
-    "showcases masterful conflict resolution in {{area}}",
-    "reveals natural mentoring ability in {{area}}",
-    "displays strategic foresight in {{area}}",
-    "demonstrates inspirational communication in {{area}}",
-    "exhibits decisive action orientation in {{area}}",
-    "shows remarkable emotional intelligence in {{area}}",
-    "possesses authentic charisma in {{area}}",
-    "demonstrates exceptional change leadership in {{area}}",
-    "exhibits strong organizational influence in {{area}}",
-    "showcases masterful stakeholder management in {{area}}",
-    "reveals profound leadership wisdom in {{area}}"
+
+  practicalValidation: [
+    "This should be validated through practical observation before final placement.",
+    "Supervisor judgment and practical work validation are recommended before final assignment.",
+    "This interpretation should be considered alongside interview evidence, references, and work observation.",
+    "The result should support, not replace, supervisor judgment and practical validation."
   ],
-  
-  // Communication phrases
-  communication: [
-    "articulates ideas with exceptional clarity in {{area}}",
-    "demonstrates persuasive communication in {{area}}",
-    "exhibits strong verbal expression in {{area}}",
-    "shows adept interpersonal messaging in {{area}}",
-    "reveals talent for conveying complex ideas in {{area}}",
-    "displays engaging presentation style in {{area}}",
-    "showcases active listening skills in {{area}}",
-    "demonstrates diplomatic communication in {{area}}",
-    "exhibits clarity of expression in {{area}}",
-    "shows strength in stakeholder communication in {{area}}",
-    "possesses exceptional storytelling ability in {{area}}",
-    "demonstrates masterful negotiation skills in {{area}}",
-    "exhibits compelling written communication in {{area}}",
-    "showcases articulate self-expression in {{area}}",
-    "reveals talent for simplifying complexity in {{area}}",
-    "displays charismatic public speaking in {{area}}",
-    "demonstrates empathetic communication in {{area}}",
-    "exhibits persuasive rhetoric in {{area}}",
-    "shows remarkable cross-cultural communication in {{area}}",
-    "possesses natural rapport-building ability in {{area}}",
-    "demonstrates exceptional feedback delivery in {{area}}",
-    "exhibits clear and concise messaging in {{area}}",
-    "showcases masterful facilitation skills in {{area}}",
-    "reveals outstanding interpersonal fluency in {{area}}"
+
+  noStrengths: [
+    "No category reached the current strength threshold.",
+    "No dominant strength area was identified from the category scores.",
+    "The assessment did not show a clear strength area above the current threshold.",
+    "The profile shows no standout strength area, so baseline development should be prioritized."
   ],
-  
-  // Technical phrases
-  technical: [
-    "demonstrates deep technical mastery in {{area}}",
-    "exhibits strong hands-on capability in {{area}}",
-    "shows comprehensive system knowledge in {{area}}",
-    "reveals practical troubleshooting skill in {{area}}",
-    "displays methodical technical approach in {{area}}",
-    "showcases robust equipment handling in {{area}}",
-    "demonstrates quality-focused execution in {{area}}",
-    "exhibits safety-conscious practice in {{area}}",
-    "shows innovative problem-solving in {{area}}",
-    "reveals strong process optimization in {{area}}",
-    "possesses exceptional technical intuition in {{area}}",
-    "demonstrates masterful system integration in {{area}}",
-    "exhibits advanced diagnostic capabilities in {{area}}",
-    "showcases precision in technical execution in {{area}}",
-    "reveals deep understanding of technical principles in {{area}}",
-    "displays innovative technical solutions in {{area}}",
-    "demonstrates exceptional attention to detail in {{area}}",
-    "exhibits strong analytical troubleshooting in {{area}}",
-    "shows remarkable technical adaptability in {{area}}",
-    "possesses comprehensive technical expertise in {{area}}",
-    "demonstrates outstanding quality control in {{area}}",
-    "exhibits efficient process management in {{area}}",
-    "showcases masterful equipment optimization in {{area}}",
-    "reveals profound technical insight in {{area}}"
+
+  noDevelopmentAreas: [
+    "No major development area was identified below the current development threshold.",
+    "No critical development concern was identified from the category scores.",
+    "The assessment did not show a major gap below the current development threshold.",
+    "Development should focus on reinforcement and practical validation rather than remediation."
   ],
-  
-  // ===== NEW: Manufacturing Baseline specific phrases =====
-  manufacturing: [
-    "demonstrates solid understanding of maintenance principles in {{area}}",
-    "exhibits strong foundational knowledge of production equipment in {{area}}",
-    "shows good grasp of safety protocols in {{area}}",
-    "reveals practical troubleshooting capability in {{area}}",
-    "displays methodical approach to problem-solving in {{area}}",
-    "showcases attention to quality standards in {{area}}",
-    "demonstrates reliable equipment handling skills in {{area}}",
-    "exhibits understanding of production line flow in {{area}}",
-    "shows competence in numerical reasoning for production in {{area}}",
-    "reveals good awareness of safety requirements in {{area}}",
-    "possesses solid foundation in technical fundamentals in {{area}}",
-    "demonstrates ability to follow procedures reliably in {{area}}",
-    "exhibits understanding of preventive maintenance in {{area}}",
-    "showcases attention to detail in quality control in {{area}}",
-    "reveals good grasp of production metrics in {{area}}",
-    "displays responsible approach to workplace safety in {{area}}",
-    "demonstrates solid analytical thinking for manufacturing in {{area}}",
-    "exhibits strong foundational skills for production roles in {{area}}",
-    "shows promise in technical problem-solving in {{area}}",
-    "possesses good understanding of production processes in {{area}}",
-    "demonstrates reliable work ethic in {{area}}",
-    "exhibits ability to learn manufacturing concepts in {{area}}",
-    "showcases potential for growth in production environment in {{area}}",
-    "reveals solid baseline competency for manufacturing in {{area}}"
-  ],
-  
-  // Emotional intelligence phrases
-  emotional: [
-    "demonstrates high self-awareness in {{area}}",
-    "exhibits strong empathy in {{area}}",
-    "shows adept relationship management in {{area}}",
-    "reveals emotional maturity in {{area}}",
-    "displays social perceptiveness in {{area}}",
-    "showcases self-regulation in {{area}}",
-    "demonstrates interpersonal sensitivity in {{area}}",
-    "exhibits collaborative spirit in {{area}}",
-    "shows conflict navigation skills in {{area}}",
-    "reveals team-oriented mindset in {{area}}",
-    "possesses exceptional emotional balance in {{area}}",
-    "demonstrates masterful social awareness in {{area}}",
-    "exhibits authentic empathy in {{area}}",
-    "showcases remarkable self-control in {{area}}",
-    "reveals strong interpersonal intuition in {{area}}",
-    "displays graceful conflict resolution in {{area}}",
-    "demonstrates outstanding team harmony in {{area}}",
-    "exhibits keen emotional perception in {{area}}",
-    "shows remarkable relationship building in {{area}}",
-    "possesses natural psychological insight in {{area}}",
-    "demonstrates exceptional stress management in {{area}}",
-    "exhibits strong social adaptability in {{area}}",
-    "showcases masterful group dynamics in {{area}}",
-    "reveals profound emotional wisdom in {{area}}"
-  ],
-  
-  // Performance phrases
-  performance: [
-    "demonstrates results-driven approach in {{area}}",
-    "exhibits strong execution focus in {{area}}",
-    "shows consistent productivity in {{area}}",
-    "reveals accountability in {{area}}",
-    "displays goal orientation in {{area}}",
-    "showcases efficiency in {{area}}",
-    "demonstrates quality consciousness in {{area}}",
-    "exhibits initiative in {{area}}",
-    "shows reliability in {{area}}",
-    "reveals commitment to excellence in {{area}}",
-    "possesses exceptional work ethic in {{area}}",
-    "demonstrates outstanding delivery capability in {{area}}",
-    "exhibits relentless drive in {{area}}",
-    "showcases remarkable consistency in {{area}}",
-    "reveals strong performance under pressure in {{area}}",
-    "displays exceptional time management in {{area}}",
-    "demonstrates proactive problem-solving in {{area}}",
-    "exhibits keen results orientation in {{area}}",
-    "shows remarkable productivity gains in {{area}}",
-    "possesses natural achievement drive in {{area}}",
-    "demonstrates exceptional follow-through in {{area}}",
-    "exhibits strong ownership mentality in {{area}}",
-    "showcases masterful prioritization in {{area}}",
-    "reveals profound commitment to quality in {{area}}"
-  ],
-  
-  // UPDATED: Personality phrases - now with 6 new traits
-  personality: [
-    "demonstrates exceptional accountability and follow-through in {{area}}",
-    "exhibits strong ownership and initiative in {{area}}",
-    "shows natural drive to take responsibility in {{area}}",
-    "reveals commitment to owning outcomes in {{area}}",
-    "displays remarkable reliability and dependability in {{area}}",
-    "showcases exceptional team orientation in {{area}}",
-    "demonstrates strong collaborative instincts in {{area}}",
-    "exhibits natural ability to build consensus in {{area}}",
-    "shows remarkable interpersonal effectiveness in {{area}}",
-    "reveals talent for fostering team harmony in {{area}}",
-    "displays exceptional decisiveness and urgency in {{area}}",
-    "demonstrates strong action orientation in {{area}}",
-    "exhibits remarkable initiative-taking ability in {{area}}",
-    "shows natural inclination to act swiftly in {{area}}",
-    "reveals impressive execution focus in {{area}}",
-    "displays exceptional analytical thinking in {{area}}",
-    "demonstrates strong systematic approach in {{area}}",
-    "exhibits remarkable data-driven decision-making in {{area}}",
-    "shows natural curiosity and thoroughness in {{area}}",
-    "reveals impressive methodical processing in {{area}}",
-    "displays healthy comfort with uncertainty in {{area}}",
-    "demonstrates appropriate calculated risk-taking in {{area}}",
-    "exhibits remarkable innovation mindset in {{area}}",
-    "shows natural experimentation approach in {{area}}",
-    "reveals impressive boundary-pushing capability in {{area}}",
-    "displays exceptional process discipline in {{area}}",
-    "demonstrates strong organizational consistency in {{area}}",
-    "exhibits remarkable reliability in following procedures in {{area}}",
-    "shows natural affinity for structured approaches in {{area}}",
-    "reveals impressive attention to process in {{area}}"
-  ],
-  
-  // Cultural fit phrases
-  cultural: [
-    "demonstrates strong values alignment in {{area}}",
-    "exhibits cultural awareness in {{area}}",
-    "shows inclusive behavior in {{area}}",
-    "reveals respect for diversity in {{area}}",
-    "displays professional conduct in {{area}}",
-    "showcases ethical judgment in {{area}}",
-    "demonstrates team collaboration in {{area}}",
-    "exhibits organizational citizenship in {{area}}",
-    "shows adaptability to company culture in {{area}}",
-    "reveals integrity in {{area}}",
-    "possesses exceptional cultural intelligence in {{area}}",
-    "demonstrates strong belonging in {{area}}",
-    "exhibits inclusive leadership in {{area}}",
-    "showcases respect for differences in {{area}}",
-    "reveals commitment to equity in {{area}}",
-    "displays authentic appreciation of diversity in {{area}}",
-    "demonstrates outstanding cross-cultural collaboration in {{area}}",
-    "exhibits strong values congruence in {{area}}",
-    "shows remarkable cultural adaptability in {{area}}",
-    "possesses natural inclusivity in {{area}}",
-    "demonstrates exceptional ethical reasoning in {{area}}",
-    "exhibits strong organizational loyalty in {{area}}",
-    "showcases masterful cultural navigation in {{area}}",
-    "reveals profound respect for others in {{area}}"
-  ],
-  
-  // Default fallback
-  default: [
-    "demonstrates strength in {{area}}",
-    "shows capability in {{area}}",
-    "exhibits proficiency in {{area}}",
-    "reveals talent in {{area}}",
-    "displays competence in {{area}}",
-    "showcases ability in {{area}}",
-    "performs well in {{area}}",
-    "demonstrates skill in {{area}}",
-    "shows aptitude in {{area}}",
-    "reveals potential in {{area}}",
-    "possesses natural ability in {{area}}",
-    "demonstrates growing expertise in {{area}}",
-    "exhibits promising capability in {{area}}",
-    "showcases developing talent in {{area}}",
-    "reveals emerging strength in {{area}}",
-    "displays increasing proficiency in {{area}}",
-    "demonstrates solid foundation in {{area}}",
-    "exhibits notable skill in {{area}}",
-    "shows considerable aptitude in {{area}}",
-    "possesses valuable capability in {{area}}"
+
+  caution: [
+    "Use caution when interpreting this result in isolation.",
+    "This result should be combined with practical validation before making final placement decisions.",
+    "The assessment result should be used as one source of evidence among several.",
+    "Further evidence may be required for high-impact placement or promotion decisions."
   ]
 };
 
-// ===== WEAKNESS PHRASES =====
-export const weaknessPhrases = {
-  // General cognitive phrases
-  cognitive: [
-    "would benefit from strengthening {{area}}",
-    "presents opportunity to develop {{area}}",
-    "shows potential to enhance {{area}}",
-    "could improve through focused practice in {{area}}",
-    "would gain from targeted development in {{area}}",
-    "has room to grow in {{area}}",
-    "may need additional support in {{area}}",
-    "would be well-served by building {{area}}",
-    "could elevate performance by developing {{area}}",
-    "shows foundational {{area}} that can be strengthened",
-    "would benefit from cognitive exercises in {{area}}",
-    "presents opportunity to sharpen {{area}}",
-    "could enhance through analytical training in {{area}}",
-    "would gain from structured thinking practice in {{area}}",
-    "has potential to develop stronger {{area}}",
-    "may need focused attention on {{area}}",
-    "would be improved by building {{area}} capabilities",
-    "shows emerging {{area}} that needs cultivation",
-    "could benefit from mental agility exercises in {{area}}",
-    "presents opportunity to strengthen cognitive {{area}}",
-    "would gain from problem-solving practice in {{area}}",
-    "has room to develop deeper {{area}}",
-    "may need additional cognitive scaffolding in {{area}}",
-    "would be enhanced by analytical skill building in {{area}}"
+// ======================================================
+// SCORE-LEVEL PHRASES
+// ======================================================
+
+export const scoreLevelPhrases = {
+  exceptional: {
+    summary: [
+      "{{area}} shows exceptional evidence of capability.",
+      "{{area}} appears to be a standout strength based on assessment evidence.",
+      "{{area}} demonstrates strong assessment evidence and may support advanced responsibility."
+    ],
+    supervisor: [
+      "This area may be leveraged through stretch assignments, mentoring, or greater responsibility.",
+      "Supervisor may consider using this area as a foundation for expanded role contribution.",
+      "This capability may support more demanding assignments, subject to practical validation."
+    ]
+  },
+
+  strong: {
+    summary: [
+      "{{area}} shows reliable evidence of capability.",
+      "{{area}} appears to be a strength area.",
+      "{{area}} shows strong enough evidence to support role-relevant contribution."
+    ],
+    supervisor: [
+      "This area can be leveraged through practical assignments and continued feedback.",
+      "Supervisor may use this area as a useful foundation during onboarding or development.",
+      "This strength should be reinforced through real work exposure."
+    ]
+  },
+
+  adequate: {
+    summary: [
+      "{{area}} shows functional capability.",
+      "{{area}} appears adequate but not yet dominant.",
+      "{{area}} shows usable evidence with room for refinement."
+    ],
+    supervisor: [
+      "This area should be reinforced through role-specific practice.",
+      "Supervisor should provide feedback and practical exposure to strengthen consistency.",
+      "This area may support routine tasks with standard guidance."
+    ]
+  },
+
+  developing: {
+    summary: [
+      "{{area}} is developing and requires structured support.",
+      "{{area}} shows foundational evidence but needs reinforcement.",
+      "{{area}} requires development before complex independent responsibility."
+    ],
+    supervisor: [
+      "Structured practice, coaching, and regular progress review are recommended.",
+      "Supervisor should provide clear expectations and guided development.",
+      "Practical exposure should be supervised until consistency improves."
+    ]
+  },
+
+  priority_development: {
+    summary: [
+      "{{area}} requires priority development.",
+      "{{area}} shows significant gaps that may affect role readiness.",
+      "{{area}} should be addressed through targeted training and close follow-up."
+    ],
+    supervisor: [
+      "Targeted training and supervised practice are recommended.",
+      "Supervisor should monitor progress closely and provide structured feedback.",
+      "Independent responsibility in this area should be limited until improvement is validated."
+    ]
+  },
+
+  critical_gap: {
+    summary: [
+      "{{area}} shows a critical development need.",
+      "{{area}} indicates a significant readiness concern.",
+      "{{area}} requires immediate foundational support."
+    ],
+    supervisor: [
+      "Immediate training, close supervision, and clear development milestones are recommended.",
+      "Do not assign complex independent responsibility in this area until improvement is validated.",
+      "Foundational development should begin before role-critical exposure."
+    ]
+  }
+};
+
+// ======================================================
+// MANUFACTURING BASELINE PHRASES
+// ======================================================
+
+export const manufacturingPhrases = {
+  "Technical Fundamentals": {
+    strength: [
+      "Technical Fundamentals show useful evidence of equipment and manufacturing-system understanding.",
+      "The candidate appears to have a workable technical foundation for supervised onboarding.",
+      "Assessment evidence suggests the candidate can build on existing technical fundamentals during practical exposure."
+    ],
+    development: [
+      "Technical Fundamentals require structured reinforcement before independent equipment-related work.",
+      "The candidate may need support with equipment concepts, maintenance basics, sensors, motors, or pneumatic systems.",
+      "Foundational technical training and supervised equipment familiarization are recommended."
+    ],
+    action: [
+      "Provide equipment walkthroughs, maintenance basics, and supervised technical practice.",
+      "Assign practical equipment familiarization with an experienced operator or technician.",
+      "Use checklists and demonstrations to reinforce technical concepts."
+    ]
+  },
+
+  Troubleshooting: {
+    strength: [
+      "Troubleshooting shows useful diagnostic evidence for common production issues.",
+      "Assessment evidence suggests the candidate can approach practical faults with structured support.",
+      "The candidate may be able to contribute to supervised line issue review."
+    ],
+    development: [
+      "Troubleshooting requires structured diagnostic development.",
+      "The candidate may need support with root-cause analysis and fault-finding.",
+      "Guided troubleshooting practice is recommended before independent issue resolution."
+    ],
+    action: [
+      "Use 5 Whys, PDCA, and guided fault scenarios.",
+      "Provide practical troubleshooting simulations and supervisor feedback.",
+      "Pair the candidate with an experienced technician during issue review."
+    ]
+  },
+
+  "Numerical Aptitude": {
+    strength: [
+      "Numerical Aptitude shows useful evidence for production calculations and reporting.",
+      "The candidate appears able to handle production math and basic metric interpretation.",
+      "Assessment evidence suggests numerical reasoning may support quality or production tracking tasks."
+    ],
+    development: [
+      "Numerical Aptitude requires reinforcement for production calculations and metric interpretation.",
+      "The candidate may need support with percentages, ratios, efficiency calculations, or production rates.",
+      "Production math practice is recommended before assigning calculation-heavy work."
+    ],
+    action: [
+      "Provide production math exercises and metric interpretation practice.",
+      "Use examples involving output, efficiency, ratios, and quality checks.",
+      "Review calculation tasks with a supervisor or mentor."
+    ]
+  },
+
+  "Safety & Work Ethic": {
+    strength: [
+      "Safety & Work Ethic shows useful evidence of PPE awareness, SOP discipline, and workplace conduct.",
+      "Assessment evidence suggests the candidate understands important safety and work-behavior expectations.",
+      "This area may support supervised production onboarding, subject to practical observation."
+    ],
+    development: [
+      "Safety & Work Ethic requires reinforcement before independent production exposure.",
+      "The candidate may need safety training, SOP reinforcement, and close onboarding supervision.",
+      "Safety awareness and workplace conduct should be practically validated before production assignment."
+    ],
+    action: [
+      "Provide safety induction, PPE demonstrations, and SOP review.",
+      "Use toolbox talks, hazard-recognition exercises, and supervisor observation.",
+      "Validate safe work behavior during supervised onboarding."
+    ]
+  }
+};
+
+// Alias support
+manufacturingPhrases["Safety &amp; Work Ethic"] =
+  manufacturingPhrases["Safety & Work Ethic"];
+
+// ======================================================
+// PERSONALITY / TRAIT PHRASES
+// ======================================================
+
+export const traitPhrases = {
+  Ownership: {
+    strength:
+      "Ownership suggests accountability, initiative, and follow-through.",
+    development:
+      "Ownership requires development through clear expectations, task ownership, and follow-up."
+  },
+  Collaboration: {
+    strength:
+      "Collaboration suggests constructive team contribution and interpersonal effectiveness.",
+    development:
+      "Collaboration requires development through team practice, active listening, and feedback."
+  },
+  Action: {
+    strength:
+      "Action suggests initiative, timely execution, and willingness to move tasks forward.",
+    development:
+      "Action requires development through time-bound tasks, initiative-building, and decision practice."
+  },
+  Analysis: {
+    strength:
+      "Analysis suggests structured reasoning and data-informed thinking.",
+    development:
+      "Analysis requires development through problem-solving frameworks, case practice, and guided reasoning."
+  },
+  "Risk Tolerance": {
+    strength:
+      "Risk Tolerance suggests comfort with controlled uncertainty and experimentation.",
+    development:
+      "Risk Tolerance requires development through safe experiments and structured risk review."
+  },
+  Structure: {
+    strength:
+      "Structure suggests process discipline, consistency, and respect for procedures.",
+    development:
+      "Structure requires development through SOP reinforcement, checklists, and process monitoring."
+  }
+};
+
+// ======================================================
+// ROLE READINESS PHRASES
+// ======================================================
+
+export const roleReadinessPhrases = {
+  ready: [
+    "Assessment evidence suggests possible readiness, subject to practical validation.",
+    "The candidate may be considered ready for supervised progression in this role area.",
+    "The result supports potential readiness, provided onboarding confirms practical performance."
   ],
-  
-  // Leadership phrases
-  leadership: [
-    "would benefit from leadership coaching in {{area}}",
-    "presents opportunity to develop {{area}}",
-    "could strengthen through mentorship in {{area}}",
-    "would gain from exposure to {{area}} challenges",
-    "has potential to grow in {{area}} with guidance",
-    "may need development in {{area}} for advancement",
-    "would be enhanced by building {{area}} capabilities",
-    "shows promise in {{area}} that can be cultivated",
-    "could benefit from structured {{area}} training",
-    "has opportunity to refine {{area}}",
-    "would benefit from executive coaching in {{area}}",
-    "presents opportunity to strengthen {{area}}",
-    "could develop through leadership programs in {{area}}",
-    "would gain from strategic assignments in {{area}}",
-    "has potential to enhance {{area}} with experience",
-    "may need guidance in developing {{area}}",
-    "would be improved by building {{area}} competencies",
-    "shows emerging leadership in {{area}} to nurture",
-    "could benefit from shadowing senior leaders in {{area}}",
-    "presents opportunity to cultivate {{area}}",
-    "would gain from 360-degree feedback on {{area}}",
-    "has room to develop stronger {{area}}",
-    "may need additional leadership exposure in {{area}}",
-    "would be enhanced by strategic thinking practice in {{area}}"
+
+  conditional: [
+    "The candidate may be conditionally ready with increased supervision and structured onboarding.",
+    "Role exposure may be appropriate if development support and supervisor monitoring are in place.",
+    "Readiness is developing and should be validated through supervised practical tasks."
   ],
-  
-  // Communication phrases
-  communication: [
-    "would benefit from communication workshops in {{area}}",
-    "presents opportunity to enhance {{area}}",
-    "could strengthen through practice in {{area}}",
-    "would gain from feedback on {{area}}",
-    "has potential to develop clearer {{area}}",
-    "may need support in {{area}} situations",
-    "would be enhanced by building {{area}} skills",
-    "shows room to grow in {{area}}",
-    "could benefit from active listening practice in {{area}}",
-    "has opportunity to refine {{area}} expression",
-    "would benefit from presentation skills training in {{area}}",
-    "presents opportunity to improve {{area}}",
-    "could develop through public speaking practice in {{area}}",
-    "would gain from writing workshops in {{area}}",
-    "has potential to enhance {{area}} clarity",
-    "may need practice in {{area}} scenarios",
-    "would be improved by building {{area}} confidence",
-    "shows developing {{area}} that can be strengthened",
-    "could benefit from storytelling workshops in {{area}}",
-    "presents opportunity to refine {{area}} style",
-    "would gain from executive presence training in {{area}}",
-    "has room to develop more persuasive {{area}}",
-    "may need additional communication coaching in {{area}}",
-    "would be enhanced by feedback on {{area}} delivery"
-  ],
-  
-  // Technical phrases
-  technical: [
-    "would benefit from hands-on practice in {{area}}",
-    "presents opportunity to build {{area}} knowledge",
-    "could strengthen through technical training in {{area}}",
-    "would gain from mentorship in {{area}}",
-    "has potential to develop {{area}} competence",
-    "may need additional exposure to {{area}}",
-    "would be enhanced by certification in {{area}}",
-    "shows foundation in {{area}} that can be built upon",
-    "could benefit from structured {{area}} learning",
-    "has opportunity to develop {{area}} proficiency",
-    "would benefit from technical workshops in {{area}}",
-    "presents opportunity to deepen {{area}} understanding",
-    "could strengthen through practical application in {{area}}",
-    "would gain from shadowing experts in {{area}}",
-    "has potential to build {{area}} expertise",
-    "may need guided practice in {{area}}",
-    "would be improved by hands-on projects in {{area}}",
-    "shows basic {{area}} that needs development",
-    "could benefit from technical reading in {{area}}",
-    "presents opportunity to master {{area}} fundamentals",
-    "would gain from simulation training in {{area}}",
-    "has room to develop technical depth in {{area}}",
-    "may need additional troubleshooting practice in {{area}}",
-    "would be enhanced by equipment training in {{area}}"
-  ],
-  
-  // ===== NEW: Manufacturing Baseline specific weakness phrases =====
-  manufacturing: [
-    "would benefit from foundational training in {{area}}",
-    "presents opportunity to build basic manufacturing knowledge in {{area}}",
-    "could strengthen through hands-on practice in {{area}}",
-    "would gain from structured learning in production {{area}}",
-    "has potential to develop foundational {{area}} skills",
-    "may need additional guidance in {{area}} for role readiness",
-    "would be enhanced by on-the-job training in {{area}}",
-    "shows gaps in {{area}} that require attention",
-    "could benefit from apprenticeship in {{area}}",
-    "has opportunity to develop baseline {{area}} competence",
-    "would benefit from safety refresher training in {{area}}",
-    "presents opportunity to strengthen {{area}} fundamentals",
-    "could improve through structured manufacturing orientation in {{area}}",
-    "would gain from shadowing experienced operators in {{area}}",
-    "has potential to build {{area}} capability through guided practice",
-    "may need focused development to establish {{area}} proficiency",
-    "would be improved by targeted training in {{area}}",
-    "shows developing {{area}} that needs reinforcement",
-    "could benefit from manufacturing fundamentals course in {{area}}",
-    "presents opportunity to build solid {{area}} foundation"
-  ],
-  
-  // Emotional intelligence phrases
-  emotional: [
-    "would benefit from self-awareness exercises in {{area}}",
-    "presents opportunity to develop {{area}}",
-    "could strengthen through empathy practice in {{area}}",
-    "would gain from feedback on {{area}}",
-    "has potential to enhance {{area}}",
-    "may need support in {{area}} situations",
-    "would be enhanced by coaching in {{area}}",
-    "shows room to grow in {{area}}",
-    "could benefit from reflection on {{area}}",
-    "has opportunity to develop {{area}} maturity",
-    "would benefit from mindfulness practice in {{area}}",
-    "presents opportunity to build {{area}} awareness",
-    "could strengthen through perspective-taking in {{area}}",
-    "would gain from emotional regulation training in {{area}}",
-    "has potential to enhance {{area}} sensitivity",
-    "may need guidance in {{area}} interactions",
-    "would be improved by building {{area}} capacity",
-    "shows developing {{area}} that can be nurtured",
-    "could benefit from relationship workshops in {{area}}",
-    "presents opportunity to cultivate {{area}} depth",
-    "would gain from interpersonal skills training in {{area}}",
-    "has room to develop stronger {{area}}",
-    "may need additional emotional coaching in {{area}}",
-    "would be enhanced by social awareness practice in {{area}}"
-  ],
-  
-  // Performance phrases
-  performance: [
-    "would benefit from goal-setting in {{area}}",
-    "presents opportunity to improve {{area}}",
-    "could strengthen through accountability in {{area}}",
-    "would gain from structured tracking in {{area}}",
-    "has potential to enhance {{area}}",
-    "may need focus on {{area}}",
-    "would be enhanced by time management in {{area}}",
-    "shows room to grow in {{area}}",
-    "could benefit from productivity tools in {{area}}",
-    "has opportunity to develop {{area}} discipline",
-    "would benefit from performance coaching in {{area}}",
-    "presents opportunity to boost {{area}}",
-    "could strengthen through metric tracking in {{area}}",
-    "would gain from efficiency training in {{area}}",
-    "has potential to improve {{area}} consistency",
-    "may need structure in {{area}}",
-    "would be improved by building {{area}} habits",
-    "shows developing {{area}} that needs reinforcement",
-    "could benefit from productivity systems in {{area}}",
-    "presents opportunity to enhance {{area}} output",
-    "would gain from prioritization practice in {{area}}",
-    "has room to develop stronger {{area}} focus",
-    "may need additional performance support in {{area}}",
-    "would be enhanced by accountability partnerships in {{area}}"
-  ],
-  
-  // UPDATED: Personality phrases - now with 6 new traits
-  personality: [
-    "would benefit from developing stronger accountability in {{area}}",
-    "presents opportunity to build ownership skills in {{area}}",
-    "could strengthen through taking more initiative in {{area}}",
-    "would gain from owning outcomes more consistently in {{area}}",
-    "has potential to develop greater reliability in {{area}}",
-    "may need support in taking responsibility in {{area}}",
-    "would benefit from teamwork development in {{area}}",
-    "presents opportunity to build collaboration skills in {{area}}",
-    "could strengthen through more inclusive behavior in {{area}}",
-    "would gain from seeking input from others in {{area}}",
-    "has potential to develop stronger team orientation in {{area}}",
-    "would benefit from building decisiveness in {{area}}",
-    "presents opportunity to develop faster action orientation in {{area}}",
-    "could strengthen through taking initiative more often in {{area}}",
-    "would gain from making timely decisions in {{area}}",
-    "has potential to develop greater urgency in {{area}}",
-    "would benefit from strengthening analytical skills in {{area}}",
-    "presents opportunity to develop more systematic thinking in {{area}}",
-    "could strengthen through data-driven approaches in {{area}}",
-    "would gain from more thorough planning in {{area}}",
-    "has potential to develop deeper analytical capability in {{area}}",
-    "would benefit from building comfort with uncertainty in {{area}}",
-    "presents opportunity to develop calculated risk-taking in {{area}}",
-    "could strengthen through more experimentation in {{area}}",
-    "would gain from embracing innovation more in {{area}}",
-    "has potential to develop healthier risk orientation in {{area}}",
-    "would benefit from strengthening process discipline in {{area}}",
-    "presents opportunity to develop more consistent procedures in {{area}}",
-    "could strengthen through better organization in {{area}}",
-    "would gain from following processes more reliably in {{area}}",
-    "has potential to develop greater structural consistency in {{area}}"
-  ],
-  
-  // Cultural fit phrases
-  cultural: [
-    "would benefit from cultural awareness training in {{area}}",
-    "presents opportunity to develop {{area}}",
-    "could strengthen through exposure in {{area}}",
-    "would gain from feedback on {{area}}",
-    "has potential to enhance {{area}}",
-    "may need guidance in {{area}}",
-    "would be enhanced by mentorship in {{area}}",
-    "shows room to grow in {{area}}",
-    "could benefit from inclusive practice in {{area}}",
-    "has opportunity to develop {{area}}",
-    "would benefit from diversity workshops in {{area}}",
-    "presents opportunity to build {{area}} understanding",
-    "could strengthen through cross-cultural exposure in {{area}}",
-    "would gain from values clarification in {{area}}",
-    "has potential to enhance {{area}} alignment",
-    "may need support in {{area}} integration",
-    "would be improved by building {{area}} awareness",
-    "shows developing {{area}} that can be strengthened",
-    "could benefit from inclusion training in {{area}}",
-    "presents opportunity to cultivate {{area}} sensitivity",
-    "would gain from organizational values immersion in {{area}}",
-    "has room to develop stronger {{area}}",
-    "may need additional cultural coaching in {{area}}",
-    "would be enhanced by belonging exercises in {{area}}"
-  ],
-  
-  // Default fallback
-  default: [
-    "would benefit from development in {{area}}",
-    "presents opportunity to strengthen {{area}}",
-    "could improve in {{area}}",
-    "would gain from focus on {{area}}",
-    "has potential to develop {{area}}",
-    "may need attention in {{area}}",
-    "would be enhanced by building {{area}}",
-    "shows room for growth in {{area}}",
-    "could benefit from work on {{area}}",
-    "has opportunity to improve {{area}}",
-    "would benefit from targeted practice in {{area}}",
-    "presents opportunity to enhance {{area}}",
-    "could strengthen through effort in {{area}}",
-    "would gain from development in {{area}}",
-    "has potential to grow in {{area}}",
-    "may need focus on improving {{area}}",
-    "would be improved by addressing {{area}}",
-    "shows developing {{area}} that needs attention",
-    "could benefit from learning in {{area}}",
-    "presents opportunity to build {{area}} capability"
+
+  notReady: [
+    "The candidate is not yet recommended for independent responsibility in this role area.",
+    "Training and supervised practice are recommended before role placement.",
+    "Current evidence suggests the candidate should follow a development-first pathway."
   ]
 };
 
-// ===== IMPACT PHRASES =====
-export const impactPhrases = {
-  high: [
-    "this is a critical development priority requiring immediate attention.",
-    "this area significantly impacts overall performance.",
-    "addressing this will have substantial effect on effectiveness.",
-    "this represents a key leverage point for improvement.",
-    "this is foundational for success in the role.",
-    "this area warrants urgent focus in the development plan.",
-    "strengthening this will yield significant returns.",
-    "this is a make-or-break competency for advancement.",
-    "this area requires prioritized intervention.",
-    "this fundamentally affects capability in related areas.",
-    "this competency is essential for role readiness.",
-    "addressing this gap will unlock significant potential.",
-    "this area directly correlates with job performance.",
-    "improvement here will have cascading benefits.",
-    "this is a non-negotiable competency for success.",
-    "this area represents the highest leverage development opportunity.",
-    "strengthening this will dramatically enhance overall capability.",
-    "this competency underpins performance in multiple areas.",
-    "addressing this is critical for career progression.",
-    "this area demands immediate and focused attention.",
-    "this gap creates significant risk if left unaddressed.",
-    "improvement here will yield the greatest ROI on development.",
-    "this is the cornerstone competency for this role.",
-    "this area requires top priority in the development journey."
+// ======================================================
+// DEVELOPMENT PLAN PHRASES
+// ======================================================
+
+export const developmentPlanPhrases = {
+  thirtyDays: [
+    "Clarify expectations and begin foundational development in priority areas.",
+    "Start supervised practice and assign a mentor or experienced peer for guidance.",
+    "Review low-scoring areas and begin targeted training with weekly check-ins."
   ],
-  
-  medium: [
-    "this should be a focus area in the development plan.",
-    "addressing this will contribute to overall growth.",
-    "this represents a solid opportunity for improvement.",
-    "developing this will enhance professional capability.",
-    "this area merits attention in the coming months.",
-    "strengthening this will round out performance.",
-    "this is a valuable target for development efforts.",
-    "improving this will support career progression.",
-    "this area offers good potential for growth.",
-    "focusing here will yield positive results.",
-    "this competency supports overall effectiveness.",
-    "addressing this will build foundational strength.",
-    "this area contributes to balanced performance.",
-    "developing this will complement existing strengths.",
-    "this represents a meaningful growth opportunity.",
-    "improvement here will enhance versatility.",
-    "this area is worth investing development time in.",
-    "strengthening this will add to capability breadth.",
-    "this competency rounds out the professional profile.",
-    "addressing this will remove a performance limiter.",
-    "this area offers solid potential for capability building.",
-    "developing this will increase role flexibility.",
-    "this represents a worthwhile development investment.",
-    "improvement here will support long-term growth."
+
+  sixtyDays: [
+    "Increase practical exposure while continuing supervisor feedback.",
+    "Review progress against development goals and adjust support where needed.",
+    "Introduce role-relevant tasks that allow the candidate to apply developing skills."
   ],
-  
-  low: [
-    "this can be addressed over time.",
-    "this represents a secondary development opportunity.",
-    "improving this will add to overall competence.",
-    "this area may benefit from gradual attention.",
-    "developing this could be part of long-term growth.",
-    "this is a nice-to-have improvement area.",
-    "strengthening this would complement existing skills.",
-    "this area could be addressed as bandwidth allows.",
-    "this represents a future development consideration.",
-    "improving this would enhance an already solid profile.",
-    "this area is lower priority in the immediate term.",
-    "addressing this can wait for future development phases.",
-    "this competency is not urgent to develop now.",
-    "improvement here would be incremental gain.",
-    "this area can be developed through informal learning.",
-    "strengthening this is optional for current role success.",
-    "this represents a stretch goal for future growth.",
-    "developing this would be nice but not necessary yet.",
-    "this area can be addressed through self-study.",
-    "improvement here would add polish to performance.",
-    "this competency is secondary to more critical areas.",
-    "addressing this can be part of ongoing development.",
-    "this area offers low-hanging fruit for later attention.",
-    "developing this would be beneficial but not urgent."
+
+  ninetyDays: [
+    "Validate progress through practical observation or reassessment.",
+    "Review readiness for expanded responsibility based on demonstrated improvement.",
+    "Document progress and decide whether further training, reassessment, or placement adjustment is required."
   ]
 };
 
-// ===== CLASSIFICATION PHRASES =====
-export const classificationPhrases = {
-  'High Potential': [
-    "demonstrates exceptional capability ready for strategic challenges.",
-    "positions as top talent with clear readiness for advancement.",
-    "shows mastery-level performance across key competencies.",
-    "exhibits the qualities of future organizational leaders.",
-    "stands out as high-potential talent for senior roles.",
-    "possesses the rare combination of skills for accelerated growth.",
-    "demonstrates readiness for expanded responsibility now.",
-    "exhibits the strategic mindset of future executives.",
-    "shows exceptional promise for leadership advancement.",
-    "represents the top tier of talent in this assessment.",
-    "displays the adaptability and insight of high performers.",
-    "demonstrates consistent excellence across all measures.",
-    "exhibits the cognitive and emotional range for senior roles.",
-    "shows remarkable capacity for complex challenges.",
-    "possesses the executive presence of future leaders.",
-    "demonstrates the strategic acumen for advancement.",
-    "exhibits exceptional readiness for promotion consideration.",
-    "shows the versatility and depth of high-potential talent.",
-    "represents a future organizational asset of significant value.",
-    "displays the learning agility for rapid progression."
-  ],
-  'Strong Performer': [
-    "shows solid performance with consistent capability across key areas.",
-    "demonstrates reliable competence and growth potential.",
-    "performs effectively with clear strengths to leverage.",
-    "meets expectations solidly with room for strategic development.",
-    "provides dependable performance with identified growth areas.",
-    "exhibits strong foundational capabilities for current role.",
-    "shows consistent delivery across most competencies.",
-    "demonstrates reliable performance with development opportunities.",
-    "performs capably with clear path for advancement.",
-    "represents solid talent with defined strengths.",
-    "exhibits steady performance worthy of investment.",
-    "shows reliable competence in core areas.",
-    "demonstrates capability to grow with targeted support.",
-    "performs well with manageable development needs.",
-    "represents dependable talent for current and future roles.",
-    "exhibits consistent performance across key dimensions.",
-    "shows solid foundation for career development.",
-    "demonstrates reliable execution with growth mindset.",
-    "performs effectively with identified leverage points.",
-    "represents valuable talent with clear development path."
-  ],
-  'Developing': [
-    "shows foundational competence with clear opportunities for growth.",
-    "demonstrates basic capability with targeted development needs.",
-    "exhibits potential that can be realized through structured support.",
-    "has building-block skills ready for further development.",
-    "shows promise that requires cultivation through guided effort.",
-    "possesses emerging capabilities needing structured development.",
-    "demonstrates foundational skills with defined growth areas.",
-    "exhibits developing talent requiring targeted investment.",
-    "shows potential for growth with appropriate support.",
-    "represents a developing contributor with identified needs.",
-    "displays emerging competence in core areas.",
-    "has foundational capabilities ready for strengthening.",
-    "demonstrates growth mindset with clear development path.",
-    "exhibits building-block skills needing reinforcement.",
-    "shows developing potential requiring cultivation.",
-    "possesses raw talent needing structured development.",
-    "demonstrates emerging strengths with defined gaps.",
-    "exhibits promise that can be realized with support.",
-    "shows foundational readiness for skill building.",
-    "represents developing talent with identified opportunities."
-  ],
-  'At Risk': [
-    "indicates significant development needs requiring structured intervention.",
-    "shows gaps that need immediate attention in key areas.",
-    "requires focused support to address performance concerns.",
-    "demonstrates challenges that may impact role effectiveness.",
-    "needs targeted intervention to build fundamental capabilities.",
-    "exhibits critical gaps requiring urgent development attention.",
-    "shows performance concerns needing immediate remediation.",
-    "demonstrates significant challenges requiring structured support.",
-    "requires intensive intervention to address foundational gaps.",
-    "presents notable risks that must be addressed promptly.",
-    "exhibits capability gaps affecting current performance.",
-    "shows development needs requiring immediate focus.",
-    "demonstrates performance challenges needing intervention.",
-    "requires urgent attention to address competency gaps.",
-    "presents significant concerns for current role readiness.",
-    "exhibits foundational weaknesses requiring remediation.",
-    "shows critical development areas needing immediate action.",
-    "demonstrates performance risks requiring structured support.",
-    "requires targeted intervention to build core competencies.",
-    "presents notable gaps affecting role effectiveness."
-  ],
-  'High Risk': [
-    "reveals critical gaps requiring immediate attention and support.",
-    "shows fundamental challenges needing intensive intervention.",
-    "indicates significant concerns that must be prioritized.",
-    "demonstrates critical development needs across multiple areas.",
-    "requires urgent intervention to address foundational gaps.",
-    "exhibits severe capability gaps requiring immediate remediation.",
-    "shows fundamental weaknesses affecting core performance.",
-    "demonstrates critical challenges needing intensive support.",
-    "requires comprehensive intervention to address multiple gaps.",
-    "presents serious concerns for role suitability.",
-    "exhibits foundational deficits requiring immediate action.",
-    "shows critical performance risks needing urgent attention.",
-    "demonstrates severe development needs across competencies.",
-    "requires intensive remediation to build basic capabilities.",
-    "presents significant barriers to current role success.",
-    "exhibits profound gaps requiring structured intervention.",
-    "shows fundamental incapacity in key areas.",
-    "demonstrates critical limitations needing immediate support.",
-    "requires urgent comprehensive development intervention.",
-    "presents severe challenges affecting overall capability."
-  ]
+// ======================================================
+// HELPER FUNCTIONS
+// ======================================================
+
+export const getScoreLevelKey = (percentage) => {
+  const value = safeNumber(percentage, 0);
+
+  if (value >= 85) return "exceptional";
+  if (value >= 75) return "strong";
+  if (value >= 65) return "adequate";
+  if (value >= 55) return "developing";
+  if (value >= 40) return "priority_development";
+
+  return "critical_gap";
 };
 
-// ===== AREA-SPECIFIC DESCRIPTORS =====
-export const areaDescriptors = {
-  // Cognitive areas
-  'Memory & Attention': ['memory retention', 'attention to detail', 'focus', 'concentration', 'recall ability', 'information retention', 'attentiveness', 'cognitive focus', 'mental recall', 'detail orientation'],
-  'Verbal Reasoning': ['verbal comprehension', 'language processing', 'verbal analysis', 'linguistic reasoning', 'verbal logic', 'language understanding', 'verbal deduction', 'linguistic analysis', 'verbal intelligence', 'language comprehension'],
-  'Logical / Abstract Reasoning': ['logical thinking', 'abstract problem-solving', 'pattern recognition', 'logical deduction', 'abstract reasoning', 'conceptual thinking', 'logical analysis', 'abstract cognition', 'pattern identification', 'logical processing'],
-  'Numerical Reasoning': ['numerical analysis', 'quantitative reasoning', 'data interpretation', 'numerical logic', 'mathematical reasoning', 'quantitative analysis', 'numerical comprehension', 'data analysis', 'mathematical thinking', 'numerical processing'],
-  'Mechanical Reasoning': ['mechanical comprehension', 'physical principles', 'mechanical aptitude', 'mechanical understanding', 'physical reasoning', 'mechanical logic', 'technical comprehension', 'mechanical insight', 'physical intuition', 'mechanical knowledge'],
-  'Spatial Reasoning': ['spatial visualization', 'mental rotation', 'visual-spatial processing', 'spatial awareness', 'visual reasoning', 'spatial perception', 'visual-spatial intelligence', 'spatial cognition', 'visual processing', 'spatial orientation'],
-  'Perceptual Speed': ['processing speed', 'visual accuracy', 'perceptual efficiency', 'information processing', 'visual perception', 'perceptual speed', 'cognitive processing', 'visual discrimination', 'perceptual ability', 'speed of processing'],
-  
-  // Leadership areas
-  'Vision & Strategic Thinking': ['strategic foresight', 'long-term planning', 'visionary thinking', 'strategic perspective', 'forward thinking', 'strategic insight', 'vision creation', 'strategic orientation', 'future focus', 'strategic mindset'],
-  'Decision-Making': ['judgment', 'decisiveness', 'analytical decision-making', 'choice quality', 'decision quality', 'judgment calls', 'decisive action', 'choice evaluation', 'decision process', 'judgment accuracy'],
-  'Communication & Influence': ['persuasive ability', 'influencing skills', 'stakeholder communication', 'persuasion', 'influence tactics', 'stakeholder engagement', 'persuasive communication', 'influential presence', 'advocacy skills', 'persuasive impact'],
-  'People Management': ['team leadership', 'coaching ability', 'talent development', 'staff management', 'team guidance', 'employee development', 'people leadership', 'team building', 'staff development', 'personnel management'],
-  
-  // Manufacturing Baseline specific descriptors
-  'Technical Fundamentals': ['maintenance principles', 'sensor functions', 'motor operation', 'pneumatic systems', 'equipment knowledge', 'mechanical basics', 'technical foundation', 'production equipment', 'system understanding', 'operational basics'],
-  'Troubleshooting': ['problem diagnosis', 'conveyor issues', 'filler problems', 'labeler alignment', 'jam resolution', 'fault finding', 'diagnostic skill', 'issue identification', 'root cause analysis', 'problem resolution'],
-  'Numerical Aptitude': ['production calculations', 'efficiency math', 'rate calculation', 'percentage work', 'numerical reasoning', 'data interpretation', 'quantity math', 'production metrics', 'mathematical accuracy', 'calculation ability'],
-  'Safety & Work Ethic': ['PPE compliance', 'safety protocols', 'injury prevention', 'hazard awareness', 'workplace safety', 'SOP adherence', 'professional conduct', 'teamwork', 'ethical behavior', 'reliability'],
-  
-  // UPDATED: New Personality Traits
-  'Ownership': ['accountability', 'initiative', 'responsibility', 'follow-through', 'reliability', 'commitment', 'dependability', 'ownership mindset', 'drive', 'self-direction'],
-  'Collaboration': ['teamwork', 'cooperation', 'consensus-building', 'partnership', 'collegiality', 'coordination', 'alliance-building', 'team orientation', 'interpersonal effectiveness', 'collective success'],
-  'Action': ['decisiveness', 'initiative', 'urgency', 'execution speed', 'proactivity', 'decisive action', 'swift response', 'action orientation', 'impetus', 'momentum'],
-  'Analysis': ['analytical thinking', 'systematic approach', 'data-driven reasoning', 'structured analysis', 'methodical processing', 'logical evaluation', 'critical thinking', 'analytical rigor', 'thoroughness', 'cognitive precision'],
-  'Risk Tolerance': ['innovation mindset', 'calculated risk-taking', 'experimentation', 'comfort with uncertainty', 'boundary-pushing', 'entrepreneurial spirit', 'innovative approach', 'risk acceptance', 'exploratory mindset', 'adaptability to uncertainty'],
-  'Structure': ['process adherence', 'organizational consistency', 'systematic approach', 'procedural discipline', 'methodical execution', 'quality focus', 'consistency', 'orderliness', 'methodical nature', 'procedural reliability'],
-  
-  // Default
-  'default': ['this competency', 'this area', 'this capability', 'this skill', 'this dimension', 'this aspect', 'this quality', 'this attribute', 'this characteristic', 'this domain']
+export const getScorePhrase = (
+  area,
+  percentage,
+  phraseType = "summary",
+  seed = ""
+) => {
+  const levelKey = getScoreLevelKey(percentage);
+  const phrases = scoreLevelPhrases[levelKey]?.[phraseType] || [];
+
+  const selected = selectPhrase(
+    phrases,
+    `${seed}-${area}-${percentage}-${phraseType}`
+  );
+
+  return replaceVariables(selected, {
+    area: normalizeText(area),
+    percentage
+  });
 };
 
-// ===== HELPER FUNCTIONS =====
-export const getRandomPhrase = (phraseArray) => {
-  if (!phraseArray || phraseArray.length === 0) return '';
-  const randomIndex = Math.floor(Math.random() * phraseArray.length);
-  return phraseArray[randomIndex];
-};
+export const getManufacturingPhrase = (
+  area,
+  percentage,
+  phraseType = "strength",
+  seed = ""
+) => {
+  const normalizedArea = normalizeText(area);
+  const library = manufacturingPhrases[normalizedArea];
 
-export const getStrengthPhrase = (area, category = 'default') => {
-  // Determine which phrase set to use based on area keywords
-  let phraseSet = 'default';
-  
-  // Check for manufacturing baseline specific areas first
-  if (area === 'Technical Fundamentals' || area === 'Maintenance Principles' || area === 'Equipment Knowledge') {
-    phraseSet = 'manufacturing';
-  } else if (area === 'Troubleshooting' || area === 'Problem Diagnosis' || area === 'Fault Finding') {
-    phraseSet = 'manufacturing';
-  } else if (area === 'Numerical Aptitude' || area === 'Production Calculations' || area === 'Efficiency Math') {
-    phraseSet = 'manufacturing';
-  } else if (area === 'Safety & Work Ethic' || area === 'PPE Compliance' || area === 'Safety Protocols') {
-    phraseSet = 'manufacturing';
-  } else if (area === 'Ownership' || area === 'Accountability') {
-    phraseSet = 'personality';
-  } else if (area === 'Collaboration' || area === 'Teamwork') {
-    phraseSet = 'personality';
-  } else if (area === 'Action' || area === 'Initiative' || area === 'Decisiveness') {
-    phraseSet = 'personality';
-  } else if (area === 'Analysis' || area === 'Analytical Thinking') {
-    phraseSet = 'personality';
-  } else if (area === 'Risk Tolerance' || area === 'Risk' || area === 'Innovation') {
-    phraseSet = 'personality';
-  } else if (area === 'Structure' || area === 'Process' || area === 'Consistency') {
-    phraseSet = 'personality';
-  } else if (area.toLowerCase().includes('leader') || area.toLowerCase().includes('vision') || area.toLowerCase().includes('strategic')) {
-    phraseSet = 'leadership';
-  } else if (area.toLowerCase().includes('communicat') || area.toLowerCase().includes('verbal') || area.toLowerCase().includes('influence')) {
-    phraseSet = 'communication';
-  } else if (area.toLowerCase().includes('technical') || area.toLowerCase().includes('mechanical') || area.toLowerCase().includes('equipment')) {
-    phraseSet = 'technical';
-  } else if (area.toLowerCase().includes('emotional') || area.toLowerCase().includes('empathy') || area.toLowerCase().includes('self')) {
-    phraseSet = 'emotional';
-  } else if (area.toLowerCase().includes('performance') || area.toLowerCase().includes('productivity') || area.toLowerCase().includes('results')) {
-    phraseSet = 'performance';
-  } else if (area.toLowerCase().includes('personality') || area.toLowerCase().includes('openness') || area.toLowerCase().includes('conscientiousness')) {
-    phraseSet = 'personality';
-  } else if (area.toLowerCase().includes('cultural') || area.toLowerCase().includes('values') || area.toLowerCase().includes('diversity')) {
-    phraseSet = 'cultural';
-  } else if (area.toLowerCase().includes('cognitive') || area.toLowerCase().includes('reasoning') || area.toLowerCase().includes('memory')) {
-    phraseSet = 'cognitive';
+  if (!library) {
+    return getScorePhrase(area, percentage, "summary", seed);
   }
-  
-  const phrases = strengthPhrases[phraseSet] || strengthPhrases.default;
-  return getRandomPhrase(phrases).replace('{{area}}', area);
+
+  const selected = selectPhrase(
+    library[phraseType] || library.strength || [],
+    `${seed}-${normalizedArea}-${percentage}-${phraseType}`
+  );
+
+  return selected;
 };
 
-export const getWeaknessPhrase = (area, category = 'default') => {
-  // Similar logic for weakness phrases
-  let phraseSet = 'default';
-  
-  // Check for manufacturing baseline specific areas first
-  if (area === 'Technical Fundamentals' || area === 'Maintenance Principles' || area === 'Equipment Knowledge') {
-    phraseSet = 'manufacturing';
-  } else if (area === 'Troubleshooting' || area === 'Problem Diagnosis' || area === 'Fault Finding') {
-    phraseSet = 'manufacturing';
-  } else if (area === 'Numerical Aptitude' || area === 'Production Calculations' || area === 'Efficiency Math') {
-    phraseSet = 'manufacturing';
-  } else if (area === 'Safety & Work Ethic' || area === 'PPE Compliance' || area === 'Safety Protocols') {
-    phraseSet = 'manufacturing';
-  } else if (area === 'Ownership' || area === 'Accountability') {
-    phraseSet = 'personality';
-  } else if (area === 'Collaboration' || area === 'Teamwork') {
-    phraseSet = 'personality';
-  } else if (area === 'Action' || area === 'Initiative' || area === 'Decisiveness') {
-    phraseSet = 'personality';
-  } else if (area === 'Analysis' || area === 'Analytical Thinking') {
-    phraseSet = 'personality';
-  } else if (area === 'Risk Tolerance' || area === 'Risk' || area === 'Innovation') {
-    phraseSet = 'personality';
-  } else if (area === 'Structure' || area === 'Process' || area === 'Consistency') {
-    phraseSet = 'personality';
-  } else if (area.toLowerCase().includes('leader') || area.toLowerCase().includes('vision') || area.toLowerCase().includes('strategic')) {
-    phraseSet = 'leadership';
-  } else if (area.toLowerCase().includes('communicat') || area.toLowerCase().includes('verbal') || area.toLowerCase().includes('influence')) {
-    phraseSet = 'communication';
-  } else if (area.toLowerCase().includes('technical') || area.toLowerCase().includes('mechanical') || area.toLowerCase().includes('equipment')) {
-    phraseSet = 'technical';
-  } else if (area.toLowerCase().includes('emotional') || area.toLowerCase().includes('empathy') || area.toLowerCase().includes('self')) {
-    phraseSet = 'emotional';
-  } else if (area.toLowerCase().includes('performance') || area.toLowerCase().includes('productivity') || area.toLowerCase().includes('results')) {
-    phraseSet = 'performance';
-  } else if (area.toLowerCase().includes('personality') || area.toLowerCase().includes('openness') || area.toLowerCase().includes('conscientiousness')) {
-    phraseSet = 'personality';
-  } else if (area.toLowerCase().includes('cultural') || area.toLowerCase().includes('values') || area.toLowerCase().includes('diversity')) {
-    phraseSet = 'cultural';
-  } else if (area.toLowerCase().includes('cognitive') || area.toLowerCase().includes('reasoning') || area.toLowerCase().includes('memory')) {
-    phraseSet = 'cognitive';
+export const getTraitPhrase = (trait, percentage) => {
+  const normalizedTrait = normalizeText(trait);
+  const library = traitPhrases[normalizedTrait];
+
+  if (!library) {
+    return getScorePhrase(trait, percentage, "summary", `${trait}-${percentage}`);
   }
-  
-  const phrases = weaknessPhrases[phraseSet] || weaknessPhrases.default;
-  return getRandomPhrase(phrases).replace('{{area}}', area);
+
+  return percentage >= 75 ? library.strength : library.development;
 };
 
-export const getImpactPhrase = (priority) => {
-  if (priority === 'High' || priority === 'Critical') {
-    return getRandomPhrase(impactPhrases.high);
-  } else if (priority === 'Medium') {
-    return getRandomPhrase(impactPhrases.medium);
-  } else {
-    return getRandomPhrase(impactPhrases.low);
+export const getRoleReadinessPhrase = (status, seed = "") => {
+  const normalizedStatus = normalizeText(status).toLowerCase();
+
+  if (normalizedStatus.includes("ready") && !normalizedStatus.includes("not")) {
+    return selectPhrase(roleReadinessPhrases.ready, `${seed}-ready`);
   }
-};
 
-export const getClassificationPhrase = (classification) => {
-  return getRandomPhrase(classificationPhrases[classification] || classificationPhrases['Developing']);
-};
-
-// New: Get a random descriptor for an area
-export const getAreaDescriptor = (area) => {
-  if (areaDescriptors[area]) {
-    return getRandomPhrase(areaDescriptors[area]);
+  if (
+    normalizedStatus.includes("conditional") ||
+    normalizedStatus.includes("developing")
+  ) {
+    return selectPhrase(roleReadinessPhrases.conditional, `${seed}-conditional`);
   }
-  return getRandomPhrase(areaDescriptors.default);
+
+  return selectPhrase(roleReadinessPhrases.notReady, `${seed}-not-ready`);
 };
 
-// New: Generate a completely unique combination
-export const generateUniquePhrase = (area, type = 'strength', priority = 'Medium') => {
-  if (type === 'strength') {
-    return getStrengthPhrase(area);
-  } else if (type === 'weakness') {
-    return getWeaknessPhrase(area);
-  } else if (type === 'impact') {
-    return getImpactPhrase(priority);
-  } else {
-    return getClassificationPhrase(area);
+export const getDevelopmentPlanPhrase = (period, seed = "") => {
+  const phrases = developmentPlanPhrases[period] || [];
+  return selectPhrase(phrases, `${seed}-${period}`);
+};
+
+/**
+ * Generic phrase getter.
+ *
+ * Example:
+ * getPhrase("generalReportPhrases.noStrengths", "seed")
+ */
+export const getPhrase = (path, seed = "") => {
+  const parts = String(path || "").split(".");
+  let current = phraseLibrary;
+
+  for (const part of parts) {
+    current = current?.[part];
   }
+
+  if (Array.isArray(current)) {
+    return selectPhrase(current, seed);
+  }
+
+  if (typeof current === "string") {
+    return current;
+  }
+
+  return "";
+};
+
+/**
+ * Compatibility helper for older code that may call generatePhrase().
+ */
+export const generatePhrase = (template = "", variables = {}) => {
+  return replaceVariables(template, variables);
+};
+
+// ======================================================
+// MAIN LIBRARY EXPORT
+// ======================================================
+
+export const phraseLibrary = {
+  generalReportPhrases,
+  scoreLevelPhrases,
+  manufacturingPhrases,
+  traitPhrases,
+  roleReadinessPhrases,
+  developmentPlanPhrases
+};
+
+export default {
+  phraseLibrary,
+
+  selectPhrase,
+  replaceVariables,
+  generatePhrase,
+  getPhrase,
+
+  getScoreLevelKey,
+  getScorePhrase,
+  getManufacturingPhrase,
+  getTraitPhrase,
+  getRoleReadinessPhrase,
+  getDevelopmentPlanPhrase,
+
+  generalReportPhrases,
+  scoreLevelPhrases,
+  manufacturingPhrases,
+  traitPhrases,
+  roleReadinessPhrases,
+  developmentPlanPhrases
 };
