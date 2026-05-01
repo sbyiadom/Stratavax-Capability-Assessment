@@ -1,271 +1,569 @@
-import React from 'react';
+// components/BehavioralInsights.js
+
+/**
+ * BehavioralInsights Component
+ *
+ * Displays assessment behavior in a supervisor-friendly way.
+ * Supports all assessment types.
+ *
+ * Handles both:
+ * 1. Full behavioral metrics when question_timing data exists.
+ * 2. Partial/fallback metrics when timing data was not captured.
+ */
+
+import React from "react";
+
+const formatSeconds = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return "Not captured";
+  }
+
+  const number = Number(value);
+
+  if (Number.isNaN(number) || !Number.isFinite(number)) {
+    return "Not captured";
+  }
+
+  if (number <= 0) {
+    return "Not captured";
+  }
+
+  if (number < 60) {
+    return `${Math.round(number)}s`;
+  }
+
+  const minutes = Math.floor(number / 60);
+  const seconds = Math.round(number % 60);
+
+  if (minutes < 60) {
+    return `${minutes}m ${seconds}s`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  return `${hours}h ${remainingMinutes}m ${seconds}s`;
+};
+
+const formatTotalTime = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return "Not captured";
+  }
+
+  const number = Number(value);
+
+  if (Number.isNaN(number) || !Number.isFinite(number)) {
+    return "Not captured";
+  }
+
+  if (number <= 0) {
+    return "Not captured";
+  }
+
+  return formatSeconds(number);
+};
+
+const formatPercent = (value, fallback = "Not captured") => {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+
+  const number = Number(value);
+
+  if (Number.isNaN(number) || !Number.isFinite(number)) {
+    return fallback;
+  }
+
+  return `${Math.round(number * 100) / 100}%`;
+};
+
+const formatNumber = (value, fallback = "0") => {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+
+  const number = Number(value);
+
+  if (Number.isNaN(number) || !Number.isFinite(number)) {
+    return fallback;
+  }
+
+  return `${Math.round(number * 100) / 100}`;
+};
+
+const getInsightStatus = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return "missing";
+  }
+
+  const number = Number(value);
+
+  if (Number.isNaN(number) || !Number.isFinite(number)) {
+    return "missing";
+  }
+
+  if (number <= 0) {
+    return "limited";
+  }
+
+  return "available";
+};
+
+const getWorkStyleDescription = (workStyle) => {
+  const descriptions = {
+    "Quick Decision Maker":
+      "The candidate appears to move quickly through decisions. Supervisors may encourage answer review and quality verification.",
+    "Methodical Analyst":
+      "The candidate appears to take a more deliberate and analytical approach. Supervisors may support this style with clear time expectations.",
+    "Anxious Reviser":
+      "The candidate shows frequent answer revision behavior. Supervisors may support confidence-building and structured review habits.",
+    "Strategic Reviewer":
+      "The candidate appears to review responses intentionally. Supervisors may guide the candidate toward efficient review strategies.",
+    "Adaptive Learner":
+      "The candidate may benefit from feedback loops and guided correction after mistakes.",
+    "Non-Linear Thinker":
+      "The candidate may move through questions in a less linear pattern. Supervisors may provide workflow and prioritization support.",
+    "Inconsistent Responder":
+      "The candidate shows variation in response pace. Supervisors may support consistency through pacing strategies.",
+    "Review-Oriented":
+      "The candidate shows a tendency to revisit or reconsider answers. Supervisors may support structured and evidence-based review habits.",
+    Balanced:
+      "The candidate shows a balanced response pattern based on the available behavioral data."
+  };
+
+  return descriptions[workStyle] || descriptions.Balanced;
+};
+
+const getConfidenceDescription = (confidenceLevel) => {
+  const descriptions = {
+    High:
+      "The candidate shows indicators of confidence in response behavior, such as low answer-change activity.",
+    Moderate:
+      "The candidate shows a generally stable level of response confidence based on available evidence.",
+    Low:
+      "The candidate may require support in building decision confidence and reducing second-guessing.",
+    Cautious:
+      "The candidate may prefer careful review before committing to responses.",
+    Variable:
+      "The candidate shows mixed confidence indicators. Additional observation may be useful.",
+    Growing:
+      "The candidate may benefit from feedback and repeated practice to strengthen confidence.",
+    Uncertain:
+      "The candidate shows signs of inconsistent response confidence."
+  };
+
+  return descriptions[confidenceLevel] || descriptions.Moderate;
+};
+
+const getAttentionDescription = (attentionSpan) => {
+  const descriptions = {
+    Consistent:
+      "The candidate shows a generally consistent attention pattern based on the available data.",
+    "Declining Pace":
+      "The candidate appears to slow down later in the assessment. Supervisors may consider pacing and break strategies.",
+    "Improving Pace":
+      "The candidate appears to gain pace as the assessment progresses. This may suggest warming up over time.",
+    "Declining (Fatigue Detected)":
+      "The candidate appears to slow down later in the assessment. Supervisors may consider pacing and break strategies.",
+    "Improving (Warms Up)":
+      "The candidate appears to gain pace as the assessment progresses. This may suggest warming up over time."
+  };
+
+  return descriptions[attentionSpan] || descriptions.Consistent;
+};
+
+const getDecisionDescription = (decisionPattern) => {
+  const descriptions = {
+    Deliberate:
+      "The candidate appears to make decisions in a considered and steady way.",
+    "Fast & Confident":
+      "The candidate appears to answer quickly with limited revision.",
+    "Thorough & Revisiting":
+      "The candidate appears to review and reconsider answers before finalizing.",
+    "Second-Guesses":
+      "The candidate may frequently reconsider answers and may benefit from confidence-building.",
+    "Reviews Before Submitting":
+      "The candidate uses review behavior before finalizing responses.",
+    "Learns from Mistakes":
+      "The candidate may benefit from corrective feedback and iterative learning.",
+    "Jumps Between Questions":
+      "The candidate may use a non-linear navigation pattern.",
+    "Variable Speed":
+      "The candidate shows inconsistent response pace.",
+    "Consistent First Choice":
+      "The candidate made few or no changes, suggesting a stable first-choice response pattern.",
+    "Minor Review Pattern":
+      "The candidate made limited changes, suggesting modest review behavior.",
+    "Frequent Reconsideration":
+      "The candidate made multiple changes, suggesting frequent reconsideration."
+  };
+
+  return descriptions[decisionPattern] || descriptions.Deliberate;
+};
+
+const MetricCard = ({
+  title,
+  value,
+  subtitle,
+  color = "#1565C0",
+  background = "#E3F2FD"
+}) => {
+  return (
+    <div style={{ ...styles.metricCard, background }}>
+      <div style={styles.metricTitle}>{title}</div>
+      <div style={{ ...styles.metricValue, color }}>{value}</div>
+      {subtitle && <div style={styles.metricSubtitle}>{subtitle}</div>}
+    </div>
+  );
+};
+
+const InsightPanel = ({ title, value, description, color = "#1565C0" }) => {
+  return (
+    <div style={styles.insightPanel}>
+      <div style={styles.insightHeader}>
+        <span style={{ ...styles.insightDot, background: color }} />
+        <div>
+          <div style={styles.insightTitle}>{title}</div>
+          <div style={{ ...styles.insightValue, color }}>{value}</div>
+        </div>
+      </div>
+      <p style={styles.insightDescription}>{description}</p>
+    </div>
+  );
+};
 
 export default function BehavioralInsights({ behavioralData, candidateName }) {
-  if (!behavioralData) return null;
-  
-  const getWorkStyleIcon = (style) => {
-    const icons = {
-      'Quick Decision Maker': '⚡',
-      'Methodical Analyst': '🔍',
-      'Anxious Reviser': '🔄',
-      'Strategic Reviewer': '📋',
-      'Adaptive Learner': '📈',
-      'Balanced': '⚖️',
-      'Non-Linear Thinker': '🌀',
-      'Inconsistent Responder': '📊'
-    };
-    return icons[style] || '📊';
-  };
-  
-  const getWorkStyleColor = (style) => {
-    const colors = {
-      'Quick Decision Maker': '#4CAF50',
-      'Methodical Analyst': '#2196F3',
-      'Anxious Reviser': '#FF9800',
-      'Strategic Reviewer': '#9C27B0',
-      'Adaptive Learner': '#00BCD4',
-      'Balanced': '#607D8B',
-      'Non-Linear Thinker': '#FF5722',
-      'Inconsistent Responder': '#F44336'
-    };
-    return colors[style] || '#2196F3';
-  };
-  
-  const getConfidenceColor = (level) => {
-    switch(level) {
-      case 'High': return '#4CAF50';
-      case 'Moderate': return '#FF9800';
-      case 'Low': return '#F44336';
-      default: return '#2196F3';
-    }
-  };
-  
-  const getConfidenceIcon = (level) => {
-    switch(level) {
-      case 'High': return '💪';
-      case 'Moderate': return '👍';
-      case 'Low': return '🤔';
-      default: return '📊';
-    }
-  };
-  
-  const getAttentionIcon = (span) => {
-    if (span.includes('Declining') || span.includes('Fatigue')) return '😴';
-    if (span.includes('Improving')) return '📈';
-    if (span.includes('Consistent')) return '⚡';
-    return '📊';
-  };
-  
-  const formatTime = (seconds) => {
-    if (!seconds || seconds === 0) return 'N/A';
-    if (seconds < 60) return `${seconds}s`;
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}m ${secs}s`;
-  };
+  if (!behavioralData) {
+    return (
+      <div style={styles.emptyState}>
+        <h3 style={styles.emptyTitle}>Behavioral Insights Not Available</h3>
+        <p style={styles.emptyText}>
+          No behavioral data has been captured for this assessment attempt.
+        </p>
+      </div>
+    );
+  }
+
+  const workStyle = behavioralData.work_style || "Balanced";
+  const confidenceLevel = behavioralData.confidence_level || "Moderate";
+  const attentionSpan = behavioralData.attention_span || "Consistent";
+  const decisionPattern = behavioralData.decision_pattern || "Deliberate";
+
+  const avgResponseTime =
+    behavioralData.avg_response_time_seconds ??
+    behavioralData.avg_response_time;
+
+  const medianResponseTime = behavioralData.median_response_time_seconds;
+
+  const fastestResponse = behavioralData.fastest_response_seconds;
+  const slowestResponse = behavioralData.slowest_response_seconds;
+
+  const totalTime =
+    behavioralData.total_time_spent_seconds ??
+    behavioralData.total_time_spent;
+
+  const totalAnswerChanges = behavioralData.total_answer_changes ?? 0;
+  const avgChangesPerQuestion = behavioralData.avg_changes_per_question ?? 0;
+
+  const firstInstinctAccuracy = behavioralData.first_instinct_accuracy;
+  const improvementRate = behavioralData.improvement_rate;
+
+  const totalQuestionVisits = behavioralData.total_question_visits ?? 0;
+
+  const revisitRate =
+    behavioralData.revisit_rate ??
+    behavioralData.question_revisit_rate;
+
+  const skippedQuestions = behavioralData.skipped_questions ?? 0;
+  const linearityScore = behavioralData.linearity_score;
+
+  const firstHalfAvgTime = behavioralData.first_half_avg_time;
+  const secondHalfAvgTime = behavioralData.second_half_avg_time;
+  const fatigueFactor = behavioralData.fatigue_factor;
+
+  const recommendedSupport =
+    behavioralData.recommended_support ||
+    "Provide balanced support with regular check-ins on progress.";
+
+  const developmentFocusAreas = Array.isArray(
+    behavioralData.development_focus_areas
+  )
+    ? behavioralData.development_focus_areas
+    : Array.isArray(behavioralData.focus_areas)
+    ? behavioralData.focus_areas
+    : [];
+
+  const hasPerQuestionTiming =
+    getInsightStatus(fastestResponse) === "available" ||
+    getInsightStatus(slowestResponse) === "available" ||
+    getInsightStatus(avgResponseTime) === "available";
+
+  const hasNavigationData =
+    Number(totalQuestionVisits || 0) > 0 ||
+    getInsightStatus(revisitRate) === "available";
 
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h3 style={styles.title}>🧠 Behavioral Insights</h3>
-        <p style={styles.subtitle}>How {candidateName} approached the assessment - unique behavioral patterns</p>
-      </div>
-      
-      {/* Work Style Card */}
-      <div style={{
-        ...styles.workStyleCard,
-        borderTop: `4px solid ${getWorkStyleColor(behavioralData.work_style)}`
-      }}>
-        <div style={styles.workStyleHeader}>
-          <span style={styles.workStyleIcon}>{getWorkStyleIcon(behavioralData.work_style)}</span>
-          <div>
-            <span style={styles.workStyleLabel}>Work Style</span>
-            <span style={styles.workStyleValue}>{behavioralData.work_style}</span>
-          </div>
-        </div>
-        <div style={styles.workStyleMetrics}>
-          <div style={styles.metric}>
-            <span style={styles.metricLabel}>Confidence</span>
-            <span style={{...styles.metricValue, color: getConfidenceColor(behavioralData.confidence_level)}}>
-              {getConfidenceIcon(behavioralData.confidence_level)} {behavioralData.confidence_level}
-            </span>
-          </div>
-          <div style={styles.metric}>
-            <span style={styles.metricLabel}>Attention Span</span>
-            <span style={styles.metricValue}>
-              {getAttentionIcon(behavioralData.attention_span)} {behavioralData.attention_span}
-            </span>
-          </div>
-          <div style={styles.metric}>
-            <span style={styles.metricLabel}>Decision Pattern</span>
-            <span style={styles.metricValue}>{behavioralData.decision_pattern}</span>
-          </div>
+        <div>
+          <h2 style={styles.title}>Behavioral Insights</h2>
+          <p style={styles.description}>
+            Behavioral insights summarize how{" "}
+            <strong>{candidateName || "the candidate"}</strong> interacted with
+            the assessment. These indicators should support supervisor judgment
+            and should be interpreted alongside the assessment score and
+            category breakdown.
+          </p>
         </div>
       </div>
-      
-      {/* Timing Metrics */}
+
+      {!hasPerQuestionTiming && (
+        <div style={styles.noticeBox}>
+          <strong>Timing limitation:</strong> Per-question timing was not fully
+          captured for this assessment attempt. Timing-based insights such as
+          fastest response, slowest response, revisit rate, fatigue, and
+          linearity may be limited or unavailable for this report.
+        </div>
+      )}
+
       <div style={styles.section}>
-        <h4 style={styles.sectionTitle}>⏱️ Timing Analysis</h4>
-        <div style={styles.metricsGrid}>
-          <div style={styles.metricCard}>
-            <span style={styles.metricCardValue}>{formatTime(behavioralData.avg_response_time)}</span>
-            <span style={styles.metricCardLabel}>Avg Response Time</span>
-          </div>
-          <div style={styles.metricCard}>
-            <span style={styles.metricCardValue}>{formatTime(behavioralData.fastest_response)}</span>
-            <span style={styles.metricCardLabel}>Fastest Response</span>
-          </div>
-          <div style={styles.metricCard}>
-            <span style={styles.metricCardValue}>{formatTime(behavioralData.slowest_response)}</span>
-            <span style={styles.metricCardLabel}>Slowest Response</span>
-          </div>
-          <div style={styles.metricCard}>
-            <span style={styles.metricCardValue}>
-              {behavioralData.fatigue_factor > 0 ? '+' : ''}{behavioralData.fatigue_factor}s
-            </span>
-            <span style={styles.metricCardLabel}>Fatigue Factor</span>
-          </div>
+        <h3 style={styles.sectionTitle}>Behavioral Profile</h3>
+
+        <div style={styles.insightGrid}>
+          <InsightPanel
+            title="Work Style"
+            value={workStyle}
+            description={getWorkStyleDescription(workStyle)}
+            color="#1565C0"
+          />
+
+          <InsightPanel
+            title="Confidence Level"
+            value={confidenceLevel}
+            description={getConfidenceDescription(confidenceLevel)}
+            color="#2E7D32"
+          />
+
+          <InsightPanel
+            title="Attention Span"
+            value={attentionSpan}
+            description={getAttentionDescription(attentionSpan)}
+            color="#F57C00"
+          />
+
+          <InsightPanel
+            title="Decision Pattern"
+            value={decisionPattern}
+            description={getDecisionDescription(decisionPattern)}
+            color="#6A1B9A"
+          />
         </div>
-        
-        {/* Fatigue Warning */}
-        {behavioralData.fatigue_factor > 30 && (
-          <div style={styles.warningBox}>
-            <span style={styles.warningIcon}>⚠️</span>
-            <div>
-              <strong>Significant fatigue detected</strong>
-              <p style={styles.warningText}>Response times increased by {behavioralData.fatigue_factor}s in the second half. Consider break strategies for longer assessments.</p>
-            </div>
-          </div>
-        )}
-        
-        {/* Consistency Indicator */}
-        {behavioralData.time_variance < 20 && behavioralData.avg_response_time > 0 && (
-          <div style={styles.successBox}>
-            <span style={styles.successIcon}>✅</span>
-            <div>
-              <strong>Highly Consistent</strong>
-              <p style={styles.successText}>Response times were very consistent throughout the assessment, indicating good focus and pacing.</p>
-            </div>
-          </div>
-        )}
       </div>
-      
-      {/* Answer Behavior */}
+
       <div style={styles.section}>
-        <h4 style={styles.sectionTitle}>🔄 Answer Behavior</h4>
+        <h3 style={styles.sectionTitle}>Timing Metrics</h3>
+
         <div style={styles.metricsGrid}>
-          <div style={styles.metricCard}>
-            <span style={styles.metricCardValue}>{behavioralData.total_answer_changes}</span>
-            <span style={styles.metricCardLabel}>Answer Changes</span>
-          </div>
-          <div style={styles.metricCard}>
-            <span style={styles.metricCardValue}>{behavioralData.improvement_rate}%</span>
-            <span style={styles.metricCardLabel}>Improvement Rate</span>
-          </div>
-          <div style={styles.metricCard}>
-            <span style={styles.metricCardValue}>{behavioralData.first_instinct_accuracy}%</span>
-            <span style={styles.metricCardLabel}>First Instinct Accuracy</span>
-          </div>
-          <div style={styles.metricCard}>
-            <span style={styles.metricCardValue}>{behavioralData.revisit_rate}%</span>
-            <span style={styles.metricCardLabel}>Question Revisit Rate</span>
-          </div>
+          <MetricCard
+            title="Average Response"
+            value={formatSeconds(avgResponseTime)}
+            subtitle="Average time per captured question"
+            color="#1565C0"
+            background="#E3F2FD"
+          />
+
+          <MetricCard
+            title="Median Response"
+            value={formatSeconds(medianResponseTime)}
+            subtitle="Middle response time"
+            color="#1565C0"
+            background="#E3F2FD"
+          />
+
+          <MetricCard
+            title="Fastest Response"
+            value={formatSeconds(fastestResponse)}
+            subtitle="Fastest captured answer time"
+            color="#2E7D32"
+            background="#E8F5E9"
+          />
+
+          <MetricCard
+            title="Slowest Response"
+            value={formatSeconds(slowestResponse)}
+            subtitle="Slowest captured answer time"
+            color="#C62828"
+            background="#FFEBEE"
+          />
+
+          <MetricCard
+            title="Total Time Spent"
+            value={formatTotalTime(totalTime)}
+            subtitle="Total captured assessment duration"
+            color="#0A1929"
+            background="#F8FAFC"
+          />
+
+          <MetricCard
+            title="Fatigue Factor"
+            value={
+              fatigueFactor === null || fatigueFactor === undefined
+                ? "Not captured"
+                : `${formatNumber(fatigueFactor)}s`
+            }
+            subtitle="Second-half pace minus first-half pace"
+            color="#F57C00"
+            background="#FFF3E0"
+          />
         </div>
-        
-        {/* First Instinct Insight */}
-        {behavioralData.first_instinct_accuracy > 80 && behavioralData.total_answer_changes > 3 && (
-          <div style={styles.tipBox}>
-            <span style={styles.tipIcon}>💡</span>
-            <div>
-              <strong>First Instinct Insight</strong>
-              <p style={styles.tipText}>First instinct accuracy is high ({behavioralData.first_instinct_accuracy}%) but they changed answers {behavioralData.total_answer_changes} times. Encourage trusting initial responses.</p>
-            </div>
-          </div>
-        )}
-        
-        {/* Improvement Insight */}
-        {behavioralData.improvement_rate > 70 && behavioralData.total_answer_changes > 0 && (
-          <div style={styles.tipBox}>
-            <span style={styles.tipIcon}>📈</span>
-            <div>
-              <strong>Adaptive Learner</strong>
-              <p style={styles.tipText}>Answer changes improved scores {behavioralData.improvement_rate}% of the time. This candidate learns from mistakes and adjusts effectively.</p>
-            </div>
-          </div>
-        )}
-        
-        {/* Review Pattern Insight */}
-        {behavioralData.revisit_rate > 50 && (
-          <div style={styles.tipBox}>
-            <span style={styles.tipIcon}>📋</span>
-            <div>
-              <strong>Strategic Reviewer</strong>
-              <p style={styles.tipText}>Revisited {behavioralData.revisit_rate}% of questions. This thorough approach ensures quality but may benefit from time management strategies.</p>
-            </div>
-          </div>
-        )}
       </div>
-      
-      {/* Navigation Pattern */}
+
       <div style={styles.section}>
-        <h4 style={styles.sectionTitle}>🗺️ Navigation Pattern</h4>
+        <h3 style={styles.sectionTitle}>Answer Behavior</h3>
+
         <div style={styles.metricsGrid}>
-          <div style={styles.metricCard}>
-            <span style={styles.metricCardValue}>{behavioralData.linearity_score}%</span>
-            <span style={styles.metricCardLabel}>Linearity Score</span>
-          </div>
-          <div style={styles.metricCard}>
-            <span style={styles.metricCardValue}>{behavioralData.total_question_visits}</span>
-            <span style={styles.metricCardLabel}>Total Visits</span>
-          </div>
+          <MetricCard
+            title="Answer Changes"
+            value={formatNumber(totalAnswerChanges, "0")}
+            subtitle="Total recorded answer changes"
+            color="#6A1B9A"
+            background="#F3E5F5"
+          />
+
+          <MetricCard
+            title="Avg Changes / Question"
+            value={formatNumber(avgChangesPerQuestion, "0")}
+            subtitle="Average revision behavior"
+            color="#6A1B9A"
+            background="#F3E5F5"
+          />
+
+          <MetricCard
+            title="First Instinct Consistency"
+            value={formatPercent(firstInstinctAccuracy, "Not captured")}
+            subtitle="Initial answer retained as final answer"
+            color="#2E7D32"
+            background="#E8F5E9"
+          />
+
+          <MetricCard
+            title="Improvement Rate"
+            value={formatPercent(improvementRate, "Not captured")}
+            subtitle="Answer changes that improved score, if tracked"
+            color="#1565C0"
+            background="#E3F2FD"
+          />
         </div>
-        
-        {/* Linearity Insight */}
-        {behavioralData.linearity_score < 70 && (
-          <div style={styles.tipBox}>
-            <span style={styles.tipIcon}>🌀</span>
-            <div>
-              <strong>Non-Linear Approach</strong>
-              <p style={styles.tipText}>This candidate jumps between questions rather than following a linear path. Consider providing a 'mark for review' feature to help organize their approach.</p>
-            </div>
-          </div>
-        )}
       </div>
-      
-      {/* Support Recommendations */}
-      <div style={styles.supportSection}>
-        <h4 style={styles.supportTitle}>🎯 Recommended Support & Development</h4>
-        <p style={styles.supportText}>{behavioralData.recommended_support}</p>
-        {behavioralData.development_focus_areas && behavioralData.development_focus_areas.length > 0 && (
-          <div style={styles.focusAreas}>
-            <span style={styles.focusLabel}>Focus Areas:</span>
-            {behavioralData.development_focus_areas.map((area, idx) => (
-              <span key={idx} style={styles.focusTag}>{area}</span>
+
+      <div style={styles.section}>
+        <h3 style={styles.sectionTitle}>Navigation Behavior</h3>
+
+        <div style={styles.metricsGrid}>
+          <MetricCard
+            title="Total Visits"
+            value={
+              hasNavigationData
+                ? formatNumber(totalQuestionVisits, "0")
+                : "Not captured"
+            }
+            subtitle="Total question visits recorded"
+            color="#0A1929"
+            background="#F8FAFC"
+          />
+
+          <MetricCard
+            title="Revisit Rate"
+            value={
+              hasNavigationData
+                ? formatPercent(revisitRate, "0%")
+                : "Not captured"
+            }
+            subtitle="Questions revisited after first view"
+            color="#F57C00"
+            background="#FFF3E0"
+          />
+
+          <MetricCard
+            title="Skipped Questions"
+            value={
+              hasNavigationData
+                ? formatNumber(skippedQuestions, "0")
+                : "Not captured"
+            }
+            subtitle="Questions marked or detected as skipped"
+            color="#C62828"
+            background="#FFEBEE"
+          />
+
+          <MetricCard
+            title="Linearity Score"
+            value={
+              hasNavigationData
+                ? formatPercent(linearityScore, "0%")
+                : "Not captured"
+            }
+            subtitle="How linearly candidate moved through questions"
+            color="#1565C0"
+            background="#E3F2FD"
+          />
+        </div>
+      </div>
+
+      <div style={styles.section}>
+        <h3 style={styles.sectionTitle}>Pacing Split</h3>
+
+        <div style={styles.metricsGrid}>
+          <MetricCard
+            title="First Half Avg Time"
+            value={formatSeconds(firstHalfAvgTime)}
+            subtitle="Average response time in first half"
+            color="#2E7D32"
+            background="#E8F5E9"
+          />
+
+          <MetricCard
+            title="Second Half Avg Time"
+            value={formatSeconds(secondHalfAvgTime)}
+            subtitle="Average response time in second half"
+            color="#F57C00"
+            background="#FFF3E0"
+          />
+        </div>
+      </div>
+
+      <div style={styles.section}>
+        <h3 style={styles.sectionTitle}>Supervisor Support Recommendation</h3>
+
+        <div style={styles.recommendationBox}>
+          <p style={styles.recommendationText}>{recommendedSupport}</p>
+        </div>
+      </div>
+
+      <div style={styles.section}>
+        <h3 style={styles.sectionTitle}>Development Focus Areas</h3>
+
+        {developmentFocusAreas.length > 0 ? (
+          <div style={styles.focusList}>
+            {developmentFocusAreas.map((area, index) => (
+              <span key={`${area}-${index}`} style={styles.focusPill}>
+                {area}
+              </span>
             ))}
           </div>
+        ) : (
+          <p style={styles.noFocusText}>
+            No specific behavioral focus areas were generated for this report.
+          </p>
         )}
       </div>
-      
-      {/* Summary Card */}
-      <div style={styles.summaryCard}>
-        <div style={styles.summaryHeader}>
-          <span style={styles.summaryIcon}>📋</span>
-          <span style={styles.summaryTitle}>At a Glance</span>
-        </div>
-        <div style={styles.summaryGrid}>
-          <div style={styles.summaryItem}>
-            <span style={styles.summaryLabel}>Work Style</span>
-            <span style={styles.summaryValue}>{behavioralData.work_style}</span>
-          </div>
-          <div style={styles.summaryItem}>
-            <span style={styles.summaryLabel}>Decision Pattern</span>
-            <span style={styles.summaryValue}>{behavioralData.decision_pattern}</span>
-          </div>
-          <div style={styles.summaryItem}>
-            <span style={styles.summaryLabel}>Support Priority</span>
-            <span style={styles.summaryValue}>{behavioralData.development_focus_areas?.[0] || 'Balanced approach'}</span>
-          </div>
-        </div>
+
+      <div style={styles.footerNote}>
+        <strong>Interpretation note:</strong> Behavioral data describes how the
+        candidate interacted with the assessment. These indicators should not be
+        used alone for selection decisions. Use them together with score
+        results, category performance, supervisor judgment, and practical
+        validation.
       </div>
     </div>
   );
@@ -273,246 +571,169 @@ export default function BehavioralInsights({ behavioralData, candidateName }) {
 
 const styles = {
   container: {
-    marginTop: '30px',
-    marginBottom: '30px'
+    width: "100%"
   },
   header: {
-    marginBottom: '20px'
+    marginBottom: "24px"
   },
   title: {
-    fontSize: '20px',
-    fontWeight: 600,
-    color: '#0A1929',
-    marginBottom: '8px'
+    fontSize: "22px",
+    fontWeight: 700,
+    color: "#0A1929",
+    marginBottom: "8px"
   },
-  subtitle: {
-    fontSize: '14px',
-    color: '#64748B'
+  description: {
+    fontSize: "14px",
+    lineHeight: 1.6,
+    color: "#475569",
+    margin: 0
   },
-  workStyleCard: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '20px',
-    marginBottom: '24px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    border: '1px solid #E2E8F0'
-  },
-  workStyleHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    marginBottom: '16px'
-  },
-  workStyleIcon: {
-    fontSize: '40px'
-  },
-  workStyleLabel: {
-    display: 'block',
-    fontSize: '12px',
-    color: '#64748B',
-    marginBottom: '4px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px'
-  },
-  workStyleValue: {
-    display: 'block',
-    fontSize: '18px',
-    fontWeight: 600,
-    color: '#0A1929'
-  },
-  workStyleMetrics: {
-    display: 'flex',
-    gap: '24px',
-    flexWrap: 'wrap',
-    paddingTop: '12px',
-    borderTop: '1px solid #E2E8F0'
-  },
-  metric: {
-    flex: 1,
-    minWidth: '100px'
-  },
-  metricLabel: {
-    display: 'block',
-    fontSize: '11px',
-    color: '#64748B',
-    marginBottom: '4px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.3px'
-  },
-  metricValue: {
-    display: 'block',
-    fontSize: '15px',
-    fontWeight: 600,
-    color: '#0A1929'
+  noticeBox: {
+    background: "#FFF8E1",
+    borderLeft: "5px solid #F57C00",
+    padding: "14px 16px",
+    borderRadius: "10px",
+    fontSize: "13px",
+    lineHeight: 1.6,
+    color: "#7A4B00",
+    marginBottom: "24px"
   },
   section: {
-    marginBottom: '24px'
+    marginBottom: "30px"
   },
   sectionTitle: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#0A1929',
-    marginBottom: '16px'
+    fontSize: "16px",
+    fontWeight: 700,
+    color: "#0A1929",
+    marginBottom: "14px"
+  },
+  insightGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "16px"
+  },
+  insightPanel: {
+    background: "#FFFFFF",
+    border: "1px solid #E2E8F0",
+    borderRadius: "14px",
+    padding: "18px",
+    boxShadow: "0 2px 8px rgba(15,23,42,0.04)"
+  },
+  insightHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    marginBottom: "10px"
+  },
+  insightDot: {
+    width: "12px",
+    height: "12px",
+    borderRadius: "50%",
+    flexShrink: 0
+  },
+  insightTitle: {
+    fontSize: "12px",
+    color: "#64748B",
+    textTransform: "uppercase",
+    letterSpacing: "0.4px",
+    marginBottom: "2px"
+  },
+  insightValue: {
+    fontSize: "15px",
+    fontWeight: 700
+  },
+  insightDescription: {
+    fontSize: "13px",
+    color: "#475569",
+    lineHeight: 1.55,
+    margin: 0
   },
   metricsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: '16px'
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: "14px"
   },
   metricCard: {
-    background: '#F8FAFC',
-    padding: '16px',
-    borderRadius: '12px',
-    textAlign: 'center',
-    border: '1px solid #E2E8F0'
+    border: "1px solid rgba(15,23,42,0.06)",
+    borderRadius: "14px",
+    padding: "16px",
+    minHeight: "104px",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between"
   },
-  metricCardValue: {
-    display: 'block',
-    fontSize: '20px',
+  metricTitle: {
+    fontSize: "12px",
+    color: "#64748B",
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: "0.35px"
+  },
+  metricValue: {
+    fontSize: "24px",
+    fontWeight: 800,
+    marginTop: "8px",
+    marginBottom: "6px"
+  },
+  metricSubtitle: {
+    fontSize: "11px",
+    color: "#64748B",
+    lineHeight: 1.4
+  },
+  recommendationBox: {
+    background: "#F8FAFC",
+    border: "1px solid #E2E8F0",
+    borderLeft: "5px solid #1565C0",
+    padding: "18px",
+    borderRadius: "12px"
+  },
+  recommendationText: {
+    fontSize: "14px",
+    lineHeight: 1.65,
+    color: "#334155",
+    margin: 0
+  },
+  focusList: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "10px"
+  },
+  focusPill: {
+    padding: "8px 12px",
+    background: "#E3F2FD",
+    color: "#1565C0",
+    borderRadius: "999px",
+    fontSize: "12px",
+    fontWeight: 600
+  },
+  noFocusText: {
+    fontSize: "13px",
+    color: "#64748B"
+  },
+  footerNote: {
+    background: "#F8FAFC",
+    border: "1px solid #E2E8F0",
+    borderRadius: "12px",
+    padding: "14px 16px",
+    fontSize: "12px",
+    lineHeight: 1.6,
+    color: "#475569"
+  },
+  emptyState: {
+    background: "#F8FAFC",
+    border: "1px solid #E2E8F0",
+    borderRadius: "12px",
+    padding: "24px",
+    textAlign: "center"
+  },
+  emptyTitle: {
+    fontSize: "18px",
     fontWeight: 700,
-    color: '#0A1929',
-    marginBottom: '8px'
+    color: "#0A1929",
+    marginBottom: "8px"
   },
-  metricCardLabel: {
-    display: 'block',
-    fontSize: '11px',
-    color: '#64748B',
-    textTransform: 'uppercase',
-    letterSpacing: '0.3px'
-  },
-  warningBox: {
-    marginTop: '16px',
-    padding: '16px',
-    background: '#FFF3E0',
-    borderRadius: '12px',
-    display: 'flex',
-    gap: '12px',
-    borderLeft: '4px solid #F57C00'
-  },
-  warningIcon: {
-    fontSize: '20px'
-  },
-  warningText: {
-    fontSize: '13px',
-    color: '#E65100',
-    marginTop: '4px',
-    lineHeight: '1.5'
-  },
-  successBox: {
-    marginTop: '16px',
-    padding: '16px',
-    background: '#E8F5E9',
-    borderRadius: '12px',
-    display: 'flex',
-    gap: '12px',
-    borderLeft: '4px solid #4CAF50'
-  },
-  successIcon: {
-    fontSize: '20px'
-  },
-  successText: {
-    fontSize: '13px',
-    color: '#2E7D32',
-    marginTop: '4px',
-    lineHeight: '1.5'
-  },
-  tipBox: {
-    marginTop: '16px',
-    padding: '16px',
-    background: '#E3F2FD',
-    borderRadius: '12px',
-    display: 'flex',
-    gap: '12px',
-    borderLeft: '4px solid #2196F3'
-  },
-  tipIcon: {
-    fontSize: '20px'
-  },
-  tipText: {
-    fontSize: '13px',
-    color: '#1565C0',
-    marginTop: '4px',
-    lineHeight: '1.5'
-  },
-  supportSection: {
-    background: '#F0F4F8',
-    padding: '20px',
-    borderRadius: '12px',
-    marginTop: '24px'
-  },
-  supportTitle: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#0A1929',
-    marginBottom: '12px'
-  },
-  supportText: {
-    fontSize: '14px',
-    color: '#2D3748',
-    lineHeight: '1.6',
-    marginBottom: '16px'
-  },
-  focusAreas: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '8px',
-    alignItems: 'center'
-  },
-  focusLabel: {
-    fontSize: '13px',
-    fontWeight: 500,
-    color: '#0A1929'
-  },
-  focusTag: {
-    padding: '4px 12px',
-    background: 'white',
-    borderRadius: '20px',
-    fontSize: '12px',
-    color: '#475569',
-    border: '1px solid #E2E8F0'
-  },
-  summaryCard: {
-    background: 'white',
-    borderRadius: '12px',
-    padding: '16px',
-    marginTop: '20px',
-    border: '1px solid #E2E8F0'
-  },
-  summaryHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '12px'
-  },
-  summaryIcon: {
-    fontSize: '18px'
-  },
-  summaryTitle: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#0A1929',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px'
-  },
-  summaryGrid: {
-    display: 'flex',
-    gap: '16px',
-    flexWrap: 'wrap'
-  },
-  summaryItem: {
-    flex: 1,
-    minWidth: '120px'
-  },
-  summaryLabel: {
-    display: 'block',
-    fontSize: '11px',
-    color: '#64748B',
-    marginBottom: '4px'
-  },
-  summaryValue: {
-    display: 'block',
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#0A1929'
+  emptyText: {
+    fontSize: "14px",
+    color: "#64748B"
   }
 };
