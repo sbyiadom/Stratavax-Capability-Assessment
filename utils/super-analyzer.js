@@ -1,27 +1,641 @@
 // utils/super-analyzer.js
-// THE ULTIMATE COMBINATION - Never done before!
-// Combines: Psychometric + Response Analysis + Professional Interpretation + Development Pathways + Phrase Library
-
-import { generatePsychometricAnalysis } from './psychometricAnalyzer';
-import { analyzeResponses } from './responseAnalyzer';
-import { generateDetailedInterpretation } from './detailedInterpreter';
-import { getAssessmentType } from './assessmentConfigs';
-import { generateProfessionalInterpretation } from './professionalInterpreter';
-import { getDevelopmentRecommendation } from './developmentRecommendations';
-import { generateUniversalInterpretation } from './categoryMapper';
-import { generateCommentary } from './commentaryEngine';
-import { 
-  getStrengthPhrase, 
-  getWeaknessPhrase, 
-  getImpactPhrase,
-  getClassificationPhrase,
-  areaDescriptors 
-} from './phraseLibrary';
 
 /**
- * SUPER ANALYZER - The Complete Picture
- * Generates a multi-dimensional, deeply personalized analysis that no other platform can match
- * Every analysis is unique because it combines actual scores, response patterns, and randomized phrasing
+ * SUPER ANALYZER
+ *
+ * Builds advanced supervisor-facing analysis from category scores and responses.
+ *
+ * Corrected version:
+ * - Uses central scoring standard from utils/scoring.js
+ * - Supports all assessment types
+ * - Handles Manufacturing Baseline role readiness separately
+ * - Removes unstable Date.now()/Buffer randomness
+ * - Keeps existing export: generateSuperAnalysis
+ * - Keeps output structure expected by the report page
+ */
+
+import {
+  calculatePercentage,
+  getClassificationDetailsFromPercentage,
+  getGrade,
+  getGradeDescription,
+  getScoreLevel,
+  getScoreComment,
+  getSupervisorImplication,
+  isStrength,
+  isDevelopmentArea,
+  isCriticalGap,
+  isPriorityDevelopment,
+  calculateGapToTarget,
+  normalizeCategoryScore,
+  REPORT_THRESHOLDS,
+  roundNumber
+} from "./scoring";
+
+const safeNumber = (value, fallback = 0) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+};
+
+const normalizeText = (value) => {
+  if (value === null || value === undefined) return "";
+
+  return String(value)
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'");
+};
+
+const createStableHash = (input) => {
+  const text = String(input || "");
+  let hash = 0;
+
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash << 5) - hash + text.charCodeAt(index);
+    hash |= 0;
+  }
+
+  return Math.abs(hash).toString(36).toUpperCase();
+};
+
+const normalizeAssessmentType = (assessmentType) => {
+  return assessmentType || "general";
+};
+
+const getCategoryPercentage = (categoryScores, categoryName) => {
+  const direct = categoryScores?.[categoryName];
+
+  if (direct) {
+    return safeNumber(direct.percentage, 0);
+  }
+
+  const normalizedName = normalizeText(categoryName);
+
+  const matchedEntry = Object.entries(categoryScores || {}).find(
+    ([key]) => normalizeText(key) === normalizedName
+  );
+
+  if (!matchedEntry) return 0;
+
+  return safeNumber(matchedEntry[1]?.percentage, 0);
+};
+
+const normalizeCategoryScoresForAnalysis = (categoryScores = {}) => {
+  return Object.entries(categoryScores || {}).map(([category, data]) => {
+    const normalized = normalizeCategoryScore(normalizeText(category), data);
+
+    return {
+      area: normalized.category,
+      category: normalized.category,
+      name: normalized.category,
+      score: normalized.score,
+      maxPossible: normalized.maxPossible,
+      percentage: normalized.percentage,
+      grade: normalized.grade,
+      gradeDescription: normalized.gradeDescription,
+      classification: normalized.classification,
+      label: normalized.label,
+      band: normalized.band,
+      color: normalized.color,
+      bg: normalized.bg,
+      description: normalized.description,
+      gap: normalized.gapToTarget,
+      gapToTarget: normalized.gapToTarget,
+      performanceComment: getScoreComment(normalized.percentage),
+      supervisorImplication: getSupervisorImplication(normalized.percentage),
+      scoreLevel: getScoreLevel(normalized.percentage)
+    };
+  });
+};
+
+const calculateOverallPercentage = (categoryScores, totalScore, maxScore) => {
+  const total = safeNumber(totalScore, 0);
+  const max = safeNumber(maxScore, 0);
+
+  if (max > 0) {
+    return calculatePercentage(total, max);
+  }
+
+  const categories = normalizeCategoryScoresForAnalysis(categoryScores);
+
+  if (categories.length === 0) return 0;
+
+  const average =
+    categories.reduce((sum, item) => sum + safeNumber(item.percentage, 0), 0) /
+    categories.length;
+
+  return Math.round(average);
+};
+
+const buildProfileId = ({
+  candidateName,
+  assessmentType,
+  totalScore,
+  maxScore,
+  categoryScores
+}) => {
+  const scoreString = Object.entries(categoryScores || {})
+    .map(([category, data]) => `${category}:${data?.percentage ?? 0}`)
+    .sort()
+    .join("|");
+
+  const base = `${candidateName}-${assessmentType}-${totalScore}-${maxScore}-${scoreString}`;
+  return `SVX-${createStableHash(base).slice(0, 10)}`;
+};
+
+const buildSummary = ({
+  candidateName,
+  assessmentType,
+  overallPercentage,
+  classificationDetails,
+  strengths,
+  developmentAreas
+}) => {
+  const assessmentLabel = getAssessmentLabel(assessmentType);
+
+  const strengthText =
+    strengths.byScore.length > 0
+      ? strengths.byScore
+          .slice(0, 3)
+          .map((item) => item.area)
+          .join(", ")
+      : "no dominant strength area";
+
+  const developmentText =
+    developmentAreas.byScore.length > 0
+      ? developmentAreas.byScore
+          .slice(0, 3)
+          .map((item) => item.area)
+          .join(", ")
+      : "no major development area below threshold";
+
+  const oneLine = `${candidateName} completed the ${assessmentLabel} with an overall score of ${overallPercentage}% and is classified as ${classificationDetails.classification}.`;
+
+  const narrative = `${oneLine} Key strength evidence includes ${strengthText}. Priority development focus includes ${developmentText}. ${classificationDetails.description}`;
+
+  return {
+    oneLine,
+    narrative,
+    classification: classificationDetails.classification,
+    grade: classificationDetails.grade,
+    gradeDescription: classificationDetails.gradeDescription,
+    overallScore: overallPercentage
+  };
+};
+
+const getAssessmentLabel = (assessmentType) => {
+  const labels = {
+    general: "General Assessment",
+    leadership: "Leadership Assessment",
+    cognitive: "Cognitive Ability Assessment",
+    technical: "Technical Competence Assessment",
+    personality: "Personality Assessment",
+    strategic_leadership: "Strategic Leadership Assessment",
+    performance: "Performance Assessment",
+    behavioral: "Behavioral & Soft Skills Assessment",
+    cultural: "Cultural & Attitudinal Fit Assessment",
+    manufacturing_baseline: "Manufacturing Baseline Assessment"
+  };
+
+  return labels[assessmentType] || "Assessment";
+};
+
+const buildStrengths = (categories) => {
+  const byScore = categories
+    .filter((item) => isStrength(item.percentage))
+    .sort((a, b) => b.percentage - a.percentage);
+
+  const relativeStrengths = [...categories]
+    .sort((a, b) => b.percentage - a.percentage)
+    .slice(0, 3);
+
+  return {
+    byScore,
+    relative: relativeStrengths,
+    count: byScore.length,
+    narrative:
+      byScore.length > 0
+        ? `The strongest assessed areas are ${byScore
+            .slice(0, 3)
+            .map((item) => item.area)
+            .join(", ")}. These areas can be leveraged for placement, coaching, or gradual responsibility expansion.`
+        : "No category reached the current strength threshold. Focus first on baseline capability development."
+  };
+};
+
+const buildDevelopmentAreas = (categories) => {
+  const byScore = categories
+    .filter((item) => isDevelopmentArea(item.percentage))
+    .sort((a, b) => a.percentage - b.percentage);
+
+  const priority = byScore.filter(
+    (item) =>
+      isCriticalGap(item.percentage) || isPriorityDevelopment(item.percentage)
+  );
+
+  return {
+    byScore,
+    priority,
+    count: byScore.length,
+    narrative:
+      byScore.length > 0
+        ? `Priority development areas are ${byScore
+            .slice(0, 3)
+            .map((item) => item.area)
+            .join(", ")}. These areas should be addressed through structured training, supervised practice, and progress review.`
+        : "No major development area was identified below the current development threshold."
+  };
+};
+
+const buildDifferentiators = (categories, assessmentType) => {
+  const differentiators = [];
+
+  categories
+    .filter((item) => item.percentage >= REPORT_THRESHOLDS.strengthThreshold)
+    .sort((a, b) => b.percentage - a.percentage)
+    .slice(0, 5)
+    .forEach((item) => {
+      differentiators.push({
+        differentiator: item.area,
+        score: item.percentage,
+        value: getDifferentiatorValue(item.area, item.percentage, assessmentType)
+      });
+    });
+
+  return differentiators;
+};
+
+const getDifferentiatorValue = (area, percentage, assessmentType) => {
+  const normalizedArea = normalizeText(area);
+
+  const manufacturingValues = {
+    "Technical Fundamentals":
+      "Provides a useful foundation for supervised production or technical onboarding.",
+    Troubleshooting:
+      "Supports supervised diagnostic work and common production issue response.",
+    "Numerical Aptitude":
+      "Supports production reporting, quality tracking, and metric interpretation.",
+    "Safety & Work Ethic":
+      "Supports safe onboarding and disciplined production behavior, subject to practical observation."
+  };
+
+  if (
+    assessmentType === "manufacturing_baseline" &&
+    manufacturingValues[normalizedArea]
+  ) {
+    return manufacturingValues[normalizedArea];
+  }
+
+  const values = {
+    Ownership:
+      "Supports accountability, initiative, and independent task follow-through.",
+    Collaboration:
+      "Supports teamwork, cross-functional contribution, and peer coordination.",
+    Action:
+      "Supports timely execution and movement of priorities.",
+    Analysis:
+      "Supports structured reasoning, planning, and decision quality.",
+    "Risk Tolerance":
+      "Supports controlled experimentation and improvement-focused assignments.",
+    Structure:
+      "Supports process discipline, SOP adherence, and quality consistency.",
+    Communication:
+      "Supports clear reporting, stakeholder interaction, and collaborative work.",
+    "Emotional Intelligence":
+      "Supports interpersonal effectiveness and workplace relationship management.",
+    "Leadership & Management":
+      "Supports gradual leadership exposure and team coordination.",
+    "Problem-Solving":
+      "Supports practical issue resolution and continuous improvement."
+  };
+
+  return (
+    values[normalizedArea] ||
+    `Represents a relative strength at ${percentage}% that may support role contribution.`
+  );
+};
+
+const buildRiskFlags = (categories, assessmentType) => {
+  const flags = [];
+
+  categories
+    .filter((item) => item.percentage < REPORT_THRESHOLDS.developmentThreshold)
+    .sort((a, b) => a.percentage - b.percentage)
+    .forEach((item) => {
+      flags.push({
+        area: item.area,
+        score: item.percentage,
+        severity: isCriticalGap(item.percentage)
+          ? "Critical"
+          : isPriorityDevelopment(item.percentage)
+          ? "High"
+          : "Medium",
+        implication: getRiskImplication(item.area, item.percentage, assessmentType),
+        recommendation: getRiskRecommendation(item.area, item.percentage, assessmentType)
+      });
+    });
+
+  return flags;
+};
+
+const getRiskImplication = (area, percentage, assessmentType) => {
+  const normalizedArea = normalizeText(area);
+
+  if (assessmentType === "manufacturing_baseline") {
+    const manufacturingRisks = {
+      "Technical Fundamentals":
+        "Candidate may struggle with basic equipment concepts or maintenance principles without foundational training.",
+      Troubleshooting:
+        "Candidate may struggle with fault diagnosis or root-cause analysis without guided practice.",
+      "Numerical Aptitude":
+        "Candidate may struggle with production calculations, ratios, or quality documentation.",
+      "Safety & Work Ethic":
+        "Candidate may not yet be ready for production exposure without safety training and close supervision."
+    };
+
+    if (manufacturingRisks[normalizedArea]) {
+      return manufacturingRisks[normalizedArea];
+    }
+  }
+
+  return getSupervisorImplication(percentage);
+};
+
+const getRiskRecommendation = (area, percentage, assessmentType) => {
+  const normalizedArea = normalizeText(area);
+
+  if (assessmentType === "manufacturing_baseline") {
+    const manufacturingRecommendations = {
+      "Technical Fundamentals":
+        "Provide foundational technical training and supervised equipment familiarization.",
+      Troubleshooting:
+        "Provide structured diagnostic training using 5 Whys, PDCA, and guided fault scenarios.",
+      "Numerical Aptitude":
+        "Provide production math practice, metric interpretation, and supervised reporting exercises.",
+      "Safety & Work Ethic":
+        "Provide safety induction, SOP reinforcement, PPE training, and close onboarding supervision."
+    };
+
+    if (manufacturingRecommendations[normalizedArea]) {
+      return manufacturingRecommendations[normalizedArea];
+    }
+  }
+
+  if (isCriticalGap(percentage)) {
+    return `Begin foundational development in ${normalizedArea} with close supervision and weekly progress checks.`;
+  }
+
+  if (isPriorityDevelopment(percentage)) {
+    return `Prioritize structured training and guided practice in ${normalizedArea}.`;
+  }
+
+  return `Provide targeted coaching and practical reinforcement in ${normalizedArea}.`;
+};
+
+const buildRoleReadiness = (categoryScores, assessmentType, overallPercentage) => {
+  if (assessmentType === "manufacturing_baseline") {
+    return buildManufacturingRoleReadiness(categoryScores, overallPercentage);
+  }
+
+  return buildGeneralRoleReadiness(categoryScores, overallPercentage);
+};
+
+const buildManufacturingRoleReadiness = (categoryScores, overallPercentage) => {
+  const technical = getCategoryPercentage(categoryScores, "Technical Fundamentals");
+  const troubleshooting = getCategoryPercentage(categoryScores, "Troubleshooting");
+  const numerical = getCategoryPercentage(categoryScores, "Numerical Aptitude");
+
+  const safety =
+    getCategoryPercentage(categoryScores, "Safety & Work Ethic") ||
+    getCategoryPercentage(categoryScores, "Safety &amp; Work Ethic");
+
+  const productionScore = Math.round(
+    safety * 0.4 + technical * 0.3 + troubleshooting * 0.2 + numerical * 0.1
+  );
+
+  const qualityScore = Math.round(
+    safety * 0.25 + numerical * 0.35 + troubleshooting * 0.25 + technical * 0.15
+  );
+
+  const maintenanceScore = Math.round(
+    technical * 0.4 + troubleshooting * 0.35 + safety * 0.15 + numerical * 0.1
+  );
+
+  return {
+    production: {
+      score: productionScore,
+      ready: productionScore >= 75 && safety >= 70,
+      reasoning: getManufacturingReadinessReasoning(
+        "Production",
+        productionScore,
+        {
+          safety,
+          technical,
+          troubleshooting,
+          numerical
+        }
+      )
+    },
+
+    quality: {
+      score: qualityScore,
+      ready: qualityScore >= 75 && numerical >= 65 && safety >= 65,
+      reasoning: getManufacturingReadinessReasoning("Quality", qualityScore, {
+        safety,
+        technical,
+        troubleshooting,
+        numerical
+      })
+    },
+
+    maintenance: {
+      score: maintenanceScore,
+      ready: maintenanceScore >= 75 && technical >= 70 && troubleshooting >= 65,
+      reasoning: getManufacturingReadinessReasoning(
+        "Maintenance",
+        maintenanceScore,
+        {
+          safety,
+          technical,
+          troubleshooting,
+          numerical
+        }
+      )
+    }
+  };
+};
+
+const getManufacturingReadinessReasoning = (role, score, data) => {
+  const { safety, technical, troubleshooting, numerical } = data;
+
+  if (safety < 60) {
+    return `${role} readiness is limited because safety and work ethic require reinforcement before production exposure.`;
+  }
+
+  if (role === "Production") {
+    if (score >= 75) {
+      return "Assessment evidence suggests potential readiness for supervised production exposure with standard onboarding and practical validation.";
+    }
+
+    return "Production readiness is developing. Focus on safety reinforcement, technical basics, and supervised line exposure.";
+  }
+
+  if (role === "Quality") {
+    if (score >= 75) {
+      return "Assessment evidence suggests potential readiness for supervised quality or production tracking tasks.";
+    }
+
+    return "Quality readiness is developing. Focus on numerical aptitude, troubleshooting, and documentation practice.";
+  }
+
+  if (role === "Maintenance") {
+    if (score >= 75) {
+      return "Assessment evidence suggests potential readiness for a maintenance-trainee pathway with practical validation.";
+    }
+
+    return "Maintenance readiness is developing. Focus on technical fundamentals and structured troubleshooting practice.";
+  }
+
+  return "Role readiness should be validated through supervised practical exposure.";
+};
+
+const buildGeneralRoleReadiness = (categoryScores, overallPercentage) => {
+  const leadership =
+    getCategoryPercentage(categoryScores, "Leadership & Management") ||
+    getCategoryPercentage(categoryScores, "People Leadership") ||
+    getCategoryPercentage(categoryScores, "Vision / Strategy");
+
+  const cognitive =
+    getCategoryPercentage(categoryScores, "Cognitive Ability") ||
+    getCategoryPercentage(categoryScores, "Analysis") ||
+    getCategoryPercentage(categoryScores, "Problem-Solving");
+
+  const technical =
+    getCategoryPercentage(categoryScores, "Technical & Manufacturing") ||
+    getCategoryPercentage(categoryScores, "Technical Knowledge") ||
+    getCategoryPercentage(categoryScores, "Technical Fundamentals");
+
+  const communication = getCategoryPercentage(categoryScores, "Communication");
+  const emotional = getCategoryPercentage(categoryScores, "Emotional Intelligence");
+  const ownership =
+    getCategoryPercentage(categoryScores, "Ownership") ||
+    getCategoryPercentage(categoryScores, "Accountability");
+  const action =
+    getCategoryPercentage(categoryScores, "Action") ||
+    getCategoryPercentage(categoryScores, "Execution Drive");
+  const structure = getCategoryPercentage(categoryScores, "Structure");
+
+  const executiveScore = Math.round(
+    leadership * 0.35 +
+      cognitive * 0.2 +
+      communication * 0.15 +
+      emotional * 0.15 +
+      ownership * 0.15
+  );
+
+  const managementScore = Math.round(
+    leadership * 0.25 +
+      communication * 0.2 +
+      emotional * 0.2 +
+      ownership * 0.2 +
+      action * 0.15
+  );
+
+  const technicalScore = Math.round(
+    technical * 0.4 + cognitive * 0.25 + structure * 0.2 + action * 0.15
+  );
+
+  return {
+    executive: {
+      score: executiveScore || overallPercentage,
+      ready: executiveScore >= 80 && leadership >= 70,
+      reasoning:
+        executiveScore >= 80 && leadership >= 70
+          ? "Assessment evidence suggests possible readiness for strategic or senior responsibility, subject to interview and work validation."
+          : "Executive readiness is not yet confirmed. Strengthen leadership, strategic thinking, communication, and accountability evidence."
+    },
+
+    management: {
+      score: managementScore || overallPercentage,
+      ready: managementScore >= 75 && leadership >= 65,
+      reasoning:
+        managementScore >= 75 && leadership >= 65
+          ? "Assessment evidence suggests possible readiness for supervised management exposure or team coordination."
+          : "Management readiness is developing. Focus on leadership, people skills, ownership, and execution consistency."
+    },
+
+    technical: {
+      score: technicalScore || overallPercentage,
+      ready: technicalScore >= 75 && technical >= 65,
+      reasoning:
+        technicalScore >= 75 && technical >= 65
+          ? "Assessment evidence suggests possible readiness for technical or specialist assignments with role validation."
+          : "Technical readiness is developing. Focus on technical capability, structured thinking, and practical application."
+    }
+  };
+};
+
+const buildDevelopmentPlan = (developmentAreas, assessmentType) => {
+  const topAreas = developmentAreas.byScore.slice(0, 3);
+
+  if (topAreas.length === 0) {
+    return {
+      focus: "Maintain and leverage strengths",
+      thirtyDays: [
+        "Confirm strengths through practical work observation.",
+        "Assign role-relevant tasks that use the strongest areas.",
+        "Provide feedback and identify stretch opportunities."
+      ],
+      sixtyDays: [
+        "Increase responsibility gradually where performance is validated.",
+        "Encourage peer support or mentoring in strength areas.",
+        "Monitor consistency across real work situations."
+      ],
+      ninetyDays: [
+        "Review readiness for expanded responsibility.",
+        "Document performance evidence.",
+        "Plan next-stage development or role progression."
+      ]
+    };
+  }
+
+  return {
+    focus: topAreas.map((item) => item.area).join(", "),
+    thirtyDays: topAreas.map(
+      (item) =>
+        `Begin structured development in ${item.area}; clarify expectations and assign supervised practice.`
+    ),
+    sixtyDays: topAreas.map(
+      (item) =>
+        `Review progress in ${item.area}; add practical tasks and targeted feedback.`
+    ),
+    ninetyDays: topAreas.map(
+      (item) =>
+        `Validate improvement in ${item.area}; consider reassessment or expanded responsibility if progress is confirmed.`
+    )
+  };
+};
+
+const buildEvidenceNotes = (responses, categoryScores) => {
+  const responseCount = Array.isArray(responses) ? responses.length : 0;
+  const categoryCount = Object.keys(categoryScores || {}).length;
+
+  return {
+    responseCount,
+    categoryCount,
+    notes: [
+      `Analysis is based on ${responseCount} recorded response(s).`,
+      `Category analysis covers ${categoryCount} scored area(s).`,
+      "Assessment evidence should be interpreted together with interviews, supervisor judgment, references, and practical validation.",
+      "Behavioral and timing insights depend on whether response timing and navigation data were captured during the attempt."
+    ]
+  };
+};
+
+/**
+ * Main export.
  */
 export const generateSuperAnalysis = (
   candidateName,
@@ -31,1019 +645,101 @@ export const generateSuperAnalysis = (
   totalScore,
   maxScore
 ) => {
-  console.log(`🌟 GENERATING SUPER ANALYSIS for ${candidateName}`);
-  console.log(`📊 Assessment Type: ${assessmentType}`);
-  console.log(`📝 Responses: ${responses?.length || 0}`);
-  console.log(`📈 Categories: ${Object.keys(categoryScores).length}`);
+  const safeAssessmentType = normalizeAssessmentType(assessmentType);
+  const safeResponses = Array.isArray(responses) ? responses : [];
+  const safeCategoryScores = categoryScores || {};
 
-  // ===== DIMENSION 1: PSYCHOMETRIC PROFILE =====
-  const psychometric = generatePsychometricAnalysis(
-    categoryScores,
-    assessmentType,
-    candidateName,
-    {}
+  const overallPercentage = calculateOverallPercentage(
+    safeCategoryScores,
+    totalScore,
+    maxScore
   );
 
-  // ===== DIMENSION 2: RESPONSE-LEVEL INSIGHTS =====
-  const responseInsights = analyzeResponses(
-    responses,
-    responses.map(r => r.unique_questions),
-    responses.map(r => r.unique_answers)
+  const classificationDetails =
+    getClassificationDetailsFromPercentage(overallPercentage);
+
+  const categories = normalizeCategoryScoresForAnalysis(safeCategoryScores);
+
+  const strengths = buildStrengths(categories);
+  const developmentAreas = buildDevelopmentAreas(categories);
+  const differentiators = buildDifferentiators(categories, safeAssessmentType);
+  const riskFlags = buildRiskFlags(categories, safeAssessmentType);
+
+  const roleReadiness = buildRoleReadiness(
+    safeCategoryScores,
+    safeAssessmentType,
+    overallPercentage
   );
 
-  // ===== DIMENSION 3: DETAILED PROFESSIONAL INTERPRETATION =====
-  const detailed = generateDetailedInterpretation(
-    candidateName,
-    categoryScores,
-    assessmentType,
-    responseInsights
+  const developmentPlan = buildDevelopmentPlan(
+    developmentAreas,
+    safeAssessmentType
   );
 
-  // ===== DIMENSION 4: PROFESSIONAL PATTERN RECOGNITION =====
-  const professional = generateProfessionalInterpretation(
+  const evidenceNotes = buildEvidenceNotes(safeResponses, safeCategoryScores);
+
+  const summary = buildSummary({
     candidateName,
-    categoryScores
-  );
-
-  // ===== DIMENSION 5: UNIVERSAL CATEGORY MAPPING =====
-  // Convert to format expected by categoryMapper
-  const scoresObject = {};
-  Object.entries(categoryScores).forEach(([cat, data]) => {
-    scoresObject[cat] = data.percentage;
-  });
-  
-  const strengths = Object.entries(categoryScores)
-    .filter(([_, data]) => data.percentage >= 70)
-    .map(([cat, data]) => ({ area: cat, percentage: data.percentage }));
-
-  const weaknesses = Object.entries(categoryScores)
-    .filter(([_, data]) => data.percentage < 60)
-    .map(([cat, data]) => ({ area: cat, percentage: data.percentage }));
-
-  const universal = generateUniversalInterpretation(
-    assessmentType,
-    candidateName,
-    scoresObject,
+    assessmentType: safeAssessmentType,
+    overallPercentage,
+    classificationDetails,
     strengths,
-    weaknesses,
-    Math.round((totalScore / maxScore) * 100)
-  );
-
-  // ===== DIMENSION 6: DEEP CATEGORY ANALYSIS WITH DEVELOPMENT PATHS =====
-  const categoryDeepAnalysis = {};
-  Object.entries(categoryScores).forEach(([category, data]) => {
-    const percentage = data.percentage;
-    const score = data.score;
-    const maxPossible = data.maxPossible;
-    
-    // Get commentary from multiple sources (with phrase library randomization)
-    const commentaryFromMapper = universal.categoryInterpretation?.[category]?.interpretation;
-    const commentaryFromProfessional = professional.categoryBreakdown?.concerns?.find(c => c.includes(category)) ||
-                                      professional.categoryBreakdown?.moderate?.find(c => c.includes(category)) ||
-                                      professional.categoryBreakdown?.strong?.find(c => c.includes(category));
-    
-    // Use phrase library for unique phrasing every time
-    const isStrength = percentage >= 70;
-    const phraseBasedCommentary = isStrength 
-      ? getStrengthPhrase(category, assessmentType)
-      : getWeaknessPhrase(category, assessmentType);
-    
-    // Get development recommendation (most detailed in the industry!)
-    const developmentPath = getDevelopmentRecommendation(category, percentage);
-    
-    // Get response insights for this category
-    const categoryResponses = responseInsights[category] || {};
-    
-    // Identify behavioral patterns
-    const behavioralPattern = identifyBehavioralPattern(category, percentage, psychometric, assessmentType);
-    
-    // Calculate trajectory
-    const trajectory = calculateTrajectory(category, percentage, psychometric);
-    
-    // Determine priority with impact phrase
-    const priority = calculatePriority(percentage, psychometric);
-    const impactPhrase = getImpactPhrase(priority);
-    
-    categoryDeepAnalysis[category] = {
-      score: percentage,
-      rawScore: `${score}/${maxPossible}`,
-      grade: getGradeLetter(percentage),
-      level: getLevel(percentage),
-      
-      // Multi-source commentary (unique to this candidate)
-      commentary: {
-        primary: commentaryFromMapper || generateCommentary(category, percentage, isStrength ? 'strength' : 'weakness', assessmentType),
-        phraseBased: phraseBasedCommentary,
-        professional: commentaryFromProfessional,
-        responseBased: categoryResponses.insights || []
-      },
-      
-      // Development pathway (specific, actionable)
-      development: {
-        recommendation: developmentPath,
-        priority,
-        impact: impactPhrase,
-        timeframe: calculateTimeframe(percentage),
-        gapToTarget: Math.max(0, 80 - percentage),
-        actions: extractActions(developmentPath)
-      },
-      
-      // Behavioral insights
-      behavioralPattern,
-      
-      // Trajectory prediction
-      trajectory,
-      
-      // Response highlights
-      keyResponses: categoryResponses.questionDetails?.slice(0, 2).map(q => ({
-        question: q.question,
-        answer: q.answer,
-        score: q.score
-      })) || [],
-      
-      // Unique identifier (ensures no two reports are identical)
-      signature: generateSignature(category, percentage, psychometric, candidateName)
-    };
+    developmentAreas
   });
 
-  // ===== DIMENSION 7: CROSS-CATEGORY PATTERN ANALYSIS =====
-  const patterns = identifyCrossCategoryPatterns(categoryScores, psychometric, professional, assessmentType);
-
-  // ===== DIMENSION 8: ROLE READINESS WITH MULTI-FACTOR ASSESSMENT =====
-  const roleReadiness = assessMultiFactorRoleReadiness(
-    categoryScores,
-    psychometric,
-    patterns,
+  const profileId = buildProfileId({
+    candidateName,
+    assessmentType: safeAssessmentType,
     totalScore,
     maxScore,
-    assessmentType
-  );
+    categoryScores: safeCategoryScores
+  });
 
-  // ===== DIMENSION 9: PREDICTIVE PERFORMANCE INSIGHTS =====
-  const predictiveInsights = generatePredictiveInsights(
-    categoryScores,
-    psychometric,
-    patterns,
-    assessmentType
-  );
-
-  // ===== DIMENSION 10: COMPETITIVE DIFFERENTIATORS =====
-  const differentiators = identifyCompetitiveDifferentiators(
-    categoryScores,
-    psychometric,
-    patterns
-  );
-
-  // ===== DIMENSION 11: DEVELOPMENT ROADMAP =====
-  const developmentRoadmap = generateDevelopmentRoadmap(categoryDeepAnalysis, patterns);
-
-  // ===== DIMENSION 12: UNIQUE PROFILE IDENTIFIER =====
-  const profileId = generateUniqueProfileId(candidateName, categoryScores, totalScore);
-
-  // ===== FINAL ASSEMBLY: THE COMPLETE SUPER ANALYSIS =====
   return {
-    // Unique identifiers
     profileId,
+
     candidateName,
-    assessmentType,
-    generatedAt: new Date().toISOString(),
-    
-    // Summary (combines all dimensions with phrase library)
-    summary: {
-      oneLine: generateOneLineSummary(candidateName, totalScore, maxScore, patterns),
-      executive: professional.overallSummary || detailed.overallProfileSummary,
-      psychometric: psychometric.executiveSummary,
-      professional: professional.profileSuggestion,
-      universal: universal.overallSummary,
-      classificationPhrase: getClassificationPhrase(getOverallClassification(totalScore, maxScore).label)
-    },
-    
-    // Overall metrics
-    overall: {
-      score: totalScore,
-      maxScore,
-      percentage: Math.round((totalScore / maxScore) * 100),
-      classification: getOverallClassification(totalScore, maxScore),
-      grade: getOverallGrade(totalScore, maxScore)
-    },
-    
-    // MULTI-DIMENSIONAL CATEGORY ANALYSIS
-    categories: categoryDeepAnalysis,
-    
-    // STRENGTHS (from multiple perspectives)
-    strengths: {
-      byScore: strengths,
-      byPsychometric: psychometric.categoryAnalysis?.strengths || [],
-      byPattern: patterns.strengthPatterns,
-      topStrengths: universal.topStrengths || [],
-      detailed: strengths.map(s => ({
-        ...s,
-        commentary: categoryDeepAnalysis[s.area]?.commentary.primary,
-        phrase: getStrengthPhrase(s.area, assessmentType),
-        development: categoryDeepAnalysis[s.area]?.development,
-        behavioralPattern: categoryDeepAnalysis[s.area]?.behavioralPattern,
-        keyResponses: categoryDeepAnalysis[s.area]?.keyResponses
-      }))
-    },
-    
-    // DEVELOPMENT AREAS (from multiple perspectives)
-    developmentAreas: {
-      byScore: weaknesses,
-      byPsychometric: psychometric.categoryAnalysis?.risks || [],
-      byPattern: patterns.developmentPatterns,
-      topWeaknesses: universal.topWeaknesses || [],
-      detailed: weaknesses.map(w => ({
-        ...w,
-        commentary: categoryDeepAnalysis[w.area]?.commentary.primary,
-        phrase: getWeaknessPhrase(w.area, assessmentType),
-        development: categoryDeepAnalysis[w.area]?.development,
-        behavioralPattern: categoryDeepAnalysis[w.area]?.behavioralPattern,
-        keyResponses: categoryDeepAnalysis[w.area]?.keyResponses
-      }))
-    },
-    
-    // PATTERNS (unique to this candidate)
-    patterns: {
-      crossCategory: patterns,
-      leadershipFlags: professional.leadershipEval,
-      psychometricProfile: psychometric.personalityStructure,
-      riskFactors: psychometric.categoryAnalysis?.risks || professional.developmentPriorities
-    },
-    
-    // ROLE READINESS (nuanced assessment)
-    roleReadiness,
-    
-    // PREDICTIVE INSIGHTS
-    predictiveInsights,
-    
-    // COMPETITIVE DIFFERENTIATORS
+    assessmentType: safeAssessmentType,
+    assessmentName: getAssessmentLabel(safeAssessmentType),
+
+    totalScore: safeNumber(totalScore, 0),
+    maxScore: safeNumber(maxScore, 0),
+    overallPercentage,
+    overallScore: overallPercentage,
+
+    grade: getGrade(overallPercentage),
+    gradeDescription: getGradeDescription(overallPercentage),
+    classification: classificationDetails.classification,
+    classificationDetails,
+
+    summary,
+
+    strengths,
+    developmentAreas,
     differentiators,
-    
-    // DEVELOPMENT ROADMAP
-    developmentRoadmap,
-    
-    // RESPONSE INSIGHTS
-    responseInsights,
-    
-    // RAW DATA (for reference)
-    raw: {
-      psychometric,
-      detailed,
-      professional,
-      universal
+    riskFlags,
+    roleReadiness,
+    developmentPlan,
+    evidenceNotes,
+
+    categoryAnalysis: categories,
+
+    supervisorSnapshot: {
+      readiness: classificationDetails.classification,
+      primaryStrength:
+        strengths.byScore[0]?.area || strengths.relative[0]?.area || "None identified",
+      primaryDevelopmentArea:
+        developmentAreas.byScore[0]?.area || "None identified",
+      recommendedSupport:
+        developmentAreas.byScore.length > 0
+          ? "Structured development plan with supervisor follow-up"
+          : "Maintain strengths through practical validation and role-relevant assignments",
+      retestGuidance:
+        developmentAreas.priority.length > 0
+          ? "Retest after 30-90 days of focused development"
+          : "Retest optional unless required by role progression"
     }
   };
-};
-
-// ===== HELPER FUNCTIONS =====
-
-const getGradeLetter = (percentage) => {
-  if (percentage >= 95) return 'A+';
-  if (percentage >= 90) return 'A';
-  if (percentage >= 85) return 'A-';
-  if (percentage >= 80) return 'B+';
-  if (percentage >= 75) return 'B';
-  if (percentage >= 70) return 'B-';
-  if (percentage >= 65) return 'C+';
-  if (percentage >= 60) return 'C';
-  if (percentage >= 55) return 'C-';
-  if (percentage >= 50) return 'D+';
-  if (percentage >= 40) return 'D';
-  return 'F';
-};
-
-const getLevel = (percentage) => {
-  if (percentage >= 85) return 'Exceptional';
-  if (percentage >= 75) return 'Strong';
-  if (percentage >= 65) return 'Good';
-  if (percentage >= 55) return 'Developing';
-  if (percentage >= 45) return 'Emerging';
-  return 'Foundation';
-};
-
-const calculatePriority = (percentage, psychometric) => {
-  if (percentage < 50) return 'Critical';
-  if (percentage < 60) return 'High';
-  if (percentage < 70) return 'Medium';
-  if (percentage < 80) return 'Low';
-  return 'Maintain';
-};
-
-const calculateTimeframe = (percentage) => {
-  if (percentage < 50) return 'Immediate (0-3 months)';
-  if (percentage < 60) return 'Short-term (3-6 months)';
-  if (percentage < 70) return 'Medium-term (6-12 months)';
-  return 'Long-term (12+ months)';
-};
-
-const extractActions = (recommendation) => {
-  if (!recommendation) return [];
-  return recommendation.split('. ').filter(a => a.length > 10).slice(0, 3);
-};
-
-const identifyBehavioralPattern = (category, percentage, psychometric, assessmentType) => {
-  // Manufacturing baseline specific patterns
-  if (assessmentType === 'manufacturing_baseline') {
-    if (category === 'Safety & Work Ethic' && percentage < 60) {
-      return 'Safety awareness needs reinforcement - requires structured safety training and close supervision';
-    }
-    if (category === 'Technical Fundamentals' && percentage < 60) {
-      return 'Technical foundation gaps - would benefit from hands-on training and equipment familiarization';
-    }
-    if (category === 'Troubleshooting' && percentage < 60) {
-      return 'Problem-solving approach needs development - systematic diagnostic training recommended';
-    }
-    if (category === 'Numerical Aptitude' && percentage < 60) {
-      return 'Numerical reasoning gaps - may struggle with production metrics and quality documentation';
-    }
-    if (category === 'Safety & Work Ethic' && percentage >= 80) {
-      return 'Exemplary safety awareness - can serve as safety role model for peers';
-    }
-    if (category === 'Technical Fundamentals' && percentage >= 80) {
-      return 'Strong technical foundation - ready for independent equipment operation';
-    }
-  }
-  
-  if (category.includes('Cognitive') && percentage < 60) {
-    return 'May struggle with complex analysis - benefits from structured frameworks';
-  }
-  if (category.includes('Emotional') && percentage < 60) {
-    return 'May have difficulty reading team dynamics - needs explicit feedback';
-  }
-  if (category.includes('Stress') && percentage < 60) {
-    return 'Performance may dip under pressure - requires support during high-stress periods';
-  }
-  if (category.includes('Leadership') && percentage < 60) {
-    return 'Not yet ready for people management - needs foundational leadership development';
-  }
-  if (category.includes('Communication') && percentage < 60) {
-    return 'May need support in articulating complex ideas clearly';
-  }
-  return 'Shows expected behavioral patterns for this score range';
-};
-
-const calculateTrajectory = (category, percentage, psychometric) => {
-  if (percentage >= 75) return 'Accelerated growth likely';
-  if (percentage >= 60) return 'Steady improvement with support';
-  if (percentage >= 50) return 'Needs structured intervention';
-  return 'Requires foundational development';
-};
-
-const identifyCrossCategoryPatterns = (categoryScores, psychometric, professional, assessmentType) => {
-  const patterns = [];
-  const categories = Object.keys(categoryScores);
-  
-  // ===== MANUFACTURING BASELINE SPECIFIC PATTERNS =====
-  if (assessmentType === 'manufacturing_baseline') {
-    const hasSafety = categories.some(c => c.includes('Safety') || c.includes('Work Ethic'));
-    const hasTech = categories.some(c => c.includes('Technical') || c.includes('Fundamentals'));
-    const hasTroubleshooting = categories.some(c => c.includes('Troubleshooting'));
-    const hasNumerical = categories.some(c => c.includes('Numerical') || c.includes('Aptitude'));
-    
-    const safetyCategory = categories.find(c => c.includes('Safety') || c.includes('Work Ethic'));
-    const techCategory = categories.find(c => c.includes('Technical') || c.includes('Fundamentals'));
-    const troubleshootingCategory = categories.find(c => c.includes('Troubleshooting'));
-    const numericalCategory = categories.find(c => c.includes('Numerical') || c.includes('Aptitude'));
-    
-    // Safety-Technical mismatch pattern
-    if (safetyCategory && techCategory) {
-      const safetyScore = categoryScores[safetyCategory].percentage;
-      const techScore = categoryScores[techCategory].percentage;
-      
-      if (safetyScore >= 80 && techScore < 60) {
-        patterns.push({
-          name: 'Safety-Aware but Technically Limited',
-          severity: 'Medium',
-          description: 'Strong safety awareness but gaps in technical fundamentals may limit independent equipment operation.',
-          recommendation: 'Build technical knowledge through hands-on training while maintaining safety focus.'
-        });
-      } else if (safetyScore < 50 && techScore >= 70) {
-        patterns.push({
-          name: 'Technical-Safety Imbalance',
-          severity: 'High',
-          description: 'Good technical skills but safety awareness requires immediate attention.',
-          recommendation: 'Prioritize safety training before independent work assignments.'
-        });
-      }
-    }
-    
-    // Troubleshooting-Numerical pattern
-    if (troubleshootingCategory && numericalCategory) {
-      const troubleshootingScore = categoryScores[troubleshootingCategory].percentage;
-      const numericalScore = categoryScores[numericalCategory].percentage;
-      
-      if (troubleshootingScore >= 70 && numericalScore < 60) {
-        patterns.push({
-          name: 'Diagnostic-Numerical Gap',
-          severity: 'Medium',
-          description: 'Good diagnostic ability but struggles with quantitative aspects of production monitoring.',
-          recommendation: 'Focus on building numerical confidence through production math practice.'
-        });
-      }
-    }
-    
-    // Production Readiness pattern
-    if (safetyCategory && techCategory && troubleshootingCategory) {
-      const safetyScore = categoryScores[safetyCategory].percentage;
-      const techScore = categoryScores[techCategory].percentage;
-      const troubleshootingScore = categoryScores[troubleshootingCategory].percentage;
-      
-      if (safetyScore >= 70 && techScore >= 70 && troubleshootingScore >= 60) {
-        patterns.push({
-          name: 'Production Ready',
-          severity: 'Positive',
-          description: 'Demonstrates readiness for independent production roles with balanced capabilities.',
-          recommendation: 'Ready for line operations with standard supervision.'
-        });
-      } else if (safetyScore < 60 || techScore < 60) {
-        patterns.push({
-          name: 'Production Readiness Gap',
-          severity: 'Critical',
-          description: 'Significant gaps in core manufacturing competencies require foundational development.',
-          recommendation: 'Structured training program needed before production assignment.'
-        });
-      }
-    }
-  }
-
-  // Check for leadership pattern
-  const hasLeadership = categories.some(c => c.includes('Leadership') || c.includes('Management'));
-  const hasCognitive = categories.some(c => c.includes('Cognitive') || c.includes('Reasoning'));
-  const hasEI = categories.some(c => c.includes('Emotional') || c.includes('Intelligence'));
-  
-  if (hasLeadership && hasCognitive && hasEI) {
-    const leadershipCategory = categories.find(c => c.includes('Leadership') || c.includes('Management'));
-    const cognitiveCategory = categories.find(c => c.includes('Cognitive') || c.includes('Reasoning'));
-    const eiCategory = categories.find(c => c.includes('Emotional') || c.includes('Intelligence'));
-    
-    if (leadershipCategory && cognitiveCategory && eiCategory) {
-      const leadershipScore = categoryScores[leadershipCategory].percentage;
-      const cognitiveScore = categoryScores[cognitiveCategory].percentage;
-      const eiScore = categoryScores[eiCategory].percentage;
-      
-      if (leadershipScore < 60 && cognitiveScore < 60 && eiScore < 60) {
-        patterns.push({
-          name: 'Leadership Gap Triad',
-          severity: 'Critical',
-          description: 'Low scores across Leadership, Cognitive, and Emotional Intelligence indicate significant leadership development needs.',
-          recommendation: 'Not ready for leadership roles. Requires foundational development in all three areas.'
-        });
-      } else if (leadershipScore >= 70 && cognitiveScore >= 70 && eiScore >= 70) {
-        patterns.push({
-          name: 'Leadership Ready',
-          severity: 'Positive',
-          description: 'Strong across all leadership dimensions. Ready for leadership responsibilities.',
-          recommendation: 'Prepare for leadership role with targeted executive development.'
-        });
-      } else if (leadershipScore >= 70 && (cognitiveScore < 60 || eiScore < 60)) {
-        patterns.push({
-          name: 'Leadership Imbalance',
-          severity: 'Medium',
-          description: `Strong leadership instinct but needs development in ${cognitiveScore < 60 ? 'cognitive' : ''} ${eiScore < 60 ? 'emotional intelligence' : ''}`,
-          recommendation: 'Leverage leadership strengths while developing supporting competencies.'
-        });
-      }
-    }
-  }
-  
-  // Check for technical pattern
-  const hasTechnical = categories.some(c => c.includes('Technical') || c.includes('Manufacturing'));
-  const hasProblemSolving = categories.some(c => c.includes('Problem-Solving') || c.includes('Analytical'));
-  
-  if (hasTechnical && hasProblemSolving) {
-    const techCategory = categories.find(c => c.includes('Technical') || c.includes('Manufacturing'));
-    const problemCategory = categories.find(c => c.includes('Problem-Solving') || c.includes('Analytical'));
-    
-    if (techCategory && problemCategory) {
-      const techScore = categoryScores[techCategory].percentage;
-      const problemScore = categoryScores[problemCategory].percentage;
-      
-      if (techScore >= 70 && problemScore < 60) {
-        patterns.push({
-          name: 'Technical-Problem Solving Mismatch',
-          severity: 'Medium',
-          description: 'Strong technical knowledge but weaker problem-solving may limit troubleshooting ability.',
-          recommendation: 'Focus on applied problem-solving with technical scenarios.'
-        });
-      } else if (techScore < 60 && problemScore >= 70) {
-        patterns.push({
-          name: 'Analytical-Technical Mismatch',
-          severity: 'Medium',
-          description: 'Strong analytical skills but limited technical knowledge may hinder practical application.',
-          recommendation: 'Build technical knowledge through hands-on training and certification.'
-        });
-      }
-    }
-  }
-  
-  // Check for cultural pattern
-  const hasCultural = categories.some(c => c.includes('Cultural') || c.includes('Values'));
-  const hasIntegrity = categories.some(c => c.includes('Integrity') || c.includes('Ethics'));
-  
-  if (hasCultural && hasIntegrity) {
-    const culturalCategory = categories.find(c => c.includes('Cultural') || c.includes('Values'));
-    const integrityCategory = categories.find(c => c.includes('Integrity') || c.includes('Ethics'));
-    
-    if (culturalCategory && integrityCategory) {
-      const culturalScore = categoryScores[culturalCategory].percentage;
-      const integrityScore = categoryScores[integrityCategory].percentage;
-      
-      if (culturalScore < 60 && integrityScore >= 70) {
-        patterns.push({
-          name: 'Values Mismatch Risk',
-          severity: 'High',
-          description: 'Strong personal integrity but potential cultural misalignment with organization.',
-          recommendation: 'Explore cultural values in depth during interview process.'
-        });
-      } else if (culturalScore >= 70 && integrityScore < 60) {
-        patterns.push({
-          name: 'Ethical Concern',
-          severity: 'Critical',
-          description: 'Good cultural fit but potential ethical concerns - requires careful evaluation.',
-          recommendation: 'Conduct additional reference checks and values-based interviews.'
-        });
-      }
-    }
-  }
-  
-  // Check for performance pattern
-  const hasPerformance = categories.some(c => c.includes('Performance') || c.includes('Productivity'));
-  
-  if (hasPerformance) {
-    const perfCategory = categories.find(c => c.includes('Performance') || c.includes('Productivity'));
-    
-    if (perfCategory) {
-      const perfScore = categoryScores[perfCategory].percentage;
-      
-      if (perfScore < 50) {
-        patterns.push({
-          name: 'Performance Concern',
-          severity: 'Critical',
-          description: 'Performance metrics significantly below expectations across key areas.',
-          recommendation: 'Immediate intervention required with structured performance improvement plan.'
-        });
-      } else if (perfScore < 60) {
-        patterns.push({
-          name: 'Performance Gap',
-          severity: 'High',
-          description: 'Performance below expected levels in critical areas.',
-          recommendation: 'Targeted development plan with clear metrics and regular feedback cycles.'
-        });
-      }
-    }
-  }
-  
-  // Add strength patterns
-  const strengths = Object.values(categoryScores).filter(s => s.percentage >= 80).length;
-  if (strengths >= 3) {
-    patterns.push({
-      name: 'Multiple Strengths',
-      severity: 'Positive',
-      description: `Demonstrates ${strengths} areas of strong performance that can be leveraged for development.`,
-      recommendation: 'Use strengths as foundation for building weaker areas through applied learning.'
-    });
-  }
-  
-  return patterns;
-};
-
-const assessMultiFactorRoleReadiness = (categoryScores, psychometric, patterns, totalScore, maxScore, assessmentType) => {
-  const percentage = Math.round((totalScore / maxScore) * 100);
-  
-  // Manufacturing baseline specific readiness
-  if (assessmentType === 'manufacturing_baseline') {
-    const safetyScore = categoryScores['Safety & Work Ethic']?.percentage || 0;
-    const techScore = categoryScores['Technical Fundamentals']?.percentage || 0;
-    const troubleshootingScore = categoryScores['Troubleshooting']?.percentage || 0;
-    
-    const hasCriticalPattern = patterns.some(p => p.severity === 'Critical');
-    
-    return {
-      production: {
-        ready: safetyScore >= 70 && techScore >= 60 && !hasCriticalPattern,
-        score: Math.round((safetyScore + techScore + troubleshootingScore) / 3),
-        reasoning: safetyScore >= 70 && techScore >= 60 ? 'Safety-aware with adequate technical foundation' :
-                   safetyScore < 60 ? 'Safety concerns prevent production readiness' :
-                   'Technical gaps need addressing before production assignment',
-        supervision: safetyScore >= 70 && techScore >= 70 ? 'Standard' :
-                     safetyScore >= 60 && techScore >= 60 ? 'Increased' : 'Close',
-        priority: safetyScore < 60 ? 'Immediate safety training' :
-                  techScore < 60 ? 'Technical fundamentals training' : 'Ready'
-      },
-      quality: {
-        ready: troubleshootingScore >= 60 && percentage >= 60,
-        score: Math.round((troubleshootingScore + percentage) / 2),
-        reasoning: troubleshootingScore >= 60 ? 'Adequate problem-solving for quality roles' : 'Diagnostic skills need development',
-        scope: troubleshootingScore >= 70 ? 'Independent quality monitoring' : 'Supervised quality checks'
-      },
-      maintenance: {
-        ready: techScore >= 70 && troubleshootingScore >= 60,
-        score: Math.round((techScore + troubleshootingScore) / 2),
-        reasoning: techScore >= 70 ? 'Strong technical foundation for maintenance track' : 'Technical fundamentals need strengthening',
-        timeframe: techScore >= 70 ? 'Ready for maintenance training' : '6-12 months foundational development'
-      }
-    };
-  }
-  
-  // Original readiness assessment for other types
-  // Technical roles
-  const technicalScore = Object.entries(categoryScores)
-    .filter(([c]) => c.includes('Technical') || c.includes('Manufacturing') || c.includes('Equipment') || c.includes('Mechanical'))
-    .reduce((sum, [_, data]) => sum + data.percentage, 0);
-  const technicalCount = Object.keys(categoryScores).filter(c => 
-    c.includes('Technical') || c.includes('Manufacturing') || c.includes('Equipment') || c.includes('Mechanical')
-  ).length;
-  const avgTechnical = technicalCount > 0 ? Math.round(technicalScore / technicalCount) : 0;
-  
-  // Leadership roles
-  const leadershipScore = Object.entries(categoryScores)
-    .filter(([c]) => c.includes('Leadership') || c.includes('Management') || c.includes('People') || c.includes('Vision'))
-    .reduce((sum, [_, data]) => sum + data.percentage, 0);
-  const leadershipCount = Object.keys(categoryScores).filter(c => 
-    c.includes('Leadership') || c.includes('Management') || c.includes('People') || c.includes('Vision')
-  ).length;
-  const avgLeadership = leadershipCount > 0 ? Math.round(leadershipScore / leadershipCount) : 0;
-  
-  // Individual contributor
-  const contributorScore = Object.entries(categoryScores)
-    .filter(([c]) => !c.includes('Leadership') && !c.includes('Management'))
-    .reduce((sum, [_, data]) => sum + data.percentage, 0);
-  const contributorCount = Object.keys(categoryScores).filter(c => 
-    !c.includes('Leadership') && !c.includes('Management')
-  ).length;
-  const avgContributor = contributorCount > 0 ? Math.round(contributorScore / contributorCount) : 0;
-  
-  // Cognitive roles
-  const cognitiveScore = Object.entries(categoryScores)
-    .filter(([c]) => c.includes('Cognitive') || c.includes('Reasoning') || c.includes('Analytical') || c.includes('Problem'))
-    .reduce((sum, [_, data]) => sum + data.percentage, 0);
-  const cognitiveCount = Object.keys(categoryScores).filter(c => 
-    c.includes('Cognitive') || c.includes('Reasoning') || c.includes('Analytical') || c.includes('Problem')
-  ).length;
-  const avgCognitive = cognitiveCount > 0 ? Math.round(cognitiveScore / cognitiveCount) : 0;
-  
-  // Check for critical patterns
-  const hasCriticalPattern = patterns.some(p => p.severity === 'Critical');
-  const hasHighRiskPattern = patterns.some(p => p.severity === 'High');
-  
-  return {
-    executive: {
-      ready: percentage >= 80 && avgLeadership >= 75 && !hasCriticalPattern,
-      score: Math.round((percentage + avgLeadership + avgCognitive) / 3),
-      reasoning: avgLeadership >= 75 ? 'Strong leadership indicators with strategic capability' : 
-                 avgLeadership >= 65 ? 'Developing leadership capability with growth potential' : 
-                 'Leadership scores below threshold for executive roles',
-      timeframe: avgLeadership >= 75 ? 'Ready now' : 
-                 avgLeadership >= 65 ? '12-24 months with targeted development' : 
-                 '2-3+ years with intensive development',
-      confidence: hasCriticalPattern ? 'Low - critical patterns detected' : 
-                  hasHighRiskPattern ? 'Moderate - some risk factors present' : 'High'
-    },
-    management: {
-      ready: percentage >= 70 && avgLeadership >= 65,
-      score: Math.round((percentage + avgLeadership) / 2),
-      reasoning: avgLeadership >= 65 ? 'Developing leadership capability with solid foundation' : 
-                 'Leadership needs significant development before management roles',
-      timeframe: avgLeadership >= 65 ? '6-12 months' : '1-2 years',
-      confidence: hasCriticalPattern ? 'Low' : hasHighRiskPattern ? 'Moderate' : 'High'
-    },
-    technical: {
-      ready: avgTechnical >= 70,
-      score: avgTechnical,
-      reasoning: avgTechnical >= 70 ? 'Strong technical foundation - ready for complex technical work' : 
-                 avgTechnical >= 60 ? 'Developing technical skills - suitable for structured tasks' : 
-                 'Technical skills need significant development',
-      scope: avgTechnical >= 70 ? 'Independent technical work, can mentor others' : 
-             avgTechnical >= 60 ? 'Structured technical tasks with occasional guidance' : 
-             'Supervised technical work with close oversight',
-      confidence: avgTechnical >= 70 ? 'High' : avgTechnical >= 60 ? 'Moderate' : 'Low'
-    },
-    analytical: {
-      ready: avgCognitive >= 70,
-      score: avgCognitive,
-      reasoning: avgCognitive >= 70 ? 'Strong analytical capability - handles complex problems' : 
-                 avgCognitive >= 60 ? 'Developing analytical skills - benefits from structure' : 
-                 'Analytical skills need development - requires clear frameworks',
-      scope: avgCognitive >= 70 ? 'Complex problem-solving, strategic analysis' : 
-             avgCognitive >= 60 ? 'Routine analysis with guidance on complex cases' : 
-             'Basic problem-solving with defined processes',
-      confidence: avgCognitive >= 70 ? 'High' : avgCognitive >= 60 ? 'Moderate' : 'Low'
-    },
-    contributor: {
-      ready: avgContributor >= 60,
-      score: avgContributor,
-      reasoning: avgContributor >= 70 ? 'Strong individual contributor - reliable and capable' : 
-                 avgContributor >= 60 ? 'Capable contributor with some development needs' : 
-                 'Needs development to meet contributor expectations',
-      supervision: avgContributor >= 70 ? 'Minimal - works independently' : 
-                   avgContributor >= 60 ? 'Moderate - occasional guidance needed' : 
-                   'Close - regular check-ins required',
-      confidence: avgContributor >= 70 ? 'High' : avgContributor >= 60 ? 'Moderate' : 'Low'
-    }
-  };
-};
-
-const generatePredictiveInsights = (categoryScores, psychometric, patterns, assessmentType) => {
-  const insights = [];
-  
-  // Manufacturing baseline specific insights
-  if (assessmentType === 'manufacturing_baseline') {
-    const safetyScore = categoryScores['Safety & Work Ethic']?.percentage || 0;
-    const techScore = categoryScores['Technical Fundamentals']?.percentage || 0;
-    
-    if (safetyScore < 60) {
-      insights.push({
-        type: 'Risk',
-        insight: 'Safety awareness below threshold - significant risk in manufacturing environments without intervention',
-        probability: 'High',
-        impact: 'May lead to safety incidents or compliance issues without immediate training'
-      });
-    }
-    
-    if (techScore >= 70 && safetyScore >= 70) {
-      insights.push({
-        type: 'Opportunity',
-        insight: 'Strong safety and technical foundation - ready for accelerated production roles',
-        probability: 'High',
-        impact: 'Can progress quickly to independent line operations'
-      });
-    }
-    
-    if (techScore < 50) {
-      insights.push({
-        type: 'Development Needed',
-        insight: 'Technical fundamentals significantly below baseline - will require extended training period',
-        probability: 'High',
-        impact: 'Expect 3-6 months of structured training before independent work'
-      });
-    }
-  }
-  
-  // Look for high-risk patterns
-  const criticalPatterns = patterns.filter(p => p.severity === 'Critical');
-  if (criticalPatterns.length > 0) {
-    insights.push({
-      type: 'Risk',
-      insight: `Critical patterns detected: ${criticalPatterns.map(p => p.name).join(', ')}`,
-      probability: 'High',
-      impact: 'May significantly impact performance in key areas without immediate intervention'
-    });
-  }
-  
-  // Check growth trajectory
-  const strongAreas = Object.values(categoryScores).filter(s => s.percentage >= 70).length;
-  const weakAreas = Object.values(categoryScores).filter(s => s.percentage < 50).length;
-  
-  if (strongAreas >= 3 && weakAreas <= 1) {
-    insights.push({
-      type: 'Opportunity',
-      insight: `Multiple strengths (${strongAreas}) provide foundation for accelerated growth`,
-      probability: 'High',
-      impact: 'Can leverage strengths to rapidly develop weaker areas through applied learning'
-    });
-  } else if (strongAreas >= 2 && weakAreas >= 3) {
-    insights.push({
-      type: 'Caution',
-      insight: `Mixed profile with ${strongAreas} strengths but ${weakAreas} significant gaps`,
-      probability: 'Medium',
-      impact: 'Development will require balanced focus on both leveraging strengths and addressing gaps'
-    });
-  } else if (weakAreas >= 4) {
-    insights.push({
-      type: 'Development Needed',
-      insight: `Significant development needs across ${weakAreas} areas`,
-      probability: 'High',
-      impact: 'Will require structured, intensive development plan with clear milestones'
-    });
-  }
-  
-  // Check for specific patterns
-  const hasLeadershipGap = patterns.some(p => p.name === 'Leadership Gap Triad');
-  if (hasLeadershipGap) {
-    insights.push({
-      type: 'Leadership Ceiling',
-      insight: 'Current profile indicates potential ceiling for leadership advancement without significant development',
-      probability: 'High',
-      impact: 'May limit career progression into management roles'
-    });
-  }
-  
-  const hasEthicalConcern = patterns.some(p => p.name === 'Ethical Concern');
-  if (hasEthicalConcern) {
-    insights.push({
-      type: 'Critical Risk',
-      insight: 'Ethical concerns detected - requires immediate attention and careful placement',
-      probability: 'High',
-      impact: 'May pose risk in roles requiring independent judgment and integrity'
-    });
-  }
-  
-  return insights;
-};
-
-const identifyCompetitiveDifferentiators = (categoryScores, psychometric, patterns) => {
-  const differentiators = [];
-  
-  // Find unique strengths (top 10% performers)
-  Object.entries(categoryScores).forEach(([category, data]) => {
-    if (data.percentage >= 85) {
-      differentiators.push({
-        category,
-        score: data.percentage,
-        differentiator: `Top 10% performer in ${category}`,
-        value: `Significant competitive advantage in ${category.toLowerCase()}`,
-        application: `Can serve as subject matter expert or mentor in ${category}`
-      });
-    } else if (data.percentage >= 80) {
-      differentiators.push({
-        category,
-        score: data.percentage,
-        differentiator: `Strong performer in ${category}`,
-        value: `Valuable asset for roles requiring ${category.toLowerCase()}`,
-        application: `Can handle complex challenges in ${category} independently`
-      });
-    }
-  });
-  
-  // Find rare combinations
-  const hasTechnicalAndCognitive = 
-    Object.keys(categoryScores).some(c => c.includes('Technical')) && 
-    Object.keys(categoryScores).some(c => c.includes('Cognitive'));
-  
-  if (hasTechnicalAndCognitive) {
-    const techCategory = Object.keys(categoryScores).find(c => c.includes('Technical'));
-    const cogCategory = Object.keys(categoryScores).find(c => c.includes('Cognitive'));
-    
-    if (techCategory && cogCategory) {
-      const techScore = categoryScores[techCategory].percentage;
-      const cogScore = categoryScores[cogCategory].percentage;
-      
-      if (techScore >= 70 && cogScore >= 70) {
-        differentiators.push({
-          category: 'Technical-Cognitive Combination',
-          score: Math.round((techScore + cogScore) / 2),
-          differentiator: 'Rare combination of technical expertise and analytical capability',
-          value: 'Ideal for complex technical roles requiring both hands-on skill and strategic thinking',
-          application: 'Can troubleshoot complex systems and optimize processes'
-        });
-      }
-    }
-  }
-  
-  const hasLeadershipAndEI = 
-    Object.keys(categoryScores).some(c => c.includes('Leadership')) && 
-    Object.keys(categoryScores).some(c => c.includes('Emotional'));
-  
-  if (hasLeadershipAndEI) {
-    const leadCategory = Object.keys(categoryScores).find(c => c.includes('Leadership'));
-    const eiCategory = Object.keys(categoryScores).find(c => c.includes('Emotional'));
-    
-    if (leadCategory && eiCategory) {
-      const leadScore = categoryScores[leadCategory].percentage;
-      const eiScore = categoryScores[eiCategory].percentage;
-      
-      if (leadScore >= 70 && eiScore >= 70) {
-        differentiators.push({
-          category: 'Emotionally Intelligent Leader',
-          score: Math.round((leadScore + eiScore) / 2),
-          differentiator: 'Combines leadership capability with strong emotional intelligence',
-          value: 'Ideal for people management roles requiring empathy and team building',
-          application: 'Can build strong teams and navigate complex interpersonal dynamics'
-        });
-      }
-    }
-  }
-  
-  // Manufacturing baseline specific differentiators
-  const hasSafetyAndTech = 
-    Object.keys(categoryScores).some(c => c.includes('Safety')) && 
-    Object.keys(categoryScores).some(c => c.includes('Technical'));
-  
-  if (hasSafetyAndTech) {
-    const safetyCategory = Object.keys(categoryScores).find(c => c.includes('Safety'));
-    const techCategory = Object.keys(categoryScores).find(c => c.includes('Technical'));
-    
-    if (safetyCategory && techCategory) {
-      const safetyScore = categoryScores[safetyCategory].percentage;
-      const techScore = categoryScores[techCategory].percentage;
-      
-      if (safetyScore >= 80 && techScore >= 80) {
-        differentiators.push({
-          category: 'Safety-Tech Excellence',
-          score: Math.round((safetyScore + techScore) / 2),
-          differentiator: 'Exceptional combination of safety awareness and technical competence',
-          value: 'Rare and valuable for manufacturing leadership or training roles',
-          application: 'Can serve as safety champion and technical mentor'
-        });
-      }
-    }
-  }
-  
-  return differentiators;
-};
-
-const generateDevelopmentRoadmap = (categoryDeepAnalysis, patterns) => {
-  const roadmap = {
-    immediate: [],
-    shortTerm: [],
-    longTerm: [],
-    ongoing: []
-  };
-  
-  Object.entries(categoryDeepAnalysis).forEach(([category, data]) => {
-    if (data.development.priority === 'Critical') {
-      roadmap.immediate.push({
-        area: category,
-        currentScore: data.score,
-        gap: data.development.gapToTarget,
-        actions: data.development.actions,
-        recommendation: data.development.recommendation.substring(0, 100) + '...'
-      });
-    } else if (data.development.priority === 'High') {
-      roadmap.shortTerm.push({
-        area: category,
-        currentScore: data.score,
-        gap: data.development.gapToTarget,
-        actions: data.development.actions.slice(0, 2)
-      });
-    } else if (data.development.priority === 'Medium') {
-      roadmap.longTerm.push({
-        area: category,
-        currentScore: data.score,
-        gap: data.development.gapToTarget
-      });
-    } else if (data.development.priority === 'Low' || data.development.priority === 'Maintain') {
-      roadmap.ongoing.push({
-        area: category,
-        currentScore: data.score,
-        focus: 'Maintain and leverage strength'
-      });
-    }
-  });
-  
-  // Add pattern-based recommendations
-  patterns.forEach(pattern => {
-    if (pattern.severity === 'Critical') {
-      roadmap.immediate.push({
-        area: pattern.name,
-        isPattern: true,
-        recommendation: pattern.recommendation
-      });
-    } else if (pattern.severity === 'High') {
-      roadmap.shortTerm.push({
-        area: pattern.name,
-        isPattern: true,
-        recommendation: pattern.recommendation
-      });
-    }
-  });
-  
-  return roadmap;
-};
-
-const generateOneLineSummary = (candidateName, totalScore, maxScore, patterns) => {
-  const percentage = Math.round((totalScore / maxScore) * 100);
-  const criticalPatterns = patterns.filter(p => p.severity === 'Critical').length;
-  const highPatterns = patterns.filter(p => p.severity === 'High').length;
-  
-  if (percentage >= 80 && criticalPatterns === 0 && highPatterns === 0) {
-    return `${candidateName} is a strong candidate with balanced capabilities and no critical red flags.`;
-  } else if (percentage >= 70 && criticalPatterns === 0) {
-    return `${candidateName} shows solid potential with ${highPatterns > 0 ? 'some areas requiring attention' : 'manageable development areas'}.`;
-  } else if (percentage >= 60) {
-    return `${candidateName} has foundational capabilities with ${criticalPatterns > 0 ? 'critical' : 'several'} areas requiring development.`;
-  } else if (percentage >= 50) {
-    return `${candidateName} requires significant development across multiple competency areas with ${criticalPatterns} critical patterns identified.`;
-  } else {
-    return `${candidateName} needs comprehensive development support with critical gaps requiring immediate intervention.`;
-  }
-};
-
-const getOverallClassification = (totalScore, maxScore) => {
-  const percentage = Math.round((totalScore / maxScore) * 100);
-  if (percentage >= 85) return { label: 'High Potential', color: '#2E7D32' };
-  if (percentage >= 75) return { label: 'Strong Performer', color: '#4CAF50' };
-  if (percentage >= 65) return { label: 'Solid Contributor', color: '#2196F3' };
-  if (percentage >= 55) return { label: 'Developing', color: '#FF9800' };
-  if (percentage >= 45) return { label: 'Emerging', color: '#F57C00' };
-  return { label: 'Foundation Stage', color: '#F44336' };
-};
-
-const getOverallGrade = (totalScore, maxScore) => {
-  const percentage = Math.round((totalScore / maxScore) * 100);
-  return getGradeLetter(percentage);
-};
-
-const generateSignature = (category, percentage, psychometric, name) => {
-  // Creates a unique signature for each category based on multiple factors
-  const base = `${category}-${percentage}-${name.length}-${Math.random()}`;
-  return Buffer.from(base).toString('base64').substring(0, 8);
-};
-
-const generateUniqueProfileId = (name, categoryScores, totalScore) => {
-  const scoreString = Object.values(categoryScores).map(s => s.percentage).join('-');
-  const base = `${name}-${totalScore}-${scoreString}-${Date.now()}`;
-  return `SP-${Buffer.from(base).toString('base64').substring(0, 12)}`;
 };
 
 export default {
