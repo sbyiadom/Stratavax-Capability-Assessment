@@ -1,52 +1,131 @@
+// utils/professionalInterpreter.js
+
 /**
  * Professional Narrative Interpreter
- * Generates detailed, human-like interpretations based on actual assessment scores
+ *
+ * Generates professional, supervisor-facing interpretations based on category scores.
+ *
+ * Corrected version:
+ * - Uses central scoring standard from utils/scoring.js
+ * - Keeps existing export: generateProfessionalInterpretation
+ * - Keeps existing output structure expected by super-analyzer.js
+ * - Supports all assessment types and categories
+ * - Improves Manufacturing Baseline interpretation
+ * - Uses evidence-based language and avoids overclaiming
  */
 
-export const generateProfessionalInterpretation = (candidateName, categoryScores) => {
-  
-  // Categorize areas by score
+import {
+  getGrade,
+  getGradeDescription,
+  getScoreLevel,
+  getScoreComment,
+  getSupervisorImplication,
+  isStrength,
+  isDevelopmentArea,
+  isCriticalGap,
+  isPriorityDevelopment,
+  calculateGapToTarget,
+  REPORT_THRESHOLDS
+} from "./scoring";
+
+const safeNumber = (value, fallback = 0) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+};
+
+const normalizeText = (value) => {
+  if (value === null || value === undefined) return "";
+
+  return String(value)
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'");
+};
+
+const formatPercentage = (value) => {
+  const number = safeNumber(value, 0);
+  return `${Math.round(number * 100) / 100}%`;
+};
+
+const normalizeCategoryScore = (category, data = {}) => {
+  const percentage = safeNumber(data.percentage, 0);
+
+  return {
+    category: normalizeText(category),
+    percentage,
+    score: safeNumber(data.score ?? data.total ?? data.rawScore, 0),
+    maxPossible: safeNumber(data.maxPossible ?? data.max_score, 0),
+    grade: getGrade(percentage),
+    gradeDesc: getGradeDescription(percentage),
+    scoreLevel: getScoreLevel(percentage),
+    performanceComment: getScoreComment(percentage),
+    supervisorImplication: getSupervisorImplication(percentage),
+    gapToTarget: calculateGapToTarget(percentage)
+  };
+};
+
+export const generateProfessionalInterpretation = (
+  candidateName,
+  categoryScores
+) => {
   const strongAreas = [];
   const moderateAreas = [];
   const concernAreas = [];
-  
-  Object.entries(categoryScores).forEach(([category, data]) => {
-    const percentage = data.percentage;
-    const score = data.score;
-    const maxPossible = data.maxPossible;
-    
-    const area = {
-      category,
-      percentage,
-      score,
-      maxPossible,
-      grade: getGradeLetter(percentage),
-      gradeDesc: getGradeDescription(percentage)
-    };
-    
-    if (percentage >= 70) {
+
+  Object.entries(categoryScores || {}).forEach(([category, data]) => {
+    const area = normalizeCategoryScore(category, data);
+
+    if (isStrength(area.percentage)) {
       strongAreas.push(area);
-    } else if (percentage >= 60) {
-      moderateAreas.push(area);
-    } else {
+    } else if (isDevelopmentArea(area.percentage)) {
       concernAreas.push(area);
+    } else {
+      moderateAreas.push(area);
     }
   });
 
-  // Generate all the narratives
-  const overallSummary = generateOverallSummary(candidateName, strongAreas, moderateAreas, concernAreas);
-  const profileSuggestion = generateProfileSuggestion(strongAreas, concernAreas);
-  const leadershipEval = generateLeadershipEvaluation(concernAreas);
-  const overallGrade = generateOverallGrade(strongAreas, concernAreas);
+  strongAreas.sort((a, b) => b.percentage - a.percentage);
+  moderateAreas.sort((a, b) => b.percentage - a.percentage);
+  concernAreas.sort((a, b) => a.percentage - b.percentage);
+
+  const overallSummary = generateOverallSummary(
+    candidateName,
+    strongAreas,
+    moderateAreas,
+    concernAreas
+  );
+
+  const profileSuggestion = generateProfileSuggestion(
+    strongAreas,
+    moderateAreas,
+    concernAreas
+  );
+
+  const leadershipEval = generateLeadershipEvaluation(
+    strongAreas,
+    moderateAreas,
+    concernAreas
+  );
+
+  const overallGrade = generateOverallGrade(
+    strongAreas,
+    moderateAreas,
+    concernAreas
+  );
+
   const developmentPriorities = generateDevelopmentPriorities(concernAreas);
 
   return {
     overallSummary,
+
     categoryBreakdown: {
-      strong: strongAreas.map(area => formatStrongArea(area)),
-      moderate: moderateAreas.map(area => formatModerateArea(area)),
-      concerns: concernAreas.map(area => formatConcernArea(area))
+      strong: strongAreas.map((area) => formatStrongArea(area)),
+      moderate: moderateAreas.map((area) => formatModerateArea(area)),
+      concerns: concernAreas.map((area) => formatConcernArea(area))
     },
+
     profileSuggestion,
     leadershipEval,
     overallGrade,
@@ -54,392 +133,276 @@ export const generateProfessionalInterpretation = (candidateName, categoryScores
   };
 };
 
-// Helper to get grade letter
-const getGradeLetter = (percentage) => {
-  if (percentage >= 95) return 'A+';
-  if (percentage >= 90) return 'A';
-  if (percentage >= 85) return 'A-';
-  if (percentage >= 80) return 'B+';
-  if (percentage >= 75) return 'B';
-  if (percentage >= 70) return 'B-';
-  if (percentage >= 65) return 'C+';
-  if (percentage >= 60) return 'C';
-  if (percentage >= 55) return 'C-';
-  if (percentage >= 50) return 'D+';
-  if (percentage >= 40) return 'D';
-  return 'F';
-};
+// ======================================================
+// OVERALL SUMMARY
+// ======================================================
 
-// Helper to get grade description
-const getGradeDescription = (percentage) => {
-  if (percentage >= 95) return 'Exceptional';
-  if (percentage >= 90) return 'Excellent';
-  if (percentage >= 85) return 'Very Good';
-  if (percentage >= 80) return 'Good';
-  if (percentage >= 75) return 'Satisfactory';
-  if (percentage >= 70) return 'Adequate';
-  if (percentage >= 65) return 'Developing';
-  if (percentage >= 60) return 'Basic Competency';
-  if (percentage >= 55) return 'Minimum Competency';
-  if (percentage >= 50) return 'Below Expectations';
-  if (percentage >= 40) return 'Significant Gaps';
-  return 'Unsatisfactory';
-};
-
-// Generate overall summary
-const generateOverallSummary = (candidateName, strongAreas, moderateAreas, concernAreas) => {
-  const concernCount = concernAreas.length;
+const generateOverallSummary = (
+  candidateName,
+  strongAreas,
+  moderateAreas,
+  concernAreas
+) => {
   const strongCount = strongAreas.length;
-  const concernNames = concernAreas.map(c => c.category);
-  const strongNames = strongAreas.map(s => s.category);
-  
+  const moderateCount = moderateAreas.length;
+  const concernCount = concernAreas.length;
+
+  const strongNames = strongAreas.slice(0, 3).map((area) => area.category);
+  const concernNames = concernAreas.slice(0, 3).map((area) => area.category);
+
   let summary = `🔎 Overall Summary\n\n`;
+
   summary += `${candidateName} shows `;
-  
-  if (strongCount > 0) {
-    summary += `clear strengths in ${formatList(strongNames)}`;
-    if (concernCount > 0) {
-      summary += `, but also notable gaps in ${formatList(concernNames)}`;
-    }
-  } else if (moderateAreas.length > 0) {
-    summary += `moderate capability with areas for development in ${formatList(concernNames)}`;
+
+  if (strongCount > 0 && concernCount > 0) {
+    summary += `clear strength evidence in ${formatList(
+      strongNames
+    )}, with priority development needs in ${formatList(concernNames)}.`;
+  } else if (strongCount > 0) {
+    summary += `clear strength evidence in ${formatList(strongNames)}.`;
+  } else if (concernCount > 0) {
+    summary += `development needs in ${formatList(concernNames)}.`;
+  } else if (moderateCount > 0) {
+    summary += `a functional but non-dominant profile across the assessed categories.`;
   } else {
-    summary += `significant development needs across most areas`;
+    summary += `limited available category evidence for interpretation.`;
   }
-  
-  summary += `.\n\n`;
-  
-  // Add assessment based on pattern
-  if (concernNames.includes('Action') && concernNames.includes('Analysis') && concernNames.includes('Risk Tolerance')) {
-    summary += `This candidate shows caution that may limit decisiveness and innovation. Best suited for structured, clearly defined roles with established processes.`;
-  } else if (concernNames.includes('Ownership') && concernNames.includes('Action')) {
-    summary += `This candidate would benefit from developing greater initiative and accountability. Works best with clear direction and regular check-ins.`;
-  } else if (concernNames.includes('Collaboration')) {
-    summary += `This candidate may perform better in independent roles rather than highly collaborative environments.`;
-  } else if (strongCount >= 3 && concernCount <= 2) {
-    summary += `This candidate has solid foundational strengths and manageable development areas. With targeted support, they could grow into more responsible roles.`;
-  } else if (concernCount >= 4) {
-    summary += `This profile indicates significant development needs. The candidate would benefit from structured training and close supervision in a clearly defined role.`;
+
+  summary += `\n\n`;
+
+  if (concernCount >= 4) {
+    summary += `This profile suggests significant development needs across several areas. Structured training, close supervision, and clear progress milestones are recommended.`;
+  } else if (concernCount > 0 && strongCount > 0) {
+    summary += `The candidate has useful strengths that can be leveraged while development gaps are addressed through targeted support.`;
+  } else if (strongCount >= 3 && concernCount === 0) {
+    summary += `The profile suggests a strong foundation for role contribution, subject to interview evidence, practical validation, and supervisor judgment.`;
+  } else if (moderateCount > 0) {
+    summary += `The profile suggests functional capability with room for role-specific reinforcement and practical exposure.`;
   } else {
-    summary += `This is a balanced profile with identified strengths and clear development paths.`;
+    summary += `Additional evidence may be needed to support confident placement decisions.`;
   }
-  
+
   return summary;
 };
 
-// Format strong area
+// ======================================================
+// CATEGORY FORMATTERS
+// ======================================================
+
 const formatStrongArea = (area) => {
-  const { category, percentage, grade, gradeDesc } = area;
-  
-  let narrative = `${category} – ${percentage}% (${grade} | ${gradeDesc})\n\n`;
-  
-  switch(category) {
-    case 'Ownership':
-      narrative += `• Takes full accountability for outcomes\n`;
-      narrative += `• Drives results proactively\n`;
-      narrative += `• Owns mistakes and learns from them\n`;
-      narrative += `• Follows through on commitments\n\n`;
-      narrative += `This is a strong indicator of reliability and self-direction.`;
-      break;
-      
-    case 'Collaboration':
-      narrative += `• Builds strong team relationships\n`;
-      narrative += `• Seeks input from others\n`;
-      narrative += `• Shares credit generously\n`;
-      narrative += `• Fosters psychological safety\n\n`;
-      narrative += `This is a valuable asset for team-based environments.`;
-      break;
-      
-    case 'Action':
-      narrative += `• Makes timely decisions\n`;
-      narrative += `• Takes initiative without waiting\n`;
-      narrative += `• Acts with appropriate urgency\n`;
-      narrative += `• Moves priorities forward\n\n`;
-      narrative += `This is essential for fast-paced and execution-focused roles.`;
-      break;
-      
-    case 'Analysis':
-      narrative += `• Thorough problem analysis\n`;
-      narrative += `• Data-driven decision-making\n`;
-      narrative += `• Systematic approach to challenges\n`;
-      narrative += `• Thinks before acting\n\n`;
-      narrative += `This is critical for strategic and quality-focused roles.`;
-      break;
-      
-    case 'Risk Tolerance':
-      narrative += `• Comfortable with uncertainty\n`;
-      narrative += `• Experiments with new approaches\n`;
-      narrative += `• Pushes boundaries appropriately\n`;
-      narrative += `• Embraces innovation\n\n`;
-      narrative += `This is valuable for innovation and growth-oriented roles.`;
-      break;
-      
-    case 'Structure':
-      narrative += `• Follows procedures reliably\n`;
-      narrative += `• Maintains consistent quality\n`;
-      narrative += `• Organized approach to work\n`;
-      narrative += `• Provides stability\n\n`;
-      narrative += `This is essential for process-critical and quality-focused roles.`;
-      break;
-      
-    default:
-      narrative += `Strong performance in this area. This is a valuable asset.`;
-  }
-  
+  const {
+    category,
+    percentage,
+    grade,
+    gradeDesc,
+    performanceComment,
+    supervisorImplication
+  } = area;
+
+  let narrative = `${category} – ${formatPercentage(
+    percentage
+  )} (${grade} | ${gradeDesc})\n\n`;
+
+  narrative += getCategoryStrengthNarrative(category, percentage);
+  narrative += `\n\n• Performance signal: ${performanceComment}`;
+  narrative += `\n• Supervisor implication: ${supervisorImplication}`;
+
   return narrative;
 };
 
-// Format moderate area
 const formatModerateArea = (area) => {
-  const { category, percentage, grade, gradeDesc } = area;
-  
-  let narrative = `${category} – ${percentage}% (${grade} | ${gradeDesc})\n\n`;
-  
-  switch(category) {
-    case 'Ownership':
-      narrative += `• Takes responsibility when assigned\n`;
-      narrative += `• May need encouragement for initiative\n`;
-      narrative += `• Follows through with guidance\n\n`;
-      narrative += `Would benefit from accountability coaching and project ownership opportunities.`;
-      break;
-      
-    case 'Collaboration':
-      narrative += `• Works adequately with others\n`;
-      narrative += `• May occasionally work in silos\n`;
-      narrative += `• Cooperates when needed\n\n`;
-      narrative += `Would benefit from teamwork development and cross-functional exposure.`;
-      break;
-      
-    case 'Action':
-      narrative += `• Acts when prompted\n`;
-      narrative += `• May hesitate without clear direction\n`;
-      narrative += `• Decisiveness develops with support\n\n`;
-      narrative += `Would benefit from decision-making frameworks and time-boxed choices.`;
-      break;
-      
-    case 'Analysis':
-      narrative += `• Considers basic factors\n`;
-      narrative += `• May need support with complex analysis\n`;
-      narrative += `• Structured thinking developing\n\n`;
-      narrative += `Would benefit from analytical training and structured problem-solving.`;
-      break;
-      
-    case 'Risk Tolerance':
-      narrative += `• Prefers proven approaches\n`;
-      narrative += `• Accepts calculated risks with support\n`;
-      narrative += `• Innovation mindset developing\n\n`;
-      narrative += `Would benefit from innovation workshops and safe experimentation opportunities.`;
-      break;
-      
-    case 'Structure':
-      narrative += `• Follows processes when clear\n`;
-      narrative += `• May improvise without guidance\n`;
-      narrative += `• Consistency developing\n\n`;
-      narrative += `Would benefit from process training and organizational systems.`;
-      break;
-      
-    default:
-      narrative += `Shows basic competency in this area that can be developed further with targeted training.`;
-  }
-  
+  const {
+    category,
+    percentage,
+    grade,
+    gradeDesc,
+    performanceComment,
+    supervisorImplication
+  } = area;
+
+  let narrative = `${category} – ${formatPercentage(
+    percentage
+  )} (${grade} | ${gradeDesc})\n\n`;
+
+  narrative += getCategoryModerateNarrative(category, percentage);
+  narrative += `\n\n• Performance signal: ${performanceComment}`;
+  narrative += `\n• Supervisor implication: ${supervisorImplication}`;
+  narrative += `\n• Recommended support: Provide role-specific practice, feedback, and structured reinforcement.`;
+
   return narrative;
 };
 
-// Format concern area
 const formatConcernArea = (area) => {
-  const { category, percentage, grade, gradeDesc } = area;
-  
-  let narrative = `${category} – ${percentage}% (${grade} | ${gradeDesc})\n\n`;
-  
-  switch(category) {
-    case 'Ownership':
-      narrative += `• May deflect responsibility\n`;
-      narrative += `• Waits for direction\n`;
-      narrative += `• Inconsistent follow-through\n\n`;
-      narrative += `This is a significant gap for roles requiring independence and accountability.`;
-      break;
-      
-    case 'Collaboration':
-      narrative += `• May work in silos\n`;
-      narrative += `• Struggles with team dynamics\n`;
-      narrative += `• Limited contribution to collective success\n\n`;
-      narrative += `This is a concern for team-based environments.`;
-      break;
-      
-    case 'Action':
-      narrative += `• Delays decisions\n`;
-      narrative += `• Hesitates without clear direction\n`;
-      narrative += `• Misses opportunities due to caution\n\n`;
-      narrative += `This is a major flag for fast-paced, execution-focused roles.`;
-      break;
-      
-    case 'Analysis':
-      narrative += `• Acts without sufficient information\n`;
-      narrative += `• Fails to consider alternatives\n`;
-      narrative += `• Limited structured thinking\n\n`;
-      narrative += `This is a significant gap for strategic and analytical roles.`;
-      break;
-      
-    case 'Risk Tolerance':
-      narrative += `• Excessive caution\n`;
-      narrative += `• Resists new approaches\n`;
-      narrative += `• Avoids necessary innovation\n\n`;
-      narrative += `This may limit growth and adaptability in dynamic environments.`;
-      break;
-      
-    case 'Structure':
-      narrative += `• Skips steps or improvises\n`;
-      narrative += `• Inconsistent process adherence\n`;
-      narrative += `• May impact quality and reliability\n\n`;
-      narrative += `This is a concern for quality-critical and process-dependent roles.`;
-      break;
-      
-    default:
-      narrative += `Significant gaps in this area requiring immediate attention and structured development.`;
-  }
-  
+  const {
+    category,
+    percentage,
+    grade,
+    gradeDesc,
+    performanceComment,
+    supervisorImplication,
+    gapToTarget
+  } = area;
+
+  let narrative = `${category} – ${formatPercentage(
+    percentage
+  )} (${grade} | ${gradeDesc})\n\n`;
+
+  narrative += getCategoryConcernNarrative(category, percentage);
+  narrative += `\n\n• Performance signal: ${performanceComment}`;
+  narrative += `\n• Supervisor implication: ${supervisorImplication}`;
+  narrative += `\n• Gap to 80% target: ${gapToTarget}%`;
+  narrative += `\n• Recommended support: ${getDevelopmentRecommendation(category, percentage)}`;
+
   return narrative;
 };
 
-// Generate profile suggestion
-const generateProfileSuggestion = (strongAreas, concernAreas) => {
-  const concernNames = concernAreas.map(c => c.category);
-  const strongNames = strongAreas.map(s => s.category);
-  
-  let suggestion = `🎯 What This Profile Suggests\n\n`;
-  suggestion += `**Best Fit:**\n\n`;
-  
-  if (concernNames.includes('Action') && concernNames.includes('Risk Tolerance')) {
-    suggestion += `• Structured, process-driven roles\n`;
-    suggestion += `• Clear SOP-defined environments\n`;
-    suggestion += `• Roles with established procedures\n`;
-    suggestion += `• Not high-autonomy or innovation roles\n\n`;
-  } else if (strongNames.includes('Ownership') && strongNames.includes('Action')) {
-    suggestion += `• Leadership or lead contributor roles\n`;
-    suggestion += `• Project management positions\n`;
-    suggestion += `• Roles requiring initiative and accountability\n\n`;
-  } else if (strongNames.includes('Collaboration')) {
-    suggestion += `• Team-based roles\n`;
-    suggestion += `• Client-facing positions\n`;
-    suggestion += `• Cross-functional initiatives\n\n`;
-  } else if (strongNames.includes('Analysis') && strongNames.includes('Structure')) {
-    suggestion += `• Analytical and quality-focused roles\n`;
-    suggestion += `• Process improvement positions\n`;
-    suggestion += `• Strategic planning roles\n\n`;
-  } else {
-    suggestion += `• Entry-level positions with training\n`;
-    suggestion += `• Structured environments with clear guidance\n`;
-    suggestion += `• Roles with close supervision\n\n`;
-  }
-  
-  suggestion += `**Risk Areas:**\n\n`;
-  
-  if (concernNames.includes('Ownership')) {
-    suggestion += `• Roles requiring high independence\n`;
-  }
-  if (concernNames.includes('Collaboration')) {
-    suggestion += `• Heavy team-dependent roles\n`;
-  }
-  if (concernNames.includes('Action')) {
-    suggestion += `• Fast-paced, time-sensitive roles\n`;
-  }
-  if (concernNames.includes('Analysis')) {
-    suggestion += `• Strategic decision-making positions\n`;
-  }
-  if (concernNames.includes('Risk Tolerance')) {
-    suggestion += `• Innovation and experimentation roles\n`;
-  }
-  if (concernNames.includes('Structure')) {
-    suggestion += `• Quality-critical positions\n`;
-  }
-  
-  if (!suggestion.includes('•')) {
-    suggestion += `• Standard operational roles with appropriate supervision\n`;
-  }
-  
-  return suggestion;
-};
+// ======================================================
+// CATEGORY-SPECIFIC NARRATIVES
+// ======================================================
 
-// Generate leadership evaluation
-const generateLeadershipEvaluation = (concernAreas) => {
-  const concernNames = concernAreas.map(c => c.category);
-  
-  let evaluation = `🧠 Leadership Evaluation\n\n`;
-  
-  const hasOwnership = concernNames.includes('Ownership');
-  const hasAction = concernNames.includes('Action');
-  const hasAnalysis = concernNames.includes('Analysis');
-  const hasCollaboration = concernNames.includes('Collaboration');
-  
-  if (hasOwnership && hasAction && hasAnalysis) {
-    evaluation += `For leadership hiring, this profile shows significant gaps in:\n\n`;
-    evaluation += `• Ownership and accountability\n`;
-    evaluation += `• Decisiveness and initiative\n`;
-    evaluation += `• Analytical thinking\n\n`;
-    evaluation += `These gaps would likely limit leadership effectiveness without substantial development.`;
-  } else if (hasOwnership || hasAction) {
-    evaluation += `The ${hasOwnership ? 'ownership' : 'action'} gap needs to be addressed for leadership consideration. Leadership roles require initiative and accountability.`;
-  } else if (hasAnalysis) {
-    evaluation += `Analytical thinking is a gap that may limit strategic leadership capabilities. With development, this candidate could grow into management roles.`;
-  } else {
-    evaluation += `This candidate shows potential for leadership development with appropriate coaching and experience.`;
-  }
-  
-  return evaluation;
-};
+const getCategoryStrengthNarrative = (category, percentage) => {
+  const normalized = normalizeText(category);
 
-// Generate overall grade
-const generateOverallGrade = (strongAreas, concernAreas) => {
-  const strongCount = strongAreas.length;
-  const concernCount = concernAreas.length;
-  
-  let grade = `📌 Overall Grade Interpretation\n\n`;
-  
-  if (strongCount >= 4 && concernCount <= 2) {
-    grade += `This profile reflects a strong candidate with multiple strengths and manageable development areas. Good potential for growth and increased responsibility.`;
-  } else if (strongCount >= 2 && concernCount <= 3) {
-    grade += `Balanced performer with identified strengths and clear development paths. Not a high-potential candidate without targeted growth, but capable in structured roles.`;
-  } else if (concernCount >= 4) {
-    grade += `This candidate requires significant development across multiple areas. Best suited for structured roles with close supervision and clear guidance.`;
-  } else {
-    grade += `Balanced profile with identified strengths and clear development paths. With targeted support, this candidate can grow into a solid contributor.`;
-  }
-  
-  return grade;
-};
+  const narratives = {
+    Ownership:
+      "Assessment evidence suggests accountability, initiative, and follow-through. This can support roles requiring task ownership and reliability.",
 
-// Generate development priorities
-const generateDevelopmentPriorities = (concernAreas) => {
-  if (concernAreas.length === 0) return '';
-  
-  let priorities = `📋 Development Priority Summary\n\n`;
-  
-  concernAreas.slice(0, 3).forEach((area, index) => {
-    priorities += `Priority ${index + 1}: ${area.category}\n`;
-    priorities += `• Focus on improving from ${area.percentage}% to 70%+ target\n`;
-    priorities += `• ${getDevelopmentRecommendation(area.category)}\n\n`;
-  });
-  
-  return priorities;
-};
+    Collaboration:
+      "Assessment evidence suggests constructive teamwork and interpersonal contribution. This can support team-based or cross-functional work.",
 
-// Get development recommendation
-const getDevelopmentRecommendation = (category) => {
-  const recommendations = {
-    'Ownership': 'Accountability coaching. Take ownership of a small project. Practice owning outcomes and learning from mistakes.',
-    'Collaboration': 'Teamwork workshops. Participate in cross-functional projects. Practice active listening and seeking input.',
-    'Action': 'Decision-making frameworks. Time-boxed decisions. Practice taking initiative in low-risk situations.',
-    'Analysis': 'Critical thinking courses. Structured problem-solving training. Data analysis practice.',
-    'Risk Tolerance': 'Innovation mindset workshops. Safe experimentation opportunities. Learn calculated risk assessment.',
-    'Structure': 'Process discipline training. Project management tools. Develop personal organization systems.'
+    Action:
+      "Assessment evidence suggests timely action, initiative, and execution focus. This can support environments where progress and responsiveness are important.",
+
+    Analysis:
+      "Assessment evidence suggests structured reasoning and analytical thinking. This can support planning, problem-solving, quality, or decision-support tasks.",
+
+    "Risk Tolerance":
+      "Assessment evidence suggests comfort with controlled uncertainty and calculated experimentation. This can support improvement or innovation-focused tasks.",
+
+    Structure:
+      "Assessment evidence suggests process discipline, consistency, and procedural reliability. This can support quality-critical and SOP-driven work.",
+
+    "Technical Fundamentals":
+      "Assessment evidence suggests useful foundational technical knowledge. This can support supervised manufacturing exposure, equipment familiarization, or technical onboarding.",
+
+    Troubleshooting:
+      "Assessment evidence suggests diagnostic thinking and problem-resolution awareness. This can support supervised fault-finding and production issue response.",
+
+    "Numerical Aptitude":
+      "Assessment evidence suggests reliable production math and numerical reasoning. This can support metric tracking, quality documentation, and production reporting.",
+
+    "Safety & Work Ethic":
+      "Assessment evidence suggests reliable safety awareness, SOP discipline, and workplace conduct indicators. Practical observation should still validate this during onboarding.",
+
+    "Safety &amp; Work Ethic":
+      "Assessment evidence suggests reliable safety awareness, SOP discipline, and workplace conduct indicators. Practical observation should still validate this during onboarding.",
+
+    Communication:
+      "Assessment evidence suggests clear expression and communication capability. This can support collaboration, reporting, and stakeholder interaction.",
+
+    "Emotional Intelligence":
+      "Assessment evidence suggests interpersonal awareness and self-management. This can support team interaction and workplace relationship management.",
+
+    "Leadership & Management":
+      "Assessment evidence suggests leadership potential. Gradual leadership exposure may be considered with role-specific validation.",
+
+    "Problem-Solving":
+      "Assessment evidence suggests structured problem-solving capability. This can support practical issue resolution and improvement tasks.",
+
+    "Technical & Manufacturing":
+      "Assessment evidence suggests operational or technical capability that may support technical role exposure."
   };
-  
-  return recommendations[category] || 'Complete targeted training and work with a mentor for guided development.';
+
+  return (
+    narratives[normalized] ||
+    `Assessment evidence suggests ${normalized} is a strength area that can be leveraged in role-relevant assignments.`
+  );
 };
 
-// Helper to format list
-const formatList = (list) => {
-  if (list.length === 1) return list[0];
-  if (list.length === 2) return `${list[0]} and ${list[1]}`;
-  return `${list.slice(0, -1).join(', ')}, and ${list[list.length - 1]}`;
+const getCategoryModerateNarrative = (category, percentage) => {
+  const normalized = normalizeText(category);
+
+  const narratives = {
+    Ownership:
+      "Assessment evidence suggests functional ownership, but the candidate may benefit from clearer accountability expectations and progress follow-up.",
+
+    Collaboration:
+      "Assessment evidence suggests functional collaboration, but the candidate may benefit from more team-based practice and feedback.",
+
+    Action:
+      "Assessment evidence suggests developing action orientation. The candidate may need support with urgency, initiative, or decision timing.",
+
+    Analysis:
+      "Assessment evidence suggests functional analytical ability, but complex tasks may require structure and guidance.",
+
+    "Risk Tolerance":
+      "Assessment evidence suggests moderate comfort with uncertainty. Controlled experimentation and risk review can help strengthen this area.",
+
+    Structure:
+      "Assessment evidence suggests functional process adherence. SOP reinforcement and checklists may improve consistency.",
+
+    "Technical Fundamentals":
+      "Assessment evidence suggests a developing technical foundation. Practical equipment familiarization and guided technical practice are recommended.",
+
+    Troubleshooting:
+      "Assessment evidence suggests developing troubleshooting capability. Structured diagnostic frameworks and supervised scenarios are recommended.",
+
+    "Numerical Aptitude":
+      "Assessment evidence suggests functional numerical ability. Production math and metric interpretation practice are recommended.",
+
+    "Safety & Work Ethic":
+      "Assessment evidence suggests functional safety awareness. PPE, SOP, and workplace conduct reinforcement should continue during onboarding.",
+
+    "Safety &amp; Work Ethic":
+      "Assessment evidence suggests functional safety awareness. PPE, SOP, and workplace conduct reinforcement should continue during onboarding."
+  };
+
+  return (
+    narratives[normalized] ||
+    `Assessment evidence suggests ${normalized} is functional but should be reinforced through practical exposure, feedback, and role-specific development.`
+  );
 };
+
+const getCategoryConcernNarrative = (category, percentage) => {
+  const normalized = normalizeText(category);
+
+  const criticalPrefix = isCriticalGap(percentage)
+    ? "Critical development evidence was identified."
+    : "Priority development evidence was identified.";
+
+  const narratives = {
+    Ownership:
+      `${criticalPrefix} The candidate may require clear expectations, close follow-up, and accountability coaching before being assigned high-autonomy work.`,
+
+    Collaboration:
+      `${criticalPrefix} The candidate may need support with teamwork, communication, and contribution in group settings.`,
+
+    Action:
+      `${criticalPrefix} The candidate may delay decisions or wait for direction. Structured action planning and time-bound tasks are recommended.`,
+
+    Analysis:
+      `${criticalPrefix} The candidate may need structured reasoning frameworks, data interpretation support, and guided problem-solving practice.`,
+
+    "Risk Tolerance":
+      `${criticalPrefix} The candidate may avoid uncertainty or change. Low-risk experimentation and risk-assessment coaching are recommended.`,
+
+    Structure:
+      `${criticalPrefix} The candidate may need SOP reinforcement, checklists, and close monitoring of process adherence.`,
+
+    "Technical Fundamentals":
+      `${criticalPrefix} The candidate may struggle with equipment concepts, maintenance basics, or manufacturing system understanding without foundational training.`,
+
+    Troubleshooting:
+      `${criticalPrefix} The candidate may struggle with fault diagnosis, root-cause analysis, or common production issue response without guided practice.`,
+
+    "Numerical Aptitude":
+      `${criticalPrefix} The candidate may struggle with production calculations, percentages, ratios, or quality documentation without numeracy support.`,
+
+    "Safety & Work Ethic":
+      `${criticalPrefix} Safety and work ethic should be addressed before independent production exposure. Safety training and close supervision are recommended.`,
+
+    "Safety &amp; Work Ethic":
+      `${criticalPrefix} Safety and work ethic should be addressed before independent production exposure. Safety training and close supervision are recommended.`,
+
+    Communication:
+      `${criticalPrefix} The candidate may need communication support to
