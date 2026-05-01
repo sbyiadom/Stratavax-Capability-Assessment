@@ -1,204 +1,9 @@
 // components/BehavioralInsights.js
 
-/**
- * BehavioralInsights Component
- *
- * Displays assessment behavior in a supervisor-friendly way.
- * Supports all assessment types.
- *
- * Handles both:
- * 1. Full behavioral metrics when question_timing data exists.
- * 2. Partial/fallback metrics when timing data was not captured.
- */
-
 import React from "react";
 
-const formatSeconds = (value) => {
-  if (value === null || value === undefined || value === "") {
-    return "Not captured";
-  }
-
-  const number = Number(value);
-
-  if (Number.isNaN(number) || !Number.isFinite(number)) {
-    return "Not captured";
-  }
-
-  if (number <= 0) {
-    return "Not captured";
-  }
-
-  if (number < 60) {
-    return `${Math.round(number)}s`;
-  }
-
-  const minutes = Math.floor(number / 60);
-  const seconds = Math.round(number % 60);
-
-  if (minutes < 60) {
-    return `${minutes}m ${seconds}s`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-
-  return `${hours}h ${remainingMinutes}m ${seconds}s`;
-};
-
-const formatTotalTime = (value) => {
-  if (value === null || value === undefined || value === "") {
-    return "Not captured";
-  }
-
-  const number = Number(value);
-
-  if (Number.isNaN(number) || !Number.isFinite(number)) {
-    return "Not captured";
-  }
-
-  if (number <= 0) {
-    return "Not captured";
-  }
-
-  return formatSeconds(number);
-};
-
-const formatPercent = (value, fallback = "Not captured") => {
-  if (value === null || value === undefined || value === "") {
-    return fallback;
-  }
-
-  const number = Number(value);
-
-  if (Number.isNaN(number) || !Number.isFinite(number)) {
-    return fallback;
-  }
-
-  return `${Math.round(number * 100) / 100}%`;
-};
-
-const formatNumber = (value, fallback = "0") => {
-  if (value === null || value === undefined || value === "") {
-    return fallback;
-  }
-
-  const number = Number(value);
-
-  if (Number.isNaN(number) || !Number.isFinite(number)) {
-    return fallback;
-  }
-
-  return `${Math.round(number * 100) / 100}`;
-};
-
-const getInsightStatus = (value) => {
-  if (value === null || value === undefined || value === "") {
-    return "missing";
-  }
-
-  const number = Number(value);
-
-  if (Number.isNaN(number) || !Number.isFinite(number)) {
-    return "missing";
-  }
-
-  if (number <= 0) {
-    return "limited";
-  }
-
-  return "available";
-};
-
-const getWorkStyleDescription = (workStyle) => {
-  const descriptions = {
-    "Quick Decision Maker":
-      "The candidate appears to move quickly through decisions. Supervisors may encourage answer review and quality verification.",
-    "Methodical Analyst":
-      "The candidate appears to take a more deliberate and analytical approach. Supervisors may support this style with clear time expectations.",
-    "Anxious Reviser":
-      "The candidate shows frequent answer revision behavior. Supervisors may support confidence-building and structured review habits.",
-    "Strategic Reviewer":
-      "The candidate appears to review responses intentionally. Supervisors may guide the candidate toward efficient review strategies.",
-    "Adaptive Learner":
-      "The candidate may benefit from feedback loops and guided correction after mistakes.",
-    "Non-Linear Thinker":
-      "The candidate may move through questions in a less linear pattern. Supervisors may provide workflow and prioritization support.",
-    "Inconsistent Responder":
-      "The candidate shows variation in response pace. Supervisors may support consistency through pacing strategies.",
-    "Review-Oriented":
-      "The candidate shows a tendency to revisit or reconsider answers. Supervisors may support structured and evidence-based review habits.",
-    Balanced:
-      "The candidate shows a balanced response pattern based on the available behavioral data."
-  };
-
-  return descriptions[workStyle] || descriptions.Balanced;
-};
-
-const getConfidenceDescription = (confidenceLevel) => {
-  const descriptions = {
-    High:
-      "The candidate shows indicators of confidence in response behavior, such as low answer-change activity.",
-    Moderate:
-      "The candidate shows a generally stable level of response confidence based on available evidence.",
-    Low:
-      "The candidate may require support in building decision confidence and reducing second-guessing.",
-    Cautious:
-      "The candidate may prefer careful review before committing to responses.",
-    Variable:
-      "The candidate shows mixed confidence indicators. Additional observation may be useful.",
-    Growing:
-      "The candidate may benefit from feedback and repeated practice to strengthen confidence.",
-    Uncertain:
-      "The candidate shows signs of inconsistent response confidence."
-  };
-
-  return descriptions[confidenceLevel] || descriptions.Moderate;
-};
-
-const getAttentionDescription = (attentionSpan) => {
-  const descriptions = {
-    Consistent:
-      "The candidate shows a generally consistent attention pattern based on the available data.",
-    "Declining Pace":
-      "The candidate appears to slow down later in the assessment. Supervisors may consider pacing and break strategies.",
-    "Improving Pace":
-      "The candidate appears to gain pace as the assessment progresses. This may suggest warming up over time.",
-    "Declining (Fatigue Detected)":
-      "The candidate appears to slow down later in the assessment. Supervisors may consider pacing and break strategies.",
-    "Improving (Warms Up)":
-      "The candidate appears to gain pace as the assessment progresses. This may suggest warming up over time."
-  };
-
-  return descriptions[attentionSpan] || descriptions.Consistent;
-};
-
-const getDecisionDescription = (decisionPattern) => {
-  const descriptions = {
-    Deliberate:
-      "The candidate appears to make decisions in a considered and steady way.",
-    "Fast & Confident":
-      "The candidate appears to answer quickly with limited revision.",
-    "Thorough & Revisiting":
-      "The candidate appears to review and reconsider answers before finalizing.",
-    "Second-Guesses":
-      "The candidate may frequently reconsider answers and may benefit from confidence-building.",
-    "Reviews Before Submitting":
-      "The candidate uses review behavior before finalizing responses.",
-    "Learns from Mistakes":
-      "The candidate may benefit from corrective feedback and iterative learning.",
-    "Jumps Between Questions":
-      "The candidate may use a non-linear navigation pattern.",
-    "Variable Speed":
-      "The candidate shows inconsistent response pace.",
-    "Consistent First Choice":
-      "The candidate made few or no changes, suggesting a stable first-choice response pattern.",
-    "Minor Review Pattern":
-      "The candidate made limited changes, suggesting modest review behavior.",
-    "Frequent Reconsideration":
-      "The candidate made multiple changes, suggesting frequent reconsideration."
-  };
-
-  return descriptions[decisionPattern] || descriptions.Deliberate;
+/**
+ * BehavioralInsights] || descriptions.Deliberate; * BehavioralInsights Component
 };
 
 const MetricCard = ({
@@ -254,7 +59,6 @@ export default function BehavioralInsights({ behavioralData, candidateName }) {
     behavioralData.avg_response_time;
 
   const medianResponseTime = behavioralData.median_response_time_seconds;
-
   const fastestResponse = behavioralData.fastest_response_seconds;
   const slowestResponse = behavioralData.slowest_response_seconds;
 
@@ -294,27 +98,24 @@ export default function BehavioralInsights({ behavioralData, candidateName }) {
     : [];
 
   const hasPerQuestionTiming =
-    getInsightStatus(fastestResponse) === "available" ||
-    getInsightStatus(slowestResponse) === "available" ||
-    getInsightStatus(avgResponseTime) === "available";
+    hasCapturedValue(avgResponseTime) ||
+    hasCapturedValue(fastestResponse) ||
+    hasCapturedValue(slowestResponse);
 
   const hasNavigationData =
-    Number(totalQuestionVisits || 0) > 0 ||
-    getInsightStatus(revisitRate) === "available";
+    Number(totalQuestionVisits || 0) > 0 || hasCapturedValue(revisitRate);
 
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <div>
-          <h2 style={styles.title}>Behavioral Insights</h2>
-          <p style={styles.description}>
-            Behavioral insights summarize how{" "}
-            <strong>{candidateName || "the candidate"}</strong> interacted with
-            the assessment. These indicators should support supervisor judgment
-            and should be interpreted alongside the assessment score and
-            category breakdown.
-          </p>
-        </div>
+        <h2 style={styles.title}>Behavioral Insights</h2>
+        <p style={styles.description}>
+          Behavioral insights summarize how{" "}
+          <strong>{candidateName || "the candidate"}</strong> interacted with
+          the assessment. These indicators should support supervisor judgment
+          and should be interpreted together with score results and category
+          performance.
+        </p>
       </div>
 
       {!hasPerQuestionTiming && (
@@ -737,3 +538,200 @@ const styles = {
     color: "#64748B"
   }
 };
+ *
+ * Displays behavioral assessment data in a clean supervisor-friendly format.
+ * Works for all assessment types.
+ *
+ * It handles:
+ * - complete behavioral data when question_timing exists
+ * - partial behavioral data when question_timing was not captured
+ * - fallback values without showing broken text like "s", "%", or blank fields
+ */
+
+const formatSeconds = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return "Not captured";
+  }
+
+  const number = Number(value);
+
+  if (Number.isNaN(number) || !Number.isFinite(number) || number <= 0) {
+    return "Not captured";
+  }
+
+  if (number < 60) {
+    return `${Math.round(number)}s`;
+  }
+
+  const minutes = Math.floor(number / 60);
+  const seconds = Math.round(number % 60);
+
+  if (minutes < 60) {
+    return `${minutes}m ${seconds}s`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  return `${hours}h ${remainingMinutes}m ${seconds}s`;
+};
+
+const formatTotalTime = (value) => {
+  return formatSeconds(value);
+};
+
+const formatPercent = (value, fallback = "Not captured") => {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+
+  const number = Number(value);
+
+  if (Number.isNaN(number) || !Number.isFinite(number)) {
+    return fallback;
+  }
+
+  return `${Math.round(number * 100) / 100}%`;
+};
+
+const formatNumber = (value, fallback = "0") => {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+
+  const number = Number(value);
+
+  if (Number.isNaN(number) || !Number.isFinite(number)) {
+    return fallback;
+  }
+
+  return `${Math.round(number * 100) / 100}`;
+};
+
+const hasCapturedValue = (value) => {
+  if (value === null || value === undefined || value === "") return false;
+
+  const number = Number(value);
+
+  if (Number.isNaN(number) || !Number.isFinite(number)) return false;
+
+  return number > 0;
+};
+
+const getWorkStyleDescription = (workStyle) => {
+  const descriptions = {
+    "Quick Decision Maker":
+      "The candidate appears to move quickly through decisions. Supervisors may encourage answer review and quality verification.",
+
+    "Methodical Analyst":
+      "The candidate appears to take a deliberate and analytical approach. Supervisors may support this style with clear time expectations.",
+
+    "Anxious Reviser":
+      "The candidate shows frequent answer revision behavior. Supervisors may support confidence-building and structured review habits.",
+
+    "Strategic Reviewer":
+      "The candidate appears to review responses intentionally. Supervisors may guide the candidate toward efficient review strategies.",
+
+    "Adaptive Learner":
+      "The candidate may benefit from feedback loops and guided correction after mistakes.",
+
+    "Non-Linear Thinker":
+      "The candidate may move through questions in a less linear pattern. Supervisors may provide workflow and prioritization support.",
+
+    "Inconsistent Responder":
+      "The candidate shows variation in response pace. Supervisors may support consistency through pacing strategies.",
+
+    "Review-Oriented":
+      "The candidate shows a tendency to revisit or reconsider answers. Supervisors may support structured and evidence-based review habits.",
+
+    Balanced:
+      "The candidate shows a balanced response pattern based on the available behavioral data."
+  };
+
+  return descriptions[workStyle] || descriptions.Balanced;
+};
+
+const getConfidenceDescription = (confidenceLevel) => {
+  const descriptions = {
+    High:
+      "The candidate shows indicators of response confidence, such as limited answer-change activity.",
+
+    Moderate:
+      "The candidate shows a generally stable level of response confidence based on available evidence.",
+
+    Low:
+      "The candidate may require support in building decision confidence and reducing second-guessing.",
+
+    Cautious:
+      "The candidate may prefer careful review before committing to responses.",
+
+    Variable:
+      "The candidate shows mixed confidence indicators. Additional observation may be useful.",
+
+    Growing:
+      "The candidate may benefit from feedback and repeated practice to strengthen confidence.",
+
+    Uncertain:
+      "The candidate shows signs of inconsistent response confidence."
+  };
+
+  return descriptions[confidenceLevel] || descriptions.Moderate;
+};
+
+const getAttentionDescription = (attentionSpan) => {
+  const descriptions = {
+    Consistent:
+      "The candidate shows a generally consistent attention pattern based on the available data.",
+
+    "Declining Pace":
+      "The candidate appears to slow down later in the assessment. Supervisors may consider pacing and break strategies.",
+
+    "Improving Pace":
+      "The candidate appears to gain pace as the assessment progresses. This may suggest warming up over time.",
+
+    "Declining (Fatigue Detected)":
+      "The candidate appears to slow down later in the assessment. Supervisors may consider pacing and break strategies.",
+
+    "Improving (Warms Up)":
+      "The candidate appears to gain pace as the assessment progresses. This may suggest warming up over time."
+  };
+
+  return descriptions[attentionSpan] || descriptions.Consistent;
+};
+
+const getDecisionDescription = (decisionPattern) => {
+  const descriptions = {
+    Deliberate:
+      "The candidate appears to make decisions in a considered and steady way.",
+
+    "Fast & Confident":
+      "The candidate appears to answer quickly with limited revision.",
+
+    "Thorough & Revisiting":
+      "The candidate appears to review and reconsider answers before finalizing.",
+
+    "Second-Guesses":
+      "The candidate may frequently reconsider answers and may benefit from confidence-building.",
+
+    "Reviews Before Submitting":
+      "The candidate uses review behavior before finalizing responses.",
+
+    "Learns from Mistakes":
+      "The candidate may benefit from corrective feedback and iterative learning.",
+
+    "Jumps Between Questions":
+      "The candidate may use a non-linear navigation pattern.",
+
+    "Variable Speed":
+      "The candidate shows inconsistent response pace.",
+
+    "Consistent First Choice":
+      "The candidate made few or no changes, suggesting a stable first-choice response pattern.",
+
+    "Minor Review Pattern":
+      "The candidate made limited changes, suggesting modest review behavior.",
+
+    "Frequent Reconsideration":
+      "The candidate made multiple changes, suggesting frequent reconsideration."
+  };
+
