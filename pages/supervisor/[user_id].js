@@ -1,19 +1,196 @@
 // pages/supervisor/[user_id].js
 
-import React, { useEffect, useState("");import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useRouter } from "next/router";
+
+function safeObject(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value;
+  }
+
+  return {};
+}
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function safeText(value, fallback) {
+  if (value === null || value === undefined || value === "") {
+    return fallback || "Not available";
+  }
+
+  return String(value);
+}
+
+function safeNumber(value, fallback) {
+  const defaultValue = fallback === undefined ? 0 : fallback;
+  const number = Number(value);
+
+  if (Number.isNaN(number) || !Number.isFinite(number)) {
+    return defaultValue;
+  }
+
+  return number;
+}
+
+function formatPercentage(value) {
+  return safeNumber(value, 0) + "%";
+}
+
+function getCandidateName(candidate, report) {
+  const c = safeObject(candidate);
+  const r = safeObject(report);
+
+  return (
+    c.full_name ||
+    c.name ||
+    c.email ||
+    r.candidateName ||
+    r.candidate_name ||
+    "Candidate"
+  );
+}
+
+function getOverallScore(report) {
+  const r = safeObject(report);
+
+  return (
+    r.percentage ||
+    r.overallPercentage ||
+    r.overall_score ||
+    r.totalPercentage ||
+    r.score ||
+    0
+  );
+}
+
+function getClassification(report) {
+  const r = safeObject(report);
+
+  return (
+    r.classification ||
+    r.overallClassification ||
+    r.performanceBand ||
+    r.label ||
+    "Not classified"
+  );
+}
+
+function getCategoryScores(report) {
+  const r = safeObject(report);
+
+  if (Array.isArray(r.categoryScores)) return r.categoryScores;
+  if (Array.isArray(r.category_scores)) return r.category_scores;
+  if (Array.isArray(r.competencyScores)) return r.competencyScores;
+  if (Array.isArray(r.competency_scores)) return r.competency_scores;
+
+  if (r.competencyScores && typeof r.competencyScores === "object") {
+    return Object.values(r.competencyScores);
+  }
+
+  if (r.competency_scores && typeof r.competency_scores === "object") {
+    return Object.values(r.competency_scores);
+  }
+
+  return [];
+}
+
+function getStrengths(report) {
+  const r = safeObject(report);
+
+  if (Array.isArray(r.strengths)) return r.strengths;
+  if (Array.isArray(r.topStrengths)) return r.topStrengths;
+
+  if (
+    r.competencySummary &&
+    Array.isArray(r.competencySummary.topStrengths)
+  ) {
+    return r.competencySummary.topStrengths;
+  }
+
+  if (
+    r.competency_summary &&
+    Array.isArray(r.competency_summary.top_strengths)
+  ) {
+    return r.competency_summary.top_strengths;
+  }
+
+  return [];
+}
+
+function getDevelopmentAreas(report) {
+  const r = safeObject(report);
+
+  if (Array.isArray(r.developmentAreas)) return r.developmentAreas;
+  if (Array.isArray(r.topDevelopmentNeeds)) return r.topDevelopmentNeeds;
+
+  if (
+    r.competencySummary &&
+    Array.isArray(r.competencySummary.topDevelopmentNeeds)
+  ) {
+    return r.competencySummary.topDevelopmentNeeds;
+  }
+
+  if (
+    r.competency_summary &&
+    Array.isArray(r.competency_summary.top_development_needs)
+  ) {
+    return r.competency_summary.top_development_needs;
+  }
+
+  return [];
+}
+
+function getRecommendations(report) {
+  const r = safeObject(report);
+
+  if (Array.isArray(r.recommendations)) return r.recommendations;
+
+  if (
+    r.competencySummary &&
+    Array.isArray(r.competencySummary.recommendations)
+  ) {
+    return r.competencySummary.recommendations;
+  }
+
+  if (
+    r.competency_summary &&
+    Array.isArray(r.competency_summary.recommendations)
+  ) {
+    return r.competency_summary.recommendations;
+  }
+
+  return [];
+}
+
+export default function SupervisorUserReportPage() {
+  const router = useRouter();
+  const userId = router.query.user_id;
+
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [candidate, setCandidate] = useState(null);
+  const [report, setReport] = useState(null);
+
+  useEffect(
+    function () {
+      if (!userId) return;
+
+      let mounted = true;
+
+      async function loadReport() {
+        setLoading(true);
+        setErrorMessage("");
 
         try {
-          /*
-           * This page tries common report API routes.
-           * If your project uses a different endpoint, only change the URLs below.
-           */
           const urls = [
             "/api/supervisor/report?user_id=" + encodeURIComponent(userId),
             "/api/generate-report?user_id=" + encodeURIComponent(userId),
             "/api/report?user_id=" + encodeURIComponent(userId)
           ];
 
-          let loadedData = null;
+          let data = null;
           let lastError = "";
 
           for (let i = 0; i < urls.length; i += 1) {
@@ -21,7 +198,7 @@ import React, { useEffect, useState("");import React, { useEffect, useState } fr
               const response = await fetch(urls[i]);
 
               if (response.ok) {
-                loadedData = await response.json();
+                data = await response.json();
                 break;
               }
 
@@ -30,73 +207,72 @@ import React, { useEffect, useState("");import React, { useEffect, useState } fr
               lastError =
                 requestError && requestError.message
                   ? requestError.message
-                  : "Unable to load report.";
+                  : "Unable to fetch report";
             }
           }
 
-          if (!isMounted) return;
+          if (!mounted) return;
 
-          if (!loadedData) {
+          if (!data) {
             setCandidate(null);
-            setGeneratedReport(null);
+            setReport(null);
             setErrorMessage(
-              lastError ||
-                "No supervisor report data was returned for this candidate."
+              lastError || "No report data was returned for this candidate."
             );
             setLoading(false);
             return;
           }
 
-          const data = safeObject(loadedData);
+          const cleanData = safeObject(data);
 
           setCandidate(
-            data.candidate ||
-              data.user ||
-              data.profile ||
-              data.candidateProfile ||
+            cleanData.candidate ||
+              cleanData.user ||
+              cleanData.profile ||
+              cleanData.candidateProfile ||
               null
           );
 
-          setGeneratedReport(
-            data.generatedReport ||
-              data.report ||
-              data.assessmentReport ||
-              data.result ||
-              data
+          setReport(
+            cleanData.generatedReport ||
+              cleanData.report ||
+              cleanData.assessmentReport ||
+              cleanData.result ||
+              cleanData
           );
 
           setLoading(false);
         } catch (error) {
-          if (!isMounted) return;
+          if (!mounted) return;
 
           setCandidate(null);
-          setGeneratedReport(null);
+          setReport(null);
           setErrorMessage(
             error && error.message
               ? error.message
-              : "Something went wrong while loading the supervisor report."
+              : "Something went wrong while loading the report."
           );
           setLoading(false);
         }
-      };
+      }
 
-      loadSupervisorReport();
+      loadReport();
 
       return function () {
-        isMounted = false;
+        mounted = false;
       };
     },
     [userId]
   );
 
-  const report = safeObject(generatedReport);
-  const categoryScores = getCategoryScores(report);
-  const recommendations = getRecommendations(report);
-  const strengths = getStrengths(report);
-  const developmentAreas = getDevelopmentAreas(report);
-  const overallScore = getOverallScore(report);
-  const classification = getClassification(report);
-  const candidateName = getCandidateName(candidate, report);
+  const cleanReport = safeObject(report);
+  const categoryScores = getCategoryScores(cleanReport);
+  const strengths = getStrengths(cleanReport);
+  const developmentAreas = getDevelopmentAreas(cleanReport);
+  const recommendations = getRecommendations(cleanReport);
+  const candidateName = getCandidateName(candidate, cleanReport);
+  const overallScore = getOverallScore(cleanReport);
+  const classification = getClassification(cleanReport);
 
   return (
     <div style={styles.page}>
@@ -119,7 +295,7 @@ import React, { useEffect, useState("");import React, { useEffect, useState } fr
 
         {loading && (
           <section style={styles.card}>
-            <p style={styles.loading}>Loading supervisor report...</p>
+            <p style={styles.bodyText}>Loading supervisor report...</p>
           </section>
         )}
 
@@ -128,24 +304,23 @@ import React, { useEffect, useState("");import React, { useEffect, useState } fr
             <h2 style={styles.sectionTitle}>Report not loaded</h2>
             <p style={styles.errorText}>{errorMessage}</p>
             <p style={styles.mutedText}>
-              The page compiled successfully, but the report API did not return
-              data. Check the report API endpoint or candidate report data.
+              The page is compiling, but no report API returned data.
             </p>
           </section>
         )}
 
         {!loading && !errorMessage && (
-          <>
+          <React.Fragment>
             <section style={styles.grid}>
               <div style={styles.card}>
                 <h2 style={styles.sectionTitle}>Summary</h2>
                 <p style={styles.bodyText}>
                   {safeText(
-                    report.overallAssessment ||
-                      report.summary ||
-                      report.executiveSummary ||
-                      report.interpretation,
-                    "No written summary is available yet."
+                    cleanReport.overallAssessment ||
+                      cleanReport.summary ||
+                      cleanReport.executiveSummary ||
+                      cleanReport.interpretation,
+                    "No summary is available yet."
                   )}
                 </p>
               </div>
@@ -154,10 +329,10 @@ import React, { useEffect, useState("");import React, { useEffect, useState } fr
                 <h2 style={styles.sectionTitle}>Supervisor Implication</h2>
                 <p style={styles.bodyText}>
                   {safeText(
-                    report.supervisorImplication ||
-                      report.supervisor_implication ||
-                      report.recommendationSummary,
-                    "No supervisor implication has been generated yet."
+                    cleanReport.supervisorImplication ||
+                      cleanReport.supervisor_implication ||
+                      cleanReport.recommendationSummary,
+                    "No supervisor implication is available yet."
                   )}
                 </p>
               </div>
@@ -166,13 +341,12 @@ import React, { useEffect, useState("");import React, { useEffect, useState } fr
             <section style={styles.card}>
               <div style={styles.sectionHeader}>
                 <h2 style={styles.sectionTitle}>Category / Competency Scores</h2>
-                <span style={styles.badge}>{categoryScores.length} items</span>
+                <span style={styles.badge}>{categoryScores.length}</span>
               </div>
 
               {categoryScores.length === 0 ? (
                 <p style={styles.mutedText}>
-                  No category or competency scores were found in the generated
-                  report.
+                  No category or competency scores were found.
                 </p>
               ) : (
                 <div style={styles.tableWrapper}>
@@ -234,7 +408,7 @@ import React, { useEffect, useState("");import React, { useEffect, useState } fr
                   <span style={styles.badge}>{strengths.length}</span>
                 </div>
 
-                {strengths.length === 0 ? (
+                {safeArray(strengths).length === 0 ? (
                   <p style={styles.mutedText}>No strengths available.</p>
                 ) : (
                   <ul style={styles.list}>
@@ -265,10 +439,8 @@ import React, { useEffect, useState("");import React, { useEffect, useState } fr
                   <span style={styles.badge}>{developmentAreas.length}</span>
                 </div>
 
-                {developmentAreas.length === 0 ? (
-                  <p style={styles.mutedText}>
-                    No development areas available.
-                  </p>
+                {safeArray(developmentAreas).length === 0 ? (
+                  <p style={styles.mutedText}>No development areas available.</p>
                 ) : (
                   <ul style={styles.list}>
                     {developmentAreas.map(function (item, index) {
@@ -346,16 +518,12 @@ import React, { useEffect, useState("");import React, { useEffect, useState } fr
                 </div>
               )}
             </section>
-          </>
+          </React.Fragment>
         )}
       </div>
     </div>
   );
 }
-
-// ======================================================
-// STYLES
-// ======================================================
 
 const styles = {
   page: {
@@ -505,12 +673,6 @@ const styles = {
     fontWeight: 700
   },
 
-  loading: {
-    margin: 0,
-    color: "#344054",
-    fontWeight: 600
-  },
-
   tableWrapper: {
     overflowX: "auto"
   },
@@ -599,197 +761,3 @@ const styles = {
     fontSize: "14px"
   }
 };
-
-import { useRouter } from "next/router";
-
-// ======================================================
-// SAFE HELPERS
-// ======================================================
-
-const safeArray = function (value) {
-  return Array.isArray(value) ? value : [];
-};
-
-const safeObject = function (value) {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value;
-  }
-
-  return {};
-};
-
-const safeText = function (value, fallback) {
-  if (value === null || value === undefined || value === "") {
-    return fallback || "Not available";
-  }
-
-  return String(value);
-};
-
-const safeNumber = function (value, fallback) {
-  const defaultValue = fallback === undefined ? 0 : fallback;
-  const number = Number(value);
-
-  if (Number.isNaN(number) || !Number.isFinite(number)) {
-    return defaultValue;
-  }
-
-  return number;
-};
-
-const formatPercentage = function (value) {
-  return safeNumber(value, 0) + "%";
-};
-
-const getCategoryScores = function (generatedReport) {
-  const report = safeObject(generatedReport);
-
-  if (Array.isArray(report.categoryScores)) {
-    return report.categoryScores;
-  }
-
-  if (Array.isArray(report.category_scores)) {
-    return report.category_scores;
-  }
-
-  if (Array.isArray(report.competencyScores)) {
-    return report.competencyScores;
-  }
-
-  if (report.competencyScores && typeof report.competencyScores === "object") {
-    return Object.values(report.competencyScores);
-  }
-
-  if (report.competency_scores && typeof report.competency_scores === "object") {
-    return Object.values(report.competency_scores);
-  }
-
-  return [];
-};
-
-const getRecommendations = function (generatedReport) {
-  const report = safeObject(generatedReport);
-
-  if (Array.isArray(report.recommendations)) {
-    return report.recommendations;
-  }
-
-  if (
-    report.competencySummary &&
-    Array.isArray(report.competencySummary.recommendations)
-  ) {
-    return report.competencySummary.recommendations;
-  }
-
-  if (
-    report.competency_summary &&
-    Array.isArray(report.competency_summary.recommendations)
-  ) {
-    return report.competency_summary.recommendations;
-  }
-
-  return [];
-};
-
-const getStrengths = function (generatedReport) {
-  const report = safeObject(generatedReport);
-
-  if (Array.isArray(report.strengths)) {
-    return report.strengths;
-  }
-
-  if (Array.isArray(report.topStrengths)) {
-    return report.topStrengths;
-  }
-
-  if (
-    report.competencySummary &&
-    Array.isArray(report.competencySummary.topStrengths)
-  ) {
-    return report.competencySummary.topStrengths;
-  }
-
-  return [];
-};
-
-const getDevelopmentAreas = function (generatedReport) {
-  const report = safeObject(generatedReport);
-
-  if (Array.isArray(report.developmentAreas)) {
-    return report.developmentAreas;
-  }
-
-  if (Array.isArray(report.topDevelopmentNeeds)) {
-    return report.topDevelopmentNeeds;
-  }
-
-  if (
-    report.competencySummary &&
-    Array.isArray(report.competencySummary.topDevelopmentNeeds)
-  ) {
-    return report.competencySummary.topDevelopmentNeeds;
-  }
-
-  return [];
-};
-
-const getOverallScore = function (generatedReport) {
-  const report = safeObject(generatedReport);
-
-  return (
-    report.percentage ||
-    report.overallPercentage ||
-    report.overall_score ||
-    report.score ||
-    report.totalPercentage ||
-    0
-  );
-};
-
-const getClassification = function (generatedReport) {
-  const report = safeObject(generatedReport);
-
-  return (
-    report.classification ||
-    report.overallClassification ||
-    report.performanceBand ||
-    report.label ||
-    "Not classified"
-  );
-};
-
-const getCandidateName = function (candidate, generatedReport) {
-  const c = safeObject(candidate);
-  const report = safeObject(generatedReport);
-
-  return (
-    c.full_name ||
-    c.name ||
-    c.email ||
-    report.candidateName ||
-    report.candidate_name ||
-    "Candidate"
-  );
-};
-
-// ======================================================
-// PAGE COMPONENT
-// ======================================================
-
-export default function SupervisorUserReportPage() {
-  const router = useRouter();
-  const userId = router.query.user_id;
-
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [candidate, setCandidate] = useState(null);
-  const [generatedReport, setGeneratedReport] = useState(null);
-
-  useEffect(
-    function () {
-      if (!userId) return;
-
-      let isMounted = true;
-
-      const loadSupervisorReport = async function () {
-        setLoading(true);
