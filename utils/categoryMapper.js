@@ -1,694 +1,713 @@
 /**
  * Focused Category Mapper
- * Provides professional interpretations based on actual category scores
- */
-
-// Score thresholds for interpretation
-const THRESHOLDS = {
-  EXCELLENT: 80,
-  GOOD: 70,
-  AVERAGE: 60,
-  BELOW_AVERAGE: 50
-};
-
-// Get level based on score
-const getLevel = (score) => {
-  if (score >= THRESHOLDS.EXCELLENT) return 'excellent';
-  if (score >= THRESHOLDS.GOOD) return 'good';
-  if (score >= THRESHOLDS.AVERAGE) return 'average';
-  if (score >= THRESHOLDS.BELOW_AVERAGE) return 'below_average';
-  return 'poor';
-};
-
-// Category interpretations by assessment type
-const categoryInterpretations = {
-  // General Assessment Categories
-  'Cognitive Ability': {
-    excellent: 'Strong analytical and strategic thinking capabilities. Can handle complex problems effectively.',
-    good: 'Good cognitive abilities. Handles most challenges well with occasional support.',
-    average: 'Moderate cognitive abilities. Benefits from structured approaches to complex problems.',
-    below_average: 'Cognitive abilities need development. May struggle with complex problem-solving.',
-    poor: 'Significant cognitive gaps. Requires clear guidance and simplified tasks.'
-  },
-  'Communication': {
-    excellent: 'Exceptional communicator. Articulates ideas clearly and persuasively.',
-    good: 'Good communication skills. Expresses ideas effectively in most situations.',
-    average: 'Adequate communication. Can convey basic ideas but may struggle with complex messaging.',
-    below_average: 'Communication needs improvement. May have difficulty expressing ideas clearly.',
-    poor: 'Poor communication skills. Significant development needed.'
-  },
-  'Cultural & Attitudinal Fit': {
-    excellent: 'Strong cultural alignment. Embodies company values and enhances team dynamics.',
-    good: 'Good cultural fit. Generally aligned with organizational values.',
-    average: 'Moderate cultural alignment. Some areas may need attention.',
-    below_average: 'Cultural fit concerns. May not fully align with company values.',
-    poor: 'Poor cultural fit. Significant misalignment with organizational culture.'
-  },
-  'Emotional Intelligence': {
-    excellent: 'High emotional intelligence. Self-aware, empathetic, and skilled at managing relationships.',
-    good: 'Good emotional awareness. Navigates interpersonal situations well.',
-    average: 'Moderate emotional intelligence. May struggle with complex interpersonal dynamics.',
-    below_average: 'Emotional intelligence needs development. Challenges with self-awareness and empathy.',
-    poor: 'Poor emotional intelligence. Significant interpersonal challenges.'
-  },
-  'Ethics & Integrity': {
-    excellent: 'Strong ethical foundation. Trustworthy and principled decision-maker.',
-    good: 'Good integrity. Generally makes ethical choices with sound judgment.',
-    average: 'Adequate ethical awareness. May need guidance in complex situations.',
-    below_average: 'Ethical concerns. Requires clear boundaries and supervision.',
-    poor: 'Poor ethical judgment. Significant risk area.'
-  },
-  'Leadership & Management': {
-    excellent: 'Strong leadership potential. Strategic thinker who inspires and develops others.',
-    good: 'Good leadership capabilities. Can manage teams and drive results effectively.',
-    average: 'Moderate leadership skills. May need support in people management.',
-    below_average: 'Leadership needs development. Challenges with team management.',
-    poor: 'Poor leadership potential. Not ready for management roles.'
-  },
-  'Performance Metrics': {
-    excellent: 'Results-driven with strong accountability. Sets and achieves challenging goals.',
-    good: 'Good performance orientation. Meets targets and tracks progress effectively.',
-    average: 'Adequate focus on results. May need guidance in goal setting.',
-    below_average: 'Performance focus needs improvement. Challenges with accountability.',
-    poor: 'Poor results orientation. Significant gaps in performance management.'
-  },
-  'Personality & Behavioral': {
-    excellent: 'Stable, resilient, and adaptable. Positive work patterns.',
-    good: 'Good behavioral profile. Generally stable and reliable.',
-    average: 'Moderate behavioral patterns. May have some inconsistencies.',
-    below_average: 'Behavioral concerns. May lack resilience or adaptability.',
-    poor: 'Poor behavioral profile. Significant concerns needing attention.'
-  },
-  'Problem-Solving': {
-    excellent: 'Excellent problem-solver. Systematic, creative, and effective.',
-    good: 'Good problem-solving skills. Handles most challenges effectively.',
-    average: 'Moderate problem-solving. May need support with complex issues.',
-    below_average: 'Problem-solving needs development. Struggles with analysis.',
-    poor: 'Poor problem-solving. Significant difficulties with challenges.'
-  },
-  'Technical & Manufacturing': {
-    excellent: 'Strong technical expertise. Deep understanding of systems and processes.',
-    good: 'Good technical knowledge. Handles most technical tasks effectively.',
-    average: 'Moderate technical skills. May need training in advanced areas.',
-    below_average: 'Technical knowledge needs development. Requires training.',
-    poor: 'Poor technical expertise. Significant knowledge gaps.'
+ *
+ * Provides professional "The candidate shows strong foundational manufacturing knowledge, including equipment basics, maintenance principles, and system understanding.", * Provides professional interpretations based on actual category scores.
+    strong:
+      "The candidate shows reliable technical fundamentals and may be ready for supervised production or maintenance exposure.",
+    adequate:
+      "The candidate shows functional technical foundation but may need reinforcement in equipment operation, sensors, motors, or pneumatic systems.",
+    developing:
+      "The candidate shows developing technical fundamentals. Structured equipment familiarization and hands-on training are recommended.",
+    priority_development:
+      "Technical fundamentals require priority development. The candidate may struggle with basic equipment concepts without training.",
+    critical_gap:
+      "The candidate shows critical gaps in technical fundamentals. Foundational training is required before independent equipment work."
   },
 
-  // ============================================
-  // MANUFACTURING BASELINE ASSESSMENT CATEGORIES
-  // ============================================
-  
-  'Technical Fundamentals': {
-    excellent: 'Exceptional foundational technical knowledge. Demonstrates strong understanding of maintenance principles, sensor functions, motor operation, and pneumatic systems. Ready for advanced technical roles.',
-    good: 'Solid grasp of technical fundamentals. Understands core maintenance concepts, basic equipment operation, and system principles. Can handle standard technical tasks with minimal supervision.',
-    average: 'Adequate technical foundation. Knows basic concepts but may need reinforcement in areas like sensor calibration, motor diagnostics, or pneumatic troubleshooting. Would benefit from structured technical training.',
-    below_average: 'Technical fundamentals need development. Shows gaps in understanding of basic maintenance, equipment functions, or system principles. Requires foundational technical training and hands-on practice.',
-    poor: 'Significant gaps in technical fundamentals. Struggles with basic equipment understanding and maintenance concepts. Intensive foundational training required before independent technical work.'
-  },
-  
-  'Troubleshooting': {
-    excellent: 'Exceptional diagnostic and problem-solving abilities. Systematically identifies root causes, resolves production issues efficiently, and prevents recurrence. Strong analytical approach to line problems.',
-    good: 'Good troubleshooting skills. Effectively diagnoses common production issues like conveyor jams, filler problems, and labeler misalignment. Can resolve most line problems independently.',
-    average: 'Adequate troubleshooting capability. Can identify basic issues but may need guidance with complex problems. Would benefit from structured problem-solving frameworks and diagnostic practice.',
-    below_average: 'Troubleshooting skills need development. Struggles with systematic problem diagnosis and may miss root causes. Requires training in fault-finding methodologies and diagnostic tools.',
-    poor: 'Poor troubleshooting ability. Difficulty identifying production issues or determining root causes. Significant development needed in diagnostic thinking and problem resolution.'
-  },
-  
-  'Numerical Aptitude': {
-    excellent: 'Exceptional numerical reasoning ability. Performs calculations accurately, understands production metrics, and analyzes efficiency data effectively. Excellent quantitative foundation.',
-    good: 'Strong numerical aptitude. Handles production calculations, percentage work, rate calculations, and data interpretation well. Can track and report production metrics accurately.',
-    average: 'Adequate numerical skills. Performs basic calculations correctly but may struggle with complex formulas or rapid mental math. Would benefit from practice with production-related math.',
-    below_average: 'Numerical skills need development. Shows difficulty with calculations, percentages, or data interpretation. Requires basic numeracy training and practice with production math.',
-    poor: 'Poor numerical aptitude. Significant challenges with basic calculations and number concepts. Intensive foundational math training required for production roles.'
-  },
-  
-  'Safety & Work Ethic': {
-    excellent: 'Exemplary safety awareness and professional conduct. Consistently follows PPE requirements, safety protocols, and standard operating procedures. Strong team player with excellent reliability.',
-    good: 'Good safety awareness and work ethic. Generally follows safety protocols, uses appropriate PPE, and adheres to procedures. Reliable team member with professional conduct.',
-    average: 'Adequate safety and work ethic understanding. Follows basic safety rules but may need reminders on specific protocols. Would benefit from safety refresher training and SOP reinforcement.',
-    below_average: 'Safety awareness or work ethic needs improvement. May overlook safety protocols or show inconsistent adherence to procedures. Requires focused training on safety standards and professional expectations.',
-    poor: 'Significant safety or conduct concerns. Shows poor understanding of safety requirements or demonstrates unreliable work habits. Immediate intervention needed to address foundational safety knowledge.'
+  Troubleshooting: {
+    exceptional:
+      "The candidate shows strong diagnostic thinking and can likely approach common production issues systematically.",
+    strong:
+      "The candidate shows reliable troubleshooting capability for common production or equipment issues.",
+    adequate:
+      "The candidate shows functional troubleshooting ability but may need diagnostic frameworks for complex issues.",
+    developing:
+      "Troubleshooting capability is developing. Practice with structured fault-finding and root-cause analysis is recommended.",
+    priority_development:
+      "Troubleshooting requires priority development. The candidate may struggle to identify root causes without guidance.",
+    critical_gap:
+      "The candidate shows critical troubleshooting gaps. Close supervision and diagnostic training are recommended."
   },
 
-  // ============================================
-  // NEW PERSONALITY TRAITS (6 Traits)
-  // ============================================
-  
-  'Ownership': {
-    excellent: 'Exceptional ownership. Takes full accountability for outcomes, drives results proactively, and owns mistakes as learning opportunities. A natural leader.',
-    good: 'Strong ownership. Generally takes responsibility, follows through on commitments, and shows initiative. Reliable and accountable.',
-    average: 'Moderate ownership. Accepts responsibility for assigned tasks but may hesitate to take initiative beyond defined scope. Would benefit from stretching accountability.',
-    below_average: 'Ownership needs development. May sometimes deflect responsibility or wait for direction. Requires clear expectations and accountability check-ins.',
-    poor: 'Poor ownership. Tends to avoid responsibility and may blame external factors. Significant development needed in accountability and initiative.'
-  },
-  
-  'Collaboration': {
-    excellent: 'Exceptional collaborator. Builds strong team relationships, actively seeks diverse perspectives, and elevates collective performance. Fosters psychological safety.',
-    good: 'Strong collaboration. Works effectively with others, shares credit generously, and contributes to team goals. Valued team member.',
-    average: 'Moderate collaboration. Cooperates when needed but may prefer working independently. Would benefit from teamwork development.',
-    below_average: 'Collaboration needs improvement. May struggle with team dynamics or prioritize individual goals. Requires guidance on effective collaboration.',
-    poor: 'Poor collaboration. Often works in silos and struggles with teamwork. Significant development needed in interpersonal and team skills.'
-  },
-  
-  'Action': {
-    excellent: 'Exceptional action orientation. Moves quickly on priorities, makes decisive choices, and takes initiative without waiting for direction. Thrives in fast-paced environments.',
-    good: 'Strong action orientation. Generally proactive and willing to act. Makes timely decisions with appropriate information.',
-    average: 'Moderate action orientation. Takes action when prompted but may hesitate without clear direction. Would benefit from building decision-making confidence.',
-    below_average: 'Action orientation needs development. May delay decisions or wait for instructions. Requires encouragement to act and develop urgency.',
-    poor: 'Poor action orientation. Struggles with decisiveness and initiative. Significant development needed in proactive execution.'
-  },
-  
-  'Analysis': {
-    excellent: 'Exceptional analytical thinking. Thoroughly analyzes problems, seeks data before acting, and thinks systematically. Excels in roles requiring careful planning.',
-    good: 'Strong analytical skills. Gathers necessary information and considers options before acting. Makes well-reasoned decisions.',
-    average: 'Moderate analytical ability. Considers basic factors but may not always dig deeper for root causes. Would benefit from structured analytical frameworks.',
-    below_average: 'Analysis needs development. May act without sufficient information or fail to consider alternatives. Requires guidance on systematic problem-solving.',
-    poor: 'Poor analytical thinking. Struggles with structured analysis and may rely on intuition without data. Significant development needed in analytical skills.'
-  },
-  
-  'Risk Tolerance': {
-    excellent: 'Healthy risk tolerance. Comfortable with uncertainty, experiments with new approaches, and pushes boundaries appropriately. Balances innovation with prudence.',
-    good: 'Good risk awareness. Willing to try new approaches when supported, while maintaining reasonable caution. Accepts calculated risks.',
-    average: 'Moderate risk orientation. Generally prefers proven approaches but will accept calculated risks with support. Would benefit from confidence-building.',
-    below_average: 'Risk orientation needs development. Prefers certainty and may avoid necessary risks. Requires encouragement to embrace innovation.',
-    poor: 'Excessive risk aversion. Struggles with uncertainty and resists new approaches. Significant development needed in adaptability and innovation.'
-  },
-  
-  'Structure': {
-    excellent: 'Exceptional process orientation. Follows procedures reliably, respects established systems, and maintains consistent quality. Provides stability and reliability.',
-    good: 'Strong structure orientation. Generally follows processes and values consistency. Maintains organized approach to work.',
-    average: 'Moderate process adherence. Follows procedures when clear but may improvise without guidance. Would benefit from structured training.',
-    below_average: 'Process adherence needs improvement. May skip steps or improvise without considering consequences. Requires reinforcement of procedures.',
-    poor: 'Poor process orientation. Struggles to follow procedures consistently and may create instability. Significant development needed in process discipline.'
+  "Numerical Aptitude": {
+    exceptional:
+      "The candidate shows strong numerical reasoning for production calculations, percentages, ratios, and production-rate interpretation.",
+    strong:
+      "The candidate shows reliable numerical aptitude and can likely handle standard production math and reporting tasks.",
+    adequate:
+      "The candidate shows functional numerical ability but may need practice with production metrics and calculations.",
+    developing:
+      "Numerical aptitude is developing. Production math, efficiency calculations, and quality documentation practice are recommended.",
+    priority_development:
+      "Numerical aptitude requires priority development. The candidate may struggle with production calculations and data interpretation.",
+    critical_gap:
+      "The candidate shows critical numeracy gaps. Foundational math training is recommended before quantitative production tasks."
   },
 
-  // Leadership Assessment Categories
-  'Change Leadership & Agility': {
-    excellent: 'Exceptional change leader. Drives transformation and adapts quickly.',
-    good: 'Good at managing change. Adapts well to new situations.',
-    average: 'Moderate change agility. May need support during transitions.',
-    below_average: 'Change management needs development. Struggles with adaptation.',
-    poor: 'Poor change agility. Resists or struggles with change.'
-  },
-  'Communication & Influence': {
-    excellent: 'Powerful communicator who influences effectively at all levels.',
-    good: 'Good communicator with developing influence skills.',
-    average: 'Adequate communication. May struggle with persuasion.',
-    below_average: 'Communication needs improvement. Limited influence.',
-    poor: 'Poor communication and influence skills.'
-  },
-  'Cultural Alignment': {
-    excellent: 'Strong cultural ambassador. Models and reinforces values.',
-    good: 'Good cultural alignment. Generally embodies company values.',
-    average: 'Moderate cultural fit. Some areas of misalignment.',
-    below_average: 'Cultural concerns. May not fully align with values.',
-    poor: 'Poor cultural fit. Significant misalignment.'
-  },
-  'Cultural Competence & Inclusivity': {
-    excellent: 'Champions diversity and inclusion. Creates inclusive environments.',
-    good: 'Good cultural competence. Values diversity and inclusion.',
-    average: 'Moderate awareness of diversity issues. Needs development.',
-    below_average: 'Limited cultural competence. May need training.',
-    poor: 'Poor cultural competence. Concerns in this area.'
-  },
-  'Decision-Making & Problem-Solving': {
-    excellent: 'Decisive and analytical. Makes sound judgments consistently.',
-    good: 'Good decision-maker. Handles most decisions effectively.',
-    average: 'Moderate decision-making. May need support with complex choices.',
-    below_average: 'Decision-making needs improvement. Struggles with analysis.',
-    poor: 'Poor decision-making. Significant concerns.'
-  },
-  'Derailer Identification': {
-    excellent: 'Highly self-aware. Recognizes and manages potential derailers.',
-    good: 'Good self-awareness. Aware of most derailers.',
-    average: 'Moderate awareness. May miss some derailers.',
-    below_average: 'Limited self-awareness. Derailer risk.',
-    poor: 'Poor self-awareness. Significant derailer concerns.'
-  },
-  'Empathy & Relationship Building': {
-    excellent: 'Builds strong, trusting relationships. Highly empathetic.',
-    good: 'Good relationship builder. Connects well with others.',
-    average: 'Moderate relationship skills. May need development.',
-    below_average: 'Relationship building needs improvement.',
-    poor: 'Poor relationship skills. Difficulty connecting with others.'
-  },
-  'Execution & Results Orientation': {
-    excellent: 'Drives results with disciplined execution. Highly accountable.',
-    good: 'Good execution focus. Delivers results consistently.',
-    average: 'Moderate execution. May need help with follow-through.',
-    below_average: 'Execution needs improvement. Inconsistent results.',
-    poor: 'Poor execution. Significant accountability concerns.'
-  },
-  'Integrated Leadership Judgment': {
-    excellent: 'Exceptional judgment. Balances multiple factors effectively.',
-    good: 'Good judgment. Makes sound decisions in most situations.',
-    average: 'Moderate judgment. May need support in complex scenarios.',
-    below_average: 'Judgment concerns. Needs development.',
-    poor: 'Poor judgment. Significant concerns.'
-  },
-  'Learning Agility': {
-    excellent: 'Rapid learner. Adapts quickly to new situations.',
-    good: 'Good learning agility. Picks up new concepts well.',
-    average: 'Moderate learning pace. Needs time to master new areas.',
-    below_average: 'Learning agility needs development. Slow to adapt.',
-    poor: 'Poor learning agility. Difficulty acquiring new skills.'
-  },
-  'People Management & Coaching': {
-    excellent: 'Develops and coaches others effectively. Strong people manager.',
-    good: 'Good people manager. Supports team development.',
-    average: 'Moderate people skills. Needs development in coaching.',
-    below_average: 'People management needs improvement.',
-    poor: 'Poor people management. Significant concerns.'
-  },
-  'Resilience & Stress Management': {
-    excellent: 'Highly resilient. Thrives under pressure.',
-    good: 'Good stress management. Handles pressure well.',
-    average: 'Moderate resilience. May struggle under intense pressure.',
-    below_average: 'Stress management needs improvement.',
-    poor: 'Poor resilience. Significant concerns.'
-  },
-  'Role Readiness': {
-    excellent: 'Ready for increased responsibility now.',
-    good: 'Ready with some development support.',
-    average: 'Needs more experience before advancement.',
-    below_average: 'Significant development needed before ready.',
-    poor: 'Not ready for advancement at this time.'
-  },
-  'Self-Awareness & Self-Regulation': {
-    excellent: 'Highly self-aware and well-regulated.',
-    good: 'Good self-awareness. Regulates well.',
-    average: 'Moderate self-awareness. May have blind spots.',
-    below_average: 'Limited self-awareness. Needs development.',
-    poor: 'Poor self-awareness. Significant concerns.'
-  },
-  'Values & Drivers': {
-    excellent: 'Strong values alignment. Highly motivated by purpose.',
-    good: 'Good values alignment. Appropriately motivated.',
-    average: 'Moderate alignment. May have some conflicts.',
-    below_average: 'Values misalignment concerns.',
-    poor: 'Poor values alignment. Significant concerns.'
-  },
-  'Vision & Strategic Thinking': {
-    excellent: 'Strategic thinker with compelling vision.',
-    good: 'Good strategic thinking. Sees the big picture.',
-    average: 'Moderate strategic ability. Needs development.',
-    below_average: 'Limited strategic thinking. Tactical focus.',
-    poor: 'Poor strategic thinking. Significant concerns.'
+  "Safety & Work Ethic": {
+    exceptional:
+      "The candidate shows strong safety awareness, PPE understanding, SOP discipline, teamwork, and professional conduct.",
+    strong:
+      "The candidate shows reliable safety and work ethic indicators suitable for supervised manufacturing environments.",
+    adequate:
+      "The candidate shows functional safety awareness but may need reinforcement of specific protocols and SOP expectations.",
+    developing:
+      "Safety and work ethic understanding is developing. Refresher training and clear workplace expectations are recommended.",
+    priority_development:
+      "Safety or work ethic requires priority development. Close supervision and safety reinforcement are recommended.",
+    critical_gap:
+      "The candidate shows critical safety or conduct gaps. Safety training is required before production exposure."
   },
 
-  // Cognitive Assessment Categories
-  'Logical / Abstract Reasoning': {
-    excellent: 'Strong logical reasoning. Excellent pattern recognition.',
-    good: 'Good logical reasoning. Handles abstract concepts well.',
-    average: 'Moderate logical skills. May need support with complex logic.',
-    below_average: 'Logical reasoning needs development.',
-    poor: 'Poor logical reasoning. Significant concerns.'
-  },
-  'Mechanical Reasoning': {
-    excellent: 'Strong mechanical understanding. Natural aptitude.',
-    good: 'Good mechanical reasoning. Understands mechanical concepts.',
-    average: 'Moderate mechanical skills. Needs development.',
-    below_average: 'Mechanical reasoning needs improvement.',
-    poor: 'Poor mechanical reasoning. Significant gaps.'
-  },
-  'Memory & Attention': {
-    excellent: 'Excellent memory and attention to detail.',
-    good: 'Good memory and focus. Attentive to details.',
-    average: 'Moderate memory. May miss some details.',
-    below_average: 'Memory and attention need improvement.',
-    poor: 'Poor memory and attention. Significant concerns.'
-  },
-  'Numerical Reasoning': {
-    excellent: 'Strong numerical reasoning. Comfortable with data.',
-    good: 'Good numerical skills. Handles numbers well.',
-    average: 'Moderate numerical ability. Needs support with complex math.',
-    below_average: 'Numerical reasoning needs development.',
-    poor: 'Poor numerical reasoning. Significant gaps.'
-  },
-  'Perceptual Speed & Accuracy': {
-    excellent: 'Fast and accurate. Excellent attention.',
-    good: 'Good speed and accuracy. Reliable.',
-    average: 'Moderate speed. May need more time.',
-    below_average: 'Speed and accuracy need improvement.',
-    poor: 'Poor perceptual skills. Significant concerns.'
-  },
-  'Spatial Reasoning': {
-    excellent: 'Strong spatial reasoning. Visualizes well.',
-    good: 'Good spatial skills. Handles spatial tasks well.',
-    average: 'Moderate spatial ability. Needs development.',
-    below_average: 'Spatial reasoning needs improvement.',
-    poor: 'Poor spatial reasoning. Significant gaps.'
-  },
-  'Verbal Reasoning': {
-    excellent: 'Strong verbal reasoning. Excellent comprehension.',
-    good: 'Good verbal skills. Understands language well.',
-    average: 'Moderate verbal ability. May need support.',
-    below_average: 'Verbal reasoning needs development.',
-    poor: 'Poor verbal reasoning. Significant concerns.'
+  // Personality Traits
+  Ownership: {
+    exceptional:
+      "The candidate shows strong accountability, initiative, and follow-through.",
+    strong:
+      "The candidate shows reliable ownership and can likely manage assigned responsibilities with standard supervision.",
+    adequate:
+      "The candidate shows functional ownership but may need encouragement to take initiative beyond assigned tasks.",
+    developing:
+      "Ownership is developing. Clear accountability expectations and follow-up are recommended.",
+    priority_development:
+      "Ownership requires priority development. The candidate may wait for direction or need close accountability tracking.",
+    critical_gap:
+      "The candidate shows critical ownership gaps. Close supervision and accountability coaching are recommended."
   },
 
-  // Technical Assessment Categories
-  'CIP & Maintenance': {
-    excellent: 'Strong CIP and maintenance expertise.',
-    good: 'Good understanding of CIP processes.',
-    average: 'Moderate CIP knowledge. Needs training.',
-    below_average: 'CIP knowledge needs development.',
-    poor: 'Poor CIP understanding. Significant gaps.'
-  },
-  'Conveyors & Line Efficiency': {
-    excellent: 'Expert in conveyor systems and line efficiency.',
-    good: 'Good understanding of line operations.',
-    average: 'Moderate conveyor knowledge. Needs training.',
-    below_average: 'Conveyor knowledge needs improvement.',
-    poor: 'Poor understanding. Significant gaps.'
-  },
-  'Filling & Bottling': {
-    excellent: 'Expert in filling and bottling processes.',
-    good: 'Good understanding of filling operations.',
-    average: 'Moderate filling knowledge. Needs training.',
-    below_average: 'Filling knowledge needs development.',
-    poor: 'Poor understanding. Significant gaps.'
-  },
-  'Packaging & Labeling': {
-    excellent: 'Strong packaging and labeling expertise.',
-    good: 'Good understanding of packaging.',
-    average: 'Moderate packaging knowledge. Needs training.',
-    below_average: 'Packaging knowledge needs improvement.',
-    poor: 'Poor understanding. Significant gaps.'
-  },
-  'Safety & Efficiency': {
-    excellent: 'Strong safety focus and efficiency mindset.',
-    good: 'Good safety awareness. Understands efficiency.',
-    average: 'Moderate safety knowledge. Needs training.',
-    below_average: 'Safety knowledge needs development.',
-    poor: 'Poor safety understanding. Significant concerns.'
-  },
-  'Water Treatment & Quality': {
-    excellent: 'Expert in water treatment and quality control.',
-    good: 'Good understanding of water quality.',
-    average: 'Moderate water treatment knowledge. Needs training.',
-    below_average: 'Water treatment knowledge needs improvement.',
-    poor: 'Poor understanding. Significant gaps.'
+  Collaboration: {
+    exceptional:
+      "The candidate shows strong teamwork, consensus-building, and interpersonal contribution.",
+    strong:
+      "The candidate shows reliable collaboration and can likely work well in team environments.",
+    adequate:
+      "The candidate shows functional collaboration but may need support in highly interdependent team settings.",
+    developing:
+      "Collaboration is developing. Teamwork practice and feedback are recommended.",
+    priority_development:
+      "Collaboration requires priority development. The candidate may struggle in team-based environments without support.",
+    critical_gap:
+      "The candidate shows critical collaboration gaps. Teamwork coaching and close observation are recommended."
   },
 
-  // Performance Assessment Categories
-  'Employee Engagement and Behavior': {
-    excellent: 'Strong at engaging and motivating teams.',
-    good: 'Good understanding of engagement.',
-    average: 'Moderate engagement skills. Needs development.',
-    below_average: 'Engagement skills need improvement.',
-    poor: 'Poor engagement skills. Significant concerns.'
-  },
-  'Financial and Operational Performance': {
-    excellent: 'Strong financial and operational understanding.',
-    good: 'Good business acumen. Understands operations.',
-    average: 'Moderate financial knowledge. Needs development.',
-    below_average: 'Financial knowledge needs improvement.',
-    poor: 'Poor financial understanding. Significant gaps.'
-  },
-  'Goal Achievement and Strategic Alignment': {
-    excellent: 'Excellent at goal setting and strategic alignment.',
-    good: 'Good understanding of goals and alignment.',
-    average: 'Moderate goal achievement. Needs support.',
-    below_average: 'Goal achievement needs improvement.',
-    poor: 'Poor goal orientation. Significant concerns.'
-  },
-  'Productivity and Efficiency': {
-    excellent: 'Highly productive and efficiency-focused.',
-    good: 'Good productivity. Understands efficiency.',
-    average: 'Moderate productivity. Needs improvement.',
-    below_average: 'Productivity needs development.',
-    poor: 'Poor productivity. Significant concerns.'
-  },
-  'Work Quality and Effectiveness': {
-    excellent: 'Consistently high-quality work.',
-    good: 'Good work quality. Reliable.',
-    average: 'Moderate quality. May need improvement.',
-    below_average: 'Work quality needs development.',
-    poor: 'Poor quality. Significant concerns.'
+  Action: {
+    exceptional:
+      "The candidate shows strong action orientation, decisiveness, and urgency.",
+    strong:
+      "The candidate shows reliable initiative and can likely move tasks forward with standard supervision.",
+    adequate:
+      "The candidate shows functional action orientation but may need support with ambiguous or time-sensitive decisions.",
+    developing:
+      "Action orientation is developing. Decision-making practice and time-bound tasks are recommended.",
+    priority_development:
+      "Action orientation requires priority development. The candidate may delay decisions or wait for direction.",
+    critical_gap:
+      "The candidate shows critical gaps in action orientation. Close guidance and initiative-building support are recommended."
   },
 
-  // Cultural Assessment Categories
-  'Attitude': {
-    excellent: 'Positive attitude. Highly motivated and adaptable.',
-    good: 'Good attitude. Generally positive and willing.',
-    average: 'Moderate attitude. May have occasional concerns.',
-    below_average: 'Attitude concerns. Needs development.',
-    poor: 'Poor attitude. Significant concerns.'
+  Analysis: {
+    exceptional:
+      "The candidate shows strong analytical thinking, structured reasoning, and data-informed judgment.",
+    strong:
+      "The candidate shows reliable analytical capability for structured tasks and decision support.",
+    adequate:
+      "The candidate shows functional analysis but may need frameworks for complex reasoning.",
+    developing:
+      "Analysis is developing. Structured problem-solving and data interpretation practice are recommended.",
+    priority_development:
+      "Analysis requires priority development. The candidate may act without sufficient evidence or structure.",
+    critical_gap:
+      "The candidate shows critical analytical gaps. Foundational analytical training is recommended."
   },
-  'Core Values': {
-    excellent: 'Strong values alignment. Principled and consistent.',
-    good: 'Good values alignment. Generally aligned.',
-    average: 'Moderate alignment. May have some conflicts.',
-    below_average: 'Values misalignment concerns.',
-    poor: 'Poor values alignment. Significant concerns.'
+
+  "Risk Tolerance": {
+    exceptional:
+      "The candidate shows healthy comfort with uncertainty, experimentation, and calculated risk-taking.",
+    strong:
+      "The candidate shows reliable risk awareness and may be comfortable with controlled innovation.",
+    adequate:
+      "The candidate shows functional risk tolerance but may prefer proven approaches.",
+    developing:
+      "Risk tolerance is developing. Safe experimentation and risk assessment practice are recommended.",
+    priority_development:
+      "Risk tolerance requires priority development. The candidate may avoid necessary change or innovation.",
+    critical_gap:
+      "The candidate shows critical risk-aversion indicators. Structured exposure to safe experimentation is recommended."
   },
-  'Environmental Fit': {
-    excellent: 'Excellent environmental fit. Thrives in the setting.',
-    good: 'Good fit with environment. Comfortable.',
-    average: 'Moderate fit. May need adjustment.',
-    below_average: 'Environmental mismatch concerns.',
-    poor: 'Poor environmental fit. Significant concerns.'
-  },
-  'Interpersonal': {
-    excellent: 'Strong interpersonal skills. Builds relationships well.',
-    good: 'Good interpersonal skills. Works well with others.',
-    average: 'Moderate interpersonal skills. May need development.',
-    below_average: 'Interpersonal skills need improvement.',
-    poor: 'Poor interpersonal skills. Significant concerns.'
-  },
-  'Leadership': {
-    excellent: 'Strong leadership potential. Inspires others.',
-    good: 'Good leadership capabilities. Guides teams well.',
-    average: 'Moderate leadership skills. Needs development.',
-    below_average: 'Leadership needs improvement.',
-    poor: 'Poor leadership. Significant concerns.'
-  },
-  'Work Style': {
-    excellent: 'Effective work style. Adaptable and productive.',
-    good: 'Good work habits. Reliable and consistent.',
-    average: 'Moderate work style. May need adjustment.',
-    below_average: 'Work style concerns. Needs improvement.',
-    poor: 'Poor work style. Significant concerns.'
+
+  Structure: {
+    exceptional:
+      "The candidate shows strong process discipline, consistency, and procedural reliability.",
+    strong:
+      "The candidate shows reliable structure orientation and can likely follow procedures consistently.",
+    adequate:
+      "The candidate shows functional process adherence but may need reinforcement in complex or quality-critical work.",
+    developing:
+      "Structure orientation is developing. Clear SOPs, checklists, and process training are recommended.",
+    priority_development:
+      "Structure requires priority development. The candidate may skip steps or work inconsistently without guidance.",
+    critical_gap:
+      "The candidate shows critical process-discipline gaps. Close supervision and SOP reinforcement are recommended."
   }
 };
 
-// Generate overall profile summary based on scores
+// ======================================================
+// HELPERS
+// ======================================================
+
+const getCategoryInterpretation = (category, percentage) => {
+  const scoreLevel = getScoreLevel(percentage);
+  const categorySet = categoryInterpretations[category];
+
+  if (categorySet?.[scoreLevel.key]) {
+    return categorySet[scoreLevel.key];
+  }
+
+  return `${category}: ${percentage}% - ${scoreLevel.label}. ${getSupervisorImplication(
+    percentage
+  )}`;
+};
+
 const getProfileSummary = (scores) => {
-  const values = Object.values(scores);
-  const avg = values.reduce((a, b) => a + b, 0) / values.length;
-  const excellent = values.filter(s => s >= 80).length;
-  const poor = values.filter(s => s < 50).length;
+  const values = Object.values(scores || {}).map((value) => Number(value || 0));
 
-  if (excellent >= 5 && poor === 0) {
+  if (values.length === 0) {
     return {
-      type: 'High-Performer',
-      description: 'This candidate demonstrates strong overall capability with consistent performance across most areas. Ready for challenging roles and increased responsibility.'
-    };
-  } else if (excellent >= 3 && poor <= 1) {
-    return {
-      type: 'Solid Performer',
-      description: 'This candidate shows solid performance with clear strengths and manageable development areas. Good potential for growth.'
-    };
-  } else if (avg >= 60 && poor <= 2) {
-    return {
-      type: 'Developing Performer',
-      description: 'This candidate has foundational skills with identified development areas. Requires targeted support to reach full potential.'
-    };
-  } else if (poor >= 3) {
-    return {
-      type: 'Development Priority',
-      description: 'This candidate has significant development needs across multiple areas. Requires intensive support and structured training.'
-    };
-  } else {
-    return {
-      type: 'Balanced Profile',
-      description: 'This candidate shows a mix of strengths and development areas. Suitable for structured roles with supervision.'
+      type: "No Data",
+      description:
+        "No category score data was available for this assessment report."
     };
   }
+
+  const average =
+    values.reduce((sum, value) => sum + value, 0) / values.length;
+
+  const strengths = values.filter((score) => isStrength(score)).length;
+  const developmentAreas = values.filter((score) =>
+    isDevelopmentArea(score)
+  ).length;
+  const criticalGaps = values.filter((score) => isCriticalGap(score)).length;
+
+  if (average >= 85 && criticalGaps === 0) {
+    return {
+      type: "High-Potential Profile",
+      description:
+        "This candidate demonstrates strong overall capability with evidence of readiness for more demanding responsibilities, subject to role validation."
+    };
+  }
+
+  if (average >= 75 && developmentAreas <= 1) {
+    return {
+      type: "Strong Performer",
+      description:
+        "This candidate shows reliable performance with clear strengths and limited development needs."
+    };
+  }
+
+  if (average >= 65 && criticalGaps === 0) {
+    return {
+      type: "Capable Contributor",
+      description:
+        "This candidate shows functional competence with some areas requiring targeted reinforcement."
+    };
+  }
+
+  if (average >= 55) {
+    return {
+      type: "Developing Performer",
+      description:
+        "This candidate has foundational capability but requires structured support to improve role readiness."
+    };
+  }
+
+  if (criticalGaps > 0 || average < 40) {
+    return {
+      type: "High Development Need",
+      description:
+        "This candidate shows critical or significant gaps that require immediate structured development and close supervision."
+    };
+  }
+
+  return {
+    type: "Development Priority",
+    description:
+      "This candidate shows significant development needs across multiple areas and should be placed carefully with structured supervision."
+  };
 };
 
-// Generate suitability and risks
 const getSuitabilityAndRisks = (scores) => {
   const suitability = [];
   const risks = [];
-  
-  const leadership = scores['Leadership & Management'] || 0;
-  const cognitive = scores['Cognitive Ability'] || 0;
-  const technical = scores['Technical & Manufacturing'] || 0;
-  const cultural = scores['Cultural & Attitudinal Fit'] || 0;
-  const ei = scores['Emotional Intelligence'] || 0;
-  const communication = scores['Communication'] || 0;
-  
-  // Manufacturing baseline specific
-  const techFundamentals = scores['Technical Fundamentals'] || 0;
-  const troubleshooting = scores['Troubleshooting'] || 0;
-  const numericalAptitude = scores['Numerical Aptitude'] || 0;
-  const safetyWorkEthic = scores['Safety & Work Ethic'] || 0;
-  
-  // New personality traits
-  const ownership = scores['Ownership'] || 0;
-  const collaboration = scores['Collaboration'] || 0;
-  const action = scores['Action'] || 0;
-  const analysis = scores['Analysis'] || 0;
-  const riskTolerance = scores['Risk Tolerance'] || 0;
-  const structure = scores['Structure'] || 0;
 
-  // Manufacturing Baseline specific suitability
-  if (techFundamentals >= 70 && troubleshooting >= 60) {
-    suitability.push('Strong foundation for production operator or maintenance roles');
-  }
-  if (safetyWorkEthic >= 70) {
-    suitability.push('Demonstrates strong safety awareness and work ethic - essential for manufacturing environments');
-  }
-  if (numericalAptitude >= 70 && troubleshooting >= 60) {
-    suitability.push('Well-suited for quality control or production monitoring roles');
-  }
-  if (techFundamentals >= 60 && safetyWorkEthic >= 60) {
-    suitability.push('Suitable for entry-level production or assembly positions');
+  const get = (name) => Number(scores?.[name] || 0);
+
+  // General / broad categories
+  const leadership = get("Leadership & Management");
+  const cognitive = get("Cognitive Ability");
+  const technical = get("Technical & Manufacturing");
+  const cultural = get("Cultural & Attitudinal Fit");
+  const emotional = get("Emotional Intelligence");
+  const communication = get("Communication");
+  const problemSolving = get("Problem-Solving");
+
+  if (leadership >= 75 && cognitive >= 65 && emotional >= 65) {
+    suitability.push(
+      "May be suitable for leadership-track responsibilities with role-specific validation."
+    );
   }
 
-  // Suitability based on strengths
-  if (leadership >= 70 && cognitive >= 70 && ei >= 60) {
-    suitability.push('Good fit for leadership or management roles');
-  }
-  if (technical >= 70) {
-    suitability.push('Well-suited for technical or specialist positions');
-  }
-  if (communication >= 70) {
-    suitability.push('Effective in client-facing or collaborative roles');
-  }
-  if (leadership >= 60 && cognitive >= 60) {
-    suitability.push('Suitable for team lead or supervisory positions');
-  }
-  if (technical >= 60 && cultural >= 60) {
-    suitability.push('Good fit for operational roles in structured environments');
-  }
-  
-  // New personality-based suitability
-  if (ownership >= 70 && action >= 60) {
-    suitability.push('Strong fit for roles requiring initiative and accountability');
-  }
-  if (collaboration >= 70) {
-    suitability.push('Excellent fit for team-based and collaborative environments');
-  }
-  if (analysis >= 70 && structure >= 60) {
-    suitability.push('Well-suited for analytical and process-driven roles');
-  }
-  if (riskTolerance >= 70 && action >= 60) {
-    suitability.push('Good fit for innovation-focused and fast-paced environments');
+  if (technical >= 75 || get("Technical Fundamentals") >= 75) {
+    suitability.push(
+      "Shows evidence of suitability for technical or operational tasks with standard supervision."
+    );
   }
 
-  // Manufacturing Baseline specific risks
-  if (safetyWorkEthic < 50) {
-    risks.push('Safety awareness concerns - requires immediate training and close supervision');
-  }
-  if (techFundamentals < 50) {
-    risks.push('Limited technical foundation - may struggle with basic equipment operation');
-  }
-  if (troubleshooting < 40) {
-    risks.push('Poor problem-solving ability - production interruptions may be frequent without support');
-  }
-  if (numericalAptitude < 40) {
-    risks.push('Numeracy concerns - may struggle with production tracking and quality documentation');
+  if (communication >= 75 || get("Collaboration") >= 75) {
+    suitability.push(
+      "Shows evidence of suitability for collaborative or stakeholder-facing work."
+    );
   }
 
-  // Risks based on weaknesses
-  if (cognitive < 50) {
-    risks.push('Limited cognitive capacity may impact complex problem-solving');
-  }
-  if (ei < 50) {
-    risks.push('Emotional intelligence concerns may affect team dynamics');
-  }
-  if (cultural < 50) {
-    risks.push('Cultural fit concerns - may not align with company values');
-  }
-  if (leadership < 50) {
-    risks.push('Limited leadership potential - may not suit management roles');
-  }
-  if (technical < 50 && cognitive < 50) {
-    risks.push('Significant development needed for technical or analytical roles');
-  }
-  
-  // New personality-based risks
-  if (ownership < 40) {
-    risks.push('Limited accountability - may require close supervision and clear expectations');
-  }
-  if (collaboration < 40) {
-    risks.push('Collaboration concerns - may struggle in team environments');
-  }
-  if (action < 40 && riskTolerance < 40) {
-    risks.push('Risk of stagnation - may be overly cautious and slow to act');
-  }
-  if (analysis < 40 && structure < 40) {
-    risks.push('Process and planning concerns - may struggle with organization and quality');
-  }
-  if (ownership < 50 && action < 50) {
-    risks.push('Initiative concerns - may need prompting to take action');
+  if (problemSolving >= 75 || get("Troubleshooting") >= 75) {
+    suitability.push(
+      "Shows evidence of suitability for problem-solving or diagnostic tasks."
+    );
   }
 
-  return { suitability, risks };
+  // Manufacturing Baseline categories
+  const techFundamentals = get("Technical Fundamentals");
+  const troubleshooting = get("Troubleshooting");
+  const numericalAptitude = get("Numerical Aptitude");
+  const safetyWorkEthic =
+    get("Safety & Work Ethic") || get("Safety &amp; Work Ethic");
+
+  if (safetyWorkEthic >= 75 && techFundamentals >= 65) {
+    suitability.push(
+      "May be suitable for supervised production exposure after standard onboarding."
+    );
+  }
+
+  if (troubleshooting >= 65 && numericalAptitude >= 65) {
+    suitability.push(
+      "May be suitable for quality monitoring or production tracking tasks with appropriate guidance."
+    );
+  }
+
+  if (techFundamentals >= 75 && troubleshooting >= 65) {
+    suitability.push(
+      "May be suitable for a maintenance-trainee pathway with practical validation."
+    );
+  }
+
+  // Personality traits
+  const ownership = get("Ownership");
+  const collaboration = get("Collaboration");
+  const action = get("Action");
+  const analysis = get("Analysis");
+  const riskTolerance = get("Risk Tolerance");
+  const structure = get("Structure");
+
+  if (ownership >= 75 && action >= 65) {
+    suitability.push(
+      "Shows evidence of suitability for roles requiring initiative and accountability."
+    );
+  }
+
+  if (collaboration >= 75) {
+    suitability.push(
+      "Shows evidence of suitability for team-based and collaborative environments."
+    );
+  }
+
+  if (analysis >= 75 && structure >= 65) {
+    suitability.push(
+      "Shows evidence of suitability for analytical, process-driven, or quality-focused tasks."
+    );
+  }
+
+  if (riskTolerance >= 75 && action >= 65) {
+    suitability.push(
+      "May be suitable for controlled innovation or improvement-focused assignments."
+    );
+  }
+
+  // Risks
+  if (safetyWorkEthic > 0 && safetyWorkEthic < 55) {
+    risks.push(
+      "Safety and work ethic require attention before production exposure. Safety training and close supervision are recommended."
+    );
+  }
+
+  if (techFundamentals > 0 && techFundamentals < 55) {
+    risks.push(
+      "Technical fundamentals are below expected baseline. The candidate may struggle with equipment concepts without foundational training."
+    );
+  }
+
+  if (troubleshooting > 0 && troubleshooting < 55) {
+    risks.push(
+      "Troubleshooting is below expected baseline. The candidate may need structured diagnostic training and guided practice."
+    );
+  }
+
+  if (numericalAptitude > 0 && numericalAptitude < 55) {
+    risks.push(
+      "Numerical aptitude is below expected baseline. The candidate may need support with production calculations and reporting."
+    );
+  }
+
+  if (cognitive > 0 && cognitive < 55) {
+    risks.push(
+      "Cognitive capability may limit complex analysis without structured problem-solving support."
+    );
+  }
+
+  if (emotional > 0 && emotional < 55) {
+    risks.push(
+      "Emotional intelligence may require development to support effective workplace interactions."
+    );
+  }
+
+  if (cultural > 0 && cultural < 55) {
+    risks.push(
+      "Cultural or attitudinal fit requires supervisor validation and expectation setting."
+    );
+  }
+
+  if (leadership > 0 && leadership < 55) {
+    risks.push(
+      "Leadership readiness appears limited. People-management responsibility is not recommended without development."
+    );
+  }
+
+  if (ownership > 0 && ownership < 55) {
+    risks.push(
+      "Ownership and accountability may require close follow-up and clear expectations."
+    );
+  }
+
+  if (collaboration > 0 && collaboration < 55) {
+    risks.push(
+      "Collaboration may require support before assigning highly interdependent team tasks."
+    );
+  }
+
+  if (action > 0 && action < 55) {
+    risks.push(
+      "Action orientation may require development; the candidate may delay decisions or wait for direction."
+    );
+  }
+
+  if (analysis > 0 && analysis < 55) {
+    risks.push(
+      "Analytical thinking may require structured frameworks and guided practice."
+    );
+  }
+
+  if (structure > 0 && structure < 55) {
+    risks.push(
+      "Process discipline may require reinforcement through SOPs, checklists, and close supervision."
+    );
+  }
+
+  return {
+    suitability,
+    risks
+  };
 };
 
-// Main interpretation generator
-export const generateUniversalInterpretation = (assessmentType, candidateName, scores, strengths, weaknesses, overallPercentage) => {
-  
-  // Generate category interpretations
+// ======================================================
+// MAIN EXPORT
+// ======================================================
+
+export const generateUniversalInterpretation = (
+  assessmentType,
+  candidateName,
+  scores,
+  strengths,
+  weaknesses,
+  overallPercentage
+) => {
+  const safeScores = scores || {};
+  const normalized = normalizeCategoryScores(
+    Object.fromEntries(
+      Object.entries(safeScores).map(([category, percentage]) => [
+        category,
+        {
+          score: percentage,
+          maxPossible: 100,
+          percentage
+        }
+      ])
+    )
+  );
+
   const categoryInterpretation = {};
-  Object.entries(scores).forEach(([category, score]) => {
-    const level = getLevel(score);
-    const interpretation = categoryInterpretations[category]?.[level] || 
-      `${category}: ${score}% - ${level.replace('_', ' ')} performance.`;
-    
+
+  Object.entries(safeScores).forEach(([category, score]) => {
+    const percentage = Number(score || 0);
+    const level = getScoreLevel(percentage);
+
     categoryInterpretation[category] = {
-      score,
-      level,
-      interpretation
+      score: percentage,
+      level: level.key,
+      levelLabel: level.label,
+      classification: level.classification,
+      color: level.color,
+      interpretation: getCategoryInterpretation(category, percentage),
+      supervisorImplication: getSupervisorImplication(percentage),
+      performanceComment: getScoreComment(percentage),
+      gapToTarget: calculateGapToTarget(percentage)
     };
   });
 
-  // Get profile summary
-  const profileSummary = getProfileSummary(scores);
+  const profileSummary = getProfileSummary(safeScores);
+  const { suitability, risks } = getSuitabilityAndRisks(safeScores);
 
-  // Get suitability and risks
-  const { suitability, risks } = getSuitabilityAndRisks(scores);
+  const topStrengths = getStrengthAreas(normalized, 3).map(
+    (item) => item.category
+  );
 
-  // Identify top strengths and development areas
-  const topStrengths = Object.entries(scores)
-    .filter(([_, score]) => score >= 70)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([category]) => category);
+  const topWeaknesses = getDevelopmentAreas(normalized, 3).map(
+    (item) => item.category
+  );
 
-  const topWeaknesses = Object.entries(scores)
-    .filter(([_, score]) => score < 60)
-    .sort((a, b) => a[1] - b[1])
-    .slice(0, 3)
-    .map(([category]) => category);
+  const developmentFocus = getDevelopmentAreas(normalized, 3).map(
+    (item, index) => ({
+      area: item.category,
+      score: item.percentage,
+      gapToTarget: item.gapToTarget,
+      priority:
+        isCriticalGap(item.percentage) || isPriorityDevelopment(item.percentage)
+          ? "High"
+          : index === 0
+          ? "Medium"
+          : "Low"
+    })
+  );
 
-  // Generate development focus
-  const developmentFocus = topWeaknesses.map((area, index) => ({
-    area,
-    priority: index === 0 ? 'High' : index === 1 ? 'Medium' : 'Low'
-  }));
+  const strengthText =
+    topStrengths.length > 0
+      ? `Key strengths include ${topStrengths.join(", ")}. `
+      : "No category reached the strength threshold. ";
 
-  // Create overall summary paragraph
-  const overallSummary = `${candidateName} completed the assessment with an overall score of ${overallPercentage}%. ` +
-    (topStrengths.length > 0 ? `Key strengths include ${topStrengths.join(', ')}. ` : '') +
-    (topWeaknesses.length > 0 ? `Development needed in ${topWeaknesses.join(', ')}. ` : '') +
-    profileSummary.description;
+  const weaknessText =
+    topWeaknesses.length > 0
+      ? `Priority development areas include ${topWeaknesses.join(", ")}. `
+      : "No major development area was identified below the development threshold. ";
+
+  const overallSummary = `${candidateName} completed the assessment with an overall score of ${overallPercentage}%. ${strengthText}${weaknessText}${profileSummary.description}`;
 
   return {
     candidateName,
+    assessmentType,
     overallScore: overallPercentage,
+
     profileType: profileSummary.type,
     profileDescription: profileSummary.description,
     overallSummary,
+
     categoryInterpretation,
     topStrengths,
     topWeaknesses,
-    suitability: suitability.length > 0 ? suitability : ['Standard role placement with appropriate support'],
-    risks: risks.length > 0 ? risks : ['No significant risks identified'],
+
+    suitability:
+      suitability.length > 0
+        ? suitability
+        : ["Standard role placement may be considered with appropriate support and supervisor validation."],
+
+    risks:
+      risks.length > 0
+        ? risks
+        : ["No significant risk area was identified from the category score pattern."],
+
     developmentFocus
   };
 };
+
+export default {
+  generateUniversalInterpretation
+};
+ *
+ * Corrected version:
+ * - Uses central scoring standards from utils/scoring.js
+ * - Supports all assessment types
+ * - Keeps generateUniversalInterpretation(...) export unchanged
+ * - Reduces contradictory thresholds
+ * - Adds cleaner supervisor-friendly suitability and risk logic
+ */
+
+import {
+  getScoreLevel,
+  getScoreComment,
+  getSupervisorImplication,
+  getStrengthAreas,
+  getDevelopmentAreas,
+  normalizeCategoryScores,
+  isStrength,
+  isDevelopmentArea,
+  isCriticalGap,
+  isPriorityDevelopment,
+  calculateGapToTarget,
+  REPORT_THRESHOLDS
+} from "./scoring";
+
+// ======================================================
+// ASSESSMENT-SPECIFIC CATEGORY INTERPRETATIONS
+// ======================================================
+
+const categoryInterpretations = {
+  // General Assessment Categories
+  "Cognitive Ability": {
+    exceptional:
+      "The candidate shows strong analytical and strategic thinking capability. This suggests readiness for complex problem-solving and structured decision-making tasks.",
+    strong:
+      "The candidate shows reliable cognitive capability and can handle most analytical challenges with standard guidance.",
+    adequate:
+      "The candidate shows functional cognitive capability but may benefit from structure when working through complex problems.",
+    developing:
+      "The candidate shows developing cognitive capability and may require support with complex analysis or abstract reasoning.",
+    priority_development:
+      "The candidate shows significant gaps in cognitive capability. Structured problem-solving support is recommended.",
+    critical_gap:
+      "The candidate shows critical gaps in cognitive capability. Close guidance and foundational reasoning support are recommended."
+  },
+
+  Communication: {
+    exceptional:
+      "The candidate shows strong communication capability and can likely explain ideas clearly in role-relevant situations.",
+    strong:
+      "The candidate communicates effectively in most situations and can support collaboration through clear expression.",
+    adequate:
+      "The candidate shows functional communication ability but may benefit from practice with complex or formal communication.",
+    developing:
+      "The candidate shows developing communication capability and may require support in presenting ideas clearly.",
+    priority_development:
+      "Communication should be treated as a priority development area. Misunderstanding or unclear expression may affect performance.",
+    critical_gap:
+      "The candidate shows critical communication gaps. Structured communication training and close supervision are recommended."
+  },
+
+  "Cultural & Attitudinal Fit": {
+    exceptional:
+      "The candidate shows strong alignment with workplace values, professional conduct, and team expectations.",
+    strong:
+      "The candidate shows generally reliable cultural and attitudinal fit for structured work environments.",
+    adequate:
+      "The candidate shows functional alignment but may need reinforcement of organizational expectations.",
+    developing:
+      "The candidate shows developing cultural alignment and may benefit from onboarding, coaching, and expectation setting.",
+    priority_development:
+      "Cultural or attitudinal fit requires attention. Supervisor should clarify values, standards, and expected workplace behaviors.",
+    critical_gap:
+      "The candidate shows critical fit concerns. Further validation and close monitoring are recommended before placement."
+  },
+
+  "Emotional Intelligence": {
+    exceptional:
+      "The candidate shows strong self-awareness and interpersonal judgment based on assessment evidence.",
+    strong:
+      "The candidate shows reliable interpersonal awareness and can likely manage typical workplace interactions.",
+    adequate:
+      "The candidate shows functional emotional intelligence but may need support in complex interpersonal situations.",
+    developing:
+      "The candidate shows developing emotional intelligence and may benefit from feedback and coaching.",
+    priority_development:
+      "Emotional intelligence is a priority development area. Interpersonal effectiveness may require structured support.",
+    critical_gap:
+      "The candidate shows critical gaps in emotional intelligence. Close supervision and interpersonal coaching are recommended."
+  },
+
+  "Ethics & Integrity": {
+    exceptional:
+      "The candidate shows strong evidence of principled judgment and ethical decision-making.",
+    strong:
+      "The candidate shows reliable ethical awareness and generally sound judgment.",
+    adequate:
+      "The candidate shows functional ethical awareness but may need guidance in complex situations.",
+    developing:
+      "The candidate shows developing ethical judgment and should receive clear boundaries and guidance.",
+    priority_development:
+      "Ethics and integrity should be treated as a priority development area. Supervisor guidance is recommended.",
+    critical_gap:
+      "The candidate shows critical gaps in ethical judgment. Further validation is recommended before assigning independent responsibility."
+  },
+
+  "Leadership & Management": {
+    exceptional:
+      "The candidate shows strong evidence of leadership readiness, including direction setting, people awareness, and accountability.",
+    strong:
+      "The candidate shows reliable leadership potential and may be suitable for gradual leadership exposure.",
+    adequate:
+      "The candidate shows functional leadership capability but may need structured development before leading others independently.",
+    developing:
+      "The candidate shows developing leadership capability and should receive coaching before taking on management responsibility.",
+    priority_development:
+      "Leadership and management require priority development. The candidate may not yet be ready for people-management responsibility.",
+    critical_gap:
+      "The candidate shows critical leadership gaps. Management responsibility is not recommended without significant development."
+  },
+
+  "Performance Metrics": {
+    exceptional:
+      "The candidate shows strong results orientation, accountability, and performance awareness.",
+    strong:
+      "The candidate shows reliable performance orientation and can likely work toward targets with standard supervision.",
+    adequate:
+      "The candidate shows functional performance awareness but may benefit from structured goals and progress reviews.",
+    developing:
+      "The candidate shows developing performance orientation and should receive clear targets and regular feedback.",
+    priority_development:
+      "Performance orientation requires priority development. Structured tracking and supervisor follow-up are recommended.",
+    critical_gap:
+      "The candidate shows critical performance gaps. Close supervision and clear performance expectations are recommended."
+  },
+
+  "Personality & Behavioral": {
+    exceptional:
+      "The candidate shows strong evidence of stable work style, adaptability, and constructive behavioral patterns.",
+    strong:
+      "The candidate shows generally reliable behavioral patterns for work settings.",
+    adequate:
+      "The candidate shows functional behavioral consistency but may need role-specific support.",
+    developing:
+      "The candidate shows developing behavioral consistency and may benefit from regular feedback.",
+    priority_development:
+      "Behavioral patterns require attention. Supervisor should provide clear expectations and regular check-ins.",
+    critical_gap:
+      "The candidate shows critical behavioral concerns. Close supervision and further validation are recommended."
+  },
+
+  "Problem-Solving": {
+    exceptional:
+      "The candidate shows strong problem-solving capability, including structured thinking and practical judgment.",
+    strong:
+      "The candidate can likely handle common problems with reliable reasoning and standard support.",
+    adequate:
+      "The candidate shows functional problem-solving capability but may need frameworks for complex issues.",
+    developing:
+      "The candidate shows developing problem-solving capability and would benefit from structured methods such as 5 Whys or PDCA.",
+    priority_development:
+      "Problem-solving is a priority development area. The candidate may struggle with root-cause analysis without support.",
+    critical_gap:
+      "The candidate shows critical problem-solving gaps. Close guidance and foundational problem-solving training are recommended."
+  },
+
+  "Technical & Manufacturing": {
+    exceptional:
+      "The candidate shows strong technical and operational understanding that may support technical role readiness.",
+    strong:
+      "The candidate shows reliable technical capability and can likely handle standard operational tasks.",
+    adequate:
+      "The candidate shows functional technical understanding but may need practical exposure and reinforcement.",
+    developing:
+      "The candidate shows developing technical capability and should receive structured technical training.",
+    priority_development:
+      "Technical capability requires priority development. The candidate may struggle with technical tasks without support.",
+    critical_gap:
+      "The candidate shows critical technical gaps. Foundational technical training and close supervision are recommended."
+  },
+
+  // Manufacturing Baseline Assessment Categories
+  "Technical Fundamentals": {
+    exceptional:
