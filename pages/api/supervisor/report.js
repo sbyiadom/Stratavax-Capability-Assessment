@@ -1,161 +1,6 @@
 // pages/api/supervisor/report.js
 
-import { createClient } from "@supabase/supabase-js";
-
-/*
-  Supervisor Report API
-
-  Query examples:
-  /api/supervisor/report?user_id=USER_ID&assessment_id=ASSESSMENT_ID
-  /api/supervisor/report?user_id=USER_ID&assessment=ASSESSMENT_ID
-
-  This file is intentionally written in syntax-safe JavaScript:
-  - no optional chaining
-  - no default parameters
-  - no arrow functions
-  - no duplicated exports
-  - no partial fragments
-*/
-
-// ======================================================
-// BASIC HELPERS
-// ======================================================
-
-function toNumber(value, fallback) {
-  var fallbackValue = fallback === undefined ? 0 : fallback;
-  var numberValue = Number(value);
-
-  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) {
-    return fallbackValue;
-  }
-
-  return numberValue;
-}
-
-function roundNumber(value, decimals) {
-  var decimalPlaces = decimals === undefined ? 2 : decimals;
-  var factor = Math.pow(10, decimalPlaces);
-
-  return Math.round(toNumber(value, 0) * factor) / factor;
-}
-
-function firstValue(values, fallback) {
-  var i;
-
-  if (!Array.isArray(values)) {
-    return fallback;
-  }
-
-  for (i = 0; i < values.length; i += 1) {
-    if (values[i] !== undefined && values[i] !== null && values[i] !== "") {
-      return values[i];
-    }
-  }
-
-  return fallback;
-}
-
-function getObjectValue(objectValue, key, fallback) {
-  if (
-    objectValue &&
-    typeof objectValue === "object" &&
-    objectValue[key] !== undefined &&
-    objectValue[key] !== null &&
-    objectValue[key] !== ""
-  ) {
-    return objectValue[key];
-  }
-
-  return fallback;
-}
-
-function getNestedValue(objectValue, path, fallback) {
-  var parts;
-  var current;
-  var i;
-
-  if (!objectValue || !path) {
-    return fallback;
-  }
-
-  parts = path.split(".");
-  current = objectValue;
-
-  for (i = 0; i < parts.length; i += 1) {
-    if (
-      current === null ||
-      current === undefined ||
-      current[parts[i]] === undefined ||
-      current[parts[i]] === null
-    ) {
-      return fallback;
-    }
-
-    current = current[parts[i]];
-  }
-
-  if (current === "") {
-    return fallback;
-  }
-
-  return current;
-}
-
-// ======================================================
-// INTERPRETATION HELPERS
-// ======================================================
-
-function getClassification(percentage) {
-  var value = toNumber(percentage, 0);
-
-  if (value >= 85) {
-    return "Exceptional";
-  }
-
-  if (value >= 75) {
-    return "Strong Performer";
-  }
-
-  if (value >= 65) {
-    return "Capable Contributor";
-  }
-
-  if (value >= 55) {
-    return "Developing";
-  }
-
-  if (value >= 40) {
-    return "At Risk";
-  }
-
-  return "High Risk";
-}
-
-function getScoreComment(percentage) {
-  var value = toNumber(percentage, 0);
-
-  if (value >= 85) {
-    return "Exceptional performance with strong evidence of readiness.";
-  }
-
-  if (value >= 75) {
-    return "Strong performance with reliable capability.";
-  }
-
-  if (value >= 65) {
-    return "Adequate performance with some areas requiring reinforcement.";
-  }
-
-  if (value >= 55) {
-    return "Developing performance requiring structured support.";
-  }
-
-  if (value >= 40) {
-    return "Priority development is required.";
-  }
-
-  return "Critical development support is required.";
-}
+import { createClient } from "@}import { createClient } from "@supabase/supabase-js";
 
 function getSupervisorImplication(percentage) {
   var value = toNumber(percentage, 0);
@@ -178,21 +23,10 @@ function getSupervisorImplication(percentage) {
 function getRiskLevel(percentage) {
   var value = toNumber(percentage, 0);
 
-  if (value >= 75) {
-    return "Low";
-  }
-
-  if (value >= 65) {
-    return "Moderate";
-  }
-
-  if (value >= 55) {
-    return "Elevated";
-  }
-
-  if (value >= 40) {
-    return "High";
-  }
+  if (value >= 75) return "Low";
+  if (value >= 65) return "Moderate";
+  if (value >= 55) return "Elevated";
+  if (value >= 40) return "High";
 
   return "Critical";
 }
@@ -201,22 +35,41 @@ function getRiskLevel(percentage) {
 // RESPONSE FIELD HELPERS
 // ======================================================
 
+function getQuestionObject(response) {
+  return (
+    getNestedValue(response, "unique_questions", null) ||
+    getNestedValue(response, "question", null) ||
+    null
+  );
+}
+
+function getAnswerObject(response) {
+  return (
+    getNestedValue(response, "unique_answers", null) ||
+    getNestedValue(response, "answer", null) ||
+    getNestedValue(response, "selected_answer", null) ||
+    null
+  );
+}
+
 function getResponseScore(response) {
-  if (!response) {
-    return 0;
-  }
+  var answer;
+
+  if (!response) return 0;
+
+  answer = getAnswerObject(response);
 
   return toNumber(
     firstValue(
       [
-        getObjectValue(response, "score", null),
-        getObjectValue(response, "selected_score", null),
-        getObjectValue(response, "answer_score", null),
-        getObjectValue(response, "points", null),
-        getObjectValue(response, "value", null),
-        getNestedValue(response, "answer.score", null),
-        getNestedValue(response, "unique_answers.score", null),
-        getNestedValue(response, "selected_answer.score", null)
+        getNestedValue(response, "score", null),
+        getNestedValue(response, "selected_score", null),
+        getNestedValue(response, "answer_score", null),
+        getNestedValue(response, "points", null),
+        getNestedValue(response, "value", null),
+        getNestedValue(answer, "score", null),
+        getNestedValue(answer, "points", null),
+        getNestedValue(answer, "value", null)
       ],
       0
     ),
@@ -225,21 +78,21 @@ function getResponseScore(response) {
 }
 
 function getResponseMaxScore(response) {
-  if (!response) {
-    return 5;
-  }
+  var question;
+
+  if (!response) return 5;
+
+  question = getQuestionObject(response);
 
   return toNumber(
     firstValue(
       [
-        getObjectValue(response, "max_score", null),
-        getObjectValue(response, "maxScore", null),
-        getObjectValue(response, "max_points", null),
-        getObjectValue(response, "max", null),
-        getNestedValue(response, "question.max_score", null),
-        getNestedValue(response, "unique_questions.max_score", null),
-        getNestedValue(response, "question.maxScore", null),
-        getNestedValue(response, "unique_questions.maxScore", null)
+        getNestedValue(response, "max_score", null),
+        getNestedValue(response, "maxScore", null),
+        getNestedValue(response, "max_points", null),
+        getNestedValue(response, "max", null),
+        getNestedValue(question, "max_score", null),
+        getNestedValue(question, "maxScore", null)
       ],
       5
     ),
@@ -248,78 +101,92 @@ function getResponseMaxScore(response) {
 }
 
 function getResponseCategory(response) {
-  if (!response) {
-    return "General";
-  }
+  var question;
+
+  if (!response) return "General";
+
+  question = getQuestionObject(response);
 
   return firstValue(
     [
-      getObjectValue(response, "category", null),
-      getObjectValue(response, "competency", null),
-      getObjectValue(response, "dimension", null),
-      getObjectValue(response, "section", null),
-      getObjectValue(response, "area", null),
-      getNestedValue(response, "question.category", null),
-      getNestedValue(response, "question.competency", null),
-      getNestedValue(response, "question.dimension", null),
-      getNestedValue(response, "unique_questions.category", null),
-      getNestedValue(response, "unique_questions.competency", null),
-      getNestedValue(response, "unique_questions.dimension", null)
+      getNestedValue(question, "section", null),
+      getNestedValue(response, "section", null),
+      getNestedValue(question, "category", null),
+      getNestedValue(response, "category", null),
+      getNestedValue(question, "competency", null),
+      getNestedValue(response, "competency", null),
+      getNestedValue(question, "dimension", null),
+      getNestedValue(response, "dimension", null)
     ],
     "General"
   );
 }
 
-function getResponseQuestionText(response) {
-  if (!response) {
-    return "";
-  }
+function getResponseSubcategory(response) {
+  var question;
+
+  if (!response) return "";
+
+  question = getQuestionObject(response);
 
   return firstValue(
     [
-      getObjectValue(response, "question_text", null),
-      getObjectValue(response, "question", null),
-      getNestedValue(response, "question.question_text", null),
-      getNestedValue(response, "question.text", null),
-      getNestedValue(response, "unique_questions.question_text", null),
-      getNestedValue(response, "unique_questions.text", null)
+      getNestedValue(question, "subsection", null),
+      getNestedValue(response, "subsection", null),
+      getNestedValue(question, "sub_category", null),
+      getNestedValue(response, "sub_category", null)
+    ],
+    ""
+  );
+}
+
+function getResponseQuestionText(response) {
+  var question;
+
+  if (!response) return "";
+
+  question = getQuestionObject(response);
+
+  return firstValue(
+    [
+      getNestedValue(question, "question_text", null),
+      getNestedValue(question, "text", null),
+      getNestedValue(response, "question_text", null),
+      getNestedValue(response, "question", null)
     ],
     ""
   );
 }
 
 function getResponseAnswerText(response) {
-  if (!response) {
-    return "";
-  }
+  var answer;
+
+  if (!response) return "";
+
+  answer = getAnswerObject(response);
 
   return firstValue(
     [
-      getObjectValue(response, "answer_text", null),
-      getObjectValue(response, "selected_answer_text", null),
-      getNestedValue(response, "answer.answer_text", null),
-      getNestedValue(response, "answer.text", null),
-      getNestedValue(response, "unique_answers.answer_text", null),
-      getNestedValue(response, "unique_answers.text", null),
-      getNestedValue(response, "selected_answer.answer_text", null),
-      getNestedValue(response, "selected_answer.text", null)
+      getNestedValue(answer, "answer_text", null),
+      getNestedValue(answer, "text", null),
+      getNestedValue(answer, "label", null),
+      getNestedValue(response, "answer_text", null),
+      getNestedValue(response, "selected_answer_text", null)
     ],
     ""
   );
 }
 
 function getResponseTime(response) {
-  if (!response) {
-    return 0;
-  }
+  if (!response) return 0;
 
   return toNumber(
     firstValue(
       [
-        getObjectValue(response, "time_spent_seconds", null),
-        getObjectValue(response, "time_spent", null),
-        getObjectValue(response, "duration_seconds", null),
-        getObjectValue(response, "response_time_seconds", null)
+        getNestedValue(response, "time_spent_seconds", null),
+        getNestedValue(response, "time_spent", null),
+        getNestedValue(response, "duration_seconds", null),
+        getNestedValue(response, "response_time_seconds", null)
       ],
       0
     ),
@@ -328,17 +195,15 @@ function getResponseTime(response) {
 }
 
 function getResponseChanges(response) {
-  if (!response) {
-    return 0;
-  }
+  if (!response) return 0;
 
   return toNumber(
     firstValue(
       [
-        getObjectValue(response, "times_changed", null),
-        getObjectValue(response, "changes", null),
-        getObjectValue(response, "answer_changes", null),
-        getObjectValue(response, "revision_count", null)
+        getNestedValue(response, "times_changed", null),
+        getNestedValue(response, "changes", null),
+        getNestedValue(response, "answer_changes", null),
+        getNestedValue(response, "revision_count", null)
       ],
       0
     ),
@@ -347,37 +212,33 @@ function getResponseChanges(response) {
 }
 
 // ======================================================
-// CANDIDATE AND ASSESSMENT HELPERS
+// CANDIDATE / ASSESSMENT HELPERS
 // ======================================================
 
 function getCandidateName(candidate, userId) {
-  if (!candidate) {
-    return "Candidate";
-  }
+  if (!candidate) return "Candidate";
 
   return firstValue(
     [
-      getObjectValue(candidate, "full_name", null),
-      getObjectValue(candidate, "name", null),
-      getObjectValue(candidate, "display_name", null),
-      getObjectValue(candidate, "email", null),
-      getObjectValue(candidate, "candidate_name", null)
+      getNestedValue(candidate, "full_name", null),
+      getNestedValue(candidate, "name", null),
+      getNestedValue(candidate, "display_name", null),
+      getNestedValue(candidate, "email", null),
+      getNestedValue(candidate, "candidate_name", null)
     ],
     userId || "Candidate"
   );
 }
 
 function getAssessmentName(assessment) {
-  if (!assessment) {
-    return "Assessment";
-  }
+  if (!assessment) return "Assessment";
 
   return firstValue(
     [
-      getObjectValue(assessment, "title", null),
-      getObjectValue(assessment, "name", null),
-      getObjectValue(assessment, "assessment_name", null),
-      getObjectValue(assessment, "description", null)
+      getNestedValue(assessment, "title", null),
+      getNestedValue(assessment, "name", null),
+      getNestedValue(assessment, "assessment_name", null),
+      getNestedValue(assessment, "description", null)
     ],
     "Assessment"
   );
@@ -433,9 +294,7 @@ async function selectSingle(supabase, tableName, configureQuery, selectText) {
     query = query.limit(1);
     result = await query;
 
-    if (result.error) {
-      return null;
-    }
+    if (result.error) return null;
 
     if (Array.isArray(result.data) && result.data.length > 0) {
       return result.data[0];
@@ -458,41 +317,31 @@ async function fetchCandidate(supabase, userId) {
     return query.eq("id", userId);
   });
 
-  if (candidate) {
-    return candidate;
-  }
+  if (candidate) return candidate;
 
   candidate = await selectSingle(supabase, "profiles", function (query) {
     return query.eq("user_id", userId);
   });
 
-  if (candidate) {
-    return candidate;
-  }
+  if (candidate) return candidate;
 
-  candidate = await selectSingle(supabase, "users", function (query) {
+  candidate = await selectSingle(supabase, "user_profiles", function (query) {
     return query.eq("id", userId);
   });
 
-  if (candidate) {
-    return candidate;
-  }
+  if (candidate) return candidate;
+
+  candidate = await selectSingle(supabase, "candidate_profiles", function (query) {
+    return query.eq("user_id", userId);
+  });
+
+  if (candidate) return candidate;
 
   candidate = await selectSingle(supabase, "candidates", function (query) {
     return query.eq("user_id", userId);
   });
 
-  if (candidate) {
-    return candidate;
-  }
-
-  candidate = await selectSingle(supabase, "candidates", function (query) {
-    return query.eq("id", userId);
-  });
-
-  if (candidate) {
-    return candidate;
-  }
+  if (candidate) return candidate;
 
   return {
     id: userId,
@@ -503,73 +352,33 @@ async function fetchCandidate(supabase, userId) {
 async function fetchAssessment(supabase, assessmentId) {
   var assessment;
 
-  if (!assessmentId) {
-    return null;
-  }
+  if (!assessmentId) return null;
 
   assessment = await selectSingle(supabase, "assessments", function (query) {
     return query.eq("id", assessmentId);
   });
 
-  if (assessment) {
-    return assessment;
-  }
+  if (assessment) return assessment;
 
-  assessment = await selectSingle(supabase, "unique_assessments", function (query) {
+  assessment = await selectSingle(supabase, "candidate_assessments", function (query) {
     return query.eq("id", assessmentId);
   });
 
-  if (assessment) {
-    return assessment;
-  }
+  if (assessment) return assessment;
 
   return null;
 }
 
-async function fetchSessions(supabase, userId, assessmentId) {
-  var tableNames;
-  var i;
-  var result;
-
-  if (!userId || !assessmentId) {
-    return [];
-  }
-
-  tableNames = ["assessment_sessions", "sessions", "candidate_sessions"];
-
-  for (i = 0; i < tableNames.length; i += 1) {
-    result = await selectRows(
-      supabase,
-      tableNames[i],
-      function (query) {
-        return query.eq("user_id", userId).eq("assessment_id", assessmentId);
-      },
-      "*"
-    );
-
-    if (result.data.length > 0) {
-      return result.data;
-    }
-  }
-
-  return [];
-}
-
 async function fetchResponses(supabase, userId, assessmentId) {
   var selectWithJoins;
-  var directWithJoins;
-  var directPlain;
-  var sessions;
-  var sessionIds;
-  var bySessionWithJoins;
-  var bySessionPlain;
-  var fallbackWithJoins;
-  var fallbackPlain;
+  var resultWithAssessment;
+  var resultPlainAssessment;
+  var resultUserOnly;
 
   selectWithJoins = "*, unique_answers(*), unique_questions(*)";
 
   if (assessmentId) {
-    directWithJoins = await selectRows(
+    resultWithAssessment = await selectRows(
       supabase,
       "responses",
       function (query) {
@@ -578,14 +387,14 @@ async function fetchResponses(supabase, userId, assessmentId) {
       selectWithJoins
     );
 
-    if (directWithJoins.data.length > 0) {
+    if (resultWithAssessment.data.length > 0) {
       return {
-        responses: directWithJoins.data,
+        responses: resultWithAssessment.data,
         source: "responses.user_id_and_assessment_id_with_joins"
       };
     }
 
-    directPlain = await selectRows(
+    resultPlainAssessment = await selectRows(
       supabase,
       "responses",
       function (query) {
@@ -594,59 +403,15 @@ async function fetchResponses(supabase, userId, assessmentId) {
       "*"
     );
 
-    if (directPlain.data.length > 0) {
+    if (resultPlainAssessment.data.length > 0) {
       return {
-        responses: directPlain.data,
+        responses: resultPlainAssessment.data,
         source: "responses.user_id_and_assessment_id_plain"
       };
     }
-
-    sessions = await fetchSessions(supabase, userId, assessmentId);
-
-    sessionIds = sessions
-      .map(function (session) {
-        return session.id;
-      })
-      .filter(function (id) {
-        return id !== undefined && id !== null && id !== "";
-      });
-
-    if (sessionIds.length > 0) {
-      bySessionWithJoins = await selectRows(
-        supabase,
-        "responses",
-        function (query) {
-          return query.eq("user_id", userId).in("session_id", sessionIds);
-        },
-        selectWithJoins
-      );
-
-      if (bySessionWithJoins.data.length > 0) {
-        return {
-          responses: bySessionWithJoins.data,
-          source: "responses.session_id_with_joins"
-        };
-      }
-
-      bySessionPlain = await selectRows(
-        supabase,
-        "responses",
-        function (query) {
-          return query.eq("user_id", userId).in("session_id", sessionIds);
-        },
-        "*"
-      );
-
-      if (bySessionPlain.data.length > 0) {
-        return {
-          responses: bySessionPlain.data,
-          source: "responses.session_id_plain"
-        };
-      }
-    }
   }
 
-  fallbackWithJoins = await selectRows(
+  resultUserOnly = await selectRows(
     supabase,
     "responses",
     function (query) {
@@ -655,25 +420,9 @@ async function fetchResponses(supabase, userId, assessmentId) {
     selectWithJoins
   );
 
-  if (fallbackWithJoins.data.length > 0) {
-    return {
-      responses: fallbackWithJoins.data,
-      source: "responses.user_id_fallback_with_joins"
-    };
-  }
-
-  fallbackPlain = await selectRows(
-    supabase,
-    "responses",
-    function (query) {
-      return query.eq("user_id", userId);
-    },
-    "*"
-  );
-
   return {
-    responses: fallbackPlain.data,
-    source: "responses.user_id_fallback_plain"
+    responses: resultUserOnly.data,
+    source: "responses.user_id_fallback_with_joins"
   };
 }
 
@@ -684,9 +433,9 @@ async function fetchResponses(supabase, userId, assessmentId) {
 function buildBehavioralInsights(responses) {
   var totalTime = 0;
   var totalChanges = 0;
+  var count = responses.length;
   var averageTime = 0;
   var averageChanges = 0;
-  var count = responses.length;
   var note = "";
 
   responses.forEach(function (response) {
@@ -723,8 +472,9 @@ function buildBehavioralInsights(responses) {
 function buildCategoryScores(responses) {
   var grouped = {};
 
-  responses.forEach(function (response) {
+  safeArray(responses).forEach(function (response) {
     var category = getResponseCategory(response);
+    var subcategory = getResponseSubcategory(response);
     var score = getResponseScore(response);
     var maxScore = getResponseMaxScore(response);
     var timeSpent = getResponseTime(response);
@@ -750,6 +500,8 @@ function buildCategoryScores(responses) {
     grouped[category].totalChanges += changes;
 
     grouped[category].answers.push({
+      section: category,
+      subsection: subcategory,
       question: getResponseQuestionText(response),
       answer: getResponseAnswerText(response),
       score: score,
@@ -795,7 +547,7 @@ function buildRecommendations(categoryScores) {
   var developmentAreas;
   var strengths;
 
-  developmentAreas = categoryScores
+  developmentAreas = safeArray(categoryScores)
     .filter(function (item) {
       return toNumber(item.percentage, 0) < 65;
     })
@@ -832,7 +584,7 @@ function buildRecommendations(categoryScores) {
     });
   });
 
-  strengths = categoryScores
+  strengths = safeArray(categoryScores)
     .filter(function (item) {
       return toNumber(item.percentage, 0) >= 75;
     })
@@ -868,17 +620,17 @@ function buildReport(candidate, assessment, responses, userId, assessmentId, sou
   var totalScore = 0;
   var maxScore = 0;
   var percentage = 0;
-  var classification = "";
-  var categoryScores = [];
-  var strengths = [];
-  var developmentAreas = [];
-  var recommendations = [];
+  var classification;
+  var categoryScores;
+  var strengths;
+  var developmentAreas;
+  var recommendations;
   var behavioralInsights;
   var candidateName;
   var assessmentName;
   var summary;
 
-  responses.forEach(function (response) {
+  safeArray(responses).forEach(function (response) {
     totalScore += getResponseScore(response);
     maxScore += getResponseMaxScore(response);
   });
@@ -965,8 +717,8 @@ function buildReport(candidate, assessment, responses, userId, assessmentId, sou
     topDevelopmentNeeds: developmentAreas,
     recommendations: recommendations,
 
-    responseCount: responses.length,
-    response_count: responses.length,
+    responseCount: safeArray(responses).length,
+    response_count: safeArray(responses).length,
     dataSource: source
   };
 }
@@ -1067,3 +819,139 @@ export default async function handler(req, res) {
     });
   }
 }
+
+/*
+  Supervisor Report API
+
+  Purpose:
+  - Fetch candidate responses for one assessment
+  - Join selected answers and unique questions
+  - Use unique_questions.section as the report category
+  - Use unique_questions.subsection for answer-level context
+  - Generate supervisor-facing scores, strengths, development areas and recommendations
+
+  Query examples:
+  /api/supervisor/report?user_id=USER_ID&assessment_id=ASSESSMENT_ID
+  /api/supervisor/report?user_id=USER_ID&assessment=ASSESSMENT_ID
+
+  Syntax-safe style:
+  - no optional chaining
+  - no default parameters
+  - no arrow functions
+  - no partial fragments
+*/
+
+// ======================================================
+// BASIC HELPERS
+// ======================================================
+
+function toNumber(value, fallback) {
+  var defaultValue = fallback === undefined ? 0 : fallback;
+  var numberValue = Number(value);
+
+  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) {
+    return defaultValue;
+  }
+
+  return numberValue;
+}
+
+function roundNumber(value, decimals) {
+  var d = decimals === undefined ? 2 : decimals;
+  var factor = Math.pow(10, d);
+
+  return Math.round(toNumber(value, 0) * factor) / factor;
+}
+
+function firstValue(values, fallback) {
+  var i;
+
+  if (!Array.isArray(values)) {
+    return fallback;
+  }
+
+  for (i = 0; i < values.length; i += 1) {
+    if (values[i] !== undefined && values[i] !== null && values[i] !== "") {
+      return values[i];
+    }
+  }
+
+  return fallback;
+}
+
+function getNestedValue(objectValue, path, fallback) {
+  var parts;
+  var current;
+  var i;
+
+  if (!objectValue || !path) {
+    return fallback;
+  }
+
+  parts = path.split(".");
+  current = objectValue;
+
+  for (i = 0; i < parts.length; i += 1) {
+    if (
+      current === null ||
+      current === undefined ||
+      current[parts[i]] === undefined ||
+      current[parts[i]] === null
+    ) {
+      return fallback;
+    }
+
+    current = current[parts[i]];
+  }
+
+  if (current === "") {
+    return fallback;
+  }
+
+  return current;
+}
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+// ======================================================
+// INTERPRETATION HELPERS
+// ======================================================
+
+function getClassification(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value >= 85) return "Exceptional";
+  if (value >= 75) return "Strong Performer";
+  if (value >= 65) return "Capable Contributor";
+  if (value >= 55) return "Developing";
+  if (value >= 40) return "At Risk";
+
+  return "High Risk";
+}
+
+function getScoreComment(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value >= 85) {
+    return "Exceptional performance with strong evidence of readiness.";
+  }
+
+  if (value >= 75) {
+    return "Strong performance with reliable capability.";
+  }
+
+  if (value >= 65) {
+    return "Adequate performance with some areas requiring reinforcement.";
+  }
+
+  if (value >= 55) {
+    return "Developing performance requiring structured support.";
+  }
+
+  if (value >= 40) {
+    return "Priority development is required.";
+  }
+
+  return "Critical development support is required.";
