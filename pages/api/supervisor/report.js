@@ -1,31 +1,6 @@
 // pages/api/supervisor/report.js
 
-import { createClient } from", null),import { createClient } from "@supabase/supabase-js";
-      getNestedValue(response, "question.dimension", null)
-    ],
-    "General"
-  );
-}
-
-function getResponseQuestionText(response) {
-  return firstDefined(
-    [
-      response.question_text,
-      getNestedValue(response, "unique_questions.question_text", null),
-      getNestedValue(response, "question.question_text", null),
-      getNestedValue(response, "unique_questions.text", null),
-      getNestedValue(response, "question.text", null)
-    ],
-    ""
-  );
-}
-
-function getResponseAnswerText(response) {
-  return firstDefined(
-    [
-      response.answer_text,
-      getNestedValue(response, "unique_answers.answer_text", null),
-      getNestedValue(response, "answer.answer_text", null),
+import {Value(response, "answer.answer_text", null),import { createClient } from "@supabase/supabase-js";
       getNestedValue(response, "unique_answers.text", null),
       getNestedValue(response, "answer.text", null)
     ],
@@ -34,7 +9,7 @@ function getResponseAnswerText(response) {
 }
 
 function getCandidateName(candidate, userId) {
-  if (!candidate) return "Candidate";
+  if (!candidate) return userId || "Candidate";
 
   return firstDefined(
     [
@@ -51,7 +26,6 @@ function getCandidateName(candidate, userId) {
 async function trySelectRows(supabase, tableName, configureQuery, selectText) {
   try {
     let query = supabase.from(tableName).select(selectText || "*");
-
     query = configureQuery(query);
 
     const result = await query;
@@ -78,14 +52,11 @@ async function trySelectRows(supabase, tableName, configureQuery, selectText) {
 async function trySelectSingle(supabase, tableName, configureQuery) {
   try {
     let query = supabase.from(tableName).select("*");
-
     query = configureQuery(query).limit(1);
 
     const result = await query;
 
-    if (result.error) {
-      return null;
-    }
+    if (result.error) return null;
 
     if (Array.isArray(result.data) && result.data.length > 0) {
       return result.data[0];
@@ -98,8 +69,14 @@ async function trySelectSingle(supabase, tableName, configureQuery) {
 }
 
 async function fetchCandidate(supabase, userId) {
-  const profile = await trySelectSingle(supabase, "profiles", function (query) {
+  let profile = await trySelectSingle(supabase, "profiles", function (query) {
     return query.eq("id", userId);
+  });
+
+  if (profile) return profile;
+
+  profile = await trySelectSingle(supabase, "profiles", function (query) {
+    return query.eq("user_id", userId);
   });
 
   if (profile) return profile;
@@ -125,11 +102,19 @@ async function fetchCandidate(supabase, userId) {
 async function fetchAssessment(supabase, assessmentId) {
   if (!assessmentId) return null;
 
-  const assessment = await trySelectSingle(supabase, "assessments", function (query) {
+  let assessment = await trySelectSingle(supabase, "assessments", function (query) {
     return query.eq("id", assessmentId);
   });
 
-  return assessment;
+  if (assessment) return assessment;
+
+  assessment = await trySelectSingle(supabase, "unique_assessments", function (query) {
+    return query.eq("id", assessmentId);
+  });
+
+  if (assessment) return assessment;
+
+  return null;
 }
 
 async function fetchSessions(supabase, userId, assessmentId) {
@@ -171,7 +156,7 @@ async function fetchResponses(supabase, userId, assessmentId) {
     if (directWithAssessment.data.length > 0) {
       return {
         responses: directWithAssessment.data,
-        source: "responses.assessment_id"
+        source: "responses.assessment_id_with_joins"
       };
     }
 
@@ -192,6 +177,7 @@ async function fetchResponses(supabase, userId, assessmentId) {
     }
 
     const sessions = await fetchSessions(supabase, userId, assessmentId);
+
     const sessionIds = sessions
       .map(function (session) {
         return session.id;
@@ -213,7 +199,7 @@ async function fetchResponses(supabase, userId, assessmentId) {
       if (bySessionWithJoins.data.length > 0) {
         return {
           responses: bySessionWithJoins.data,
-          source: "responses.session_id"
+          source: "responses.session_id_with_joins"
         };
       }
 
@@ -247,7 +233,7 @@ async function fetchResponses(supabase, userId, assessmentId) {
   if (fallbackWithJoins.data.length > 0) {
     return {
       responses: fallbackWithJoins.data,
-      source: "responses.user_id_fallback"
+      source: "responses.user_id_fallback_with_joins"
     };
   }
 
@@ -262,7 +248,7 @@ async function fetchResponses(supabase, userId, assessmentId) {
 
   return {
     responses: fallbackPlain.data,
-    source: "responses.user_id_plain_fallback"
+    source: "responses.user_id_fallback_plain"
   };
 }
 
@@ -288,6 +274,7 @@ function buildCategoryScores(responses) {
     grouped[category].totalScore += score;
     grouped[category].maxScore += maxScore;
     grouped[category].questionCount += 1;
+
     grouped[category].answers.push({
       question: getResponseQuestionText(response),
       answer: getResponseAnswerText(response),
@@ -298,8 +285,11 @@ function buildCategoryScores(responses) {
 
   return Object.keys(grouped).map(function (key) {
     const item = grouped[key];
+
     const percentage =
-      item.maxScore > 0 ? roundNumber((item.totalScore / item.maxScore) * 100, 2) : 0;
+      item.maxScore > 0
+        ? roundNumber((item.totalScore / item.maxScore) * 100, 2)
+        : 0;
 
     return {
       category: item.category,
@@ -423,10 +413,13 @@ function buildReport(candidate, assessment, responses, userId, assessmentId, sou
     .slice(0, 3);
 
   const recommendations = buildRecommendations(categoryScores);
-
   const candidateName = getCandidateName(candidate, userId);
+
   const assessmentName = assessment
-    ? firstDefined([assessment.title, assessment.name, assessment.assessment_name], "Assessment")
+    ? firstDefined(
+        [assessment.title, assessment.name, assessment.assessment_name],
+        "Assessment"
+      )
     : "Assessment";
 
   const summary =
@@ -520,7 +513,6 @@ export default async function handler(req, res) {
   try {
     const candidate = await fetchCandidate(supabase, userId);
     const assessment = await fetchAssessment(supabase, assessmentId);
-
     const responseResult = await fetchResponses(supabase, userId, assessmentId);
     const responses = responseResult.responses;
 
@@ -579,6 +571,8 @@ function roundNumber(value, decimals) {
 }
 
 function firstDefined(values, fallback) {
+  if (!Array.isArray(values)) return fallback;
+
   for (let i = 0; i < values.length; i += 1) {
     if (values[i] !== undefined && values[i] !== null && values[i] !== "") {
       return values[i];
@@ -625,11 +619,25 @@ function getClassification(percentage) {
 function getScoreComment(percentage) {
   const value = safeNumber(percentage, 0);
 
-  if (value >= 85) return "Exceptional performance with strong evidence of readiness.";
-  if (value >= 75) return "Strong performance with reliable capability.";
-  if (value >= 65) return "Adequate performance with some areas for reinforcement.";
-  if (value >= 55) return "Developing performance requiring structured support.";
-  if (value >= 40) return "Priority development is required.";
+  if (value >= 85) {
+    return "Exceptional performance with strong evidence of readiness.";
+  }
+
+  if (value >= 75) {
+    return "Strong performance with reliable capability.";
+  }
+
+  if (value >= 65) {
+    return "Adequate performance with some areas for reinforcement.";
+  }
+
+  if (value >= 55) {
+    return "Developing performance requiring structured support.";
+  }
+
+  if (value >= 40) {
+    return "Priority development is required.";
+  }
 
   return "Critical development support is required.";
 }
@@ -653,6 +661,8 @@ function getSupervisorImplication(percentage) {
 }
 
 function getResponseScore(response) {
+  if (!response) return 0;
+
   return safeNumber(
     firstDefined(
       [
@@ -669,6 +679,8 @@ function getResponseScore(response) {
 }
 
 function getResponseMaxScore(response) {
+  if (!response) return 5;
+
   return safeNumber(
     firstDefined(
       [
@@ -685,6 +697,8 @@ function getResponseMaxScore(response) {
 }
 
 function getResponseCategory(response) {
+  if (!response) return "General";
+
   return firstDefined(
     [
       response.category,
@@ -694,3 +708,32 @@ function getResponseCategory(response) {
       getNestedValue(response, "unique_questions.competency", null),
       getNestedValue(response, "unique_questions.dimension", null),
       getNestedValue(response, "question.category", null),
+      getNestedValue(response, "question.competency", null),
+      getNestedValue(response, "question.dimension", null)
+    ],
+    "General"
+  );
+}
+
+function getResponseQuestionText(response) {
+  if (!response) return "";
+
+  return firstDefined(
+    [
+      response.question_text,
+      getNestedValue(response, "unique_questions.question_text", null),
+      getNestedValue(response, "question.question_text", null),
+      getNestedValue(response, "unique_questions.text", null),
+      getNestedValue(response, "question.text", null)
+    ],
+    ""
+  );
+}
+
+function getResponseAnswerText(response) {
+  if (!response) return "";
+
+  return firstDefined(
+    [
+      response.answer_text,
+      getNestedValue(response, "unique_answers.answer_text", null),
