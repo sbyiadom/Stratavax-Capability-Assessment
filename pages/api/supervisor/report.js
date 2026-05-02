@@ -1,6 +1,324 @@
 // pages/api/supervisor/report.js
 
-import { createClientimport { createClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
+
+/*
+  Supervisor Report API
+
+  Confirmed working data model:
+  - responses.question_id links to unique_questions.id
+  - unique_questions.section is used as the report category
+  - unique_questions.subsection is used as sub-area context
+  - unique_answers.score is used as selected answer score where available
+
+  Syntax-safe JavaScript:
+  - no optional chaining
+  - no arrow functions
+  - no default parameters
+  - no partial fragments
+*/
+
+// ======================================================
+// BASIC HELPERS
+// ======================================================
+
+function toNumber(value, fallback) {
+  var fallbackValue = fallback === undefined ? 0 : fallback;
+  var numberValue = Number(value);
+
+  if (isNaN(numberValue) || !isFinite(numberValue)) {
+    return fallbackValue;
+  }
+
+  return numberValue;
+}
+
+function roundNumber(value, decimals) {
+  var decimalPlaces = decimals === undefined ? 2 : decimals;
+  var factor = Math.pow(10, decimalPlaces);
+
+  return Math.round(toNumber(value, 0) * factor) / factor;
+}
+
+function safeArray(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  return [];
+}
+
+function firstValue(values, fallback) {
+  var i;
+
+  if (!Array.isArray(values)) {
+    return fallback;
+  }
+
+  for (i = 0; i < values.length; i += 1) {
+    if (values[i] !== undefined && values[i] !== null && values[i] !== "") {
+      return values[i];
+    }
+  }
+
+  return fallback;
+}
+
+function asObject(value) {
+  if (Array.isArray(value)) {
+    if (value.length > 0 && value[0] && typeof value[0] === "object") {
+      return value[0];
+    }
+
+    return null;
+  }
+
+  if (value && typeof value === "object") {
+    return value;
+  }
+
+  return null;
+}
+
+function getValue(objectValue, key, fallback) {
+  var objectData = asObject(objectValue);
+
+  if (!objectData) {
+    return fallback;
+  }
+
+  if (
+    objectData[key] !== undefined &&
+    objectData[key] !== null &&
+    objectData[key] !== ""
+  ) {
+    return objectData[key];
+  }
+
+  return fallback;
+}
+
+// ======================================================
+// CLASSIFICATION HELPERS
+// ======================================================
+
+function classifyScore(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value >= 85) return "Exceptional";
+  if (value >= 75) return "Strong Performer";
+  if (value >= 65) return "Capable Contributor";
+  if (value >= 55) return "Developing";
+  if (value >= 40) return "At Risk";
+
+  return "High Risk";
+}
+
+function getRiskLevel(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value >= 75) return "Low";
+  if (value >= 65) return "Moderate";
+  if (value >= 55) return "Elevated";
+  if (value >= 40) return "High";
+
+  return "Critical";
+}
+
+function getScoreComment(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value >= 85) {
+    return "Exceptional performance with strong evidence of readiness.";
+  }
+
+  if (value >= 75) {
+    return "Strong performance with reliable capability.";
+  }
+
+  if (value >= 65) {
+    return "Adequate performance with some areas requiring reinforcement.";
+  }
+
+  if (value >= 55) {
+    return "Developing performance requiring structured support.";
+  }
+
+  if (value >= 40) {
+    return "Priority development is required.";
+  }
+
+  return "Critical development support is required.";
+}
+
+function getSupervisorImplication(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value >= 75) {
+    return "The candidate can perform reliably with standard supervision while still benefiting from role-specific reinforcement.";
+  }
+
+  if (value >= 65) {
+    return "The candidate can perform with guidance, coaching, and periodic review in this area.";
+  }
+
+  if (value >= 55) {
+    return "The candidate requires structured support, close follow-up, and practical coaching before being relied upon independently.";
+  }
+
+  return "The candidate requires close supervision, targeted development, and careful validation before being assigned critical responsibilities.";
+}
+
+function getPriorityFromScore(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value < 40) return "Critical";
+  if (value < 55) return "High";
+  if (value < 65) return "Medium";
+
+  return "Low";
+}
+
+// ======================================================
+// CATEGORY NARRATIVE HELPERS
+// ======================================================
+
+function getCategoryNarrative(category, percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (category === "Clinical") {
+    return (
+      "Clinical performance scored " +
+      value +
+      "%. This suggests difficulty consistently interpreting behavioral, psychological, or stress-related indicators. The supervisor should validate judgement in sensitive situations and use structured case discussions before assigning high-impact responsibilities."
+    );
+  }
+
+  if (category === "Leadership") {
+    return (
+      "Leadership performance scored " +
+      value +
+      "%. This suggests challenges with ownership, direction-setting, accountability, or confident response in leadership situations. Development should focus on practical leadership scenarios, decision ownership, and follow-through."
+    );
+  }
+
+  if (category === "Decision-Making") {
+    return (
+      "Decision-Making performance scored " +
+      value +
+      "%. This reflects developing judgement under complexity, ambiguity, competing priorities, or pressure. The supervisor should provide decision frameworks, guided review, and feedback after real or simulated decisions."
+    );
+  }
+
+  if (category === "Communication Style") {
+    return (
+      "Communication Style performance scored " +
+      value +
+      "%. This indicates inconsistent interpersonal communication, especially around feedback handling, emotional awareness, meeting behavior, and written clarity. Coaching should focus on clarity, listening, tone, and response discipline."
+    );
+  }
+
+  if (category === "Adaptability") {
+    return (
+      "Adaptability performance scored " +
+      value +
+      "%. This suggests difficulty adjusting to change, uncertainty, or unexpected plan changes. Development should include exposure to varied scenarios, reflection after change events, and coaching on flexible response patterns."
+    );
+  }
+
+  if (category === "Collaboration") {
+    return (
+      "Collaboration performance scored " +
+      value +
+      "%. This indicates challenges working effectively with others, aligning with team expectations, or contributing consistently in group situations. The supervisor should reinforce teamwork habits and shared accountability."
+    );
+  }
+
+  if (category === "FBA") {
+    return (
+      "FBA performance scored " +
+      value +
+      "%. This indicates gaps in understanding behavioral antecedents, consequences, triggers, and functional patterns. Practical case-based coaching is recommended to improve interpretation of behavior and appropriate response planning."
+    );
+  }
+
+  return (
+    category +
+    " performance scored " +
+    value +
+    "%. This area requires development support, supervisor review, and practical reinforcement."
+  );
+}
+
+function getCategoryAction(category, percentage) {
+  var priority = getPriorityFromScore(percentage);
+
+  if (category === "Clinical") {
+    return (
+      "Use case-based reviews, guided interpretation exercises, and supervisor validation before the candidate handles sensitive clinical or behavioral judgement tasks independently. Priority: " +
+      priority +
+      "."
+    );
+  }
+
+  if (category === "Leadership") {
+    return (
+      "Assign small leadership tasks with clear expectations, require reflection after completion, and review accountability, initiative, and decision ownership. Priority: " +
+      priority +
+      "."
+    );
+  }
+
+  if (category === "Decision-Making") {
+    return (
+      "Introduce a structured decision-making framework, review options before action, and discuss outcomes after decisions are made. Priority: " +
+      priority +
+      "."
+    );
+  }
+
+  if (category === "Communication Style") {
+    return (
+      "Provide coaching on feedback response, meeting participation, emotional awareness, email clarity, and active listening. Priority: " +
+      priority +
+      "."
+    );
+  }
+
+  if (category === "Adaptability") {
+    return (
+      "Expose the candidate to controlled change scenarios and coach the candidate on flexible planning, calm response, and adjustment after unexpected changes. Priority: " +
+      priority +
+      "."
+    );
+  }
+
+  if (category === "Collaboration") {
+    return (
+      "Assign team-based tasks with clear roles and review how the candidate communicates, supports others, and follows shared commitments. Priority: " +
+      priority +
+      "."
+    );
+  }
+
+  if (category === "FBA") {
+    return (
+      "Use practical behavior scenarios to teach antecedents, consequences, reinforcement patterns, and response planning. Priority: " +
+      priority +
+      "."
+    );
+  }
+
+  return (
+    "Create a targeted development plan for " +
+    category +
+    " and review progress after applied practice. Priority: " +
+    priority +
+    "."
+  );
+}
+
+// ======================================================
 // RESPONSE HELPERS
 // ======================================================
 
@@ -869,351 +1187,3 @@ export default async function handler(req, res) {
     });
   }
 }
-
-/*
-  SUPERVISOR REPORT API
-
-  Confirmed data model:
-  - responses.question_id links to unique_questions.id
-  - unique_questions.section is the main report category
-  - unique_questions.subsection is the sub-area/context
-  - responses.answer_id links to unique_answers.id through Supabase relationship
-  - unique_answers.score is used as the selected answer score where available
-
-  Syntax-safe JavaScript:
-  - no arrow functions
-  - no optional chaining
-  - no default parameters
-  - no partial exports
-  - no HTML entities
-*/
-
-// ======================================================
-// BASIC HELPERS
-// ======================================================
-
-function toNumber(value, fallback) {
-  var fallbackValue = fallback === undefined ? 0 : fallback;
-  var numberValue = Number(value);
-
-  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) {
-    return fallbackValue;
-  }
-
-  return numberValue;
-}
-
-function roundNumber(value, decimals) {
-  var decimalPlaces = decimals === undefined ? 2 : decimals;
-  var factor = Math.pow(10, decimalPlaces);
-
-  return Math.round(toNumber(value, 0) * factor) / factor;
-}
-
-function firstValue(values, fallback) {
-  var i;
-
-  if (!Array.isArray(values)) {
-    return fallback;
-  }
-
-  for (i = 0; i < values.length; i += 1) {
-    if (values[i] !== undefined && values[i] !== null && values[i] !== "") {
-      return values[i];
-    }
-  }
-
-  return fallback;
-}
-
-function safeArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-function asObject(value) {
-  if (Array.isArray(value)) {
-    if (value.length > 0 && value[0] && typeof value[0] === "object") {
-      return value[0];
-    }
-
-    return null;
-  }
-
-  if (value && typeof value === "object") {
-    return value;
-  }
-
-  return null;
-}
-
-function getValue(objectValue, key, fallback) {
-  var objectData = asObject(objectValue);
-
-  if (!objectData) {
-    return fallback;
-  }
-
-  if (
-    objectData[key] !== undefined &&
-    objectData[key] !== null &&
-    objectData[key] !== ""
-  ) {
-    return objectData[key];
-  }
-
-  return fallback;
-}
-
-// ======================================================
-// CLASSIFICATION AND INTERPRETATION
-// ======================================================
-
-function classifyScore(percentage) {
-  var value = toNumber(percentage, 0);
-
-  if (value >= 85) {
-    return "Exceptional";
-  }
-
-  if (value >= 75) {
-    return "Strong Performer";
-  }
-
-  if (value >= 65) {
-    return "Capable Contributor";
-  }
-
-  if (value >= 55) {
-    return "Developing";
-  }
-
-  if (value >= 40) {
-    return "At Risk";
-  }
-
-  return "High Risk";
-}
-
-function getRiskLevel(percentage) {
-  var value = toNumber(percentage, 0);
-
-  if (value >= 75) {
-    return "Low";
-  }
-
-  if (value >= 65) {
-    return "Moderate";
-  }
-
-  if (value >= 55) {
-    return "Elevated";
-  }
-
-  if (value >= 40) {
-    return "High";
-  }
-
-  return "Critical";
-}
-
-function getScoreComment(percentage) {
-  var value = toNumber(percentage, 0);
-
-  if (value >= 85) {
-    return "Exceptional performance with strong evidence of readiness.";
-  }
-
-  if (value >= 75) {
-    return "Strong performance with reliable capability.";
-  }
-
-  if (value >= 65) {
-    return "Adequate performance with some areas requiring reinforcement.";
-  }
-
-  if (value >= 55) {
-    return "Developing performance requiring structured support.";
-  }
-
-  if (value >= 40) {
-    return "Priority development is required.";
-  }
-
-  return "Critical development support is required.";
-}
-
-function getSupervisorImplication(percentage) {
-  var value = toNumber(percentage, 0);
-
-  if (value >= 75) {
-    return "The candidate can perform reliably with standard supervision while still benefiting from role-specific reinforcement.";
-  }
-
-  if (value >= 65) {
-    return "The candidate can perform with guidance, coaching, and periodic review in this area.";
-  }
-
-  if (value >= 55) {
-    return "The candidate requires structured support, close follow-up, and practical coaching before being relied upon independently.";
-  }
-
-  return "The candidate requires close supervision, targeted development, and careful validation before being assigned critical responsibilities.";
-}
-
-function getPriorityFromScore(percentage) {
-  var value = toNumber(percentage, 0);
-
-  if (value < 40) {
-    return "Critical";
-  }
-
-  if (value < 55) {
-    return "High";
-  }
-
-  if (value < 65) {
-    return "Medium";
-  }
-
-  return "Low";
-}
-
-// ======================================================
-// CATEGORY-SPECIFIC NARRATIVES
-// ======================================================
-
-function getCategoryNarrative(category, percentage) {
-  var value = toNumber(percentage, 0);
-
-  if (category === "Clinical") {
-    return (
-      "Clinical performance scored " +
-      value +
-      "%. This suggests difficulty consistently interpreting behavioral, psychological, or stress-related indicators. The supervisor should validate judgement in sensitive situations and use structured case discussions before assigning high-impact responsibilities."
-    );
-  }
-
-  if (category === "Leadership") {
-    return (
-      "Leadership performance scored " +
-      value +
-      "%. This suggests challenges with ownership, direction-setting, accountability, or confident response in leadership situations. Development should focus on practical leadership scenarios, decision ownership, and follow-through."
-    );
-  }
-
-  if (category === "Decision-Making") {
-    return (
-      "Decision-Making performance scored " +
-      value +
-      "%. This reflects developing judgement under complexity, ambiguity, competing priorities, or pressure. The supervisor should provide decision frameworks, guided review, and feedback after real or simulated decisions."
-    );
-  }
-
-  if (category === "Communication Style") {
-    return (
-      "Communication Style performance scored " +
-      value +
-      "%. This indicates inconsistent interpersonal communication, especially around feedback handling, emotional awareness, meeting behavior, and written clarity. Coaching should focus on clarity, listening, tone, and response discipline."
-    );
-  }
-
-  if (category === "Adaptability") {
-    return (
-      "Adaptability performance scored " +
-      value +
-      "%. This suggests difficulty adjusting to change, uncertainty, or unexpected plan changes. Development should include exposure to varied scenarios, reflection after change events, and coaching on flexible response patterns."
-    );
-  }
-
-  if (category === "Collaboration") {
-    return (
-      "Collaboration performance scored " +
-      value +
-      "%. This indicates challenges working effectively with others, aligning with team expectations, or contributing consistently in group situations. The supervisor should reinforce teamwork habits and shared accountability."
-    );
-  }
-
-  if (category === "FBA") {
-    return (
-      "FBA performance scored " +
-      value +
-      "%. This indicates gaps in understanding behavioral antecedents, consequences, triggers, and functional patterns. Practical case-based coaching is recommended to improve interpretation of behavior and appropriate response planning."
-    );
-  }
-
-  return (
-    category +
-    " performance scored " +
-    value +
-    "%. This area requires development support, supervisor review, and practical reinforcement."
-  );
-}
-
-function getCategoryAction(category, percentage) {
-  var priority = getPriorityFromScore(percentage);
-
-  if (category === "Clinical") {
-    return (
-      "Use case-based reviews, guided interpretation exercises, and supervisor validation before the candidate handles sensitive clinical or behavioral judgement tasks independently. Priority: " +
-      priority +
-      "."
-    );
-  }
-
-  if (category === "Leadership") {
-    return (
-      "Assign small leadership tasks with clear expectations, require reflection after completion, and review accountability, initiative, and decision ownership. Priority: " +
-      priority +
-      "."
-    );
-  }
-
-  if (category === "Decision-Making") {
-    return (
-      "Introduce a structured decision-making framework, review options before action, and discuss outcomes after decisions are made. Priority: " +
-      priority +
-      "."
-    );
-  }
-
-  if (category === "Communication Style") {
-    return (
-      "Provide coaching on feedback response, meeting participation, emotional awareness, email clarity, and active listening. Priority: " +
-      priority +
-      "."
-    );
-  }
-
-  if (category === "Adaptability") {
-    return (
-      "Expose the candidate to controlled change scenarios and coach the candidate on flexible planning, calm response, and adjustment after unexpected changes. Priority: " +
-      priority +
-      "."
-    );
-  }
-
-  if (category === "Collaboration") {
-    return (
-      "Assign team-based tasks with clear roles and review how the candidate communicates, supports others, and follows shared commitments. Priority: " +
-      priority +
-      "."
-    );
-  }
-
-  if (category === "FBA") {
-    return (
-      "Use practical behavior scenarios to teach antecedents, consequences, reinforcement patterns, and response planning. Priority: " +
-      priority +
-      "."
-    );
-  }
-
-  return (
-    "Create a targeted development plan for " +
-    category +
-    " and review progress after applied practice. Priority: " +
-    priority +
-    "."
-  );
-}
-
