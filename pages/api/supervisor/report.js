@@ -1,159 +1,192 @@
 // pages/api/supervisor/report.js
 
-import { createClient } fromimport { createClient } from "@supabase/supabase-js";
-// ======================================================
-
-function toNumber(value, fallback = 0) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function round(value, decimals = 2) {
-  const factor = Math.pow(10, decimals);
-  return Math.round(toNumber(value) * factor) / factor;
-}
-
-function first(values, fallback) {
-  for (let i = 0; i < values.length; i += 1) {
-    if (values[i] !== undefined && values[i] !== null && values[i] !== "") {
-      return values[i];
-    }
-  }
-  return fallback;
-}
-
-// ======================================================
-// INTERPRETATION
-// ======================================================
-
-function classify(percentage) {
-  if (percentage >= 85) return "Exceptional";
-  if (percentage >= 75) return "Strong Performer";
-  if (percentage >= 65) return "Capable Contributor";
-  if (percentage >= 55) return "Developing";
-  if (percentage >= 40) return "At Risk";
-  return "High Risk";
-}
-
-function supervisorImplication(percentage) {
-  if (percentage >= 75) {
-    return "Candidate can perform reliably with standard supervision.";
-  }
-  if (percentage >= 65) {
-    return "Candidate can perform with guidance and reinforcement.";
-  }
-  if (percentage >= 55) {
-    return "Candidate requires structured support and close follow-up.";
-  }
-  return "Candidate requires close supervision and targeted development.";
-}
-
-// ======================================================
-// RESPONSE NORMALIZATION
-// ======================================================
-
-function getScore(r) {
-  return toNumber(
-    first(
-      [r.score, r.selected_score, r.value, r.points],
-      0
-    ),
-    0
-  );
-}
-
-function getMaxScore(r) {
-  return toNumber(
-    first(
-      [r.max_score, r.maxScore, r.max, 5],
-      5
-    ),
-    5
-  );
-}
-
-function getCategory(r) {
-  return first(
-    [r.category, r.competency, r.dimension, "General"],
-    "General"
-  );
-}
-
-// ======================================================
-// REPORT BUILDING
-// ======================================================
-
-function buildCategoryScores(responses) {
-  const map = {};
-
-  responses.forEach(r => {
-    const cat = getCategory(r);
-    const score = getScore(r);
-    const max = getMaxScore(r);
-
-    if (!map[cat]) {
-      map[cat] = {
-        category: cat,
-        totalScore: 0,
-        maxScore: 0,
-        count: 0
-      };
-    }
-
-    map[cat].totalScore += score;
-    map[cat].maxScore += max;
-    map[cat].count += 1;
-  });
-
-  return Object.values(map).map(item => {
-    const percentage =
-      item.maxScore > 0
-        ? round((item.totalScore / item.maxScore) * 100)
-        : 0;
-
-    return {
-      category: item.category,
-      totalScore: round(item.totalScore),
-      maxScore: round(item.maxScore),
-      percentage,
-      classification: classify(percentage),
-      supervisorImplication: supervisorImplication(percentage)
+import { createClient } from, 2)import { createClient } from "@supabase/supabase-js";
+          : 0,
+      answers: item.answers
     };
   });
 }
 
-function buildReport(candidate, assessment, responses, userId, assessmentId) {
-  const totalScore = responses.reduce((s, r) => s + getScore(r), 0);
-  const maxScore = responses.reduce((s, r) => s + getMaxScore(r), 0);
+function buildRecommendations(categoryScores) {
+  var recommendations = [];
+  var developmentAreas;
+  var strengths;
 
-  const percentage =
-    maxScore > 0 ? round((totalScore / maxScore) * 100) : 0;
+  developmentAreas = categoryScores
+    .filter(function (item) {
+      return toNumber(item.percentage, 0) < 65;
+    })
+    .sort(function (a, b) {
+      return toNumber(a.percentage, 0) - toNumber(b.percentage, 0);
+    })
+    .slice(0, 5);
 
-  const categories = buildCategoryScores(responses);
+  developmentAreas.forEach(function (area) {
+    var percentage = toNumber(area.percentage, 0);
+    var priority = "Medium";
+
+    if (percentage < 40) {
+      priority = "Critical";
+    } else if (percentage < 55) {
+      priority = "High";
+    }
+
+    recommendations.push({
+      priority: priority,
+      competency: area.name,
+      category: area.name,
+      currentScore: percentage,
+      gap: percentage < 80 ? roundNumber(80 - percentage, 2) : 0,
+      recommendation:
+        area.name +
+        " requires development attention. The supervisor should provide targeted coaching, practical exercises, and follow-up checks.",
+      action:
+        "Create a short development plan for " +
+        area.name +
+        " and review progress with the candidate after practical assignments.",
+      impact:
+        "Improving this area will increase role readiness, consistency, and confidence in work-related decisions."
+    });
+  });
+
+  strengths = categoryScores
+    .filter(function (item) {
+      return toNumber(item.percentage, 0) >= 75;
+    })
+    .sort(function (a, b) {
+      return toNumber(b.percentage, 0) - toNumber(a.percentage, 0);
+    })
+    .slice(0, 3);
+
+  strengths.forEach(function (area) {
+    recommendations.push({
+      priority: "Leverage",
+      competency: area.name,
+      category: area.name,
+      currentScore: area.percentage,
+      gap: 0,
+      recommendation:
+        area.name +
+        " is a strength. The supervisor can use this area to support confidence, contribution, and role performance.",
+      action:
+        "Assign role-relevant tasks that allow the candidate to apply " +
+        area.name +
+        " in real work situations.",
+      impact:
+        "Using this strength can improve candidate contribution and development momentum.",
+      isStrength: true
+    });
+  });
+
+  return recommendations;
+}
+
+function buildReport(candidate, assessment, responses, userId, assessmentId, source) {
+  var totalScore;
+  var maxScore;
+  var percentage;
+  var classification;
+  var categoryScores;
+  var strengths;
+  var developmentAreas;
+  var recommendations;
+  var candidateName;
+  var assessmentName;
+  var summary;
+  var behavioralSummary;
+
+  totalScore = responses.reduce(function (sum, response) {
+    return sum + getResponseScore(response);
+  }, 0);
+
+  maxScore = responses.reduce(function (sum, response) {
+    return sum + getResponseMaxScore(response);
+  }, 0);
+
+  percentage =
+    maxScore > 0 ? roundNumber((totalScore / maxScore) * 100, 2) : 0;
+
+  classification = getClassification(percentage);
+  categoryScores = buildCategoryScores(responses);
+  behavioralSummary = buildBehavioralSummary(responses);
+
+  strengths = categoryScores
+    .filter(function (item) {
+      return toNumber(item.percentage, 0) >= 75;
+    })
+    .sort(function (a, b) {
+      return toNumber(b.percentage, 0) - toNumber(a.percentage, 0);
+    })
+    .slice(0, 3);
+
+  developmentAreas = categoryScores
+    .filter(function (item) {
+      return toNumber(item.percentage, 0) < 65;
+    })
+    .sort(function (a, b) {
+      return toNumber(a.percentage, 0) - toNumber(b.percentage, 0);
+    })
+    .slice(0, 3);
+
+  recommendations = buildRecommendations(categoryScores);
+  candidateName = getCandidateName(candidate, userId);
+  assessmentName = getAssessmentName(assessment);
+
+  summary =
+    candidateName +
+    " completed the " +
+    assessmentName +
+    ". The overall score is " +
+    percentage +
+    "%, classified as " +
+    classification +
+    ". " +
+    getScoreComment(percentage);
 
   return {
-    candidateName:
-      candidate?.full_name ||
-      candidate?.name ||
-      "Candidate",
-
-    assessmentName:
-      assessment?.title ||
-      assessment?.name ||
-      "Assessment",
-
+    candidateName: candidateName,
+    candidate_name: candidateName,
+    assessmentName: assessmentName,
+    assessment_name: assessmentName,
+    userId: userId,
     user_id: userId,
+    assessmentId: assessmentId || null,
     assessment_id: assessmentId || null,
 
-    totalScore: round(totalScore),
-    maxScore: round(maxScore),
-    percentage,
+    totalScore: roundNumber(totalScore, 2),
+    total_score: roundNumber(totalScore, 2),
+    maxScore: roundNumber(maxScore, 2),
+    max_score: roundNumber(maxScore, 2),
+    percentage: percentage,
+    overallPercentage: percentage,
+    overall_score: percentage,
+    classification: classification,
+    overallClassification: classification,
+    riskLevel: getRiskLevel(percentage),
 
-    classification: classify(percentage),
-    supervisorImplication: supervisorImplication(percentage),
+    summary: summary,
+    executiveSummary: summary,
+    overallAssessment: summary,
+    interpretation: summary,
+    supervisorImplication: getSupervisorImplication(percentage),
 
-    categoryScores: categories,
-    responseCount: responses.length
+    behavioralSummary: behavioralSummary,
+    behavioralInsights: behavioralSummary,
+
+    categoryScores: categoryScores,
+    category_scores: categoryScores,
+    competencyScores: categoryScores,
+    competency_scores: categoryScores,
+
+    strengths: strengths,
+    topStrengths: strengths,
+    developmentAreas: developmentAreas,
+    topDevelopmentNeeds: developmentAreas,
+    recommendations: recommendations,
+
+    responseCount: responses.length,
+    response_count: responses.length,
+    dataSource: source
   };
 }
 
@@ -162,69 +195,799 @@ function buildReport(candidate, assessment, responses, userId, assessmentId) {
 // ======================================================
 
 export default async function handler(req, res) {
+  var userId;
+  var assessmentId;
+  var supabaseUrl;
+  var supabaseKey;
+  var supabase;
+  var candidate;
+  var assessment;
+  var responseResult;
+  var responses;
+  var generatedReport;
+
   if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({
+      success: false,
+      error: "Method not allowed"
+    });
   }
 
-  const userId = req.query.user_id;
-  const assessmentId = req.query.assessment_id || req.query.assessment;
+  userId = req.query.user_id || req.query.userId;
+  assessmentId =
+    req.query.assessment_id || req.query.assessmentId || req.query.assessment;
 
   if (!userId) {
-    return res.status(400).json({ error: "Missing user_id" });
+    return res.status(400).json({
+      success: false,
+      error: "Missing user_id"
+    });
   }
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
+  supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+
+  supabaseKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return res.status(500).json({
+      success: false,
+      error:
+        "Supabase environment variables are missing. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
+    });
+  }
+
+  supabase = createClient(supabaseUrl, supabaseKey);
 
   try {
-    const { data: candidate } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .single();
-
-    const { data: assessment } = assessmentId
-      ? await supabase
-          .from("assessments")
-          .select("*")
-          .eq("id", assessmentId)
-          .single()
-      : { data: null };
-
-    const { data: responses } = await supabase
-      .from("responses")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("assessment_id", assessmentId);
+    candidate = await fetchCandidate(supabase, userId);
+    assessment = await fetchAssessment(supabase, assessmentId);
+    responseResult = await fetchResponses(supabase, userId, assessmentId);
+    responses = responseResult.responses;
 
     if (!responses || responses.length === 0) {
       return res.status(404).json({
-        error: "No responses found for this candidate and assessment"
+        success: false,
+        error: "No responses found for this candidate and assessment.",
+        user_id: userId,
+        assessment_id: assessmentId || null,
+        dataSource: responseResult.source
       });
     }
 
-    const report = buildReport(
+    generatedReport = buildReport(
       candidate,
       assessment,
       responses,
       userId,
-      assessmentId
+      assessmentId,
+      responseResult.source
     );
 
     return res.status(200).json({
       success: true,
-      candidate,
-      assessment,
-      generatedReport: report,
-      report
+      candidate: candidate,
+      assessment: assessment,
+      generatedReport: generatedReport,
+      report: generatedReport,
+      responseCount: responses.length,
+      dataSource: responseResult.source
     });
-  } catch (err) {
+  } catch (error) {
     return res.status(500).json({
-      error: err.message || "Failed to generate report"
+      success: false,
+      error:
+        error && error.message
+          ? error.message
+          : "Failed to generate supervisor report."
     });
   }
 }
 
+/**
+ * Supervisor Report API
+ *
+ * This API generates a supervisor-facing assessment report for a candidate.
+ *
+ * Expected query:
+ * /api/supervisor/report?user_id=<USER_ID>&assessment_id=<ASSESSMENT_ID>
+ *
+ * Also supports:
+ * /api/supervisor/report?user_id=<USER_ID>&assessment=<ASSESSMENT_ID>
+ */
+
 // ======================================================
+// BASIC HELPERS
+// ======================================================
+
+function toNumber(value, fallback) {
+  var defaultValue = fallback === undefined ? 0 : fallback;
+  var number = Number(value);
+
+  if (Number.isNaN(number) || !Number.isFinite(number)) {
+    return defaultValue;
+  }
+
+  return number;
+}
+
+function roundNumber(value, decimals) {
+  var d = decimals === undefined ? 2 : decimals;
+  var factor = Math.pow(10, d);
+
+  return Math.round(toNumber(value, 0) * factor) / factor;
+}
+
+function firstValue(values, fallback) {
+  var i;
+
+  if (!Array.isArray(values)) {
+    return fallback;
+  }
+
+  for (i = 0; i < values.length; i += 1) {
+    if (values[i] !== undefined && values[i] !== null && values[i] !== "") {
+      return values[i];
+    }
+  }
+
+  return fallback;
+}
+
+function getNestedValue(object, path, fallback) {
+  var parts;
+  var current;
+  var i;
+
+  if (!object) {
+    return fallback;
+  }
+
+  parts = path.split(".");
+  current = object;
+
+  for (i = 0; i < parts.length; i += 1) {
+    if (
+      current === null ||
+      current === undefined ||
+      current[parts[i]] === undefined ||
+      current[parts[i]] === null
+    ) {
+      return fallback;
+    }
+
+    current = current[parts[i]];
+  }
+
+  return current;
+}
+
+// ======================================================
+// INTERPRETATION HELPERS
+// ======================================================
+
+function getClassification(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value >= 85) return "Exceptional";
+  if (value >= 75) return "Strong Performer";
+  if (value >= 65) return "Capable Contributor";
+  if (value >= 55) return "Developing";
+  if (value >= 40) return "At Risk";
+
+  return "High Risk";
+}
+
+function getScoreComment(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value >= 85) {
+    return "Exceptional performance with strong evidence of readiness.";
+  }
+
+  if (value >= 75) {
+    return "Strong performance with reliable capability.";
+  }
+
+  if (value >= 65) {
+    return "Adequate performance with some areas requiring reinforcement.";
+  }
+
+  if (value >= 55) {
+    return "Developing performance requiring structured support.";
+  }
+
+  if (value >= 40) {
+    return "Priority development is required.";
+  }
+
+  return "Critical development support is required.";
+}
+
+function getSupervisorImplication(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value >= 75) {
+    return "The candidate can likely perform reliably with standard supervision, while still benefiting from role-specific reinforcement.";
+  }
+
+  if (value >= 65) {
+    return "The candidate can perform with guidance, coaching, and reinforcement in weaker areas.";
+  }
+
+  if (value >= 55) {
+    return "The candidate requires structured support, close follow-up, and practical coaching before being relied upon independently.";
+  }
+
+  return "The candidate requires close supervision, targeted development, and careful validation before being assigned critical responsibilities.";
+}
+
+function getRiskLevel(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value >= 75) return "Low";
+  if (value >= 65) return "Moderate";
+  if (value >= 55) return "Elevated";
+  if (value >= 40) return "High";
+
+  return "Critical";
+}
+
+// ======================================================
+// RESPONSE FIELD HELPERS
+// ======================================================
+
+function getResponseScore(response) {
+  if (!response) return 0;
+
+  return toNumber(
+    firstValue(
+      [
+        response.score,
+        response.selected_score,
+        response.value,
+        response.points,
+        response.answer_score,
+        getNestedValue(response, "answer.score", null),
+        getNestedValue(response, "unique_answers.score", null),
+        getNestedValue(response, "selected_answer.score", null)
+      ],
+      0
+    ),
+    0
+  );
+}
+
+function getResponseMaxScore(response) {
+  if (!response) return 5;
+
+  return toNumber(
+    firstValue(
+      [
+        response.max_score,
+        response.maxScore,
+        response.max,
+        response.max_points,
+        getNestedValue(response, "question.max_score", null),
+        getNestedValue(response, "unique_questions.max_score", null),
+        getNestedValue(response, "question.maxScore", null),
+        getNestedValue(response, "unique_questions.maxScore", null)
+      ],
+      5
+    ),
+    5
+  );
+}
+
+function getResponseCategory(response) {
+  if (!response) return "General";
+
+  return firstValue(
+    [
+      response.category,
+      response.competency,
+      response.dimension,
+      response.section,
+      response.area,
+      getNestedValue(response, "question.category", null),
+      getNestedValue(response, "question.competency", null),
+      getNestedValue(response, "question.dimension", null),
+      getNestedValue(response, "unique_questions.category", null),
+      getNestedValue(response, "unique_questions.competency", null),
+      getNestedValue(response, "unique_questions.dimension", null)
+    ],
+    "General"
+  );
+}
+
+function getResponseQuestionText(response) {
+  if (!response) return "";
+
+  return firstValue(
+    [
+      response.question_text,
+      response.question,
+      getNestedValue(response, "question.question_text", null),
+      getNestedValue(response, "question.text", null),
+      getNestedValue(response, "unique_questions.question_text", null),
+      getNestedValue(response, "unique_questions.text", null)
+    ],
+    ""
+  );
+}
+
+function getResponseAnswerText(response) {
+  if (!response) return "";
+
+  return firstValue(
+    [
+      response.answer_text,
+      response.answer,
+      response.selected_answer_text,
+      getNestedValue(response, "answer.answer_text", null),
+      getNestedValue(response, "answer.text", null),
+      getNestedValue(response, "unique_answers.answer_text", null),
+      getNestedValue(response, "unique_answers.text", null),
+      getNestedValue(response, "selected_answer.answer_text", null),
+      getNestedValue(response, "selected_answer.text", null)
+    ],
+    ""
+  );
+}
+
+function getResponseTimeSpent(response) {
+  if (!response) return 0;
+
+  return toNumber(
+    firstValue(
+      [
+        response.time_spent_seconds,
+        response.time_spent,
+        response.duration_seconds,
+        response.response_time_seconds
+      ],
+      0
+    ),
+    0
+  );
+}
+
+function getResponseChanges(response) {
+  if (!response) return 0;
+
+  return toNumber(
+    firstValue(
+      [
+        response.times_changed,
+        response.changes,
+        response.answer_changes,
+        response.revision_count
+      ],
+      0
+    ),
+    0
+  );
+}
+
+// ======================================================
+// CANDIDATE / ASSESSMENT HELPERS
+// ======================================================
+
+function getCandidateName(candidate, userId) {
+  if (!candidate) return "Candidate";
+
+  return firstValue(
+    [
+      candidate.full_name,
+      candidate.name,
+      candidate.display_name,
+      candidate.email,
+      candidate.candidate_name
+    ],
+    userId || "Candidate"
+  );
+}
+
+function getAssessmentName(assessment) {
+  if (!assessment) return "Assessment";
+
+  return firstValue(
+    [
+      assessment.title,
+      assessment.name,
+      assessment.assessment_name,
+      assessment.description
+    ],
+    "Assessment"
+  );
+}
+
+// ======================================================
+// SUPABASE QUERY HELPERS
+// ======================================================
+
+async function selectRows(supabase, tableName, configureQuery, selectText) {
+  var query;
+  var result;
+
+  try {
+    query = supabase.from(tableName).select(selectText || "*");
+
+    if (typeof configureQuery === "function") {
+      query = configureQuery(query);
+    }
+
+    result = await query;
+
+    if (result.error) {
+      return {
+        data: [],
+        error: result.error.message
+      };
+    }
+
+    return {
+      data: Array.isArray(result.data) ? result.data : [],
+      error: null
+    };
+  } catch (error) {
+    return {
+      data: [],
+      error: error && error.message ? error.message : "Query failed"
+    };
+  }
+}
+
+async function selectSingle(supabase, tableName, configureQuery, selectText) {
+  var query;
+  var result;
+
+  try {
+    query = supabase.from(tableName).select(selectText || "*");
+
+    if (typeof configureQuery === "function") {
+      query = configureQuery(query);
+    }
+
+    query = query.limit(1);
+    result = await query;
+
+    if (result.error) {
+      return null;
+    }
+
+    if (Array.isArray(result.data) && result.data.length > 0) {
+      return result.data[0];
+    }
+
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
+// ======================================================
+// DATA FETCHING
+// ======================================================
+
+async function fetchCandidate(supabase, userId) {
+  var candidate;
+
+  candidate = await selectSingle(supabase, "profiles", function (query) {
+    return query.eq("id", userId);
+  });
+
+  if (candidate) return candidate;
+
+  candidate = await selectSingle(supabase, "profiles", function (query) {
+    return query.eq("user_id", userId);
+  });
+
+  if (candidate) return candidate;
+
+  candidate = await selectSingle(supabase, "users", function (query) {
+    return query.eq("id", userId);
+  });
+
+  if (candidate) return candidate;
+
+  candidate = await selectSingle(supabase, "candidates", function (query) {
+    return query.eq("user_id", userId);
+  });
+
+  if (candidate) return candidate;
+
+  candidate = await selectSingle(supabase, "candidates", function (query) {
+    return query.eq("id", userId);
+  });
+
+  if (candidate) return candidate;
+
+  return {
+    id: userId,
+    name: "Candidate"
+  };
+}
+
+async function fetchAssessment(supabase, assessmentId) {
+  var assessment;
+
+  if (!assessmentId) {
+    return null;
+  }
+
+  assessment = await selectSingle(supabase, "assessments", function (query) {
+    return query.eq("id", assessmentId);
+  });
+
+  if (assessment) return assessment;
+
+  assessment = await selectSingle(supabase, "unique_assessments", function (query) {
+    return query.eq("id", assessmentId);
+  });
+
+  if (assessment) return assessment;
+
+  return null;
+}
+
+async function fetchSessions(supabase, userId, assessmentId) {
+  var tableNames;
+  var i;
+  var result;
+
+  if (!userId || !assessmentId) {
+    return [];
+  }
+
+  tableNames = ["assessment_sessions", "sessions", "candidate_sessions"];
+
+  for (i = 0; i < tableNames.length; i += 1) {
+    result = await selectRows(
+      supabase,
+      tableNames[i],
+      function (query) {
+        return query.eq("user_id", userId).eq("assessment_id", assessmentId);
+      },
+      "*"
+    );
+
+    if (result.data.length > 0) {
+      return result.data;
+    }
+  }
+
+  return [];
+}
+
+async function fetchResponses(supabase, userId, assessmentId) {
+  var selectWithJoins;
+  var directWithJoins;
+  var directPlain;
+  var sessions;
+  var sessionIds;
+  var bySessionWithJoins;
+  var bySessionPlain;
+  var fallbackWithJoins;
+  var fallbackPlain;
+
+  selectWithJoins = "*, unique_answers(*), unique_questions(*)";
+
+  if (assessmentId) {
+    directWithJoins = await selectRows(
+      supabase,
+      "responses",
+      function (query) {
+        return query.eq("user_id", userId).eq("assessment_id", assessmentId);
+      },
+      selectWithJoins
+    );
+
+    if (directWithJoins.data.length > 0) {
+      return {
+        responses: directWithJoins.data,
+        source: "responses.user_id_and_assessment_id_with_joins"
+      };
+    }
+
+    directPlain = await selectRows(
+      supabase,
+      "responses",
+      function (query) {
+        return query.eq("user_id", userId).eq("assessment_id", assessmentId);
+      },
+      "*"
+    );
+
+    if (directPlain.data.length > 0) {
+      return {
+        responses: directPlain.data,
+        source: "responses.user_id_and_assessment_id_plain"
+      };
+    }
+
+    sessions = await fetchSessions(supabase, userId, assessmentId);
+
+    sessionIds = sessions
+      .map(function (session) {
+        return session.id;
+      })
+      .filter(function (id) {
+        return id !== undefined && id !== null && id !== "";
+      });
+
+    if (sessionIds.length > 0) {
+      bySessionWithJoins = await selectRows(
+        supabase,
+        "responses",
+        function (query) {
+          return query.eq("user_id", userId).in("session_id", sessionIds);
+        },
+        selectWithJoins
+      );
+
+      if (bySessionWithJoins.data.length > 0) {
+        return {
+          responses: bySessionWithJoins.data,
+          source: "responses.session_id_with_joins"
+        };
+      }
+
+      bySessionPlain = await selectRows(
+        supabase,
+        "responses",
+        function (query) {
+          return query.eq("user_id", userId).in("session_id", sessionIds);
+        },
+        "*"
+      );
+
+      if (bySessionPlain.data.length > 0) {
+        return {
+          responses: bySessionPlain.data,
+          source: "responses.session_id_plain"
+        };
+      }
+    }
+  }
+
+  fallbackWithJoins = await selectRows(
+    supabase,
+    "responses",
+    function (query) {
+      return query.eq("user_id", userId);
+    },
+    selectWithJoins
+  );
+
+  if (fallbackWithJoins.data.length > 0) {
+    return {
+      responses: fallbackWithJoins.data,
+      source: "responses.user_id_fallback_with_joins"
+    };
+  }
+
+  fallbackPlain = await selectRows(
+    supabase,
+    "responses",
+    function (query) {
+      return query.eq("user_id", userId);
+    },
+    "*"
+  );
+
+  return {
+    responses: fallbackPlain.data,
+    source: "responses.user_id_fallback_plain"
+  };
+}
+
+// ======================================================
+// REPORT BUILDING
+// ======================================================
+
+function buildBehavioralSummary(responses) {
+  var totalTime = 0;
+  var totalChanges = 0;
+  var count = responses.length;
+  var averageTime = 0;
+  var averageChanges = 0;
+  var note = "";
+
+  responses.forEach(function (response) {
+    totalTime += getResponseTimeSpent(response);
+    totalChanges += getResponseChanges(response);
+  });
+
+  if (count > 0) {
+    averageTime = roundNumber(totalTime / count, 2);
+    averageChanges = roundNumber(totalChanges / count, 2);
+  }
+
+  if (averageTime > 75) {
+    note += "Response time suggests careful processing or possible uncertainty. ";
+  }
+
+  if (averageChanges > 1.5) {
+    note += "Frequent answer changes suggest possible second-guessing or low confidence. ";
+  }
+
+  if (!note) {
+    note = "Response behavior does not show major timing or answer-change concerns.";
+  }
+
+  return {
+    totalTimeSpent: roundNumber(totalTime, 2),
+    totalChanges: roundNumber(totalChanges, 2),
+    averageTimePerQuestion: averageTime,
+    averageChangesPerQuestion: averageChanges,
+    note: note
+  };
+}
+
+function buildCategoryScores(responses) {
+  var grouped = {};
+
+  responses.forEach(function (response) {
+    var category = getResponseCategory(response);
+    var score = getResponseScore(response);
+    var maxScore = getResponseMaxScore(response);
+    var timeSpent = getResponseTimeSpent(response);
+    var changes = getResponseChanges(response);
+
+    if (!grouped[category]) {
+      grouped[category] = {
+        category: category,
+        name: category,
+        totalScore: 0,
+        maxScore: 0,
+        questionCount: 0,
+        totalTimeSpent: 0,
+        totalChanges: 0,
+        answers: []
+      };
+    }
+
+    grouped[category].totalScore += score;
+    grouped[category].maxScore += maxScore;
+    grouped[category].questionCount += 1;
+    grouped[category].totalTimeSpent += timeSpent;
+    grouped[category].totalChanges += changes;
+
+    grouped[category].answers.push({
+      question: getResponseQuestionText(response),
+      answer: getResponseAnswerText(response),
+      score: score,
+      maxScore: maxScore,
+      timeSpent: timeSpent,
+      changes: changes
+    });
+  });
+
+  return Object.keys(grouped).map(function (key) {
+    var item = grouped[key];
+    var percentage =
+      item.maxScore > 0
+        ? roundNumber((item.totalScore / item.maxScore) * 100, 2)
+        : 0;
+
+    return {
+      category: item.category,
+      name: item.name,
+      totalScore: roundNumber(item.totalScore, 2),
+      maxScore: roundNumber(item.maxScore, 2),
+      questionCount: item.questionCount,
+      percentage: percentage,
+      classification: getClassification(percentage),
+      comment: getScoreComment(percentage),
+      supervisorImplication: getSupervisorImplication(percentage),
+      riskLevel: getRiskLevel(percentage),
+      averageTimePerQuestion:
+        item.questionCount > 0
+          ? roundNumber(item.totalTimeSpent / item.questionCount, 2)
+          : 0,
+      averageChangesPerQuestion:
+        item.questionCount > 0
