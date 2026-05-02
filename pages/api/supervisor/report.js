@@ -1,6 +1,184 @@
 // pages/api/supervisor/report.js
 
-import { createClient } from "@}import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
+
+/*
+  Supervisor Report API
+
+  This file generates the supervisor report for a candidate assessment.
+
+  Confirmed database relationship:
+  - responses.question_id links to unique_questions.id
+  - unique_questions.section is the report category
+  - unique_questions.subsection gives more detailed question context
+  - responses.answer_id links to unique_answers.id through Supabase join
+  - selected answer score comes from unique_answers.score where available
+
+  Query examples:
+  /api/supervisor/report?user_id=USER_ID&assessment_id=ASSESSMENT_ID
+  /api/supervisor/report?user_id=USER_ID&assessment=ASSESSMENT_ID
+
+  Syntax-safe style:
+  - no optional chaining
+  - no default parameters
+  - no arrow functions
+  - no duplicated exports
+  - no partial fragments
+*/
+
+// ======================================================
+// BASIC HELPERS
+// ======================================================
+
+function toNumber(value, fallback) {
+  var fallbackValue = fallback === undefined ? 0 : fallback;
+  var numberValue = Number(value);
+
+  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) {
+    return fallbackValue;
+  }
+
+  return numberValue;
+}
+
+function roundNumber(value, decimals) {
+  var decimalPlaces = decimals === undefined ? 2 : decimals;
+  var factor = Math.pow(10, decimalPlaces);
+
+  return Math.round(toNumber(value, 0) * factor) / factor;
+}
+
+function firstValue(values, fallback) {
+  var i;
+
+  if (!Array.isArray(values)) {
+    return fallback;
+  }
+
+  for (i = 0; i < values.length; i += 1) {
+    if (values[i] !== undefined && values[i] !== null && values[i] !== "") {
+      return values[i];
+    }
+  }
+
+  return fallback;
+}
+
+function getPlainObject(value) {
+  if (Array.isArray(value)) {
+    if (value.length > 0 && value[0] && typeof value[0] === "object") {
+      return value[0];
+    }
+
+    return null;
+  }
+
+  if (value && typeof value === "object") {
+    return value;
+  }
+
+  return null;
+}
+
+function getNestedValue(objectValue, path, fallback) {
+  var parts;
+  var current;
+  var i;
+
+  if (!objectValue || !path) {
+    return fallback;
+  }
+
+  current = getPlainObject(objectValue);
+
+  if (!current) {
+    return fallback;
+  }
+
+  parts = path.split(".");
+
+  for (i = 0; i < parts.length; i += 1) {
+    current = getPlainObject(current) || current;
+
+    if (
+      current === null ||
+      current === undefined ||
+      current[parts[i]] === undefined ||
+      current[parts[i]] === null ||
+      current[parts[i]] === ""
+    ) {
+      return fallback;
+    }
+
+    current = current[parts[i]];
+  }
+
+  if (current === "") {
+    return fallback;
+  }
+
+  return current;
+}
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+// ======================================================
+// INTERPRETATION HELPERS
+// ======================================================
+
+function getClassification(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value >= 85) {
+    return "Exceptional";
+  }
+
+  if (value >= 75) {
+    return "Strong Performer";
+  }
+
+  if (value >= 65) {
+    return "Capable Contributor";
+  }
+
+  if (value >= 55) {
+    return "Developing";
+  }
+
+  if (value >= 40) {
+    return "At Risk";
+  }
+
+  return "High Risk";
+}
+
+function getScoreComment(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value >= 85) {
+    return "Exceptional performance with strong evidence of readiness.";
+  }
+
+  if (value >= 75) {
+    return "Strong performance with reliable capability.";
+  }
+
+  if (value >= 65) {
+    return "Adequate performance with some areas requiring reinforcement.";
+  }
+
+  if (value >= 55) {
+    return "Developing performance requiring structured support.";
+  }
+
+  if (value >= 40) {
+    return "Priority development is required.";
+  }
+
+  return "Critical development support is required.";
+}
 
 function getSupervisorImplication(percentage) {
   var value = toNumber(percentage, 0);
@@ -23,12 +201,41 @@ function getSupervisorImplication(percentage) {
 function getRiskLevel(percentage) {
   var value = toNumber(percentage, 0);
 
-  if (value >= 75) return "Low";
-  if (value >= 65) return "Moderate";
-  if (value >= 55) return "Elevated";
-  if (value >= 40) return "High";
+  if (value >= 75) {
+    return "Low";
+  }
+
+  if (value >= 65) {
+    return "Moderate";
+  }
+
+  if (value >= 55) {
+    return "Elevated";
+  }
+
+  if (value >= 40) {
+    return "High";
+  }
 
   return "Critical";
+}
+
+function getPriorityFromScore(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value < 40) {
+    return "Critical";
+  }
+
+  if (value < 55) {
+    return "High";
+  }
+
+  if (value < 65) {
+    return "Medium";
+  }
+
+  return "Low";
 }
 
 // ======================================================
@@ -36,18 +243,26 @@ function getRiskLevel(percentage) {
 // ======================================================
 
 function getQuestionObject(response) {
+  if (!response) {
+    return null;
+  }
+
   return (
-    getNestedValue(response, "unique_questions", null) ||
-    getNestedValue(response, "question", null) ||
+    getPlainObject(response.unique_questions) ||
+    getPlainObject(response.question) ||
     null
   );
 }
 
 function getAnswerObject(response) {
+  if (!response) {
+    return null;
+  }
+
   return (
-    getNestedValue(response, "unique_answers", null) ||
-    getNestedValue(response, "answer", null) ||
-    getNestedValue(response, "selected_answer", null) ||
+    getPlainObject(response.unique_answers) ||
+    getPlainObject(response.answer) ||
+    getPlainObject(response.selected_answer) ||
     null
   );
 }
@@ -55,7 +270,9 @@ function getAnswerObject(response) {
 function getResponseScore(response) {
   var answer;
 
-  if (!response) return 0;
+  if (!response) {
+    return 0;
+  }
 
   answer = getAnswerObject(response);
 
@@ -80,7 +297,9 @@ function getResponseScore(response) {
 function getResponseMaxScore(response) {
   var question;
 
-  if (!response) return 5;
+  if (!response) {
+    return 5;
+  }
 
   question = getQuestionObject(response);
 
@@ -103,7 +322,9 @@ function getResponseMaxScore(response) {
 function getResponseCategory(response) {
   var question;
 
-  if (!response) return "General";
+  if (!response) {
+    return "General";
+  }
 
   question = getQuestionObject(response);
 
@@ -125,7 +346,9 @@ function getResponseCategory(response) {
 function getResponseSubcategory(response) {
   var question;
 
-  if (!response) return "";
+  if (!response) {
+    return "";
+  }
 
   question = getQuestionObject(response);
 
@@ -143,7 +366,9 @@ function getResponseSubcategory(response) {
 function getResponseQuestionText(response) {
   var question;
 
-  if (!response) return "";
+  if (!response) {
+    return "";
+  }
 
   question = getQuestionObject(response);
 
@@ -161,7 +386,9 @@ function getResponseQuestionText(response) {
 function getResponseAnswerText(response) {
   var answer;
 
-  if (!response) return "";
+  if (!response) {
+    return "";
+  }
 
   answer = getAnswerObject(response);
 
@@ -178,7 +405,9 @@ function getResponseAnswerText(response) {
 }
 
 function getResponseTime(response) {
-  if (!response) return 0;
+  if (!response) {
+    return 0;
+  }
 
   return toNumber(
     firstValue(
@@ -195,7 +424,9 @@ function getResponseTime(response) {
 }
 
 function getResponseChanges(response) {
-  if (!response) return 0;
+  if (!response) {
+    return 0;
+  }
 
   return toNumber(
     firstValue(
@@ -216,7 +447,9 @@ function getResponseChanges(response) {
 // ======================================================
 
 function getCandidateName(candidate, userId) {
-  if (!candidate) return "Candidate";
+  if (!candidate) {
+    return "Candidate";
+  }
 
   return firstValue(
     [
@@ -231,7 +464,9 @@ function getCandidateName(candidate, userId) {
 }
 
 function getAssessmentName(assessment) {
-  if (!assessment) return "Assessment";
+  if (!assessment) {
+    return "Assessment";
+  }
 
   return firstValue(
     [
@@ -294,7 +529,9 @@ async function selectSingle(supabase, tableName, configureQuery, selectText) {
     query = query.limit(1);
     result = await query;
 
-    if (result.error) return null;
+    if (result.error) {
+      return null;
+    }
 
     if (Array.isArray(result.data) && result.data.length > 0) {
       return result.data[0];
@@ -317,31 +554,41 @@ async function fetchCandidate(supabase, userId) {
     return query.eq("id", userId);
   });
 
-  if (candidate) return candidate;
+  if (candidate) {
+    return candidate;
+  }
 
   candidate = await selectSingle(supabase, "profiles", function (query) {
     return query.eq("user_id", userId);
   });
 
-  if (candidate) return candidate;
+  if (candidate) {
+    return candidate;
+  }
 
   candidate = await selectSingle(supabase, "user_profiles", function (query) {
     return query.eq("id", userId);
   });
 
-  if (candidate) return candidate;
+  if (candidate) {
+    return candidate;
+  }
 
   candidate = await selectSingle(supabase, "candidate_profiles", function (query) {
     return query.eq("user_id", userId);
   });
 
-  if (candidate) return candidate;
+  if (candidate) {
+    return candidate;
+  }
 
-  candidate = await selectSingle(supabase, "candidates", function (query) {
-    return query.eq("user_id", userId);
+  candidate = await selectSingle(supabase, "candidate_profiles", function (query) {
+    return query.eq("id", userId);
   });
 
-  if (candidate) return candidate;
+  if (candidate) {
+    return candidate;
+  }
 
   return {
     id: userId,
@@ -352,19 +599,25 @@ async function fetchCandidate(supabase, userId) {
 async function fetchAssessment(supabase, assessmentId) {
   var assessment;
 
-  if (!assessmentId) return null;
+  if (!assessmentId) {
+    return null;
+  }
 
   assessment = await selectSingle(supabase, "assessments", function (query) {
     return query.eq("id", assessmentId);
   });
 
-  if (assessment) return assessment;
+  if (assessment) {
+    return assessment;
+  }
 
   assessment = await selectSingle(supabase, "candidate_assessments", function (query) {
     return query.eq("id", assessmentId);
   });
 
-  if (assessment) return assessment;
+  if (assessment) {
+    return assessment;
+  }
 
   return null;
 }
@@ -433,12 +686,12 @@ async function fetchResponses(supabase, userId, assessmentId) {
 function buildBehavioralInsights(responses) {
   var totalTime = 0;
   var totalChanges = 0;
-  var count = responses.length;
+  var count = safeArray(responses).length;
   var averageTime = 0;
   var averageChanges = 0;
   var note = "";
 
-  responses.forEach(function (response) {
+  safeArray(responses).forEach(function (response) {
     totalTime += getResponseTime(response);
     totalChanges += getResponseChanges(response);
   });
@@ -558,13 +811,7 @@ function buildRecommendations(categoryScores) {
 
   developmentAreas.forEach(function (area) {
     var percentage = toNumber(area.percentage, 0);
-    var priority = "Medium";
-
-    if (percentage < 40) {
-      priority = "Critical";
-    } else if (percentage < 55) {
-      priority = "High";
-    }
+    var priority = getPriorityFromScore(percentage);
 
     recommendations.push({
       priority: priority,
@@ -819,139 +1066,3 @@ export default async function handler(req, res) {
     });
   }
 }
-
-/*
-  Supervisor Report API
-
-  Purpose:
-  - Fetch candidate responses for one assessment
-  - Join selected answers and unique questions
-  - Use unique_questions.section as the report category
-  - Use unique_questions.subsection for answer-level context
-  - Generate supervisor-facing scores, strengths, development areas and recommendations
-
-  Query examples:
-  /api/supervisor/report?user_id=USER_ID&assessment_id=ASSESSMENT_ID
-  /api/supervisor/report?user_id=USER_ID&assessment=ASSESSMENT_ID
-
-  Syntax-safe style:
-  - no optional chaining
-  - no default parameters
-  - no arrow functions
-  - no partial fragments
-*/
-
-// ======================================================
-// BASIC HELPERS
-// ======================================================
-
-function toNumber(value, fallback) {
-  var defaultValue = fallback === undefined ? 0 : fallback;
-  var numberValue = Number(value);
-
-  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) {
-    return defaultValue;
-  }
-
-  return numberValue;
-}
-
-function roundNumber(value, decimals) {
-  var d = decimals === undefined ? 2 : decimals;
-  var factor = Math.pow(10, d);
-
-  return Math.round(toNumber(value, 0) * factor) / factor;
-}
-
-function firstValue(values, fallback) {
-  var i;
-
-  if (!Array.isArray(values)) {
-    return fallback;
-  }
-
-  for (i = 0; i < values.length; i += 1) {
-    if (values[i] !== undefined && values[i] !== null && values[i] !== "") {
-      return values[i];
-    }
-  }
-
-  return fallback;
-}
-
-function getNestedValue(objectValue, path, fallback) {
-  var parts;
-  var current;
-  var i;
-
-  if (!objectValue || !path) {
-    return fallback;
-  }
-
-  parts = path.split(".");
-  current = objectValue;
-
-  for (i = 0; i < parts.length; i += 1) {
-    if (
-      current === null ||
-      current === undefined ||
-      current[parts[i]] === undefined ||
-      current[parts[i]] === null
-    ) {
-      return fallback;
-    }
-
-    current = current[parts[i]];
-  }
-
-  if (current === "") {
-    return fallback;
-  }
-
-  return current;
-}
-
-function safeArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-// ======================================================
-// INTERPRETATION HELPERS
-// ======================================================
-
-function getClassification(percentage) {
-  var value = toNumber(percentage, 0);
-
-  if (value >= 85) return "Exceptional";
-  if (value >= 75) return "Strong Performer";
-  if (value >= 65) return "Capable Contributor";
-  if (value >= 55) return "Developing";
-  if (value >= 40) return "At Risk";
-
-  return "High Risk";
-}
-
-function getScoreComment(percentage) {
-  var value = toNumber(percentage, 0);
-
-  if (value >= 85) {
-    return "Exceptional performance with strong evidence of readiness.";
-  }
-
-  if (value >= 75) {
-    return "Strong performance with reliable capability.";
-  }
-
-  if (value >= 65) {
-    return "Adequate performance with some areas requiring reinforcement.";
-  }
-
-  if (value >= 55) {
-    return "Developing performance requiring structured support.";
-  }
-
-  if (value >= 40) {
-    return "Priority development is required.";
-  }
-
-  return "Critical development support is required.";
