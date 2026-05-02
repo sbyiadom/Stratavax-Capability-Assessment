@@ -1,268 +1,26 @@
 // pages/api/supervisor/report.js
 
-import { createClient } from "@supabase/supabase-js";
-
-/*
-  Supervisor Report API
-
-  This file generates the supervisor report for a candidate assessment.
-
-  Confirmed database relationship:
-  - responses.question_id links to unique_questions.id
-  - unique_questions.section is the report category
-  - unique_questions.subsection gives more detailed question context
-  - responses.answer_id links to unique_answers.id through Supabase join
-  - selected answer score comes from unique_answers.score where available
-
-  Query examples:
-  /api/supervisor/report?user_id=USER_ID&assessment_id=ASSESSMENT_ID
-  /api/supervisor/report?user_id=USER_ID&assessment=ASSESSMENT_ID
-
-  Syntax-safe style:
-  - no optional chaining
-  - no default parameters
-  - no arrow functions
-  - no duplicated exports
-  - no partial fragments
-*/
-
-// ======================================================
-// BASIC HELPERS
+import { createClientimport { createClient } from "@supabase/supabase-js";
+// RESPONSE HELPERS
 // ======================================================
 
-function toNumber(value, fallback) {
-  var fallbackValue = fallback === undefined ? 0 : fallback;
-  var numberValue = Number(value);
-
-  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) {
-    return fallbackValue;
-  }
-
-  return numberValue;
-}
-
-function roundNumber(value, decimals) {
-  var decimalPlaces = decimals === undefined ? 2 : decimals;
-  var factor = Math.pow(10, decimalPlaces);
-
-  return Math.round(toNumber(value, 0) * factor) / factor;
-}
-
-function firstValue(values, fallback) {
-  var i;
-
-  if (!Array.isArray(values)) {
-    return fallback;
-  }
-
-  for (i = 0; i < values.length; i += 1) {
-    if (values[i] !== undefined && values[i] !== null && values[i] !== "") {
-      return values[i];
-    }
-  }
-
-  return fallback;
-}
-
-function getPlainObject(value) {
-  if (Array.isArray(value)) {
-    if (value.length > 0 && value[0] && typeof value[0] === "object") {
-      return value[0];
-    }
-
+function getQuestion(response) {
+  if (!response) {
     return null;
   }
 
-  if (value && typeof value === "object") {
-    return value;
-  }
-
-  return null;
+  return asObject(response.unique_questions) || asObject(response.question) || null;
 }
 
-function getNestedValue(objectValue, path, fallback) {
-  var parts;
-  var current;
-  var i;
-
-  if (!objectValue || !path) {
-    return fallback;
-  }
-
-  current = getPlainObject(objectValue);
-
-  if (!current) {
-    return fallback;
-  }
-
-  parts = path.split(".");
-
-  for (i = 0; i < parts.length; i += 1) {
-    current = getPlainObject(current) || current;
-
-    if (
-      current === null ||
-      current === undefined ||
-      current[parts[i]] === undefined ||
-      current[parts[i]] === null ||
-      current[parts[i]] === ""
-    ) {
-      return fallback;
-    }
-
-    current = current[parts[i]];
-  }
-
-  if (current === "") {
-    return fallback;
-  }
-
-  return current;
-}
-
-function safeArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-// ======================================================
-// INTERPRETATION HELPERS
-// ======================================================
-
-function getClassification(percentage) {
-  var value = toNumber(percentage, 0);
-
-  if (value >= 85) {
-    return "Exceptional";
-  }
-
-  if (value >= 75) {
-    return "Strong Performer";
-  }
-
-  if (value >= 65) {
-    return "Capable Contributor";
-  }
-
-  if (value >= 55) {
-    return "Developing";
-  }
-
-  if (value >= 40) {
-    return "At Risk";
-  }
-
-  return "High Risk";
-}
-
-function getScoreComment(percentage) {
-  var value = toNumber(percentage, 0);
-
-  if (value >= 85) {
-    return "Exceptional performance with strong evidence of readiness.";
-  }
-
-  if (value >= 75) {
-    return "Strong performance with reliable capability.";
-  }
-
-  if (value >= 65) {
-    return "Adequate performance with some areas requiring reinforcement.";
-  }
-
-  if (value >= 55) {
-    return "Developing performance requiring structured support.";
-  }
-
-  if (value >= 40) {
-    return "Priority development is required.";
-  }
-
-  return "Critical development support is required.";
-}
-
-function getSupervisorImplication(percentage) {
-  var value = toNumber(percentage, 0);
-
-  if (value >= 75) {
-    return "The candidate can likely perform reliably with standard supervision, while still benefiting from role-specific reinforcement.";
-  }
-
-  if (value >= 65) {
-    return "The candidate can perform with guidance, coaching, and reinforcement in weaker areas.";
-  }
-
-  if (value >= 55) {
-    return "The candidate requires structured support, close follow-up, and practical coaching before being relied upon independently.";
-  }
-
-  return "The candidate requires close supervision, targeted development, and careful validation before being assigned critical responsibilities.";
-}
-
-function getRiskLevel(percentage) {
-  var value = toNumber(percentage, 0);
-
-  if (value >= 75) {
-    return "Low";
-  }
-
-  if (value >= 65) {
-    return "Moderate";
-  }
-
-  if (value >= 55) {
-    return "Elevated";
-  }
-
-  if (value >= 40) {
-    return "High";
-  }
-
-  return "Critical";
-}
-
-function getPriorityFromScore(percentage) {
-  var value = toNumber(percentage, 0);
-
-  if (value < 40) {
-    return "Critical";
-  }
-
-  if (value < 55) {
-    return "High";
-  }
-
-  if (value < 65) {
-    return "Medium";
-  }
-
-  return "Low";
-}
-
-// ======================================================
-// RESPONSE FIELD HELPERS
-// ======================================================
-
-function getQuestionObject(response) {
+function getAnswer(response) {
   if (!response) {
     return null;
   }
 
   return (
-    getPlainObject(response.unique_questions) ||
-    getPlainObject(response.question) ||
-    null
-  );
-}
-
-function getAnswerObject(response) {
-  if (!response) {
-    return null;
-  }
-
-  return (
-    getPlainObject(response.unique_answers) ||
-    getPlainObject(response.answer) ||
-    getPlainObject(response.selected_answer) ||
+    asObject(response.unique_answers) ||
+    asObject(response.answer) ||
+    asObject(response.selected_answer) ||
     null
   );
 }
@@ -274,19 +32,19 @@ function getResponseScore(response) {
     return 0;
   }
 
-  answer = getAnswerObject(response);
+  answer = getAnswer(response);
 
   return toNumber(
     firstValue(
       [
-        getNestedValue(response, "score", null),
-        getNestedValue(response, "selected_score", null),
-        getNestedValue(response, "answer_score", null),
-        getNestedValue(response, "points", null),
-        getNestedValue(response, "value", null),
-        getNestedValue(answer, "score", null),
-        getNestedValue(answer, "points", null),
-        getNestedValue(answer, "value", null)
+        getValue(response, "score", null),
+        getValue(response, "selected_score", null),
+        getValue(response, "answer_score", null),
+        getValue(response, "value", null),
+        getValue(response, "points", null),
+        getValue(answer, "score", null),
+        getValue(answer, "value", null),
+        getValue(answer, "points", null)
       ],
       0
     ),
@@ -301,17 +59,18 @@ function getResponseMaxScore(response) {
     return 5;
   }
 
-  question = getQuestionObject(response);
+  question = getQuestion(response);
 
   return toNumber(
     firstValue(
       [
-        getNestedValue(response, "max_score", null),
-        getNestedValue(response, "maxScore", null),
-        getNestedValue(response, "max_points", null),
-        getNestedValue(response, "max", null),
-        getNestedValue(question, "max_score", null),
-        getNestedValue(question, "maxScore", null)
+        getValue(response, "max_score", null),
+        getValue(response, "maxScore", null),
+        getValue(response, "max_points", null),
+        getValue(response, "max", null),
+        getValue(question, "max_score", null),
+        getValue(question, "maxScore", null),
+        5
       ],
       5
     ),
@@ -326,18 +85,18 @@ function getResponseCategory(response) {
     return "General";
   }
 
-  question = getQuestionObject(response);
+  question = getQuestion(response);
 
   return firstValue(
     [
-      getNestedValue(question, "section", null),
-      getNestedValue(response, "section", null),
-      getNestedValue(question, "category", null),
-      getNestedValue(response, "category", null),
-      getNestedValue(question, "competency", null),
-      getNestedValue(response, "competency", null),
-      getNestedValue(question, "dimension", null),
-      getNestedValue(response, "dimension", null)
+      getValue(question, "section", null),
+      getValue(response, "section", null),
+      getValue(question, "category", null),
+      getValue(response, "category", null),
+      getValue(question, "competency", null),
+      getValue(response, "competency", null),
+      getValue(question, "dimension", null),
+      getValue(response, "dimension", null)
     ],
     "General"
   );
@@ -350,14 +109,14 @@ function getResponseSubcategory(response) {
     return "";
   }
 
-  question = getQuestionObject(response);
+  question = getQuestion(response);
 
   return firstValue(
     [
-      getNestedValue(question, "subsection", null),
-      getNestedValue(response, "subsection", null),
-      getNestedValue(question, "sub_category", null),
-      getNestedValue(response, "sub_category", null)
+      getValue(question, "subsection", null),
+      getValue(response, "subsection", null),
+      getValue(question, "sub_category", null),
+      getValue(response, "sub_category", null)
     ],
     ""
   );
@@ -370,14 +129,14 @@ function getResponseQuestionText(response) {
     return "";
   }
 
-  question = getQuestionObject(response);
+  question = getQuestion(response);
 
   return firstValue(
     [
-      getNestedValue(question, "question_text", null),
-      getNestedValue(question, "text", null),
-      getNestedValue(response, "question_text", null),
-      getNestedValue(response, "question", null)
+      getValue(question, "question_text", null),
+      getValue(question, "text", null),
+      getValue(response, "question_text", null),
+      getValue(response, "question", null)
     ],
     ""
   );
@@ -390,15 +149,15 @@ function getResponseAnswerText(response) {
     return "";
   }
 
-  answer = getAnswerObject(response);
+  answer = getAnswer(response);
 
   return firstValue(
     [
-      getNestedValue(answer, "answer_text", null),
-      getNestedValue(answer, "text", null),
-      getNestedValue(answer, "label", null),
-      getNestedValue(response, "answer_text", null),
-      getNestedValue(response, "selected_answer_text", null)
+      getValue(answer, "answer_text", null),
+      getValue(answer, "text", null),
+      getValue(answer, "label", null),
+      getValue(response, "answer_text", null),
+      getValue(response, "selected_answer_text", null)
     ],
     ""
   );
@@ -412,10 +171,10 @@ function getResponseTime(response) {
   return toNumber(
     firstValue(
       [
-        getNestedValue(response, "time_spent_seconds", null),
-        getNestedValue(response, "time_spent", null),
-        getNestedValue(response, "duration_seconds", null),
-        getNestedValue(response, "response_time_seconds", null)
+        getValue(response, "time_spent_seconds", null),
+        getValue(response, "time_spent", null),
+        getValue(response, "duration_seconds", null),
+        getValue(response, "response_time_seconds", null)
       ],
       0
     ),
@@ -431,10 +190,10 @@ function getResponseChanges(response) {
   return toNumber(
     firstValue(
       [
-        getNestedValue(response, "times_changed", null),
-        getNestedValue(response, "changes", null),
-        getNestedValue(response, "answer_changes", null),
-        getNestedValue(response, "revision_count", null)
+        getValue(response, "times_changed", null),
+        getValue(response, "changes", null),
+        getValue(response, "answer_changes", null),
+        getValue(response, "revision_count", null)
       ],
       0
     ),
@@ -443,7 +202,7 @@ function getResponseChanges(response) {
 }
 
 // ======================================================
-// CANDIDATE / ASSESSMENT HELPERS
+// CANDIDATE AND ASSESSMENT HELPERS
 // ======================================================
 
 function getCandidateName(candidate, userId) {
@@ -453,11 +212,11 @@ function getCandidateName(candidate, userId) {
 
   return firstValue(
     [
-      getNestedValue(candidate, "full_name", null),
-      getNestedValue(candidate, "name", null),
-      getNestedValue(candidate, "display_name", null),
-      getNestedValue(candidate, "email", null),
-      getNestedValue(candidate, "candidate_name", null)
+      getValue(candidate, "full_name", null),
+      getValue(candidate, "name", null),
+      getValue(candidate, "display_name", null),
+      getValue(candidate, "candidate_name", null),
+      getValue(candidate, "email", null)
     ],
     userId || "Candidate"
   );
@@ -470,10 +229,10 @@ function getAssessmentName(assessment) {
 
   return firstValue(
     [
-      getNestedValue(assessment, "title", null),
-      getNestedValue(assessment, "name", null),
-      getNestedValue(assessment, "assessment_name", null),
-      getNestedValue(assessment, "description", null)
+      getValue(assessment, "title", null),
+      getValue(assessment, "name", null),
+      getValue(assessment, "assessment_name", null),
+      getValue(assessment, "description", null)
     ],
     "Assessment"
   );
@@ -623,12 +382,12 @@ async function fetchAssessment(supabase, assessmentId) {
 }
 
 async function fetchResponses(supabase, userId, assessmentId) {
-  var selectWithJoins;
+  var selectText;
   var resultWithAssessment;
   var resultPlainAssessment;
   var resultUserOnly;
 
-  selectWithJoins = "*, unique_answers(*), unique_questions(*)";
+  selectText = "*, unique_questions(*), unique_answers(*)";
 
   if (assessmentId) {
     resultWithAssessment = await selectRows(
@@ -637,7 +396,7 @@ async function fetchResponses(supabase, userId, assessmentId) {
       function (query) {
         return query.eq("user_id", userId).eq("assessment_id", assessmentId);
       },
-      selectWithJoins
+      selectText
     );
 
     if (resultWithAssessment.data.length > 0) {
@@ -670,7 +429,7 @@ async function fetchResponses(supabase, userId, assessmentId) {
     function (query) {
       return query.eq("user_id", userId);
     },
-    selectWithJoins
+    selectText
   );
 
   return {
@@ -702,7 +461,7 @@ function buildBehavioralInsights(responses) {
   }
 
   if (averageTime > 75) {
-    note += "Response time suggests careful processing or possible uncertainty. ";
+    note += "Average response time suggests careful processing or possible uncertainty. ";
   }
 
   if (averageChanges > 1.5) {
@@ -742,6 +501,7 @@ function buildCategoryScores(responses) {
         questionCount: 0,
         totalTimeSpent: 0,
         totalChanges: 0,
+        subcategories: {},
         answers: []
       };
     }
@@ -751,6 +511,14 @@ function buildCategoryScores(responses) {
     grouped[category].questionCount += 1;
     grouped[category].totalTimeSpent += timeSpent;
     grouped[category].totalChanges += changes;
+
+    if (subcategory) {
+      if (!grouped[category].subcategories[subcategory]) {
+        grouped[category].subcategories[subcategory] = 0;
+      }
+
+      grouped[category].subcategories[subcategory] += 1;
+    }
 
     grouped[category].answers.push({
       section: category,
@@ -778,9 +546,11 @@ function buildCategoryScores(responses) {
       maxScore: roundNumber(item.maxScore, 2),
       questionCount: item.questionCount,
       percentage: percentage,
-      classification: getClassification(percentage),
+      classification: classifyScore(percentage),
       comment: getScoreComment(percentage),
       supervisorImplication: getSupervisorImplication(percentage),
+      narrative: getCategoryNarrative(item.category, percentage),
+      action: getCategoryAction(item.category, percentage),
       riskLevel: getRiskLevel(percentage),
       averageTimePerQuestion:
         item.questionCount > 0
@@ -790,6 +560,7 @@ function buildCategoryScores(responses) {
         item.questionCount > 0
           ? roundNumber(item.totalChanges / item.questionCount, 2)
           : 0,
+      subcategories: item.subcategories,
       answers: item.answers
     };
   });
@@ -811,23 +582,21 @@ function buildRecommendations(categoryScores) {
 
   developmentAreas.forEach(function (area) {
     var percentage = toNumber(area.percentage, 0);
-    var priority = getPriorityFromScore(percentage);
 
     recommendations.push({
-      priority: priority,
+      priority: getPriorityFromScore(percentage),
       competency: area.name,
       category: area.name,
       currentScore: percentage,
       gap: percentage < 80 ? roundNumber(80 - percentage, 2) : 0,
-      recommendation:
-        area.name +
-        " requires development attention. The supervisor should provide targeted coaching, practical exercises, and follow-up checks.",
-      action:
-        "Create a short development plan for " +
-        area.name +
-        " and review progress with the candidate after practical assignments.",
+      recommendation: area.narrative,
+      action: area.action,
       impact:
-        "Improving this area will increase role readiness, consistency, and confidence in work-related decisions."
+        "Improving this area will increase role readiness, judgement reliability, consistency, and confidence in work-related decisions.",
+      behavioralInsights: {
+        averageTimePerQuestion: area.averageTimePerQuestion,
+        averageChangesPerQuestion: area.averageChangesPerQuestion
+      }
     });
   });
 
@@ -849,11 +618,11 @@ function buildRecommendations(categoryScores) {
       gap: 0,
       recommendation:
         area.name +
-        " is a strength. The supervisor can use this area to support confidence, contribution, and role performance.",
+        " is a relative strength. The supervisor can use this area to support confidence, contribution, and role performance.",
       action:
         "Assign role-relevant tasks that allow the candidate to apply " +
         area.name +
-        " in real work situations.",
+        " in practical work situations.",
       impact:
         "Using this strength can improve candidate contribution and development momentum.",
       isStrength: true
@@ -861,6 +630,44 @@ function buildRecommendations(categoryScores) {
   });
 
   return recommendations;
+}
+
+function buildExecutiveSummary(candidateName, assessmentName, percentage, classification, categoryScores) {
+  var lowestAreas;
+  var areaText = "";
+
+  lowestAreas = safeArray(categoryScores)
+    .filter(function (item) {
+      return toNumber(item.percentage, 0) < 65;
+    })
+    .sort(function (a, b) {
+      return toNumber(a.percentage, 0) - toNumber(b.percentage, 0);
+    })
+    .slice(0, 3);
+
+  if (lowestAreas.length > 0) {
+    areaText =
+      " The most important development areas are " +
+      lowestAreas
+        .map(function (item) {
+          return item.name + " (" + item.percentage + "%)";
+        })
+        .join(", ") +
+      ".";
+  }
+
+  return (
+    candidateName +
+    " completed the " +
+    assessmentName +
+    " assessment with an overall score of " +
+    percentage +
+    "%, classified as " +
+    classification +
+    ". " +
+    getScoreComment(percentage) +
+    areaText
+  );
 }
 
 function buildReport(candidate, assessment, responses, userId, assessmentId, source) {
@@ -875,7 +682,7 @@ function buildReport(candidate, assessment, responses, userId, assessmentId, sou
   var behavioralInsights;
   var candidateName;
   var assessmentName;
-  var summary;
+  var executiveSummary;
 
   safeArray(responses).forEach(function (response) {
     totalScore += getResponseScore(response);
@@ -886,7 +693,7 @@ function buildReport(candidate, assessment, responses, userId, assessmentId, sou
     percentage = roundNumber((totalScore / maxScore) * 100, 2);
   }
 
-  classification = getClassification(percentage);
+  classification = classifyScore(percentage);
   categoryScores = buildCategoryScores(responses);
   behavioralInsights = buildBehavioralInsights(responses);
 
@@ -911,17 +718,13 @@ function buildReport(candidate, assessment, responses, userId, assessmentId, sou
   recommendations = buildRecommendations(categoryScores);
   candidateName = getCandidateName(candidate, userId);
   assessmentName = getAssessmentName(assessment);
-
-  summary =
-    candidateName +
-    " completed the " +
-    assessmentName +
-    ". The overall score is " +
-    percentage +
-    "%, classified as " +
-    classification +
-    ". " +
-    getScoreComment(percentage);
+  executiveSummary = buildExecutiveSummary(
+    candidateName,
+    assessmentName,
+    percentage,
+    classification,
+    categoryScores
+  );
 
   return {
     candidateName: candidateName,
@@ -944,10 +747,10 @@ function buildReport(candidate, assessment, responses, userId, assessmentId, sou
     overallClassification: classification,
     riskLevel: getRiskLevel(percentage),
 
-    summary: summary,
-    executiveSummary: summary,
-    overallAssessment: summary,
-    interpretation: summary,
+    summary: executiveSummary,
+    executiveSummary: executiveSummary,
+    overallAssessment: executiveSummary,
+    interpretation: executiveSummary,
     supervisorImplication: getSupervisorImplication(percentage),
 
     behavioralInsights: behavioralInsights,
@@ -1066,3 +869,351 @@ export default async function handler(req, res) {
     });
   }
 }
+
+/*
+  SUPERVISOR REPORT API
+
+  Confirmed data model:
+  - responses.question_id links to unique_questions.id
+  - unique_questions.section is the main report category
+  - unique_questions.subsection is the sub-area/context
+  - responses.answer_id links to unique_answers.id through Supabase relationship
+  - unique_answers.score is used as the selected answer score where available
+
+  Syntax-safe JavaScript:
+  - no arrow functions
+  - no optional chaining
+  - no default parameters
+  - no partial exports
+  - no HTML entities
+*/
+
+// ======================================================
+// BASIC HELPERS
+// ======================================================
+
+function toNumber(value, fallback) {
+  var fallbackValue = fallback === undefined ? 0 : fallback;
+  var numberValue = Number(value);
+
+  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) {
+    return fallbackValue;
+  }
+
+  return numberValue;
+}
+
+function roundNumber(value, decimals) {
+  var decimalPlaces = decimals === undefined ? 2 : decimals;
+  var factor = Math.pow(10, decimalPlaces);
+
+  return Math.round(toNumber(value, 0) * factor) / factor;
+}
+
+function firstValue(values, fallback) {
+  var i;
+
+  if (!Array.isArray(values)) {
+    return fallback;
+  }
+
+  for (i = 0; i < values.length; i += 1) {
+    if (values[i] !== undefined && values[i] !== null && values[i] !== "") {
+      return values[i];
+    }
+  }
+
+  return fallback;
+}
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function asObject(value) {
+  if (Array.isArray(value)) {
+    if (value.length > 0 && value[0] && typeof value[0] === "object") {
+      return value[0];
+    }
+
+    return null;
+  }
+
+  if (value && typeof value === "object") {
+    return value;
+  }
+
+  return null;
+}
+
+function getValue(objectValue, key, fallback) {
+  var objectData = asObject(objectValue);
+
+  if (!objectData) {
+    return fallback;
+  }
+
+  if (
+    objectData[key] !== undefined &&
+    objectData[key] !== null &&
+    objectData[key] !== ""
+  ) {
+    return objectData[key];
+  }
+
+  return fallback;
+}
+
+// ======================================================
+// CLASSIFICATION AND INTERPRETATION
+// ======================================================
+
+function classifyScore(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value >= 85) {
+    return "Exceptional";
+  }
+
+  if (value >= 75) {
+    return "Strong Performer";
+  }
+
+  if (value >= 65) {
+    return "Capable Contributor";
+  }
+
+  if (value >= 55) {
+    return "Developing";
+  }
+
+  if (value >= 40) {
+    return "At Risk";
+  }
+
+  return "High Risk";
+}
+
+function getRiskLevel(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value >= 75) {
+    return "Low";
+  }
+
+  if (value >= 65) {
+    return "Moderate";
+  }
+
+  if (value >= 55) {
+    return "Elevated";
+  }
+
+  if (value >= 40) {
+    return "High";
+  }
+
+  return "Critical";
+}
+
+function getScoreComment(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value >= 85) {
+    return "Exceptional performance with strong evidence of readiness.";
+  }
+
+  if (value >= 75) {
+    return "Strong performance with reliable capability.";
+  }
+
+  if (value >= 65) {
+    return "Adequate performance with some areas requiring reinforcement.";
+  }
+
+  if (value >= 55) {
+    return "Developing performance requiring structured support.";
+  }
+
+  if (value >= 40) {
+    return "Priority development is required.";
+  }
+
+  return "Critical development support is required.";
+}
+
+function getSupervisorImplication(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value >= 75) {
+    return "The candidate can perform reliably with standard supervision while still benefiting from role-specific reinforcement.";
+  }
+
+  if (value >= 65) {
+    return "The candidate can perform with guidance, coaching, and periodic review in this area.";
+  }
+
+  if (value >= 55) {
+    return "The candidate requires structured support, close follow-up, and practical coaching before being relied upon independently.";
+  }
+
+  return "The candidate requires close supervision, targeted development, and careful validation before being assigned critical responsibilities.";
+}
+
+function getPriorityFromScore(percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (value < 40) {
+    return "Critical";
+  }
+
+  if (value < 55) {
+    return "High";
+  }
+
+  if (value < 65) {
+    return "Medium";
+  }
+
+  return "Low";
+}
+
+// ======================================================
+// CATEGORY-SPECIFIC NARRATIVES
+// ======================================================
+
+function getCategoryNarrative(category, percentage) {
+  var value = toNumber(percentage, 0);
+
+  if (category === "Clinical") {
+    return (
+      "Clinical performance scored " +
+      value +
+      "%. This suggests difficulty consistently interpreting behavioral, psychological, or stress-related indicators. The supervisor should validate judgement in sensitive situations and use structured case discussions before assigning high-impact responsibilities."
+    );
+  }
+
+  if (category === "Leadership") {
+    return (
+      "Leadership performance scored " +
+      value +
+      "%. This suggests challenges with ownership, direction-setting, accountability, or confident response in leadership situations. Development should focus on practical leadership scenarios, decision ownership, and follow-through."
+    );
+  }
+
+  if (category === "Decision-Making") {
+    return (
+      "Decision-Making performance scored " +
+      value +
+      "%. This reflects developing judgement under complexity, ambiguity, competing priorities, or pressure. The supervisor should provide decision frameworks, guided review, and feedback after real or simulated decisions."
+    );
+  }
+
+  if (category === "Communication Style") {
+    return (
+      "Communication Style performance scored " +
+      value +
+      "%. This indicates inconsistent interpersonal communication, especially around feedback handling, emotional awareness, meeting behavior, and written clarity. Coaching should focus on clarity, listening, tone, and response discipline."
+    );
+  }
+
+  if (category === "Adaptability") {
+    return (
+      "Adaptability performance scored " +
+      value +
+      "%. This suggests difficulty adjusting to change, uncertainty, or unexpected plan changes. Development should include exposure to varied scenarios, reflection after change events, and coaching on flexible response patterns."
+    );
+  }
+
+  if (category === "Collaboration") {
+    return (
+      "Collaboration performance scored " +
+      value +
+      "%. This indicates challenges working effectively with others, aligning with team expectations, or contributing consistently in group situations. The supervisor should reinforce teamwork habits and shared accountability."
+    );
+  }
+
+  if (category === "FBA") {
+    return (
+      "FBA performance scored " +
+      value +
+      "%. This indicates gaps in understanding behavioral antecedents, consequences, triggers, and functional patterns. Practical case-based coaching is recommended to improve interpretation of behavior and appropriate response planning."
+    );
+  }
+
+  return (
+    category +
+    " performance scored " +
+    value +
+    "%. This area requires development support, supervisor review, and practical reinforcement."
+  );
+}
+
+function getCategoryAction(category, percentage) {
+  var priority = getPriorityFromScore(percentage);
+
+  if (category === "Clinical") {
+    return (
+      "Use case-based reviews, guided interpretation exercises, and supervisor validation before the candidate handles sensitive clinical or behavioral judgement tasks independently. Priority: " +
+      priority +
+      "."
+    );
+  }
+
+  if (category === "Leadership") {
+    return (
+      "Assign small leadership tasks with clear expectations, require reflection after completion, and review accountability, initiative, and decision ownership. Priority: " +
+      priority +
+      "."
+    );
+  }
+
+  if (category === "Decision-Making") {
+    return (
+      "Introduce a structured decision-making framework, review options before action, and discuss outcomes after decisions are made. Priority: " +
+      priority +
+      "."
+    );
+  }
+
+  if (category === "Communication Style") {
+    return (
+      "Provide coaching on feedback response, meeting participation, emotional awareness, email clarity, and active listening. Priority: " +
+      priority +
+      "."
+    );
+  }
+
+  if (category === "Adaptability") {
+    return (
+      "Expose the candidate to controlled change scenarios and coach the candidate on flexible planning, calm response, and adjustment after unexpected changes. Priority: " +
+      priority +
+      "."
+    );
+  }
+
+  if (category === "Collaboration") {
+    return (
+      "Assign team-based tasks with clear roles and review how the candidate communicates, supports others, and follows shared commitments. Priority: " +
+      priority +
+      "."
+    );
+  }
+
+  if (category === "FBA") {
+    return (
+      "Use practical behavior scenarios to teach antecedents, consequences, reinforcement patterns, and response planning. Priority: " +
+      priority +
+      "."
+    );
+  }
+
+  return (
+    "Create a targeted development plan for " +
+    category +
+    " and review progress after applied practice. Priority: " +
+    priority +
+    "."
+  );
+}
+
