@@ -68,6 +68,35 @@ function cleanText(value, fallback) {
   return decodeHtmlEntities(value);
 }
 
+function decodeObjectDeep(value) {
+  var output;
+  var keys;
+  var i;
+
+  if (typeof value === "string") {
+    return decodeHtmlEntities(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(function (item) {
+      return decodeObjectDeep(item);
+    });
+  }
+
+  if (value && typeof value === "object") {
+    output = {};
+    keys = Object.keys(value);
+
+    for (i = 0; i < keys.length; i += 1) {
+      output[keys[i]] = decodeObjectDeep(value[keys[i]]);
+    }
+
+    return output;
+  }
+
+  return value;
+}
+
 function classifyScore(percentage) {
   var value = toNumber(percentage, 0);
   if (value >= 85) return "Exceptional";
@@ -439,6 +468,10 @@ export default async function handler(req, res) {
     responses = responseResult.responses;
     if (!responses || responses.length === 0) return res.status(404).json({ success: false, error: "No responses found for this candidate and assessment.", user_id: userId, assessment_id: assessmentId || null, dataSource: responseResult.source });
     generatedReport = buildReport(candidate, assessment, responses, userId, assessmentId, responseResult.source);
+    candidate = decodeObjectDeep(candidate);
+    assessment = decodeObjectDeep(assessment);
+    generatedReport = decodeObjectDeep(generatedReport);
+
     return res.status(200).json({ success: true, candidate: candidate, assessment: assessment, generatedReport: generatedReport, report: generatedReport, responseCount: responses.length, dataSource: responseResult.source });
   } catch (error) {
     return res.status(500).json({ success: false, error: error && error.message ? error.message : "Failed to generate supervisor report." });
