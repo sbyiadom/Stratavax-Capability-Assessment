@@ -1,15 +1,117 @@
 // pages/api/supervisor/report.js
 
-import {Value(response, "answer.answer_text", null),import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
+
+// independently.";// ======================================================
+  }
+
+  return "The candidate requires close supervision, targeted development, and careful validation before being assigned critical responsibilities.";
+}
+
+// ======================================================
+// RESPONSE FIELD HELPERS
+// ======================================================
+
+function getResponseScore(response) {
+  if (!response) return 0;
+
+  return safeNumber(
+    firstDefined(
+      [
+        response.score,
+        response.selected_score,
+        response.value,
+        response.points,
+        response.answer_score,
+        getNestedValue(response, "answer.score", null),
+        getNestedValue(response, "unique_answers.score", null),
+        getNestedValue(response, "selected_answer.score", null)
+      ],
+      0
+    ),
+    0
+  );
+}
+
+function getResponseMaxScore(response) {
+  if (!response) return 5;
+
+  return safeNumber(
+    firstDefined(
+      [
+        response.max_score,
+        response.maxScore,
+        response.max,
+        response.max_points,
+        getNestedValue(response, "question.max_score", null),
+        getNestedValue(response, "unique_questions.max_score", null),
+        getNestedValue(response, "question.maxScore", null),
+        getNestedValue(response, "unique_questions.maxScore", null)
+      ],
+      5
+    ),
+    5
+  );
+}
+
+function getResponseCategory(response) {
+  if (!response) return "General";
+
+  return firstDefined(
+    [
+      response.category,
+      response.competency,
+      response.dimension,
+      response.section,
+      response.area,
+      getNestedValue(response, "question.category", null),
+      getNestedValue(response, "question.competency", null),
+      getNestedValue(response, "question.dimension", null),
+      getNestedValue(response, "unique_questions.category", null),
+      getNestedValue(response, "unique_questions.competency", null),
+      getNestedValue(response, "unique_questions.dimension", null)
+    ],
+    "General"
+  );
+}
+
+function getResponseQuestionText(response) {
+  if (!response) return "";
+
+  return firstDefined(
+    [
+      response.question_text,
+      response.question,
+      getNestedValue(response, "question.question_text", null),
+      getNestedValue(response, "question.text", null),
+      getNestedValue(response, "unique_questions.question_text", null),
+      getNestedValue(response, "unique_questions.text", null)
+    ],
+    ""
+  );
+}
+
+function getResponseAnswerText(response) {
+  if (!response) return "";
+
+  return firstDefined(
+    [
+      response.answer_text,
+      response.answer,
+      response.selected_answer_text,
+      getNestedValue(response, "answer.answer_text", null),
+      getNestedValue(response, "answer.text", null),
+      getNestedValue(response, "unique_answers.answer_text", null),
       getNestedValue(response, "unique_answers.text", null),
-      getNestedValue(response, "answer.text", null)
+      getNestedValue(response, "selected_answer.answer_text", null),
+      getNestedValue(response, "selected_answer.text", null)
     ],
     ""
   );
 }
 
 function getCandidateName(candidate, userId) {
-  if (!candidate) return userId || "Candidate";
+  if (!candidate) return "Candidate";
 
   return firstDefined(
     [
@@ -23,10 +125,31 @@ function getCandidateName(candidate, userId) {
   );
 }
 
+function getAssessmentName(assessment) {
+  if (!assessment) return "Assessment";
+
+  return firstDefined(
+    [
+      assessment.title,
+      assessment.name,
+      assessment.assessment_name,
+      assessment.description
+    ],
+    "Assessment"
+  );
+}
+
+// ======================================================
+// SUPABASE QUERY HELPERS
+// ======================================================
+
 async function trySelectRows(supabase, tableName, configureQuery, selectText) {
   try {
     let query = supabase.from(tableName).select(selectText || "*");
-    query = configureQuery(query);
+
+    if (typeof configureQuery === "function") {
+      query = configureQuery(query);
+    }
 
     const result = await query;
 
@@ -49,10 +172,15 @@ async function trySelectRows(supabase, tableName, configureQuery, selectText) {
   }
 }
 
-async function trySelectSingle(supabase, tableName, configureQuery) {
+async function trySelectSingle(supabase, tableName, configureQuery, selectText) {
   try {
-    let query = supabase.from(tableName).select("*");
-    query = configureQuery(query).limit(1);
+    let query = supabase.from(tableName).select(selectText || "*");
+
+    if (typeof configureQuery === "function") {
+      query = configureQuery(query);
+    }
+
+    query = query.limit(1);
 
     const result = await query;
 
@@ -68,27 +196,37 @@ async function trySelectSingle(supabase, tableName, configureQuery) {
   }
 }
 
+// ======================================================
+// DATA FETCHING
+// ======================================================
+
 async function fetchCandidate(supabase, userId) {
-  let profile = await trySelectSingle(supabase, "profiles", function (query) {
+  let candidate = await trySelectSingle(supabase, "profiles", function (query) {
     return query.eq("id", userId);
   });
 
-  if (profile) return profile;
+  if (candidate) return candidate;
 
-  profile = await trySelectSingle(supabase, "profiles", function (query) {
+  candidate = await trySelectSingle(supabase, "profiles", function (query) {
     return query.eq("user_id", userId);
   });
 
-  if (profile) return profile;
+  if (candidate) return candidate;
 
-  const user = await trySelectSingle(supabase, "users", function (query) {
+  candidate = await trySelectSingle(supabase, "users", function (query) {
     return query.eq("id", userId);
   });
 
-  if (user) return user;
+  if (candidate) return candidate;
 
-  const candidate = await trySelectSingle(supabase, "candidates", function (query) {
+  candidate = await trySelectSingle(supabase, "candidates", function (query) {
     return query.eq("user_id", userId);
+  });
+
+  if (candidate) return candidate;
+
+  candidate = await trySelectSingle(supabase, "candidates", function (query) {
+    return query.eq("id", userId);
   });
 
   if (candidate) return candidate;
@@ -108,9 +246,13 @@ async function fetchAssessment(supabase, assessmentId) {
 
   if (assessment) return assessment;
 
-  assessment = await trySelectSingle(supabase, "unique_assessments", function (query) {
-    return query.eq("id", assessmentId);
-  });
+  assessment = await trySelectSingle(
+    supabase,
+    "unique_assessments",
+    function (query) {
+      return query.eq("id", assessmentId);
+    }
+  );
 
   if (assessment) return assessment;
 
@@ -118,7 +260,7 @@ async function fetchAssessment(supabase, assessmentId) {
 }
 
 async function fetchSessions(supabase, userId, assessmentId) {
-  if (!assessmentId) return [];
+  if (!userId || !assessmentId) return [];
 
   const tableNames = ["assessment_sessions", "sessions", "candidate_sessions"];
 
@@ -144,7 +286,7 @@ async function fetchResponses(supabase, userId, assessmentId) {
   const selectWithJoins = "*, unique_answers(*), unique_questions(*)";
 
   if (assessmentId) {
-    const directWithAssessment = await trySelectRows(
+    const directWithJoins = await trySelectRows(
       supabase,
       "responses",
       function (query) {
@@ -153,10 +295,10 @@ async function fetchResponses(supabase, userId, assessmentId) {
       selectWithJoins
     );
 
-    if (directWithAssessment.data.length > 0) {
+    if (directWithJoins.data.length > 0) {
       return {
-        responses: directWithAssessment.data,
-        source: "responses.assessment_id_with_joins"
+        responses: directWithJoins.data,
+        source: "responses.user_id_and_assessment_id_with_joins"
       };
     }
 
@@ -172,7 +314,7 @@ async function fetchResponses(supabase, userId, assessmentId) {
     if (directPlain.data.length > 0) {
       return {
         responses: directPlain.data,
-        source: "responses.assessment_id_plain"
+        source: "responses.user_id_and_assessment_id_plain"
       };
     }
 
@@ -251,6 +393,10 @@ async function fetchResponses(supabase, userId, assessmentId) {
     source: "responses.user_id_fallback_plain"
   };
 }
+
+// ======================================================
+// REPORT BUILDING
+// ======================================================
 
 function buildCategoryScores(responses) {
   const grouped = {};
@@ -414,13 +560,7 @@ function buildReport(candidate, assessment, responses, userId, assessmentId, sou
 
   const recommendations = buildRecommendations(categoryScores);
   const candidateName = getCandidateName(candidate, userId);
-
-  const assessmentName = assessment
-    ? firstDefined(
-        [assessment.title, assessment.name, assessment.assessment_name],
-        "Assessment"
-      )
-    : "Assessment";
+  const assessmentName = getAssessmentName(assessment);
 
   const summary =
     candidateName +
@@ -476,9 +616,14 @@ function buildReport(candidate, assessment, responses, userId, assessmentId, sou
   };
 }
 
+// ======================================================
+// API HANDLER
+// ======================================================
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     return res.status(405).json({
+      success: false,
       error: "Method not allowed"
     });
   }
@@ -489,6 +634,7 @@ export default async function handler(req, res) {
 
   if (!userId) {
     return res.status(400).json({
+      success: false,
       error: "Missing user_id"
     });
   }
@@ -503,6 +649,7 @@ export default async function handler(req, res) {
 
   if (!supabaseUrl || !supabaseKey) {
     return res.status(500).json({
+      success: false,
       error:
         "Supabase environment variables are missing. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
     });
@@ -518,9 +665,11 @@ export default async function handler(req, res) {
 
     if (!responses || responses.length === 0) {
       return res.status(404).json({
+        success: false,
         error: "No responses found for this candidate and assessment.",
         user_id: userId,
-        assessment_id: assessmentId || null
+        assessment_id: assessmentId || null,
+        dataSource: responseResult.source
       });
     }
 
@@ -544,6 +693,7 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     return res.status(500).json({
+      success: false,
       error:
         error && error.message
           ? error.message
@@ -551,6 +701,8 @@ export default async function handler(req, res) {
     });
   }
 }
+// BASIC HELPERS
+// ======================================================
 
 function safeNumber(value, fallback) {
   const defaultValue = fallback === undefined ? 0 : fallback;
@@ -604,6 +756,10 @@ function getNestedValue(object, path, fallback) {
   return current;
 }
 
+// ======================================================
+// INTERPRETATION HELPERS
+// ======================================================
+
 function getClassification(percentage) {
   const value = safeNumber(percentage, 0);
 
@@ -628,7 +784,7 @@ function getScoreComment(percentage) {
   }
 
   if (value >= 65) {
-    return "Adequate performance with some areas for reinforcement.";
+    return "Adequate performance with some areas requiring reinforcement.";
   }
 
   if (value >= 55) {
@@ -654,86 +810,3 @@ function getSupervisorImplication(percentage) {
   }
 
   if (value >= 55) {
-    return "The candidate requires structured support, close follow-up, and practical coaching before being relied upon independently.";
-  }
-
-  return "The candidate requires close supervision, targeted development, and careful validation before being assigned critical responsibilities.";
-}
-
-function getResponseScore(response) {
-  if (!response) return 0;
-
-  return safeNumber(
-    firstDefined(
-      [
-        getNestedValue(response, "unique_answers.score", null),
-        getNestedValue(response, "answer.score", null),
-        response.score,
-        response.selected_score,
-        response.value
-      ],
-      0
-    ),
-    0
-  );
-}
-
-function getResponseMaxScore(response) {
-  if (!response) return 5;
-
-  return safeNumber(
-    firstDefined(
-      [
-        getNestedValue(response, "unique_questions.max_score", null),
-        getNestedValue(response, "question.max_score", null),
-        response.max_score,
-        response.maxScore,
-        response.max
-      ],
-      5
-    ),
-    5
-  );
-}
-
-function getResponseCategory(response) {
-  if (!response) return "General";
-
-  return firstDefined(
-    [
-      response.category,
-      response.competency,
-      response.dimension,
-      getNestedValue(response, "unique_questions.category", null),
-      getNestedValue(response, "unique_questions.competency", null),
-      getNestedValue(response, "unique_questions.dimension", null),
-      getNestedValue(response, "question.category", null),
-      getNestedValue(response, "question.competency", null),
-      getNestedValue(response, "question.dimension", null)
-    ],
-    "General"
-  );
-}
-
-function getResponseQuestionText(response) {
-  if (!response) return "";
-
-  return firstDefined(
-    [
-      response.question_text,
-      getNestedValue(response, "unique_questions.question_text", null),
-      getNestedValue(response, "question.question_text", null),
-      getNestedValue(response, "unique_questions.text", null),
-      getNestedValue(response, "question.text", null)
-    ],
-    ""
-  );
-}
-
-function getResponseAnswerText(response) {
-  if (!response) return "";
-
-  return firstDefined(
-    [
-      response.answer_text,
-      getNestedValue(response, "unique_answers.answer_text", null),
