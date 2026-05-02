@@ -1,322 +1,40 @@
 // pages/api/supervisor/report.js
 
-import { createClient } from, 2)import { createClient } from "@supabase/supabase-js";
-          : 0,
-      answers: item.answers
-    };
-  });
-}
+import { createClient } from "@supabase/supabase-js";
 
-function buildRecommendations(categoryScores) {
-  var recommendations = [];
-  var developmentAreas;
-  var strengths;
+/*
+  Supervisor Report API
 
-  developmentAreas = categoryScores
-    .filter(function (item) {
-      return toNumber(item.percentage, 0) < 65;
-    })
-    .sort(function (a, b) {
-      return toNumber(a.percentage, 0) - toNumber(b.percentage, 0);
-    })
-    .slice(0, 5);
+  Query examples:
+  /api/supervisor/report?user_id=USER_ID&assessment_id=ASSESSMENT_ID
+  /api/supervisor/report?user_id=USER_ID&assessment=ASSESSMENT_ID
 
-  developmentAreas.forEach(function (area) {
-    var percentage = toNumber(area.percentage, 0);
-    var priority = "Medium";
-
-    if (percentage < 40) {
-      priority = "Critical";
-    } else if (percentage < 55) {
-      priority = "High";
-    }
-
-    recommendations.push({
-      priority: priority,
-      competency: area.name,
-      category: area.name,
-      currentScore: percentage,
-      gap: percentage < 80 ? roundNumber(80 - percentage, 2) : 0,
-      recommendation:
-        area.name +
-        " requires development attention. The supervisor should provide targeted coaching, practical exercises, and follow-up checks.",
-      action:
-        "Create a short development plan for " +
-        area.name +
-        " and review progress with the candidate after practical assignments.",
-      impact:
-        "Improving this area will increase role readiness, consistency, and confidence in work-related decisions."
-    });
-  });
-
-  strengths = categoryScores
-    .filter(function (item) {
-      return toNumber(item.percentage, 0) >= 75;
-    })
-    .sort(function (a, b) {
-      return toNumber(b.percentage, 0) - toNumber(a.percentage, 0);
-    })
-    .slice(0, 3);
-
-  strengths.forEach(function (area) {
-    recommendations.push({
-      priority: "Leverage",
-      competency: area.name,
-      category: area.name,
-      currentScore: area.percentage,
-      gap: 0,
-      recommendation:
-        area.name +
-        " is a strength. The supervisor can use this area to support confidence, contribution, and role performance.",
-      action:
-        "Assign role-relevant tasks that allow the candidate to apply " +
-        area.name +
-        " in real work situations.",
-      impact:
-        "Using this strength can improve candidate contribution and development momentum.",
-      isStrength: true
-    });
-  });
-
-  return recommendations;
-}
-
-function buildReport(candidate, assessment, responses, userId, assessmentId, source) {
-  var totalScore;
-  var maxScore;
-  var percentage;
-  var classification;
-  var categoryScores;
-  var strengths;
-  var developmentAreas;
-  var recommendations;
-  var candidateName;
-  var assessmentName;
-  var summary;
-  var behavioralSummary;
-
-  totalScore = responses.reduce(function (sum, response) {
-    return sum + getResponseScore(response);
-  }, 0);
-
-  maxScore = responses.reduce(function (sum, response) {
-    return sum + getResponseMaxScore(response);
-  }, 0);
-
-  percentage =
-    maxScore > 0 ? roundNumber((totalScore / maxScore) * 100, 2) : 0;
-
-  classification = getClassification(percentage);
-  categoryScores = buildCategoryScores(responses);
-  behavioralSummary = buildBehavioralSummary(responses);
-
-  strengths = categoryScores
-    .filter(function (item) {
-      return toNumber(item.percentage, 0) >= 75;
-    })
-    .sort(function (a, b) {
-      return toNumber(b.percentage, 0) - toNumber(a.percentage, 0);
-    })
-    .slice(0, 3);
-
-  developmentAreas = categoryScores
-    .filter(function (item) {
-      return toNumber(item.percentage, 0) < 65;
-    })
-    .sort(function (a, b) {
-      return toNumber(a.percentage, 0) - toNumber(b.percentage, 0);
-    })
-    .slice(0, 3);
-
-  recommendations = buildRecommendations(categoryScores);
-  candidateName = getCandidateName(candidate, userId);
-  assessmentName = getAssessmentName(assessment);
-
-  summary =
-    candidateName +
-    " completed the " +
-    assessmentName +
-    ". The overall score is " +
-    percentage +
-    "%, classified as " +
-    classification +
-    ". " +
-    getScoreComment(percentage);
-
-  return {
-    candidateName: candidateName,
-    candidate_name: candidateName,
-    assessmentName: assessmentName,
-    assessment_name: assessmentName,
-    userId: userId,
-    user_id: userId,
-    assessmentId: assessmentId || null,
-    assessment_id: assessmentId || null,
-
-    totalScore: roundNumber(totalScore, 2),
-    total_score: roundNumber(totalScore, 2),
-    maxScore: roundNumber(maxScore, 2),
-    max_score: roundNumber(maxScore, 2),
-    percentage: percentage,
-    overallPercentage: percentage,
-    overall_score: percentage,
-    classification: classification,
-    overallClassification: classification,
-    riskLevel: getRiskLevel(percentage),
-
-    summary: summary,
-    executiveSummary: summary,
-    overallAssessment: summary,
-    interpretation: summary,
-    supervisorImplication: getSupervisorImplication(percentage),
-
-    behavioralSummary: behavioralSummary,
-    behavioralInsights: behavioralSummary,
-
-    categoryScores: categoryScores,
-    category_scores: categoryScores,
-    competencyScores: categoryScores,
-    competency_scores: categoryScores,
-
-    strengths: strengths,
-    topStrengths: strengths,
-    developmentAreas: developmentAreas,
-    topDevelopmentNeeds: developmentAreas,
-    recommendations: recommendations,
-
-    responseCount: responses.length,
-    response_count: responses.length,
-    dataSource: source
-  };
-}
-
-// ======================================================
-// API HANDLER
-// ======================================================
-
-export default async function handler(req, res) {
-  var userId;
-  var assessmentId;
-  var supabaseUrl;
-  var supabaseKey;
-  var supabase;
-  var candidate;
-  var assessment;
-  var responseResult;
-  var responses;
-  var generatedReport;
-
-  if (req.method !== "GET") {
-    return res.status(405).json({
-      success: false,
-      error: "Method not allowed"
-    });
-  }
-
-  userId = req.query.user_id || req.query.userId;
-  assessmentId =
-    req.query.assessment_id || req.query.assessmentId || req.query.assessment;
-
-  if (!userId) {
-    return res.status(400).json({
-      success: false,
-      error: "Missing user_id"
-    });
-  }
-
-  supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-
-  supabaseKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseKey) {
-    return res.status(500).json({
-      success: false,
-      error:
-        "Supabase environment variables are missing. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
-    });
-  }
-
-  supabase = createClient(supabaseUrl, supabaseKey);
-
-  try {
-    candidate = await fetchCandidate(supabase, userId);
-    assessment = await fetchAssessment(supabase, assessmentId);
-    responseResult = await fetchResponses(supabase, userId, assessmentId);
-    responses = responseResult.responses;
-
-    if (!responses || responses.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: "No responses found for this candidate and assessment.",
-        user_id: userId,
-        assessment_id: assessmentId || null,
-        dataSource: responseResult.source
-      });
-    }
-
-    generatedReport = buildReport(
-      candidate,
-      assessment,
-      responses,
-      userId,
-      assessmentId,
-      responseResult.source
-    );
-
-    return res.status(200).json({
-      success: true,
-      candidate: candidate,
-      assessment: assessment,
-      generatedReport: generatedReport,
-      report: generatedReport,
-      responseCount: responses.length,
-      dataSource: responseResult.source
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      error:
-        error && error.message
-          ? error.message
-          : "Failed to generate supervisor report."
-    });
-  }
-}
-
-/**
- * Supervisor Report API
- *
- * This API generates a supervisor-facing assessment report for a candidate.
- *
- * Expected query:
- * /api/supervisor/report?user_id=<USER_ID>&assessment_id=<ASSESSMENT_ID>
- *
- * Also supports:
- * /api/supervisor/report?user_id=<USER_ID>&assessment=<ASSESSMENT_ID>
- */
+  This file is intentionally written in syntax-safe JavaScript:
+  - no optional chaining
+  - no default parameters
+  - no arrow functions
+  - no duplicated exports
+  - no partial fragments
+*/
 
 // ======================================================
 // BASIC HELPERS
 // ======================================================
 
 function toNumber(value, fallback) {
-  var defaultValue = fallback === undefined ? 0 : fallback;
-  var number = Number(value);
+  var fallbackValue = fallback === undefined ? 0 : fallback;
+  var numberValue = Number(value);
 
-  if (Number.isNaN(number) || !Number.isFinite(number)) {
-    return defaultValue;
+  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) {
+    return fallbackValue;
   }
 
-  return number;
+  return numberValue;
 }
 
 function roundNumber(value, decimals) {
-  var d = decimals === undefined ? 2 : decimals;
-  var factor = Math.pow(10, d);
+  var decimalPlaces = decimals === undefined ? 2 : decimals;
+  var factor = Math.pow(10, decimalPlaces);
 
   return Math.round(toNumber(value, 0) * factor) / factor;
 }
@@ -337,17 +55,31 @@ function firstValue(values, fallback) {
   return fallback;
 }
 
-function getNestedValue(object, path, fallback) {
+function getObjectValue(objectValue, key, fallback) {
+  if (
+    objectValue &&
+    typeof objectValue === "object" &&
+    objectValue[key] !== undefined &&
+    objectValue[key] !== null &&
+    objectValue[key] !== ""
+  ) {
+    return objectValue[key];
+  }
+
+  return fallback;
+}
+
+function getNestedValue(objectValue, path, fallback) {
   var parts;
   var current;
   var i;
 
-  if (!object) {
+  if (!objectValue || !path) {
     return fallback;
   }
 
   parts = path.split(".");
-  current = object;
+  current = objectValue;
 
   for (i = 0; i < parts.length; i += 1) {
     if (
@@ -362,6 +94,10 @@ function getNestedValue(object, path, fallback) {
     current = current[parts[i]];
   }
 
+  if (current === "") {
+    return fallback;
+  }
+
   return current;
 }
 
@@ -372,11 +108,25 @@ function getNestedValue(object, path, fallback) {
 function getClassification(percentage) {
   var value = toNumber(percentage, 0);
 
-  if (value >= 85) return "Exceptional";
-  if (value >= 75) return "Strong Performer";
-  if (value >= 65) return "Capable Contributor";
-  if (value >= 55) return "Developing";
-  if (value >= 40) return "At Risk";
+  if (value >= 85) {
+    return "Exceptional";
+  }
+
+  if (value >= 75) {
+    return "Strong Performer";
+  }
+
+  if (value >= 65) {
+    return "Capable Contributor";
+  }
+
+  if (value >= 55) {
+    return "Developing";
+  }
+
+  if (value >= 40) {
+    return "At Risk";
+  }
 
   return "High Risk";
 }
@@ -428,10 +178,21 @@ function getSupervisorImplication(percentage) {
 function getRiskLevel(percentage) {
   var value = toNumber(percentage, 0);
 
-  if (value >= 75) return "Low";
-  if (value >= 65) return "Moderate";
-  if (value >= 55) return "Elevated";
-  if (value >= 40) return "High";
+  if (value >= 75) {
+    return "Low";
+  }
+
+  if (value >= 65) {
+    return "Moderate";
+  }
+
+  if (value >= 55) {
+    return "Elevated";
+  }
+
+  if (value >= 40) {
+    return "High";
+  }
 
   return "Critical";
 }
@@ -441,16 +202,18 @@ function getRiskLevel(percentage) {
 // ======================================================
 
 function getResponseScore(response) {
-  if (!response) return 0;
+  if (!response) {
+    return 0;
+  }
 
   return toNumber(
     firstValue(
       [
-        response.score,
-        response.selected_score,
-        response.value,
-        response.points,
-        response.answer_score,
+        getObjectValue(response, "score", null),
+        getObjectValue(response, "selected_score", null),
+        getObjectValue(response, "answer_score", null),
+        getObjectValue(response, "points", null),
+        getObjectValue(response, "value", null),
         getNestedValue(response, "answer.score", null),
         getNestedValue(response, "unique_answers.score", null),
         getNestedValue(response, "selected_answer.score", null)
@@ -462,15 +225,17 @@ function getResponseScore(response) {
 }
 
 function getResponseMaxScore(response) {
-  if (!response) return 5;
+  if (!response) {
+    return 5;
+  }
 
   return toNumber(
     firstValue(
       [
-        response.max_score,
-        response.maxScore,
-        response.max,
-        response.max_points,
+        getObjectValue(response, "max_score", null),
+        getObjectValue(response, "maxScore", null),
+        getObjectValue(response, "max_points", null),
+        getObjectValue(response, "max", null),
         getNestedValue(response, "question.max_score", null),
         getNestedValue(response, "unique_questions.max_score", null),
         getNestedValue(response, "question.maxScore", null),
@@ -483,15 +248,17 @@ function getResponseMaxScore(response) {
 }
 
 function getResponseCategory(response) {
-  if (!response) return "General";
+  if (!response) {
+    return "General";
+  }
 
   return firstValue(
     [
-      response.category,
-      response.competency,
-      response.dimension,
-      response.section,
-      response.area,
+      getObjectValue(response, "category", null),
+      getObjectValue(response, "competency", null),
+      getObjectValue(response, "dimension", null),
+      getObjectValue(response, "section", null),
+      getObjectValue(response, "area", null),
       getNestedValue(response, "question.category", null),
       getNestedValue(response, "question.competency", null),
       getNestedValue(response, "question.dimension", null),
@@ -504,12 +271,14 @@ function getResponseCategory(response) {
 }
 
 function getResponseQuestionText(response) {
-  if (!response) return "";
+  if (!response) {
+    return "";
+  }
 
   return firstValue(
     [
-      response.question_text,
-      response.question,
+      getObjectValue(response, "question_text", null),
+      getObjectValue(response, "question", null),
       getNestedValue(response, "question.question_text", null),
       getNestedValue(response, "question.text", null),
       getNestedValue(response, "unique_questions.question_text", null),
@@ -520,13 +289,14 @@ function getResponseQuestionText(response) {
 }
 
 function getResponseAnswerText(response) {
-  if (!response) return "";
+  if (!response) {
+    return "";
+  }
 
   return firstValue(
     [
-      response.answer_text,
-      response.answer,
-      response.selected_answer_text,
+      getObjectValue(response, "answer_text", null),
+      getObjectValue(response, "selected_answer_text", null),
       getNestedValue(response, "answer.answer_text", null),
       getNestedValue(response, "answer.text", null),
       getNestedValue(response, "unique_answers.answer_text", null),
@@ -538,16 +308,18 @@ function getResponseAnswerText(response) {
   );
 }
 
-function getResponseTimeSpent(response) {
-  if (!response) return 0;
+function getResponseTime(response) {
+  if (!response) {
+    return 0;
+  }
 
   return toNumber(
     firstValue(
       [
-        response.time_spent_seconds,
-        response.time_spent,
-        response.duration_seconds,
-        response.response_time_seconds
+        getObjectValue(response, "time_spent_seconds", null),
+        getObjectValue(response, "time_spent", null),
+        getObjectValue(response, "duration_seconds", null),
+        getObjectValue(response, "response_time_seconds", null)
       ],
       0
     ),
@@ -556,15 +328,17 @@ function getResponseTimeSpent(response) {
 }
 
 function getResponseChanges(response) {
-  if (!response) return 0;
+  if (!response) {
+    return 0;
+  }
 
   return toNumber(
     firstValue(
       [
-        response.times_changed,
-        response.changes,
-        response.answer_changes,
-        response.revision_count
+        getObjectValue(response, "times_changed", null),
+        getObjectValue(response, "changes", null),
+        getObjectValue(response, "answer_changes", null),
+        getObjectValue(response, "revision_count", null)
       ],
       0
     ),
@@ -573,33 +347,37 @@ function getResponseChanges(response) {
 }
 
 // ======================================================
-// CANDIDATE / ASSESSMENT HELPERS
+// CANDIDATE AND ASSESSMENT HELPERS
 // ======================================================
 
 function getCandidateName(candidate, userId) {
-  if (!candidate) return "Candidate";
+  if (!candidate) {
+    return "Candidate";
+  }
 
   return firstValue(
     [
-      candidate.full_name,
-      candidate.name,
-      candidate.display_name,
-      candidate.email,
-      candidate.candidate_name
+      getObjectValue(candidate, "full_name", null),
+      getObjectValue(candidate, "name", null),
+      getObjectValue(candidate, "display_name", null),
+      getObjectValue(candidate, "email", null),
+      getObjectValue(candidate, "candidate_name", null)
     ],
     userId || "Candidate"
   );
 }
 
 function getAssessmentName(assessment) {
-  if (!assessment) return "Assessment";
+  if (!assessment) {
+    return "Assessment";
+  }
 
   return firstValue(
     [
-      assessment.title,
-      assessment.name,
-      assessment.assessment_name,
-      assessment.description
+      getObjectValue(assessment, "title", null),
+      getObjectValue(assessment, "name", null),
+      getObjectValue(assessment, "assessment_name", null),
+      getObjectValue(assessment, "description", null)
     ],
     "Assessment"
   );
@@ -680,31 +458,41 @@ async function fetchCandidate(supabase, userId) {
     return query.eq("id", userId);
   });
 
-  if (candidate) return candidate;
+  if (candidate) {
+    return candidate;
+  }
 
   candidate = await selectSingle(supabase, "profiles", function (query) {
     return query.eq("user_id", userId);
   });
 
-  if (candidate) return candidate;
+  if (candidate) {
+    return candidate;
+  }
 
   candidate = await selectSingle(supabase, "users", function (query) {
     return query.eq("id", userId);
   });
 
-  if (candidate) return candidate;
+  if (candidate) {
+    return candidate;
+  }
 
   candidate = await selectSingle(supabase, "candidates", function (query) {
     return query.eq("user_id", userId);
   });
 
-  if (candidate) return candidate;
+  if (candidate) {
+    return candidate;
+  }
 
   candidate = await selectSingle(supabase, "candidates", function (query) {
     return query.eq("id", userId);
   });
 
-  if (candidate) return candidate;
+  if (candidate) {
+    return candidate;
+  }
 
   return {
     id: userId,
@@ -723,13 +511,17 @@ async function fetchAssessment(supabase, assessmentId) {
     return query.eq("id", assessmentId);
   });
 
-  if (assessment) return assessment;
+  if (assessment) {
+    return assessment;
+  }
 
   assessment = await selectSingle(supabase, "unique_assessments", function (query) {
     return query.eq("id", assessmentId);
   });
 
-  if (assessment) return assessment;
+  if (assessment) {
+    return assessment;
+  }
 
   return null;
 }
@@ -889,16 +681,16 @@ async function fetchResponses(supabase, userId, assessmentId) {
 // REPORT BUILDING
 // ======================================================
 
-function buildBehavioralSummary(responses) {
+function buildBehavioralInsights(responses) {
   var totalTime = 0;
   var totalChanges = 0;
-  var count = responses.length;
   var averageTime = 0;
   var averageChanges = 0;
+  var count = responses.length;
   var note = "";
 
   responses.forEach(function (response) {
-    totalTime += getResponseTimeSpent(response);
+    totalTime += getResponseTime(response);
     totalChanges += getResponseChanges(response);
   });
 
@@ -935,7 +727,7 @@ function buildCategoryScores(responses) {
     var category = getResponseCategory(response);
     var score = getResponseScore(response);
     var maxScore = getResponseMaxScore(response);
-    var timeSpent = getResponseTimeSpent(response);
+    var timeSpent = getResponseTime(response);
     var changes = getResponseChanges(response);
 
     if (!grouped[category]) {
@@ -991,3 +783,287 @@ function buildCategoryScores(responses) {
           : 0,
       averageChangesPerQuestion:
         item.questionCount > 0
+          ? roundNumber(item.totalChanges / item.questionCount, 2)
+          : 0,
+      answers: item.answers
+    };
+  });
+}
+
+function buildRecommendations(categoryScores) {
+  var recommendations = [];
+  var developmentAreas;
+  var strengths;
+
+  developmentAreas = categoryScores
+    .filter(function (item) {
+      return toNumber(item.percentage, 0) < 65;
+    })
+    .sort(function (a, b) {
+      return toNumber(a.percentage, 0) - toNumber(b.percentage, 0);
+    })
+    .slice(0, 5);
+
+  developmentAreas.forEach(function (area) {
+    var percentage = toNumber(area.percentage, 0);
+    var priority = "Medium";
+
+    if (percentage < 40) {
+      priority = "Critical";
+    } else if (percentage < 55) {
+      priority = "High";
+    }
+
+    recommendations.push({
+      priority: priority,
+      competency: area.name,
+      category: area.name,
+      currentScore: percentage,
+      gap: percentage < 80 ? roundNumber(80 - percentage, 2) : 0,
+      recommendation:
+        area.name +
+        " requires development attention. The supervisor should provide targeted coaching, practical exercises, and follow-up checks.",
+      action:
+        "Create a short development plan for " +
+        area.name +
+        " and review progress with the candidate after practical assignments.",
+      impact:
+        "Improving this area will increase role readiness, consistency, and confidence in work-related decisions."
+    });
+  });
+
+  strengths = categoryScores
+    .filter(function (item) {
+      return toNumber(item.percentage, 0) >= 75;
+    })
+    .sort(function (a, b) {
+      return toNumber(b.percentage, 0) - toNumber(a.percentage, 0);
+    })
+    .slice(0, 3);
+
+  strengths.forEach(function (area) {
+    recommendations.push({
+      priority: "Leverage",
+      competency: area.name,
+      category: area.name,
+      currentScore: area.percentage,
+      gap: 0,
+      recommendation:
+        area.name +
+        " is a strength. The supervisor can use this area to support confidence, contribution, and role performance.",
+      action:
+        "Assign role-relevant tasks that allow the candidate to apply " +
+        area.name +
+        " in real work situations.",
+      impact:
+        "Using this strength can improve candidate contribution and development momentum.",
+      isStrength: true
+    });
+  });
+
+  return recommendations;
+}
+
+function buildReport(candidate, assessment, responses, userId, assessmentId, source) {
+  var totalScore = 0;
+  var maxScore = 0;
+  var percentage = 0;
+  var classification = "";
+  var categoryScores = [];
+  var strengths = [];
+  var developmentAreas = [];
+  var recommendations = [];
+  var behavioralInsights;
+  var candidateName;
+  var assessmentName;
+  var summary;
+
+  responses.forEach(function (response) {
+    totalScore += getResponseScore(response);
+    maxScore += getResponseMaxScore(response);
+  });
+
+  if (maxScore > 0) {
+    percentage = roundNumber((totalScore / maxScore) * 100, 2);
+  }
+
+  classification = getClassification(percentage);
+  categoryScores = buildCategoryScores(responses);
+  behavioralInsights = buildBehavioralInsights(responses);
+
+  strengths = categoryScores
+    .filter(function (item) {
+      return toNumber(item.percentage, 0) >= 75;
+    })
+    .sort(function (a, b) {
+      return toNumber(b.percentage, 0) - toNumber(a.percentage, 0);
+    })
+    .slice(0, 3);
+
+  developmentAreas = categoryScores
+    .filter(function (item) {
+      return toNumber(item.percentage, 0) < 65;
+    })
+    .sort(function (a, b) {
+      return toNumber(a.percentage, 0) - toNumber(b.percentage, 0);
+    })
+    .slice(0, 3);
+
+  recommendations = buildRecommendations(categoryScores);
+  candidateName = getCandidateName(candidate, userId);
+  assessmentName = getAssessmentName(assessment);
+
+  summary =
+    candidateName +
+    " completed the " +
+    assessmentName +
+    ". The overall score is " +
+    percentage +
+    "%, classified as " +
+    classification +
+    ". " +
+    getScoreComment(percentage);
+
+  return {
+    candidateName: candidateName,
+    candidate_name: candidateName,
+    assessmentName: assessmentName,
+    assessment_name: assessmentName,
+    userId: userId,
+    user_id: userId,
+    assessmentId: assessmentId || null,
+    assessment_id: assessmentId || null,
+
+    totalScore: roundNumber(totalScore, 2),
+    total_score: roundNumber(totalScore, 2),
+    maxScore: roundNumber(maxScore, 2),
+    max_score: roundNumber(maxScore, 2),
+    percentage: percentage,
+    overallPercentage: percentage,
+    overall_score: percentage,
+    classification: classification,
+    overallClassification: classification,
+    riskLevel: getRiskLevel(percentage),
+
+    summary: summary,
+    executiveSummary: summary,
+    overallAssessment: summary,
+    interpretation: summary,
+    supervisorImplication: getSupervisorImplication(percentage),
+
+    behavioralInsights: behavioralInsights,
+    behavioralSummary: behavioralInsights,
+
+    categoryScores: categoryScores,
+    category_scores: categoryScores,
+    competencyScores: categoryScores,
+    competency_scores: categoryScores,
+
+    strengths: strengths,
+    topStrengths: strengths,
+    developmentAreas: developmentAreas,
+    topDevelopmentNeeds: developmentAreas,
+    recommendations: recommendations,
+
+    responseCount: responses.length,
+    response_count: responses.length,
+    dataSource: source
+  };
+}
+
+// ======================================================
+// API HANDLER
+// ======================================================
+
+export default async function handler(req, res) {
+  var userId;
+  var assessmentId;
+  var supabaseUrl;
+  var supabaseKey;
+  var supabase;
+  var candidate;
+  var assessment;
+  var responseResult;
+  var responses;
+  var generatedReport;
+
+  if (req.method !== "GET") {
+    return res.status(405).json({
+      success: false,
+      error: "Method not allowed"
+    });
+  }
+
+  userId = req.query.user_id || req.query.userId;
+  assessmentId =
+    req.query.assessment_id || req.query.assessmentId || req.query.assessment;
+
+  if (!userId) {
+    return res.status(400).json({
+      success: false,
+      error: "Missing user_id"
+    });
+  }
+
+  supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+
+  supabaseKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return res.status(500).json({
+      success: false,
+      error:
+        "Supabase environment variables are missing. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
+    });
+  }
+
+  supabase = createClient(supabaseUrl, supabaseKey);
+
+  try {
+    candidate = await fetchCandidate(supabase, userId);
+    assessment = await fetchAssessment(supabase, assessmentId);
+    responseResult = await fetchResponses(supabase, userId, assessmentId);
+    responses = responseResult.responses;
+
+    if (!responses || responses.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "No responses found for this candidate and assessment.",
+        user_id: userId,
+        assessment_id: assessmentId || null,
+        dataSource: responseResult.source
+      });
+    }
+
+    generatedReport = buildReport(
+      candidate,
+      assessment,
+      responses,
+      userId,
+      assessmentId,
+      responseResult.source
+    );
+
+    return res.status(200).json({
+      success: true,
+      candidate: candidate,
+      assessment: assessment,
+      generatedReport: generatedReport,
+      report: generatedReport,
+      responseCount: responses.length,
+      dataSource: responseResult.source
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error:
+        error && error.message
+          ? error.message
+          : "Failed to generate supervisor report."
+    });
+  }
+}
