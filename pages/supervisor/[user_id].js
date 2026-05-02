@@ -94,8 +94,6 @@ function getCategoryScores(report) {
   if (Array.isArray(r.category_scores)) return r.category_scores;
   if (Array.isArray(r.competencyScores)) return r.competencyScores;
   if (Array.isArray(r.competency_scores)) return r.competency_scores;
-  if (r.competencyScores && typeof r.competencyScores === "object") return Object.values(r.competencyScores);
-  if (r.competency_scores && typeof r.competency_scores === "object") return Object.values(r.competency_scores);
   return [];
 }
 
@@ -119,6 +117,13 @@ function getRecommendations(report) {
   return [];
 }
 
+function getFollowUpQuestions(report) {
+  var r = safeObject(report);
+  if (Array.isArray(r.followUpQuestions)) return r.followUpQuestions;
+  if (Array.isArray(r.follow_up_questions)) return r.follow_up_questions;
+  return [];
+}
+
 function getBehavioralInsights(report) {
   var r = safeObject(report);
   return r.behavioralInsights || r.behavioralSummary || r.behavioral_summary || null;
@@ -127,13 +132,6 @@ function getBehavioralInsights(report) {
 function getRoleReadiness(report) {
   var r = safeObject(report);
   return safeText(r.roleReadiness || r.role_readiness || r.readinessStatement || r.readiness_statement || "No role readiness statement is available yet.", "No role readiness statement is available yet.");
-}
-
-function getFollowUpQuestions(report) {
-  var r = safeObject(report);
-  if (Array.isArray(r.followUpQuestions)) return r.followUpQuestions;
-  if (Array.isArray(r.follow_up_questions)) return r.follow_up_questions;
-  return [];
 }
 
 function getRowTitle(row) {
@@ -198,9 +196,13 @@ export default function SupervisorUserReportPage() {
   var report = reportState[0];
   var setReport = reportState[1];
 
-  var debugState = useState(null);
-  var debugInfo = debugState[0];
-  var setDebugInfo = debugState[1];
+  var pdfLoadingState = useState(false);
+  var pdfLoading = pdfLoadingState[0];
+  var setPdfLoading = pdfLoadingState[1];
+
+  var pdfErrorState = useState("");
+  var pdfError = pdfErrorState[0];
+  var setPdfError = pdfErrorState[1];
 
   useEffect(function () {
     if (!router.isReady) return;
@@ -223,7 +225,6 @@ export default function SupervisorUserReportPage() {
       setCandidate(null);
       setAssessment(null);
       setReport(null);
-      setDebugInfo(null);
 
       try {
         url = buildReportUrl(userId, assessmentId);
@@ -241,7 +242,6 @@ export default function SupervisorUserReportPage() {
         if (!response.ok) {
           errorText = data && data.error ? data.error : "Request failed with status " + response.status;
           setErrorMessage(errorText);
-          setDebugInfo({ status: response.status, url: url, data: data });
           setLoading(false);
           return;
         }
@@ -254,17 +254,10 @@ export default function SupervisorUserReportPage() {
         setCandidate(loadedCandidate);
         setAssessment(loadedAssessment);
         setReport(loadedReport);
-        setDebugInfo({
-          status: response.status,
-          url: url,
-          responseCount: cleanData.responseCount || cleanData.response_count || safeObject(loadedReport).responseCount || safeObject(loadedReport).response_count || 0,
-          dataSource: cleanData.dataSource || safeObject(loadedReport).dataSource || null
-        });
         setLoading(false);
       } catch (error) {
         if (!mounted) return;
         setErrorMessage(error && error.message ? error.message : "Something went wrong while loading the report.");
-        setDebugInfo({ status: "network_error", message: error && error.message ? error.message : "Unknown error" });
         setLoading(false);
       }
     }
@@ -281,9 +274,9 @@ export default function SupervisorUserReportPage() {
   var strengths = getStrengths(cleanReport);
   var developmentAreas = getDevelopmentAreas(cleanReport);
   var recommendations = getRecommendations(cleanReport);
+  var followUpQuestions = getFollowUpQuestions(cleanReport);
   var behavioralInsights = getBehavioralInsights(cleanReport);
   var roleReadiness = getRoleReadiness(cleanReport);
-  var followUpQuestions = getFollowUpQuestions(cleanReport);
   var candidateName = getCandidateName(candidate, cleanReport);
   var assessmentName = getAssessmentName(assessment, cleanReport);
   var overallScore = getOverallScore(cleanReport);
@@ -291,6 +284,70 @@ export default function SupervisorUserReportPage() {
   var riskLevel = getRiskLevel(cleanReport);
   var responseCount = getResponseCount(cleanReport);
   var showBehavioralMetrics = shouldShowBehavioralMetrics(behavioralInsights);
+
+  async function downloadPdfReport() {
+    var response;
+    var blob;
+    var downloadUrl;
+    var link;
+    var fileName;
+    var errorData;
+
+    if (!userId || !assessmentId) {
+      setPdfError("Cannot generate PDF because candidate ID or assessment ID is missing.");
+      return;
+    }
+
+    setPdfLoading(true);
+    setPdfError("");
+
+    try {
+      response = await fetch("/api/generate-pdf-report", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          userId: userId,
+          assessmentId: assessmentId
+        })
+      });
+
+      if (!response.ok) {
+        errorData = null;
+        try {
+          errorData = await response.json();
+        } catch (jsonError) {
+          errorData = null;
+        }
+
+        setPdfError(
+          errorData && errorData.message
+            ? errorData.message
+            : errorData && errorData.error
+            ? errorData.error
+            : "PDF generation failed. Please try again."
+        );
+        setPdfLoading(false);
+        return;
+      }
+
+      blob = await response.blob();
+      downloadUrl = window.URL.createObjectURL(blob);
+      link = document.createElement("a");
+      fileName = safeText(candidateName || "Candidate", "Candidate").replace(/[^a-zA-Z0-9_-]+/g, "_");
+      link.href = downloadUrl;
+      link.download = fileName + "_supervisor_report.pdf";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+      setPdfLoading(false);
+    } catch (error) {
+      setPdfError(error && error.message ? error.message : "PDF generation failed. Please try again.");
+      setPdfLoading(false);
+    }
+  }
 
   return (
     <div style={styles.page}>
@@ -310,25 +367,20 @@ export default function SupervisorUserReportPage() {
             <p style={styles.classification}>{classification}</p>
             <p style={styles.smallMeta}>Risk Level: {riskLevel}</p>
             <p style={styles.smallMeta}>Responses: {safeNumber(responseCount, 0)}</p>
+            <button type="button" style={pdfLoading ? styles.buttonDisabled : styles.downloadButton} onClick={downloadPdfReport} disabled={pdfLoading || loading}>
+              {pdfLoading ? "Generating PDF..." : "Download PDF"}
+            </button>
+            {pdfError && <p style={styles.pdfError}>{pdfError}</p>}
           </div>
         </header>
 
-        {loading && (
-          <section style={styles.card}>
-            <p style={styles.bodyText}>Loading supervisor report...</p>
-          </section>
-        )}
+        {loading && <section style={styles.card}><p style={styles.bodyText}>Loading supervisor report...</p></section>}
 
         {!loading && errorMessage && (
           <section style={styles.errorCard}>
             <h2 style={styles.sectionTitle}>Report not loaded</h2>
             <p style={styles.errorText}>{errorMessage}</p>
             <p style={styles.mutedText}>The supervisor page loaded, but the report API did not return report data.</p>
-            <div style={styles.debugBox}>
-              <p style={styles.debugTitle}>Debug information</p>
-              <p style={styles.debugText}>API route expected: <strong>/api/supervisor/report?user_id={safeText(userId, "")}{assessmentId ? "&assessment_id=" + assessmentId : ""}</strong></p>
-              <p style={styles.debugText}>Status: <strong>{debugInfo && debugInfo.status ? String(debugInfo.status) : "Unknown"}</strong></p>
-            </div>
           </section>
         )}
 
@@ -428,6 +480,9 @@ var styles = {
   scoreValue: { margin: "8px 0", fontSize: "42px", fontWeight: 800, color: "#0f766e" },
   classification: { margin: 0, color: "#344054", fontWeight: 700 },
   smallMeta: { margin: "8px 0 0", color: "#667085", fontSize: "13px" },
+  downloadButton: { marginTop: "14px", width: "100%", border: "0", borderRadius: "12px", padding: "11px 14px", background: "#0f766e", color: "#ffffff", fontWeight: 800, cursor: "pointer", fontSize: "14px" },
+  buttonDisabled: { marginTop: "14px", width: "100%", border: "0", borderRadius: "12px", padding: "11px 14px", background: "#98a2b3", color: "#ffffff", fontWeight: 800, cursor: "not-allowed", fontSize: "14px" },
+  pdfError: { margin: "10px 0 0", color: "#b42318", fontSize: "12px", lineHeight: 1.4 },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "18px", marginBottom: "18px" },
   card: { background: "#ffffff", borderRadius: "18px", padding: "22px", boxShadow: "0 10px 30px rgba(16, 24, 40, 0.06)", border: "1px solid #eaecf0", marginBottom: "18px" },
   cardHighlight: { background: "#ffffff", borderRadius: "18px", padding: "22px", boxShadow: "0 10px 30px rgba(16, 24, 40, 0.06)", border: "1px solid #fed7aa", marginBottom: "18px" },
@@ -465,8 +520,5 @@ var styles = {
   metricLabel: { margin: 0, color: "#667085", fontSize: "12px", fontWeight: 700, textTransform: "uppercase" },
   metricValue: { margin: "6px 0 0", color: "#101828", fontSize: "24px", fontWeight: 800 },
   questionList: { display: "grid", gap: "12px" },
-  questionCard: { padding: "16px", borderRadius: "14px", background: "#ffffff", border: "1px solid #eaecf0" },
-  debugBox: { marginTop: "16px", padding: "14px", borderRadius: "12px", background: "#ffffff", border: "1px solid #fecaca" },
-  debugTitle: { margin: "0 0 8px", color: "#101828", fontWeight: 800 },
-  debugText: { margin: "5px 0", color: "#475467", fontSize: "13px", lineHeight: 1.5 }
+  questionCard: { padding: "16px", borderRadius: "14px", background: "#ffffff", border: "1px solid #eaecf0" }
 };
