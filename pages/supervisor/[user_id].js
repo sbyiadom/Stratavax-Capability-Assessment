@@ -45,10 +45,26 @@ function getCandidateName(candidate, report) {
   return (
     c.full_name ||
     c.name ||
+    c.display_name ||
     c.email ||
+    c.candidate_name ||
     r.candidateName ||
     r.candidate_name ||
     "Candidate"
+  );
+}
+
+function getAssessmentName(assessment, report) {
+  const a = safeObject(assessment);
+  const r = safeObject(report);
+
+  return (
+    a.title ||
+    a.name ||
+    a.assessment_name ||
+    r.assessmentName ||
+    r.assessment_name ||
+    "Assessment"
   );
 }
 
@@ -75,6 +91,12 @@ function getClassification(report) {
     r.label ||
     "Not classified"
   );
+}
+
+function getResponseCount(report) {
+  const r = safeObject(report);
+
+  return r.responseCount || r.response_count || 0;
 }
 
 function getCategoryScores(report) {
@@ -164,17 +186,31 @@ function getRecommendations(report) {
   return [];
 }
 
+function buildReportUrl(userId, assessmentId) {
+  let url = "/api/supervisor/report?user_id=" + encodeURIComponent(userId);
+
+  if (assessmentId) {
+    url += "&assessment_id=" + encodeURIComponent(assessmentId);
+  }
+
+  return url;
+}
+
 export default function SupervisorUserReportPage() {
   const router = useRouter();
   const userId = router.query.user_id;
+  const assessmentId = router.query.assessment || router.query.assessment_id;
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [candidate, setCandidate] = useState(null);
+  const [assessment, setAssessment] = useState(null);
   const [report, setReport] = useState(null);
+  const [debugInfo, setDebugInfo] = useState(null);
 
   useEffect(
     function () {
+      if (!router.isReady) return;
       if (!userId) return;
 
       let mounted = true;
@@ -182,76 +218,87 @@ export default function SupervisorUserReportPage() {
       async function loadReport() {
         setLoading(true);
         setErrorMessage("");
+        setCandidate(null);
+        setAssessment(null);
+        setReport(null);
+        setDebugInfo(null);
 
         try {
-          const urls = [
-            "/api/supervisor/report?user_id=" + encodeURIComponent(userId),
-            "/api/generate-report?user_id=" + encodeURIComponent(userId),
-            "/api/report?user_id=" + encodeURIComponent(userId)
-          ];
+          const url = buildReportUrl(userId, assessmentId);
+          const response = await fetch(url);
 
           let data = null;
-          let lastError = "";
 
-          for (let i = 0; i < urls.length; i += 1) {
-            try {
-              const response = await fetch(urls[i]);
-
-              if (response.ok) {
-                data = await response.json();
-                break;
-              }
-
-              lastError = "Request failed with status " + response.status;
-            } catch (requestError) {
-              lastError =
-                requestError && requestError.message
-                  ? requestError.message
-                  : "Unable to fetch report";
-            }
+          try {
+            data = await response.json();
+          } catch (jsonError) {
+            data = null;
           }
 
           if (!mounted) return;
 
-          if (!data) {
-            setCandidate(null);
-            setReport(null);
-            setErrorMessage(
-              lastError || "No report data was returned for this candidate."
-            );
+          if (!response.ok) {
+            const errorText =
+              data && data.error
+                ? data.error
+                : "Request failed with status " + response.status;
+
+            setErrorMessage(errorText);
+            setDebugInfo({
+              status: response.status,
+              url: url,
+              data: data
+            });
             setLoading(false);
             return;
           }
 
           const cleanData = safeObject(data);
 
-          setCandidate(
+          const loadedCandidate =
             cleanData.candidate ||
-              cleanData.user ||
-              cleanData.profile ||
-              cleanData.candidateProfile ||
-              null
-          );
+            cleanData.user ||
+            cleanData.profile ||
+            cleanData.candidateProfile ||
+            null;
 
-          setReport(
+          const loadedAssessment = cleanData.assessment || null;
+
+          const loadedReport =
             cleanData.generatedReport ||
-              cleanData.report ||
-              cleanData.assessmentReport ||
-              cleanData.result ||
-              cleanData
-          );
+            cleanData.report ||
+            cleanData.assessmentReport ||
+            cleanData.result ||
+            cleanData;
 
+          setCandidate(loadedCandidate);
+          setAssessment(loadedAssessment);
+          setReport(loadedReport);
+          setDebugInfo({
+            status: response.status,
+            url: url,
+            responseCount:
+              cleanData.responseCount ||
+              cleanData.response_count ||
+              safeObject(loadedReport).responseCount ||
+              safeObject(loadedReport).response_count ||
+              0,
+            dataSource:
+              cleanData.dataSource || safeObject(loadedReport).dataSource || null
+          });
           setLoading(false);
         } catch (error) {
           if (!mounted) return;
 
-          setCandidate(null);
-          setReport(null);
           setErrorMessage(
             error && error.message
               ? error.message
               : "Something went wrong while loading the report."
           );
+          setDebugInfo({
+            status: "network_error",
+            message: error && error.message ? error.message : "Unknown error"
+          });
           setLoading(false);
         }
       }
@@ -262,7 +309,7 @@ export default function SupervisorUserReportPage() {
         mounted = false;
       };
     },
-    [userId]
+    [router.isReady, userId, assessmentId]
   );
 
   const cleanReport = safeObject(report);
@@ -271,8 +318,10 @@ export default function SupervisorUserReportPage() {
   const developmentAreas = getDevelopmentAreas(cleanReport);
   const recommendations = getRecommendations(cleanReport);
   const candidateName = getCandidateName(candidate, cleanReport);
+  const assessmentName = getAssessmentName(assessment, cleanReport);
   const overallScore = getOverallScore(cleanReport);
   const classification = getClassification(cleanReport);
+  const responseCount = getResponseCount(cleanReport);
 
   return (
     <div style={styles.page}>
@@ -282,7 +331,13 @@ export default function SupervisorUserReportPage() {
             <p style={styles.eyebrow}>Supervisor Assessment Report</p>
             <h1 style={styles.title}>{candidateName}</h1>
             <p style={styles.subtitle}>
+              Assessment: {safeText(assessmentName, "Assessment")}
+            </p>
+            <p style={styles.subtitle}>
               Candidate ID: {safeText(userId, "Not available")}
+            </p>
+            <p style={styles.subtitle}>
+              Assessment ID: {safeText(assessmentId, "Not available")}
             </p>
           </div>
 
@@ -290,6 +345,9 @@ export default function SupervisorUserReportPage() {
             <p style={styles.scoreLabel}>Overall Score</p>
             <p style={styles.scoreValue}>{formatPercentage(overallScore)}</p>
             <p style={styles.classification}>{classification}</p>
+            <p style={styles.smallMeta}>
+              Responses: {safeNumber(responseCount, 0)}
+            </p>
           </div>
         </header>
 
@@ -303,9 +361,36 @@ export default function SupervisorUserReportPage() {
           <section style={styles.errorCard}>
             <h2 style={styles.sectionTitle}>Report not loaded</h2>
             <p style={styles.errorText}>{errorMessage}</p>
+
             <p style={styles.mutedText}>
-              The page is compiling, but no report API returned data.
+              The supervisor page loaded, but the report API did not return
+              report data.
             </p>
+
+            <div style={styles.debugBox}>
+              <p style={styles.debugTitle}>Debug information</p>
+              <p style={styles.debugText}>
+                API route expected:{" "}
+                <strong>
+                  /api/supervisor/report?user_id={safeText(userId, "")}
+                  {assessmentId ? "&assessment_id=" + assessmentId : ""}
+                </strong>
+              </p>
+              <p style={styles.debugText}>
+                Status:{" "}
+                <strong>
+                  {debugInfo && debugInfo.status
+                    ? String(debugInfo.status)
+                    : "Unknown"}
+                </strong>
+              </p>
+              <p style={styles.debugText}>
+                If the status is 404, create this file:
+              </p>
+              <pre style={styles.codeBlock}>
+                pages/api/supervisor/report.js
+              </pre>
+            </div>
           </section>
         )}
 
@@ -313,12 +398,12 @@ export default function SupervisorUserReportPage() {
           <React.Fragment>
             <section style={styles.grid}>
               <div style={styles.card}>
-                <h2 style={styles.sectionTitle}>Summary</h2>
+                <h2 style={styles.sectionTitle}>Executive Summary</h2>
                 <p style={styles.bodyText}>
                   {safeText(
-                    cleanReport.overallAssessment ||
+                    cleanReport.executiveSummary ||
                       cleanReport.summary ||
-                      cleanReport.executiveSummary ||
+                      cleanReport.overallAssessment ||
                       cleanReport.interpretation,
                     "No summary is available yet."
                   )}
@@ -340,13 +425,16 @@ export default function SupervisorUserReportPage() {
 
             <section style={styles.card}>
               <div style={styles.sectionHeader}>
-                <h2 style={styles.sectionTitle}>Category / Competency Scores</h2>
+                <h2 style={styles.sectionTitle}>
+                  Category / Competency Scores
+                </h2>
                 <span style={styles.badge}>{categoryScores.length}</span>
               </div>
 
               {categoryScores.length === 0 ? (
                 <p style={styles.mutedText}>
-                  No category or competency scores were found.
+                  No category or competency scores were found in the generated
+                  report.
                 </p>
               ) : (
                 <div style={styles.tableWrapper}>
@@ -356,7 +444,7 @@ export default function SupervisorUserReportPage() {
                         <th style={styles.th}>Area</th>
                         <th style={styles.th}>Score</th>
                         <th style={styles.th}>Classification</th>
-                        <th style={styles.th}>Comment</th>
+                        <th style={styles.th}>Supervisor Meaning</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -366,14 +454,24 @@ export default function SupervisorUserReportPage() {
                         return (
                           <tr key={index}>
                             <td style={styles.td}>
-                              {safeText(
-                                row.category || row.name || row.competency,
-                                "General"
+                              <strong>
+                                {safeText(
+                                  row.category || row.name || row.competency,
+                                  "General"
+                                )}
+                              </strong>
+                              {row.questionCount && (
+                                <div style={styles.cellMeta}>
+                                  {row.questionCount} question(s)
+                                </div>
                               )}
                             </td>
                             <td style={styles.td}>
                               {formatPercentage(
-                                row.percentage || row.score || row.currentScore
+                                row.percentage ||
+                                  row.score ||
+                                  row.currentScore ||
+                                  0
                               )}
                             </td>
                             <td style={styles.td}>
@@ -386,9 +484,9 @@ export default function SupervisorUserReportPage() {
                             </td>
                             <td style={styles.td}>
                               {safeText(
-                                row.comment ||
-                                  row.performanceComment ||
-                                  row.supervisorImplication,
+                                row.supervisorImplication ||
+                                  row.comment ||
+                                  row.performanceComment,
                                 "No comment available"
                               )}
                             </td>
@@ -405,26 +503,34 @@ export default function SupervisorUserReportPage() {
               <div style={styles.card}>
                 <div style={styles.sectionHeader}>
                   <h2 style={styles.sectionTitle}>Top Strengths</h2>
-                  <span style={styles.badge}>{strengths.length}</span>
+                  <span style={styles.badge}>{safeArray(strengths).length}</span>
                 </div>
 
                 {safeArray(strengths).length === 0 ? (
                   <p style={styles.mutedText}>No strengths available.</p>
                 ) : (
                   <ul style={styles.list}>
-                    {strengths.map(function (item, index) {
+                    {safeArray(strengths).map(function (item, index) {
                       const row = safeObject(item);
 
                       return (
                         <li key={index} style={styles.listItem}>
-                          <strong>
-                            {safeText(
-                              row.name || row.category || row.competency,
-                              "Strength"
-                            )}
-                          </strong>
+                          <div>
+                            <strong>
+                              {safeText(
+                                row.name || row.category || row.competency,
+                                "Strength"
+                              )}
+                            </strong>
+                            <p style={styles.listDescription}>
+                              {safeText(
+                                row.comment || row.supervisorImplication,
+                                "This is one of the candidate’s stronger areas."
+                              )}
+                            </p>
+                          </div>
                           <span style={styles.listMeta}>
-                            {formatPercentage(row.percentage || row.score)}
+                            {formatPercentage(row.percentage || row.score || 0)}
                           </span>
                         </li>
                       );
@@ -436,26 +542,38 @@ export default function SupervisorUserReportPage() {
               <div style={styles.card}>
                 <div style={styles.sectionHeader}>
                   <h2 style={styles.sectionTitle}>Development Areas</h2>
-                  <span style={styles.badge}>{developmentAreas.length}</span>
+                  <span style={styles.badge}>
+                    {safeArray(developmentAreas).length}
+                  </span>
                 </div>
 
                 {safeArray(developmentAreas).length === 0 ? (
-                  <p style={styles.mutedText}>No development areas available.</p>
+                  <p style={styles.mutedText}>
+                    No development areas available.
+                  </p>
                 ) : (
                   <ul style={styles.list}>
-                    {developmentAreas.map(function (item, index) {
+                    {safeArray(developmentAreas).map(function (item, index) {
                       const row = safeObject(item);
 
                       return (
                         <li key={index} style={styles.listItem}>
-                          <strong>
-                            {safeText(
-                              row.name || row.category || row.competency,
-                              "Development area"
-                            )}
-                          </strong>
-                          <span style={styles.listMeta}>
-                            {formatPercentage(row.percentage || row.score)}
+                          <div>
+                            <strong>
+                              {safeText(
+                                row.name || row.category || row.competency,
+                                "Development area"
+                              )}
+                            </strong>
+                            <p style={styles.listDescription}>
+                              {safeText(
+                                row.comment || row.supervisorImplication,
+                                "This area needs additional support and follow-up."
+                              )}
+                            </p>
+                          </div>
+                          <span style={styles.listMetaWarning}>
+                            {formatPercentage(row.percentage || row.score || 0)}
                           </span>
                         </li>
                       );
@@ -518,6 +636,28 @@ export default function SupervisorUserReportPage() {
                 </div>
               )}
             </section>
+
+            {debugInfo && (
+              <section style={styles.debugSuccessBox}>
+                <p style={styles.debugTitle}>Report data loaded</p>
+                <p style={styles.debugText}>
+                  Source:{" "}
+                  <strong>
+                    {debugInfo.dataSource
+                      ? debugInfo.dataSource
+                      : "Supervisor report API"}
+                  </strong>
+                </p>
+                <p style={styles.debugText}>
+                  Response count:{" "}
+                  <strong>
+                    {debugInfo.responseCount !== undefined
+                      ? debugInfo.responseCount
+                      : responseCount}
+                  </strong>
+                </p>
+              </section>
+            )}
           </React.Fragment>
         )}
       </div>
@@ -572,7 +712,7 @@ const styles = {
   },
 
   scoreCard: {
-    minWidth: "220px",
+    minWidth: "230px",
     background: "#ffffff",
     borderRadius: "18px",
     padding: "22px",
@@ -599,6 +739,12 @@ const styles = {
     margin: 0,
     color: "#344054",
     fontWeight: 700
+  },
+
+  smallMeta: {
+    margin: "8px 0 0",
+    color: "#667085",
+    fontSize: "13px"
   },
 
   grid: {
@@ -699,6 +845,12 @@ const styles = {
     verticalAlign: "top"
   },
 
+  cellMeta: {
+    marginTop: "4px",
+    color: "#667085",
+    fontSize: "12px"
+  },
+
   list: {
     listStyle: "none",
     margin: 0,
@@ -714,9 +866,23 @@ const styles = {
     color: "#344054"
   },
 
+  listDescription: {
+    margin: "4px 0 0",
+    color: "#667085",
+    fontSize: "13px",
+    lineHeight: 1.5
+  },
+
   listMeta: {
     fontWeight: 800,
-    color: "#0f766e"
+    color: "#0f766e",
+    whiteSpace: "nowrap"
+  },
+
+  listMetaWarning: {
+    fontWeight: 800,
+    color: "#c2410c",
+    whiteSpace: "nowrap"
   },
 
   recommendationList: {
@@ -751,7 +917,8 @@ const styles = {
     background: "#fff7ed",
     color: "#c2410c",
     fontSize: "12px",
-    fontWeight: 800
+    fontWeight: 800,
+    whiteSpace: "nowrap"
   },
 
   actionText: {
@@ -759,5 +926,44 @@ const styles = {
     color: "#344054",
     lineHeight: 1.6,
     fontSize: "14px"
+  },
+
+  debugBox: {
+    marginTop: "16px",
+    padding: "14px",
+    borderRadius: "12px",
+    background: "#ffffff",
+    border: "1px solid #fecaca"
+  },
+
+  debugSuccessBox: {
+    marginTop: "10px",
+    padding: "14px",
+    borderRadius: "12px",
+    background: "#ecfdf3",
+    border: "1px solid #abefc6"
+  },
+
+  debugTitle: {
+    margin: "0 0 8px",
+    color: "#101828",
+    fontWeight: 800
+  },
+
+  debugText: {
+    margin: "5px 0",
+    color: "#475467",
+    fontSize: "13px",
+    lineHeight: 1.5
+  },
+
+  codeBlock: {
+    margin: "8px 0 0",
+    padding: "10px",
+    background: "#101828",
+    color: "#ffffff",
+    borderRadius: "8px",
+    fontSize: "13px",
+    overflowX: "auto"
   }
 };
