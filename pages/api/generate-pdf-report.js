@@ -1,7 +1,7 @@
 // pages/api/generate-pdf-report.js
 
 import { createClient } from "@supabase/supabase-js";
-import chromium from "@sparticuz/chromium-min";
+import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
 
 export const config = {
