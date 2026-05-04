@@ -1,27 +1,139 @@
 // supabase/assessment.js
-import { supabase } from './client';
 
-// Fisher-Yates shuffle algorithm for true randomness
+import { supabase } from "./client";
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function toNumber(value, fallback = 0) {
+  const numberValue = Number(value);
+  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) return fallback;
+  return numberValue;
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
 function shuffleArray(array) {
-  if (!array || !Array.isArray(array)) return [];
-  
+  if (!Array.isArray(array)) return [];
   const shuffled = [...array];
-  for (let i = shuffled.length - 1; i > 0; i--) {
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    const temp = shuffled[i];
+    shuffled[i] = shuffled[j];
+    shuffled[j] = temp;
   }
   return shuffled;
 }
 
-// Assessment Types
+function getAnswerIdsArray(answerId) {
+  if (Array.isArray(answerId)) {
+    return answerId.map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id));
+  }
+
+  if (typeof answerId === "string" && answerId.includes(",")) {
+    return answerId.split(",").map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id));
+  }
+
+  if (answerId !== null && answerId !== undefined && answerId !== "") {
+    const singleId = parseInt(answerId, 10);
+    return Number.isNaN(singleId) ? [] : [singleId];
+  }
+
+  return [];
+}
+
+function normalizeAnswerForStorage(answerId) {
+  const ids = getAnswerIdsArray(answerId);
+  if (ids.length === 0) return "";
+  if (ids.length === 1) return String(ids[0]);
+  return ids.join(",");
+}
+
+function countAnsweredFromResponses(responses) {
+  return safeArray(responses).filter((response) => {
+    return response && response.answer_id !== null && response.answer_id !== undefined && response.answer_id !== "";
+  }).length;
+}
+
+async function safeSelectRows(tableName, configureQuery, selectText = "*") {
+  try {
+    let query = supabase.from(tableName).select(selectText);
+    if (typeof configureQuery === "function") query = configureQuery(query);
+    const result = await query;
+    if (result.error) return { data: [], error: result.error };
+    return { data: Array.isArray(result.data) ? result.data : [], error: null };
+  } catch (error) {
+    return { data: [], error };
+  }
+}
+
+async function safeSelectSingle(tableName, configureQuery, selectText = "*") {
+  const rows = await safeSelectRows(
+    tableName,
+    (query) => {
+      if (typeof configureQuery === "function") query = configureQuery(query);
+      return query.limit(1);
+    },
+    selectText
+  );
+
+  if (rows.data.length > 0) return { data: rows.data[0], error: null };
+  return { data: null, error: rows.error };
+}
+
+async function getSessionById(sessionId) {
+  const result = await safeSelectSingle(
+    "assessment_sessions",
+    (query) => query.eq("id", sessionId),
+    "*"
+  );
+  return result.data;
+}
+
+async function getAssessmentQuestionCount(assessmentTypeId) {
+  if (!assessmentTypeId) return 0;
+  const result = await safeSelectRows(
+    "unique_questions",
+    (query) => query.eq("assessment_type_id", assessmentTypeId),
+    "id"
+  );
+  return result.data.length;
+}
+
+async function updateCandidateAssessmentStatus(userId, assessmentId, status, resultId) {
+  try {
+    const payload = {
+      status,
+      updated_at: nowIso()
+    };
+
+    if (resultId !== undefined) payload.result_id = resultId || null;
+
+    await supabase
+      .from("candidate_assessments")
+      .update(payload)
+      .eq("user_id", userId)
+      .eq("assessment_id", assessmentId);
+  } catch (error) {
+    console.error("Error updating candidate assessment status:", error);
+  }
+}
+
+// ======================================================
+// ASSESSMENT TYPES
+// ======================================================
+
 export async function getAssessmentTypes() {
   try {
     const { data, error } = await supabase
-      .from('assessment_types')
-      .select('*')
-      .eq('is_active', true)
-      .order('display_order');
-    
+      .from("assessment_types")
+      .select("*")
+      .eq("is_active", true)
+      .order("display_order", { ascending: true });
+
     if (error) throw error;
     return data || [];
   } catch (error) {
@@ -33,11 +145,11 @@ export async function getAssessmentTypes() {
 export async function getAssessmentTypeByCode(code) {
   try {
     const { data, error } = await supabase
-      .from('assessment_types')
-      .select('*')
-      .eq('code', code)
+      .from("assessment_types")
+      .select("*")
+      .eq("code", code)
       .single();
-    
+
     if (error) throw error;
     return data;
   } catch (error) {
@@ -46,17 +158,18 @@ export async function getAssessmentTypeByCode(code) {
   }
 }
 
-// Assessments
+// ======================================================
+// ASSESSMENTS
+// ======================================================
+
 export async function getAssessments() {
   try {
     const { data, error } = await supabase
-      .from('assessments')
-      .select(`
-        *,
-        assessment_type:assessment_types(*)
-      `)
-      .eq('is_active', true);
-    
+      .from("assessments")
+      .select("*, assessment_type:assessment_types(*)")
+      .eq("is_active", true)
+      .order("title", { ascending: true });
+
     if (error) throw error;
     return data || [];
   } catch (error) {
@@ -68,14 +181,11 @@ export async function getAssessments() {
 export async function getAssessmentById(id) {
   try {
     const { data, error } = await supabase
-      .from('assessments')
-      .select(`
-        *,
-        assessment_type:assessment_types(*)
-      `)
-      .eq('id', id)
+      .from("assessments")
+      .select("*, assessment_type:assessment_types(*)")
+      .eq("id", id)
       .single();
-    
+
     if (error) throw error;
     return data;
   } catch (error) {
@@ -84,81 +194,44 @@ export async function getAssessmentById(id) {
   }
 }
 
-// Assessment Sessions
+// ======================================================
+// ASSESSMENT SESSIONS
+// ======================================================
+
 export async function createAssessmentSession(userId, assessmentId, assessmentTypeId) {
   try {
-    console.log("Creating assessment session:", { userId, assessmentId, assessmentTypeId });
-    
-    // First check if there's an existing in-progress session
-    const { data: existing, error: existingError } = await supabase
-      .from('assessment_sessions')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('assessment_id', assessmentId)
-      .eq('status', 'in_progress')
-      .maybeSingle();
+    if (!userId || !assessmentId) throw new Error("Missing userId or assessmentId");
 
-    if (existingError) {
-      console.error("Error checking existing session:", existingError);
-    }
+    const completed = await isAssessmentCompleted(userId, assessmentId);
+    if (completed) throw new Error("Assessment already completed");
 
-    if (existing) {
-      console.log("Found existing session:", existing);
-      return existing;
-    }
+    const existing = await safeSelectSingle(
+      "assessment_sessions",
+      (query) => query
+        .eq("user_id", userId)
+        .eq("assessment_id", assessmentId)
+        .eq("status", "in_progress")
+        .order("created_at", { ascending: false }),
+      "*"
+    );
 
-    // Check if there's a completed session
-    const { data: completed } = await supabase
-      .from('assessment_sessions')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('assessment_id', assessmentId)
-      .eq('status', 'completed')
-      .maybeSingle();
+    if (existing.data) return existing.data;
 
-    if (completed) {
-      console.log("Found completed session - cannot create new one:", completed);
-      throw new Error("Assessment already completed");
-    }
+    const assessment = await getAssessmentById(assessmentId);
+    const resolvedAssessmentTypeId = assessmentTypeId || assessment?.assessment_type_id || null;
+    const totalQuestions = await getAssessmentQuestionCount(resolvedAssessmentTypeId);
 
-    // Get assessment for time limit
-    const { data: assessment, error: assessmentError } = await supabase
-      .from('assessments')
-      .select('assessment_type_id')
-      .eq('id', assessmentId)
-      .single();
-
-    if (assessmentError) {
-      console.error("Error fetching assessment:", assessmentError);
-      throw assessmentError;
-    }
-
-    // Get total questions count
-    const { data: questions, error: questionsError } = await supabase
-      .from('unique_questions')
-      .select('id', { count: 'exact' })
-      .eq('assessment_type_id', assessment.assessment_type_id);
-
-    if (questionsError) {
-      console.error("Error fetching question count:", questionsError);
-    }
-
-    const totalQuestions = questions?.length || 0;
-
-    // 3 hours time limit
-    const timeLimit = 180; // minutes
     const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + timeLimit);
+    expiresAt.setMinutes(expiresAt.getMinutes() + 180);
 
-    // Create new session with violation counters
     const { data, error } = await supabase
-      .from('assessment_sessions')
+      .from("assessment_sessions")
       .insert({
         user_id: userId,
         assessment_id: assessmentId,
-        assessment_type_id: assessment.assessment_type_id,
-        status: 'in_progress',
-        started_at: new Date().toISOString(),
+        assessment_type_id: resolvedAssessmentTypeId,
+        status: "in_progress",
+        started_at: nowIso(),
         expires_at: expiresAt.toISOString(),
         time_spent_seconds: 0,
         total_questions: totalQuestions,
@@ -168,20 +241,14 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
         right_click_count: 0,
         devtools_count: 0,
         screenshot_count: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        created_at: nowIso(),
+        updated_at: nowIso()
       })
       .select()
       .single();
 
-    if (error) {
-      console.error("Error creating session:", error);
-      throw error;
-    }
-    
-    console.log("Session created successfully:", data);
+    if (error) throw error;
     return data;
-    
   } catch (error) {
     console.error("Create assessment session error:", error);
     throw error;
@@ -190,22 +257,9 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
 
 export async function getAssessmentSession(sessionId) {
   try {
-    console.log("Fetching session:", sessionId);
-    
-    const { data, error } = await supabase
-      .from('assessment_sessions')
-      .select('*')
-      .eq('id', sessionId)
-      .single();
-    
-    if (error) {
-      console.error("Error fetching session:", error);
-      throw error;
-    }
-    
-    console.log("Session fetched:", data);
+    const data = await getSessionById(sessionId);
+    if (!data) throw new Error("Session not found");
     return data;
-    
   } catch (error) {
     console.error("Get assessment session error:", error);
     throw error;
@@ -214,18 +268,21 @@ export async function getAssessmentSession(sessionId) {
 
 export async function updateSessionTimer(sessionId, elapsedSeconds) {
   try {
+    if (!sessionId) return false;
+
     const { error } = await supabase
-      .from('assessment_sessions')
-      .update({ 
-        time_spent_seconds: elapsedSeconds,
-        updated_at: new Date().toISOString()
+      .from("assessment_sessions")
+      .update({
+        time_spent_seconds: Math.max(0, toNumber(elapsedSeconds, 0)),
+        updated_at: nowIso()
       })
-      .eq('id', sessionId);
+      .eq("id", sessionId);
 
     if (error) {
       console.error("Error updating session timer:", error);
       return false;
     }
+
     return true;
   } catch (error) {
     console.error("Update session timer error:", error);
@@ -233,119 +290,98 @@ export async function updateSessionTimer(sessionId, elapsedSeconds) {
   }
 }
 
-// Get session responses (UPDATED to handle comma-separated answers)
 export async function getSessionResponses(sessionId) {
   try {
-    console.log("Fetching responses for session:", sessionId);
-    
-    if (!sessionId) {
-      return { answerMap: {}, count: 0 };
-    }
+    const answerMap = {};
+    const initialAnswerMap = {};
+    const changeCountMap = {};
+
+    if (!sessionId) return { answerMap, initialAnswerMap, changeCountMap, count: 0 };
 
     const { data, error } = await supabase
       .from("responses")
-      .select("question_id, answer_id")
+      .select("question_id, answer_id, initial_answer_id, times_changed")
       .eq("session_id", sessionId);
 
     if (error) {
       console.error("Error fetching responses:", error);
-      return { answerMap: {}, count: 0 };
+      return { answerMap, initialAnswerMap, changeCountMap, count: 0 };
     }
 
-    const answerMap = {};
-    const initialAnswerMap = {};
-    
-    data?.forEach(r => {
-      if (r?.question_id) {
-        // Store answer as-is (could be string with commas for multiple answers)
-        answerMap[r.question_id] = r.answer_id;
+    safeArray(data).forEach((response) => {
+      if (response?.question_id) {
+        answerMap[response.question_id] = response.answer_id;
+        if (response.initial_answer_id !== null && response.initial_answer_id !== undefined) {
+          initialAnswerMap[response.question_id] = response.initial_answer_id;
+        }
+        changeCountMap[response.question_id] = toNumber(response.times_changed, 0);
       }
     });
-    
-    console.log(`Found ${data?.length || 0} responses`);
-    return { answerMap, initialAnswerMap, count: data?.length || 0 };
-    
+
+    return { answerMap, initialAnswerMap, changeCountMap, count: safeArray(data).length };
   } catch (error) {
     console.error("Error in getSessionResponses:", error);
-    return { answerMap: {}, count: 0 };
+    return { answerMap: {}, initialAnswerMap: {}, changeCountMap: {}, count: 0 };
   }
 }
 
-// Submit Assessment
+// ======================================================
+// SUBMISSION
+// ======================================================
+
 export async function submitAssessment(sessionId) {
   try {
-    console.log("📤 Submitting assessment for session:", sessionId);
-    
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      throw new Error("No active session");
-    }
+    if (!sessionId) throw new Error("Missing sessionId");
 
-    const { data: assessmentSession, error: sessionError } = await supabase
-      .from('assessment_sessions')
-      .select('user_id, assessment_id')
-      .eq('id', sessionId)
-      .single();
+    const authResponse = await supabase.auth.getSession();
+    const authSession = authResponse?.data?.session || null;
+    if (!authSession) throw new Error("No active session");
 
-    if (sessionError) {
-      console.error("❌ Error fetching assessment session:", sessionError);
-      throw new Error("Could not verify session");
-    }
+    const assessmentSession = await getSessionById(sessionId);
+    if (!assessmentSession) throw new Error("Could not verify session");
 
-    const submissionData = {
-      sessionId: sessionId,
-      user_id: assessmentSession.user_id,
-      assessment_id: assessmentSession.assessment_id
-    };
-
-    console.log("📦 Submitting with data:", submissionData);
-
-    const response = await fetch('/api/submit-assessment', {
-      method: 'POST',
+    const response = await fetch("/api/submit-assessment", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + authSession.access_token
       },
-      body: JSON.stringify(submissionData)
+      body: JSON.stringify({
+        sessionId,
+        session_id: sessionId,
+        user_id: assessmentSession.user_id,
+        assessment_id: assessmentSession.assessment_id
+      })
     });
 
     const result = await response.json();
-    
+
     if (!response.ok) {
-      console.error("❌ API error:", result);
-      
-      if (result.error === 'incomplete_assessment') {
-        throw new Error('incomplete_assessment');
-      }
-      if (result.error === 'already_submitted') {
-        throw new Error('already_submitted');
-      }
-      
-      throw new Error(result.message || result.error || 'Submission failed');
+      if (result?.error === "incomplete_assessment") throw new Error("incomplete_assessment");
+      if (result?.error === "already_submitted") throw new Error("already_submitted");
+      throw new Error(result?.message || result?.error || "Submission failed");
     }
-    
-    console.log("✅ Assessment submitted successfully:", result);
+
+    const resultId = result?.id || result?.result?.id || result?.data?.id || null;
+    await updateCandidateAssessmentStatus(assessmentSession.user_id, assessmentSession.assessment_id, "completed", resultId);
+
     return result;
-    
   } catch (error) {
-    console.error("❌ Submit assessment error:", error);
+    console.error("Submit assessment error:", error);
     throw error;
   }
 }
 
-// Get Assessment Results
+// ======================================================
+// RESULTS
+// ======================================================
+
 export async function getAssessmentResult(resultId) {
   try {
     const { data, error } = await supabase
-      .from('assessment_results')
-      .select(`
-        *,
-        assessment:assessments(
-          *,
-          assessment_type:assessment_types(*)
-        )
-      `)
-      .eq('id', resultId)
+      .from("assessment_results")
+      .select("*, assessment:assessments(*, assessment_type:assessment_types(*))")
+      .eq("id", resultId)
       .single();
 
     if (error) throw error;
@@ -359,16 +395,10 @@ export async function getAssessmentResult(resultId) {
 export async function getUserAssessmentResults(userId) {
   try {
     const { data, error } = await supabase
-      .from('assessment_results')
-      .select(`
-        *,
-        assessment:assessments(
-          *,
-          assessment_type:assessment_types(*)
-        )
-      `)
-      .eq('user_id', userId)
-      .order('completed_at', { ascending: false });
+      .from("assessment_results")
+      .select("*, assessment:assessments(*, assessment_type:assessment_types(*))")
+      .eq("user_id", userId)
+      .order("completed_at", { ascending: false });
 
     if (error) throw error;
     return data || [];
@@ -378,24 +408,23 @@ export async function getUserAssessmentResults(userId) {
   }
 }
 
-// Candidate Profile
+// ======================================================
+// CANDIDATE PROFILE
+// ======================================================
+
 export async function getOrCreateCandidateProfile(userId, email, fullName) {
   try {
     const { data: existing } = await supabase
-      .from('candidate_profiles')
-      .select('*')
-      .eq('id', userId)
+      .from("candidate_profiles")
+      .select("*")
+      .eq("id", userId)
       .maybeSingle();
 
     if (existing) return existing;
 
     const { data, error } = await supabase
-      .from('candidate_profiles')
-      .insert({
-        id: userId,
-        email,
-        full_name: fullName
-      })
+      .from("candidate_profiles")
+      .insert({ id: userId, email, full_name: fullName })
       .select()
       .single();
 
@@ -407,29 +436,31 @@ export async function getOrCreateCandidateProfile(userId, email, fullName) {
   }
 }
 
-// Progress Tracking
+// ======================================================
+// PROGRESS
+// ======================================================
+
 export async function saveProgress(sessionId, userId, assessmentId, elapsedSeconds, lastQuestionId) {
   try {
-    const { error: progressError } = await supabase
-      .from('assessment_progress')
+    if (!userId || !assessmentId) return false;
+
+    const { error } = await supabase
+      .from("assessment_progress")
       .upsert({
         user_id: userId,
         assessment_id: assessmentId,
-        elapsed_seconds: elapsedSeconds,
-        last_question_id: lastQuestionId,
-        last_saved_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'user_id,assessment_id'
-      });
+        elapsed_seconds: Math.max(0, toNumber(elapsedSeconds, 0)),
+        last_question_id: lastQuestionId || null,
+        last_saved_at: nowIso(),
+        updated_at: nowIso()
+      }, { onConflict: "user_id,assessment_id" });
 
-    if (progressError) {
-      console.error("Error saving progress:", progressError);
+    if (error) {
+      console.error("Error saving progress:", error);
       return false;
     }
-    
-    await updateSessionTimer(sessionId, elapsedSeconds);
-    
+
+    if (sessionId) await updateSessionTimer(sessionId, elapsedSeconds);
     return true;
   } catch (error) {
     console.error("Error saving progress:", error);
@@ -437,20 +468,20 @@ export async function saveProgress(sessionId, userId, assessmentId, elapsedSecon
   }
 }
 
-// Get Progress
 export async function getProgress(userId, assessmentId) {
   try {
     const { data, error } = await supabase
-      .from('assessment_progress')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('assessment_id', assessmentId)
+      .from("assessment_progress")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("assessment_id", assessmentId)
       .maybeSingle();
 
     if (error) {
       console.error("Error getting progress:", error);
       return null;
     }
+
     return data;
   } catch (error) {
     console.error("Error getting progress:", error);
@@ -458,132 +489,93 @@ export async function getProgress(userId, assessmentId) {
   }
 }
 
-// Completion Checking
 export async function isAssessmentCompleted(userId, assessmentId) {
   try {
-    const { data, error } = await supabase
-      .from('candidate_assessments')
-      .select('id, status')
-      .eq('user_id', userId)
-      .eq('assessment_id', assessmentId)
-      .eq('status', 'completed')
-      .maybeSingle();
+    const candidateAssessment = await safeSelectSingle(
+      "candidate_assessments",
+      (query) => query.eq("user_id", userId).eq("assessment_id", assessmentId).eq("status", "completed"),
+      "id, status, result_id"
+    );
+    if (candidateAssessment.data) return true;
 
-    if (error && error.code !== 'PGRST116') {
-      console.error("Error checking completion:", error);
-    }
+    const resultRecord = await safeSelectSingle(
+      "assessment_results",
+      (query) => query.eq("user_id", userId).eq("assessment_id", assessmentId),
+      "id"
+    );
+    if (resultRecord.data) return true;
 
-    if (data) {
-      console.log("Assessment completed found in candidate_assessments");
-      return true;
-    }
+    const completedSession = await safeSelectSingle(
+      "assessment_sessions",
+      (query) => query.eq("user_id", userId).eq("assessment_id", assessmentId).eq("status", "completed"),
+      "id"
+    );
 
-    const { data: sessionData, error: sessionError } = await supabase
-      .from('assessment_sessions')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('assessment_id', assessmentId)
-      .eq('status', 'completed')
-      .maybeSingle();
-
-    if (sessionError && sessionError.code !== 'PGRST116') {
-      console.error("Error checking session completion:", sessionError);
-    }
-
-    return !!sessionData;
-    
+    return !!completedSession.data;
   } catch (error) {
     console.error("Error in isAssessmentCompleted:", error);
     return false;
   }
 }
 
-// Get unique questions
+// ======================================================
+// QUESTIONS
+// ======================================================
+
 export async function getUniqueQuestions(assessmentId) {
   try {
-    console.log("🔍 Fetching unique questions for assessment:", assessmentId);
-    
-    if (!assessmentId) {
-      console.error("❌ No assessmentId provided");
+    if (!assessmentId) return [];
+
+    const assessmentResult = await safeSelectSingle(
+      "assessments",
+      (query) => query.eq("id", assessmentId),
+      "assessment_type_id, title"
+    );
+
+    if (!assessmentResult.data) return [];
+
+    const questionsResult = await safeSelectRows(
+      "unique_questions",
+      (query) => query.eq("assessment_type_id", assessmentResult.data.assessment_type_id).order("display_order", { ascending: true }),
+      "id, section, subsection, question_text, display_order, unique_answers(id, answer_text, score, display_order)"
+    );
+
+    if (questionsResult.error) {
+      console.error("Error fetching unique questions:", questionsResult.error);
       return [];
     }
 
-    const { data: assessment, error: aError } = await supabase
-      .from('assessments')
-      .select('assessment_type_id, title')
-      .eq('id', assessmentId)
-      .single();
-
-    if (aError) {
-      console.error("❌ Error fetching assessment:", aError);
-      return [];
-    }
-
-    console.log("📊 Assessment type ID:", assessment.assessment_type_id);
-
-    const { data: questions, error: qError } = await supabase
-      .from('unique_questions')
-      .select(`
-        id,
-        section,
-        subsection,
-        question_text,
-        display_order,
-        unique_answers (
-          id,
-          answer_text,
-          score,
-          display_order
-        )
-      `)
-      .eq('assessment_type_id', assessment.assessment_type_id);
-
-    if (qError) {
-      console.error("❌ Error fetching unique questions:", qError);
-      return [];
-    }
-
-    if (!questions || questions.length === 0) {
-      console.log("⚠️ No unique questions found");
-      return [];
-    }
-
-    console.log(`✅ Found ${questions.length} unique questions`);
-
-    const shuffledQuestions = shuffleArray(questions);
-
-    const formattedQuestions = shuffledQuestions.map((q, index) => {
-      const answers = (q.unique_answers || []).map(a => ({
-        id: a.id,
-        answer_text: a.answer_text,
-        score: a.score,
-        display_order: a.display_order
+    return shuffleArray(questionsResult.data).map((question, index) => {
+      const answers = safeArray(question.unique_answers).map((answer) => ({
+        id: answer.id,
+        answer_text: answer.answer_text,
+        score: answer.score,
+        display_order: answer.display_order
       }));
 
-      const shuffledAnswers = shuffleArray(answers);
-
       return {
-        id: q.id,
-        question_text: q.question_text,
-        section: q.section,
-        subsection: q.subsection,
+        id: question.id,
+        question_text: question.question_text,
+        section: question.section,
+        subsection: question.subsection,
         display_order: index + 1,
-        answers: shuffledAnswers
+        answers: shuffleArray(answers)
       };
     });
-
-    console.log(`✅ Returning ${formattedQuestions.length} randomized questions`);
-    return formattedQuestions;
-
   } catch (error) {
-    console.error("❌ Error in getUniqueQuestions:", error);
+    console.error("Error in getUniqueQuestions:", error);
     return [];
   }
 }
 
-// Track question view
+// ======================================================
+// QUESTION TIMING AND RESPONSES
+// ======================================================
+
 export async function trackQuestionView(session_id, question_id, question_number) {
   try {
+    if (!session_id || !question_id) return;
+
     const { data: existing } = await supabase
       .from("question_timing")
       .select("id, visit_count")
@@ -595,219 +587,175 @@ export async function trackQuestionView(session_id, question_id, question_number
       await supabase
         .from("question_timing")
         .update({
-          visit_count: (existing.visit_count || 0) + 1,
-          updated_at: new Date().toISOString()
+          visit_count: toNumber(existing.visit_count, 0) + 1,
+          updated_at: nowIso()
         })
         .eq("id", existing.id);
     } else {
-      await supabase
-        .from("question_timing")
-        .insert({
-          session_id: session_id,
-          question_id: question_id,
-          question_number: question_number,
-          first_viewed_at: new Date().toISOString(),
-          visit_count: 1
-        });
+      await supabase.from("question_timing").insert({
+        session_id,
+        question_id,
+        question_number,
+        first_viewed_at: nowIso(),
+        visit_count: 1,
+        created_at: nowIso(),
+        updated_at: nowIso()
+      });
     }
   } catch (error) {
     console.error("Error tracking question view:", error);
   }
 }
 
-// Update question timing
-async function updateQuestionTiming(session_id, question_id) {
+async function updateQuestionTiming(session_id, question_id, metadata = {}) {
   try {
-    const { data: timing } = await supabase
-      .from("question_timing")
-      .select("id, first_viewed_at")
-      .eq("session_id", session_id)
-      .eq("question_id", question_id)
-      .maybeSingle();
+    let timeSpent = toNumber(metadata.time_spent_seconds, 0);
 
-    if (timing && timing.first_viewed_at) {
-      const timeSpent = Math.floor((Date.now() - new Date(timing.first_viewed_at).getTime()) / 1000);
-      
+    const existing = await safeSelectSingle(
+      "question_timing",
+      (query) => query.eq("session_id", session_id).eq("question_id", question_id),
+      "id, first_viewed_at"
+    );
+
+    if (existing.data) {
+      if (!timeSpent && existing.data.first_viewed_at) {
+        timeSpent = Math.floor((Date.now() - new Date(existing.data.first_viewed_at).getTime()) / 1000);
+      }
+
       await supabase
         .from("question_timing")
         .update({
-          last_answered_at: new Date().toISOString(),
-          time_spent_seconds: timeSpent
+          last_answered_at: nowIso(),
+          time_spent_seconds: Math.max(0, timeSpent),
+          updated_at: nowIso()
         })
-        .eq("id", timing.id);
+        .eq("id", existing.data.id);
+    } else {
+      await supabase.from("question_timing").insert({
+        session_id,
+        question_id,
+        question_number: metadata.question_number || null,
+        first_viewed_at: nowIso(),
+        last_answered_at: nowIso(),
+        time_spent_seconds: Math.max(0, timeSpent),
+        visit_count: 1,
+        created_at: nowIso(),
+        updated_at: nowIso()
+      });
     }
   } catch (error) {
     console.error("Error updating question timing:", error);
   }
 }
 
-// Save unique response (UPDATED to support multiple-select answers)
-export async function saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id, metadata = {}) {
-  console.log("💾 Saving unique response:", { session_id, user_id, question_id, answer_id, metadata });
-  
+async function updateSessionAnsweredCount(sessionId) {
   try {
-    if (!session_id || !user_id || !assessment_id || !question_id || !answer_id) {
-      console.error("❌ Missing required fields");
+    const rows = await safeSelectRows("responses", (query) => query.eq("session_id", sessionId), "id, answer_id");
+
+    await supabase
+      .from("assessment_sessions")
+      .update({ answered_questions: countAnsweredFromResponses(rows.data), updated_at: nowIso() })
+      .eq("id", sessionId);
+  } catch (error) {
+    console.error("Error updating session answered count:", error);
+  }
+}
+
+export async function saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id, metadata = {}) {
+  try {
+    if (!session_id || !user_id || !assessment_id || !question_id || answer_id === null || answer_id === undefined || answer_id === "") {
       return { success: false, error: "Missing required fields" };
     }
 
     const questionIdNum = parseInt(question_id, 10);
-    
-    // Handle answer_id - could be a single ID (number) or comma-separated string (for multiple answers)
-    let answerToStore;
-    let answerIdsArray = [];
-    
-    if (typeof answer_id === 'string' && answer_id.includes(',')) {
-      // Multiple answers: store as comma-separated string
-      answerToStore = answer_id;
-      answerIdsArray = answer_id.split(',').map(id => parseInt(id, 10));
-    } else if (typeof answer_id === 'string' && !isNaN(parseInt(answer_id, 10))) {
-      // String but single number
-      const singleAnswerId = parseInt(answer_id, 10);
-      answerToStore = singleAnswerId;
-      answerIdsArray = [singleAnswerId];
-    } else if (typeof answer_id === 'number') {
-      // Number
-      answerToStore = answer_id;
-      answerIdsArray = [answer_id];
-    } else {
-      console.error("❌ Invalid answer_id type:", typeof answer_id);
-      return { success: false, error: "Invalid answer ID format" };
-    }
-    
-    if (isNaN(questionIdNum)) {
-      console.error("❌ Invalid question ID format");
-      return { success: false, error: "Invalid question ID format" };
-    }
-    
-    // Validate answer IDs
-    const validAnswerIds = answerIdsArray.filter(id => !isNaN(id));
-    if (validAnswerIds.length === 0) {
-      console.error("❌ No valid answer IDs");
-      return { success: false, error: "Invalid answer ID format" };
+    if (Number.isNaN(questionIdNum)) return { success: false, error: "Invalid question ID format" };
+
+    const answerIdsArray = getAnswerIdsArray(answer_id);
+    if (answerIdsArray.length === 0) return { success: false, error: "Invalid answer ID format" };
+
+    const answerToStore = normalizeAnswerForStorage(answer_id);
+
+    const sessionResult = await safeSelectSingle(
+      "assessment_sessions",
+      (query) => query.eq("id", session_id).eq("user_id", user_id),
+      "id, status"
+    );
+
+    if (!sessionResult.data) return { success: false, error: "Session not found" };
+    if (sessionResult.data.status !== "in_progress") {
+      return { success: false, error: "Session is " + sessionResult.data.status + ", cannot save responses" };
     }
 
-    const { data: session, error: sessionError } = await supabase
-      .from('assessment_sessions')
-      .select('id, status')
-      .eq('id', session_id)
-      .eq('user_id', user_id)
-      .single();
+    const existingResult = await safeSelectSingle(
+      "responses",
+      (query) => query.eq("session_id", session_id).eq("question_id", questionIdNum),
+      "id, answer_id, times_changed, initial_answer_id"
+    );
 
-    if (sessionError) {
-      console.error("❌ Session verification failed:", sessionError);
-      return { success: false, error: "Session not found" };
-    }
-
-    if (session.status !== 'in_progress') {
-      return { success: false, error: `Session is ${session.status}, cannot save responses` };
-    }
-
-    const { data: existingResponse } = await supabase
-      .from("responses")
-      .select("id, answer_id, times_changed, initial_answer_id")
-      .eq("session_id", session_id)
-      .eq("question_id", questionIdNum)
-      .maybeSingle();
-
+    const existingResponse = existingResult.data;
     const isNewResponse = !existingResponse;
-    
-    // Check if answer changed (for single or multiple answers)
-    let isAnswerChange = false;
-    if (!isNewResponse) {
-      const oldAnswerStr = existingResponse.answer_id ? existingResponse.answer_id.toString() : '';
-      const newAnswerStr = answerToStore.toString();
-      isAnswerChange = oldAnswerStr !== newAnswerStr;
-    }
-    
-    let timeSpent = 0;
-    if (isNewResponse) {
-      const { data: timing } = await supabase
-        .from("question_timing")
-        .select("first_viewed_at")
-        .eq("session_id", session_id)
-        .eq("question_id", questionIdNum)
-        .maybeSingle();
-      
-      if (timing && timing.first_viewed_at) {
-        timeSpent = Math.floor((Date.now() - new Date(timing.first_viewed_at).getTime()) / 1000);
-      }
-    } else if (metadata.time_spent_seconds) {
-      timeSpent = metadata.time_spent_seconds;
-    }
+    const isAnswerChange = existingResponse ? String(existingResponse.answer_id || "") !== String(answerToStore || "") : false;
+    const newChangeCount = isNewResponse ? 0 : toNumber(existingResponse.times_changed, 0) + (isAnswerChange ? 1 : 0);
+    const timeSpent = toNumber(metadata.time_spent_seconds, 0);
 
     const responseData = {
-      session_id: session_id,
-      user_id: user_id,
-      assessment_id: assessment_id,
+      session_id,
+      user_id,
+      assessment_id,
       question_id: questionIdNum,
-      answer_id: answerToStore.toString(), // Store as string to support comma-separated values
-      updated_at: new Date().toISOString()
+      answer_id: answerToStore,
+      time_spent_seconds: Math.max(0, timeSpent),
+      updated_at: nowIso()
     };
 
     if (isNewResponse) {
-      responseData.first_saved_at = new Date().toISOString();
-      responseData.time_spent_seconds = timeSpent;
+      responseData.first_saved_at = nowIso();
       responseData.times_changed = 0;
-      responseData.initial_answer_id = answerToStore.toString();
-    } else if (isAnswerChange) {
-      const newChangeCount = (existingResponse.times_changed || 0) + 1;
+      responseData.initial_answer_id = metadata.initial_answer_id !== undefined && metadata.initial_answer_id !== null ? String(metadata.initial_answer_id) : answerToStore;
+    } else {
       responseData.times_changed = newChangeCount;
-      
-      // Log answer change in history
-      await supabase
-        .from("answer_history")
-        .insert({
-          session_id: session_id,
-          question_id: questionIdNum,
-          old_answer_id: existingResponse.answer_id,
-          new_answer_id: answerToStore.toString(),
-          changed_at: new Date().toISOString()
-        });
+      responseData.initial_answer_id = existingResponse.initial_answer_id || answerToStore;
+    }
+
+    if (isAnswerChange) {
+      await supabase.from("answer_history").insert({
+        session_id,
+        question_id: questionIdNum,
+        old_answer_id: existingResponse.answer_id,
+        new_answer_id: answerToStore,
+        changed_at: nowIso()
+      });
     }
 
     const { data, error } = await supabase
       .from("responses")
-      .upsert(responseData, {
-        onConflict: 'session_id,question_id'
-      })
+      .upsert(responseData, { onConflict: "session_id,question_id" })
       .select();
 
     if (error) {
-      console.error("❌ Error saving response:", error);
+      console.error("Error saving response:", error);
       return { success: false, error: error.message };
     }
 
-    // Update answered questions count in session
-    const { count: responseCount } = await supabase
-      .from('responses')
-      .select('id', { count: 'exact', head: true })
-      .eq('session_id', session_id);
+    await updateQuestionTiming(session_id, questionIdNum, metadata);
+    await updateSessionAnsweredCount(session_id);
 
-    await supabase
-      .from('assessment_sessions')
-      .update({ answered_questions: responseCount })
-      .eq('id', session_id);
-
-    await updateQuestionTiming(session_id, questionIdNum);
-
-    console.log("✅ Response saved successfully");
-    return { success: true, data, isNewResponse, isAnswerChange };
-
+    return { success: true, data, isNewResponse, isAnswerChange, timesChanged: responseData.times_changed };
   } catch (error) {
-    console.error("❌ Error in saveUniqueResponse:", error);
-    return { success: false, error: error.message };
+    console.error("Error in saveUniqueResponse:", error);
+    return { success: false, error: error?.message || "Failed to save response" };
   }
 }
 
-// Legacy functions
+// ======================================================
+// LEGACY COMPATIBILITY
+// ======================================================
+
 export async function getRandomizedQuestions(candidateId, assessmentId) {
-  console.log("⚠️ getRandomizedQuestions is deprecated, using getUniqueQuestions");
   return getUniqueQuestions(assessmentId);
 }
 
 export async function saveRandomizedResponse(session_id, user_id, assessment_id, question_id, answer_id) {
-  console.log("⚠️ saveRandomizedResponse is deprecated, using saveUniqueResponse");
   return saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id);
 }
 
