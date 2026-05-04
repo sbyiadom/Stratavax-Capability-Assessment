@@ -6,10 +6,6 @@ import Link from "next/link";
 import AppLayout from "../../../components/AppLayout";
 import { supabase } from "../../../supabase/client";
 
-// ======================================================
-// SAFE HELPERS
-// ======================================================
-
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -26,100 +22,70 @@ function safeNumber(value, fallback) {
   return numberValue;
 }
 
-function formatDate(dateString) {
-  if (!dateString) return "N/A";
+function formatDate(value) {
+  if (!value) return "N/A";
   try {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric"
-    });
+    return new Date(value).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
   } catch (error) {
     return "N/A";
   }
 }
 
-function getInitials(nameOrEmail) {
-  var text = safeText(nameOrEmail, "C").trim();
-  var parts;
-
-  if (!text) return "C";
-
-  parts = text.split(" ").filter(Boolean);
-  if (parts.length >= 2) return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
-
-  return text.charAt(0).toUpperCase();
+function initials(value) {
+  var text = safeText(value, "C").trim();
+  var parts = text.split(" ").filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return text ? text[0].toUpperCase() : "C";
 }
 
 function calculatePercentage(score, maxScore, fallbackPercentage) {
-  var percentage = Number(fallbackPercentage);
-  var scoreValue;
-  var maxValue;
+  var scoreValue = safeNumber(score, null);
+  var maxValue = safeNumber(maxScore, null);
+  var fallbackValue = safeNumber(fallbackPercentage, null);
 
-  if (!Number.isNaN(percentage) && Number.isFinite(percentage)) {
-    return Math.round(percentage);
+  if (scoreValue !== null && maxValue !== null && maxValue > 0) {
+    return Math.round((scoreValue / maxValue) * 100);
   }
 
-  scoreValue = safeNumber(score, 0);
-  maxValue = safeNumber(maxScore, 0);
+  if (fallbackValue !== null && fallbackValue !== undefined && Number.isFinite(Number(fallbackValue))) {
+    return Math.round(Number(fallbackValue));
+  }
 
-  if (maxValue <= 0) return 0;
-  return Math.round((scoreValue / maxValue) * 100);
+  return 0;
 }
 
-function getClassificationFromPercentage(percentage) {
+function getClassification(percentage) {
   var value = safeNumber(percentage, 0);
-
-  if (value >= 85) return { label: "Exceptional", color: "#0f766e", background: "#ecfdf3" };
-  if (value >= 75) return { label: "Strong Performer", color: "#2563eb", background: "#eff6ff" };
-  if (value >= 65) return { label: "Capable", color: "#4f46e5", background: "#eef2ff" };
-  if (value >= 55) return { label: "Developing", color: "#d97706", background: "#fffaeb" };
-  if (value >= 40) return { label: "At Risk", color: "#ea580c", background: "#fff7ed" };
-  if (value > 0) return { label: "High Risk", color: "#b42318", background: "#fef3f2" };
-
-  return { label: "No Data", color: "#667085", background: "#f2f4f7" };
+  if (value >= 85) return { label: "Exceptional", color: "#0f766e", bg: "#ecfdf3" };
+  if (value >= 75) return { label: "Strong Performer", color: "#2563eb", bg: "#eff6ff" };
+  if (value >= 65) return { label: "Capable", color: "#4f46e5", bg: "#eef2ff" };
+  if (value >= 55) return { label: "Developing", color: "#d97706", bg: "#fffaeb" };
+  if (value >= 40) return { label: "At Risk", color: "#ea580c", bg: "#fff7ed" };
+  if (value > 0) return { label: "High Risk", color: "#b42318", bg: "#fef3f2" };
+  return { label: "No Data", color: "#667085", bg: "#f2f4f7" };
 }
 
-function getStatusBadge(status, hasResult) {
-  if (hasResult || status === "completed") return { label: "Completed", icon: "✓", color: "#027a48", background: "#ecfdf3" };
-  if (status === "unblocked") return { label: "Ready", icon: "↗", color: "#175cd3", background: "#eff8ff" };
-  if (status === "blocked") return { label: "Blocked", icon: "●", color: "#c2410c", background: "#fff7ed" };
-  return { label: safeText(status, "Unknown"), icon: "•", color: "#475467", background: "#f2f4f7" };
+function getStatus(assessment) {
+  if (assessment.result || assessment.status === "completed") return { label: "Completed", color: "#027a48", bg: "#ecfdf3", icon: "✓" };
+  if (assessment.status === "unblocked") return { label: "Ready", color: "#175cd3", bg: "#eff8ff", icon: "↗" };
+  if (assessment.status === "blocked") return { label: "Blocked", color: "#c2410c", bg: "#fff7ed", icon: "●" };
+  return { label: safeText(assessment.status, "Scheduled"), color: "#475467", bg: "#f2f4f7", icon: "•" };
 }
 
-function getAssessmentDisplayType(type) {
-  if (!type || type === "general") return "General";
-  return String(type)
-    .replace(/_/g, " ")
-    .replace(/-/g, " ")
-    .replace(/\b\w/g, function (letter) { return letter.toUpperCase(); });
+function assessmentTypeName(value) {
+  if (!value || value === "general") return "General";
+  return String(value).replace(/_/g, " ").replace(/-/g, " ").replace(/\b\w/g, function (letter) { return letter.toUpperCase(); });
 }
-
-function getBestCompletedAssessment(assessments) {
-  var completed = safeArray(assessments).filter(function (assessment) {
-    return assessment.result !== null && assessment.result !== undefined;
-  });
-
-  completed.sort(function (a, b) {
-    var aDate = a.result && a.result.completed_at ? new Date(a.result.completed_at).getTime() : 0;
-    var bDate = b.result && b.result.completed_at ? new Date(b.result.completed_at).getTime() : 0;
-    return bDate - aDate;
-  });
-
-  return completed.length > 0 ? completed[0] : null;
-}
-
-// ======================================================
-// SMALL UI COMPONENTS
-// ======================================================
 
 function Pill(props) {
-  return (
-    <span style={{ ...styles.pill, color: props.color, background: props.background, borderColor: props.borderColor || props.background }}>
-      {props.icon && <span>{props.icon}</span>}
-      {props.children}
-    </span>
-  );
+  return <span style={{ ...styles.pill, color: props.color, background: props.bg }}>{props.children}</span>;
+}
+
+function ProgressBar(props) {
+  var value = safeNumber(props.value, 0);
+  if (value < 0) value = 0;
+  if (value > 100) value = 100;
+  return <div style={styles.progressTrack}><div style={{ width: value + "%", height: "100%", background: props.color, borderRadius: "999px" }} /></div>;
 }
 
 function StatCard(props) {
@@ -129,38 +95,11 @@ function StatCard(props) {
       <div>
         <p style={styles.statLabel}>{props.label}</p>
         <p style={styles.statValue}>{props.value}</p>
-        {props.note && <p style={styles.statNote}>{props.note}</p>}
+        <p style={styles.statNote}>{props.note}</p>
       </div>
     </div>
   );
 }
-
-function ProgressBar(props) {
-  var value = safeNumber(props.value, 0);
-  if (value < 0) value = 0;
-  if (value > 100) value = 100;
-
-  return (
-    <div style={styles.progressTrack}>
-      <div style={{ width: value + "%", height: "100%", borderRadius: "999px", background: props.color || "#0f766e" }} />
-    </div>
-  );
-}
-
-function EmptyState(props) {
-  return (
-    <div style={styles.emptyState}>
-      <div style={styles.emptyIcon}>{props.icon || "📋"}</div>
-      <h3 style={styles.emptyTitle}>{props.title}</h3>
-      <p style={styles.emptyText}>{props.message}</p>
-      {props.children}
-    </div>
-  );
-}
-
-// ======================================================
-// PAGE COMPONENT
-// ======================================================
 
 export default function ManageCandidate() {
   var router = useRouter();
@@ -179,50 +118,45 @@ export default function ManageCandidate() {
   var setAssessments = assessmentsState[1];
 
   var supervisorState = useState(null);
-  var currentSupervisor = supervisorState[0];
-  var setCurrentSupervisor = supervisorState[1];
-
-  var processingState = useState(null);
-  var processingId = processingState[0];
-  var setProcessingId = processingState[1];
-
-  var unblockModalState = useState(null);
-  var showUnblockModal = unblockModalState[0];
-  var setShowUnblockModal = unblockModalState[1];
-
-  var timeExtensionState = useState(30);
-  var timeExtension = timeExtensionState[0];
-  var setTimeExtension = timeExtensionState[1];
-
-  var resetFullTimeState = useState(false);
-  var resetFullTime = resetFullTimeState[0];
-  var setResetFullTime = resetFullTimeState[1];
+  var supervisor = supervisorState[0];
+  var setSupervisor = supervisorState[1];
 
   var messageState = useState(null);
   var message = messageState[0];
   var setMessage = messageState[1];
 
-  var selectedState = useState([]);
-  var selectedAssessments = selectedState[0];
-  var setSelectedAssessments = selectedState[1];
+  var processingState = useState(null);
+  var processingId = processingState[0];
+  var setProcessingId = processingState[1];
+
+  var modalState = useState(null);
+  var unblockModal = modalState[0];
+  var setUnblockModal = modalState[1];
+
+  var timeState = useState(30);
+  var timeExtension = timeState[0];
+  var setTimeExtension = timeState[1];
+
+  var resetState = useState(false);
+  var resetFullTime = resetState[0];
+  var setResetFullTime = resetState[1];
 
   useEffect(function () {
     async function checkAuth() {
-      var sessionResponse;
+      var authResult;
       var supabaseSession;
       var userRole;
-      var userSession;
+      var stored;
       var session;
 
       try {
-        sessionResponse = await supabase.auth.getSession();
-        supabaseSession = sessionResponse && sessionResponse.data ? sessionResponse.data.session : null;
+        authResult = await supabase.auth.getSession();
+        supabaseSession = authResult && authResult.data ? authResult.data.session : null;
 
         if (supabaseSession) {
           userRole = supabaseSession.user && supabaseSession.user.user_metadata ? supabaseSession.user.user_metadata.role : null;
-
           if (userRole === "supervisor" || userRole === "admin") {
-            setCurrentSupervisor({
+            setSupervisor({
               id: supabaseSession.user.id,
               email: supabaseSession.user.email,
               name: (supabaseSession.user.user_metadata && supabaseSession.user.user_metadata.full_name) || supabaseSession.user.email,
@@ -233,21 +167,15 @@ export default function ManageCandidate() {
         }
 
         if (typeof window === "undefined") return;
-
-        userSession = localStorage.getItem("userSession");
-        if (!userSession) {
+        stored = localStorage.getItem("userSession");
+        if (!stored) {
           router.push("/login");
           return;
         }
 
-        session = JSON.parse(userSession);
+        session = JSON.parse(stored);
         if (session.loggedIn && (session.role === "supervisor" || session.role === "admin")) {
-          setCurrentSupervisor({
-            id: session.user_id,
-            email: session.email,
-            name: session.full_name || session.email,
-            role: session.role
-          });
+          setSupervisor({ id: session.user_id, email: session.email, name: session.full_name || session.email, role: session.role });
         } else {
           router.push("/login");
         }
@@ -260,58 +188,43 @@ export default function ManageCandidate() {
   }, [router]);
 
   useEffect(function () {
-    if (!router.isReady) return;
-    if (!candidateId || !currentSupervisor) return;
+    if (!router.isReady || !candidateId || !supervisor) return;
 
     var cancelled = false;
 
-    async function fetchCandidateData() {
+    async function loadData() {
       var isAdmin;
       var candidateResponse;
       var candidateData;
       var supervisorName = "Unassigned";
       var supervisorResponse;
       var resultsResponse;
-      var resultsMap = {};
       var accessResponse;
+      var resultsMap = {};
       var accessData;
-      var uniqueAssessmentIds;
-      var assessmentsMap = {};
-      var assessmentsResponse;
-      var assessmentsWithDetails;
+      var ids;
+      var assessmentResponse;
+      var assessmentMap = {};
+      var mappedAssessments;
 
       setLoading(true);
       setMessage(null);
 
       try {
-        isAdmin = currentSupervisor.role === "admin";
+        isAdmin = supervisor.role === "admin";
 
-        candidateResponse = await supabase
-          .from("candidate_profiles")
-          .select("*")
-          .eq("id", candidateId)
-          .single();
-
+        candidateResponse = await supabase.from("candidate_profiles").select("*").eq("id", candidateId).single();
         if (candidateResponse.error) throw candidateResponse.error;
         candidateData = candidateResponse.data;
 
-        if (!isAdmin && candidateData.supervisor_id !== currentSupervisor.id) {
+        if (!isAdmin && candidateData.supervisor_id !== supervisor.id) {
           router.push("/supervisor");
           return;
         }
 
         if (candidateData.supervisor_id) {
-          supervisorResponse = await supabase
-            .from("supervisor_profiles")
-            .select("full_name")
-            .eq("id", candidateData.supervisor_id)
-            .single();
-
-          if (supervisorResponse.data) supervisorName = supervisorResponse.data.full_name;
-        }
-
-        if (!cancelled) {
-          setCandidate({ ...candidateData, supervisor_name: supervisorName });
+          supervisorResponse = await supabase.from("supervisor_profiles").select("full_name").eq("id", candidateData.supervisor_id).single();
+          if (supervisorResponse.data && supervisorResponse.data.full_name) supervisorName = supervisorResponse.data.full_name;
         }
 
         resultsResponse = await supabase
@@ -339,81 +252,86 @@ export default function ManageCandidate() {
 
         if (accessResponse.error) throw accessResponse.error;
         accessData = safeArray(accessResponse.data);
+        ids = Array.from(new Set(accessData.map(function (item) { return item.assessment_id; }).filter(Boolean)));
 
-        uniqueAssessmentIds = Array.from(new Set(accessData.map(function (item) { return item.assessment_id; }).filter(Boolean)));
-
-        if (uniqueAssessmentIds.length > 0) {
-          assessmentsResponse = await supabase
+        if (ids.length > 0) {
+          assessmentResponse = await supabase
             .from("assessments")
             .select("id, title, description, assessment_type_id, assessment_types(id, code, name, icon, gradient_start, gradient_end)")
-            .in("id", uniqueAssessmentIds);
+            .in("id", ids);
 
-          safeArray(assessmentsResponse.data).forEach(function (assessment) {
-            assessmentsMap[assessment.id] = assessment;
+          safeArray(assessmentResponse.data).forEach(function (assessment) {
+            assessmentMap[assessment.id] = assessment;
           });
         }
 
-        assessmentsWithDetails = accessData.map(function (access) {
+        mappedAssessments = accessData.map(function (access) {
+          var assessment = assessmentMap[access.assessment_id] || {};
+          var type = assessment.assessment_types || {};
           var result = resultsMap[access.assessment_id] || null;
-          var assessment = assessmentsMap[access.assessment_id] || {};
-          var typeData = assessment.assessment_types || {};
-          var displayStatus = access.status;
-          var typeCode = typeData.code || "general";
+          var status = access.status;
+          var code = type.code || "general";
 
-          if (result || access.result_id || access.status === "completed") displayStatus = "completed";
+          if (result || access.result_id || status === "completed") status = "completed";
 
           return {
             id: access.id,
             assessment_id: access.assessment_id,
             assessment_title: assessment.title || "Unknown Assessment",
             assessment_description: assessment.description || "",
-            assessment_type: typeCode,
-            assessment_type_name: typeData.name || getAssessmentDisplayType(typeCode),
-            type_icon: typeData.icon || "📋",
-            type_gradient_start: typeData.gradient_start || "#0f766e",
-            type_gradient_end: typeData.gradient_end || "#14b8a6",
-            status: displayStatus,
+            assessment_type: code,
+            assessment_type_name: type.name || assessmentTypeName(code),
+            type_icon: type.icon || "📋",
+            type_gradient_start: type.gradient_start || "#0f766e",
+            type_gradient_end: type.gradient_end || "#14b8a6",
+            status: status,
             created_at: access.created_at,
             unblocked_at: access.unblocked_at,
             result: result
           };
         });
 
-        assessmentsWithDetails.sort(function (a, b) {
+        mappedAssessments.sort(function (a, b) {
           if (a.result && !b.result) return -1;
           if (!a.result && b.result) return 1;
           return new Date((b.result && b.result.completed_at) || b.created_at || 0).getTime() - new Date((a.result && a.result.completed_at) || a.created_at || 0).getTime();
         });
 
-        if (!cancelled) setAssessments(assessmentsWithDetails);
+        if (!cancelled) {
+          setCandidate({ ...candidateData, supervisor_name: supervisorName });
+          setAssessments(mappedAssessments);
+        }
       } catch (error) {
-        console.error("Error fetching candidate:", error);
         if (!cancelled) setMessage({ type: "error", text: "Failed to load candidate data: " + (error && error.message ? error.message : "Unknown error") });
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
-    fetchCandidateData();
+    loadData();
 
     return function () {
       cancelled = true;
     };
-  }, [router.isReady, candidateId, currentSupervisor, router]);
+  }, [router.isReady, candidateId, supervisor, router]);
 
-  var completedCount = assessments.filter(function (item) { return item.status === "completed" || item.result !== null; }).length;
-  var unblockedCount = assessments.filter(function (item) { return item.status === "unblocked" && !item.result; }).length;
+  var completedCount = assessments.filter(function (item) { return item.result || item.status === "completed"; }).length;
+  var readyCount = assessments.filter(function (item) { return item.status === "unblocked" && !item.result; }).length;
   var blockedCount = assessments.filter(function (item) { return item.status === "blocked" && !item.result; }).length;
-  var latestCompleted = getBestCompletedAssessment(assessments);
+  var completionRate = assessments.length > 0 ? Math.round((completedCount / assessments.length) * 100) : 0;
+
+  var latestCompleted = useMemo(function () {
+    var completed = assessments.filter(function (item) { return item.result; });
+    completed.sort(function (a, b) {
+      return new Date((b.result && b.result.completed_at) || 0).getTime() - new Date((a.result && a.result.completed_at) || 0).getTime();
+    });
+    return completed.length > 0 ? completed[0] : null;
+  }, [assessments]);
+
   var latestPercentage = latestCompleted && latestCompleted.result ? calculatePercentage(latestCompleted.result.score, latestCompleted.result.max_score, latestCompleted.result.percentage) : 0;
-  var latestClassification = getClassificationFromPercentage(latestPercentage);
+  var latestClassification = getClassification(latestPercentage);
 
-  var completionRate = useMemo(function () {
-    if (assessments.length === 0) return 0;
-    return Math.round((completedCount / assessments.length) * 100);
-  }, [assessments.length, completedCount]);
-
-  function showTimedMessage(type, text) {
+  function showMessage(type, text) {
     setMessage({ type: type, text: text });
     setTimeout(function () { setMessage(null); }, 6000);
   }
@@ -421,7 +339,7 @@ export default function ManageCandidate() {
   async function handleUnblock(assessmentId, assessmentTitle) {
     var response;
     var result;
-    var msg;
+    var text;
 
     setProcessingId(assessmentId);
 
@@ -434,133 +352,66 @@ export default function ManageCandidate() {
           assessmentId: assessmentId,
           extendMinutes: resetFullTime ? 0 : timeExtension,
           resetTime: resetFullTime,
-          performed_by: currentSupervisor.id
+          performed_by: supervisor.id
         })
       });
 
       result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || result.error || "Unblock failed");
 
-      if (!response.ok || !result.success) throw new Error(result.message || result.error || "Unblock request failed");
-
-      msg = "✓ " + assessmentTitle + " unblocked successfully. ";
-      if (resetFullTime) msg += "Time reset to full 3 hours. ";
-      else if (timeExtension > 0) msg += "Time extended by " + timeExtension + " minutes. ";
-      msg += result.hasExistingProgress ? "Candidate can continue where they left off." : "Candidate can start a new session.";
-
-      showTimedMessage("success", msg);
+      text = "✓ " + assessmentTitle + " unblocked successfully. ";
+      if (resetFullTime) text += "Time reset to full time. ";
+      else if (timeExtension > 0) text += "Time extended by " + timeExtension + " minutes. ";
+      text += result.hasExistingProgress ? "Candidate can continue where they left off." : "Candidate can start a new session.";
 
       setAssessments(function (previous) {
-        return previous.map(function (assessment) {
-          return assessment.assessment_id === assessmentId ? { ...assessment, status: "unblocked" } : assessment;
+        return previous.map(function (item) {
+          return item.assessment_id === assessmentId ? { ...item, status: "unblocked" } : item;
         });
       });
+
+      showMessage("success", text);
     } catch (error) {
-      showTimedMessage("error", "Failed to unblock assessment: " + (error && error.message ? error.message : "Unknown error"));
+      showMessage("error", "Failed to unblock assessment: " + (error && error.message ? error.message : "Unknown error"));
     } finally {
       setProcessingId(null);
-      setShowUnblockModal(null);
+      setUnblockModal(null);
       setTimeExtension(30);
       setResetFullTime(false);
     }
   }
 
-  async function handleReset(assessmentId, assessmentTitle) {
-    if (!window.confirm("Reset \"" + assessmentTitle + "\" for " + safeText(candidate && candidate.full_name, "this candidate") + "?\n\nThis will delete all progress. The candidate will have to start over.")) return;
-
+  async function handleBlock(assessmentId, assessmentTitle) {
+    if (!window.confirm("Block \"" + assessmentTitle + "\"?")) return;
     setProcessingId(assessmentId);
+    try {
+      await supabase.from("candidate_assessments").update({ status: "blocked" }).eq("user_id", candidateId).eq("assessment_id", assessmentId);
+      setAssessments(function (previous) {
+        return previous.map(function (item) { return item.assessment_id === assessmentId ? { ...item, status: "blocked" } : item; });
+      });
+      showMessage("success", "Assessment blocked successfully.");
+    } catch (error) {
+      showMessage("error", "Failed to block assessment: " + (error && error.message ? error.message : "Unknown error"));
+    } finally {
+      setProcessingId(null);
+    }
+  }
 
+  async function handleReset(assessmentId, assessmentTitle) {
+    if (!window.confirm("Reset \"" + assessmentTitle + "\"?\n\nThis will delete all progress and results for this assessment.")) return;
+    setProcessingId(assessmentId);
     try {
       await supabase.from("responses").delete().eq("user_id", candidateId).eq("assessment_id", assessmentId);
       await supabase.from("assessment_sessions").delete().eq("user_id", candidateId).eq("assessment_id", assessmentId);
       await supabase.from("assessment_results").delete().eq("user_id", candidateId).eq("assessment_id", assessmentId);
       await supabase.from("assessment_progress").delete().eq("user_id", candidateId).eq("assessment_id", assessmentId);
-
-      await supabase
-        .from("candidate_assessments")
-        .update({ status: "blocked", unblocked_at: null, result_id: null })
-        .eq("user_id", candidateId)
-        .eq("assessment_id", assessmentId);
-
-      showTimedMessage("success", "✓ " + assessmentTitle + " reset successfully. It is now blocked.");
-
+      await supabase.from("candidate_assessments").update({ status: "blocked", unblocked_at: null, result_id: null }).eq("user_id", candidateId).eq("assessment_id", assessmentId);
       setAssessments(function (previous) {
-        return previous.map(function (assessment) {
-          return assessment.assessment_id === assessmentId ? { ...assessment, status: "blocked", result: null } : assessment;
-        });
+        return previous.map(function (item) { return item.assessment_id === assessmentId ? { ...item, status: "blocked", result: null } : item; });
       });
+      showMessage("success", "Assessment reset successfully.");
     } catch (error) {
-      showTimedMessage("error", "Failed to reset assessment: " + (error && error.message ? error.message : "Unknown error"));
-    } finally {
-      setProcessingId(null);
-    }
-  }
-
-  async function handleBlock(assessmentId, assessmentTitle) {
-    if (!window.confirm("Block \"" + assessmentTitle + "\" for " + safeText(candidate && candidate.full_name, "this candidate") + "?")) return;
-
-    setProcessingId(assessmentId);
-
-    try {
-      await supabase
-        .from("candidate_assessments")
-        .update({ status: "blocked" })
-        .eq("user_id", candidateId)
-        .eq("assessment_id", assessmentId);
-
-      showTimedMessage("success", "● " + assessmentTitle + " blocked successfully.");
-
-      setAssessments(function (previous) {
-        return previous.map(function (assessment) {
-          return assessment.assessment_id === assessmentId ? { ...assessment, status: "blocked" } : assessment;
-        });
-      });
-    } catch (error) {
-      showTimedMessage("error", "Failed to block assessment: " + (error && error.message ? error.message : "Unknown error"));
-    } finally {
-      setProcessingId(null);
-    }
-  }
-
-  function toggleSelectAssessment(assessmentId) {
-    setSelectedAssessments(function (previous) {
-      if (previous.indexOf(assessmentId) >= 0) {
-        return previous.filter(function (id) { return id !== assessmentId; });
-      }
-      return previous.concat([assessmentId]);
-    });
-  }
-
-  function selectAllOpenAssessments() {
-    setSelectedAssessments(assessments.filter(function (assessment) { return !assessment.result; }).map(function (assessment) { return assessment.assessment_id; }));
-  }
-
-  function clearSelection() {
-    setSelectedAssessments([]);
-  }
-
-  async function bulkBlockSelected() {
-    var ids = selectedAssessments.slice();
-    if (ids.length === 0) return;
-    if (!window.confirm("Block " + ids.length + " selected assessment(s)?")) return;
-
-    setProcessingId("bulk-block");
-
-    try {
-      await supabase
-        .from("candidate_assessments")
-        .update({ status: "blocked" })
-        .eq("user_id", candidateId)
-        .in("assessment_id", ids);
-
-      setAssessments(function (previous) {
-        return previous.map(function (assessment) {
-          return ids.indexOf(assessment.assessment_id) >= 0 ? { ...assessment, status: "blocked" } : assessment;
-        });
-      });
-      setSelectedAssessments([]);
-      showTimedMessage("success", "Selected assessments blocked successfully.");
-    } catch (error) {
-      showTimedMessage("error", "Failed to block selected assessments: " + (error && error.message ? error.message : "Unknown error"));
+      showMessage("error", "Failed to reset assessment: " + (error && error.message ? error.message : "Unknown error"));
     } finally {
       setProcessingId(null);
     }
@@ -585,7 +436,7 @@ export default function ManageCandidate() {
           <div style={styles.notFoundIcon}>👤</div>
           <h2 style={styles.notFoundTitle}>Candidate Not Found</h2>
           <p style={styles.notFoundText}>The candidate does not exist or you do not have access.</p>
-          <Link href="/supervisor" style={styles.primaryLink}>← Back to Dashboard</Link>
+          <Link href="/supervisor" style={styles.primaryLink}>Back to Dashboard</Link>
         </div>
       </AppLayout>
     );
@@ -598,15 +449,13 @@ export default function ManageCandidate() {
           <div style={styles.heroTopRow}>
             <Link href="/supervisor" style={styles.backLink}>← Back to Dashboard</Link>
             <div style={styles.heroActions}>
-              {latestCompleted && (
-                <Link href={`/supervisor/${candidate.id}?assessment=${latestCompleted.assessment_id}`} style={styles.reportHeroLink}>View Latest Report</Link>
-              )}
+              {latestCompleted && <Link href={`/supervisor/${candidate.id}?assessment=${latestCompleted.assessment_id}`} style={styles.reportHeroLink}>View Latest Report</Link>}
               <Link href={`/supervisor/assign-assessment/${candidate.id}`} style={styles.assignLink}>+ Assign Assessment</Link>
             </div>
           </div>
 
           <div style={styles.profileRow}>
-            <div style={styles.avatar}>{getInitials(candidate.full_name || candidate.email)}</div>
+            <div style={styles.avatar}>{initials(candidate.full_name || candidate.email)}</div>
             <div style={styles.profileMain}>
               <div style={styles.profileBadge}>Candidate Profile</div>
               <h1 style={styles.profileName}>{safeText(candidate.full_name, "Unnamed Candidate")}</h1>
@@ -621,46 +470,19 @@ export default function ManageCandidate() {
               <p style={styles.latestScoreLabel}>Latest Score</p>
               <p style={{ ...styles.latestScoreValue, color: latestClassification.color }}>{latestCompleted ? latestPercentage + "%" : "N/A"}</p>
               <ProgressBar value={latestPercentage} color={latestClassification.color} />
-              <div style={styles.latestScoreFooter}>
-                <Pill color={latestClassification.color} background={latestClassification.background}>{latestClassification.label}</Pill>
-              </div>
+              <div style={styles.latestScoreFooter}><Pill color={latestClassification.color} bg={latestClassification.bg}>{latestClassification.label}</Pill></div>
             </div>
           </div>
         </div>
 
-        {message && (
-          <div style={message.type === "success" ? styles.successMessage : styles.errorMessage}>
-            {message.text}
-          </div>
-        )}
+        {message && <div style={message.type === "success" ? styles.successMessage : styles.errorMessage}>{message.text}</div>}
 
         <div style={styles.statsGrid}>
           <StatCard icon="📋" label="Total" value={assessments.length} note="Assigned assessments" background="linear-gradient(135deg, #0f172a 0%, #334155 100%)" />
           <StatCard icon="✓" label="Completed" value={completedCount} note={completionRate + "% complete"} background="linear-gradient(135deg, #047857 0%, #34d399 100%)" />
-          <StatCard icon="↗" label="Ready" value={unblockedCount} note="Available to candidate" background="linear-gradient(135deg, #1d4ed8 0%, #38bdf8 100%)" />
+          <StatCard icon="↗" label="Ready" value={readyCount} note="Available to candidate" background="linear-gradient(135deg, #1d4ed8 0%, #38bdf8 100%)" />
           <StatCard icon="●" label="Blocked" value={blockedCount} note="Locked assessments" background="linear-gradient(135deg, #c2410c 0%, #fb923c 100%)" />
         </div>
-
-        {assessments.length > 0 && (
-          <div style={styles.bulkBar}>
-            <div style={styles.bulkLeft}>
-              <input
-                type="checkbox"
-                checked={selectedAssessments.length > 0 && selectedAssessments.length === assessments.filter(function (item) { return !item.result; }).length}
-                onChange={selectedAssessments.length > 0 ? clearSelection : selectAllOpenAssessments}
-                style={styles.checkbox}
-              />
-              <span style={styles.bulkText}>{selectedAssessments.length} selected</span>
-            </div>
-            <div style={styles.bulkActions}>
-              <button type="button" onClick={selectAllOpenAssessments} style={styles.lightButton}>Select Open</button>
-              <button type="button" onClick={clearSelection} style={styles.lightButton}>Clear</button>
-              <button type="button" onClick={bulkBlockSelected} disabled={selectedAssessments.length === 0 || processingId === "bulk-block"} style={selectedAssessments.length === 0 ? styles.disabledButton : styles.warningButton}>
-                {processingId === "bulk-block" ? "Processing..." : "Block Selected"}
-              </button>
-            </div>
-          </div>
-        )}
 
         <div style={styles.contentCard}>
           <div style={styles.contentHeader}>
@@ -668,35 +490,28 @@ export default function ManageCandidate() {
               <h2 style={styles.contentTitle}>Assessments</h2>
               <p style={styles.contentSubtitle}>Manage assessment status, reports, resets, and release access.</p>
             </div>
-            <Pill color="#175cd3" background="#eff8ff">{assessments.length} assigned</Pill>
+            <Pill color="#175cd3" bg="#eff8ff">{assessments.length} assigned</Pill>
           </div>
 
           {assessments.length === 0 ? (
-            <EmptyState title="No assessments assigned" message="Assign an assessment to make it available for this candidate." icon="📋">
+            <div style={styles.emptyState}>
+              <div style={styles.emptyIcon}>📋</div>
+              <h3 style={styles.emptyTitle}>No assessments assigned</h3>
+              <p style={styles.emptyText}>Assign an assessment to make it available for this candidate.</p>
               <Link href={`/supervisor/assign-assessment/${candidate.id}`} style={styles.primaryLink}>+ Assign Assessment</Link>
-            </EmptyState>
+            </div>
           ) : (
             <div style={styles.assessmentGrid}>
               {assessments.map(function (assessment) {
-                var isSelected = selectedAssessments.indexOf(assessment.assessment_id) >= 0;
+                var status = getStatus(assessment);
+                var hasResult = assessment.result !== null;
+                var percentage = hasResult ? calculatePercentage(assessment.result.score, assessment.result.max_score, assessment.result.percentage) : 0;
+                var classification = getClassification(percentage);
                 var isProcessing = processingId === assessment.assessment_id;
-                var isCompleted = assessment.result !== null;
-                var isUnblocked = assessment.status === "unblocked" && !assessment.result;
-                var isBlocked = assessment.status === "blocked" && !assessment.result;
-                var statusBadge = getStatusBadge(assessment.status, isCompleted);
-                var scorePercentage = assessment.result ? calculatePercentage(assessment.result.score, assessment.result.max_score, assessment.result.percentage) : 0;
-                var classification = getClassificationFromPercentage(scorePercentage);
 
                 return (
                   <article key={assessment.id} style={styles.assessmentCard}>
                     <div style={styles.assessmentCardTop}>
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={function () { toggleSelectAssessment(assessment.assessment_id); }}
-                        disabled={isCompleted}
-                        style={styles.checkbox}
-                      />
                       <div style={{ ...styles.assessmentIcon, background: "linear-gradient(135deg, " + assessment.type_gradient_start + " 0%, " + assessment.type_gradient_end + " 100%)" }}>{assessment.type_icon}</div>
                       <div style={styles.assessmentTitleBlock}>
                         <h3 style={styles.assessmentTitle}>{assessment.assessment_title}</h3>
@@ -705,39 +520,37 @@ export default function ManageCandidate() {
                     </div>
 
                     <div style={styles.assessmentPills}>
-                      <Pill icon={statusBadge.icon} color={statusBadge.color} background={statusBadge.background}>{statusBadge.label}</Pill>
-                      {assessment.result && <Pill color={classification.color} background={classification.background}>{classification.label}</Pill>}
-                      {assessment.result && assessment.result.is_auto_submitted && <Pill color="#b42318" background="#fef3f2">Auto-submitted</Pill>}
+                      <Pill color={status.color} bg={status.bg}>{status.icon} {status.label}</Pill>
+                      {hasResult && <Pill color={classification.color} bg={classification.bg}>{classification.label}</Pill>}
+                      {hasResult && assessment.result.is_auto_submitted && <Pill color="#b42318" bg="#fef3f2">Auto-submitted</Pill>}
                     </div>
 
-                    {assessment.result ? (
+                    {hasResult ? (
                       <div style={styles.resultBox}>
                         <div style={styles.resultTopLine}>
-                          <strong style={{ color: classification.color, fontSize: "28px" }}>{scorePercentage}%</strong>
+                          <strong style={{ color: classification.color, fontSize: "28px" }}>{percentage}%</strong>
                           <span style={styles.resultScore}>{safeNumber(assessment.result.score, 0)}/{safeNumber(assessment.result.max_score, 0)}</span>
                         </div>
-                        <ProgressBar value={scorePercentage} color={classification.color} />
+                        <ProgressBar value={percentage} color={classification.color} />
                         <p style={styles.resultMeta}>Completed: {formatDate(assessment.result.completed_at)}</p>
-                        {assessment.result.is_auto_submitted && (
-                          <p style={styles.autoSubmitText}>Auto-submitted after {safeNumber(assessment.result.violation_count, 0)}/3 violation(s).</p>
-                        )}
+                        {assessment.result.is_auto_submitted && <p style={styles.autoSubmitText}>Auto-submitted after {safeNumber(assessment.result.violation_count, 0)}/3 violation(s).</p>}
                       </div>
                     ) : (
                       <div style={styles.pendingBox}>
-                        <p style={styles.pendingText}>{isUnblocked ? "Candidate can currently access this assessment." : isBlocked ? "This assessment is currently blocked." : "Assessment is awaiting candidate action."}</p>
+                        <p style={styles.pendingText}>{assessment.status === "unblocked" ? "Candidate can currently access this assessment." : assessment.status === "blocked" ? "This assessment is currently blocked." : "Assessment is awaiting candidate action."}</p>
                         <p style={styles.resultMeta}>Assigned: {formatDate(assessment.created_at)}</p>
                         {assessment.unblocked_at && <p style={styles.resultMeta}>Last unblocked: {formatDate(assessment.unblocked_at)}</p>}
                       </div>
                     )}
 
                     <div style={styles.cardActions}>
-                      {isCompleted ? (
+                      {hasResult ? (
                         <React.Fragment>
                           <Link href={`/supervisor/${candidate.id}?assessment=${assessment.assessment_id}`} style={styles.reportLink}>View Report</Link>
                           <button type="button" onClick={function () { handleReset(assessment.assessment_id, assessment.assessment_title); }} disabled={isProcessing} style={styles.resetButton}>{isProcessing ? "Processing..." : "Reset"}</button>
                         </React.Fragment>
-                      ) : isBlocked ? (
-                        <button type="button" onClick={function () { setShowUnblockModal({ assessmentId: assessment.assessment_id, assessmentTitle: assessment.assessment_title }); }} disabled={isProcessing} style={styles.unblockButton}>{isProcessing ? "Processing..." : "Unblock"}</button>
+                      ) : assessment.status === "blocked" ? (
+                        <button type="button" onClick={function () { setUnblockModal({ assessmentId: assessment.assessment_id, assessmentTitle: assessment.assessment_title }); }} disabled={isProcessing} style={styles.unblockButton}>{isProcessing ? "Processing..." : "Unblock"}</button>
                       ) : (
                         <button type="button" onClick={function () { handleBlock(assessment.assessment_id, assessment.assessment_title); }} disabled={isProcessing} style={styles.blockButton}>{isProcessing ? "Processing..." : "Block"}</button>
                       )}
@@ -750,25 +563,22 @@ export default function ManageCandidate() {
         </div>
       </div>
 
-      {showUnblockModal && (
+      {unblockModal && (
         <div style={styles.modalBackdrop}>
           <div style={styles.modalCard}>
             <div style={styles.modalHeader}>
               <div style={styles.modalIcon}>↗</div>
               <div>
                 <h3 style={styles.modalTitle}>Unblock Assessment</h3>
-                <p style={styles.modalSubtitle}>{showUnblockModal.assessmentTitle}</p>
+                <p style={styles.modalSubtitle}>{unblockModal.assessmentTitle}</p>
               </div>
-              <button type="button" onClick={function () { setShowUnblockModal(null); }} style={styles.modalClose}>×</button>
+              <button type="button" onClick={function () { setUnblockModal(null); }} style={styles.modalClose}>×</button>
             </div>
-
             <div style={styles.modalBody}>
               <p style={styles.modalText}><strong>Candidate:</strong> {candidate.full_name}</p>
-              <p style={styles.modalText}><strong>Assessment:</strong> {showUnblockModal.assessmentTitle}</p>
-
+              <p style={styles.modalText}><strong>Assessment:</strong> {unblockModal.assessmentTitle}</p>
               <div style={styles.optionStack}>
                 <h4 style={styles.optionTitle}>Time Options</h4>
-
                 {[30, 60, 120].map(function (minutes) {
                   return (
                     <label key={minutes} style={styles.optionRow}>
@@ -777,26 +587,20 @@ export default function ManageCandidate() {
                     </label>
                   );
                 })}
-
                 <label style={styles.optionRow}>
                   <input type="radio" checked={resetFullTime} onChange={function () { setResetFullTime(true); }} />
                   <span><strong>Reset to full time</strong><br /><small>Reset timer to full assessment duration</small></span>
                 </label>
-
                 <label style={styles.optionRow}>
                   <input type="radio" checked={!resetFullTime && timeExtension === 0} onChange={function () { setResetFullTime(false); setTimeExtension(0); }} />
                   <span><strong>No time change</strong><br /><small>Only unblock access without changing time</small></span>
                 </label>
               </div>
-
               <div style={styles.infoBox}>Existing answers are preserved. The candidate can continue from where they stopped if previous progress exists.</div>
             </div>
-
             <div style={styles.modalFooter}>
-              <button type="button" onClick={function () { setShowUnblockModal(null); }} style={styles.cancelButton}>Cancel</button>
-              <button type="button" onClick={function () { handleUnblock(showUnblockModal.assessmentId, showUnblockModal.assessmentTitle); }} disabled={processingId === showUnblockModal.assessmentId} style={styles.modalPrimaryButton}>
-                {processingId === showUnblockModal.assessmentId ? "Processing..." : "Unblock Assessment"}
-              </button>
+              <button type="button" onClick={function () { setUnblockModal(null); }} style={styles.cancelButton}>Cancel</button>
+              <button type="button" onClick={function () { handleUnblock(unblockModal.assessmentId, unblockModal.assessmentTitle); }} disabled={processingId === unblockModal.assessmentId} style={styles.modalPrimaryButton}>{processingId === unblockModal.assessmentId ? "Processing..." : "Unblock Assessment"}</button>
             </div>
           </div>
         </div>
@@ -806,10 +610,6 @@ export default function ManageCandidate() {
     </AppLayout>
   );
 }
-
-// ======================================================
-// STYLES
-// ======================================================
 
 var spinStyles = `
   @keyframes spin {
@@ -851,27 +651,19 @@ var styles = {
   statLabel: { margin: 0, color: "rgba(255,255,255,0.78)", fontSize: "12px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.05em" },
   statValue: { margin: "4px 0 0", color: "#ffffff", fontSize: "30px", lineHeight: 1, fontWeight: 900 },
   statNote: { margin: "5px 0 0", color: "rgba(255,255,255,0.72)", fontSize: "12px" },
-  bulkBar: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", background: "rgba(255,255,255,0.95)", border: "1px solid #eaecf0", borderRadius: "20px", padding: "14px", marginBottom: "20px", boxShadow: "0 14px 34px rgba(16,24,40,0.06)" },
-  bulkLeft: { display: "flex", alignItems: "center", gap: "10px" },
-  checkbox: { width: "18px", height: "18px", cursor: "pointer" },
-  bulkText: { color: "#101828", fontWeight: 900, fontSize: "13px" },
-  bulkActions: { display: "flex", gap: "8px", flexWrap: "wrap" },
-  lightButton: { border: "1px solid #d0d5dd", background: "#ffffff", color: "#344054", padding: "9px 12px", borderRadius: "12px", cursor: "pointer", fontWeight: 900, fontSize: "12px" },
-  warningButton: { border: 0, background: "#c2410c", color: "#ffffff", padding: "9px 12px", borderRadius: "12px", cursor: "pointer", fontWeight: 900, fontSize: "12px" },
-  disabledButton: { border: 0, background: "#98a2b3", color: "#ffffff", padding: "9px 12px", borderRadius: "12px", cursor: "not-allowed", fontWeight: 900, fontSize: "12px" },
   contentCard: { background: "rgba(255,255,255,0.96)", border: "1px solid #eaecf0", borderRadius: "26px", padding: "22px", boxShadow: "0 20px 56px rgba(16,24,40,0.09)" },
   contentHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "18px" },
   contentTitle: { margin: 0, color: "#101828", fontSize: "24px" },
   contentSubtitle: { margin: "5px 0 0", color: "#667085", fontSize: "13px" },
   assessmentGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(310px, 1fr))", gap: "14px" },
   assessmentCard: { background: "#ffffff", border: "1px solid #eaecf0", borderRadius: "22px", padding: "18px", boxShadow: "0 10px 28px rgba(16,24,40,0.05)" },
-  assessmentCardTop: { display: "grid", gridTemplateColumns: "24px 46px minmax(0,1fr)", gap: "12px", alignItems: "center", marginBottom: "14px" },
+  assessmentCardTop: { display: "grid", gridTemplateColumns: "46px minmax(0,1fr)", gap: "12px", alignItems: "center", marginBottom: "14px" },
   assessmentIcon: { width: "44px", height: "44px", borderRadius: "15px", color: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", fontWeight: 900 },
   assessmentTitleBlock: { minWidth: 0 },
   assessmentTitle: { margin: 0, color: "#101828", fontSize: "16px", overflowWrap: "anywhere" },
   assessmentType: { margin: "4px 0 0", color: "#667085", fontSize: "12px" },
   assessmentPills: { display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "14px" },
-  pill: { display: "inline-flex", alignItems: "center", gap: "5px", padding: "6px 10px", borderRadius: "999px", border: "1px solid", fontSize: "12px", fontWeight: 900, whiteSpace: "nowrap" },
+  pill: { display: "inline-flex", alignItems: "center", gap: "5px", padding: "6px 10px", borderRadius: "999px", border: "1px solid transparent", fontSize: "12px", fontWeight: 900, whiteSpace: "nowrap" },
   resultBox: { background: "#f8fafc", borderRadius: "16px", padding: "14px", marginBottom: "14px" },
   resultTopLine: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", marginBottom: "10px" },
   resultScore: { color: "#667085", fontWeight: 900, fontSize: "13px" },
