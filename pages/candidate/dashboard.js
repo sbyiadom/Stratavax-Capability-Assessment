@@ -6,94 +6,164 @@ import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 
-function text(value, fallback = "") {
-  if (value === null || value === undefined || value === "") return fallback;
-  return String(value);
+function getReadableError(error) {
+  if (!error) return "Something went wrong.";
+  return error.message || String(error) || "Something went wrong.";
 }
 
-function errorText(error) {
-  return error?.message || String(error || "Something went wrong.");
-}
-
-function typeObj(assessment) {
+function getType(assessment) {
   return assessment?.assessment_type || assessment?.assessment_types || {};
 }
 
-function typeCode(assessment) {
-  return typeObj(assessment)?.code || "general";
+function getTypeCode(assessment) {
+  return getType(assessment)?.code || "general";
 }
 
-function typeName(assessment) {
-  return typeObj(assessment)?.name || "Assessment";
+function getTypeName(assessment) {
+  return getType(assessment)?.name || "Assessment";
 }
 
-function iconOf(assessment) {
-  return typeObj(assessment)?.icon || "📋";
+function getTypeIcon(assessment) {
+  return getType(assessment)?.icon || "📋";
 }
 
-function colorsFor(code) {
-  const colors = {
-    general: { bg: "#dbeafe", color: "#1e40af", gradient: "linear-gradient(135deg,#1d4ed8,#1e3a8a)" },
-    leadership: { bg: "#ede9fe", color: "#5b21b6", gradient: "linear-gradient(135deg,#7c3aed,#5b21b6)" },
-    strategic_leadership: { bg: "#e0e7ff", color: "#3730a3", gradient: "linear-gradient(135deg,#1e3a8a,#5b21b6)" },
-    cognitive: { bg: "#cffafe", color: "#0e7490", gradient: "linear-gradient(135deg,#0891b2,#0e7490)" },
-    technical: { bg: "#fee2e2", color: "#991b1b", gradient: "linear-gradient(135deg,#dc2626,#991b1b)" },
-    personality: { bg: "#ccfbf1", color: "#115e59", gradient: "linear-gradient(135deg,#0d9488,#115e59)" },
-    performance: { bg: "#ffedd5", color: "#c2410c", gradient: "linear-gradient(135deg,#ea580c,#c2410c)" },
-    behavioral: { bg: "#f3e8ff", color: "#6b21a5", gradient: "linear-gradient(135deg,#9333ea,#6b21a5)" },
-    cultural: { bg: "#dcfce7", color: "#047857", gradient: "linear-gradient(135deg,#059669,#047857)" },
-    manufacturing_baseline: { bg: "#dcfce7", color: "#1b5e20", gradient: "linear-gradient(135deg,#2e7d32,#1b5e20)" }
+function getColors(code) {
+  const map = {
+    general: { bg: "#dbeafe", color: "#1e40af", gradient: "linear-gradient(135deg, #1d4ed8, #1e3a8a)" },
+    leadership: { bg: "#ede9fe", color: "#5b21b6", gradient: "linear-gradient(135deg, #7c3aed, #5b21b6)" },
+    strategic_leadership: { bg: "#e0e7ff", color: "#3730a3", gradient: "linear-gradient(135deg, #1e3a8a, #5b21b6)" },
+    cognitive: { bg: "#cffafe", color: "#0e7490", gradient: "linear-gradient(135deg, #0891b2, #0e7490)" },
+    technical: { bg: "#fee2e2", color: "#991b1b", gradient: "linear-gradient(135deg, #dc2626, #991b1b)" },
+    personality: { bg: "#ccfbf1", color: "#115e59", gradient: "linear-gradient(135deg, #0d9488, #115e59)" },
+    performance: { bg: "#ffedd5", color: "#c2410c", gradient: "linear-gradient(135deg, #ea580c, #c2410c)" },
+    behavioral: { bg: "#f3e8ff", color: "#6b21a5", gradient: "linear-gradient(135deg, #9333ea, #6b21a5)" },
+    cultural: { bg: "#dcfce7", color: "#047857", gradient: "linear-gradient(135deg, #059669, #047857)" },
+    manufacturing_baseline: { bg: "#dcfce7", color: "#1b5e20", gradient: "linear-gradient(135deg, #2e7d32, #1b5e20)" }
   };
-  return colors[code] || colors.general;
+  return map[code] || map.general;
 }
 
-function formatDate(value) {
+function formatDateTime(value) {
   if (!value) return "Not set";
   try {
-    return new Date(value).toLocaleString();
-  } catch {
+    return new Date(value).toLocaleString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  } catch (error) {
     return "Not set";
   }
 }
 
-function withinSchedule(row) {
-  if (!row?.is_scheduled && row?.status !== "scheduled") return true;
+function isWithinSchedule(accessRecord) {
+  if (!accessRecord?.is_scheduled && accessRecord?.status !== "scheduled") return true;
+
   const now = new Date();
-  const start = row?.scheduled_start ? new Date(row.scheduled_start) : null;
-  const end = row?.scheduled_end ? new Date(row.scheduled_end) : null;
+  const start = accessRecord?.scheduled_start ? new Date(accessRecord.scheduled_start) : null;
+  const end = accessRecord?.scheduled_end ? new Date(accessRecord.scheduled_end) : null;
+
   if (start && now < start) return false;
   if (end && now > end) return false;
   return true;
 }
 
-function accessInfo(access, result) {
-  if (result || access?.status === "completed" || access?.result_id) {
-    return { key: "completed", label: "Completed", canStart: false, button: "Completed", bg: "#e3f2fd", color: "#1565c0", help: "This assessment has already been completed." };
+function getAccessInfo(accessRecord, resultRecord) {
+  if (resultRecord || accessRecord?.status === "completed" || accessRecord?.result_id) {
+    return {
+      key: "completed",
+      label: "Completed",
+      canStart: false,
+      buttonText: "Completed",
+      badgeBg: "#e3f2fd",
+      badgeColor: "#1565c0",
+      helper: "This assessment has already been completed."
+    };
   }
 
-  if (!access) {
-    return { key: "not_assigned", label: "Not Assigned", canStart: false, button: "Not Assigned", bg: "#f5f5f5", color: "#667085", help: "This assessment has not been assigned yet. You can view details, but cannot start it." };
+  if (!accessRecord) {
+    return {
+      key: "not_assigned",
+      label: "Not Assigned",
+      canStart: false,
+      buttonText: "Not Assigned",
+      badgeBg: "#f5f5f5",
+      badgeColor: "#667085",
+      helper: "This assessment is visible, but it has not been assigned to you yet."
+    };
   }
 
-  if (access.status === "unblocked") {
-    if (!withinSchedule(access)) {
-      return { key: "scheduled_locked", label: "Scheduled", canStart: false, button: "Not Yet Available", bg: "#f3e5f5", color: "#6a1b9a", help: "Available from " + formatDate(access.scheduled_start) + " to " + formatDate(access.scheduled_end) + "." };
+  if (accessRecord.status === "unblocked") {
+    if (!isWithinSchedule(accessRecord)) {
+      return {
+        key: "scheduled_locked",
+        label: "Scheduled",
+        canStart: false,
+        buttonText: "Not Yet Available",
+        badgeBg: "#f3e5f5",
+        badgeColor: "#6a1b9a",
+        helper: "This assessment is scheduled from " + formatDateTime(accessRecord.scheduled_start) + " to " + formatDateTime(accessRecord.scheduled_end) + "."
+      };
     }
-    return { key: "ready", label: "Ready", canStart: true, button: "Start Assessment", bg: "#e8f5e9", color: "#2e7d32", help: "This assessment is assigned and unblocked. You can start it now." };
+
+    return {
+      key: "ready",
+      label: "Ready",
+      canStart: true,
+      buttonText: "Start Assessment",
+      badgeBg: "#e8f5e9",
+      badgeColor: "#2e7d32",
+      helper: "This assessment is assigned and unblocked. You can start it now."
+    };
   }
 
-  if (access.status === "scheduled") {
-    if (withinSchedule(access)) {
-      return { key: "ready_scheduled", label: "Ready", canStart: true, button: "Start Assessment", bg: "#e8f5e9", color: "#2e7d32", help: "This scheduled assessment is currently available." };
+  if (accessRecord.status === "scheduled") {
+    if (isWithinSchedule(accessRecord)) {
+      return {
+        key: "ready_scheduled",
+        label: "Ready",
+        canStart: true,
+        buttonText: "Start Assessment",
+        badgeBg: "#e8f5e9",
+        badgeColor: "#2e7d32",
+        helper: "This scheduled assessment is currently available."
+      };
     }
-    return { key: "scheduled", label: "Scheduled", canStart: false, button: "Scheduled", bg: "#f3e5f5", color: "#6a1b9a", help: "Available from " + formatDate(access.scheduled_start) + " to " + formatDate(access.scheduled_end) + "." };
+
+    return {
+      key: "scheduled",
+      label: "Scheduled",
+      canStart: false,
+      buttonText: "Scheduled",
+      badgeBg: "#f3e5f5",
+      badgeColor: "#6a1b9a",
+      helper: "This assessment is scheduled from " + formatDateTime(accessRecord.scheduled_start) + " to " + formatDateTime(accessRecord.scheduled_end) + "."
+    };
   }
 
-  if (access.status === "in_progress") {
-    return { key: "in_progress", label: "In Progress", canStart: true, button: "Continue Assessment", bg: "#fef9c3", color: "#854d0e", help: "This assessment is already in progress." };
+  if (accessRecord.status === "in_progress") {
+    return {
+      key: "in_progress",
+      label: "In Progress",
+      canStart: true,
+      buttonText: "Continue Assessment",
+      badgeBg: "#fef9c3",
+      badgeColor: "#854d0e",
+      helper: "This assessment is already in progress."
+    };
   }
 
-  return { key: "blocked", label: "Blocked", canStart: false, button: "Contact Supervisor to Unblock", bg: "#fff3e0", color: "#f57c00", help: "This assessment is assigned but blocked. You can move through the dashboard, but you cannot start this assessment until it is unblocked." };
+  return {
+    key: "blocked",
+    label: "Blocked",
+    canStart: false,
+    buttonText: "Contact Supervisor to Unblock",
+    badgeBg: "#fff3e0",
+    badgeColor: "#f57c00",
+    helper: "This assessment is assigned but blocked. You can view and move through the dashboard, but you cannot start until it is unblocked."
+  };
 }
 
 export default function CandidateDashboard() {
@@ -102,7 +172,7 @@ export default function CandidateDashboard() {
   const [candidate, setCandidate] = useState(null);
   const [assessments, setAssessments] = useState([]);
   const [candidateAssessments, setCandidateAssessments] = useState([]);
-  const [results, setResults] = useState([]);
+  const [assessmentResults, setAssessmentResults] = useState([]);
   const [selectedAssessmentId, setSelectedAssessmentId] = useState("");
   const [message, setMessage] = useState({ type: "", text: "" });
 
@@ -124,14 +194,18 @@ export default function CandidateDashboard() {
             return {
               id: parsed.user_id,
               email: parsed.email,
-              user_metadata: { role: parsed.role, full_name: parsed.full_name }
+              user_metadata: {
+                role: parsed.role,
+                full_name: parsed.full_name
+              }
             };
           }
-        } catch {
+        } catch (error) {
           localStorage.removeItem("userSession");
         }
       }
     }
+
     return null;
   }
 
@@ -141,6 +215,7 @@ export default function CandidateDashboard() {
       setMessage({ type: "", text: "" });
 
       const user = await getCurrentUser();
+
       if (!user?.id) {
         router.push("/login");
         return;
@@ -160,18 +235,20 @@ export default function CandidateDashboard() {
 
       if (profileResponse.error) throw profileResponse.error;
 
-      const profile = profileResponse.data || {
+      const candidateProfile = profileResponse.data || {
         id: user.id,
         full_name: user.user_metadata?.full_name || user.email || "Candidate",
-        email: user.email || ""
+        email: user.email || "",
+        phone: "",
+        supervisor_id: null
       };
 
-      setCandidate(profile);
+      setCandidate(candidateProfile);
 
-      const [assessmentResponse, accessResponse, resultResponse] = await Promise.all([
+      const [assessmentsResponse, accessResponse, resultsResponse] = await Promise.all([
         supabase
           .from("assessments")
-          .select("id, title, description, duration_minutes, time_limit, question_count, total_questions, is_active, assessment_type:assessment_types(id, code, name, icon)")
+          .select("id, title, description, is_active, assessment_type:assessment_types(id, code, name, icon)")
           .eq("is_active", true)
           .order("title", { ascending: true }),
         supabase
@@ -184,28 +261,34 @@ export default function CandidateDashboard() {
           .eq("user_id", user.id)
       ]);
 
-      if (assessmentResponse.error) throw assessmentResponse.error;
+      if (assessmentsResponse.error) throw assessmentsResponse.error;
       if (accessResponse.error) throw accessResponse.error;
-      if (resultResponse.error) throw resultResponse.error;
+      if (resultsResponse.error) throw resultsResponse.error;
 
-      const assessmentRows = assessmentResponse.data || [];
+      const assessmentRows = assessmentsResponse.data || [];
       setAssessments(assessmentRows);
       setCandidateAssessments(accessResponse.data || []);
-      setResults(resultResponse.data || []);
+      setAssessmentResults(resultsResponse.data || []);
 
-      if (assessmentRows.length > 0) setSelectedAssessmentId(assessmentRows[0].id);
+      if (assessmentRows.length > 0) {
+        setSelectedAssessmentId((current) => current || assessmentRows[0].id);
+      }
     } catch (error) {
       console.error("Candidate dashboard load error:", error);
-      setMessage({ type: "error", text: "Failed to load dashboard: " + errorText(error) });
+      setMessage({ type: "error", text: "Failed to load dashboard: " + getReadableError(error) });
     } finally {
       setLoading(false);
     }
   }
 
-  async function signOut() {
-    await supabase.auth.signOut();
-    if (typeof window !== "undefined") localStorage.removeItem("userSession");
-    router.push("/login");
+  async function handleSignOut() {
+    try {
+      await supabase.auth.signOut();
+      if (typeof window !== "undefined") localStorage.removeItem("userSession");
+      router.push("/login");
+    } catch (error) {
+      router.push("/login");
+    }
   }
 
   function accessFor(assessmentId) {
@@ -213,15 +296,17 @@ export default function CandidateDashboard() {
   }
 
   function resultFor(assessmentId) {
-    return results.find((item) => item.assessment_id === assessmentId) || null;
+    return assessmentResults.find((item) => item.assessment_id === assessmentId) || null;
   }
 
   function startAssessment(assessment) {
-    const info = accessInfo(accessFor(assessment.id), resultFor(assessment.id));
+    const info = getAccessInfo(accessFor(assessment.id), resultFor(assessment.id));
+
     if (!info.canStart) {
-      setMessage({ type: "error", text: info.help });
+      setMessage({ type: "error", text: info.helper });
       return;
     }
+
     router.push("/candidate/assessment/" + assessment.id);
   }
 
@@ -229,10 +314,17 @@ export default function CandidateDashboard() {
     return assessments.find((item) => item.id === selectedAssessmentId) || assessments[0] || null;
   }, [assessments, selectedAssessmentId]);
 
-  const selectedInfo = selectedAssessment ? accessInfo(accessFor(selectedAssessment.id), resultFor(selectedAssessment.id)) : null;
+  const selectedInfo = selectedAssessment ? getAccessInfo(accessFor(selectedAssessment.id), resultFor(selectedAssessment.id)) : null;
 
-  const completedCount = assessments.filter((assessment) => accessInfo(accessFor(assessment.id), resultFor(assessment.id)).key === "completed").length;
-  const readyCount = assessments.filter((assessment) => accessInfo(accessFor(assessment.id), resultFor(assessment.id)).canStart).length;
+  const completedCount = assessments.filter((assessment) => {
+    const info = getAccessInfo(accessFor(assessment.id), resultFor(assessment.id));
+    return info.key === "completed";
+  }).length;
+
+  const readyCount = assessments.filter((assessment) => {
+    const info = getAccessInfo(accessFor(assessment.id), resultFor(assessment.id));
+    return info.canStart;
+  }).length;
 
   if (loading) {
     return (
@@ -241,7 +333,12 @@ export default function CandidateDashboard() {
           <div style={styles.spinner} />
           <p>Loading dashboard...</p>
         </div>
-        <style jsx>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+        <style jsx>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
       </AppLayout>
     );
   }
@@ -256,8 +353,10 @@ export default function CandidateDashboard() {
             <span style={styles.portalText}>Assessment Portal</span>
           </div>
           <div style={styles.topActions}>
-            <Link href="/candidate/profile" legacyBehavior><a style={styles.profileButton}>Profile</a></Link>
-            <button type="button" onClick={signOut} style={styles.signOutButton}>Sign Out</button>
+            <Link href="/candidate/profile" legacyBehavior>
+              <a style={styles.profileButton}>Profile</a>
+            </Link>
+            <button type="button" onClick={handleSignOut} style={styles.signOutButton}>Sign Out</button>
           </div>
         </div>
 
@@ -270,7 +369,12 @@ export default function CandidateDashboard() {
         </div>
 
         {message.text && (
-          <div style={{ ...styles.message, background: message.type === "success" ? "#e8f5e9" : "#ffebee", color: message.type === "success" ? "#2e7d32" : "#c62828", border: "1px solid " + (message.type === "success" ? "#a5d6a7" : "#ffcdd2") }}>
+          <div style={{
+            ...styles.message,
+            background: message.type === "success" ? "#e8f5e9" : "#ffebee",
+            color: message.type === "success" ? "#2e7d32" : "#c62828",
+            border: "1px solid " + (message.type === "success" ? "#a5d6a7" : "#ffcdd2")
+          }}>
             {message.text}
           </div>
         )}
@@ -284,18 +388,24 @@ export default function CandidateDashboard() {
           <>
             <div style={styles.tabsWrap}>
               {assessments.map((assessment) => {
-                const colors = colorsFor(typeCode(assessment));
+                const colors = getColors(getTypeCode(assessment));
                 const isSelected = selectedAssessment?.id === assessment.id;
-                const info = accessInfo(accessFor(assessment.id), resultFor(assessment.id));
+                const info = getAccessInfo(accessFor(assessment.id), resultFor(assessment.id));
+
                 return (
                   <button
                     key={assessment.id}
                     type="button"
                     onClick={() => setSelectedAssessmentId(assessment.id)}
-                    style={{ ...styles.tabButton, background: isSelected ? colors.color : colors.bg, color: isSelected ? "white" : colors.color }}
+                    style={{
+                      ...styles.tabButton,
+                      background: isSelected ? colors.color : colors.bg,
+                      color: isSelected ? "white" : colors.color,
+                      border: isSelected ? "1px solid " + colors.color : "1px solid rgba(255,255,255,0.35)"
+                    }}
                   >
                     <span>{assessment.title}</span>
-                    <small style={{ ...styles.tabStatus, background: info.bg, color: info.color }}>{info.label}</small>
+                    <small style={{ ...styles.tabStatus, background: info.badgeBg, color: info.badgeColor }}>{info.label}</small>
                   </button>
                 );
               })}
@@ -304,29 +414,34 @@ export default function CandidateDashboard() {
             {selectedAssessment && selectedInfo && (
               <div style={styles.assessmentCard}>
                 <div style={styles.assessmentMain}>
-                  <div style={{ ...styles.assessmentIcon, background: colorsFor(typeCode(selectedAssessment)).gradient }}>{iconOf(selectedAssessment)}</div>
+                  <div style={{ ...styles.assessmentIcon, background: getColors(getTypeCode(selectedAssessment)).gradient }}>{getTypeIcon(selectedAssessment)}</div>
                   <div style={styles.assessmentTextBlock}>
                     <h2 style={styles.assessmentTitle}>{selectedAssessment.title}</h2>
                     <p style={styles.assessmentDescription}>{selectedAssessment.description || "Comprehensive assessment covering relevant capability areas."}</p>
                     <div style={styles.metaRow}>
-                      <span>{selectedAssessment.duration_minutes || selectedAssessment.time_limit || 180} minutes</span>
-                      <span>{selectedAssessment.question_count || selectedAssessment.total_questions || "100"} questions</span>
+                      <span>180 minutes</span>
+                      <span>100 questions</span>
                       <span>One attempt</span>
-                      <span>{typeName(selectedAssessment)}</span>
+                      <span>{getTypeName(selectedAssessment)}</span>
                     </div>
-                    <p style={styles.helperText}>{selectedInfo.help}</p>
+                    <p style={styles.helperText}>{selectedInfo.helper}</p>
                   </div>
                 </div>
 
                 <div style={styles.actionBlock}>
-                  <span style={{ ...styles.statusBadge, background: selectedInfo.bg, color: selectedInfo.color }}>{selectedInfo.label}</span>
+                  <span style={{ ...styles.statusBadge, background: selectedInfo.badgeBg, color: selectedInfo.badgeColor }}>{selectedInfo.label}</span>
                   <button
                     type="button"
                     onClick={() => startAssessment(selectedAssessment)}
                     disabled={!selectedInfo.canStart}
-                    style={{ ...styles.startButton, background: selectedInfo.canStart ? "#0a1929" : "#cbd5e1", color: selectedInfo.canStart ? "white" : "#475569", cursor: selectedInfo.canStart ? "pointer" : "not-allowed" }}
+                    style={{
+                      ...styles.startButton,
+                      background: selectedInfo.canStart ? "#0a1929" : "#cbd5e1",
+                      color: selectedInfo.canStart ? "white" : "#475569",
+                      cursor: selectedInfo.canStart ? "pointer" : "not-allowed"
+                    }}
                   >
-                    {selectedInfo.button}
+                    {selectedInfo.buttonText}
                   </button>
                 </div>
               </div>
@@ -350,7 +465,12 @@ export default function CandidateDashboard() {
           </>
         )}
       </div>
-      <style jsx>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </AppLayout>
   );
 }
@@ -374,7 +494,7 @@ const styles = {
   progressPill: { background: "rgba(255,255,255,0.18)", color: "white", padding: "16px 24px", borderRadius: "28px", border: "1px solid rgba(255,255,255,0.22)", fontSize: "14px" },
   message: { padding: "14px 18px", borderRadius: "10px", marginBottom: "18px", fontSize: "14px", lineHeight: 1.5 },
   tabsWrap: { display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "28px" },
-  tabButton: { border: "none", borderRadius: "22px", padding: "11px 18px", fontSize: "14px", fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "8px", boxShadow: "0 4px 10px rgba(0,0,0,0.12)" },
+  tabButton: { borderRadius: "22px", padding: "11px 18px", fontSize: "14px", fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "8px", boxShadow: "0 4px 10px rgba(0,0,0,0.12)" },
   tabStatus: { fontSize: "10px", padding: "3px 7px", borderRadius: "12px", fontWeight: 800 },
   assessmentCard: { background: "rgba(255,255,255,0.94)", borderRadius: "20px", padding: "30px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "24px", boxShadow: "0 18px 45px rgba(0,0,0,0.18)", border: "1px solid rgba(255,255,255,0.45)", marginBottom: "28px" },
   assessmentMain: { display: "flex", alignItems: "flex-start", gap: "24px", flex: 1 },
