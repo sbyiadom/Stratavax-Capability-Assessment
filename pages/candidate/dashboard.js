@@ -178,9 +178,12 @@ export default function CandidateDashboard() {
         .select("*, assessment_type:assessment_types(*)")
         .eq("is_active", true);
 
+      // IMPORTANT:
+      // candidate_assessments is for access control only.
+      // Do not query score, max_score, or percentage from this table.
       const accessPromise = supabase
         .from("candidate_assessments")
-        .select("id, assessment_id, status, result_id, score, max_score, percentage, completed_at, unblocked_at, created_at")
+        .select("id, assessment_id, status, result_id, completed_at, unblocked_at, created_at")
         .eq("user_id", userId);
 
       const sessionsPromise = supabase
@@ -256,9 +259,7 @@ export default function CandidateDashboard() {
         const access = accessMap[assessment.id] || null;
         const latestSession = latestSessionMap[assessment.id] || null;
         const result = resultMap[assessment.id] || null;
-        const resultScore = getScorePercentage(result);
-        const accessScore = getScorePercentage(access);
-        const scorePercentage = resultScore !== null ? resultScore : accessScore;
+        const scorePercentage = getScorePercentage(result);
 
         let status = access ? "blocked" : "not_assigned";
         if (result || access?.status === "completed" || latestSession?.status === "completed") status = "completed";
@@ -393,7 +394,7 @@ export default function CandidateDashboard() {
             <p style={styles.welcomeText}>
               {readyCount + inProgressCount > 0
                 ? "You have " + (readyCount + inProgressCount) + " assessment(s) ready or in progress."
-                : "You can view the dashboard. Assessment start is locked until assigned and unblocked."}
+                : "You can view and move through the dashboard. Assessment start is locked until assigned and unblocked."}
             </p>
           </div>
           <div style={styles.progressBadge}>
@@ -505,6 +506,20 @@ export default function CandidateDashboard() {
                   Not Assigned
                 </button>
               </div>
+
+              {selectedAssessmentAreas.length > 0 && (
+                <div style={{ ...styles.areasSection, borderTop: "4px solid " + activeColors.color }}>
+                  <h3 style={styles.areasTitle}>Key Assessment Areas</h3>
+                  <div style={styles.areasGrid}>
+                    {selectedAssessmentAreas.map((area, index) => (
+                      <div key={index} style={styles.areaItem}>
+                        <span style={{ ...styles.areaBullet, color: activeColors.color }}>•</span>
+                        <span style={styles.areaText}>{area}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
