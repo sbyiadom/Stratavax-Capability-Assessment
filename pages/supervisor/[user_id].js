@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 
 // ======================================================
-// SAFE TEXT HELPERS
+// SAFE HELPERS
 // ======================================================
 
 function decodeHtmlEntities(value) {
@@ -18,12 +18,13 @@ function decodeHtmlEntities(value) {
 
   for (i = 0; i < 10; i += 1) {
     previousText = text;
-    text = text.replace(new RegExp("&" + "amp;", "g"), "&");
-    text = text.replace(new RegExp("&" + "lt;", "g"), "<");
-    text = text.replace(new RegExp("&" + "gt;", "g"), ">");
-    text = text.replace(new RegExp("&" + "quot;", "g"), '"');
-    text = text.replace(new RegExp("&" + "#039;", "g"), "'");
-
+    text = text.replace(/&amp;/g, "&");
+    text = text.replace(/&lt;/g, "<");
+    text = text.replace(/&gt;/g, ">");
+    text = text.replace(/&quot;/g, '"');
+    text = text.replace(/&#039;/g, "'");
+    text = text.replace(/&#39;/g, "'");
+    text = text.replace(/&nbsp;/g, " ");
     if (text === previousText) break;
   }
 
@@ -46,11 +47,9 @@ function decodeObjectDeep(value) {
   if (value && typeof value === "object") {
     output = {};
     keys = Object.keys(value);
-
     for (i = 0; i < keys.length; i += 1) {
       output[keys[i]] = decodeObjectDeep(value[keys[i]]);
     }
-
     return output;
   }
 
@@ -78,15 +77,15 @@ function safeNumber(value, fallback) {
   return number;
 }
 
-function formatPercentage(value) {
-  return safeNumber(value, 0) + "%";
-}
-
 function clampPercentage(value) {
   var number = safeNumber(value, 0);
   if (number < 0) return 0;
   if (number > 100) return 100;
   return number;
+}
+
+function formatPercentage(value) {
+  return safeNumber(value, 0) + "%";
 }
 
 // ======================================================
@@ -101,6 +100,16 @@ function getScoreTone(score) {
   if (value >= 55) return "developing";
   if (value >= 40) return "risk";
   return "critical";
+}
+
+function getToneLabel(score) {
+  var tone = getScoreTone(score);
+  if (tone === "excellent") return "Excellent";
+  if (tone === "strong") return "Strong";
+  if (tone === "capable") return "Capable";
+  if (tone === "developing") return "Developing";
+  if (tone === "risk") return "At Risk";
+  return "Critical";
 }
 
 function getToneColor(score) {
@@ -164,14 +173,20 @@ function getAssessmentName(assessment, report) {
   return safeText(a.title || a.name || a.assessment_name || r.assessmentName || r.assessment_name || "Assessment", "Assessment");
 }
 
+function getAssessmentIdFromData(assessment, report, fallback) {
+  var a = safeObject(assessment);
+  var r = safeObject(report);
+  return a.id || a.assessment_id || r.assessmentId || r.assessment_id || fallback || "";
+}
+
 function getOverallScore(report) {
   var r = safeObject(report);
-  return r.percentage || r.overallPercentage || r.overall_score || r.totalPercentage || r.score || 0;
+  return r.percentage || r.overallPercentage || r.overall_score || r.overallScore || r.totalPercentage || r.score || 0;
 }
 
 function getClassification(report) {
   var r = safeObject(report);
-  return safeText(r.classification || r.overallClassification || r.performanceBand || r.label || "Not classified", "Not classified");
+  return safeText(r.classification || r.overallClassification || r.performanceBand || r.performance_band || r.label || "Not classified", "Not classified");
 }
 
 function getRiskLevel(report) {
@@ -181,7 +196,7 @@ function getRiskLevel(report) {
 
 function getResponseCount(report) {
   var r = safeObject(report);
-  return r.responseCount || r.response_count || 0;
+  return r.responseCount || r.response_count || r.totalResponses || r.total_responses || 0;
 }
 
 function getCategoryScores(report) {
@@ -199,19 +214,24 @@ function getStrengths(report) {
   var r = safeObject(report);
   if (Array.isArray(r.strengths)) return r.strengths;
   if (Array.isArray(r.topStrengths)) return r.topStrengths;
+  if (Array.isArray(r.top_strengths)) return r.top_strengths;
   return [];
 }
 
 function getDevelopmentAreas(report) {
   var r = safeObject(report);
   if (Array.isArray(r.developmentAreas)) return r.developmentAreas;
+  if (Array.isArray(r.development_areas)) return r.development_areas;
   if (Array.isArray(r.topDevelopmentNeeds)) return r.topDevelopmentNeeds;
+  if (Array.isArray(r.top_development_needs)) return r.top_development_needs;
   return [];
 }
 
 function getRecommendations(report) {
   var r = safeObject(report);
   if (Array.isArray(r.recommendations)) return r.recommendations;
+  if (Array.isArray(r.actionPlan)) return r.actionPlan;
+  if (Array.isArray(r.action_plan)) return r.action_plan;
   return [];
 }
 
@@ -219,17 +239,19 @@ function getFollowUpQuestions(report) {
   var r = safeObject(report);
   if (Array.isArray(r.followUpQuestions)) return r.followUpQuestions;
   if (Array.isArray(r.follow_up_questions)) return r.follow_up_questions;
+  if (Array.isArray(r.supervisorQuestions)) return r.supervisorQuestions;
+  if (Array.isArray(r.supervisor_questions)) return r.supervisor_questions;
   return [];
 }
 
 function getBehavioralInsights(report) {
   var r = safeObject(report);
-  return r.behavioralInsights || r.behavioralSummary || r.behavioral_summary || null;
+  return r.behavioralInsights || r.behavioral_insights || r.behavioralSummary || r.behavioral_summary || null;
 }
 
 function getRoleReadiness(report) {
   var r = safeObject(report);
-  return safeText(r.roleReadiness || r.role_readiness || r.readinessStatement || r.readiness_statement || "No role readiness statement is available yet.", "No role readiness statement is available yet.");
+  return safeText(r.roleReadiness || r.role_readiness || r.readinessStatement || r.readiness_statement || r.roleReadinessStatement || r.role_readiness_statement || "No role readiness statement is available yet.", "No role readiness statement is available yet.");
 }
 
 function getRowTitle(row) {
@@ -239,17 +261,17 @@ function getRowTitle(row) {
 
 function getRowPercentage(row) {
   var item = safeObject(row);
-  return item.percentage || item.score || item.currentScore || 0;
+  return item.percentage || item.score || item.currentScore || item.current_score || 0;
 }
 
 function getRowNarrative(row) {
   var item = safeObject(row);
-  return safeText(item.narrative || item.supervisorMeaning || item.supervisorImplication || item.comment || item.performanceComment || item.recommendation || item.description, "No interpretation available.");
+  return safeText(item.narrative || item.supervisorMeaning || item.supervisor_meaning || item.supervisorImplication || item.supervisor_implication || item.comment || item.performanceComment || item.performance_comment || item.recommendation || item.description, "No interpretation available.");
 }
 
 function getRowAction(row) {
   var item = safeObject(row);
-  return safeText(item.action || "", "");
+  return safeText(item.action || item.suggestedAction || item.suggested_action || "", "");
 }
 
 function shouldShowBehavioralMetrics(behavioralInsights) {
@@ -278,10 +300,9 @@ function getTabCount(tab, data) {
 function ProgressBar(props) {
   var value = clampPercentage(props.value);
   var color = props.color || getToneColor(value);
-
   return (
     <div style={styles.progressTrack}>
-      <div style={{ width: value + "%", height: "100%", borderRadius: "999px", background: color }} />
+      <div style={{ width: value + "%", height: "100%", borderRadius: "999px", background: color, transition: "width 0.45s ease" }} />
     </div>
   );
 }
@@ -289,9 +310,7 @@ function ProgressBar(props) {
 function MetricCard(props) {
   return (
     <div style={styles.metricCard}>
-      <div style={{ ...styles.metricIcon, background: props.background || "#eef4ff", color: props.color || "#3538cd" }}>
-        {props.icon}
-      </div>
+      <div style={{ ...styles.metricIcon, background: props.background || "#eef4ff", color: props.color || "#3538cd" }}>{props.icon}</div>
       <div>
         <p style={styles.metricCardLabel}>{safeText(props.label, "Metric")}</p>
         <p style={styles.metricCardValue}>{props.value}</p>
@@ -415,9 +434,9 @@ export default function SupervisorUserReportPage() {
         }
 
         cleanData = safeObject(data);
-        loadedCandidate = cleanData.candidate || cleanData.user || cleanData.profile || cleanData.candidateProfile || null;
+        loadedCandidate = cleanData.candidate || cleanData.user || cleanData.profile || cleanData.candidateProfile || cleanData.candidate_profile || null;
         loadedAssessment = cleanData.assessment || null;
-        loadedReport = cleanData.generatedReport || cleanData.report || cleanData.assessmentReport || cleanData.result || cleanData;
+        loadedReport = cleanData.generatedReport || cleanData.generated_report || cleanData.report || cleanData.assessmentReport || cleanData.assessment_report || cleanData.result || cleanData;
 
         setCandidate(decodeObjectDeep(loadedCandidate));
         setAssessment(decodeObjectDeep(loadedAssessment));
@@ -444,15 +463,18 @@ export default function SupervisorUserReportPage() {
   var recommendations = safeArray(decodeObjectDeep(getRecommendations(cleanReport)));
   var followUpQuestions = safeArray(decodeObjectDeep(getFollowUpQuestions(cleanReport)));
   var behavioralInsights = decodeObjectDeep(getBehavioralInsights(cleanReport));
+
   var roleReadiness = getRoleReadiness(cleanReport);
   var candidateName = getCandidateName(candidate, cleanReport);
   var assessmentName = getAssessmentName(assessment, cleanReport);
+  var effectiveAssessmentId = getAssessmentIdFromData(assessment, cleanReport, assessmentId);
   var overallScore = getOverallScore(cleanReport);
   var classification = getClassification(cleanReport);
   var riskLevel = getRiskLevel(cleanReport);
   var responseCount = getResponseCount(cleanReport);
   var scoreColor = getToneColor(overallScore);
   var scoreGradient = getToneGradient(overallScore);
+  var scoreToneLabel = getToneLabel(overallScore);
   var showBehavioralMetrics = shouldShowBehavioralMetrics(behavioralInsights);
 
   var tabs = useMemo(function () {
@@ -491,7 +513,7 @@ export default function SupervisorUserReportPage() {
     var fileName;
     var errorData;
 
-    if (!userId || !assessmentId) {
+    if (!userId || !effectiveAssessmentId) {
       setPdfError("Cannot generate PDF because candidate ID or assessment ID is missing.");
       return;
     }
@@ -503,7 +525,7 @@ export default function SupervisorUserReportPage() {
       response = await fetch("/api/generate-pdf-report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: userId, assessmentId: assessmentId })
+        body: JSON.stringify({ userId: userId, assessmentId: effectiveAssessmentId })
       });
 
       if (!response.ok) {
@@ -513,7 +535,6 @@ export default function SupervisorUserReportPage() {
         } catch (jsonError) {
           errorData = null;
         }
-
         setPdfError(errorData && errorData.message ? errorData.message : errorData && errorData.error ? errorData.error : "PDF generation failed. Please try again.");
         setPdfLoading(false);
         return;
@@ -541,11 +562,10 @@ export default function SupervisorUserReportPage() {
       <React.Fragment>
         <div style={styles.summaryGrid}>
           <SectionShell title="Executive Summary" eyebrow="Overall interpretation" badge="Summary">
-            <p style={styles.bodyText}>{safeText(cleanReport.executiveSummary || cleanReport.summary || cleanReport.overallAssessment || cleanReport.interpretation, "No executive summary is available yet.")}</p>
+            <p style={styles.bodyText}>{safeText(cleanReport.executiveSummary || cleanReport.executive_summary || cleanReport.summary || cleanReport.overallAssessment || cleanReport.overall_assessment || cleanReport.interpretation, "No executive summary is available yet.")}</p>
           </SectionShell>
-
           <SectionShell title="Supervisor Implication" eyebrow="Management meaning" badge="Supervisor">
-            <p style={styles.bodyText}>{safeText(cleanReport.supervisorImplication || cleanReport.supervisor_implication || cleanReport.recommendationSummary, "No supervisor implication is available yet.")}</p>
+            <p style={styles.bodyText}>{safeText(cleanReport.supervisorImplication || cleanReport.supervisor_implication || cleanReport.recommendationSummary || cleanReport.recommendation_summary, "No supervisor implication is available yet.")}</p>
           </SectionShell>
         </div>
 
@@ -557,12 +577,12 @@ export default function SupervisorUserReportPage() {
           <SectionShell title="Behavioral Insights" eyebrow="Response behavior" badge="Behavior">
             {showBehavioralMetrics && (
               <div style={styles.miniMetrics}>
-                <MetricCard label="Average Time" value={safeNumber(behavioralInsights.averageTimePerQuestion, 0) + "s"} icon="⏱" background="#ecfeff" color="#0e7490" />
-                <MetricCard label="Average Changes" value={safeNumber(behavioralInsights.averageChangesPerQuestion, 0)} icon="↺" background="#f5f3ff" color="#6d28d9" />
-                <MetricCard label="Total Changes" value={safeNumber(behavioralInsights.totalChanges, 0)} icon="✦" background="#fff7ed" color="#c2410c" />
+                <MetricCard label="Average Time" value={safeNumber(behavioralInsights.averageTimePerQuestion || behavioralInsights.average_time_per_question, 0) + "s"} icon="⏱" background="#ecfeff" color="#0e7490" />
+                <MetricCard label="Average Changes" value={safeNumber(behavioralInsights.averageChangesPerQuestion || behavioralInsights.average_changes_per_question, 0)} icon="↺" background="#f5f3ff" color="#6d28d9" />
+                <MetricCard label="Total Changes" value={safeNumber(behavioralInsights.totalChanges || behavioralInsights.total_changes, 0)} icon="✦" background="#fff7ed" color="#c2410c" />
               </div>
             )}
-            <p style={styles.bodyText}>{safeText(behavioralInsights.note, "No behavioral timing insight is available.")}</p>
+            <p style={styles.bodyText}>{safeText(behavioralInsights.note || behavioralInsights.summary || behavioralInsights.interpretation || "No behavioral timing insight is available.", "No behavioral timing insight is available.")}</p>
           </SectionShell>
         )}
       </React.Fragment>
@@ -594,7 +614,7 @@ export default function SupervisorUserReportPage() {
                     <div style={{ ...styles.categoryIcon, background: getToneGradient(rowPercentage) }}>{index + 1}</div>
                     <div>
                       <h3 style={styles.categoryTitle}>{rowTitle}</h3>
-                      <p style={styles.categoryMeta}>{safeNumber(row.questionCount, 0)} question(s)</p>
+                      <p style={styles.categoryMeta}>{safeNumber(row.questionCount || row.question_count, 0)} question(s)</p>
                     </div>
                   </div>
                   <div style={styles.categoryRight}>
@@ -603,11 +623,13 @@ export default function SupervisorUserReportPage() {
                     <span style={styles.chevron}>{isOpen ? "−" : "+"}</span>
                   </div>
                 </button>
+
                 <div style={styles.categoryProgressWrap}><ProgressBar value={rowPercentage} color={color} /></div>
+
                 {isOpen && (
                   <div style={styles.categoryDetails}>
                     <div style={styles.detailPills}>
-                      <span style={styles.classificationPill}>{safeText(row.classification || row.label || row.scoreLevel, "Not classified")}</span>
+                      <span style={styles.classificationPill}>{safeText(row.classification || row.label || row.scoreLevel || row.score_level, "Not classified")}</span>
                       <span style={getRiskStyle(row.riskLevel || row.risk_level)}>{safeText(row.riskLevel || row.risk_level, "N/A")}</span>
                     </div>
                     <p style={styles.bodyText}>{rowNarrative}</p>
@@ -623,9 +645,7 @@ export default function SupervisorUserReportPage() {
   }
 
   function renderStrengths() {
-    if (strengths.length === 0) {
-      return <EmptyState title="No strengths available" message="No strengths have been identified for this candidate yet." icon="★" />;
-    }
+    if (strengths.length === 0) return <EmptyState title="No strengths available" message="No strengths have been identified for this candidate yet." icon="★" />;
 
     return (
       <SectionShell title="Top Strengths" eyebrow="Leverage areas" badge={strengths.length}>
@@ -635,10 +655,7 @@ export default function SupervisorUserReportPage() {
             var score = getRowPercentage(row);
             return (
               <article key={index} style={styles.insightCard}>
-                <div style={styles.insightTop}>
-                  <span style={styles.strengthIcon}>★</span>
-                  <strong style={{ ...styles.insightScore, color: getToneColor(score) }}>{formatPercentage(score)}</strong>
-                </div>
+                <div style={styles.insightTop}><span style={styles.strengthIcon}>★</span><strong style={{ ...styles.insightScore, color: getToneColor(score) }}>{formatPercentage(score)}</strong></div>
                 <h3 style={styles.insightTitle}>{getRowTitle(row)}</h3>
                 <ProgressBar value={score} color={getToneColor(score)} />
                 <p style={styles.insightText}>{getRowNarrative(row)}</p>
@@ -651,9 +668,7 @@ export default function SupervisorUserReportPage() {
   }
 
   function renderDevelopment() {
-    if (developmentAreas.length === 0) {
-      return <EmptyState title="No priority development areas detected" message="The candidate scored above the development threshold across all measured areas." icon="✓" />;
-    }
+    if (developmentAreas.length === 0) return <EmptyState title="No priority development areas detected" message="The candidate scored above the development threshold across all measured areas." icon="✓" />;
 
     return (
       <SectionShell title="Development Areas" eyebrow="Priority improvement areas" badge={developmentAreas.length} badgeStyle={styles.badgeWarm}>
@@ -663,10 +678,7 @@ export default function SupervisorUserReportPage() {
             var score = getRowPercentage(row);
             return (
               <article key={index} style={styles.developmentCard}>
-                <div style={styles.insightTop}>
-                  <span style={styles.developmentIcon}>△</span>
-                  <strong style={{ ...styles.insightScore, color: getToneColor(score) }}>{formatPercentage(score)}</strong>
-                </div>
+                <div style={styles.insightTop}><span style={styles.developmentIcon}>△</span><strong style={{ ...styles.insightScore, color: getToneColor(score) }}>{formatPercentage(score)}</strong></div>
                 <h3 style={styles.insightTitle}>{getRowTitle(row)}</h3>
                 <ProgressBar value={score} color={getToneColor(score)} />
                 <p style={styles.insightText}>{getRowNarrative(row)}</p>
@@ -679,9 +691,7 @@ export default function SupervisorUserReportPage() {
   }
 
   function renderQuestions() {
-    if (followUpQuestions.length === 0) {
-      return <EmptyState title="No follow-up questions generated" message="There are no supervisor follow-up questions available for this report." icon="?" />;
-    }
+    if (followUpQuestions.length === 0) return <EmptyState title="No follow-up questions generated" message="There are no supervisor follow-up questions available for this report." icon="?" />;
 
     return (
       <SectionShell title="Supervisor Follow-up Questions" eyebrow="Interview and validation prompts" badge={followUpQuestions.length}>
@@ -690,12 +700,9 @@ export default function SupervisorUserReportPage() {
             var row = safeObject(decodeObjectDeep(item));
             return (
               <article key={index} style={styles.questionCardModern}>
-                <div style={styles.questionHeader}>
-                  <span style={styles.questionNumber}>{index + 1}</span>
-                  <span style={getPriorityStyle(row.priority)}>{safeText(row.priority, "Medium")}</span>
-                </div>
-                <h3 style={styles.insightTitle}>{safeText(row.category, "Follow-up Area")}</h3>
-                <p style={styles.bodyText}>{safeText(row.question, "No question text available.")}</p>
+                <div style={styles.questionHeader}><span style={styles.questionNumber}>{index + 1}</span><span style={getPriorityStyle(row.priority)}>{safeText(row.priority, "Medium")}</span></div>
+                <h3 style={styles.insightTitle}>{safeText(row.category || row.competency || row.area, "Follow-up Area")}</h3>
+                <p style={styles.bodyText}>{safeText(row.question || row.prompt, "No question text available.")}</p>
               </article>
             );
           })}
@@ -705,9 +712,7 @@ export default function SupervisorUserReportPage() {
   }
 
   function renderRecommendations() {
-    if (recommendations.length === 0) {
-      return <EmptyState title="No recommendations generated" message="No recommendations have been generated yet." icon="✓" />;
-    }
+    if (recommendations.length === 0) return <EmptyState title="No recommendations generated" message="No recommendations have been generated yet." icon="✓" />;
 
     return (
       <SectionShell title="Recommendations" eyebrow={developmentAreas.length === 0 ? "Leverage plan" : "Action plan"} badge={recommendations.length}>
@@ -718,14 +723,12 @@ export default function SupervisorUserReportPage() {
               <article key={index} style={styles.recommendationModern}>
                 <div style={styles.timelineDot}>{index + 1}</div>
                 <div style={styles.recommendationContent}>
-                  <div style={styles.recommendationHeader}>
-                    <h3 style={styles.recommendationTitle}>{safeText(row.competency || row.category || row.title, "Recommendation")}</h3>
-                    <span style={getPriorityStyle(row.priority)}>{safeText(row.priority, "Medium")}</span>
-                  </div>
+                  <div style={styles.recommendationHeader}><h3 style={styles.recommendationTitle}>{safeText(row.competency || row.category || row.title, "Recommendation")}</h3><span style={getPriorityStyle(row.priority)}>{safeText(row.priority, "Medium")}</span></div>
                   <p style={styles.bodyText}>{safeText(row.recommendation || row.description, "No recommendation text available.")}</p>
                   {row.action && <p style={styles.actionText}><strong>Action:</strong> {safeText(row.action, "")}</p>}
                   {row.impact && <p style={styles.mutedText}><strong>Impact:</strong> {safeText(row.impact, "")}</p>}
                   {row.followUpQuestion && <p style={styles.mutedText}><strong>Follow-up:</strong> {safeText(row.followUpQuestion, "")}</p>}
+                  {row.follow_up_question && <p style={styles.mutedText}><strong>Follow-up:</strong> {safeText(row.follow_up_question, "")}</p>}
                 </div>
               </article>
             );
@@ -756,7 +759,7 @@ export default function SupervisorUserReportPage() {
               <h1 style={styles.heroTitle}>{candidateName}</h1>
               <p style={styles.heroSubtitle}>Assessment: {safeText(assessmentName, "Assessment")}</p>
               <p style={styles.heroMeta}>Candidate ID: {safeText(userId, "Not available")}</p>
-              <p style={styles.heroMeta}>Assessment ID: {safeText(assessmentId, "Not available")}</p>
+              <p style={styles.heroMeta}>Assessment ID: {safeText(effectiveAssessmentId, "Not available")}</p>
             </div>
 
             <div style={styles.scorePanel}>
@@ -765,12 +768,11 @@ export default function SupervisorUserReportPage() {
               <ProgressBar value={overallScore} color={scoreColor} />
               <div style={styles.scorePanelFooter}>
                 <span style={styles.classificationBadge}>{classification}</span>
+                <span style={styles.classificationBadge}>{scoreToneLabel}</span>
                 <span style={getRiskStyle(riskLevel)}>{riskLevel}</span>
               </div>
               <p style={styles.scorePanelMeta}>Responses: {safeNumber(responseCount, 0)}</p>
-              <button type="button" style={pdfLoading ? styles.buttonDisabled : styles.downloadButton} onClick={downloadPdfReport} disabled={pdfLoading || loading}>
-                {pdfLoading ? "Generating PDF..." : "Download PDF"}
-              </button>
+              <button type="button" style={pdfLoading ? styles.buttonDisabled : styles.downloadButton} onClick={downloadPdfReport} disabled={pdfLoading || loading}>{pdfLoading ? "Generating PDF..." : "Download PDF"}</button>
               {pdfError && <p style={styles.pdfError}>{pdfError}</p>}
             </div>
           </div>
