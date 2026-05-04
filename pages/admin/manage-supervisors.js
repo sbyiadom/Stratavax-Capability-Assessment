@@ -1,200 +1,283 @@
+// pages/admin/manage-supervisors.js
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 
+function cleanEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function cleanName(value) {
+  return String(value || "").trim().replace(/\s+/g, " ");
+}
+
+function formatDate(value) {
+  if (!value) return "N/A";
+  try {
+    return new Date(value).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    });
+  } catch (error) {
+    return "N/A";
+  }
+}
+
+function getInitials(name, email) {
+  const source = cleanName(name) || cleanEmail(email) || "S";
+  return source.charAt(0).toUpperCase();
+}
+
+function getReadableError(error) {
+  if (!error) return "Something went wrong.";
+  const message = String(error.message || error.error || error || "");
+  const lowerMessage = message.toLowerCase();
+
+  if (lowerMessage.includes("already") || lowerMessage.includes("duplicate")) {
+    return "A supervisor account already exists with this email address.";
+  }
+
+  if (lowerMessage.includes("permission") || lowerMessage.includes("forbidden") || lowerMessage.includes("unauthorized")) {
+    return "You do not have permission to perform this action.";
+  }
+
+  if (lowerMessage.includes("password")) {
+    return message || "Password does not meet the required standard.";
+  }
+
+  return message || "Something went wrong.";
+}
+
 export default function ManageSupervisors() {
   const router = useRouter();
   const [supervisors, setSupervisors] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [email, setEmail] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [password, setPassword] = useState('');
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState({ type: "", text: "" });
+  const [formData, setFormData] = useState({
+    fullName: "",
+    email: "",
+    password: "",
+    confirmPassword: ""
+  });
 
-  // Check if current user is admin
   useEffect(() => {
-    const checkAdmin = async () => {
-      if (typeof window !== 'undefined') {
-        const userSession = localStorage.getItem("userSession");
-        
-        if (userSession) {
-          try {
-            const session = JSON.parse(userSession);
-            
-            // Verify admin status from database
-            const { data: profile, error } = await supabase
-              .from('supervisor_profiles')
-              .select('role')
-              .eq('id', session.user_id)
-              .maybeSingle();
+    checkAdminAuth();
+  }, []);
 
-            if (error) {
-              console.error('Error checking admin:', error);
-              router.push('/login');
-              return;
-            }
+  async function checkAdminAuth() {
+    try {
+      setCheckingAuth(true);
+      setMessage({ type: "", text: "" });
 
-            if (profile?.role === 'admin') {
-              setIsAdmin(true);
-              fetchSupervisors();
-            } else {
-              router.push('/supervisor');
-            }
-          } catch (e) {
-            console.error('Auth error:', e);
-            router.push('/login');
-          }
-        } else {
-          router.push('/login');
-        }
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
+
+      const activeSession = data?.session || null;
+
+      if (!activeSession?.user) {
+        if (typeof window !== "undefined") localStorage.removeItem("userSession");
+        router.push("/login");
+        return;
       }
-    };
-    checkAdmin();
-  }, [router]);
 
-  const fetchSupervisors = async () => {
+      const userId = activeSession.user.id;
+      const metadataRole = activeSession.user.user_metadata?.role || null;
+
+      const { data: profile, error: profileError } = await supabase
+        .from("supervisor_profiles")
+        .select("id, email, full_name, role, is_active")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (profileError && profileError.code !== "PGRST116") throw profileError;
+
+      const resolvedRole = profile?.role || metadataRole;
+
+      if (resolvedRole !== "admin") {
+        setMessage({ type: "error", text: "Admin access is required." });
+        router.push("/supervisor");
+        return;
+      }
+
+      if (profile?.is_active === false) {
+        setMessage({ type: "error", text: "This admin account is inactive." });
+        await supabase.auth.signOut();
+        if (typeof window !== "undefined") localStorage.removeItem("userSession");
+        router.push("/login");
+        return;
+      }
+
+      setIsAdmin(true);
+      await fetchSupervisors();
+    } catch (error) {
+      console.error("Admin auth error:", error);
+      setMessage({ type: "error", text: getReadableError(error) });
+      router.push("/login");
+    } finally {
+      setCheckingAuth(false);
+    }
+  }
+
+  async function fetchSupervisors() {
     try {
       setLoading(true);
-      
-      // Fetch supervisors from database (not localStorage)
+
       const { data, error } = await supabase
-        .from('supervisor_profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .from("supervisor_profiles")
+        .select("id, email, full_name, role, is_active, created_at, updated_at")
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
-      
+
       setSupervisors(data || []);
     } catch (error) {
-      console.error('Error fetching supervisors:', error);
-      alert('Failed to load supervisors');
+      console.error("Error fetching supervisors:", error);
+      setMessage({ type: "error", text: getReadableError(error) });
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const handleAddSupervisor = async () => {
-    setError('');
-    setSuccess('');
+  function handleFormChange(event) {
+    const { name, value } = event.target;
+    setFormData((previous) => ({ ...previous, [name]: value }));
+  }
 
-    if (!fullName || !email || !password) {
-      setError('All fields are required');
+  function resetModal() {
+    setShowAddModal(false);
+    setSaving(false);
+    setFormData({ fullName: "", email: "", password: "", confirmPassword: "" });
+  }
+
+  async function handleAddSupervisor(event) {
+    if (event && typeof event.preventDefault === "function") event.preventDefault();
+    setMessage({ type: "", text: "" });
+
+    const fullName = cleanName(formData.fullName);
+    const email = cleanEmail(formData.email);
+    const password = String(formData.password || "");
+    const confirmPassword = String(formData.confirmPassword || "");
+
+    if (!fullName || !email || !password || !confirmPassword) {
+      setMessage({ type: "error", text: "All fields are required." });
       return;
     }
 
     if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+      setMessage({ type: "error", text: "Password must be at least 6 characters." });
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setMessage({ type: "error", text: "Passwords do not match." });
       return;
     }
 
     try {
-      // Check if supervisor already exists
-      const { data: existing } = await supabase
-        .from('supervisor_profiles')
-        .select('email')
-        .eq('email', email)
-        .maybeSingle();
+      setSaving(true);
 
-      if (existing) {
-        setError('Supervisor with this email already exists');
-        return;
-      }
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token || null;
 
-      // Create auth user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-            role: 'supervisor',
-            is_supervisor: true
-          }
-        }
+      const response = await fetch("/api/admin/add-supervisor", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: "Bearer " + accessToken } : {})
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          full_name: fullName,
+          role: "supervisor"
+        })
       });
 
-      if (authError) throw authError;
+      const result = await response.json();
 
-      // Supervisor profile is automatically created by trigger
-      // But we can update it if needed
-      const { error: updateError } = await supabase
-        .from('supervisor_profiles')
-        .update({ 
-          full_name: fullName,
-          role: 'supervisor',
-          is_active: true 
-        })
-        .eq('id', authData.user.id);
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || result?.error || "Failed to add supervisor.");
+      }
 
-      if (updateError) throw updateError;
-
-      setSuccess(`✅ Supervisor added successfully!\n\nEmail: ${email}\nPassword: ${password}\n\nShare these credentials securely.`);
-      
-      // Clear form
-      setEmail('');
-      setFullName('');
-      setPassword('');
-      
-      // Refresh list
-      fetchSupervisors();
-      
-      // Close modal after 3 seconds
-      setTimeout(() => {
-        setShowAddModal(false);
-        setSuccess('');
-      }, 3000);
-
+      setMessage({ type: "success", text: "Supervisor added successfully." });
+      resetModal();
+      await fetchSupervisors();
     } catch (error) {
-      console.error('Error adding supervisor:', error);
-      setError(error.message || 'Error adding supervisor');
+      console.error("Error adding supervisor:", error);
+      setMessage({ type: "error", text: getReadableError(error) });
+    } finally {
+      setSaving(false);
     }
-  };
+  }
 
-  const handleToggleStatus = async (id, currentStatus) => {
+  async function handleToggleStatus(supervisor) {
+    if (!supervisor?.id) return;
+
+    if (supervisor.role === "admin") {
+      setMessage({ type: "error", text: "Admin accounts cannot be deactivated from this page." });
+      return;
+    }
+
     try {
+      setMessage({ type: "", text: "" });
+
       const { error } = await supabase
-        .from('supervisor_profiles')
-        .update({ is_active: !currentStatus })
-        .eq('id', id);
+        .from("supervisor_profiles")
+        .update({
+          is_active: !supervisor.is_active,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", supervisor.id);
 
       if (error) throw error;
-      
-      fetchSupervisors();
-    } catch (error) {
-      console.error('Error updating supervisor:', error);
-      alert('Failed to update supervisor status');
-    }
-  };
 
-  const handleDelete = async (id) => {
-    if (!confirm('Are you sure you want to remove this supervisor? This action cannot be undone.')) return;
+      setMessage({
+        type: "success",
+        text: supervisor.is_active ? "Supervisor deactivated successfully." : "Supervisor activated successfully."
+      });
 
-    try {
-      // Delete from auth.users (cascade will handle supervisor_profiles)
-      const { error } = await supabase.auth.admin.deleteUser(id);
-      
-      if (error) throw error;
-      
-      fetchSupervisors();
+      await fetchSupervisors();
     } catch (error) {
-      console.error('Error deleting supervisor:', error);
-      alert('Failed to delete supervisor');
+      console.error("Error updating supervisor status:", error);
+      setMessage({ type: "error", text: getReadableError(error) });
     }
-  };
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    if (typeof window !== "undefined") localStorage.removeItem("userSession");
+    router.push("/login");
+  }
+
+  if (checkingAuth) {
+    return (
+      <div style={styles.checkingContainer}>
+        <div style={styles.spinner} />
+        <p style={styles.checkingText}>Checking admin access...</p>
+        <style jsx>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    );
+  }
 
   if (!isAdmin) {
     return (
       <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.unauthorized}>
           <h2>Access Denied</h2>
-          <p>You don't have permission to view this page.</p>
-          <button onClick={() => router.push('/supervisor')} style={styles.button}>
-            Go to Dashboard
-          </button>
+          <p>You do not have permission to view this page.</p>
+          <button onClick={() => router.push("/supervisor")} style={styles.button}>Go to Dashboard</button>
         </div>
       </AppLayout>
     );
@@ -206,162 +289,159 @@ export default function ManageSupervisors() {
         <div style={styles.header}>
           <div>
             <h1 style={styles.title}>Manage Supervisors</h1>
-            <p style={styles.subtitle}>View, activate, or remove existing supervisors</p>
+            <p style={styles.subtitle}>View, activate, or deactivate supervisor accounts.</p>
           </div>
-          <button style={styles.addButton} onClick={() => setShowAddModal(true)}>
-            + Add Supervisor
-          </button>
+          <div style={styles.headerActions}>
+            <button style={styles.secondaryButton} onClick={fetchSupervisors}>Refresh</button>
+            <button style={styles.addButton} onClick={() => setShowAddModal(true)}>+ Add Supervisor</button>
+            <button style={styles.logoutButton} onClick={handleLogout}>Sign Out</button>
+          </div>
         </div>
+
+        {message.text && (
+          <div style={{
+            ...styles.message,
+            background: message.type === "success" ? "#e8f5e9" : "#ffebee",
+            color: message.type === "success" ? "#2e7d32" : "#c62828",
+            border: "1px solid " + (message.type === "success" ? "#a5d6a7" : "#ffcdd2")
+          }}>
+            {message.text}
+          </div>
+        )}
 
         {loading ? (
           <div style={styles.loading}>Loading supervisors...</div>
         ) : (
           <div style={styles.tableContainer}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Name</th>
-                  <th style={styles.th}>Email</th>
-                  <th style={styles.th}>Role</th>
-                  <th style={styles.th}>Status</th>
-                  <th style={styles.th}>Added</th>
-                  <th style={styles.th}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {supervisors.length === 0 ? (
+            <div style={styles.tableScroll}>
+              <table style={styles.table}>
+                <thead>
                   <tr>
-                    <td colSpan="6" style={styles.noData}>
-                      No supervisors found. Click "Add Supervisor" to create one.
-                    </td>
+                    <th style={styles.th}>Name</th>
+                    <th style={styles.th}>Email</th>
+                    <th style={styles.th}>Role</th>
+                    <th style={styles.th}>Status</th>
+                    <th style={styles.th}>Added</th>
+                    <th style={styles.th}>Actions</th>
                   </tr>
-                ) : (
-                  supervisors.map(sup => (
-                    <tr key={sup.id}>
-                      <td style={styles.td}>
-                        <div style={styles.supervisorInfo}>
-                          <div style={styles.avatar}>
-                            {sup.full_name?.charAt(0) || 'S'}
+                </thead>
+                <tbody>
+                  {supervisors.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" style={styles.noData}>No supervisors found. Click Add Supervisor to create one.</td>
+                    </tr>
+                  ) : (
+                    supervisors.map((supervisor) => (
+                      <tr key={supervisor.id}>
+                        <td style={styles.td}>
+                          <div style={styles.supervisorInfo}>
+                            <div style={styles.avatar}>{getInitials(supervisor.full_name, supervisor.email)}</div>
+                            <span>{supervisor.full_name || "Unnamed"}</span>
                           </div>
-                          {sup.full_name || 'Unnamed'}
-                        </div>
-                      </td>
-                      <td style={styles.td}>{sup.email}</td>
-                      <td style={styles.td}>
-                        <span style={{
-                          ...styles.roleBadge,
-                          background: sup.role === 'admin' ? '#FFEBEE' : '#E3F2FD',
-                          color: sup.role === 'admin' ? '#C62828' : '#1565C0'
-                        }}>
-                          {sup.role === 'admin' ? 'Administrator' : 'Supervisor'}
-                        </span>
-                      </td>
-                      <td style={styles.td}>
-                        <span style={{
-                          ...styles.statusBadge,
-                          background: sup.is_active ? '#E8F5E9' : '#FFEBEE',
-                          color: sup.is_active ? '#2E7D32' : '#C62828'
-                        }}>
-                          {sup.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td style={styles.td}>
-                        {sup.created_at ? new Date(sup.created_at).toLocaleDateString() : 'N/A'}
-                      </td>
-                      <td style={styles.td}>
-                        <div style={styles.actionGroup}>
+                        </td>
+                        <td style={styles.td}>{supervisor.email || "N/A"}</td>
+                        <td style={styles.td}>
+                          <span style={{
+                            ...styles.roleBadge,
+                            background: supervisor.role === "admin" ? "#ffebee" : "#e3f2fd",
+                            color: supervisor.role === "admin" ? "#c62828" : "#1565c0"
+                          }}>
+                            {supervisor.role === "admin" ? "Administrator" : "Supervisor"}
+                          </span>
+                        </td>
+                        <td style={styles.td}>
+                          <span style={{
+                            ...styles.statusBadge,
+                            background: supervisor.is_active ? "#e8f5e9" : "#ffebee",
+                            color: supervisor.is_active ? "#2e7d32" : "#c62828"
+                          }}>
+                            {supervisor.is_active ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                        <td style={styles.td}>{formatDate(supervisor.created_at)}</td>
+                        <td style={styles.td}>
                           <button
                             style={{
                               ...styles.actionButton,
-                              background: sup.is_active ? '#ff9800' : '#4CAF50'
+                              background: supervisor.is_active ? "#ff9800" : "#4caf50",
+                              opacity: supervisor.role === "admin" ? 0.5 : 1,
+                              cursor: supervisor.role === "admin" ? "not-allowed" : "pointer"
                             }}
-                            onClick={() => handleToggleStatus(sup.id, sup.is_active)}
+                            disabled={supervisor.role === "admin"}
+                            onClick={() => handleToggleStatus(supervisor)}
                           >
-                            {sup.is_active ? 'Deactivate' : 'Activate'}
+                            {supervisor.is_active ? "Deactivate" : "Activate"}
                           </button>
-                          <button
-                            style={{...styles.actionButton, background: '#f44336'}}
-                            onClick={() => handleDelete(sup.id)}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
-        {/* Add Supervisor Modal */}
         {showAddModal && (
           <div style={styles.modalOverlay}>
             <div style={styles.modal}>
               <h2 style={styles.modalTitle}>Add New Supervisor</h2>
-              
-              {error && (
-                <div style={styles.errorMessage}>
-                  ⚠️ {error}
+              <form onSubmit={handleAddSupervisor}>
+                <input
+                  type="text"
+                  name="fullName"
+                  placeholder="Full Name"
+                  value={formData.fullName}
+                  onChange={handleFormChange}
+                  style={styles.input}
+                  required
+                />
+                <input
+                  type="email"
+                  name="email"
+                  placeholder="Email"
+                  value={formData.email}
+                  onChange={handleFormChange}
+                  style={styles.input}
+                  required
+                />
+                <input
+                  type="password"
+                  name="password"
+                  placeholder="Temporary Password"
+                  value={formData.password}
+                  onChange={handleFormChange}
+                  style={styles.input}
+                  minLength={6}
+                  required
+                />
+                <input
+                  type="password"
+                  name="confirmPassword"
+                  placeholder="Confirm Temporary Password"
+                  value={formData.confirmPassword}
+                  onChange={handleFormChange}
+                  style={styles.input}
+                  minLength={6}
+                  required
+                />
+
+                <div style={styles.modalInfo}>
+                  <p style={styles.infoText}>Supervisor access details:</p>
+                  <ul style={styles.infoList}>
+                    <li>Login at <code>/login</code> and select Supervisor mode.</li>
+                    <li>Dashboard URL: <code>/supervisor</code></li>
+                    <li>Supervisors should change temporary passwords after first login.</li>
+                  </ul>
                 </div>
-              )}
 
-              {success && (
-                <div style={styles.successMessage}>
-                  ✅ {success}
+                <div style={styles.modalActions}>
+                  <button type="button" style={styles.cancelButton} onClick={resetModal}>Cancel</button>
+                  <button type="submit" disabled={saving} style={{ ...styles.saveButton, opacity: saving ? 0.7 : 1, cursor: saving ? "not-allowed" : "pointer" }}>
+                    {saving ? "Adding..." : "Add Supervisor"}
+                  </button>
                 </div>
-              )}
-
-              <input
-                type="text"
-                placeholder="Full Name *"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                style={styles.input}
-              />
-              <input
-                type="email"
-                placeholder="Email *"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                style={styles.input}
-              />
-              <input
-                type="password"
-                placeholder="Password * (min 6 characters)"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                style={styles.input}
-                minLength="6"
-              />
-              
-              <div style={styles.modalInfo}>
-                <p style={styles.infoText}>
-                  📋 New supervisors will:
-                </p>
-                <ul style={styles.infoList}>
-                  <li>Login at <code>/login</code> (Supervisor mode)</li>
-                  <li>Access dashboard at <code>/supervisor</code></li>
-                  <li>See only candidates assigned to them</li>
-                </ul>
-              </div>
-
-              <div style={styles.modalActions}>
-                <button style={styles.cancelButton} onClick={() => {
-                  setShowAddModal(false);
-                  setError('');
-                  setSuccess('');
-                  setEmail('');
-                  setFullName('');
-                  setPassword('');
-                }}>
-                  Cancel
-                </button>
-                <button style={styles.saveButton} onClick={handleAddSupervisor}>
-                  Add Supervisor
-                </button>
-              </div>
+              </form>
             </div>
           </div>
         )}
@@ -378,268 +458,58 @@ export default function ManageSupervisors() {
 }
 
 const styles = {
-  container: {
-    maxWidth: '1200px',
-    margin: '0 auto',
-    padding: '40px 20px'
+  checkingContainer: {
+    minHeight: "100vh",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "linear-gradient(135deg, #0a1929 0%, #1a2a3a 100%)",
+    color: "white",
+    padding: "20px",
+    textAlign: "center"
   },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '30px',
-    background: 'white',
-    padding: '20px 30px',
-    borderRadius: '16px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+  spinner: {
+    width: "42px",
+    height: "42px",
+    border: "4px solid rgba(255,255,255,0.3)",
+    borderTop: "4px solid white",
+    borderRadius: "50%",
+    animation: "spin 1s linear infinite",
+    marginBottom: "18px"
   },
-  title: {
-    fontSize: '24px',
-    fontWeight: 600,
-    color: '#0A1929',
-    margin: '0 0 5px 0'
-  },
-  subtitle: {
-    fontSize: '14px',
-    color: '#666',
-    margin: 0
-  },
-  addButton: {
-    padding: '12px 24px',
-    background: '#0A1929',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#1A2A3A',
-      transform: 'translateY(-1px)',
-      boxShadow: '0 4px 12px rgba(10,25,41,0.3)'
-    }
-  },
-  tableContainer: {
-    background: 'white',
-    borderRadius: '16px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    overflow: 'hidden'
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '14px'
-  },
-  th: {
-    textAlign: 'left',
-    padding: '15px 20px',
-    background: '#F8FAFC',
-    borderBottom: '2px solid #0A1929',
-    fontWeight: 600,
-    color: '#0A1929'
-  },
-  td: {
-    padding: '15px 20px',
-    borderBottom: '1px solid #E2E8F0',
-    color: '#2D3748'
-  },
-  noData: {
-    padding: '40px',
-    textAlign: 'center',
-    color: '#718096',
-    fontStyle: 'italic'
-  },
-  supervisorInfo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px'
-  },
-  avatar: {
-    width: '32px',
-    height: '32px',
-    borderRadius: '16px',
-    background: '#0A1929',
-    color: 'white',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '14px',
-    fontWeight: 600
-  },
-  roleBadge: {
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '12px',
-    fontWeight: 600,
-    display: 'inline-block'
-  },
-  statusBadge: {
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '12px',
-    fontWeight: 600,
-    display: 'inline-block'
-  },
-  actionGroup: {
-    display: 'flex',
-    gap: '8px'
-  },
-  actionButton: {
-    padding: '6px 12px',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '12px',
-    fontWeight: 500,
-    color: 'white',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      opacity: 0.9,
-      transform: 'translateY(-1px)'
-    }
-  },
-  loading: {
-    textAlign: 'center',
-    padding: '60px',
-    color: '#666',
-    background: 'white',
-    borderRadius: '16px'
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-    backdropFilter: 'blur(5px)'
-  },
-  modal: {
-    background: 'white',
-    padding: '30px',
-    borderRadius: '16px',
-    width: '450px',
-    maxWidth: '90%',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
-  },
-  modalTitle: {
-    fontSize: '20px',
-    fontWeight: 600,
-    marginBottom: '20px',
-    color: '#0A1929'
-  },
-  errorMessage: {
-    padding: '12px',
-    background: '#FFEBEE',
-    color: '#C62828',
-    borderRadius: '8px',
-    marginBottom: '20px',
-    fontSize: '14px'
-  },
-  successMessage: {
-    padding: '12px',
-    background: '#E8F5E9',
-    color: '#2E7D32',
-    borderRadius: '8px',
-    marginBottom: '20px',
-    fontSize: '14px',
-    whiteSpace: 'pre-line'
-  },
-  input: {
-    width: '100%',
-    padding: '12px',
-    marginBottom: '15px',
-    border: '2px solid #E2E8F0',
-    borderRadius: '8px',
-    fontSize: '14px',
-    boxSizing: 'border-box',
-    transition: 'all 0.2s ease',
-    outline: 'none',
-    ':focus': {
-      borderColor: '#0A1929'
-    }
-  },
-  modalInfo: {
-    background: '#F8FAFC',
-    padding: '15px',
-    borderRadius: '8px',
-    margin: '20px 0'
-  },
-  infoText: {
-    margin: '0 0 10px 0',
-    fontWeight: 600,
-    color: '#0A1929'
-  },
-  infoList: {
-    margin: 0,
-    paddingLeft: '20px',
-    color: '#4A5568',
-    fontSize: '13px',
-    lineHeight: 1.6
-  },
-  modalActions: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '10px',
-    marginTop: '20px'
-  },
-  cancelButton: {
-    padding: '10px 20px',
-    background: '#E2E8F0',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 500,
-    color: '#2D3748',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#CBD5E0'
-    }
-  },
-  saveButton: {
-    padding: '10px 20px',
-    background: '#0A1929',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 600,
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#1A2A3A',
-      transform: 'translateY(-1px)',
-      boxShadow: '0 4px 12px rgba(10,25,41,0.3)'
-    }
-  },
-  unauthorized: {
-    textAlign: 'center',
-    padding: '60px',
-    color: '#666',
-    background: 'white',
-    borderRadius: '16px',
-    maxWidth: '400px',
-    margin: '100px auto'
-  },
-  button: {
-    padding: '10px 20px',
-    background: '#0A1929',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 500,
-    marginTop: '20px',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#1A2A3A'
-    }
-  }
+  checkingText: { margin: 0, color: "rgba(255,255,255,0.9)", fontSize: "14px" },
+  container: { maxWidth: "1200px", margin: "0 auto", padding: "40px 20px" },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "24px", background: "white", padding: "22px 30px", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", flexWrap: "wrap" },
+  title: { fontSize: "24px", fontWeight: 800, color: "#0a1929", margin: "0 0 5px" },
+  subtitle: { fontSize: "14px", color: "#667085", margin: 0 },
+  headerActions: { display: "flex", gap: "10px", flexWrap: "wrap" },
+  addButton: { padding: "12px 20px", background: "#0a1929", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 700, cursor: "pointer" },
+  secondaryButton: { padding: "12px 20px", background: "#1565c0", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 700, cursor: "pointer" },
+  logoutButton: { padding: "12px 20px", background: "#d32f2f", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 700, cursor: "pointer" },
+  message: { padding: "14px", borderRadius: "10px", marginBottom: "20px", fontSize: "14px", lineHeight: 1.5 },
+  tableContainer: { background: "white", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", overflow: "hidden" },
+  tableScroll: { overflowX: "auto" },
+  table: { width: "100%", borderCollapse: "collapse", fontSize: "14px", minWidth: "780px" },
+  th: { textAlign: "left", padding: "15px 20px", background: "#f8fafc", borderBottom: "2px solid #0a1929", fontWeight: 800, color: "#0a1929" },
+  td: { padding: "15px 20px", borderBottom: "1px solid #e2e8f0", color: "#2d3748" },
+  noData: { padding: "40px", textAlign: "center", color: "#718096", fontStyle: "italic" },
+  supervisorInfo: { display: "flex", alignItems: "center", gap: "10px" },
+  avatar: { width: "32px", height: "32px", borderRadius: "16px", background: "#0a1929", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: 800 },
+  roleBadge: { padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: 800, display: "inline-block" },
+  statusBadge: { padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: 800, display: "inline-block" },
+  actionButton: { padding: "7px 12px", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: 700, color: "white" },
+  loading: { textAlign: "center", padding: "60px", color: "#667085", background: "white", borderRadius: "16px" },
+  modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(5px)", padding: "20px" },
+  modal: { background: "white", padding: "30px", borderRadius: "16px", width: "460px", maxWidth: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" },
+  modalTitle: { fontSize: "20px", fontWeight: 800, margin: "0 0 20px", color: "#0a1929" },
+  input: { width: "100%", padding: "12px", marginBottom: "14px", border: "2px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", boxSizing: "border-box", outline: "none" },
+  modalInfo: { background: "#f8fafc", padding: "15px", borderRadius: "8px", margin: "18px 0", border: "1px solid #e2e8f0" },
+  infoText: { margin: "0 0 10px", fontWeight: 800, color: "#0a1929" },
+  infoList: { margin: 0, paddingLeft: "20px", color: "#4a5568", fontSize: "13px", lineHeight: 1.6 },
+  modalActions: { display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "20px" },
+  cancelButton: { padding: "10px 20px", background: "#e2e8f0", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700, color: "#2d3748" },
+  saveButton: { padding: "10px 20px", background: "#0a1929", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 800 },
+  unauthorized: { textAlign: "center", padding: "60px", color: "#667085", background: "white", borderRadius: "16px", maxWidth: "400px", margin: "100px auto" },
+  button: { padding: "10px 20px", background: "#0a1929", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700, marginTop: "20px" }
 };
