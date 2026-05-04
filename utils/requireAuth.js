@@ -1,98 +1,177 @@
-import { supabase } from "../supabase/client";
-import { useRouter } from "next/router";
+// utils/requireAuth.js
+
 import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
+import { supabase } from "../supabase/client";
+
+function getSafeRole(session) {
+  return session?.user?.user_metadata?.role || null;
+}
+
+function getSafeName(session) {
+  return session?.user?.user_metadata?.full_name || session?.user?.email?.split("@")[0] || "User";
+}
+
+function buildLocalSession(session, roleOverride) {
+  const role = roleOverride || getSafeRole(session) || "candidate";
+
+  return {
+    loggedIn: true,
+    user_id: session.user.id,
+    email: session.user.email,
+    full_name: getSafeName(session),
+    role,
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+    timestamp: Date.now()
+  };
+}
+
+function safeWriteLocalSession(session, roleOverride) {
+  if (typeof window === "undefined" || !session?.user) return;
+
+  try {
+    localStorage.setItem("userSession", JSON.stringify(buildLocalSession(session, roleOverride)));
+  } catch (error) {
+    console.error("Unable to write local session:", error);
+  }
+}
+
+function safeClearLocalSession() {
+  if (typeof window === "undefined") return;
+
+  try {
+    localStorage.removeItem("userSession");
+  } catch (error) {
+    console.error("Unable to clear local session:", error);
+  }
+}
+
+function getRouteAccess(pathname) {
+  const path = pathname || "";
+
+  return {
+    isCandidateRoute: path.startsWith("/candidate"),
+    isSupervisorRoute: path.startsWith("/supervisor"),
+    isAdminRoute: path.startsWith("/admin"),
+    isAssessmentRoute: path.startsWith("/assessment")
+  };
+}
+
+function getRedirectForRole(role, pathname) {
+  const access = getRouteAccess(pathname);
+
+  if (!role) return null;
+
+  if (role === "candidate") {
+    if (access.isSupervisorRoute || access.isAdminRoute) return "/candidate/dashboard";
+    return null;
+  }
+
+  if (role === "supervisor") {
+    if (access.isCandidateRoute || access.isAdminRoute) return "/supervisor";
+    return null;
+  }
+
+  if (role === "admin") {
+    if (access.isCandidateRoute) return "/admin";
+    return null;
+  }
+
+  return null;
+}
 
 export function useRequireAuth() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
-  const router = useRouter();
+  const [role, setRole] = useState(null);
 
   useEffect(() => {
-    const checkSession = async () => {
+    let mounted = true;
+
+    async function checkSession() {
       try {
-        const { data } = await supabase.auth.getSession();
-        
-        if (!data.session) {
-          // No Supabase session, clear localStorage and redirect
-          localStorage.removeItem("userSession");
+        setLoading(true);
+
+        const { data, error } = await supabase.auth.getSession();
+
+        if (error) {
+          console.error("Auth session error:", error);
+        }
+
+        const activeSession = data?.session || null;
+
+        if (!activeSession) {
+          safeClearLocalSession();
+          if (mounted) {
+            setSession(null);
+            setRole(null);
+            setLoading(false);
+          }
           router.replace("/login");
           return;
         }
 
-        // Get user role from user metadata
-        const userRole = data.session.user?.user_metadata?.role;
-        
-        // Also check localStorage for role consistency
-        const localSession = localStorage.getItem("userSession");
-        if (localSession) {
-          const parsed = JSON.parse(localSession);
-          
-          // If roles don't match, update localStorage
-          if (parsed.role !== userRole) {
-            localStorage.setItem("userSession", JSON.stringify({
-              loggedIn: true,
-              user_id: data.session.user.id,
-              email: data.session.user.email,
-              full_name: data.session.user.user_metadata?.full_name || data.session.user.email?.split('@')[0],
-              role: userRole,
-              access_token: data.session.access_token,
-              refresh_token: data.session.refresh_token,
-              timestamp: Date.now()
-            }));
-          }
+        const userRole = getSafeRole(activeSession) || "candidate";
+        const redirectTo = getRedirectForRole(userRole, router.pathname);
+
+        safeWriteLocalSession(activeSession, userRole);
+
+        if (mounted) {
+          setSession(activeSession);
+          setRole(userRole);
+          setLoading(false);
         }
 
-        // Check if current route matches user role
-        const path = router.pathname;
-        const isCandidateRoute = path.startsWith('/candidate');
-        const isSupervisorRoute = path.startsWith('/supervisor') || path.startsWith('/admin');
-        
-        if (userRole === 'candidate' && isSupervisorRoute) {
-          router.replace('/candidate/dashboard');
-          return;
+        if (redirectTo && router.pathname !== redirectTo) {
+          router.replace(redirectTo);
         }
-        
-        if ((userRole === 'supervisor' || userRole === 'admin') && isCandidateRoute) {
-          router.replace('/supervisor');
-          return;
-        }
-
-        setSession(data.session);
-        setLoading(false);
-        
       } catch (error) {
         console.error("Auth check error:", error);
+        safeClearLocalSession();
+        if (mounted) {
+          setSession(null);
+          setRole(null);
+          setLoading(false);
+        }
         router.replace("/login");
       }
-    };
+    }
 
     checkSession();
 
-    // Listen for auth changes
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') {
-        localStorage.removeItem("userSession");
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (!mounted) return;
+
+      if (event === "SIGNED_OUT") {
+        safeClearLocalSession();
+        setSession(null);
+        setRole(null);
+        setLoading(false);
         router.replace("/login");
-      } else if (event === 'SIGNED_IN' && session) {
-        // Update localStorage with new session
-        const userRole = session.user?.user_metadata?.role;
-        localStorage.setItem("userSession", JSON.stringify({
-          loggedIn: true,
-          user_id: session.user.id,
-          email: session.user.email,
-          full_name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0],
-          role: userRole,
-          access_token: session.access_token,
-          refresh_token: session.refresh_token,
-          timestamp: Date.now()
-        }));
+        return;
+      }
+
+      if ((event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") && nextSession) {
+        const nextRole = getSafeRole(nextSession) || "candidate";
+        safeWriteLocalSession(nextSession, nextRole);
+        setSession(nextSession);
+        setRole(nextRole);
+        setLoading(false);
+
+        const redirectTo = getRedirectForRole(nextRole, router.pathname);
+        if (redirectTo && router.pathname !== redirectTo) {
+          router.replace(redirectTo);
+        }
       }
     });
 
     return () => {
-      authListener?.subscription.unsubscribe();
+      mounted = false;
+      if (authListener?.subscription) authListener.subscription.unsubscribe();
     };
-  }, [router]);
+  }, [router.pathname]);
 
-  return { session, loading };
+  return { session, loading, role };
 }
