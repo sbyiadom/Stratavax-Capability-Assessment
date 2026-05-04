@@ -1,202 +1,475 @@
-import { createClient } from '@supabase/supabase-js';
+// pages/api/supervisor/unblock-assessment.js
+
+import { createClient } from "@supabase/supabase-js";
+
+/*
+  SUPERVISOR UNBLOCK ASSESSMENT API
+
+  Replace this file:
+  pages/api/supervisor/unblock-assessment.js
+
+  Purpose:
+  - Unblock an assessment without deleting candidate responses.
+  - Preserve existing progress and in-progress sessions.
+  - Extend time or reset time where requested.
+  - Create a safe in-progress session only when needed.
+  - Record audit information where the audit table exists.
+*/
+
+// ======================================================
+// BASIC HELPERS
+// ======================================================
+
+function toNumber(value, fallback) {
+  var fallbackValue = fallback === undefined ? 0 : fallback;
+  var numberValue = Number(value);
+  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) return fallbackValue;
+  return numberValue;
+}
+
+function cleanText(value, fallback) {
+  if (value === null || value === undefined || value === "") return fallback || "";
+  return String(value);
+}
+
+function getNowIso() {
+  return new Date().toISOString();
+}
+
+function addMinutesToDate(dateValue, minutes) {
+  var baseDate = dateValue ? new Date(dateValue) : new Date();
+  var safeMinutes = toNumber(minutes, 0);
+
+  if (Number.isNaN(baseDate.getTime())) baseDate = new Date();
+
+  baseDate.setMinutes(baseDate.getMinutes() + safeMinutes);
+  return baseDate;
+}
+
+function getSupabaseClient() {
+  var supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  var supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error("Supabase environment variables are missing.");
+  }
+
+  return createClient(supabaseUrl, supabaseKey);
+}
+
+async function safeSelectSingle(supabase, tableName, configureQuery, selectText) {
+  var query;
+  var result;
+
+  try {
+    query = supabase.from(tableName).select(selectText || "*");
+    if (typeof configureQuery === "function") query = configureQuery(query);
+    result = await query.maybeSingle();
+
+    if (result.error) return { data: null, error: result.error.message };
+    return { data: result.data || null, error: null };
+  } catch (error) {
+    return { data: null, error: error && error.message ? error.message : "Query failed" };
+  }
+}
+
+async function safeSelectRows(supabase, tableName, configureQuery, selectText) {
+  var query;
+  var result;
+
+  try {
+    query = supabase.from(tableName).select(selectText || "*");
+    if (typeof configureQuery === "function") query = configureQuery(query);
+    result = await query;
+
+    if (result.error) return { data: [], error: result.error.message };
+    return { data: Array.isArray(result.data) ? result.data : [], error: null };
+  } catch (error) {
+    return { data: [], error: error && error.message ? error.message : "Query failed" };
+  }
+}
+
+async function safeUpdate(supabase, tableName, values, configureQuery) {
+  var query;
+  var result;
+
+  try {
+    query = supabase.from(tableName).update(values);
+    if (typeof configureQuery === "function") query = configureQuery(query);
+    result = await query;
+
+    if (result.error) return { success: false, error: result.error.message };
+    return { success: true, error: null };
+  } catch (error) {
+    return { success: false, error: error && error.message ? error.message : "Update failed" };
+  }
+}
+
+async function safeInsert(supabase, tableName, values) {
+  var result;
+
+  try {
+    result = await supabase.from(tableName).insert(values);
+    if (result.error) return { success: false, error: result.error.message };
+    return { success: true, error: null };
+  } catch (error) {
+    return { success: false, error: error && error.message ? error.message : "Insert failed" };
+  }
+}
+
+// ======================================================
+// DOMAIN HELPERS
+// ======================================================
+
+async function getCandidateAssessment(supabase, userId, assessmentId) {
+  return safeSelectSingle(
+    supabase,
+    "candidate_assessments",
+    function (query) {
+      return query.eq("user_id", userId).eq("assessment_id", assessmentId);
+    },
+    "id, user_id, assessment_id, status, result_id, created_at, unblocked_at"
+  );
+}
+
+async function getLatestSession(supabase, userId, assessmentId) {
+  var rows = await safeSelectRows(
+    supabase,
+    "assessment_sessions",
+    function (query) {
+      return query.eq("user_id", userId).eq("assessment_id", assessmentId).order("created_at", { ascending: false }).limit(1);
+    },
+    "id, user_id, assessment_id, status, time_spent_seconds, started_at, created_at, updated_at, expires_at"
+  );
+
+  if (rows.data.length > 0) return { data: rows.data[0], error: null };
+  return { data: null, error: rows.error };
+}
+
+async function getExistingProgress(supabase, userId, assessmentId) {
+  var responseRows;
+  var progressRows;
+
+  responseRows = await safeSelectRows(
+    supabase,
+    "responses",
+    function (query) {
+      return query.eq("user_id", userId).eq("assessment_id", assessmentId).limit(1);
+    },
+    "id"
+  );
+
+  progressRows = await safeSelectRows(
+    supabase,
+    "assessment_progress",
+    function (query) {
+      return query.eq("user_id", userId).eq("assessment_id", assessmentId).limit(1);
+    },
+    "id"
+  );
+
+  return {
+    hasResponses: responseRows.data.length > 0,
+    hasProgressRecord: progressRows.data.length > 0,
+    hasExistingProgress: responseRows.data.length > 0 || progressRows.data.length > 0
+  };
+}
+
+async function updateOrCreateCandidateAssessment(supabase, userId, assessmentId) {
+  var existing;
+  var nowIso = getNowIso();
+  var updateResult;
+  var insertResult;
+
+  existing = await getCandidateAssessment(supabase, userId, assessmentId);
+
+  if (existing.data) {
+    updateResult = await safeUpdate(
+      supabase,
+      "candidate_assessments",
+      {
+        status: "unblocked",
+        unblocked_at: nowIso,
+        updated_at: nowIso
+      },
+      function (query) {
+        return query.eq("user_id", userId).eq("assessment_id", assessmentId);
+      }
+    );
+
+    if (!updateResult.success) throw new Error("Failed to update candidate assessment: " + updateResult.error);
+    return { action: "updated", previousStatus: existing.data.status };
+  }
+
+  insertResult = await safeInsert(supabase, "candidate_assessments", {
+    user_id: userId,
+    assessment_id: assessmentId,
+    status: "unblocked",
+    unblocked_at: nowIso,
+    created_at: nowIso,
+    updated_at: nowIso
+  });
+
+  if (!insertResult.success) throw new Error("Failed to create candidate assessment: " + insertResult.error);
+  return { action: "created", previousStatus: null };
+}
+
+async function updateOrCreateSession(supabase, userId, assessmentId, existingSession, extendMinutes, resetTime) {
+  var now = new Date();
+  var nowIso = now.toISOString();
+  var extensionMinutes = toNumber(extendMinutes, 0);
+  var shouldCreateOrUpdateSession = resetTime || extensionMinutes > 0;
+  var expiresAt = null;
+  var timeExtensionApplied = 0;
+  var updateResult;
+  var insertResult;
+  var baseExpiry;
+
+  if (!shouldCreateOrUpdateSession) {
+    if (existingSession) {
+      return {
+        sessionAction: "preserved",
+        expiresAt: existingSession.expires_at || null,
+        timeExtensionApplied: 0
+      };
+    }
+
+    return {
+      sessionAction: "none",
+      expiresAt: null,
+      timeExtensionApplied: 0
+    };
+  }
+
+  if (resetTime) {
+    expiresAt = addMinutesToDate(now, 180);
+    timeExtensionApplied = 180;
+  } else if (extensionMinutes > 0) {
+    if (existingSession && existingSession.expires_at) {
+      baseExpiry = new Date(existingSession.expires_at);
+      if (Number.isNaN(baseExpiry.getTime()) || baseExpiry.getTime() < now.getTime()) baseExpiry = now;
+      expiresAt = addMinutesToDate(baseExpiry, extensionMinutes);
+    } else {
+      expiresAt = addMinutesToDate(now, extensionMinutes);
+    }
+    timeExtensionApplied = extensionMinutes;
+  }
+
+  if (!expiresAt) {
+    return {
+      sessionAction: existingSession ? "preserved" : "none",
+      expiresAt: existingSession ? existingSession.expires_at : null,
+      timeExtensionApplied: 0
+    };
+  }
+
+  if (existingSession) {
+    updateResult = await safeUpdate(
+      supabase,
+      "assessment_sessions",
+      {
+        status: "in_progress",
+        expires_at: expiresAt.toISOString(),
+        updated_at: nowIso
+      },
+      function (query) {
+        return query.eq("id", existingSession.id);
+      }
+    );
+
+    if (!updateResult.success) {
+      return {
+        sessionAction: "update_failed",
+        expiresAt: existingSession.expires_at || null,
+        timeExtensionApplied: 0,
+        warning: updateResult.error
+      };
+    }
+
+    return {
+      sessionAction: "updated",
+      expiresAt: expiresAt.toISOString(),
+      timeExtensionApplied: timeExtensionApplied
+    };
+  }
+
+  insertResult = await safeInsert(supabase, "assessment_sessions", {
+    user_id: userId,
+    assessment_id: assessmentId,
+    status: "in_progress",
+    started_at: nowIso,
+    expires_at: expiresAt.toISOString(),
+    time_spent_seconds: 0,
+    created_at: nowIso,
+    updated_at: nowIso
+  });
+
+  if (!insertResult.success) {
+    return {
+      sessionAction: "create_failed",
+      expiresAt: null,
+      timeExtensionApplied: 0,
+      warning: insertResult.error
+    };
+  }
+
+  return {
+    sessionAction: "created",
+    expiresAt: expiresAt.toISOString(),
+    timeExtensionApplied: timeExtensionApplied
+  };
+}
+
+async function writeAuditLog(supabase, payload) {
+  var insertResult;
+
+  insertResult = await safeInsert(supabase, "assessment_audit_logs", payload);
+
+  if (!insertResult.success) {
+    return { success: false, warning: insertResult.error };
+  }
+
+  return { success: true, warning: null };
+}
+
+async function getFinalSession(supabase, userId, assessmentId) {
+  var latest = await getLatestSession(supabase, userId, assessmentId);
+  return latest.data;
+}
+
+function buildMessage(hasExistingProgress, timeExtensionApplied, resetTime) {
+  var message;
+
+  if (hasExistingProgress) {
+    message = "Assessment unblocked. Candidate can continue from where they left off.";
+  } else {
+    message = "Assessment unblocked. Candidate can start a new session.";
+  }
+
+  if (resetTime) {
+    message += " Time reset to full duration.";
+  } else if (timeExtensionApplied > 0) {
+    message += " Time extended by " + timeExtensionApplied + " minutes.";
+  }
+
+  return message;
+}
+
+// ======================================================
+// API HANDLER
+// ======================================================
 
 export default async function handler(req, res) {
+  var body;
+  var userId;
+  var assessmentId;
+  var extendMinutes;
+  var resetTime;
+  var performedBy;
+  var supabase;
+  var latestSessionResult;
+  var existingSession;
+  var progressInfo;
+  var candidateAssessmentAction;
+  var sessionAction;
+  var finalSession;
+  var auditResult;
+  var warnings = [];
+  var auditPayload;
+
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({ success: false, error: "Method not allowed" });
   }
 
   try {
-    const { userId, assessmentId, extendMinutes, resetTime = false } = req.body;
+    body = req.body || {};
+    userId = cleanText(body.userId || body.user_id, "");
+    assessmentId = cleanText(body.assessmentId || body.assessment_id, "");
+    extendMinutes = toNumber(body.extendMinutes || body.extend_minutes, 0);
+    resetTime = body.resetTime === true || body.reset_time === true;
+    performedBy = cleanText(body.performed_by || body.performedBy || req.headers["x-user-id"], "system");
 
     if (!userId || !assessmentId) {
-      return res.status(400).json({ error: "Missing required fields" });
+      return res.status(400).json({ success: false, error: "Missing required fields: userId and assessmentId are required." });
     }
 
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (extendMinutes < 0) extendMinutes = 0;
+    if (extendMinutes > 480) extendMinutes = 480;
+
+    supabase = getSupabaseClient();
+
+    latestSessionResult = await getLatestSession(supabase, userId, assessmentId);
+    existingSession = latestSessionResult.data;
+
+    if (latestSessionResult.error) warnings.push("Session lookup warning: " + latestSessionResult.error);
+
+    progressInfo = await getExistingProgress(supabase, userId, assessmentId);
+    candidateAssessmentAction = await updateOrCreateCandidateAssessment(supabase, userId, assessmentId);
+
+    sessionAction = await updateOrCreateSession(
+      supabase,
+      userId,
+      assessmentId,
+      existingSession,
+      extendMinutes,
+      resetTime
     );
 
-    console.log(`🔓 Unblocking assessment for user: ${userId}, assessment: ${assessmentId}`);
-    console.log(`⏰ Time extension: ${extendMinutes || 0} minutes, Reset time: ${resetTime}`);
+    if (sessionAction.warning) warnings.push("Session warning: " + sessionAction.warning);
 
-    // 1. Check if there's an existing in-progress session
-    const { data: existingSession, error: sessionError } = await supabase
-      .from('assessment_sessions')
-      .select('id, status, time_spent_seconds, created_at, expires_at')
-      .eq('user_id', userId)
-      .eq('assessment_id', assessmentId)
-      .eq('status', 'in_progress')
-      .maybeSingle();
+    finalSession = await getFinalSession(supabase, userId, assessmentId);
 
-    if (sessionError) {
-      console.error("❌ Error checking session:", sessionError);
-    }
-
-    let newExpiresAt = null;
-    let timeExtensionApplied = 0;
-
-    // 2. Handle time extension
-    if (existingSession && (extendMinutes > 0 || resetTime)) {
-      const currentExpiresAt = new Date(existingSession.expires_at);
-      const now = new Date();
-      
-      if (resetTime) {
-        // Reset to full time (3 hours = 180 minutes)
-        newExpiresAt = new Date(now);
-        newExpiresAt.setMinutes(now.getMinutes() + 180);
-        timeExtensionApplied = 180;
-        console.log(`⏰ Time reset to full 3 hours`);
-      } else if (extendMinutes > 0) {
-        // Extend by specified minutes
-        newExpiresAt = new Date(currentExpiresAt);
-        newExpiresAt.setMinutes(currentExpiresAt.getMinutes() + extendMinutes);
-        timeExtensionApplied = extendMinutes;
-        console.log(`⏰ Extended by ${extendMinutes} minutes`);
+    auditPayload = {
+      user_id: userId,
+      assessment_id: assessmentId,
+      action: "unblock",
+      performed_by: performedBy,
+      timestamp: getNowIso(),
+      details: {
+        candidateAssessmentAction: candidateAssessmentAction.action,
+        previousAssessmentStatus: candidateAssessmentAction.previousStatus,
+        hadExistingSession: !!existingSession,
+        sessionAction: sessionAction.sessionAction,
+        hasExistingProgress: progressInfo.hasExistingProgress,
+        hasResponses: progressInfo.hasResponses,
+        hasProgressRecord: progressInfo.hasProgressRecord,
+        requestedExtendMinutes: extendMinutes,
+        timeExtensionApplied: sessionAction.timeExtensionApplied,
+        resetTime: resetTime,
+        newExpiry: sessionAction.expiresAt
       }
+    };
 
-      // Update session with new expiration
-      if (newExpiresAt) {
-        const { error: updateSessionError } = await supabase
-          .from('assessment_sessions')
-          .update({ 
-            expires_at: newExpiresAt.toISOString(),
-            status: 'in_progress',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingSession.id);
+    auditResult = await writeAuditLog(supabase, auditPayload);
+    if (!auditResult.success) warnings.push("Audit log warning: " + auditResult.warning);
 
-        if (updateSessionError) {
-          console.error("❌ Error updating session time:", updateSessionError);
-        } else {
-          console.log(`✅ Session time extended. New expiry: ${newExpiresAt.toISOString()}`);
-        }
-      }
-    }
-
-    // 3. Update candidate_assessments to unblocked
-    const { data: existingRecord, error: checkError } = await supabase
-      .from('candidate_assessments')
-      .select('id, status')
-      .eq('user_id', userId)
-      .eq('assessment_id', assessmentId)
-      .maybeSingle();
-
-    if (checkError) {
-      console.error("❌ Error checking candidate_assessments:", checkError);
-    }
-
-    if (existingRecord) {
-      // Update existing record to unblocked
-      const { error: updateError } = await supabase
-        .from('candidate_assessments')
-        .update({ 
-          status: 'unblocked',
-          unblocked_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('user_id', userId)
-        .eq('assessment_id', assessmentId);
-
-      if (updateError) {
-        console.error("❌ Error updating candidate_assessments:", updateError);
-      } else {
-        console.log("✅ Candidate assessment updated to unblocked");
-      }
-    } else {
-      // Create new record if it doesn't exist
-      const { error: insertError } = await supabase
-        .from('candidate_assessments')
-        .insert({
-          user_id: userId,
-          assessment_id: assessmentId,
-          status: 'unblocked',
-          unblocked_at: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
-
-      if (insertError) {
-        console.error("❌ Error inserting candidate_assessments:", insertError);
-      } else {
-        console.log("✅ Candidate assessment created with unblocked status");
-      }
-    }
-
-    // 4. If there's no session but we have time extension, create a new session
-    if (!existingSession && (extendMinutes > 0 || resetTime)) {
-      const timeLimit = 180; // Default 3 hours
-      const expiresAt = new Date();
-      expiresAt.setMinutes(expiresAt.getMinutes() + timeLimit);
-      
-      const { error: createSessionError } = await supabase
-        .from('assessment_sessions')
-        .insert({
-          user_id: userId,
-          assessment_id: assessmentId,
-          status: 'in_progress',
-          started_at: new Date().toISOString(),
-          expires_at: expiresAt.toISOString(),
-          time_spent_seconds: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
-
-      if (createSessionError) {
-        console.error("❌ Error creating new session:", createSessionError);
-      } else {
-        console.log("✅ New session created with time limit");
-      }
-    }
-
-    // 5. Optional: Add audit log
-    try {
-      await supabase
-        .from('assessment_audit_logs')
-        .insert({
-          user_id: userId,
-          assessment_id: assessmentId,
-          action: 'unblock',
-          performed_by: req.headers['x-user-id'] || 'admin',
-          timestamp: new Date().toISOString(),
-          details: {
-            hadExistingSession: !!existingSession,
-            timeExtensionMinutes: timeExtensionApplied,
-            resetTime: resetTime,
-            newExpiry: newExpiresAt?.toISOString()
-          }
-        });
-      console.log("✅ Audit log created");
-    } catch (auditError) {
-      console.error("⚠️ Failed to create audit log:", auditError);
-    }
-
-    // 6. Return session info
-    const { data: finalSession } = await supabase
-      .from('assessment_sessions')
-      .select('id, status, time_spent_seconds, expires_at')
-      .eq('user_id', userId)
-      .eq('assessment_id', assessmentId)
-      .eq('status', 'in_progress')
-      .maybeSingle();
-
-    console.log("✅ Assessment unblocked successfully");
-
-    return res.status(200).json({ 
+    return res.status(200).json({
       success: true,
-      hasExistingProgress: !!existingSession,
+      userId: userId,
+      user_id: userId,
+      assessmentId: assessmentId,
+      assessment_id: assessmentId,
+      hasExistingProgress: progressInfo.hasExistingProgress,
+      has_existing_progress: progressInfo.hasExistingProgress,
+      hadExistingSession: !!existingSession,
+      had_existing_session: !!existingSession,
+      candidateAssessmentAction: candidateAssessmentAction.action,
+      candidate_assessment_action: candidateAssessmentAction.action,
+      sessionAction: sessionAction.sessionAction,
+      session_action: sessionAction.sessionAction,
       session: finalSession,
-      timeExtensionApplied: timeExtensionApplied,
-      message: existingSession 
-        ? `Assessment unblocked. Candidate can continue from where they left off. ${timeExtensionApplied > 0 ? `Time extended by ${timeExtensionApplied} minutes.` : ''}`
-        : "Assessment unblocked. Candidate can start a new session."
+      timeExtensionApplied: sessionAction.timeExtensionApplied,
+      time_extension_applied: sessionAction.timeExtensionApplied,
+      resetTime: resetTime,
+      reset_time: resetTime,
+      warnings: warnings,
+      message: buildMessage(progressInfo.hasExistingProgress, sessionAction.timeExtensionApplied, resetTime)
     });
-
-  } catch (err) {
-    console.error("❌ Error unblocking assessment:", err);
-    return res.status(500).json({ 
-      error: "server_error", 
-      message: err.message 
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: "server_error",
+      message: error && error.message ? error.message : "Failed to unblock assessment."
     });
   }
 }
