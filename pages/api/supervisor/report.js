@@ -3,13 +3,17 @@
 import { createClient } from "@supabase/supabase-js";
 
 /*
-  SUPERVISOR REPORT API - SCORE-SENSITIVE NARRATIVES
+  SUPERVISOR REPORT API - FINAL REPORT INTELLIGENCE
 
   Replace this file:
   pages/api/supervisor/report.js
 
-  This version fixes the wrong high-score narrative issue.
-  High scores are treated as strengths/leverage areas, not development gaps.
+  Purpose:
+  - Generate supervisor-ready reports directly from candidate responses.
+  - Treat high scores as strengths/leverage areas, not development gaps.
+  - Provide score-sensitive executive summaries, role readiness, follow-up questions,
+    recommendations, category narratives, and behavioral insights.
+  - Decode HTML entities so values such as &amp; display as &.
 */
 
 // ======================================================
@@ -20,7 +24,7 @@ function toNumber(value, fallback) {
   var fallbackValue = fallback === undefined ? 0 : fallback;
   var numberValue = Number(value);
 
-  if (isNaN(numberValue) || !isFinite(numberValue)) {
+  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) {
     return fallbackValue;
   }
 
@@ -34,15 +38,12 @@ function roundNumber(value, decimals) {
 }
 
 function safeArray(value) {
-  if (Array.isArray(value)) return value;
-  return [];
+  return Array.isArray(value) ? value : [];
 }
 
 function asObject(value) {
   if (Array.isArray(value)) {
-    if (value.length > 0 && value[0] && typeof value[0] === "object") {
-      return value[0];
-    }
+    if (value.length > 0 && value[0] && typeof value[0] === "object") return value[0];
     return null;
   }
 
@@ -55,11 +56,7 @@ function getValue(objectValue, key, fallback) {
 
   if (!objectData) return fallback;
 
-  if (
-    objectData[key] !== undefined &&
-    objectData[key] !== null &&
-    objectData[key] !== ""
-  ) {
+  if (objectData[key] !== undefined && objectData[key] !== null && objectData[key] !== "") {
     return objectData[key];
   }
 
@@ -72,9 +69,7 @@ function firstValue(values, fallback) {
   if (!Array.isArray(values)) return fallback;
 
   for (i = 0; i < values.length; i += 1) {
-    if (values[i] !== undefined && values[i] !== null && values[i] !== "") {
-      return values[i];
-    }
+    if (values[i] !== undefined && values[i] !== null && values[i] !== "") return values[i];
   }
 
   return fallback;
@@ -91,11 +86,13 @@ function decodeHtmlEntities(value) {
 
   for (i = 0; i < 10; i += 1) {
     previousText = text;
-    text = text.replace(new RegExp("&" + "amp;", "g"), "&");
-    text = text.replace(new RegExp("&" + "lt;", "g"), "<");
-    text = text.replace(new RegExp("&" + "gt;", "g"), ">");
-    text = text.replace(new RegExp("&" + "quot;", "g"), '"');
-    text = text.replace(new RegExp("&" + "#039;", "g"), "'");
+    text = text.replace(/&amp;/g, "&");
+    text = text.replace(/&lt;/g, "<");
+    text = text.replace(/&gt;/g, ">");
+    text = text.replace(/&quot;/g, '"');
+    text = text.replace(/&#039;/g, "'");
+    text = text.replace(/&#39;/g, "'");
+    text = text.replace(/&nbsp;/g, " ");
 
     if (text === previousText) break;
   }
@@ -104,10 +101,7 @@ function decodeHtmlEntities(value) {
 }
 
 function cleanText(value, fallback) {
-  if (value === null || value === undefined || value === "") {
-    return fallback || "";
-  }
-
+  if (value === null || value === undefined || value === "") return fallback || "";
   return decodeHtmlEntities(value);
 }
 
@@ -136,6 +130,10 @@ function decodeObjectDeep(value) {
   }
 
   return value;
+}
+
+function normalizeCategoryName(category) {
+  return cleanText(category, "General").trim();
 }
 
 // ======================================================
@@ -211,11 +209,11 @@ function getSupervisorImplication(percentage) {
 }
 
 // ======================================================
-// SCORE-SENSITIVE CATEGORY INTELLIGENCE
+// CATEGORY INTELLIGENCE
 // ======================================================
 
 function getCategoryDomainContext(category) {
-  var value = cleanText(category, "General");
+  var value = normalizeCategoryName(category);
 
   if (value === "Clinical") return "clinical interpretation, behavioral judgement, and response planning";
   if (value === "Leadership") return "ownership, direction setting, accountability, and leadership follow-through";
@@ -258,7 +256,7 @@ function getScoreBandName(percentage) {
 
 function getCategoryNarrative(category, percentage) {
   var value = toNumber(percentage, 0);
-  var cleanCategory = cleanText(category, "General");
+  var cleanCategory = normalizeCategoryName(category);
   var context = getCategoryDomainContext(cleanCategory);
   var band = getScoreBandName(value);
 
@@ -287,7 +285,7 @@ function getCategoryNarrative(category, percentage) {
 
 function getCategoryAction(category, percentage) {
   var value = toNumber(percentage, 0);
-  var cleanCategory = cleanText(category, "General");
+  var cleanCategory = normalizeCategoryName(category);
   var priority = getPriorityFromScore(value);
 
   if (value >= 85) {
@@ -315,7 +313,7 @@ function getCategoryAction(category, percentage) {
 
 function getCategoryFollowUpQuestion(category, percentage) {
   var value = toNumber(percentage, 0);
-  var cleanCategory = cleanText(category, "General");
+  var cleanCategory = normalizeCategoryName(category);
 
   if (value >= 75) {
     return "Ask the candidate to describe how this strength can be applied to improve performance, support others, or handle a more complex responsibility in the role.";
@@ -375,6 +373,7 @@ function getResponseMaxScore(response) {
     getValue(response, "max", null),
     getValue(question, "max_score", null),
     getValue(question, "maxScore", null),
+    getValue(question, "max_points", null),
     5
   ], 5), 5);
 }
@@ -384,7 +383,7 @@ function getResponseCategory(response) {
   if (!response) return "General";
   question = getQuestion(response);
 
-  return cleanText(firstValue([
+  return normalizeCategoryName(firstValue([
     getValue(question, "section", null),
     getValue(response, "section", null),
     getValue(question, "category", null),
@@ -393,7 +392,7 @@ function getResponseCategory(response) {
     getValue(response, "competency", null),
     getValue(question, "dimension", null),
     getValue(response, "dimension", null)
-  ], "General"), "General");
+  ], "General"));
 }
 
 function getResponseSubcategory(response) {
@@ -464,6 +463,7 @@ function getResponseChanges(response) {
 
 function getCandidateName(candidate, userId) {
   var value;
+
   if (!candidate) return "Candidate";
 
   value = firstValue([
@@ -479,6 +479,7 @@ function getCandidateName(candidate, userId) {
 
 function getAssessmentName(assessment) {
   var value;
+
   if (!assessment) return "Assessment";
 
   value = firstValue([
@@ -512,21 +513,15 @@ async function selectRows(supabase, tableName, configureQuery, selectText) {
 }
 
 async function selectSingle(supabase, tableName, configureQuery, selectText) {
-  var query;
-  var result;
+  var rows;
 
-  try {
-    query = supabase.from(tableName).select(selectText || "*");
+  rows = await selectRows(supabase, tableName, function (query) {
     if (typeof configureQuery === "function") query = configureQuery(query);
-    query = query.limit(1);
-    result = await query;
+    return query.limit(1);
+  }, selectText || "*");
 
-    if (result.error) return null;
-    if (Array.isArray(result.data) && result.data.length > 0) return result.data[0];
-    return null;
-  } catch (error) {
-    return null;
-  }
+  if (rows.data.length > 0) return rows.data[0];
+  return null;
 }
 
 async function fetchCandidate(supabase, userId) {
@@ -552,6 +547,7 @@ async function fetchCandidate(supabase, userId) {
 
 async function fetchAssessment(supabase, assessmentId) {
   var assessment;
+
   if (!assessmentId) return null;
 
   assessment = await selectSingle(supabase, "assessments", function (query) { return query.eq("id", assessmentId); });
@@ -564,12 +560,10 @@ async function fetchAssessment(supabase, assessmentId) {
 }
 
 async function fetchResponses(supabase, userId, assessmentId) {
-  var selectText;
+  var selectText = "*, unique_questions(*), unique_answers(*)";
   var resultWithAssessment;
   var resultPlainAssessment;
   var resultUserOnly;
-
-  selectText = "*, unique_questions(*), unique_answers(*)";
 
   if (assessmentId) {
     resultWithAssessment = await selectRows(supabase, "responses", function (query) {
@@ -593,7 +587,15 @@ async function fetchResponses(supabase, userId, assessmentId) {
     return query.eq("user_id", userId);
   }, selectText);
 
-  return { responses: resultUserOnly.data, source: "responses.user_id_fallback_with_joins" };
+  if (resultUserOnly.data.length > 0) {
+    return { responses: resultUserOnly.data, source: "responses.user_id_fallback_with_joins" };
+  }
+
+  resultUserOnly = await selectRows(supabase, "responses", function (query) {
+    return query.eq("user_id", userId);
+  }, "*");
+
+  return { responses: resultUserOnly.data, source: "responses.user_id_fallback_plain" };
 }
 
 // ======================================================
@@ -631,10 +633,15 @@ function buildBehavioralInsights(responses) {
 
   return {
     totalTimeSpent: roundNumber(totalTime, 2),
+    total_time_spent: roundNumber(totalTime, 2),
     totalChanges: roundNumber(totalChanges, 2),
+    total_changes: roundNumber(totalChanges, 2),
     averageTimePerQuestion: averageTime,
+    average_time_per_question: averageTime,
     averageChangesPerQuestion: averageChanges,
+    average_changes_per_question: averageChanges,
     dataQuality: quality,
+    data_quality: quality,
     note: note
   };
 }
@@ -682,7 +689,9 @@ function buildCategoryScores(responses) {
       answer: getResponseAnswerText(response),
       score: score,
       maxScore: maxScore,
+      max_score: maxScore,
       timeSpent: timeSpent,
+      time_spent: timeSpent,
       changes: changes
     });
   });
@@ -695,19 +704,28 @@ function buildCategoryScores(responses) {
       category: item.category,
       name: item.name,
       totalScore: roundNumber(item.totalScore, 2),
+      total_score: roundNumber(item.totalScore, 2),
       maxScore: roundNumber(item.maxScore, 2),
+      max_score: roundNumber(item.maxScore, 2),
       questionCount: item.questionCount,
+      question_count: item.questionCount,
       percentage: percentage,
+      score: percentage,
       classification: classifyScore(percentage),
       comment: getScoreComment(percentage),
       supervisorImplication: getSupervisorImplication(percentage),
+      supervisor_implication: getSupervisorImplication(percentage),
       narrative: getCategoryNarrative(item.category, percentage),
       action: getCategoryAction(item.category, percentage),
       riskLevel: getRiskLevel(percentage),
+      risk_level: getRiskLevel(percentage),
       priority: getPriorityFromScore(percentage),
       followUpQuestion: getCategoryFollowUpQuestion(item.category, percentage),
+      follow_up_question: getCategoryFollowUpQuestion(item.category, percentage),
       averageTimePerQuestion: item.questionCount > 0 ? roundNumber(item.totalTimeSpent / item.questionCount, 2) : 0,
+      average_time_per_question: item.questionCount > 0 ? roundNumber(item.totalTimeSpent / item.questionCount, 2) : 0,
       averageChangesPerQuestion: item.questionCount > 0 ? roundNumber(item.totalChanges / item.questionCount, 2) : 0,
+      average_changes_per_question: item.questionCount > 0 ? roundNumber(item.totalChanges / item.questionCount, 2) : 0,
       subcategories: item.subcategories,
       answers: item.answers
     };
@@ -725,11 +743,13 @@ function buildRecommendations(categoryScores) {
 
   developmentAreas.forEach(function (area) {
     var percentage = toNumber(area.percentage, 0);
+
     recommendations.push({
       priority: getPriorityFromScore(percentage),
       competency: area.name,
       category: area.name,
       currentScore: percentage,
+      current_score: percentage,
       gap: percentage < 80 ? roundNumber(80 - percentage, 2) : 0,
       recommendation: area.narrative,
       action: area.action,
@@ -738,8 +758,14 @@ function buildRecommendations(categoryScores) {
         averageTimePerQuestion: area.averageTimePerQuestion,
         averageChangesPerQuestion: area.averageChangesPerQuestion
       },
+      behavioral_insights: {
+        average_time_per_question: area.averageTimePerQuestion,
+        average_changes_per_question: area.averageChangesPerQuestion
+      },
       followUpQuestion: getCategoryFollowUpQuestion(area.name, percentage),
-      isStrength: false
+      follow_up_question: getCategoryFollowUpQuestion(area.name, percentage),
+      isStrength: false,
+      is_strength: false
     });
   });
 
@@ -753,12 +779,15 @@ function buildRecommendations(categoryScores) {
       competency: area.name,
       category: area.name,
       currentScore: area.percentage,
+      current_score: area.percentage,
       gap: 0,
       recommendation: area.narrative,
       action: area.action,
       impact: "Using this strength can improve candidate contribution, team support, role readiness, and development momentum.",
       followUpQuestion: getCategoryFollowUpQuestion(area.name, area.percentage),
-      isStrength: true
+      follow_up_question: getCategoryFollowUpQuestion(area.name, area.percentage),
+      isStrength: true,
+      is_strength: true
     });
   });
 
@@ -825,17 +854,28 @@ function buildRoleReadiness(percentage, categoryScores) {
 
 function buildFollowUpQuestions(categoryScores) {
   var questions = [];
+  var selected;
 
-  safeArray(categoryScores)
+  selected = safeArray(categoryScores)
     .filter(function (item) { return toNumber(item.percentage, 0) < 75; })
-    .sort(function (a, b) { return toNumber(a.percentage, 0) - toNumber(b.percentage, 0); })
-    .forEach(function (item) {
-      questions.push({
-        category: item.name,
-        priority: getPriorityFromScore(item.percentage),
-        question: getCategoryFollowUpQuestion(item.name, item.percentage)
-      });
+    .sort(function (a, b) { return toNumber(a.percentage, 0) - toNumber(b.percentage, 0); });
+
+  if (selected.length === 0) {
+    selected = safeArray(categoryScores)
+      .filter(function (item) { return toNumber(item.percentage, 0) >= 75; })
+      .sort(function (a, b) { return toNumber(b.percentage, 0) - toNumber(a.percentage, 0); })
+      .slice(0, 3);
+  }
+
+  selected.forEach(function (item) {
+    questions.push({
+      category: item.name,
+      competency: item.name,
+      priority: getPriorityFromScore(item.percentage),
+      score: item.percentage,
+      question: getCategoryFollowUpQuestion(item.name, item.percentage)
     });
+  });
 
   return questions;
 }
@@ -899,20 +939,35 @@ function buildReport(candidate, assessment, responses, userId, assessmentId, sou
     percentage: percentage,
     overallPercentage: percentage,
     overall_score: percentage,
+    overallScore: percentage,
+    totalPercentage: percentage,
+    score: percentage,
     classification: classification,
     overallClassification: classification,
+    performanceBand: classification,
+    performance_band: classification,
     riskLevel: getRiskLevel(percentage),
+    risk_level: getRiskLevel(percentage),
 
     summary: executiveSummary,
     executiveSummary: executiveSummary,
+    executive_summary: executiveSummary,
     overallAssessment: executiveSummary,
+    overall_assessment: executiveSummary,
     interpretation: executiveSummary,
     supervisorImplication: getSupervisorImplication(percentage),
+    supervisor_implication: getSupervisorImplication(percentage),
+    recommendationSummary: getSupervisorImplication(percentage),
+    recommendation_summary: getSupervisorImplication(percentage),
     roleReadiness: roleReadiness,
     role_readiness: roleReadiness,
+    readinessStatement: roleReadiness,
+    readiness_statement: roleReadiness,
 
     behavioralInsights: behavioralInsights,
+    behavioral_insights: behavioralInsights,
     behavioralSummary: behavioralInsights,
+    behavioral_summary: behavioralInsights,
 
     categoryScores: categoryScores,
     category_scores: categoryScores,
@@ -921,15 +976,25 @@ function buildReport(candidate, assessment, responses, userId, assessmentId, sou
 
     strengths: strengths,
     topStrengths: strengths,
+    top_strengths: strengths,
     developmentAreas: developmentAreas,
+    development_areas: developmentAreas,
     topDevelopmentNeeds: developmentAreas,
+    top_development_needs: developmentAreas,
     recommendations: recommendations,
+    actionPlan: recommendations,
+    action_plan: recommendations,
     followUpQuestions: followUpQuestions,
     follow_up_questions: followUpQuestions,
+    supervisorQuestions: followUpQuestions,
+    supervisor_questions: followUpQuestions,
 
     responseCount: safeArray(responses).length,
     response_count: safeArray(responses).length,
-    dataSource: source
+    totalResponses: safeArray(responses).length,
+    total_responses: safeArray(responses).length,
+    dataSource: source,
+    data_source: source
   };
 }
 
@@ -956,7 +1021,9 @@ export default async function handler(req, res) {
   userId = req.query.user_id || req.query.userId;
   assessmentId = req.query.assessment_id || req.query.assessmentId || req.query.assessment;
 
-  if (!userId) return res.status(400).json({ success: false, error: "Missing user_id" });
+  if (!userId) {
+    return res.status(400).json({ success: false, error: "Missing user_id" });
+  }
 
   supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
   supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -982,7 +1049,8 @@ export default async function handler(req, res) {
         error: "No responses found for this candidate and assessment.",
         user_id: userId,
         assessment_id: assessmentId || null,
-        dataSource: responseResult.source
+        dataSource: responseResult.source,
+        data_source: responseResult.source
       });
     }
 
@@ -997,9 +1065,12 @@ export default async function handler(req, res) {
       candidate: candidate,
       assessment: assessment,
       generatedReport: generatedReport,
+      generated_report: generatedReport,
       report: generatedReport,
       responseCount: responses.length,
-      dataSource: responseResult.source
+      response_count: responses.length,
+      dataSource: responseResult.source,
+      data_source: responseResult.source
     });
   } catch (error) {
     return res.status(500).json({
