@@ -1,485 +1,463 @@
+// pages/admin/assign-assessments.js
+
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function cleanText(value, fallback = "") {
+  if (value === null || value === undefined || value === "") return fallback;
+  return String(value);
+}
+
+function getInitial(name, email) {
+  const source = cleanText(name, cleanText(email, "C"));
+  return source.charAt(0).toUpperCase();
+}
+
+function getReadableError(error) {
+  if (!error) return "Something went wrong.";
+  return error.message || String(error) || "Something went wrong.";
+}
+
+function statusDetails(status) {
+  if (status === "unblocked") {
+    return { text: "Unblocked / Ready", icon: "✅", bg: "#e8f5e9", color: "#2e7d32" };
+  }
+  if (status === "blocked") {
+    return { text: "Blocked", icon: "🔒", bg: "#fff3e0", color: "#f57c00" };
+  }
+  if (status === "completed") {
+    return { text: "Completed", icon: "🏁", bg: "#e0f2fe", color: "#0369a1" };
+  }
+  if (status === "in_progress") {
+    return { text: "In Progress", icon: "⏳", bg: "#fef9c3", color: "#854d0e" };
+  }
+  return { text: "Not Assigned", icon: "📭", bg: "#f5f5f5", color: "#667085" };
+}
+
 export default function AssignAssessments() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [candidates, setCandidates] = useState([]);
   const [assessments, setAssessments] = useState([]);
   const [supervisors, setSupervisors] = useState([]);
   const [selectedAssessment, setSelectedAssessment] = useState("");
-  const [selectedAction, setSelectedAction] = useState("assign"); // assign, unblock, block
+  const [selectedAction, setSelectedAction] = useState("assign");
   const [selectedCandidates, setSelectedCandidates] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterSupervisor, setFilterSupervisor] = useState("all");
   const [processing, setProcessing] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [message, setMessage] = useState({ type: "", text: "" });
   const [candidateAssessmentStatus, setCandidateAssessmentStatus] = useState({});
 
   useEffect(() => {
     checkAdminAuth();
   }, []);
 
-  const checkAdminAuth = async () => {
+  useEffect(() => {
+    fetchAssessmentStatus();
+  }, [selectedAssessment]);
+
+  async function checkAdminAuth() {
     try {
-      const userSession = localStorage.getItem("userSession");
-      if (!userSession) {
+      setCheckingAuth(true);
+      setMessage({ type: "", text: "" });
+
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
+
+      const activeSession = data?.session || null;
+
+      if (!activeSession?.user) {
+        if (typeof window !== "undefined") localStorage.removeItem("userSession");
         router.push("/login");
         return;
       }
 
-      const session = JSON.parse(userSession);
-      
-      const { data: profile, error } = await supabase
-        .from('supervisor_profiles')
-        .select('role')
-        .eq('id', session.user_id)
+      const metadataRole = activeSession.user.user_metadata?.role || null;
+
+      const { data: profile, error: profileError } = await supabase
+        .from("supervisor_profiles")
+        .select("id, email, full_name, role, is_active")
+        .eq("id", activeSession.user.id)
         .maybeSingle();
 
-      if (error) {
-        console.error('Error checking admin status:', error);
-        router.push('/login');
+      if (profileError && profileError.code !== "PGRST116") throw profileError;
+
+      const resolvedRole = profile?.role || metadataRole;
+
+      if (resolvedRole !== "admin") {
+        setMessage({ type: "error", text: "Admin access is required." });
+        router.push("/supervisor");
         return;
       }
 
-      if (!profile || profile.role !== 'admin') {
-        alert('Admin access required');
-        router.push('/supervisor');
+      if (profile?.is_active === false) {
+        await supabase.auth.signOut();
+        if (typeof window !== "undefined") localStorage.removeItem("userSession");
+        router.push("/login");
         return;
       }
 
       setIsAdmin(true);
-      fetchData();
+      await fetchData();
     } catch (error) {
-      console.error('Auth error:', error);
-      router.push('/login');
+      console.error("Admin auth error:", error);
+      setMessage({ type: "error", text: getReadableError(error) });
+      router.push("/login");
+    } finally {
+      setCheckingAuth(false);
     }
-  };
+  }
 
-  const fetchData = async () => {
+  async function fetchData() {
     try {
       setLoading(true);
+      setMessage({ type: "", text: "" });
 
-      // Fetch all candidates
-      const { data: candidatesData, error: candidatesError } = await supabase
-        .from('candidate_profiles')
-        .select(`
-          id,
-          full_name,
-          email,
-          phone,
-          supervisor_id,
-          supervisor:supervisor_id (
-            id,
-            full_name,
-            email
-          )
-        `)
-        .order('created_at', { ascending: false });
+      const [candidateResponse, assessmentResponse, supervisorResponse] = await Promise.all([
+        supabase
+          .from("candidate_profiles")
+          .select("id, full_name, email, phone, supervisor_id, supervisor:supervisor_profiles(id, full_name, email)")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("assessments")
+          .select("id, title, description, is_active, assessment_type:assessment_types(id, code, name, icon)")
+          .eq("is_active", true)
+          .order("title", { ascending: true }),
+        supabase
+          .from("supervisor_profiles")
+          .select("id, full_name, email, role, is_active")
+          .eq("is_active", true)
+          .order("full_name", { ascending: true })
+      ]);
 
-      if (candidatesError) throw candidatesError;
+      if (candidateResponse.error) throw candidateResponse.error;
+      if (assessmentResponse.error) throw assessmentResponse.error;
+      if (supervisorResponse.error) throw supervisorResponse.error;
 
-      // Fetch all active assessments
-      const { data: assessmentsData, error: assessmentsError } = await supabase
-        .from('assessments')
-        .select(`
-          id,
-          title,
-          description,
-          assessment_type:assessment_types(id, code, name, icon)
-        `)
-        .eq('is_active', true)
-        .order('title');
-
-      if (assessmentsError) throw assessmentsError;
-
-      // Fetch all supervisors for filter
-      const { data: supervisorsData, error: supervisorsError } = await supabase
-        .from('supervisor_profiles')
-        .select('id, full_name, email')
-        .order('full_name');
-
-      if (supervisorsError) throw supervisorsError;
-
-      setCandidates(candidatesData || []);
-      setAssessments(assessmentsData || []);
-      setSupervisors(supervisorsData || []);
-      
+      setCandidates(candidateResponse.data || []);
+      setAssessments(assessmentResponse.data || []);
+      setSupervisors(supervisorResponse.data || []);
     } catch (error) {
-      console.error('Error fetching data:', error);
-      setError('Failed to load data');
+      console.error("Error fetching assignment data:", error);
+      setMessage({ type: "error", text: "Failed to load data: " + getReadableError(error) });
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  // Fetch assessment status for selected assessment
-  useEffect(() => {
-    const fetchAssessmentStatus = async () => {
-      if (!selectedAssessment) return;
-
-      try {
-        const { data, error } = await supabase
-          .from('candidate_assessments')
-          .select('user_id, status')
-          .eq('assessment_id', selectedAssessment);
-
-        if (error) throw error;
-
-        const statusMap = {};
-        (data || []).forEach(item => {
-          statusMap[item.user_id] = item.status;
-        });
-        setCandidateAssessmentStatus(statusMap);
-      } catch (error) {
-        console.error('Error fetching assessment status:', error);
-      }
-    };
-
-    fetchAssessmentStatus();
-  }, [selectedAssessment]);
-
-  const handleSelectAll = () => {
-    if (selectedCandidates.length === filteredCandidates.length && filteredCandidates.length > 0) {
-      setSelectedCandidates([]);
-    } else {
-      setSelectedCandidates(filteredCandidates.map(c => c.id));
-    }
-  };
-
-  const handleSelectCandidate = (candidateId) => {
-    if (selectedCandidates.includes(candidateId)) {
-      setSelectedCandidates(selectedCandidates.filter(id => id !== candidateId));
-    } else {
-      setSelectedCandidates([...selectedCandidates, candidateId]);
-    }
-  };
-
-  const getCandidateStatus = (candidateId) => {
-    const status = candidateAssessmentStatus[candidateId];
-    if (!status) return 'unassigned';
-    return status;
-  };
-
-  const handleSubmit = async () => {
+  async function fetchAssessmentStatus() {
     if (!selectedAssessment) {
-      setError('Please select an assessment');
+      setCandidateAssessmentStatus({});
       return;
     }
-    if (selectedCandidates.length === 0) {
-      setError('Please select at least one candidate');
-      return;
-    }
-
-    setProcessing(true);
-    setError('');
-    setSuccess('');
 
     try {
-      let successCount = 0;
-      let errorCount = 0;
+      const { data, error } = await supabase
+        .from("candidate_assessments")
+        .select("user_id, status")
+        .eq("assessment_id", selectedAssessment);
 
-      for (const candidateId of selectedCandidates) {
-        try {
-          if (selectedAction === 'assign') {
-            // Check if record exists
-            const { data: existing, error: checkError } = await supabase
-              .from('candidate_assessments')
-              .select('id')
-              .eq('user_id', candidateId)
-              .eq('assessment_id', selectedAssessment)
-              .maybeSingle();
+      if (error) throw error;
 
-            if (existing) {
-              // Update to unblocked
-              const { error } = await supabase
-                .from('candidate_assessments')
-                .update({ 
-                  status: 'unblocked',
-                  unblocked_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString()
-                })
-                .eq('id', existing.id);
-              if (!error) successCount++;
-              else errorCount++;
-            } else {
-              // Create new
-              const { error } = await supabase
-                .from('candidate_assessments')
-                .insert({
-                  user_id: candidateId,
-                  assessment_id: selectedAssessment,
-                  status: 'unblocked',
-                  unblocked_at: new Date().toISOString(),
-                  created_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString()
-                });
-              if (!error) successCount++;
-              else errorCount++;
-            }
-          } 
-          else if (selectedAction === 'unblock') {
-            const { error } = await supabase
-              .from('candidate_assessments')
-              .update({ 
-                status: 'unblocked',
-                unblocked_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-              })
-              .eq('user_id', candidateId)
-              .eq('assessment_id', selectedAssessment);
-            if (!error) successCount++;
-            else errorCount++;
-          } 
-          else if (selectedAction === 'block') {
-            const { error } = await supabase
-              .from('candidate_assessments')
-              .update({ 
-                status: 'blocked',
-                unblocked_at: null,
-                updated_at: new Date().toISOString()
-              })
-              .eq('user_id', candidateId)
-              .eq('assessment_id', selectedAssessment);
-            if (!error) successCount++;
-            else errorCount++;
-          }
-        } catch (err) {
-          errorCount++;
-          console.error(`Error processing candidate ${candidateId}:`, err);
-        }
-      }
-
-      if (successCount > 0) {
-        const actionText = selectedAction === 'assign' ? 'assigned/unblocked' : 
-                          selectedAction === 'unblock' ? 'unblocked' : 'blocked';
-        setSuccess(`✅ Successfully ${actionText} ${successCount} candidate(s) for "${assessments.find(a => a.id === selectedAssessment)?.title}"`);
-      }
-      if (errorCount > 0) {
-        setError(`⚠️ Failed to process ${errorCount} candidate(s)`);
-      }
-
-      // Refresh statuses
-      const { data } = await supabase
-        .from('candidate_assessments')
-        .select('user_id, status')
-        .eq('assessment_id', selectedAssessment);
-      
       const statusMap = {};
-      (data || []).forEach(item => {
+      safeArray(data).forEach((item) => {
         statusMap[item.user_id] = item.status;
       });
       setCandidateAssessmentStatus(statusMap);
-      
-      setSelectedCandidates([]);
-      
     } catch (error) {
-      console.error('Error processing:', error);
-      setError('Failed to process request: ' + error.message);
+      console.error("Error fetching assessment status:", error);
+      setMessage({ type: "error", text: "Failed to load assessment status: " + getReadableError(error) });
+    }
+  }
+
+  function filteredCandidates() {
+    let filtered = [...candidates];
+
+    if (filterSupervisor === "unassigned") {
+      filtered = filtered.filter((candidate) => !candidate.supervisor_id);
+    } else if (filterSupervisor !== "all") {
+      filtered = filtered.filter((candidate) => candidate.supervisor_id === filterSupervisor);
+    }
+
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase().trim();
+      filtered = filtered.filter((candidate) => {
+        return (
+          cleanText(candidate.full_name).toLowerCase().includes(term) ||
+          cleanText(candidate.email).toLowerCase().includes(term) ||
+          cleanText(candidate.phone).toLowerCase().includes(term)
+        );
+      });
+    }
+
+    return filtered;
+  }
+
+  function getCandidateStatus(candidateId) {
+    return candidateAssessmentStatus[candidateId] || "unassigned";
+  }
+
+  function handleSelectAll() {
+    const visibleCandidates = filteredCandidates();
+    const visibleIds = visibleCandidates.map((candidate) => candidate.id);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedCandidates.includes(id));
+
+    if (allVisibleSelected) {
+      setSelectedCandidates((current) => current.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setSelectedCandidates((current) => Array.from(new Set([...current, ...visibleIds])));
+    }
+  }
+
+  function handleSelectCandidate(candidateId) {
+    setSelectedCandidates((current) => {
+      if (current.includes(candidateId)) return current.filter((id) => id !== candidateId);
+      return [...current, candidateId];
+    });
+  }
+
+  async function assignOrUpdateCandidateAssessment(candidateId, assessmentId, status) {
+    const now = new Date().toISOString();
+
+    const { data: existing, error: checkError } = await supabase
+      .from("candidate_assessments")
+      .select("id")
+      .eq("user_id", candidateId)
+      .eq("assessment_id", assessmentId)
+      .maybeSingle();
+
+    if (checkError && checkError.code !== "PGRST116") throw checkError;
+
+    if (existing?.id) {
+      const updatePayload = {
+        status,
+        updated_at: now,
+        unblocked_at: status === "unblocked" ? now : null
+      };
+
+      const { error } = await supabase
+        .from("candidate_assessments")
+        .update(updatePayload)
+        .eq("id", existing.id);
+
+      if (error) throw error;
+      return;
+    }
+
+    const insertPayload = {
+      user_id: candidateId,
+      assessment_id: assessmentId,
+      status,
+      unblocked_at: status === "unblocked" ? now : null,
+      created_at: now,
+      updated_at: now
+    };
+
+    const { error } = await supabase
+      .from("candidate_assessments")
+      .insert(insertPayload);
+
+    if (error) throw error;
+  }
+
+  async function handleSubmit() {
+    if (!selectedAssessment) {
+      setMessage({ type: "error", text: "Please select an assessment." });
+      return;
+    }
+
+    if (selectedCandidates.length === 0) {
+      setMessage({ type: "error", text: "Please select at least one candidate." });
+      return;
+    }
+
+    try {
+      setProcessing(true);
+      setMessage({ type: "", text: "" });
+
+      let successCount = 0;
+      let errorCount = 0;
+      const targetStatus = selectedAction === "block" ? "blocked" : "unblocked";
+
+      for (const candidateId of selectedCandidates) {
+        try {
+          await assignOrUpdateCandidateAssessment(candidateId, selectedAssessment, targetStatus);
+          successCount += 1;
+        } catch (error) {
+          errorCount += 1;
+          console.error("Error processing candidate " + candidateId + ":", error);
+        }
+      }
+
+      const selectedAssessmentTitle = assessments.find((item) => item.id === selectedAssessment)?.title || "selected assessment";
+      const actionText = selectedAction === "block" ? "blocked" : selectedAction === "unblock" ? "unblocked" : "assigned and unblocked";
+
+      if (successCount > 0) {
+        setMessage({ type: "success", text: "Successfully " + actionText + " " + successCount + " candidate(s) for " + selectedAssessmentTitle + "." });
+      }
+
+      if (errorCount > 0) {
+        setMessage({ type: "error", text: "Failed to process " + errorCount + " candidate(s)." });
+      }
+
+      setSelectedCandidates([]);
+      await fetchAssessmentStatus();
+    } catch (error) {
+      console.error("Assessment assignment error:", error);
+      setMessage({ type: "error", text: "Failed to process request: " + getReadableError(error) });
     } finally {
       setProcessing(false);
-      setTimeout(() => {
-        setSuccess('');
-        setError('');
-      }, 5000);
+      setTimeout(() => setMessage({ type: "", text: "" }), 5000);
     }
-  };
+  }
 
-  const getActionButtonText = () => {
-    switch(selectedAction) {
-      case 'assign': return 'Assign & Unblock';
-      case 'unblock': return 'Unblock';
-      case 'block': return 'Block';
-      default: return 'Process';
-    }
-  };
+  function getActionButtonText() {
+    if (selectedAction === "assign") return "Assign and Unblock";
+    if (selectedAction === "unblock") return "Unblock";
+    if (selectedAction === "block") return "Block";
+    return "Process";
+  }
 
-  const getActionButtonColor = () => {
-    switch(selectedAction) {
-      case 'assign': return '#0A1929';
-      case 'unblock': return '#2196F3';
-      case 'block': return '#F57C00';
-      default: return '#0A1929';
-    }
-  };
+  function getActionButtonColor() {
+    if (selectedAction === "assign") return "#0a1929";
+    if (selectedAction === "unblock") return "#2196f3";
+    if (selectedAction === "block") return "#f57c00";
+    return "#0a1929";
+  }
 
-  const filteredCandidates = candidates.filter(c => {
-    const matchesSearch = searchTerm === '' || 
-      c.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.email?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesFilter = filterSupervisor === 'all' || 
-      (filterSupervisor === 'unassigned' && !c.supervisor_id) ||
-      c.supervisor_id === filterSupervisor;
-    
-    return matchesSearch && matchesFilter;
-  });
+  const visibleCandidates = filteredCandidates();
+  const selectedAssessmentObj = assessments.find((assessment) => assessment.id === selectedAssessment);
+  const allVisibleSelected = visibleCandidates.length > 0 && visibleCandidates.every((candidate) => selectedCandidates.includes(candidate.id));
 
-  const selectedAssessmentObj = assessments.find(a => a.id === selectedAssessment);
-
-  if (!isAdmin) {
+  if (checkingAuth) {
     return (
       <div style={styles.checkingContainer}>
         <div style={styles.spinner} />
-        <p>Checking authorization...</p>
+        <p style={styles.checkingText}>Checking authorization...</p>
+        <style jsx>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
       </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <AppLayout background="/images/admin-bg.jpg">
+        <div style={styles.unauthorized}>
+          <h2>Access Denied</h2>
+          <p>You do not have permission to view this page.</p>
+          <button onClick={() => router.push("/supervisor")} style={styles.button}>Go to Dashboard</button>
+        </div>
+      </AppLayout>
     );
   }
 
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.container}>
-        {/* Header */}
         <div style={styles.header}>
           <Link href="/admin/manage-candidates" legacyBehavior>
             <a style={styles.backButton}>← Back to Manage Candidates</a>
           </Link>
           <h1 style={styles.title}>Assign Assessments</h1>
-          <p style={styles.subtitle}>Manage candidate access to assessments (Assign, Unblock, or Block)</p>
+          <p style={styles.subtitle}>Manage candidate access to assessments.</p>
         </div>
 
-        {error && <div style={styles.errorMessage}>⚠️ {error}</div>}
-        {success && <div style={styles.successMessage}>✅ {success}</div>}
+        {message.text && (
+          <div style={{
+            ...styles.message,
+            background: message.type === "success" ? "#e8f5e9" : "#ffebee",
+            color: message.type === "success" ? "#2e7d32" : "#c62828",
+            border: "1px solid " + (message.type === "success" ? "#a5d6a7" : "#ffcdd2")
+          }}>
+            {message.text}
+          </div>
+        )}
 
-        {/* Step 1: Select Assessment */}
         <div style={styles.section}>
           <h3 style={styles.sectionTitle}>1. Select Assessment</h3>
-          <div style={styles.assessmentGrid}>
-            {assessments.map(assessment => (
-              <div
-                key={assessment.id}
-                onClick={() => {
-                  setSelectedAssessment(assessment.id);
-                  setSelectedCandidates([]);
-                }}
-                style={{
-                  ...styles.assessmentCard,
-                  border: selectedAssessment === assessment.id ? '2px solid #0A1929' : '1px solid #E2E8F0',
-                  background: selectedAssessment === assessment.id ? '#F8FAFC' : 'white'
-                }}
-              >
-                <div style={styles.assessmentIcon}>
-                  {assessment.assessment_type?.icon || '📋'}
-                </div>
-                <div style={styles.assessmentInfo}>
-                  <div style={styles.assessmentTitle}>{assessment.title}</div>
-                  <div style={styles.assessmentType}>{assessment.assessment_type?.name || 'Assessment'}</div>
-                </div>
-                {selectedAssessment === assessment.id && (
-                  <div style={styles.selectedBadge}>✓ Selected</div>
-                )}
-              </div>
-            ))}
-          </div>
+          {loading ? (
+            <div style={styles.loadingState}>Loading assessments...</div>
+          ) : assessments.length === 0 ? (
+            <div style={styles.noData}>No active assessments found.</div>
+          ) : (
+            <div style={styles.assessmentGrid}>
+              {assessments.map((assessment) => (
+                <button
+                  key={assessment.id}
+                  type="button"
+                  onClick={() => { setSelectedAssessment(assessment.id); setSelectedCandidates([]); }}
+                  style={{
+                    ...styles.assessmentCard,
+                    border: selectedAssessment === assessment.id ? "2px solid #0a1929" : "1px solid #e2e8f0",
+                    background: selectedAssessment === assessment.id ? "#f8fafc" : "white"
+                  }}
+                >
+                  <div style={styles.assessmentIcon}>{assessment.assessment_type?.icon || "📋"}</div>
+                  <div style={styles.assessmentInfo}>
+                    <div style={styles.assessmentTitle}>{assessment.title}</div>
+                    <div style={styles.assessmentType}>{assessment.assessment_type?.name || "Assessment"}</div>
+                  </div>
+                  {selectedAssessment === assessment.id && <div style={styles.selectedBadge}>Selected</div>}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Step 2: Choose Action */}
         {selectedAssessment && (
           <div style={styles.section}>
             <h3 style={styles.sectionTitle}>2. Choose Action</h3>
             <div style={styles.actionGrid}>
-              <button
-                onClick={() => setSelectedAction('assign')}
-                style={{
-                  ...styles.actionButton,
-                  background: selectedAction === 'assign' ? '#0A1929' : 'white',
-                  color: selectedAction === 'assign' ? 'white' : '#0A1929',
-                  border: selectedAction === 'assign' ? 'none' : '1px solid #E2E8F0'
-                }}
-              >
-                <span style={styles.actionIcon}>📋</span>
-                <span>Assign & Unblock</span>
-                <span style={styles.actionDesc}>Give access to take assessment</span>
-              </button>
-              <button
-                onClick={() => setSelectedAction('unblock')}
-                style={{
-                  ...styles.actionButton,
-                  background: selectedAction === 'unblock' ? '#2196F3' : 'white',
-                  color: selectedAction === 'unblock' ? 'white' : '#2196F3',
-                  border: selectedAction === 'unblock' ? 'none' : '1px solid #E2E8F0'
-                }}
-              >
-                <span style={styles.actionIcon}>🔓</span>
-                <span>Unblock</span>
-                <span style={styles.actionDesc}>Unblock existing assessments</span>
-              </button>
-              <button
-                onClick={() => setSelectedAction('block')}
-                style={{
-                  ...styles.actionButton,
-                  background: selectedAction === 'block' ? '#F57C00' : 'white',
-                  color: selectedAction === 'block' ? 'white' : '#F57C00',
-                  border: selectedAction === 'block' ? 'none' : '1px solid #E2E8F0'
-                }}
-              >
-                <span style={styles.actionIcon}>🔒</span>
-                <span>Block</span>
-                <span style={styles.actionDesc}>Block access to assessment</span>
-              </button>
+              <ActionButton active={selectedAction === "assign"} color="#0a1929" icon="📋" title="Assign and Unblock" desc="Create access and make ready" onClick={() => setSelectedAction("assign")} />
+              <ActionButton active={selectedAction === "unblock"} color="#2196f3" icon="🔓" title="Unblock" desc="Make existing access ready" onClick={() => setSelectedAction("unblock")} />
+              <ActionButton active={selectedAction === "block"} color="#f57c00" icon="🔒" title="Block" desc="Restrict assessment access" onClick={() => setSelectedAction("block")} />
             </div>
           </div>
         )}
 
-        {/* Step 3: Select Candidates */}
         {selectedAssessment && (
           <div style={styles.section}>
             <h3 style={styles.sectionTitle}>
               3. Select Candidates
-              {selectedAssessmentObj && (
-                <span style={styles.assessmentHint}>
-                  for "{selectedAssessmentObj.title}"
-                </span>
-              )}
+              {selectedAssessmentObj && <span style={styles.assessmentHint}>for {selectedAssessmentObj.title}</span>}
             </h3>
-            
-            {/* Filters */}
+
             <div style={styles.filterBar}>
               <div style={styles.searchBox}>
-                <input
-                  type="text"
-                  placeholder="Search by name or email..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  style={styles.searchInput}
-                />
+                <input type="text" placeholder="Search by name, email, or phone..." value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} style={styles.searchInput} />
               </div>
               <div style={styles.filterGroup}>
-                <select
-                  value={filterSupervisor}
-                  onChange={(e) => setFilterSupervisor(e.target.value)}
-                  style={styles.filterSelect}
-                >
+                <select value={filterSupervisor} onChange={(event) => setFilterSupervisor(event.target.value)} style={styles.filterSelect}>
                   <option value="all">All Candidates</option>
                   <option value="unassigned">Unassigned Only</option>
-                  {supervisors.map(s => (
-                    <option key={s.id} value={s.id}>
-                      Supervised by: {s.full_name || s.email}
-                    </option>
+                  {supervisors.map((supervisor) => (
+                    <option key={supervisor.id} value={supervisor.id}>Supervised by: {supervisor.full_name || supervisor.email}</option>
                   ))}
                 </select>
               </div>
             </div>
 
-            {/* Candidate Table */}
             <div style={styles.tableContainer}>
               <div style={styles.tableWrapper}>
                 <table style={styles.table}>
                   <thead>
                     <tr style={styles.tableHeadRow}>
-                      <th style={styles.thCheckbox}>
-                        <input
-                          type="checkbox"
-                          checked={selectedCandidates.length === filteredCandidates.length && filteredCandidates.length > 0}
-                          onChange={handleSelectAll}
-                          style={styles.checkbox}
-                        />
-                      </th>
+                      <th style={styles.thCheckbox}><input type="checkbox" checked={allVisibleSelected} onChange={handleSelectAll} style={styles.checkbox} /></th>
                       <th style={styles.tableHead}>Candidate</th>
                       <th style={styles.tableHead}>Email</th>
                       <th style={styles.tableHead}>Supervisor</th>
@@ -487,74 +465,27 @@ export default function AssignAssessments() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredCandidates.length === 0 ? (
-                      <tr>
-                        <td colSpan="5" style={styles.noData}>
-                          No candidates found
-                        </td>
-                      </tr>
+                    {visibleCandidates.length === 0 ? (
+                      <tr><td colSpan="5" style={styles.noData}>No candidates found.</td></tr>
                     ) : (
-                      filteredCandidates.map(candidate => {
+                      visibleCandidates.map((candidate) => {
                         const status = getCandidateStatus(candidate.id);
-                        let statusColor = '#9E9E9E';
-                        let statusBg = '#F5F5F5';
-                        let statusText = 'Not Assigned';
-                        let statusIcon = '📭';
-                        
-                        if (status === 'unblocked') {
-                          statusColor = '#2E7D32';
-                          statusBg = '#E8F5E9';
-                          statusText = 'Unblocked / Ready';
-                          statusIcon = '✅';
-                        } else if (status === 'blocked') {
-                          statusColor = '#F57C00';
-                          statusBg = '#FFF3E0';
-                          statusText = 'Blocked';
-                          statusIcon = '🔒';
-                        }
-                        
+                        const details = statusDetails(status);
                         return (
                           <tr key={candidate.id} style={styles.tableRow}>
-                            <td style={styles.tdCheckbox}>
-                              <input
-                                type="checkbox"
-                                checked={selectedCandidates.includes(candidate.id)}
-                                onChange={() => handleSelectCandidate(candidate.id)}
-                                style={styles.checkbox}
-                              />
-                            </td>
+                            <td style={styles.tdCheckbox}><input type="checkbox" checked={selectedCandidates.includes(candidate.id)} onChange={() => handleSelectCandidate(candidate.id)} style={styles.checkbox} /></td>
                             <td style={styles.tableCell}>
                               <div style={styles.candidateInfo}>
-                                <div style={styles.candidateAvatar}>
-                                  {candidate.full_name?.charAt(0) || 'C'}
-                                </div>
+                                <div style={styles.candidateAvatar}>{getInitial(candidate.full_name, candidate.email)}</div>
                                 <div>
-                                  <div style={styles.candidateName}>{candidate.full_name || 'Unnamed Candidate'}</div>
-                                  <div style={styles.candidateId}>ID: {candidate.id.substring(0, 8)}...</div>
+                                  <div style={styles.candidateName}>{candidate.full_name || "Unnamed Candidate"}</div>
+                                  <div style={styles.candidateId}>ID: {candidate.id ? candidate.id.substring(0, 8) : "N/A"}...</div>
                                 </div>
                               </div>
                             </td>
-                            <td style={styles.tableCell}>
-                              <div style={styles.candidateEmail}>{candidate.email}</div>
-                            </td>
-                            <td style={styles.tableCell}>
-                              {candidate.supervisor ? (
-                                <span style={styles.supervisorName}>
-                                  {candidate.supervisor.full_name || candidate.supervisor.email}
-                                </span>
-                              ) : (
-                                <span style={styles.unassignedBadge}>Unassigned</span>
-                              )}
-                            </td>
-                            <td style={styles.tableCell}>
-                              <span style={{
-                                ...styles.statusBadge,
-                                background: statusBg,
-                                color: statusColor
-                              }}>
-                                {statusIcon} {statusText}
-                              </span>
-                            </td>
+                            <td style={styles.tableCell}><div style={styles.candidateEmail}>{candidate.email || "No email"}</div></td>
+                            <td style={styles.tableCell}>{candidate.supervisor ? <span style={styles.supervisorName}>{candidate.supervisor.full_name || candidate.supervisor.email}</span> : <span style={styles.unassignedBadge}>Unassigned</span>}</td>
+                            <td style={styles.tableCell}><span style={{ ...styles.statusBadge, background: details.bg, color: details.color }}>{details.icon} {details.text}</span></td>
                           </tr>
                         );
                       })
@@ -564,16 +495,11 @@ export default function AssignAssessments() {
               </div>
             </div>
 
-            {/* Selection Summary & Submit */}
             <div style={styles.summaryBar}>
               <div style={styles.selectionSummary}>
                 <span style={styles.selectedCount}>{selectedCandidates.length}</span>
                 <span>candidate(s) selected</span>
-                {selectedCandidates.length > 0 && (
-                  <button onClick={() => setSelectedCandidates([])} style={styles.clearSelection}>
-                    Clear
-                  </button>
-                )}
+                {selectedCandidates.length > 0 && <button onClick={() => setSelectedCandidates([])} style={styles.clearSelection}>Clear</button>}
               </div>
               {selectedCandidates.length > 0 && (
                 <button
@@ -583,10 +509,10 @@ export default function AssignAssessments() {
                     ...styles.submitButton,
                     background: getActionButtonColor(),
                     opacity: processing ? 0.6 : 1,
-                    cursor: processing ? 'not-allowed' : 'pointer'
+                    cursor: processing ? "not-allowed" : "pointer"
                   }}
                 >
-                  {processing ? 'Processing...' : `${getActionButtonText()} (${selectedCandidates.length})`}
+                  {processing ? "Processing..." : getActionButtonText() + " (" + selectedCandidates.length + ")"}
                 </button>
               )}
             </div>
@@ -604,346 +530,79 @@ export default function AssignAssessments() {
   );
 }
 
+function ActionButton({ active, color, icon, title, desc, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        ...styles.actionButton,
+        background: active ? color : "white",
+        color: active ? "white" : color,
+        border: active ? "1px solid " + color : "1px solid #e2e8f0"
+      }}
+    >
+      <span style={styles.actionIcon}>{icon}</span>
+      <span>{title}</span>
+      <span style={styles.actionDesc}>{desc}</span>
+    </button>
+  );
+}
+
 const styles = {
-  checkingContainer: {
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'linear-gradient(135deg, #0A1929 0%, #1A2A3A 100%)',
-    color: 'white'
-  },
-  spinner: {
-    width: '40px',
-    height: '40px',
-    border: '4px solid rgba(255,255,255,0.3)',
-    borderTop: '4px solid white',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite',
-    marginBottom: '20px'
-  },
-  container: {
-    maxWidth: '1400px',
-    margin: '0 auto',
-    padding: '30px 20px'
-  },
-  header: {
-    marginBottom: '30px',
-    background: 'white',
-    padding: '20px 30px',
-    borderRadius: '16px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
-  },
-  backButton: {
-    display: 'inline-block',
-    color: '#0A1929',
-    textDecoration: 'none',
-    fontSize: '14px',
-    marginBottom: '15px',
-    padding: '6px 12px',
-    borderRadius: '6px',
-    border: '1px solid #E2E8F0',
-    ':hover': {
-      background: '#F8FAFC'
-    }
-  },
-  title: {
-    margin: '0 0 5px 0',
-    color: '#0A1929',
-    fontSize: '28px',
-    fontWeight: 600
-  },
-  subtitle: {
-    margin: 0,
-    color: '#666',
-    fontSize: '14px'
-  },
-  errorMessage: {
-    padding: '12px 20px',
-    background: '#FFEBEE',
-    color: '#C62828',
-    borderRadius: '8px',
-    marginBottom: '20px'
-  },
-  successMessage: {
-    padding: '12px 20px',
-    background: '#E8F5E9',
-    color: '#2E7D32',
-    borderRadius: '8px',
-    marginBottom: '20px'
-  },
-  section: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '24px',
-    marginBottom: '24px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
-  },
-  sectionTitle: {
-    fontSize: '18px',
-    fontWeight: 600,
-    color: '#0A1929',
-    margin: '0 0 20px 0',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    flexWrap: 'wrap'
-  },
-  assessmentHint: {
-    fontSize: '14px',
-    fontWeight: 'normal',
-    color: '#666'
-  },
-  assessmentGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-    gap: '16px'
-  },
-  assessmentCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    padding: '16px',
-    borderRadius: '12px',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    position: 'relative',
-    ':hover': {
-      transform: 'translateY(-2px)',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-    }
-  },
-  assessmentIcon: {
-    fontSize: '32px'
-  },
-  assessmentInfo: {
-    flex: 1
-  },
-  assessmentTitle: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#0A1929',
-    marginBottom: '4px'
-  },
-  assessmentType: {
-    fontSize: '12px',
-    color: '#666'
-  },
-  selectedBadge: {
-    position: 'absolute',
-    top: '8px',
-    right: '12px',
-    fontSize: '12px',
-    color: '#0A1929',
-    fontWeight: 500
-  },
-  actionGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '16px'
-  },
-  actionButton: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '20px',
-    borderRadius: '12px',
-    fontSize: '16px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    fontFamily: 'inherit'
-  },
-  actionIcon: {
-    fontSize: '24px'
-  },
-  actionDesc: {
-    fontSize: '11px',
-    fontWeight: 'normal',
-    opacity: 0.7
-  },
-  filterBar: {
-    display: 'flex',
-    gap: '20px',
-    marginBottom: '20px',
-    flexWrap: 'wrap'
-  },
-  searchBox: {
-    flex: 2,
-    minWidth: '250px'
-  },
-  searchInput: {
-    width: '100%',
-    padding: '10px 16px',
-    border: '1px solid #E2E8F0',
-    borderRadius: '8px',
-    fontSize: '14px',
-    outline: 'none',
-    ':focus': {
-      borderColor: '#0A1929'
-    }
-  },
-  filterGroup: {
-    flex: 1,
-    minWidth: '200px'
-  },
-  filterSelect: {
-    width: '100%',
-    padding: '10px 16px',
-    border: '1px solid #E2E8F0',
-    borderRadius: '8px',
-    fontSize: '14px',
-    background: 'white',
-    cursor: 'pointer'
-  },
-  tableContainer: {
-    overflowX: 'auto',
-    marginBottom: '20px'
-  },
-  tableWrapper: {
-    overflowX: 'auto'
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '14px'
-  },
-  tableHeadRow: {
-    borderBottom: '2px solid #E2E8F0',
-    background: '#F8FAFC'
-  },
-  tableHead: {
-    padding: '12px 16px',
-    fontWeight: 600,
-    color: '#0A1929',
-    textAlign: 'left'
-  },
-  thCheckbox: {
-    width: '40px',
-    padding: '12px 8px',
-    textAlign: 'center'
-  },
-  tableCell: {
-    padding: '12px 16px',
-    borderBottom: '1px solid #E2E8F0'
-  },
-  tdCheckbox: {
-    padding: '12px 8px',
-    textAlign: 'center',
-    borderBottom: '1px solid #E2E8F0'
-  },
-  checkbox: {
-    width: '18px',
-    height: '18px',
-    cursor: 'pointer'
-  },
-  tableRow: {
-    ':hover': {
-      background: '#F8FAFC'
-    }
-  },
-  candidateInfo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px'
-  },
-  candidateAvatar: {
-    width: '36px',
-    height: '36px',
-    borderRadius: '18px',
-    background: 'linear-gradient(135deg, #0A1929, #1A2A3A)',
-    color: 'white',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '14px',
-    fontWeight: 600
-  },
-  candidateName: {
-    fontWeight: 500,
-    color: '#0A1929',
-    marginBottom: '2px'
-  },
-  candidateId: {
-    fontSize: '10px',
-    color: '#718096',
-    fontFamily: 'monospace'
-  },
-  candidateEmail: {
-    fontSize: '13px',
-    color: '#0A1929'
-  },
-  supervisorName: {
-    fontSize: '13px',
-    color: '#0A1929'
-  },
-  unassignedBadge: {
-    display: 'inline-block',
-    padding: '2px 8px',
-    background: '#FEF2F2',
-    color: '#B91C1C',
-    borderRadius: '12px',
-    fontSize: '11px',
-    fontWeight: 500
-  },
-  statusBadge: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px',
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '12px',
-    fontWeight: 500
-  },
-  noData: {
-    padding: '40px',
-    textAlign: 'center',
-    color: '#718096'
-  },
-  summaryBar: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: '16px',
-    borderTop: '1px solid #E2E8F0',
-    flexWrap: 'wrap',
-    gap: '16px'
-  },
-  selectionSummary: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px'
-  },
-  selectedCount: {
-    fontSize: '20px',
-    fontWeight: 700,
-    color: '#0A1929'
-  },
-  clearSelection: {
-    background: 'none',
-    border: 'none',
-    color: '#F57C00',
-    cursor: 'pointer',
-    fontSize: '12px',
-    textDecoration: 'underline',
-    padding: '4px 8px',
-    ':hover': {
-      color: '#0A1929'
-    }
-  },
-  submitButton: {
-    padding: '12px 32px',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '16px',
-    fontWeight: 600,
-    transition: 'all 0.2s ease',
-    ':hover': {
-      transform: 'translateY(-1px)',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
-    }
-  }
+  checkingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #0a1929 0%, #1a2a3a 100%)", color: "white", padding: "20px", textAlign: "center" },
+  checkingText: { margin: 0, color: "rgba(255,255,255,0.9)", fontSize: "14px" },
+  spinner: { width: "40px", height: "40px", border: "4px solid rgba(255,255,255,0.3)", borderTop: "4px solid white", borderRadius: "50%", animation: "spin 1s linear infinite", marginBottom: "20px" },
+  container: { maxWidth: "1400px", margin: "0 auto", padding: "30px 20px" },
+  header: { marginBottom: "24px", background: "white", padding: "22px 30px", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" },
+  backButton: { display: "inline-block", color: "#0a1929", textDecoration: "none", fontSize: "14px", marginBottom: "15px", padding: "7px 12px", borderRadius: "6px", border: "1px solid #e2e8f0", fontWeight: 700 },
+  title: { margin: "0 0 5px", color: "#0a1929", fontSize: "28px", fontWeight: 800 },
+  subtitle: { margin: 0, color: "#667085", fontSize: "14px" },
+  message: { padding: "12px 20px", borderRadius: "8px", marginBottom: "20px", fontSize: "14px", lineHeight: 1.5 },
+  section: { background: "white", borderRadius: "16px", padding: "24px", marginBottom: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" },
+  sectionTitle: { fontSize: "18px", fontWeight: 800, color: "#0a1929", margin: "0 0 20px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" },
+  assessmentHint: { fontSize: "14px", fontWeight: 500, color: "#667085" },
+  assessmentGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px" },
+  assessmentCard: { display: "flex", alignItems: "center", gap: "16px", padding: "16px", borderRadius: "12px", cursor: "pointer", position: "relative", textAlign: "left" },
+  assessmentIcon: { fontSize: "32px" },
+  assessmentInfo: { flex: 1 },
+  assessmentTitle: { fontSize: "14px", fontWeight: 800, color: "#0a1929", marginBottom: "4px" },
+  assessmentType: { fontSize: "12px", color: "#667085" },
+  selectedBadge: { position: "absolute", top: "8px", right: "12px", fontSize: "12px", color: "#0a1929", fontWeight: 800 },
+  actionGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" },
+  actionButton: { display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", padding: "20px", borderRadius: "12px", fontSize: "16px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" },
+  actionIcon: { fontSize: "24px" },
+  actionDesc: { fontSize: "11px", fontWeight: 500, opacity: 0.75 },
+  filterBar: { display: "flex", gap: "20px", marginBottom: "20px", flexWrap: "wrap" },
+  searchBox: { flex: 2, minWidth: "250px" },
+  searchInput: { width: "100%", padding: "10px 16px", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", outline: "none", boxSizing: "border-box" },
+  filterGroup: { flex: 1, minWidth: "220px" },
+  filterSelect: { width: "100%", padding: "10px 16px", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", background: "white", cursor: "pointer", boxSizing: "border-box" },
+  tableContainer: { overflowX: "auto", marginBottom: "20px" },
+  tableWrapper: { overflowX: "auto" },
+  table: { width: "100%", borderCollapse: "collapse", fontSize: "14px", minWidth: "850px" },
+  tableHeadRow: { borderBottom: "2px solid #e2e8f0", background: "#f8fafc" },
+  tableHead: { padding: "12px 16px", fontWeight: 800, color: "#0a1929", textAlign: "left" },
+  thCheckbox: { width: "40px", padding: "12px 8px", textAlign: "center" },
+  tableCell: { padding: "12px 16px", borderBottom: "1px solid #e2e8f0" },
+  tdCheckbox: { padding: "12px 8px", textAlign: "center", borderBottom: "1px solid #e2e8f0" },
+  checkbox: { width: "18px", height: "18px", cursor: "pointer" },
+  tableRow: { background: "white" },
+  candidateInfo: { display: "flex", alignItems: "center", gap: "12px" },
+  candidateAvatar: { width: "36px", height: "36px", borderRadius: "18px", background: "linear-gradient(135deg, #0a1929, #1a2a3a)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: 800 },
+  candidateName: { fontWeight: 800, color: "#0a1929", marginBottom: "2px" },
+  candidateId: { fontSize: "10px", color: "#718096", fontFamily: "monospace" },
+  candidateEmail: { fontSize: "13px", color: "#0a1929" },
+  supervisorName: { fontSize: "13px", color: "#0a1929", fontWeight: 700 },
+  unassignedBadge: { display: "inline-block", padding: "2px 8px", background: "#fef2f2", color: "#b91c1c", borderRadius: "12px", fontSize: "11px", fontWeight: 800 },
+  statusBadge: { display: "inline-flex", alignItems: "center", gap: "4px", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: 800 },
+  noData: { padding: "40px", textAlign: "center", color: "#718096" },
+  loadingState: { padding: "35px", textAlign: "center", color: "#667085" },
+  summaryBar: { display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "16px", borderTop: "1px solid #e2e8f0", flexWrap: "wrap", gap: "16px" },
+  selectionSummary: { display: "flex", alignItems: "center", gap: "8px" },
+  selectedCount: { fontSize: "20px", fontWeight: 800, color: "#0a1929" },
+  clearSelection: { background: "none", border: "none", color: "#f57c00", cursor: "pointer", fontSize: "12px", textDecoration: "underline", padding: "4px 8px" },
+  submitButton: { padding: "12px 32px", color: "white", border: "none", borderRadius: "8px", fontSize: "16px", fontWeight: 800 },
+  unauthorized: { textAlign: "center", padding: "60px", color: "#667085", background: "white", borderRadius: "16px", maxWidth: "400px", margin: "100px auto" },
+  button: { padding: "10px 20px", background: "#0a1929", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700, marginTop: "20px" }
 };
