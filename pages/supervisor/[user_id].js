@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 
 // ======================================================
-// TEXT / SAFETY HELPERS
+// SAFE TEXT HELPERS
 // ======================================================
 
 function decodeHtmlEntities(value) {
@@ -23,10 +23,38 @@ function decodeHtmlEntities(value) {
     text = text.replace(new RegExp("&" + "gt;", "g"), ">");
     text = text.replace(new RegExp("&" + "quot;", "g"), '"');
     text = text.replace(new RegExp("&" + "#039;", "g"), "'");
+
     if (text === previousText) break;
   }
 
   return text;
+}
+
+function decodeObjectDeep(value) {
+  var output;
+  var keys;
+  var i;
+
+  if (typeof value === "string") return decodeHtmlEntities(value);
+
+  if (Array.isArray(value)) {
+    return value.map(function (item) {
+      return decodeObjectDeep(item);
+    });
+  }
+
+  if (value && typeof value === "object") {
+    output = {};
+    keys = Object.keys(value);
+
+    for (i = 0; i < keys.length; i += 1) {
+      output[keys[i]] = decodeObjectDeep(value[keys[i]]);
+    }
+
+    return output;
+  }
+
+  return value;
 }
 
 function safeObject(value) {
@@ -60,6 +88,10 @@ function clampPercentage(value) {
   if (number > 100) return 100;
   return number;
 }
+
+// ======================================================
+// VISUAL HELPERS
+// ======================================================
 
 function getScoreTone(score) {
   var value = safeNumber(score, 0);
@@ -111,7 +143,7 @@ function getPriorityStyle(priority) {
 }
 
 // ======================================================
-// DATA HELPERS
+// REPORT DATA HELPERS
 // ======================================================
 
 function buildReportUrl(userId, assessmentId) {
@@ -212,7 +244,7 @@ function getRowPercentage(row) {
 
 function getRowNarrative(row) {
   var item = safeObject(row);
-  return safeText(item.narrative || item.supervisorMeaning || item.supervisorImplication || item.comment || item.performanceComment, "No interpretation available.");
+  return safeText(item.narrative || item.supervisorMeaning || item.supervisorImplication || item.comment || item.performanceComment || item.recommendation || item.description, "No interpretation available.");
 }
 
 function getRowAction(row) {
@@ -240,7 +272,7 @@ function getTabCount(tab, data) {
 }
 
 // ======================================================
-// COMPONENTS
+// UI COMPONENTS
 // ======================================================
 
 function ProgressBar(props) {
@@ -261,9 +293,9 @@ function MetricCard(props) {
         {props.icon}
       </div>
       <div>
-        <p style={styles.metricCardLabel}>{props.label}</p>
+        <p style={styles.metricCardLabel}>{safeText(props.label, "Metric")}</p>
         <p style={styles.metricCardValue}>{props.value}</p>
-        {props.note && <p style={styles.metricCardNote}>{props.note}</p>}
+        {props.note && <p style={styles.metricCardNote}>{safeText(props.note, "")}</p>}
       </div>
     </div>
   );
@@ -274,10 +306,10 @@ function SectionShell(props) {
     <section style={props.highlight ? styles.sectionShellHighlight : styles.sectionShell}>
       <div style={styles.sectionHeader}>
         <div>
-          <p style={styles.sectionEyebrow}>{props.eyebrow || "Report Section"}</p>
-          <h2 style={styles.sectionTitle}>{props.title}</h2>
+          <p style={styles.sectionEyebrow}>{safeText(props.eyebrow || "Report Section", "Report Section")}</p>
+          <h2 style={styles.sectionTitle}>{safeText(props.title, "Section")}</h2>
         </div>
-        {props.badge && <span style={props.badgeStyle || styles.badgeNeutral}>{props.badge}</span>}
+        {props.badge !== undefined && props.badge !== null && props.badge !== "" && <span style={props.badgeStyle || styles.badgeNeutral}>{props.badge}</span>}
       </div>
       {props.children}
     </section>
@@ -288,8 +320,8 @@ function EmptyState(props) {
   return (
     <div style={styles.emptyState}>
       <div style={styles.emptyIcon}>{props.icon || "✓"}</div>
-      <p style={styles.emptyTitle}>{props.title}</p>
-      <p style={styles.emptyText}>{props.message}</p>
+      <p style={styles.emptyTitle}>{safeText(props.title, "Nothing to show")}</p>
+      <p style={styles.emptyText}>{safeText(props.message, "No information is available for this section.")}</p>
     </div>
   );
 }
@@ -387,9 +419,9 @@ export default function SupervisorUserReportPage() {
         loadedAssessment = cleanData.assessment || null;
         loadedReport = cleanData.generatedReport || cleanData.report || cleanData.assessmentReport || cleanData.result || cleanData;
 
-        setCandidate(loadedCandidate);
-        setAssessment(loadedAssessment);
-        setReport(loadedReport);
+        setCandidate(decodeObjectDeep(loadedCandidate));
+        setAssessment(decodeObjectDeep(loadedAssessment));
+        setReport(decodeObjectDeep(loadedReport));
         setLoading(false);
       } catch (error) {
         if (!mounted) return;
@@ -405,13 +437,13 @@ export default function SupervisorUserReportPage() {
     };
   }, [router.isReady, userId, assessmentId]);
 
-  var cleanReport = safeObject(report);
-  var categoryScores = getCategoryScores(cleanReport);
-  var strengths = getStrengths(cleanReport);
-  var developmentAreas = getDevelopmentAreas(cleanReport);
-  var recommendations = getRecommendations(cleanReport);
-  var followUpQuestions = getFollowUpQuestions(cleanReport);
-  var behavioralInsights = getBehavioralInsights(cleanReport);
+  var cleanReport = safeObject(decodeObjectDeep(report));
+  var categoryScores = safeArray(decodeObjectDeep(getCategoryScores(cleanReport)));
+  var strengths = safeArray(decodeObjectDeep(getStrengths(cleanReport)));
+  var developmentAreas = safeArray(decodeObjectDeep(getDevelopmentAreas(cleanReport)));
+  var recommendations = safeArray(decodeObjectDeep(getRecommendations(cleanReport)));
+  var followUpQuestions = safeArray(decodeObjectDeep(getFollowUpQuestions(cleanReport)));
+  var behavioralInsights = decodeObjectDeep(getBehavioralInsights(cleanReport));
   var roleReadiness = getRoleReadiness(cleanReport);
   var candidateName = getCandidateName(candidate, cleanReport);
   var assessmentName = getAssessmentName(assessment, cleanReport);
@@ -518,7 +550,7 @@ export default function SupervisorUserReportPage() {
         </div>
 
         <SectionShell title="Role Readiness" eyebrow="Readiness decision" badge="Readiness" badgeStyle={styles.badgeWarm} highlight={true}>
-          <p style={styles.bodyTextLarge}>{roleReadiness}</p>
+          <p style={styles.bodyTextLarge}>{safeText(roleReadiness, "No role readiness statement is available yet.")}</p>
         </SectionShell>
 
         {behavioralInsights && (
@@ -546,7 +578,7 @@ export default function SupervisorUserReportPage() {
       <SectionShell title="Category / Competency Scores" eyebrow="Expandable performance breakdown" badge={categoryScores.length}>
         <div style={styles.categoryDeck}>
           {categoryScores.map(function (item, index) {
-            var row = safeObject(item);
+            var row = safeObject(decodeObjectDeep(item));
             var rowTitle = getRowTitle(row);
             var rowPercentage = getRowPercentage(row);
             var rowNarrative = getRowNarrative(row);
@@ -591,15 +623,15 @@ export default function SupervisorUserReportPage() {
   }
 
   function renderStrengths() {
-    if (safeArray(strengths).length === 0) {
+    if (strengths.length === 0) {
       return <EmptyState title="No strengths available" message="No strengths have been identified for this candidate yet." icon="★" />;
     }
 
     return (
-      <SectionShell title="Top Strengths" eyebrow="Leverage areas" badge={safeArray(strengths).length}>
+      <SectionShell title="Top Strengths" eyebrow="Leverage areas" badge={strengths.length}>
         <div style={styles.cardGrid}>
-          {safeArray(strengths).map(function (item, index) {
-            var row = safeObject(item);
+          {strengths.map(function (item, index) {
+            var row = safeObject(decodeObjectDeep(item));
             var score = getRowPercentage(row);
             return (
               <article key={index} style={styles.insightCard}>
@@ -619,15 +651,15 @@ export default function SupervisorUserReportPage() {
   }
 
   function renderDevelopment() {
-    if (safeArray(developmentAreas).length === 0) {
+    if (developmentAreas.length === 0) {
       return <EmptyState title="No priority development areas detected" message="The candidate scored above the development threshold across all measured areas." icon="✓" />;
     }
 
     return (
-      <SectionShell title="Development Areas" eyebrow="Priority improvement areas" badge={safeArray(developmentAreas).length} badgeStyle={styles.badgeWarm}>
+      <SectionShell title="Development Areas" eyebrow="Priority improvement areas" badge={developmentAreas.length} badgeStyle={styles.badgeWarm}>
         <div style={styles.cardGrid}>
-          {safeArray(developmentAreas).map(function (item, index) {
-            var row = safeObject(item);
+          {developmentAreas.map(function (item, index) {
+            var row = safeObject(decodeObjectDeep(item));
             var score = getRowPercentage(row);
             return (
               <article key={index} style={styles.developmentCard}>
@@ -655,7 +687,7 @@ export default function SupervisorUserReportPage() {
       <SectionShell title="Supervisor Follow-up Questions" eyebrow="Interview and validation prompts" badge={followUpQuestions.length}>
         <div style={styles.questionGrid}>
           {followUpQuestions.map(function (item, index) {
-            var row = safeObject(item);
+            var row = safeObject(decodeObjectDeep(item));
             return (
               <article key={index} style={styles.questionCardModern}>
                 <div style={styles.questionHeader}>
@@ -678,10 +710,10 @@ export default function SupervisorUserReportPage() {
     }
 
     return (
-      <SectionShell title="Recommendations" eyebrow="Action plan" badge={recommendations.length}>
+      <SectionShell title="Recommendations" eyebrow={developmentAreas.length === 0 ? "Leverage plan" : "Action plan"} badge={recommendations.length}>
         <div style={styles.recommendationTimeline}>
           {recommendations.map(function (item, index) {
-            var row = safeObject(item);
+            var row = safeObject(decodeObjectDeep(item));
             return (
               <article key={index} style={styles.recommendationModern}>
                 <div style={styles.timelineDot}>{index + 1}</div>
@@ -781,7 +813,6 @@ export default function SupervisorUserReportPage() {
                 );
               })}
             </nav>
-
             <div style={styles.tabContent}>{renderActiveTab()}</div>
           </React.Fragment>
         )}
@@ -795,661 +826,94 @@ export default function SupervisorUserReportPage() {
 // ======================================================
 
 var styles = {
-  page: {
-    minHeight: "100vh",
-    background: "#f3f6fb",
-    padding: "28px 16px 48px",
-    color: "#172033",
-    position: "relative",
-    overflow: "hidden",
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif'
-  },
-  backgroundBlobOne: {
-    position: "absolute",
-    width: "420px",
-    height: "420px",
-    borderRadius: "999px",
-    background: "rgba(20, 184, 166, 0.18)",
-    top: "-160px",
-    right: "-120px",
-    filter: "blur(10px)"
-  },
-  backgroundBlobTwo: {
-    position: "absolute",
-    width: "360px",
-    height: "360px",
-    borderRadius: "999px",
-    background: "rgba(79, 70, 229, 0.12)",
-    bottom: "-160px",
-    left: "-120px",
-    filter: "blur(12px)"
-  },
-  container: {
-    maxWidth: "1220px",
-    margin: "0 auto",
-    position: "relative",
-    zIndex: 1
-  },
-  hero: {
-    borderRadius: "30px",
-    padding: "30px",
-    boxShadow: "0 24px 80px rgba(15, 23, 42, 0.18)",
-    marginBottom: "20px",
-    color: "#ffffff"
-  },
-  heroContent: {
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) 310px",
-    gap: "24px",
-    alignItems: "stretch"
-  },
-  heroTextBlock: {
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "center",
-    minHeight: "230px"
-  },
-  heroBadge: {
-    display: "inline-flex",
-    width: "fit-content",
-    padding: "7px 12px",
-    borderRadius: "999px",
-    background: "rgba(255,255,255,0.18)",
-    color: "#ffffff",
-    fontWeight: 800,
-    fontSize: "12px",
-    textTransform: "uppercase",
-    letterSpacing: "0.08em",
-    marginBottom: "14px"
-  },
-  heroTitle: {
-    margin: 0,
-    fontSize: "44px",
-    lineHeight: 1.1,
-    color: "#ffffff",
-    textShadow: "0 2px 18px rgba(0,0,0,0.15)"
-  },
-  heroSubtitle: {
-    margin: "14px 0 0",
-    fontSize: "17px",
-    color: "rgba(255,255,255,0.9)"
-  },
-  heroMeta: {
-    margin: "8px 0 0",
-    fontSize: "13px",
-    color: "rgba(255,255,255,0.78)",
-    overflowWrap: "anywhere"
-  },
-  scorePanel: {
-    background: "rgba(255,255,255,0.94)",
-    border: "1px solid rgba(255,255,255,0.55)",
-    borderRadius: "24px",
-    padding: "22px",
-    boxShadow: "0 18px 45px rgba(15, 23, 42, 0.16)",
-    color: "#172033"
-  },
-  scorePanelLabel: {
-    margin: 0,
-    color: "#667085",
-    fontSize: "13px",
-    fontWeight: 900,
-    textTransform: "uppercase",
-    letterSpacing: "0.05em"
-  },
-  scorePanelValue: {
-    margin: "10px 0 10px",
-    fontSize: "48px",
-    lineHeight: 1,
-    fontWeight: 900
-  },
-  scorePanelFooter: {
-    display: "flex",
-    gap: "8px",
-    alignItems: "center",
-    flexWrap: "wrap",
-    marginTop: "14px"
-  },
-  scorePanelMeta: {
-    margin: "12px 0 0",
-    color: "#667085",
-    fontSize: "13px"
-  },
-  classificationBadge: {
-    display: "inline-flex",
-    borderRadius: "999px",
-    padding: "6px 10px",
-    background: "#f2f4f7",
-    color: "#344054",
-    fontSize: "12px",
-    fontWeight: 900
-  },
-  downloadButton: {
-    marginTop: "16px",
-    width: "100%",
-    border: 0,
-    borderRadius: "14px",
-    padding: "13px 14px",
-    background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)",
-    color: "#ffffff",
-    fontWeight: 900,
-    cursor: "pointer",
-    fontSize: "14px",
-    boxShadow: "0 12px 26px rgba(15, 118, 110, 0.28)"
-  },
-  buttonDisabled: {
-    marginTop: "16px",
-    width: "100%",
-    border: 0,
-    borderRadius: "14px",
-    padding: "13px 14px",
-    background: "#98a2b3",
-    color: "#ffffff",
-    fontWeight: 900,
-    cursor: "not-allowed",
-    fontSize: "14px"
-  },
-  pdfError: {
-    margin: "10px 0 0",
-    color: "#b42318",
-    fontSize: "12px",
-    lineHeight: 1.4
-  },
-  progressTrack: {
-    width: "100%",
-    height: "10px",
-    borderRadius: "999px",
-    background: "#e4e7ec",
-    overflow: "hidden"
-  },
-  metricStrip: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: "14px",
-    marginBottom: "18px"
-  },
-  metricCard: {
-    display: "flex",
-    gap: "12px",
-    alignItems: "center",
-    background: "rgba(255,255,255,0.92)",
-    border: "1px solid #eaecf0",
-    borderRadius: "20px",
-    padding: "16px",
-    boxShadow: "0 14px 40px rgba(16, 24, 40, 0.06)"
-  },
-  metricIcon: {
-    width: "42px",
-    height: "42px",
-    borderRadius: "14px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 900,
-    fontSize: "18px"
-  },
-  metricCardLabel: {
-    margin: 0,
-    color: "#667085",
-    fontSize: "12px",
-    fontWeight: 900,
-    textTransform: "uppercase",
-    letterSpacing: "0.05em"
-  },
-  metricCardValue: {
-    margin: "3px 0 0",
-    color: "#101828",
-    fontSize: "23px",
-    fontWeight: 900
-  },
-  metricCardNote: {
-    margin: "2px 0 0",
-    color: "#667085",
-    fontSize: "12px"
-  },
-  tabBar: {
-    display: "flex",
-    gap: "10px",
-    overflowX: "auto",
-    padding: "10px",
-    background: "rgba(255,255,255,0.78)",
-    border: "1px solid #eaecf0",
-    borderRadius: "22px",
-    marginBottom: "18px",
-    boxShadow: "0 14px 40px rgba(16, 24, 40, 0.06)",
-    backdropFilter: "blur(8px)"
-  },
-  tabButton: {
-    border: 0,
-    borderRadius: "16px",
-    padding: "11px 14px",
-    background: "transparent",
-    color: "#475467",
-    fontWeight: 900,
-    cursor: "pointer",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "8px",
-    whiteSpace: "nowrap"
-  },
-  tabActive: {
-    border: 0,
-    borderRadius: "16px",
-    padding: "11px 14px",
-    background: "#101828",
-    color: "#ffffff",
-    fontWeight: 900,
-    cursor: "pointer",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "8px",
-    whiteSpace: "nowrap",
-    boxShadow: "0 12px 24px rgba(16, 24, 40, 0.18)"
-  },
-  tabIcon: {
-    fontWeight: 900
-  },
-  tabCount: {
-    minWidth: "24px",
-    height: "22px",
-    padding: "0 7px",
-    borderRadius: "999px",
-    background: "#eef4ff",
-    color: "#3538cd",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "12px"
-  },
-  tabCountActive: {
-    minWidth: "24px",
-    height: "22px",
-    padding: "0 7px",
-    borderRadius: "999px",
-    background: "rgba(255,255,255,0.18)",
-    color: "#ffffff",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "12px"
-  },
-  tabContent: {
-    minHeight: "300px"
-  },
-  summaryGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-    gap: "18px"
-  },
-  sectionShell: {
-    background: "rgba(255,255,255,0.95)",
-    border: "1px solid #eaecf0",
-    borderRadius: "24px",
-    padding: "24px",
-    boxShadow: "0 18px 48px rgba(16, 24, 40, 0.07)",
-    marginBottom: "18px"
-  },
-  sectionShellHighlight: {
-    background: "linear-gradient(135deg, #ffffff 0%, #fff7ed 100%)",
-    border: "1px solid #fed7aa",
-    borderRadius: "24px",
-    padding: "24px",
-    boxShadow: "0 18px 48px rgba(16, 24, 40, 0.07)",
-    marginBottom: "18px"
-  },
-  sectionHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "14px",
-    marginBottom: "16px"
-  },
-  sectionEyebrow: {
-    margin: "0 0 4px",
-    color: "#667085",
-    fontSize: "12px",
-    fontWeight: 900,
-    textTransform: "uppercase",
-    letterSpacing: "0.06em"
-  },
-  sectionTitle: {
-    margin: 0,
-    fontSize: "22px",
-    color: "#101828"
-  },
-  bodyText: {
-    margin: 0,
-    color: "#344054",
-    lineHeight: 1.7,
-    fontSize: "15px"
-  },
-  bodyTextLarge: {
-    margin: 0,
-    color: "#344054",
-    lineHeight: 1.75,
-    fontSize: "16px"
-  },
-  mutedText: {
-    margin: "8px 0 0",
-    color: "#667085",
-    lineHeight: 1.6,
-    fontSize: "14px"
-  },
-  actionText: {
-    margin: "10px 0 0",
-    color: "#344054",
-    lineHeight: 1.6,
-    fontSize: "14px"
-  },
-  miniMetrics: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-    gap: "12px",
-    marginBottom: "16px"
-  },
-  categoryDeck: {
-    display: "grid",
-    gap: "14px"
-  },
-  categoryCard: {
-    background: "#ffffff",
-    border: "1px solid #eaecf0",
-    borderRadius: "18px",
-    overflow: "hidden",
-    boxShadow: "0 10px 26px rgba(16, 24, 40, 0.05)"
-  },
-  categoryButton: {
-    width: "100%",
-    border: 0,
-    background: "transparent",
-    padding: "16px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "16px",
-    cursor: "pointer",
-    textAlign: "left"
-  },
-  categoryLeft: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px"
-  },
-  categoryIcon: {
-    width: "42px",
-    height: "42px",
-    borderRadius: "14px",
-    color: "#ffffff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 900
-  },
-  categoryTitle: {
-    margin: 0,
-    fontSize: "16px",
-    color: "#101828"
-  },
-  categoryMeta: {
-    margin: "4px 0 0",
-    color: "#667085",
-    fontSize: "12px"
-  },
-  categoryRight: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    flexWrap: "wrap",
-    justifyContent: "flex-end"
-  },
-  categoryScore: {
-    fontSize: "20px",
-    fontWeight: 900
-  },
-  chevron: {
-    width: "30px",
-    height: "30px",
-    borderRadius: "999px",
-    background: "#f2f4f7",
-    color: "#344054",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 900,
-    fontSize: "18px"
-  },
-  categoryProgressWrap: {
-    padding: "0 16px 14px"
-  },
-  categoryDetails: {
-    padding: "0 16px 16px",
-    borderTop: "1px solid #eaecf0"
-  },
-  detailPills: {
-    display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
-    margin: "14px 0 10px"
-  },
-  classificationPill: {
-    display: "inline-flex",
-    borderRadius: "999px",
-    padding: "6px 10px",
-    background: "#f2f4f7",
-    color: "#344054",
-    fontSize: "12px",
-    fontWeight: 900
-  },
-  cardGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-    gap: "14px"
-  },
-  insightCard: {
-    background: "linear-gradient(135deg, #ffffff 0%, #ecfdf3 100%)",
-    border: "1px solid #bbf7d0",
-    borderRadius: "20px",
-    padding: "18px",
-    boxShadow: "0 14px 34px rgba(16, 24, 40, 0.06)"
-  },
-  developmentCard: {
-    background: "linear-gradient(135deg, #ffffff 0%, #fff7ed 100%)",
-    border: "1px solid #fed7aa",
-    borderRadius: "20px",
-    padding: "18px",
-    boxShadow: "0 14px 34px rgba(16, 24, 40, 0.06)"
-  },
-  insightTop: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "10px",
-    marginBottom: "12px"
-  },
-  strengthIcon: {
-    width: "36px",
-    height: "36px",
-    borderRadius: "12px",
-    background: "#dcfce7",
-    color: "#027a48",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 900
-  },
-  developmentIcon: {
-    width: "36px",
-    height: "36px",
-    borderRadius: "12px",
-    background: "#ffedd5",
-    color: "#c2410c",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 900
-  },
-  insightScore: {
-    fontSize: "22px",
-    fontWeight: 900
-  },
-  insightTitle: {
-    margin: "0 0 10px",
-    color: "#101828",
-    fontSize: "17px"
-  },
-  insightText: {
-    margin: "12px 0 0",
-    color: "#475467",
-    lineHeight: 1.6,
-    fontSize: "14px"
-  },
-  questionGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-    gap: "14px"
-  },
-  questionCardModern: {
-    background: "linear-gradient(135deg, #ffffff 0%, #f5f3ff 100%)",
-    border: "1px solid #ddd6fe",
-    borderRadius: "20px",
-    padding: "18px",
-    boxShadow: "0 14px 34px rgba(16, 24, 40, 0.06)"
-  },
-  questionHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "12px"
-  },
-  questionNumber: {
-    width: "34px",
-    height: "34px",
-    borderRadius: "12px",
-    background: "#ede9fe",
-    color: "#6d28d9",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 900
-  },
-  recommendationTimeline: {
-    display: "grid",
-    gap: "16px"
-  },
-  recommendationModern: {
-    display: "grid",
-    gridTemplateColumns: "44px minmax(0, 1fr)",
-    gap: "14px"
-  },
-  timelineDot: {
-    width: "38px",
-    height: "38px",
-    borderRadius: "14px",
-    background: "#101828",
-    color: "#ffffff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 900
-  },
-  recommendationContent: {
-    background: "#ffffff",
-    border: "1px solid #eaecf0",
-    borderRadius: "18px",
-    padding: "16px",
-    boxShadow: "0 10px 28px rgba(16, 24, 40, 0.05)"
-  },
-  recommendationHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "12px",
-    alignItems: "center",
-    marginBottom: "10px"
-  },
-  recommendationTitle: {
-    margin: 0,
-    fontSize: "17px",
-    color: "#101828"
-  },
-  emptyState: {
-    background: "#ffffff",
-    border: "1px dashed #cbd5e1",
-    borderRadius: "24px",
-    padding: "34px",
-    textAlign: "center",
-    boxShadow: "0 14px 34px rgba(16, 24, 40, 0.04)"
-  },
-  emptyIcon: {
-    width: "54px",
-    height: "54px",
-    margin: "0 auto 12px",
-    borderRadius: "18px",
-    background: "#ecfdf3",
-    color: "#027a48",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "24px",
-    fontWeight: 900
-  },
-  emptyTitle: {
-    margin: 0,
-    color: "#101828",
-    fontSize: "18px",
-    fontWeight: 900
-  },
-  emptyText: {
-    margin: "8px auto 0",
-    maxWidth: "540px",
-    color: "#667085",
-    lineHeight: 1.6
-  },
-  loadingBar: {
-    height: "10px",
-    borderRadius: "999px",
-    overflow: "hidden",
-    background: "#e4e7ec",
-    marginBottom: "14px"
-  },
-  loadingPulse: {
-    height: "100%",
-    width: "45%",
-    borderRadius: "999px",
-    background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)"
-  },
-  errorCard: {
-    background: "#fff5f5",
-    borderRadius: "24px",
-    padding: "24px",
-    border: "1px solid #fecaca",
-    marginBottom: "18px"
-  },
-  errorText: {
-    margin: "10px 0",
-    color: "#b42318",
-    fontWeight: 900
-  },
-  badgeNeutral: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: "999px",
-    padding: "7px 11px",
-    background: "#eef4ff",
-    color: "#3538cd",
-    fontWeight: 900,
-    fontSize: "12px"
-  },
-  badgeWarm: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: "999px",
-    padding: "7px 11px",
-    background: "#fff7ed",
-    color: "#c2410c",
-    fontWeight: 900,
-    fontSize: "12px"
-  },
+  page: { minHeight: "100vh", background: "#f3f6fb", padding: "28px 16px 48px", color: "#172033", position: "relative", overflow: "hidden", fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif' },
+  backgroundBlobOne: { position: "absolute", width: "420px", height: "420px", borderRadius: "999px", background: "rgba(20, 184, 166, 0.18)", top: "-160px", right: "-120px", filter: "blur(10px)" },
+  backgroundBlobTwo: { position: "absolute", width: "360px", height: "360px", borderRadius: "999px", background: "rgba(79, 70, 229, 0.12)", bottom: "-160px", left: "-120px", filter: "blur(12px)" },
+  container: { maxWidth: "1220px", margin: "0 auto", position: "relative", zIndex: 1 },
+  hero: { borderRadius: "30px", padding: "30px", boxShadow: "0 24px 80px rgba(15, 23, 42, 0.18)", marginBottom: "20px", color: "#ffffff" },
+  heroContent: { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 310px", gap: "24px", alignItems: "stretch" },
+  heroTextBlock: { display: "flex", flexDirection: "column", justifyContent: "center", minHeight: "230px" },
+  heroBadge: { display: "inline-flex", width: "fit-content", padding: "7px 12px", borderRadius: "999px", background: "rgba(255,255,255,0.18)", color: "#ffffff", fontWeight: 800, fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "14px" },
+  heroTitle: { margin: 0, fontSize: "44px", lineHeight: 1.1, color: "#ffffff", textShadow: "0 2px 18px rgba(0,0,0,0.15)" },
+  heroSubtitle: { margin: "14px 0 0", fontSize: "17px", color: "rgba(255,255,255,0.9)" },
+  heroMeta: { margin: "8px 0 0", fontSize: "13px", color: "rgba(255,255,255,0.78)", overflowWrap: "anywhere" },
+  scorePanel: { background: "rgba(255,255,255,0.94)", border: "1px solid rgba(255,255,255,0.55)", borderRadius: "24px", padding: "22px", boxShadow: "0 18px 45px rgba(15, 23, 42, 0.16)", color: "#172033" },
+  scorePanelLabel: { margin: 0, color: "#667085", fontSize: "13px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.05em" },
+  scorePanelValue: { margin: "10px 0 10px", fontSize: "48px", lineHeight: 1, fontWeight: 900 },
+  scorePanelFooter: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", marginTop: "14px" },
+  scorePanelMeta: { margin: "12px 0 0", color: "#667085", fontSize: "13px" },
+  classificationBadge: { display: "inline-flex", borderRadius: "999px", padding: "6px 10px", background: "#f2f4f7", color: "#344054", fontSize: "12px", fontWeight: 900 },
+  downloadButton: { marginTop: "16px", width: "100%", border: 0, borderRadius: "14px", padding: "13px 14px", background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)", color: "#ffffff", fontWeight: 900, cursor: "pointer", fontSize: "14px", boxShadow: "0 12px 26px rgba(15, 118, 110, 0.28)" },
+  buttonDisabled: { marginTop: "16px", width: "100%", border: 0, borderRadius: "14px", padding: "13px 14px", background: "#98a2b3", color: "#ffffff", fontWeight: 900, cursor: "not-allowed", fontSize: "14px" },
+  pdfError: { margin: "10px 0 0", color: "#b42318", fontSize: "12px", lineHeight: 1.4 },
+  progressTrack: { width: "100%", height: "10px", borderRadius: "999px", background: "#e4e7ec", overflow: "hidden" },
+  metricStrip: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", marginBottom: "18px" },
+  metricCard: { display: "flex", gap: "12px", alignItems: "center", background: "rgba(255,255,255,0.92)", border: "1px solid #eaecf0", borderRadius: "20px", padding: "16px", boxShadow: "0 14px 40px rgba(16, 24, 40, 0.06)" },
+  metricIcon: { width: "42px", height: "42px", borderRadius: "14px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: "18px" },
+  metricCardLabel: { margin: 0, color: "#667085", fontSize: "12px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.05em" },
+  metricCardValue: { margin: "3px 0 0", color: "#101828", fontSize: "23px", fontWeight: 900 },
+  metricCardNote: { margin: "2px 0 0", color: "#667085", fontSize: "12px" },
+  tabBar: { display: "flex", gap: "10px", overflowX: "auto", padding: "10px", background: "rgba(255,255,255,0.78)", border: "1px solid #eaecf0", borderRadius: "22px", marginBottom: "18px", boxShadow: "0 14px 40px rgba(16, 24, 40, 0.06)", backdropFilter: "blur(8px)" },
+  tabButton: { border: 0, borderRadius: "16px", padding: "11px 14px", background: "transparent", color: "#475467", fontWeight: 900, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "8px", whiteSpace: "nowrap" },
+  tabActive: { border: 0, borderRadius: "16px", padding: "11px 14px", background: "#101828", color: "#ffffff", fontWeight: 900, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "8px", whiteSpace: "nowrap", boxShadow: "0 12px 24px rgba(16, 24, 40, 0.18)" },
+  tabIcon: { fontWeight: 900 },
+  tabCount: { minWidth: "24px", height: "22px", padding: "0 7px", borderRadius: "999px", background: "#eef4ff", color: "#3538cd", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "12px" },
+  tabCountActive: { minWidth: "24px", height: "22px", padding: "0 7px", borderRadius: "999px", background: "rgba(255,255,255,0.18)", color: "#ffffff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "12px" },
+  tabContent: { minHeight: "300px" },
+  summaryGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "18px" },
+  sectionShell: { background: "rgba(255,255,255,0.95)", border: "1px solid #eaecf0", borderRadius: "24px", padding: "24px", boxShadow: "0 18px 48px rgba(16, 24, 40, 0.07)", marginBottom: "18px" },
+  sectionShellHighlight: { background: "linear-gradient(135deg, #ffffff 0%, #fff7ed 100%)", border: "1px solid #fed7aa", borderRadius: "24px", padding: "24px", boxShadow: "0 18px 48px rgba(16, 24, 40, 0.07)", marginBottom: "18px" },
+  sectionHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "14px", marginBottom: "16px" },
+  sectionEyebrow: { margin: "0 0 4px", color: "#667085", fontSize: "12px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em" },
+  sectionTitle: { margin: 0, fontSize: "22px", color: "#101828" },
+  bodyText: { margin: 0, color: "#344054", lineHeight: 1.7, fontSize: "15px" },
+  bodyTextLarge: { margin: 0, color: "#344054", lineHeight: 1.75, fontSize: "16px" },
+  mutedText: { margin: "8px 0 0", color: "#667085", lineHeight: 1.6, fontSize: "14px" },
+  actionText: { margin: "10px 0 0", color: "#344054", lineHeight: 1.6, fontSize: "14px" },
+  miniMetrics: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px", marginBottom: "16px" },
+  categoryDeck: { display: "grid", gap: "14px" },
+  categoryCard: { background: "#ffffff", border: "1px solid #eaecf0", borderRadius: "18px", overflow: "hidden", boxShadow: "0 10px 26px rgba(16, 24, 40, 0.05)" },
+  categoryButton: { width: "100%", border: 0, background: "transparent", padding: "16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", cursor: "pointer", textAlign: "left" },
+  categoryLeft: { display: "flex", alignItems: "center", gap: "12px" },
+  categoryIcon: { width: "42px", height: "42px", borderRadius: "14px", color: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900 },
+  categoryTitle: { margin: 0, fontSize: "16px", color: "#101828" },
+  categoryMeta: { margin: "4px 0 0", color: "#667085", fontSize: "12px" },
+  categoryRight: { display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", justifyContent: "flex-end" },
+  categoryScore: { fontSize: "20px", fontWeight: 900 },
+  chevron: { width: "30px", height: "30px", borderRadius: "999px", background: "#f2f4f7", color: "#344054", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: "18px" },
+  categoryProgressWrap: { padding: "0 16px 14px" },
+  categoryDetails: { padding: "0 16px 16px", borderTop: "1px solid #eaecf0" },
+  detailPills: { display: "flex", gap: "8px", flexWrap: "wrap", margin: "14px 0 10px" },
+  classificationPill: { display: "inline-flex", borderRadius: "999px", padding: "6px 10px", background: "#f2f4f7", color: "#344054", fontSize: "12px", fontWeight: 900 },
+  cardGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "14px" },
+  insightCard: { background: "linear-gradient(135deg, #ffffff 0%, #ecfdf3 100%)", border: "1px solid #bbf7d0", borderRadius: "20px", padding: "18px", boxShadow: "0 14px 34px rgba(16, 24, 40, 0.06)" },
+  developmentCard: { background: "linear-gradient(135deg, #ffffff 0%, #fff7ed 100%)", border: "1px solid #fed7aa", borderRadius: "20px", padding: "18px", boxShadow: "0 14px 34px rgba(16, 24, 40, 0.06)" },
+  insightTop: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", marginBottom: "12px" },
+  strengthIcon: { width: "36px", height: "36px", borderRadius: "12px", background: "#dcfce7", color: "#027a48", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900 },
+  developmentIcon: { width: "36px", height: "36px", borderRadius: "12px", background: "#ffedd5", color: "#c2410c", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900 },
+  insightScore: { fontSize: "22px", fontWeight: 900 },
+  insightTitle: { margin: "0 0 10px", color: "#101828", fontSize: "17px" },
+  insightText: { margin: "12px 0 0", color: "#475467", lineHeight: 1.6, fontSize: "14px" },
+  questionGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "14px" },
+  questionCardModern: { background: "linear-gradient(135deg, #ffffff 0%, #f5f3ff 100%)", border: "1px solid #ddd6fe", borderRadius: "20px", padding: "18px", boxShadow: "0 14px 34px rgba(16, 24, 40, 0.06)" },
+  questionHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" },
+  questionNumber: { width: "34px", height: "34px", borderRadius: "12px", background: "#ede9fe", color: "#6d28d9", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 900 },
+  recommendationTimeline: { display: "grid", gap: "16px" },
+  recommendationModern: { display: "grid", gridTemplateColumns: "44px minmax(0, 1fr)", gap: "14px" },
+  timelineDot: { width: "38px", height: "38px", borderRadius: "14px", background: "#101828", color: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900 },
+  recommendationContent: { background: "#ffffff", border: "1px solid #eaecf0", borderRadius: "18px", padding: "16px", boxShadow: "0 10px 28px rgba(16, 24, 40, 0.05)" },
+  recommendationHeader: { display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center", marginBottom: "10px" },
+  recommendationTitle: { margin: 0, fontSize: "17px", color: "#101828" },
+  emptyState: { background: "#ffffff", border: "1px dashed #cbd5e1", borderRadius: "24px", padding: "34px", textAlign: "center", boxShadow: "0 14px 34px rgba(16, 24, 40, 0.04)" },
+  emptyIcon: { width: "54px", height: "54px", margin: "0 auto 12px", borderRadius: "18px", background: "#ecfdf3", color: "#027a48", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px", fontWeight: 900 },
+  emptyTitle: { margin: 0, color: "#101828", fontSize: "18px", fontWeight: 900 },
+  emptyText: { margin: "8px auto 0", maxWidth: "540px", color: "#667085", lineHeight: 1.6 },
+  loadingBar: { height: "10px", borderRadius: "999px", overflow: "hidden", background: "#e4e7ec", marginBottom: "14px" },
+  loadingPulse: { height: "100%", width: "45%", borderRadius: "999px", background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)" },
+  errorCard: { background: "#fff5f5", borderRadius: "24px", padding: "24px", border: "1px solid #fecaca", marginBottom: "18px" },
+  errorText: { margin: "10px 0", color: "#b42318", fontWeight: 900 },
+  badgeNeutral: { display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "999px", padding: "7px 11px", background: "#eef4ff", color: "#3538cd", fontWeight: 900, fontSize: "12px" },
+  badgeWarm: { display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "999px", padding: "7px 11px", background: "#fff7ed", color: "#c2410c", fontWeight: 900, fontSize: "12px" },
   badgeLow: { display: "inline-flex", borderRadius: "999px", padding: "6px 10px", background: "#ecfdf3", color: "#027a48", fontWeight: 900, fontSize: "12px" },
   badgeModerate: { display: "inline-flex", borderRadius: "999px", padding: "6px 10px", background: "#eff6ff", color: "#1d4ed8", fontWeight: 900, fontSize: "12px" },
   badgeElevated: { display: "inline-flex", borderRadius: "999px", padding: "6px 10px", background: "#fffaeb", color: "#b54708", fontWeight: 900, fontSize: "12px" },
