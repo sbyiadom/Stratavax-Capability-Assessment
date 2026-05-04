@@ -178,9 +178,6 @@ export default function CandidateDashboard() {
         .select("*, assessment_type:assessment_types(*)")
         .eq("is_active", true);
 
-      // IMPORTANT:
-      // candidate_assessments is for access control only.
-      // Do not query score, max_score, or percentage from this table.
       const accessPromise = supabase
         .from("candidate_assessments")
         .select("id, assessment_id, status, result_id, completed_at, unblocked_at, created_at")
@@ -578,6 +575,15 @@ export default function CandidateDashboard() {
           100% { transform: rotate(360deg); }
         }
       `}</style>
+      <style jsx global>{`
+        html,
+        body,
+        #__next {
+          min-height: 100%;
+          overflow-y: auto !important;
+          pointer-events: auto !important;
+        }
+      `}</style>
     </div>
   );
 }
@@ -595,25 +601,25 @@ function Guideline(props) {
 }
 
 const styles = {
-  pageContainer: { position: "relative", minHeight: "100vh", width: "100%", overflow: "hidden" },
-  pageBackground: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundImage: "url(/images/dashboard1-bg.jpg)", backgroundSize: "cover", backgroundPosition: "center", zIndex: -1 },
-  content: { position: "relative", zIndex: 1, minHeight: "100vh", width: "100%" },
+  pageContainer: { position: "relative", minHeight: "100vh", width: "100%", overflowX: "hidden", overflowY: "auto", pointerEvents: "auto" },
+  pageBackground: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundImage: "url(/images/dashboard1-bg.jpg)", backgroundSize: "cover", backgroundPosition: "center", zIndex: -1, pointerEvents: "none" },
+  content: { position: "relative", zIndex: 2, minHeight: "100vh", width: "100%", pointerEvents: "auto" },
   loadingContainer: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" },
-  loadingBackground: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundImage: "url(/images/loading-bg.jpg)", backgroundSize: "cover", backgroundPosition: "center", filter: "brightness(0.7)", zIndex: 0 },
+  loadingBackground: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundImage: "url(/images/loading-bg.jpg)", backgroundSize: "cover", backgroundPosition: "center", filter: "brightness(0.7)", zIndex: 0, pointerEvents: "none" },
   loadingContent: { position: "relative", textAlign: "center", color: "white", zIndex: 1, textShadow: "2px 2px 4px rgba(0,0,0,0.5)" },
   loadingLogo: { fontSize: "32px", fontWeight: "700", marginBottom: "20px", letterSpacing: "2px", color: "white" },
   loadingSpinner: { width: "50px", height: "50px", border: "4px solid rgba(255,255,255,0.2)", borderTop: "4px solid white", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 20px" },
   loadingText: { fontSize: "16px", opacity: 0.9 },
-  header: { padding: "16px 24px", background: "rgba(255,255,255,0.1)", backdropFilter: "blur(10px)", borderBottom: "1px solid rgba(255,255,255,0.2)" },
-  headerContent: { maxWidth: "1200px", margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" },
+  header: { padding: "16px 24px", background: "rgba(255,255,255,0.1)", backdropFilter: "blur(10px)", borderBottom: "1px solid rgba(255,255,255,0.2)", position: "relative", zIndex: 5, pointerEvents: "auto" },
+  headerContent: { maxWidth: "1200px", margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", pointerEvents: "auto" },
   headerLeft: { display: "flex", alignItems: "center", gap: "12px" },
   headerTitle: { fontSize: "20px", fontWeight: "700", color: "white", margin: 0, letterSpacing: "1px", textShadow: "2px 2px 4px rgba(0,0,0,0.3)" },
   headerDivider: { color: "rgba(255,255,255,0.7)", fontSize: "20px", fontWeight: "300" },
   headerSubtitle: { fontSize: "16px", color: "rgba(255,255,255,0.9)", fontWeight: "400", textShadow: "1px 1px 2px rgba(0,0,0,0.3)" },
-  headerRight: { display: "flex", alignItems: "center", gap: "12px" },
-  profileButton: { padding: "8px 20px", background: "rgba(255,255,255,0.2)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "30px", cursor: "pointer", fontSize: "14px", fontWeight: "500", backdropFilter: "blur(10px)", textDecoration: "none", display: "inline-block" },
-  logoutButton: { padding: "8px 20px", background: "rgba(255,255,255,0.2)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "30px", cursor: "pointer", fontSize: "14px", fontWeight: "500", backdropFilter: "blur(10px)" },
-  welcomeSection: { maxWidth: "1200px", margin: "32px auto 24px", padding: "0 20px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", flexWrap: "wrap" },
+  headerRight: { display: "flex", alignItems: "center", gap: "12px", pointerEvents: "auto" },
+  profileButton: { padding: "8px 20px", background: "rgba(255,255,255,0.2)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "30px", cursor: "pointer", fontSize: "14px", fontWeight: "500", backdropFilter: "blur(10px)", textDecoration: "none", display: "inline-block", pointerEvents: "auto" },
+  logoutButton: { padding: "8px 20px", background: "rgba(255,255,255,0.2)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "30px", cursor: "pointer", fontSize: "14px", fontWeight: "500", backdropFilter: "blur(10px)", pointerEvents: "auto" },
+  welcomeSection: { maxWidth: "1200px", margin: "32px auto 24px", padding: "0 20px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", flexWrap: "wrap", position: "relative", zIndex: 4, pointerEvents: "auto" },
   welcomeContent: { flex: 1 },
   welcomeTitle: { fontSize: "24px", fontWeight: "600", margin: "0 0 4px 0", color: "white", textShadow: "2px 2px 4px rgba(0,0,0,0.3)" },
   welcomeName: { color: "#ffd700" },
@@ -622,14 +628,14 @@ const styles = {
   progressCount: { fontSize: "20px", fontWeight: "700", color: "white" },
   progressTotal: { fontSize: "14px", color: "rgba(255,255,255,0.7)" },
   progressLabel: { fontSize: "13px", color: "rgba(255,255,255,0.7)", marginLeft: "8px" },
-  mainContent: { maxWidth: "1200px", margin: "0 auto", padding: "0 20px 40px" },
+  mainContent: { maxWidth: "1200px", margin: "0 auto", padding: "0 20px 40px", position: "relative", zIndex: 4, pointerEvents: "auto" },
   errorBox: { marginBottom: "16px", padding: "12px 16px", borderRadius: "10px", background: "#fff5f5", border: "1px solid #fecaca", color: "#b42318" },
-  tabsContainer: { display: "flex", gap: "8px", marginBottom: "24px", flexWrap: "wrap" },
-  tabButton: { padding: "8px 20px", borderRadius: "30px", cursor: "pointer", fontSize: "14px", fontWeight: "500", transition: "all 0.2s", fontFamily: "inherit", backdropFilter: "blur(10px)", display: "inline-flex", alignItems: "center", gap: "8px" },
+  tabsContainer: { display: "flex", gap: "8px", marginBottom: "24px", flexWrap: "wrap", pointerEvents: "auto" },
+  tabButton: { padding: "8px 20px", borderRadius: "30px", cursor: "pointer", fontSize: "14px", fontWeight: "500", transition: "all 0.2s", fontFamily: "inherit", backdropFilter: "blur(10px)", display: "inline-flex", alignItems: "center", gap: "8px", pointerEvents: "auto" },
   tabLabel: { textTransform: "capitalize" },
   tabStatusMini: { fontSize: "10px", padding: "3px 7px", borderRadius: "12px", fontWeight: "700" },
-  assessmentDetailsSection: { marginBottom: "32px" },
-  card: { background: "white", borderRadius: "16px", padding: "24px", marginBottom: "20px", display: "flex", flexDirection: "column", gap: "20px", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" },
+  assessmentDetailsSection: { marginBottom: "32px", pointerEvents: "auto" },
+  card: { background: "white", borderRadius: "16px", padding: "24px", marginBottom: "20px", display: "flex", flexDirection: "column", gap: "20px", boxShadow: "0 4px 20px rgba(0,0,0,0.1)", pointerEvents: "auto" },
   cardHeader: { display: "flex", alignItems: "center", gap: "24px", flexWrap: "wrap" },
   cardIconLarge: { width: "60px", height: "60px", borderRadius: "16px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "30px", color: "white", flexShrink: 0, boxShadow: "0 4px 12px rgba(0,0,0,0.2)" },
   cardInfo: { flex: 1, minWidth: "250px" },
@@ -643,13 +649,12 @@ const styles = {
   cardStatus: { minWidth: "140px", textAlign: "right" },
   statusBadge: { padding: "6px 16px", borderRadius: "30px", fontSize: "13px", fontWeight: "600", display: "inline-block" },
   startButton: { padding: "12px 24px", color: "white", border: "none", borderRadius: "12px", fontSize: "15px", fontWeight: "600", cursor: "pointer", alignSelf: "flex-end", transition: "all 0.2s", minWidth: "200px", boxShadow: "0 4px 12px rgba(0,0,0,0.2)" },
-  areasSection: { background: "white", borderRadius: "16px", padding: "24px", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", border: "1px solid #e2e8f0" },
+  areasSection: { background: "white", borderRadius: "16px", padding: "24px", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", border: "1px solid #e2e8f0", pointerEvents: "auto" },
   areasTitle: { fontSize: "16px", fontWeight: "600", color: "#0f172a", margin: "0 0 16px 0" },
   areasGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "8px" },
   areaItem: { display: "flex", alignItems: "center", gap: "8px", padding: "6px 0" },
   areaBullet: { fontSize: "18px", fontWeight: "bold" },
   areaText: { fontSize: "14px", color: "#334155" },
-  emptyState: { textAlign: "center", padding: "40px", background: "white", borderRadius: "12px", marginBottom: "30px", border: "1px solid #e2e8f0", color: "#64748b", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" },
   progressSection: { marginBottom: "24px" },
   sectionTitle: { fontSize: "18px", fontWeight: "600", color: "white", margin: "0 0 16px 0", textShadow: "2px 2px 4px rgba(0,0,0,0.3)" },
   progressGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px" },
@@ -660,9 +665,9 @@ const styles = {
   progressStatus: { fontSize: "12px", fontWeight: "600", padding: "4px 10px", borderRadius: "20px" },
   infoNote: { marginBottom: "24px", padding: "12px 20px", background: "rgba(227,242,253,0.95)", borderRadius: "10px", display: "flex", alignItems: "center", gap: "10px", color: "#1565c0", fontSize: "14px", border: "1px solid #90caf9", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" },
   infoIcon: { fontSize: "18px" },
-  guidelinesWrapper: { position: "relative", borderRadius: "16px", overflow: "hidden", marginTop: "20px" },
-  guidelinesBackground: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundImage: "url(https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1920&q=80)", backgroundSize: "cover", backgroundPosition: "center", filter: "brightness(0.3)" },
-  guidelinesContent: { position: "relative", padding: "40px", background: "linear-gradient(135deg, rgba(30,41,59,0.98) 0%, rgba(15,23,42,0.98) 100%)", backdropFilter: "blur(10px)" },
+  guidelinesWrapper: { position: "relative", borderRadius: "16px", overflow: "hidden", marginTop: "20px", pointerEvents: "auto" },
+  guidelinesBackground: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundImage: "url(https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1920&q=80)", backgroundSize: "cover", backgroundPosition: "center", filter: "brightness(0.3)", pointerEvents: "none" },
+  guidelinesContent: { position: "relative", padding: "40px", background: "linear-gradient(135deg, rgba(30,41,59,0.98) 0%, rgba(15,23,42,0.98) 100%)", backdropFilter: "blur(10px)", pointerEvents: "auto" },
   guidelinesHeader: { display: "flex", alignItems: "center", gap: "12px", marginBottom: "30px" },
   guidelinesIcon: { fontSize: "28px" },
   guidelinesTitle: { fontSize: "22px", fontWeight: "600", color: "white", margin: 0 },
