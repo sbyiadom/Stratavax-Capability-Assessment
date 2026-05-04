@@ -1,178 +1,270 @@
-import { useEffect, useState } from "react";
+// pages/admin/audit-logs.js
+
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function cleanText(value, fallback = "") {
+  if (value === null || value === undefined || value === "") return fallback;
+  return String(value);
+}
+
+function getReadableError(error) {
+  if (!error) return "Something went wrong.";
+  return error.message || String(error) || "Something went wrong.";
+}
+
+function getInitial(name, email) {
+  const source = cleanText(name, cleanText(email, "S"));
+  return source.charAt(0).toUpperCase();
+}
+
+function getActionColor(action) {
+  const colors = {
+    login: { bg: "#e3f2fd", color: "#1565c0" },
+    logout: { bg: "#e8eaf6", color: "#3949ab" },
+    create: { bg: "#e8f5e9", color: "#2e7d32" },
+    update: { bg: "#fff3e0", color: "#f57c00" },
+    delete: { bg: "#ffebee", color: "#c62828" },
+    assign: { bg: "#f3e5f5", color: "#7b1fa2" },
+    unblock: { bg: "#e3f2fd", color: "#1565c0" },
+    block: { bg: "#fff3e0", color: "#f57c00" },
+    schedule: { bg: "#f3e5f5", color: "#6a1b9a" }
+  };
+
+  return colors[action] || { bg: "#f5f5f5", color: "#616161" };
+}
+
+function formatDate(value) {
+  if (!value) return "N/A";
+
+  try {
+    const date = new Date(value);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+    if (days === 0) {
+      return "Today at " + date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+    }
+
+    if (days === 1) {
+      return "Yesterday at " + date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+    }
+
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    }) + " " + date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  } catch (error) {
+    return "N/A";
+  }
+}
+
+function getDateBoundary(dateRange) {
+  const now = new Date();
+  const start = new Date();
+
+  if (dateRange === "today") {
+    start.setHours(0, 0, 0, 0);
+    return start.toISOString();
+  }
+
+  if (dateRange === "week") {
+    start.setDate(now.getDate() - 7);
+    return start.toISOString();
+  }
+
+  if (dateRange === "month") {
+    start.setDate(now.getDate() - 30);
+    return start.toISOString();
+  }
+
+  return null;
+}
+
+function stringifyJson(value) {
+  if (!value) return "";
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch (error) {
+    return String(value);
+  }
+}
+
 export default function AuditLogs() {
   const router = useRouter();
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [logs, setLogs] = useState([]);
-  const [filter, setFilter] = useState('all');
-  const [dateRange, setDateRange] = useState('today');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [filter, setFilter] = useState("all");
+  const [dateRange, setDateRange] = useState("today");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [message, setMessage] = useState({ type: "", text: "" });
+  const [auditTableAvailable, setAuditTableAvailable] = useState(true);
 
   useEffect(() => {
     checkAdminAuth();
   }, []);
 
-  const checkAdminAuth = async () => {
+  async function checkAdminAuth() {
     try {
-      const userSession = localStorage.getItem("userSession");
-      if (!userSession) {
+      setCheckingAuth(true);
+      setMessage({ type: "", text: "" });
+
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
+
+      const activeSession = data?.session || null;
+
+      if (!activeSession?.user) {
+        if (typeof window !== "undefined") localStorage.removeItem("userSession");
         router.push("/login");
         return;
       }
 
-      const session = JSON.parse(userSession);
-      
-      const { data: profile, error } = await supabase
-        .from('supervisor_profiles')
-        .select('role')
-        .eq('id', session.user_id)
+      const metadataRole = activeSession.user.user_metadata?.role || null;
+
+      const { data: profile, error: profileError } = await supabase
+        .from("supervisor_profiles")
+        .select("id, email, full_name, role, is_active")
+        .eq("id", activeSession.user.id)
         .maybeSingle();
 
-      if (error || profile?.role !== 'admin') {
-        alert('Admin access required');
-        router.push('/supervisor');
+      if (profileError && profileError.code !== "PGRST116") throw profileError;
+
+      const resolvedRole = profile?.role || metadataRole;
+
+      if (resolvedRole !== "admin") {
+        setMessage({ type: "error", text: "Admin access is required." });
+        router.push("/supervisor");
+        return;
+      }
+
+      if (profile?.is_active === false) {
+        await supabase.auth.signOut();
+        if (typeof window !== "undefined") localStorage.removeItem("userSession");
+        router.push("/login");
         return;
       }
 
       setIsAdmin(true);
-      fetchLogs();
+      await fetchLogs();
     } catch (error) {
-      console.error('Auth error:', error);
-      router.push('/login');
+      console.error("Audit logs auth error:", error);
+      setMessage({ type: "error", text: getReadableError(error) });
+      router.push("/login");
+    } finally {
+      setCheckingAuth(false);
     }
-  };
+  }
 
-  const fetchLogs = async () => {
+  async function fetchLogs() {
     try {
       setLoading(true);
+      setMessage({ type: "", text: "" });
+      setAuditTableAvailable(true);
 
-      // Try to get from audit_logs table if it exists
-      let { data, error } = await supabase
-        .from('audit_logs')
-        .select(`
-          *,
-          supervisor:user_id (
-            full_name,
-            email
-          )
-        `)
-        .order('created_at', { ascending: false })
-        .limit(100);
+      let query = supabase
+        .from("audit_logs")
+        .select("id, user_id, action, table_name, record_id, old_data, new_data, ip_address, user_agent, created_at, supervisor:supervisor_profiles(full_name, email)")
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      const boundary = getDateBoundary(dateRange);
+      if (boundary) query = query.gte("created_at", boundary);
+
+      const { data, error } = await query;
 
       if (error) {
-        console.log('Audit logs table may not exist, using sample data');
-        // Generate sample data for demonstration
-        data = generateSampleLogs();
+        console.error("Audit logs fetch warning:", error);
+        setAuditTableAvailable(false);
+        setLogs([]);
+        setMessage({
+          type: "error",
+          text: "Audit logs table is not available or is not accessible. Create/configure the audit_logs table to enable persistent audit logging."
+        });
+        return;
       }
 
       setLogs(data || []);
     } catch (error) {
-      console.error('Error fetching logs:', error);
-      setLogs(generateSampleLogs());
+      console.error("Error fetching audit logs:", error);
+      setAuditTableAvailable(false);
+      setLogs([]);
+      setMessage({ type: "error", text: "Failed to load audit logs: " + getReadableError(error) });
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const generateSampleLogs = () => {
-    const actions = ['login', 'logout', 'create', 'update', 'delete', 'assign'];
-    const tables = ['supervisor_profiles', 'candidate_profiles', 'assessments', 'system_settings'];
-    const users = [
-      { full_name: 'Samuel Boakye Yiadom', email: 'sbyiadom88@gmail.com' },
-      { full_name: 'System', email: 'system@stratavax.com' }
-    ];
+  useEffect(() => {
+    if (isAdmin) fetchLogs();
+  }, [dateRange]);
 
-    return Array(25).fill().map((_, i) => ({
-      id: `sample-${i}`,
-      user_id: i % 2 === 0 ? '19ab328a-c93c-4eaf-be9a-c7d381398170' : null,
-      action: actions[Math.floor(Math.random() * actions.length)],
-      table_name: tables[Math.floor(Math.random() * tables.length)],
-      record_id: `rec-${Math.floor(Math.random() * 1000)}`,
-      old_data: null,
-      new_data: { test: 'data' },
-      ip_address: `192.168.1.${Math.floor(Math.random() * 255)}`,
-      user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      created_at: new Date(Date.now() - Math.floor(Math.random() * 7 * 24 * 60 * 60 * 1000)).toISOString(),
-      supervisor: users[i % 2]
-    }));
-  };
+  const filteredLogs = useMemo(() => {
+    return safeArray(logs).filter((log) => {
+      if (filter !== "all" && log.action !== filter) return false;
 
-  const getDateFilter = () => {
-    const now = new Date();
-    const start = new Date();
+      if (searchTerm.trim()) {
+        const term = searchTerm.toLowerCase().trim();
+        const matches =
+          cleanText(log.supervisor?.full_name).toLowerCase().includes(term) ||
+          cleanText(log.supervisor?.email).toLowerCase().includes(term) ||
+          cleanText(log.action).toLowerCase().includes(term) ||
+          cleanText(log.table_name).toLowerCase().includes(term) ||
+          cleanText(log.record_id).toLowerCase().includes(term) ||
+          cleanText(log.ip_address).toLowerCase().includes(term);
 
-    switch (dateRange) {
-      case 'today':
-        start.setHours(0, 0, 0, 0);
-        return { gte: start.toISOString() };
-      case 'week':
-        start.setDate(now.getDate() - 7);
-        return { gte: start.toISOString() };
-      case 'month':
-        start.setMonth(now.getMonth() - 1);
-        return { gte: start.toISOString() };
-      default:
-        return {};
-    }
-  };
+        if (!matches) return false;
+      }
 
-  const filteredLogs = logs.filter(log => {
-    // Filter by action type
-    if (filter !== 'all' && log.action !== filter) return false;
+      return true;
+    });
+  }, [logs, filter, searchTerm]);
 
-    // Search term
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      const matches = 
-        log.supervisor?.full_name?.toLowerCase().includes(term) ||
-        log.supervisor?.email?.toLowerCase().includes(term) ||
-        log.action?.toLowerCase().includes(term) ||
-        log.table_name?.toLowerCase().includes(term) ||
-        log.record_id?.toLowerCase().includes(term);
-      if (!matches) return false;
-    }
-
-    return true;
-  });
-
-  const getActionColor = (action) => {
-    const colors = {
-      login: { bg: '#E3F2FD', color: '#1565C0' },
-      logout: { bg: '#E8EAF6', color: '#3949AB' },
-      create: { bg: '#E8F5E9', color: '#2E7D32' },
-      update: { bg: '#FFF3E0', color: '#F57C00' },
-      delete: { bg: '#FFEBEE', color: '#C62828' },
-      assign: { bg: '#F3E5F5', color: '#7B1FA2' }
+  const stats = useMemo(() => {
+    return {
+      total: filteredLogs.length,
+      login: filteredLogs.filter((log) => log.action === "login").length,
+      create: filteredLogs.filter((log) => log.action === "create").length,
+      update: filteredLogs.filter((log) => log.action === "update").length,
+      delete: filteredLogs.filter((log) => log.action === "delete").length
     };
-    return colors[action] || { bg: '#F5F5F5', color: '#616161' };
-  };
+  }, [filteredLogs]);
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diff = now - date;
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-    if (days === 0) {
-      return `Today at ${date.toLocaleTimeString()}`;
-    } else if (days === 1) {
-      return `Yesterday at ${date.toLocaleTimeString()}`;
-    } else {
-      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-    }
-  };
-
-  if (!isAdmin) {
+  if (checkingAuth) {
     return (
       <div style={styles.checkingContainer}>
         <div style={styles.spinner} />
-        <p>Checking authorization...</p>
+        <p style={styles.checkingText}>Checking authorization...</p>
+        <style jsx>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
       </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <AppLayout background="/images/admin-bg.jpg">
+        <div style={styles.unauthorized}>
+          <h2>Access Denied</h2>
+          <p>You do not have permission to view this page.</p>
+          <button onClick={() => router.push("/supervisor")} style={styles.button}>Go to Dashboard</button>
+        </div>
+      </AppLayout>
     );
   }
 
@@ -183,17 +275,26 @@ export default function AuditLogs() {
           <Link href="/admin" legacyBehavior>
             <a style={styles.backButton}>← Back to Admin</a>
           </Link>
-          <h1 style={styles.title}>Audit Logs</h1>
+          <div>
+            <h1 style={styles.title}>Audit Logs</h1>
+            <p style={styles.subtitle}>Review administrative and platform activity where audit logging is enabled.</p>
+          </div>
         </div>
 
-        {/* Filters */}
+        {message.text && (
+          <div style={{
+            ...styles.message,
+            background: message.type === "success" ? "#e8f5e9" : "#ffebee",
+            color: message.type === "success" ? "#2e7d32" : "#c62828",
+            border: "1px solid " + (message.type === "success" ? "#a5d6a7" : "#ffcdd2")
+          }}>
+            {message.text}
+          </div>
+        )}
+
         <div style={styles.filterBar}>
           <div style={styles.filterGroup}>
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              style={styles.filterSelect}
-            >
+            <select value={filter} onChange={(event) => setFilter(event.target.value)} style={styles.filterSelect}>
               <option value="all">All Actions</option>
               <option value="login">Login</option>
               <option value="logout">Logout</option>
@@ -201,13 +302,12 @@ export default function AuditLogs() {
               <option value="update">Update</option>
               <option value="delete">Delete</option>
               <option value="assign">Assign</option>
+              <option value="unblock">Unblock</option>
+              <option value="block">Block</option>
+              <option value="schedule">Schedule</option>
             </select>
 
-            <select
-              value={dateRange}
-              onChange={(e) => setDateRange(e.target.value)}
-              style={styles.filterSelect}
-            >
+            <select value={dateRange} onChange={(event) => setDateRange(event.target.value)} style={styles.filterSelect}>
               <option value="today">Today</option>
               <option value="week">Last 7 Days</option>
               <option value="month">Last 30 Days</option>
@@ -216,52 +316,28 @@ export default function AuditLogs() {
 
             <input
               type="text"
-              placeholder="Search logs..."
+              placeholder="Search logs by user, action, table, record, or IP..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(event) => setSearchTerm(event.target.value)}
               style={styles.searchInput}
             />
           </div>
 
-          <button
-            onClick={fetchLogs}
-            style={styles.refreshButton}
-          >
-            🔄 Refresh
-          </button>
+          <button onClick={fetchLogs} style={styles.refreshButton}>Refresh</button>
         </div>
 
-        {/* Stats */}
         <div style={styles.statsGrid}>
-          <div style={styles.statCard}>
-            <span style={styles.statValue}>{filteredLogs.length}</span>
-            <span style={styles.statLabel}>Total Events</span>
-          </div>
-          <div style={styles.statCard}>
-            <span style={styles.statValue}>
-              {filteredLogs.filter(l => l.action === 'login').length}
-            </span>
-            <span style={styles.statLabel}>Logins</span>
-          </div>
-          <div style={styles.statCard}>
-            <span style={styles.statValue}>
-              {filteredLogs.filter(l => l.action === 'create').length}
-            </span>
-            <span style={styles.statLabel}>Creations</span>
-          </div>
-          <div style={styles.statCard}>
-            <span style={styles.statValue}>
-              {filteredLogs.filter(l => l.action === 'delete').length}
-            </span>
-            <span style={styles.statLabel}>Deletions</span>
-          </div>
+          <StatCard label="Total Events" value={stats.total} />
+          <StatCard label="Logins" value={stats.login} />
+          <StatCard label="Creations" value={stats.create} />
+          <StatCard label="Updates" value={stats.update} />
+          <StatCard label="Deletions" value={stats.delete} />
         </div>
 
-        {/* Logs Table */}
         <div style={styles.tableContainer}>
           {loading ? (
             <div style={styles.loadingState}>
-              <div style={styles.spinner} />
+              <div style={styles.spinnerDark} />
               <p>Loading audit logs...</p>
             </div>
           ) : (
@@ -282,32 +358,25 @@ export default function AuditLogs() {
                   {filteredLogs.length === 0 ? (
                     <tr>
                       <td colSpan="7" style={styles.noData}>
-                        No audit logs found
+                        {auditTableAvailable ? "No audit logs found for the selected filters." : "Audit logging is not configured yet."}
                       </td>
                     </tr>
                   ) : (
                     filteredLogs.map((log) => {
                       const actionColor = getActionColor(log.action);
+                      const oldData = stringifyJson(log.old_data);
+                      const newData = stringifyJson(log.new_data);
+
                       return (
                         <tr key={log.id} style={styles.tableRow}>
-                          <td style={styles.tableCell}>
-                            <div style={styles.timestamp}>
-                              {formatDate(log.created_at)}
-                            </div>
-                          </td>
+                          <td style={styles.tableCell}><div style={styles.timestamp}>{formatDate(log.created_at)}</div></td>
                           <td style={styles.tableCell}>
                             {log.supervisor ? (
                               <div style={styles.userInfo}>
-                                <div style={styles.userAvatar}>
-                                  {log.supervisor.full_name?.charAt(0) || 'S'}
-                                </div>
+                                <div style={styles.userAvatar}>{getInitial(log.supervisor.full_name, log.supervisor.email)}</div>
                                 <div>
-                                  <div style={styles.userName}>
-                                    {log.supervisor.full_name || 'System'}
-                                  </div>
-                                  <div style={styles.userEmail}>
-                                    {log.supervisor.email || ''}
-                                  </div>
+                                  <div style={styles.userName}>{log.supervisor.full_name || "System"}</div>
+                                  <div style={styles.userEmail}>{log.supervisor.email || ""}</div>
                                 </div>
                               </div>
                             ) : (
@@ -315,39 +384,21 @@ export default function AuditLogs() {
                             )}
                           </td>
                           <td style={styles.tableCell}>
-                            <span style={{
-                              ...styles.actionBadge,
-                              background: actionColor.bg,
-                              color: actionColor.color
-                            }}>
-                              {log.action?.toUpperCase()}
+                            <span style={{ ...styles.actionBadge, background: actionColor.bg, color: actionColor.color }}>
+                              {cleanText(log.action, "unknown").toUpperCase()}
                             </span>
                           </td>
+                          <td style={styles.tableCell}><code style={styles.tableName}>{log.table_name || "N/A"}</code></td>
+                          <td style={styles.tableCell}><code style={styles.recordId}>{log.record_id ? log.record_id.substring(0, 8) + "..." : "N/A"}</code></td>
+                          <td style={styles.tableCell}><span style={styles.ipAddress}>{log.ip_address || "N/A"}</span></td>
                           <td style={styles.tableCell}>
-                            <code style={styles.tableName}>
-                              {log.table_name}
-                            </code>
-                          </td>
-                          <td style={styles.tableCell}>
-                            <code style={styles.recordId}>
-                              {log.record_id?.substring(0, 8)}...
-                            </code>
-                          </td>
-                          <td style={styles.tableCell}>
-                            <span style={styles.ipAddress}>
-                              {log.ip_address || 'N/A'}
-                            </span>
-                          </td>
-                          <td style={styles.tableCell}>
-                            {log.action === 'update' && log.old_data && (
+                            {(oldData || newData) ? (
                               <details style={styles.details}>
-                                <summary style={styles.detailsSummary}>View Changes</summary>
-                                <pre style={styles.detailsPre}>
-                                  {JSON.stringify(log.old_data, null, 2)}
-                                  {' ↓ '}
-                                  {JSON.stringify(log.new_data, null, 2)}
-                                </pre>
+                                <summary style={styles.detailsSummary}>View Data</summary>
+                                <pre style={styles.detailsPre}>{oldData ? "Old Data:\n" + oldData + "\n\n" : ""}{newData ? "New Data:\n" + newData : ""}</pre>
                               </details>
+                            ) : (
+                              <span style={styles.noDetails}>No details</span>
                             )}
                           </td>
                         </tr>
@@ -360,13 +411,13 @@ export default function AuditLogs() {
           )}
         </div>
 
-        {/* Database Setup Note */}
-        <div style={styles.note}>
-          <p style={styles.noteText}>
-            <strong>📝 Note:</strong> To enable persistent audit logging, create an 'audit_logs' table in Supabase.
-            Currently showing sample data for demonstration.
-          </p>
-        </div>
+        {!auditTableAvailable && (
+          <div style={styles.note}>
+            <p style={styles.noteText}>
+              <strong>Note:</strong> Persistent audit logging requires an <code>audit_logs</code> table and insert logic from your API/database triggers.
+            </p>
+          </div>
+        )}
       </div>
 
       <style jsx>{`
@@ -379,274 +430,60 @@ export default function AuditLogs() {
   );
 }
 
+function StatCard({ label, value }) {
+  return (
+    <div style={styles.statCard}>
+      <span style={styles.statValue}>{value}</span>
+      <span style={styles.statLabel}>{label}</span>
+    </div>
+  );
+}
+
 const styles = {
-  checkingContainer: {
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'linear-gradient(135deg, #0A1929 0%, #1A2A3A 100%)',
-    color: 'white'
-  },
-  spinner: {
-    width: '40px',
-    height: '40px',
-    border: '4px solid rgba(255,255,255,0.3)',
-    borderTop: '4px solid white',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite',
-    marginBottom: '20px'
-  },
-  container: {
-    width: '90vw',
-    maxWidth: '1400px',
-    margin: '0 auto',
-    padding: '30px 20px'
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '20px',
-    marginBottom: '30px',
-    background: 'white',
-    padding: '20px 30px',
-    borderRadius: '16px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
-  },
-  backButton: {
-    color: '#0A1929',
-    textDecoration: 'none',
-    fontSize: '16px',
-    fontWeight: 500,
-    padding: '8px 16px',
-    borderRadius: '8px',
-    border: '1px solid #0A1929',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#0A1929',
-      color: 'white'
-    }
-  },
-  title: {
-    margin: 0,
-    color: '#0A1929',
-    fontSize: '24px',
-    fontWeight: 600
-  },
-  filterBar: {
-    background: 'white',
-    padding: '20px',
-    borderRadius: '12px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    marginBottom: '20px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: '15px'
-  },
-  filterGroup: {
-    display: 'flex',
-    gap: '10px',
-    flexWrap: 'wrap',
-    flex: 1
-  },
-  filterSelect: {
-    padding: '8px 16px',
-    border: '2px solid #E2E8F0',
-    borderRadius: '8px',
-    fontSize: '14px',
-    background: 'white',
-    cursor: 'pointer',
-    minWidth: '140px'
-  },
-  searchInput: {
-    padding: '8px 16px',
-    border: '2px solid #E2E8F0',
-    borderRadius: '8px',
-    fontSize: '14px',
-    minWidth: '250px',
-    flex: 1,
-    outline: 'none',
-    ':focus': {
-      borderColor: '#0A1929'
-    }
-  },
-  refreshButton: {
-    padding: '8px 20px',
-    background: '#0A1929',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#1A2A3A'
-    }
-  },
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: '20px',
-    marginBottom: '20px'
-  },
-  statCard: {
-    background: 'white',
-    padding: '15px',
-    borderRadius: '12px',
-    textAlign: 'center',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
-  },
-  statValue: {
-    display: 'block',
-    fontSize: '28px',
-    fontWeight: 700,
-    color: '#0A1929',
-    marginBottom: '5px'
-  },
-  statLabel: {
-    fontSize: '12px',
-    color: '#718096',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px'
-  },
-  tableContainer: {
-    background: 'white',
-    padding: '25px',
-    borderRadius: '16px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
-  },
-  loadingState: {
-    textAlign: 'center',
-    padding: '60px'
-  },
-  tableWrapper: {
-    overflowX: 'auto'
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '13px'
-  },
-  tableHeadRow: {
-    borderBottom: '2px solid #0A1929',
-    background: '#F8FAFC'
-  },
-  tableHead: {
-    padding: '12px 15px',
-    fontWeight: 600,
-    color: '#0A1929',
-    textAlign: 'left',
-    whiteSpace: 'nowrap'
-  },
-  tableRow: {
-    borderBottom: '1px solid #E2E8F0',
-    transition: 'background 0.2s ease',
-    ':hover': {
-      background: '#F8FAFC'
-    }
-  },
-  tableCell: {
-    padding: '12px 15px',
-    color: '#2D3748',
-    verticalAlign: 'middle'
-  },
-  noData: {
-    padding: '40px',
-    textAlign: 'center',
-    color: '#718096',
-    fontStyle: 'italic'
-  },
-  timestamp: {
-    fontSize: '12px',
-    color: '#4A5568',
-    whiteSpace: 'nowrap'
-  },
-  userInfo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px'
-  },
-  userAvatar: {
-    width: '28px',
-    height: '28px',
-    borderRadius: '14px',
-    background: '#0A1929',
-    color: 'white',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '12px',
-    fontWeight: 600
-  },
-  userName: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#0A1929'
-  },
-  userEmail: {
-    fontSize: '11px',
-    color: '#718096'
-  },
-  systemUser: {
-    fontSize: '13px',
-    color: '#718096',
-    fontStyle: 'italic'
-  },
-  actionBadge: {
-    padding: '4px 8px',
-    borderRadius: '4px',
-    fontSize: '11px',
-    fontWeight: 600,
-    display: 'inline-block',
-    whiteSpace: 'nowrap'
-  },
-  tableName: {
-    background: '#EDF2F7',
-    padding: '2px 6px',
-    borderRadius: '4px',
-    fontSize: '11px',
-    color: '#2D3748'
-  },
-  recordId: {
-    fontFamily: 'monospace',
-    fontSize: '11px',
-    color: '#718096'
-  },
-  ipAddress: {
-    fontSize: '12px',
-    color: '#4A5568',
-    fontFamily: 'monospace'
-  },
-  details: {
-    fontSize: '12px'
-  },
-  detailsSummary: {
-    color: '#3182CE',
-    cursor: 'pointer'
-  },
-  detailsPre: {
-    background: '#2D3748',
-    color: '#E2E8F0',
-    padding: '8px',
-    borderRadius: '4px',
-    fontSize: '10px',
-    overflow: 'auto',
-    maxWidth: '300px'
-  },
-  note: {
-    marginTop: '20px',
-    padding: '15px 20px',
-    background: '#FEF3C7',
-    borderRadius: '8px',
-    border: '1px solid #FDE68A'
-  },
-  noteText: {
-    margin: 0,
-    color: '#92400E',
-    fontSize: '14px'
-  }
+  checkingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #0a1929 0%, #1a2a3a 100%)", color: "white", padding: "20px", textAlign: "center" },
+  checkingText: { margin: 0, color: "rgba(255,255,255,0.9)", fontSize: "14px" },
+  spinner: { width: "40px", height: "40px", border: "4px solid rgba(255,255,255,0.3)", borderTop: "4px solid white", borderRadius: "50%", animation: "spin 1s linear infinite", marginBottom: "20px" },
+  spinnerDark: { width: "38px", height: "38px", border: "4px solid #e2e8f0", borderTop: "4px solid #0a1929", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 16px" },
+  container: { width: "90vw", maxWidth: "1400px", margin: "0 auto", padding: "30px 20px" },
+  header: { display: "flex", alignItems: "center", gap: "20px", marginBottom: "24px", background: "white", padding: "22px 30px", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", flexWrap: "wrap" },
+  backButton: { color: "#0a1929", textDecoration: "none", fontSize: "14px", fontWeight: 700, padding: "8px 16px", borderRadius: "8px", border: "1px solid #0a1929" },
+  title: { margin: 0, color: "#0a1929", fontSize: "24px", fontWeight: 800 },
+  subtitle: { margin: "5px 0 0", color: "#667085", fontSize: "14px" },
+  message: { padding: "13px 18px", borderRadius: "10px", marginBottom: "20px", fontSize: "14px", lineHeight: 1.5 },
+  filterBar: { background: "white", padding: "20px", borderRadius: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "15px" },
+  filterGroup: { display: "flex", gap: "10px", flexWrap: "wrap", flex: 1 },
+  filterSelect: { padding: "8px 16px", border: "2px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", background: "white", cursor: "pointer", minWidth: "140px" },
+  searchInput: { padding: "8px 16px", border: "2px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", minWidth: "280px", flex: 1, outline: "none" },
+  refreshButton: { padding: "8px 20px", background: "#0a1929", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 800, cursor: "pointer" },
+  statsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "18px", marginBottom: "20px" },
+  statCard: { background: "white", padding: "17px", borderRadius: "12px", textAlign: "center", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", border: "1px solid #eef2f7" },
+  statValue: { display: "block", fontSize: "28px", fontWeight: 800, color: "#0a1929", marginBottom: "5px" },
+  statLabel: { fontSize: "12px", color: "#718096", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 700 },
+  tableContainer: { background: "white", padding: "24px", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" },
+  loadingState: { textAlign: "center", padding: "60px", color: "#667085" },
+  tableWrapper: { overflowX: "auto" },
+  table: { width: "100%", borderCollapse: "collapse", fontSize: "13px", minWidth: "980px" },
+  tableHeadRow: { borderBottom: "2px solid #0a1929", background: "#f8fafc" },
+  tableHead: { padding: "12px 15px", fontWeight: 800, color: "#0a1929", textAlign: "left", whiteSpace: "nowrap" },
+  tableRow: { borderBottom: "1px solid #e2e8f0" },
+  tableCell: { padding: "12px 15px", color: "#2d3748", verticalAlign: "middle" },
+  noData: { padding: "40px", textAlign: "center", color: "#718096", fontStyle: "italic" },
+  timestamp: { fontSize: "12px", color: "#4a5568", whiteSpace: "nowrap" },
+  userInfo: { display: "flex", alignItems: "center", gap: "8px" },
+  userAvatar: { width: "28px", height: "28px", borderRadius: "14px", background: "#0a1929", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", fontWeight: 800 },
+  userName: { fontSize: "13px", fontWeight: 800, color: "#0a1929" },
+  userEmail: { fontSize: "11px", color: "#718096" },
+  systemUser: { fontSize: "13px", color: "#718096", fontStyle: "italic" },
+  actionBadge: { padding: "4px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 800, display: "inline-block", whiteSpace: "nowrap" },
+  tableName: { background: "#edf2f7", padding: "2px 6px", borderRadius: "4px", fontSize: "11px", color: "#2d3748" },
+  recordId: { fontFamily: "monospace", fontSize: "11px", color: "#718096" },
+  ipAddress: { fontSize: "12px", color: "#4a5568", fontFamily: "monospace" },
+  details: { fontSize: "12px" },
+  detailsSummary: { color: "#3182ce", cursor: "pointer", fontWeight: 700 },
+  detailsPre: { background: "#2d3748", color: "#e2e8f0", padding: "8px", borderRadius: "4px", fontSize: "10px", overflow: "auto", maxWidth: "360px", maxHeight: "260px" },
+  noDetails: { color: "#94a3b8", fontSize: "12px" },
+  note: { marginTop: "20px", padding: "15px 20px", background: "#fef3c7", borderRadius: "8px", border: "1px solid #fde68a" },
+  noteText: { margin: 0, color: "#92400e", fontSize: "14px" },
+  unauthorized: { textAlign: "center", padding: "60px", color: "#667085", background: "white", borderRadius: "16px", maxWidth: "400px", margin: "100px auto" },
+  button: { padding: "10px 20px", background: "#0a1929", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700, marginTop: "20px" }
 };
