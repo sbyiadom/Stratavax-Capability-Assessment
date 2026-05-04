@@ -1,128 +1,264 @@
-import { createClient } from '@supabase/supabase-js';
+// pages/api/admin/add-supervisor.js
 
-export default async function handler(req, res) {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+import { createClient } from "@supabase/supabase-js";
+
+function cleanEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function cleanName(value) {
+  return String(value || "").trim().replace(/\s+/g, " ");
+}
+
+function getServiceClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Missing Supabase service configuration.");
   }
 
-  try {
-    const { email, password, full_name } = req.body;
-
-    // Validate input
-    if (!email || !password || !full_name) {
-      return res.status(400).json({ error: 'All fields are required' });
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
     }
+  });
+}
 
-    console.log('Creating supervisor:', { email, full_name });
+function getBearerToken(req) {
+  const authHeader = req.headers.authorization || "";
+  if (!authHeader.startsWith("Bearer ")) return null;
+  return authHeader.replace("Bearer ", "").trim();
+}
 
-    // Create service role client
-    const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
+function isDuplicateUserError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return message.includes("already") || message.includes("duplicate") || message.includes("registered") || message.includes("exists");
+}
 
-    // 1. Create auth user
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { full_name, role: 'supervisor' }
-    });
+async function validateAdmin(serviceClient, accessToken) {
+  if (!accessToken) {
+    return { ok: false, status: 401, error: "missing_token", message: "Authorization token is required." };
+  }
 
-    if (authError) {
-      console.error('Auth error:', authError);
-      
-      // If user exists, try to get them
-      if (authError.message.includes('already exists')) {
-        const { data: users } = await supabaseAdmin.auth.admin.listUsers();
-        const existingUser = users.users.find(u => u.email === email);
-        
-        if (existingUser) {
-          // Check if already in supervisors table
-          const { data: existing } = await supabaseAdmin
-            .from('supervisors')
-            .select('*')
-            .eq('user_id', existingUser.id);
+  const { data: authData, error: authError } = await serviceClient.auth.getUser(accessToken);
 
-          if (existing && existing.length > 0) {
-            return res.status(200).json({
-              success: true,
-              message: 'Supervisor already exists',
-              supervisor: existing[0]
-            });
-          }
+  if (authError || !authData?.user) {
+    return { ok: false, status: 401, error: "invalid_token", message: "Could not validate admin session." };
+  }
 
-          // Add to supervisors table
-          const { data: insertData, error: insertError } = await supabaseAdmin
-            .from('supervisors')
-            .insert({
-              user_id: existingUser.id,
-              email,
-              full_name,
-              role: 'supervisor',
-              is_active: true,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            })
-            .select()
-            .single();
+  const user = authData.user;
+  const metadataRole = user.user_metadata?.role || null;
 
-          if (insertError) {
-            throw insertError;
-          }
+  const { data: profile, error: profileError } = await serviceClient
+    .from("supervisor_profiles")
+    .select("id, email, full_name, role, is_active")
+    .eq("id", user.id)
+    .maybeSingle();
 
-          return res.status(200).json({
-            success: true,
-            message: 'Supervisor added successfully',
-            supervisor: insertData
-          });
-        }
-      }
-      
-      return res.status(400).json({ error: authError.message });
+  if (profileError && profileError.code !== "PGRST116") {
+    return { ok: false, status: 500, error: "profile_check_failed", message: profileError.message };
+  }
+
+  const resolvedRole = profile?.role || metadataRole;
+
+  if (resolvedRole !== "admin") {
+    return { ok: false, status: 403, error: "admin_required", message: "Admin access is required." };
+  }
+
+  if (profile?.is_active === false) {
+    return { ok: false, status: 403, error: "admin_inactive", message: "Admin account is inactive." };
+  }
+
+  return { ok: true, user, profile };
+}
+
+async function findAuthUserByEmail(serviceClient, email) {
+  let page = 1;
+  const perPage = 100;
+
+  while (page <= 20) {
+    const { data, error } = await serviceClient.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+
+    const users = data?.users || [];
+    const found = users.find((user) => cleanEmail(user.email) === email);
+    if (found) return found;
+
+    if (users.length < perPage) return null;
+    page += 1;
+  }
+
+  return null;
+}
+
+async function createOrGetAuthUser(serviceClient, email, password, fullName) {
+  const createResponse = await serviceClient.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: {
+      full_name: fullName,
+      name: fullName,
+      role: "supervisor",
+      user_type: "supervisor",
+      is_supervisor: true
     }
+  });
 
-    // 2. Add to supervisors table
-    const { data: supervisorData, error: supervisorError } = await supabaseAdmin
-      .from('supervisors')
-      .insert({
-        user_id: authData.user.id,
+  if (!createResponse.error && createResponse.data?.user) {
+    return { user: createResponse.data.user, created: true };
+  }
+
+  if (!isDuplicateUserError(createResponse.error)) {
+    throw createResponse.error;
+  }
+
+  const existingUser = await findAuthUserByEmail(serviceClient, email);
+
+  if (!existingUser) {
+    throw new Error("A user with this email already exists, but the user record could not be retrieved.");
+  }
+
+  await serviceClient.auth.admin.updateUserById(existingUser.id, {
+    user_metadata: {
+      ...(existingUser.user_metadata || {}),
+      full_name: fullName,
+      name: fullName,
+      role: "supervisor",
+      user_type: "supervisor",
+      is_supervisor: true
+    }
+  });
+
+  return { user: existingUser, created: false };
+}
+
+async function upsertSupervisorProfile(serviceClient, userId, email, fullName) {
+  const now = new Date().toISOString();
+
+  const { data: existingById, error: byIdError } = await serviceClient
+    .from("supervisor_profiles")
+    .select("*")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (byIdError && byIdError.code !== "PGRST116") throw byIdError;
+
+  if (existingById) {
+    const { data, error } = await serviceClient
+      .from("supervisor_profiles")
+      .update({
         email,
-        full_name,
-        role: 'supervisor',
+        full_name: fullName,
+        role: "supervisor",
         is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: now
       })
+      .eq("id", userId)
       .select()
       .single();
 
-    if (supervisorError) {
-      console.error('Insert error:', supervisorError);
-      
-      // Clean up auth user
-      await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
-      
-      return res.status(500).json({ 
-        error: 'Failed to add to database',
-        details: supervisorError.message
+    if (error) throw error;
+    return { profile: data, created: false };
+  }
+
+  const { data: existingByEmail, error: byEmailError } = await serviceClient
+    .from("supervisor_profiles")
+    .select("*")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (byEmailError && byEmailError.code !== "PGRST116") throw byEmailError;
+
+  if (existingByEmail) {
+    throw new Error("A supervisor profile already exists with this email address.");
+  }
+
+  const { data, error } = await serviceClient
+    .from("supervisor_profiles")
+    .insert({
+      id: userId,
+      email,
+      full_name: fullName,
+      role: "supervisor",
+      is_active: true,
+      created_at: now,
+      updated_at: now
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return { profile: data, created: true };
+}
+
+export default async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ success: false, error: "method_not_allowed", message: "Method not allowed." });
+  }
+
+  try {
+    const serviceClient = getServiceClient();
+    const adminCheck = await validateAdmin(serviceClient, getBearerToken(req));
+
+    if (!adminCheck.ok) {
+      return res.status(adminCheck.status).json({
+        success: false,
+        error: adminCheck.error,
+        message: adminCheck.message
       });
     }
 
+    const body = req.body || {};
+    const email = cleanEmail(body.email);
+    const password = String(body.password || "");
+    const fullName = cleanName(body.full_name || body.fullName || body.name);
+
+    if (!email || !password || !fullName) {
+      return res.status(400).json({
+        success: false,
+        error: "missing_fields",
+        message: "Email, password, and full name are required."
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: "weak_password",
+        message: "Password must be at least 6 characters."
+      });
+    }
+
+    const authResult = await createOrGetAuthUser(serviceClient, email, password, fullName);
+    const profileResult = await upsertSupervisorProfile(serviceClient, authResult.user.id, email, fullName);
+
     return res.status(200).json({
       success: true,
-      message: 'Supervisor added successfully',
-      supervisor: supervisorData
+      message: profileResult.created ? "Supervisor added successfully." : "Supervisor profile updated successfully.",
+      auth_user_created: authResult.created,
+      supervisor_profile_created: profileResult.created,
+      supervisor: profileResult.profile
     });
-
   } catch (error) {
-    console.error('Server error:', error);
-    return res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
+    console.error("Add supervisor API error:", error);
+
+    const status = isDuplicateUserError(error) ? 409 : 500;
+
+    return res.status(status).json({
+      success: false,
+      error: status === 409 ? "duplicate_supervisor" : "server_error",
+      message: error?.message || "Failed to add supervisor."
     });
   }
 }
