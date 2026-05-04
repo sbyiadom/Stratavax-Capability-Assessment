@@ -1,3 +1,5 @@
+// pages/assessment/[id].js
+
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
 import dynamic from "next/dynamic";
@@ -15,30 +17,70 @@ import {
   saveUniqueResponse
 } from "../../supabase/assessment";
 
-// Dynamically import with no SSR
 const AssessmentPage = dynamic(() => Promise.resolve(AssessmentContent), { ssr: false });
 
-// ===== TIMER FUNCTIONS =====
-const formatTime = (seconds) => {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
+function safeNumber(value, fallback) {
+  var fallbackValue = fallback === undefined ? 0 : fallback;
+  var numberValue = Number(value);
+  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) return fallbackValue;
+  return numberValue;
+}
 
-  return `${hrs.toString().padStart(2, "0")}:${mins
-    .toString()
-    .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-};
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
 
-// ===== CHECK IF QUESTION HAS MULTIPLE CORRECT ANSWERS =====
-const isMultipleCorrectQuestion = (question) => {
-  if (!question?.answers) return false;
-  const correctAnswers = question.answers.filter((a) => a.score === 1);
+function formatTime(seconds) {
+  var safeSeconds = Math.max(0, Math.floor(safeNumber(seconds, 0)));
+  var hrs = Math.floor(safeSeconds / 3600);
+  var mins = Math.floor((safeSeconds % 3600) / 60);
+  var secs = safeSeconds % 60;
+
+  return hrs.toString().padStart(2, "0") + ":" + mins.toString().padStart(2, "0") + ":" + secs.toString().padStart(2, "0");
+}
+
+function isMultipleCorrectQuestion(question) {
+  var correctAnswers;
+  if (!question || !Array.isArray(question.answers)) return false;
+  correctAnswers = question.answers.filter(function (answer) {
+    return safeNumber(answer.score, 0) === 1;
+  });
   return correctAnswers.length > 1;
-};
+}
+
+function getAnswerArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value === null || value === undefined || value === "") return [];
+  return [value];
+}
+
+function countAnswered(answerMap) {
+  return Object.values(answerMap || {}).filter(function (answer) {
+    if (Array.isArray(answer)) return answer.length > 0;
+    return answer !== null && answer !== undefined && answer !== "";
+  }).length;
+}
+
+function getSessionBasedLimit(sessionData, progressElapsed, defaultLimit) {
+  var elapsed = safeNumber(progressElapsed, 0);
+  var fallbackLimit = defaultLimit || 10800;
+  var expiresAt;
+  var remaining;
+
+  if (!sessionData || !sessionData.expires_at) return fallbackLimit;
+
+  expiresAt = new Date(sessionData.expires_at).getTime();
+  if (Number.isNaN(expiresAt)) return fallbackLimit;
+
+  remaining = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
+
+  if (remaining <= 0) return elapsed;
+  return elapsed + remaining;
+}
 
 function AssessmentContent() {
   const router = useRouter();
-  const { id: assessmentId } = router.query;
+  const assessmentId = router.query.id || router.query.assessment_id;
 
   const [loading, setLoading] = useState(true);
   const [assessment, setAssessment] = useState(null);
@@ -56,13 +98,14 @@ function AssessmentContent() {
   const [questionStartTime, setQuestionStartTime] = useState(Date.now());
   const [questionTimings, setQuestionTimings] = useState({});
   const sessionIdRef = useRef(null);
+  const autoSubmitRef = useRef(false);
+  const submittingRef = useRef(false);
 
   const [violationCount, setViolationCount] = useState(0);
   const [isAutoSubmitting, setIsAutoSubmitting] = useState(false);
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [timeLimit, setTimeLimit] = useState(10800);
-  const [timeRemaining, setTimeRemaining] = useState(10800);
 
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -77,19 +120,14 @@ function AssessmentContent() {
   const DEFAULT_GRADIENT_START = "#667eea";
   const DEFAULT_GRADIENT_END = "#764ba2";
 
-  const getGradientStart = () => assessmentType?.gradient_start || DEFAULT_GRADIENT_START;
-  const getGradientEnd = () => assessmentType?.gradient_end || DEFAULT_GRADIENT_END;
+  const getGradientStart = () => (assessmentType && assessmentType.gradient_start ? assessmentType.gradient_start : DEFAULT_GRADIENT_START);
+  const getGradientEnd = () => (assessmentType && assessmentType.gradient_end ? assessmentType.gradient_end : DEFAULT_GRADIENT_END);
 
-  const getSelectedAnswersForQuestion = (questionId) => {
-    const selected = answers[questionId];
-    if (Array.isArray(selected)) return selected;
-    if (selected) return [selected];
-    return [];
-  };
+  const getSelectedAnswersForQuestion = (questionId) => getAnswerArray(answers[questionId]);
 
   const isAnswerSelected = (questionId, answerId) => {
     const selected = getSelectedAnswersForQuestion(questionId);
-    return selected.includes(answerId);
+    return selected.map(String).includes(String(answerId));
   };
 
   const showViolationWarningMessage = (message) => {
@@ -98,137 +136,233 @@ function AssessmentContent() {
     setTimeout(() => setShowViolationWarning(false), 3000);
   };
 
-  const logViolation = async (violationType) => {
-    if (!sessionIdRef.current || isAutoSubmitting || alreadySubmitted) return;
+  const updateAnsweredQuestionsCount = async (answerMapOverride) => {
+    var answerMap = answerMapOverride || answers;
+    var answeredCount;
 
-    const newCount = violationCount + 1;
-    setViolationCount(newCount);
+    if (!sessionIdRef.current) return;
 
-    await supabase
+    answeredCount = countAnswered(answerMap);
+
+    const { error: updateError } = await supabase
       .from("assessment_sessions")
-      .update({ violation_count: newCount })
+      .update({
+        answered_questions: answeredCount,
+        total_questions: questions.length,
+        updated_at: new Date().toISOString()
+      })
       .eq("id", sessionIdRef.current);
 
-    await supabase.from("assessment_violations").insert({
-      session_id: sessionIdRef.current,
-      user_id: user?.id,
-      assessment_id: assessmentId,
-      violation_type: violationType
-    });
-
-    showViolationWarningMessage(`${violationType}. Violation ${newCount} of 3.`);
-
-    if (newCount >= 3 && !isAutoSubmitting && !alreadySubmitted) {
-      showViolationWarningMessage("Maximum violations reached (3/3). Auto-submitting assessment...");
-      setIsAutoSubmitting(true);
-
-      setTimeout(async () => {
-        await handleAutoSubmitDueToViolations();
-      }, 2000);
-    }
+    if (updateError) console.error("Error updating answered questions count:", updateError);
   };
 
-  const handleAutoSubmitDueToViolations = async () => {
-    if (alreadySubmitted || isSubmitting) return;
+  const markCandidateAssessmentCompleted = async (resultId, autoSubmitted, reason) => {
+    if (!user || !assessmentId) return;
 
-    try {
-      setIsSubmitting(true);
+    await supabase
+      .from("candidate_assessments")
+      .update({
+        status: "completed",
+        result_id: resultId || null,
+        updated_at: new Date().toISOString()
+      })
+      .eq("user_id", user.id)
+      .eq("assessment_id", assessmentId);
 
-      await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id);
-      await updateSessionTimer(session.id, elapsedSeconds);
-
-      await submitAssessment(session.id);
-    } catch (error) {
+    if (autoSubmitted && sessionIdRef.current) {
       await supabase
         .from("assessment_sessions")
         .update({
-          status: "completed",
           auto_submitted: true,
-          auto_submit_reason: `Auto-submitted due to ${violationCount} rule violation(s). Only ${Object.keys(answers).length} of ${questions.length} questions completed.`,
-          completed_at: new Date().toISOString()
+          auto_submit_reason: reason || "Auto-submitted.",
+          updated_at: new Date().toISOString()
         })
-        .eq("id", session.id);
+        .eq("id", sessionIdRef.current);
+    }
+  };
+
+  const completeAssessmentSafely = async (autoSubmitted, reason) => {
+    var result;
+    var resultId = null;
+    var lastQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
+    var answeredCount = countAnswered(answers);
+
+    if (!session || !user || !assessmentId) throw new Error("Assessment session is not ready.");
+
+    if (lastQuestionId) {
+      await saveQuestionTiming(lastQuestionId, Math.floor((Date.now() - questionStartTime) / 1000));
+    }
+
+    await Promise.all([
+      saveProgress(session.id, user.id, assessmentId, elapsedSeconds, lastQuestionId),
+      updateSessionTimer(session.id, elapsedSeconds),
+      updateAnsweredQuestionsCount(answers)
+    ]);
+
+    result = await submitAssessment(session.id);
+
+    if (result && result.id) resultId = result.id;
+    if (result && result.result && result.result.id) resultId = result.result.id;
+    if (result && result.data && result.data.id) resultId = result.data.id;
+
+    await supabase
+      .from("assessment_sessions")
+      .update({
+        status: "completed",
+        completed_at: new Date().toISOString(),
+        answered_questions: answeredCount,
+        total_questions: questions.length,
+        violation_count: violationCount,
+        auto_submitted: !!autoSubmitted,
+        auto_submit_reason: autoSubmitted ? reason || "Auto-submitted." : null,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", session.id);
+
+    await markCandidateAssessmentCompleted(resultId, autoSubmitted, reason);
+
+    return result;
+  };
+
+  const handleAutoSubmitDueToViolations = async () => {
+    var reason;
+    if (alreadySubmitted || submittingRef.current || autoSubmitRef.current) return;
+
+    try {
+      autoSubmitRef.current = true;
+      submittingRef.current = true;
+      setIsSubmitting(true);
+      setIsAutoSubmitting(true);
+
+      reason = "Auto-submitted due to rule violations. Answered " + countAnswered(answers) + " of " + questions.length + " questions.";
+      await completeAssessmentSafely(true, reason);
 
       setAlreadySubmitted(true);
       setShowViolationWarning(false);
+      router.push("/assessment/terminated?reason=violations&count=" + violationCount + "&answered=" + countAnswered(answers) + "&total=" + questions.length);
+    } catch (submitError) {
+      console.error("Auto-submit failed:", submitError);
 
-      router.push(
-        `/assessment/terminated?reason=violations&count=${violationCount}&answered=${Object.keys(answers).length}&total=${questions.length}`
-      );
+      if (session && session.id) {
+        await supabase
+          .from("assessment_sessions")
+          .update({
+            status: "completed",
+            auto_submitted: true,
+            auto_submit_reason: "Auto-submitted due to rule violations. Submit function failed: " + (submitError && submitError.message ? submitError.message : "Unknown error"),
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", session.id);
+      }
+
+      await markCandidateAssessmentCompleted(null, true, "Auto-submitted due to rule violations.");
+      setAlreadySubmitted(true);
+      router.push("/assessment/terminated?reason=violations&count=" + violationCount + "&answered=" + countAnswered(answers) + "&total=" + questions.length);
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
       setIsAutoSubmitting(false);
     }
   };
 
-  // ===== ANTI-CHEAT LISTENERS =====
+  const logViolation = async (violationType) => {
+    var newCount;
+
+    if (!sessionIdRef.current || isAutoSubmitting || alreadySubmitted) return;
+
+    newCount = violationCount + 1;
+    setViolationCount(newCount);
+
+    await supabase
+      .from("assessment_sessions")
+      .update({ violation_count: newCount, updated_at: new Date().toISOString() })
+      .eq("id", sessionIdRef.current);
+
+    await supabase.from("assessment_violations").insert({
+      session_id: sessionIdRef.current,
+      user_id: user ? user.id : null,
+      assessment_id: assessmentId,
+      violation_type: violationType,
+      created_at: new Date().toISOString()
+    });
+
+    showViolationWarningMessage(violationType + ". Violation " + newCount + " of 3.");
+
+    if (newCount >= 3 && !isAutoSubmitting && !alreadySubmitted) {
+      showViolationWarningMessage("Maximum violations reached (3/3). Auto-submitting assessment...");
+      setIsAutoSubmitting(true);
+      setTimeout(async () => {
+        await handleAutoSubmitDueToViolations();
+      }, 1200);
+    }
+  };
+
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session) return;
 
-    const handleCopy = (e) => {
-      e.preventDefault();
+    const handleCopy = (event) => {
+      event.preventDefault();
       logViolation("Copy attempt");
       return false;
     };
 
-    const handlePaste = (e) => {
-      e.preventDefault();
+    const handlePaste = (event) => {
+      event.preventDefault();
       logViolation("Paste attempt");
       return false;
     };
 
-    const handleCut = (e) => {
-      e.preventDefault();
+    const handleCut = (event) => {
+      event.preventDefault();
       logViolation("Cut attempt");
       return false;
     };
 
-    const handleKeyDown = (e) => {
-      if (e.key === "PrintScreen") {
-        e.preventDefault();
-        logViolation("Screenshot attempt (PrintScreen)");
+    const handleKeyDown = (event) => {
+      var key = String(event.key || "").toLowerCase();
+
+      if (event.key === "PrintScreen") {
+        event.preventDefault();
+        logViolation("Screenshot attempt");
         return false;
       }
 
-      if (e.key === "F12") {
-        e.preventDefault();
-        logViolation("DevTools attempt (F12)");
+      if (event.key === "F12") {
+        event.preventDefault();
+        logViolation("DevTools attempt");
         return false;
       }
 
-      if (e.ctrlKey && e.shiftKey && ["I", "J", "C"].includes(e.key)) {
-        e.preventDefault();
-        logViolation(`DevTools attempt (Ctrl+Shift+${e.key})`);
+      if (event.ctrlKey && event.shiftKey && ["i", "j", "c"].includes(key)) {
+        event.preventDefault();
+        logViolation("DevTools shortcut attempt");
         return false;
       }
 
-      if (e.ctrlKey && e.key === "u") {
-        e.preventDefault();
+      if (event.ctrlKey && key === "u") {
+        event.preventDefault();
         logViolation("View source attempt");
         return false;
       }
 
-      if (e.metaKey && e.altKey && e.key === "I") {
-        e.preventDefault();
-        logViolation("DevTools attempt (Mac)");
+      if (event.metaKey && event.altKey && key === "i") {
+        event.preventDefault();
+        logViolation("DevTools shortcut attempt");
         return false;
       }
     };
 
-    const handleContextMenu = (e) => {
-      e.preventDefault();
+    const handleContextMenu = (event) => {
+      event.preventDefault();
       logViolation("Right-click attempt");
       return false;
     };
 
     const devToolsInterval = setInterval(() => {
       if (!sessionIdRef.current || alreadySubmitted) return;
-
-      const widthDiff = window.outerWidth - window.innerWidth;
-      const heightDiff = window.outerHeight - window.innerHeight;
-
-      if (widthDiff > 200 || heightDiff > 200) {
-        logViolation("DevTools detected (window size)");
+      if (window.outerWidth - window.innerWidth > 200 || window.outerHeight - window.innerHeight > 200) {
+        logViolation("DevTools detected");
       }
     }, 5000);
 
@@ -239,7 +373,7 @@ function AssessmentContent() {
     document.addEventListener("contextmenu", handleContextMenu);
 
     const style = document.createElement("style");
-    style.textContent = `* { -webkit-user-select: none !important; user-select: none !important; }`;
+    style.textContent = "* { -webkit-user-select: none !important; user-select: none !important; } @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }";
     document.head.appendChild(style);
 
     return () => {
@@ -248,27 +382,24 @@ function AssessmentContent() {
       document.removeEventListener("cut", handleCut);
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("contextmenu", handleContextMenu);
-      document.head.removeChild(style);
+      if (style && style.parentNode) style.parentNode.removeChild(style);
       clearInterval(devToolsInterval);
     };
-  }, [loading, alreadySubmitted, accessDenied, session, violationCount]);
+  }, [loading, alreadySubmitted, accessDenied, session, violationCount, isAutoSubmitting]);
 
-  // ===== AUTH STATE =====
   useEffect(() => {
     const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") {
-        router.push("/login");
-      }
+      if (event === "SIGNED_OUT") router.push("/login");
     });
 
     return () => {
-      authListener?.subscription.unsubscribe();
+      if (authListener && authListener.subscription) authListener.subscription.unsubscribe();
     };
   }, [router]);
 
-  const checkAssessmentAccess = async (userId, assessmentId) => {
+  const checkAssessmentAccess = async (userId, assessmentIdValue) => {
     try {
-      const completed = await isAssessmentCompleted(userId, assessmentId);
+      const completed = await isAssessmentCompleted(userId, assessmentIdValue);
 
       if (completed) {
         setAlreadySubmitted(true);
@@ -276,40 +407,53 @@ function AssessmentContent() {
         return false;
       }
 
-      const { data, error } = await supabase
+      const { data, error: accessError } = await supabase
         .from("candidate_assessments")
         .select("status")
         .eq("user_id", userId)
-        .eq("assessment_id", assessmentId)
+        .eq("assessment_id", assessmentIdValue)
         .maybeSingle();
 
-      if (error) throw error;
+      if (accessError) throw accessError;
 
-      const hasAccess = data?.status === "unblocked";
-
-      if (!hasAccess) {
+      if (!data || data.status !== "unblocked") {
         setAccessDenied(true);
+        setAccessChecked(true);
+        return false;
       }
 
       setAccessChecked(true);
-      return hasAccess;
-    } catch (error) {
-      console.error("Error checking assessment access:", error);
+      return true;
+    } catch (accessError) {
+      console.error("Error checking assessment access:", accessError);
       setAccessDenied(true);
       setAccessChecked(true);
       return false;
     }
   };
 
-  // ===== INITIALIZATION =====
   useEffect(() => {
     const init = async () => {
+      var authSession;
+      var hasAccess;
+      var completed;
+      var assessmentData;
+      var sessionData;
+      var progress;
+      var progressElapsed;
+      var uniqueQuestions;
+      var responses;
+      var formattedAnswers = {};
+      var restoredInitialAnswers = {};
+      var restoredChangeCount = {};
+      var sessionViolations;
+      var lastIndex;
+
       try {
         setLoading(true);
 
-        const {
-          data: { session: authSession }
-        } = await supabase.auth.getSession();
+        const authResponse = await supabase.auth.getSession();
+        authSession = authResponse && authResponse.data ? authResponse.data.session : null;
 
         if (!authSession) {
           router.push("/login");
@@ -317,119 +461,117 @@ function AssessmentContent() {
         }
 
         setUser(authSession.user);
-
         if (!assessmentId) return;
 
-        const hasAccess = await checkAssessmentAccess(authSession.user.id, assessmentId);
-
+        hasAccess = await checkAssessmentAccess(authSession.user.id, assessmentId);
         if (!hasAccess) {
           setLoading(false);
           return;
         }
 
-        const completed = await isAssessmentCompleted(authSession.user.id, assessmentId);
-
+        completed = await isAssessmentCompleted(authSession.user.id, assessmentId);
         if (completed) {
           setAlreadySubmitted(true);
           setLoading(false);
           return;
         }
 
-        const assessmentData = await getAssessmentById(assessmentId);
+        assessmentData = await getAssessmentById(assessmentId);
         setAssessment(assessmentData);
-        setAssessmentType(assessmentData?.assessment_type);
-        setTimeLimit(10800);
-        setTimeRemaining(10800);
+        setAssessmentType(assessmentData ? assessmentData.assessment_type : null);
 
-        const sessionData = await createAssessmentSession(
-          authSession.user.id,
-          assessmentId,
-          assessmentData?.assessment_type?.id
-        );
-
+        sessionData = await createAssessmentSession(authSession.user.id, assessmentId, assessmentData && assessmentData.assessment_type ? assessmentData.assessment_type.id : null);
         setSession(sessionData);
 
-        if (sessionData?.id) {
-          sessionIdRef.current = sessionData.id;
-          console.log("📌 Session ID:", sessionData.id);
-        }
+        if (sessionData && sessionData.id) sessionIdRef.current = sessionData.id;
 
-        const progress = await getProgress(authSession.user.id, assessmentId);
+        progress = await getProgress(authSession.user.id, assessmentId);
+        progressElapsed = progress && progress.elapsed_seconds ? progress.elapsed_seconds : 0;
+        setElapsedSeconds(progressElapsed);
+        setTimeLimit(getSessionBasedLimit(sessionData, progressElapsed, 10800));
 
-        if (progress) {
-          setElapsedSeconds(progress.elapsed_seconds || 0);
-        }
+        uniqueQuestions = await getUniqueQuestions(assessmentId);
+        uniqueQuestions = safeArray(uniqueQuestions);
+        setQuestions(uniqueQuestions);
 
-        const uniqueQuestions = await getUniqueQuestions(assessmentId);
-        setQuestions(uniqueQuestions || []);
+        if (sessionData && sessionData.id) {
+          responses = await getSessionResponses(sessionData.id);
 
-        if (sessionData?.id) {
-          const responses = await getSessionResponses(sessionData.id);
-
-          if (responses?.answerMap) {
-            const formattedAnswers = {};
-
-            Object.entries(responses.answerMap).forEach(([qId, answer]) => {
+          if (responses && responses.answerMap) {
+            Object.entries(responses.answerMap).forEach(function ([qId, answer]) {
               if (typeof answer === "string" && answer.includes(",")) {
-                formattedAnswers[qId] = answer.split(",").map((id) => parseInt(id, 10));
+                formattedAnswers[qId] = answer.split(",").map(function (id) { return parseInt(id, 10); }).filter(function (id) { return !Number.isNaN(id); });
               } else {
                 formattedAnswers[qId] = parseInt(answer, 10);
               }
             });
 
             setAnswers(formattedAnswers);
+          }
 
-            if (responses.initialAnswerMap) {
-              setInitialAnswers(responses.initialAnswerMap);
-            }
-
-            if (progress?.last_question_id && uniqueQuestions?.length > 0) {
-              const lastIndex = uniqueQuestions.findIndex((q) => q.id === progress.last_question_id);
-              if (lastIndex >= 0) setCurrentIndex(lastIndex);
-            }
+          if (responses && responses.initialAnswerMap) {
+            restoredInitialAnswers = responses.initialAnswerMap;
+            setInitialAnswers(restoredInitialAnswers);
           }
         }
 
-        const { data: sessionViolations } = await supabase
-          .from("assessment_sessions")
-          .select("violation_count")
-          .eq("id", sessionData.id)
-          .single();
-
-        if (sessionViolations?.violation_count) {
-          setViolationCount(sessionViolations.violation_count);
+        if (progress && progress.last_question_id && uniqueQuestions.length > 0) {
+          lastIndex = uniqueQuestions.findIndex(function (question) { return String(question.id) === String(progress.last_question_id); });
+          if (lastIndex >= 0) setCurrentIndex(lastIndex);
         }
 
+        if (sessionData && sessionData.id) {
+          const violationResponse = await supabase
+            .from("assessment_sessions")
+            .select("violation_count")
+            .eq("id", sessionData.id)
+            .single();
+          sessionViolations = violationResponse.data;
+          if (sessionViolations && sessionViolations.violation_count) setViolationCount(sessionViolations.violation_count);
+        }
+
+        setAnswerChangeCount(restoredChangeCount);
         setQuestionStartTime(Date.now());
         setLoading(false);
-      } catch (error) {
-        console.error("❌ Initialization error:", error);
-        setError(error.message);
+      } catch (initError) {
+        console.error("Initialization error:", initError);
+        setError(initError && initError.message ? initError.message : "Failed to initialize assessment.");
         setLoading(false);
       }
     };
 
-    if (assessmentId) {
-      init();
-    }
+    if (assessmentId) init();
   }, [assessmentId, router]);
 
-  // ===== TIMER =====
+  const handleTimeExpired = async () => {
+    if (alreadySubmitted || submittingRef.current || isAutoSubmitting) return;
+
+    try {
+      submittingRef.current = true;
+      setIsSubmitting(true);
+      alert("Time is up. The assessment will be submitted automatically.");
+      await completeAssessmentSafely(true, "Auto-submitted because the assessment timer expired.");
+      setAlreadySubmitted(true);
+      router.push("/candidate/dashboard");
+    } catch (submitError) {
+      console.error("Auto-submit error:", submitError);
+      alert("Failed to auto-submit. Please contact support.");
+      setIsSubmitting(false);
+    } finally {
+      submittingRef.current = false;
+    }
+  };
+
   useEffect(() => {
     if (loading || alreadySubmitted || !session || accessDenied || isAutoSubmitting) return;
 
     const timer = setInterval(() => {
-      setElapsedSeconds((prev) => {
-        const newElapsed = prev + 1;
+      setElapsedSeconds((previous) => {
+        var newElapsed = previous + 1;
+        if (newElapsed >= timeLimit) handleTimeExpired();
 
-        setTimeRemaining(timeLimit - newElapsed);
-
-        if (newElapsed >= timeLimit) {
-          handleTimeExpired();
-        }
-
-        if (newElapsed % 30 === 0) {
-          saveProgress(session.id, user.id, assessmentId, newElapsed, questions[currentIndex]?.id);
+        if (newElapsed % 30 === 0 && session && user) {
+          saveProgress(session.id, user.id, assessmentId, newElapsed, questions[currentIndex] ? questions[currentIndex].id : null);
           updateSessionTimer(session.id, newElapsed);
         }
 
@@ -438,34 +580,22 @@ function AssessmentContent() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [
-    loading,
-    alreadySubmitted,
-    session,
-    timeLimit,
-    assessmentId,
-    user?.id,
-    currentIndex,
-    questions,
-    accessDenied,
-    isAutoSubmitting
-  ]);
+  }, [loading, alreadySubmitted, session, timeLimit, assessmentId, user, currentIndex, questions, accessDenied, isAutoSubmitting]);
 
-  // ✅ FIXED: Save question timing
   const saveQuestionTiming = async (questionId, timeSpentSeconds) => {
+    var questionIdNum;
+    var currentTiming;
+    var payload;
+
     if (!sessionIdRef.current || !questionId) return false;
 
     try {
-      const questionIdNum = parseInt(questionId, 10);
+      questionIdNum = parseInt(questionId, 10);
+      if (Number.isNaN(questionIdNum)) return false;
 
-      if (isNaN(questionIdNum)) {
-        console.error("❌ Invalid question_id for timing:", questionId);
-        return false;
-      }
+      currentTiming = questionTimings[questionIdNum] || {};
 
-      const currentTiming = questionTimings[questionIdNum] || {};
-
-      const payload = {
+      payload = {
         session_id: sessionIdRef.current,
         question_id: questionIdNum,
         question_number: currentIndex + 1,
@@ -475,300 +605,183 @@ function AssessmentContent() {
         updated_at: new Date().toISOString()
       };
 
-      const { error } = await supabase.from("question_timing").upsert(payload, {
-        onConflict: "session_id,question_id"
-      });
-
-      if (error) {
-        console.error("❌ Error saving question timing:", error);
+      const { error: timingError } = await supabase.from("question_timing").upsert(payload, { onConflict: "session_id,question_id" });
+      if (timingError) {
+        console.error("Error saving question timing:", timingError);
         return false;
       }
 
-      setQuestionTimings((prev) => ({
-        ...prev,
-        [questionIdNum]: {
-          time_spent: timeSpentSeconds,
-          visit_count: (prev[questionIdNum]?.visit_count || 0) + 1
-        }
-      }));
+      setQuestionTimings(function (previous) {
+        return {
+          ...previous,
+          [questionIdNum]: {
+            time_spent: timeSpentSeconds,
+            visit_count: (previous[questionIdNum] && previous[questionIdNum].visit_count ? previous[questionIdNum].visit_count : 0) + 1
+          }
+        };
+      });
 
       return true;
-    } catch (error) {
-      console.error("❌ Error in saveQuestionTiming:", error);
+    } catch (timingError) {
+      console.error("Error in saveQuestionTiming:", timingError);
       return false;
     }
   };
 
-  const handleTimeExpired = async () => {
-    if (alreadySubmitted || isSubmitting || isAutoSubmitting) return;
-
-    alert("Time's up! Your assessment will be submitted automatically.");
-
-    try {
-      setIsSubmitting(true);
-
-      await Promise.all([
-        saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id),
-        updateSessionTimer(session.id, elapsedSeconds)
-      ]);
-
-      await submitAssessment(session.id);
-
-      setAlreadySubmitted(true);
-      router.push("/candidate/dashboard");
-    } catch (error) {
-      console.error("Auto-submit error:", error);
-      alert("Failed to auto-submit. Please contact support.");
-      setIsSubmitting(false);
-    }
-  };
-
-  // ✅ SAFER: answered count fallback; DB trigger also handles this
-  const updateAnsweredQuestionsCount = async () => {
-    if (!sessionIdRef.current) return;
-
-    const answeredCount = Object.values(answers).filter((answer) => {
-      if (Array.isArray(answer)) return answer.length > 0;
-      return answer !== null && answer !== undefined && answer !== "";
-    }).length;
-
-    const { error } = await supabase
-      .from("assessment_sessions")
-      .update({
-        answered_questions: answeredCount,
-        total_questions: questions.length,
-        updated_at: new Date().toISOString()
-      })
-      .eq("id", sessionIdRef.current);
-
-    if (error) {
-      console.error("Error updating answered questions count:", error);
-    }
-  };
-
   const handleAnswerSelect = async (questionId, answerId, isMultipleCorrect) => {
+    var timeSpentSeconds;
+    var newSelectedAnswers;
+    var isAnswerChange = false;
+    var isFirstAnswer = false;
+    var currentSelected;
+    var previousAnswer;
+    var currentChangeCount;
+    var newChangeCount;
+    var initialAnswerId;
+    var answerToStore;
+    var result;
+    var nextAnswers;
+
     if (alreadySubmitted || !session || !questionId || !answerId || accessDenied || isAutoSubmitting) return;
 
-    const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
-
-    let newSelectedAnswers;
-    let isAnswerChange = false;
-    let isFirstAnswer = false;
+    timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
 
     if (isMultipleCorrect) {
-      const currentSelected = getSelectedAnswersForQuestion(questionId);
-
-      if (currentSelected.includes(answerId)) {
-        newSelectedAnswers = currentSelected.filter((id) => id !== answerId);
+      currentSelected = getSelectedAnswersForQuestion(questionId);
+      if (currentSelected.map(String).includes(String(answerId))) {
+        newSelectedAnswers = currentSelected.filter(function (id) { return String(id) !== String(answerId); });
       } else {
-        newSelectedAnswers = [...currentSelected, answerId];
+        newSelectedAnswers = currentSelected.concat([answerId]);
       }
-
-      isAnswerChange =
-        currentSelected.length !== newSelectedAnswers.length ||
-        !currentSelected.every((id) => newSelectedAnswers.includes(id));
-
+      isAnswerChange = currentSelected.map(String).join(",") !== newSelectedAnswers.map(String).join(",");
       isFirstAnswer = currentSelected.length === 0 && newSelectedAnswers.length > 0;
     } else {
-      const previousAnswer = answers[questionId];
+      previousAnswer = answers[questionId];
       newSelectedAnswers = answerId;
-      isAnswerChange = previousAnswer && previousAnswer !== answerId;
-      isFirstAnswer = !previousAnswer;
+      isAnswerChange = previousAnswer !== undefined && previousAnswer !== null && String(previousAnswer) !== String(answerId);
+      isFirstAnswer = previousAnswer === undefined || previousAnswer === null || previousAnswer === "";
     }
 
-    const currentChangeCount = answerChangeCount[questionId] || 0;
-    const newChangeCount = isAnswerChange ? currentChangeCount + 1 : currentChangeCount;
-
-    let initialAnswerId = initialAnswers[questionId];
+    currentChangeCount = answerChangeCount[questionId] || 0;
+    newChangeCount = isAnswerChange ? currentChangeCount + 1 : currentChangeCount;
+    initialAnswerId = initialAnswers[questionId];
 
     if (isFirstAnswer) {
       initialAnswerId = isMultipleCorrect ? newSelectedAnswers : answerId;
-      setInitialAnswers((prev) => ({ ...prev, [questionId]: initialAnswerId }));
+      setInitialAnswers(function (previous) { return { ...previous, [questionId]: initialAnswerId }; });
     }
 
     if (isAnswerChange) {
-      setAnswerChangeCount((prev) => ({ ...prev, [questionId]: newChangeCount }));
+      setAnswerChangeCount(function (previous) { return { ...previous, [questionId]: newChangeCount }; });
     }
 
-    setAnswers((prev) => ({ ...prev, [questionId]: newSelectedAnswers }));
-    setSaveStatus((prev) => ({ ...prev, [questionId]: "saving" }));
+    nextAnswers = { ...answers, [questionId]: newSelectedAnswers };
+    setAnswers(nextAnswers);
+    setSaveStatus(function (previous) { return { ...previous, [questionId]: "saving" }; });
 
     try {
-      const answerToStore = Array.isArray(newSelectedAnswers)
-        ? newSelectedAnswers.join(",")
-        : newSelectedAnswers;
+      answerToStore = Array.isArray(newSelectedAnswers) ? newSelectedAnswers.join(",") : newSelectedAnswers;
 
-      const result = await saveUniqueResponse(session.id, user.id, assessmentId, questionId, answerToStore, {
+      result = await saveUniqueResponse(session.id, user.id, assessmentId, questionId, answerToStore, {
         time_spent_seconds: timeSpentSeconds,
         times_changed: newChangeCount,
         initial_answer_id: Array.isArray(initialAnswerId) ? initialAnswerId.join(",") : initialAnswerId,
         is_answer_change: isAnswerChange
       });
 
-      if (result?.success) {
-        setSaveStatus((prev) => ({ ...prev, [questionId]: "saved" }));
-
+      if (result && result.success) {
+        setSaveStatus(function (previous) { return { ...previous, [questionId]: "saved" }; });
         await saveQuestionTiming(questionId, timeSpentSeconds);
-        await updateAnsweredQuestionsCount();
-
-        setTimeout(() => {
-          setSaveStatus((prev) => {
-            const newStatus = { ...prev };
-            delete newStatus[questionId];
-            return newStatus;
-          });
-        }, 500);
+        await updateAnsweredQuestionsCount(nextAnswers);
       } else {
-        setSaveStatus((prev) => ({ ...prev, [questionId]: "error" }));
-
-        setTimeout(() => {
-          setSaveStatus((prev) => {
-            const newStatus = { ...prev };
-            delete newStatus[questionId];
-            return newStatus;
-          });
-        }, 2000);
+        setSaveStatus(function (previous) { return { ...previous, [questionId]: "error" }; });
       }
-    } catch (error) {
-      console.error("Save error:", error);
-
-      setSaveStatus((prev) => ({ ...prev, [questionId]: "error" }));
-
-      setTimeout(() => {
-        setSaveStatus((prev) => {
-          const newStatus = { ...prev };
-          delete newStatus[questionId];
-          return newStatus;
-        });
-      }, 2000);
+    } catch (saveError) {
+      console.error("Save error:", saveError);
+      setSaveStatus(function (previous) { return { ...previous, [questionId]: "error" }; });
     }
+
+    setTimeout(function () {
+      setSaveStatus(function (previous) {
+        var newStatus = { ...previous };
+        delete newStatus[questionId];
+        return newStatus;
+      });
+    }, 900);
 
     setQuestionStartTime(Date.now());
   };
 
-  const handleNext = async () => {
-    if (currentIndex < questions.length - 1 && !isAutoSubmitting) {
-      const currentQuestionId = questions[currentIndex]?.id;
+  const moveToQuestion = async (nextIndex) => {
+    var currentQuestionId;
+    var timeSpent;
+    if (isAutoSubmitting || nextIndex < 0 || nextIndex >= questions.length) return;
 
-      if (currentQuestionId) {
-        const timeSpent = Math.floor((Date.now() - questionStartTime) / 1000);
-        await saveQuestionTiming(currentQuestionId, timeSpent);
-      }
-
-      setCurrentIndex((i) => i + 1);
-      setQuestionStartTime(Date.now());
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
-  };
-
-  const handlePrevious = async () => {
-    if (currentIndex > 0 && !isAutoSubmitting) {
-      const currentQuestionId = questions[currentIndex]?.id;
-
-      if (currentQuestionId) {
-        const timeSpent = Math.floor((Date.now() - questionStartTime) / 1000);
-        await saveQuestionTiming(currentQuestionId, timeSpent);
-      }
-
-      setCurrentIndex((i) => i - 1);
-      setQuestionStartTime(Date.now());
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
-  };
-
-  const jumpToQuestion = async (index) => {
-    if (isAutoSubmitting) return;
-
-    const currentQuestionId = questions[currentIndex]?.id;
-
+    currentQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
     if (currentQuestionId) {
-      const timeSpent = Math.floor((Date.now() - questionStartTime) / 1000);
+      timeSpent = Math.floor((Date.now() - questionStartTime) / 1000);
       await saveQuestionTiming(currentQuestionId, timeSpent);
+      if (session && user) await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, currentQuestionId);
     }
 
-    setCurrentIndex(index);
+    setCurrentIndex(nextIndex);
     setQuestionStartTime(Date.now());
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleSubmit = async () => {
-    if (!session || alreadySubmitted || accessDenied || isAutoSubmitting) return;
+    var unansweredCount;
+    var confirmed;
+
+    if (!session || alreadySubmitted || accessDenied || isAutoSubmitting || submittingRef.current) return;
 
     if (violationCount >= 3) {
-      alert(
-        `Cannot submit: You have ${violationCount} rule violations. The assessment has been auto-submitted as invalid.`
-      );
+      alert("Cannot submit: the assessment reached the violation limit and must be auto-submitted.");
       return;
     }
 
-    const lastQuestionId = questions[currentIndex]?.id;
-
-    if (lastQuestionId) {
-      const timeSpent = Math.floor((Date.now() - questionStartTime) / 1000);
-      await saveQuestionTiming(lastQuestionId, timeSpent);
-    }
-
-    const unansweredCount = questions.length - Object.keys(answers).length;
-
+    unansweredCount = questions.length - countAnswered(answers);
     if (unansweredCount > 0) {
-      const confirmed = window.confirm(
-        `You have ${unansweredCount} unanswered questions. Are you sure you want to submit?`
-      );
-
+      confirmed = window.confirm("You have " + unansweredCount + " unanswered question(s). Are you sure you want to submit?");
       if (!confirmed) return;
     }
 
-    setIsSubmitting(true);
-    setShowSubmitModal(false);
-
     try {
-      await Promise.all([
-        saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id),
-        updateSessionTimer(session.id, elapsedSeconds),
-        updateAnsweredQuestionsCount()
-      ]);
+      submittingRef.current = true;
+      setIsSubmitting(true);
+      setShowSubmitModal(false);
 
-      const result = await submitAssessment(session.id);
-
-      console.log("✅ Submit successful:", result);
+      await completeAssessmentSafely(false, null);
 
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
-
-      setTimeout(() => {
-        router.push("/candidate/dashboard");
-      }, 2000);
-    } catch (error) {
-      console.error("❌ Submission error:", error);
-
-      if (error.message === "assessment_invalid_violations" || error.message?.includes("violations")) {
-        alert("Assessment cannot be submitted due to rule violations. Please contact your supervisor.");
-        router.push("/candidate/dashboard");
-      } else if (error.message === "already_submitted" || error.message?.includes("already submitted")) {
-        setAlreadySubmitted(true);
-        alert("This assessment has already been submitted.");
-        router.push("/candidate/dashboard");
-      } else {
-        alert(`Failed to submit assessment: ${error.message}`);
-        setIsSubmitting(false);
-      }
+      setTimeout(function () { router.push("/candidate/dashboard"); }, 2000);
+    } catch (submitError) {
+      console.error("Submission error:", submitError);
+      alert("Failed to submit assessment: " + (submitError && submitError.message ? submitError.message : "Unknown error"));
+      setIsSubmitting(false);
+    } finally {
+      submittingRef.current = false;
     }
   };
 
   const handleBackClick = async () => {
+    if (session && user && !alreadySubmitted) {
+      await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex] ? questions[currentIndex].id : null);
+      await updateSessionTimer(session.id, elapsedSeconds);
+    }
     router.push("/candidate/dashboard");
   };
 
-  const totalAnswered = Object.keys(answers || {}).length;
-  const isLastQuestion = currentIndex === questions.length - 1;
-  const timeRemainingSeconds = Math.max(0, timeLimit - elapsedSeconds);
-  const timeRemainingFormatted = formatTime(timeRemainingSeconds);
-  const timePercentage = (elapsedSeconds / timeLimit) * 100;
-  const isTimeWarning = timePercentage > 80;
-  const isTimeCritical = timePercentage > 90;
-
-  const currentQuestion = questions[currentIndex] || {};
-  const isMultipleCorrect = isMultipleCorrectQuestion(currentQuestion);
+  var totalAnswered = countAnswered(answers);
+  var isLastQuestion = currentIndex === questions.length - 1;
+  var timeRemainingSeconds = Math.max(0, timeLimit - elapsedSeconds);
+  var timeRemainingFormatted = formatTime(timeRemainingSeconds);
+  var timePercentage = timeLimit > 0 ? (elapsedSeconds / timeLimit) * 100 : 0;
+  var isTimeWarning = timePercentage > 80;
+  var isTimeCritical = timePercentage > 90;
+  var currentQuestion = questions[currentIndex] || {};
+  var isMultipleCorrect = isMultipleCorrectQuestion(currentQuestion);
 
   if (loading) {
     return (
@@ -787,9 +800,7 @@ function AssessmentContent() {
           <div style={styles.errorIcon}>🔒</div>
           <h2>Access Denied</h2>
           <p>You do not have permission to take this assessment.</p>
-          <button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>
-            ← Go to Dashboard
-          </button>
+          <button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button>
         </div>
       </div>
     );
@@ -800,11 +811,9 @@ function AssessmentContent() {
       <div style={styles.messageContainer}>
         <div style={styles.messageCard}>
           <div style={styles.successIcon}>✅</div>
-          <h2>Assessment Already Completed</h2>
-          <p>You have already submitted this assessment.</p>
-          <button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>
-            ← Go to Dashboard
-          </button>
+          <h2>Assessment Completed</h2>
+          <p>This assessment has already been submitted.</p>
+          <button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button>
         </div>
       </div>
     );
@@ -817,9 +826,7 @@ function AssessmentContent() {
           <div style={styles.errorIcon}>⚠️</div>
           <h2>Error Loading Assessment</h2>
           <p>{error}</p>
-          <button onClick={() => window.location.reload()} style={styles.primaryButton}>
-            Try Again
-          </button>
+          <button onClick={() => window.location.reload()} style={styles.primaryButton}>Try Again</button>
         </div>
       </div>
     );
@@ -832,9 +839,7 @@ function AssessmentContent() {
           <div style={styles.errorIcon}>📭</div>
           <h2>No Questions Available</h2>
           <p>This assessment does not have any questions yet.</p>
-          <button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>
-            ← Go to Dashboard
-          </button>
+          <button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button>
         </div>
       </div>
     );
@@ -843,10 +848,7 @@ function AssessmentContent() {
   return (
     <>
       {showViolationWarning && (
-        <div style={styles.violationBanner}>
-          <span>⚠️</span>
-          <span>{violationMessage}</span>
-        </div>
+        <div style={styles.violationBanner}><span>⚠️</span><span>{violationMessage}</span></div>
       )}
 
       {isAutoSubmitting && (
@@ -854,7 +856,7 @@ function AssessmentContent() {
           <div style={styles.autoSubmitCard}>
             <div style={styles.autoSubmitSpinner} />
             <h3>Auto-submitting assessment...</h3>
-            <p>You have exceeded the violation limit (3/3).</p>
+            <p>The violation limit has been reached.</p>
           </div>
         </div>
       )}
@@ -864,67 +866,16 @@ function AssessmentContent() {
           <div style={styles.modalContent}>
             <div style={styles.modalIcon}>📋</div>
             <h2 style={styles.modalTitle}>Ready to Submit?</h2>
-
             <div style={styles.modalStats}>
-              <div style={styles.modalStat}>
-                <span>Questions Answered</span>
-                <span style={{ color: "#4caf50", fontWeight: 700 }}>
-                  {totalAnswered}/{questions.length}
-                </span>
-              </div>
-
-              <div style={styles.modalStat}>
-                <span>Completion Rate</span>
-                <span>{Math.round((totalAnswered / questions.length) * 100)}%</span>
-              </div>
-
-              <div style={styles.modalStat}>
-                <span>Answer Changes</span>
-                <span>{Object.values(answerChangeCount).reduce((a, b) => a + b, 0)}</span>
-              </div>
-
-              {violationCount > 0 && (
-                <div style={styles.modalStat}>
-                  <span>Violations</span>
-                  <span
-                    style={{
-                      color: violationCount >= 3 ? "#f44336" : "#ff9800",
-                      fontWeight: 700
-                    }}
-                  >
-                    {violationCount}/3
-                  </span>
-                </div>
-              )}
+              <div style={styles.modalStat}><span>Questions Answered</span><strong style={{ color: "#4caf50" }}>{totalAnswered}/{questions.length}</strong></div>
+              <div style={styles.modalStat}><span>Completion Rate</span><strong>{Math.round((totalAnswered / questions.length) * 100)}%</strong></div>
+              <div style={styles.modalStat}><span>Answer Changes</span><strong>{Object.values(answerChangeCount).reduce((a, b) => a + b, 0)}</strong></div>
+              {violationCount > 0 && <div style={styles.modalStat}><span>Violations</span><strong style={{ color: violationCount >= 3 ? "#f44336" : "#ff9800" }}>{violationCount}/3</strong></div>}
             </div>
-
-            <div style={styles.modalWarning}>
-              <span>⚠️</span>
-              <span>
-                <strong>One attempt only:</strong> After submission, you cannot retake this assessment.
-              </span>
-            </div>
-
+            <div style={styles.modalWarning}><span>⚠️</span><span><strong>One attempt only:</strong> After submission, the assessment cannot be retaken.</span></div>
             <div style={styles.modalActions}>
-              <button onClick={() => setShowSubmitModal(false)} style={styles.modalSecondaryButton}>
-                Continue Reviewing
-              </button>
-
-              <button
-                onClick={handleSubmit}
-                disabled={isSubmitting || violationCount >= 3}
-                style={{
-                  ...styles.modalPrimaryButton,
-                  background: violationCount >= 3 ? "#ccc" : "#4caf50",
-                  cursor: violationCount >= 3 ? "not-allowed" : "pointer"
-                }}
-              >
-                {isSubmitting
-                  ? "Submitting..."
-                  : violationCount >= 3
-                  ? "Cannot Submit - Violations"
-                  : "Submit Assessment"}
-              </button>
+              <button onClick={() => setShowSubmitModal(false)} style={styles.modalSecondaryButton}>Continue Reviewing</button>
+              <button onClick={handleSubmit} disabled={isSubmitting || violationCount >= 3} style={{ ...styles.modalPrimaryButton, background: violationCount >= 3 ? "#ccc" : "#4caf50", cursor: violationCount >= 3 ? "not-allowed" : "pointer" }}>{isSubmitting ? "Submitting..." : violationCount >= 3 ? "Cannot Submit" : "Submit Assessment"}</button>
             </div>
           </div>
         </div>
@@ -942,66 +893,20 @@ function AssessmentContent() {
       )}
 
       <div style={styles.container}>
-        <div
-          style={{
-            ...styles.header,
-            background: `linear-gradient(135deg, ${getGradientStart()}, ${getGradientEnd()})`
-          }}
-        >
+        <div style={{ ...styles.header, background: "linear-gradient(135deg, " + getGradientStart() + ", " + getGradientEnd() + ")" }}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
-              <button onClick={handleBackClick} style={styles.backButton}>
-                ←
-              </button>
-
+              <button onClick={handleBackClick} style={styles.backButton}>←</button>
               <div>
-                <div style={styles.headerTitle}>{assessment?.title}</div>
-                <div style={styles.headerMeta}>
-                  Question {currentIndex + 1} of {questions.length} • {currentQuestion?.section || "General"}
-                  {isMultipleCorrect && (
-                    <span style={{ marginLeft: "10px", color: "#ff9800", fontSize: "12px" }}>
-                      (Select all that apply)
-                    </span>
-                  )}
-                </div>
+                <div style={styles.headerTitle}>{assessment ? assessment.title : "Assessment"}</div>
+                <div style={styles.headerMeta}>Question {currentIndex + 1} of {questions.length} • {currentQuestion.section || "General"}{isMultipleCorrect && <span style={{ marginLeft: "10px", color: "#ff9800", fontSize: "12px" }}>(Select all that apply)</span>}</div>
               </div>
             </div>
-
             <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-              {violationCount > 0 && (
-                <div
-                  style={{
-                    background: violationCount >= 3 ? "#f44336" : "#ff9800",
-                    color: "white",
-                    padding: "4px 12px",
-                    borderRadius: "20px",
-                    fontSize: "12px",
-                    fontWeight: "bold"
-                  }}
-                >
-                  ⚠️ {violationCount}/3 Violations
-                </div>
-              )}
-
-              <div
-                style={{
-                  ...styles.timer,
-                  background: isTimeCritical
-                    ? "rgba(211, 47, 47, 0.1)"
-                    : isTimeWarning
-                    ? "rgba(255, 152, 0, 0.1)"
-                    : "rgba(255,255,255,0.15)"
-                }}
-              >
+              {violationCount > 0 && <div style={{ background: violationCount >= 3 ? "#f44336" : "#ff9800", color: "white", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold" }}>⚠️ {violationCount}/3 Violations</div>}
+              <div style={{ ...styles.timer, background: isTimeCritical ? "rgba(211,47,47,0.1)" : isTimeWarning ? "rgba(255,152,0,0.1)" : "rgba(255,255,255,0.15)" }}>
                 <div style={styles.timerLabel}>TIME REMAINING</div>
-                <div
-                  style={{
-                    ...styles.timerValue,
-                    color: isTimeCritical ? "#d32f2f" : isTimeWarning ? "#ff9800" : "white"
-                  }}
-                >
-                  {timeRemainingFormatted}
-                </div>
+                <div style={{ ...styles.timerValue, color: isTimeCritical ? "#d32f2f" : isTimeWarning ? "#ff9800" : "white" }}>{timeRemainingFormatted}</div>
               </div>
             </div>
           </div>
@@ -1010,90 +915,24 @@ function AssessmentContent() {
         <div style={styles.mainContent}>
           <div style={styles.questionColumn}>
             <div style={styles.questionCard}>
-              <div style={styles.questionText}>{currentQuestion?.question_text}</div>
-
-              {answerChangeCount[currentQuestion?.id] > 0 && (
-                <div style={styles.changeIndicator}>
-                  ✏️ Changed answer {answerChangeCount[currentQuestion.id]} time
-                  {answerChangeCount[currentQuestion.id] !== 1 ? "s" : ""}
-                </div>
-              )}
-
+              <div style={styles.questionText}>{currentQuestion.question_text}</div>
+              {answerChangeCount[currentQuestion.id] > 0 && <div style={styles.changeIndicator}>✏️ Changed answer {answerChangeCount[currentQuestion.id]} time{answerChangeCount[currentQuestion.id] !== 1 ? "s" : ""}</div>}
               <div style={styles.answersContainer}>
-                {currentQuestion?.answers?.map((answer, index) => {
+                {safeArray(currentQuestion.answers).map((answer, index) => {
                   const isSelected = isAnswerSelected(currentQuestion.id, answer.id);
                   const optionLetter = String.fromCharCode(65 + index);
-
                   return (
-                    <button
-                      key={answer.id}
-                      onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)}
-                      disabled={alreadySubmitted || isAutoSubmitting}
-                      style={{
-                        ...styles.answerCard,
-                        background: isSelected
-                          ? `linear-gradient(135deg, ${getGradientStart()}, ${getGradientEnd()})`
-                          : "white",
-                        borderColor: isSelected ? getGradientStart() : "#e2e8f0",
-                        opacity: isAutoSubmitting ? 0.6 : 1
-                      }}
-                    >
-                      <div
-                        style={{
-                          ...styles.answerLetter,
-                          background: isSelected ? "rgba(255,255,255,0.2)" : "#f1f5f9",
-                          color: isSelected ? "white" : "#475569"
-                        }}
-                      >
-                        {optionLetter}
-                      </div>
-
-                      <span style={{ color: isSelected ? "white" : "#1e293b" }}>
-                        {answer.answer_text}
-                        {isMultipleCorrect && isSelected && (
-                          <span style={{ marginLeft: "8px", fontSize: "12px" }}>✓</span>
-                        )}
-                      </span>
+                    <button key={answer.id} onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)} disabled={alreadySubmitted || isAutoSubmitting} style={{ ...styles.answerCard, background: isSelected ? "linear-gradient(135deg, " + getGradientStart() + ", " + getGradientEnd() + ")" : "white", borderColor: isSelected ? getGradientStart() : "#e2e8f0", opacity: isAutoSubmitting ? 0.6 : 1 }}>
+                      <div style={{ ...styles.answerLetter, background: isSelected ? "rgba(255,255,255,0.2)" : "#f1f5f9", color: isSelected ? "white" : "#475569" }}>{optionLetter}</div>
+                      <span style={{ color: isSelected ? "white" : "#1e293b" }}>{answer.answer_text}{isMultipleCorrect && isSelected && <span style={{ marginLeft: "8px", fontSize: "12px" }}>✓</span>}</span>
                     </button>
                   );
                 })}
               </div>
-
-              {isMultipleCorrect && (
-                <div style={styles.multipleHint}>
-                  💡 This question has multiple correct answers. Select all that apply.
-                </div>
-              )}
-
+              {isMultipleCorrect && <div style={styles.multipleHint}>💡 This question has multiple correct answers. Select all that apply.</div>}
               <div style={styles.navigation}>
-                <button
-                  onClick={handlePrevious}
-                  disabled={currentIndex === 0 || isAutoSubmitting}
-                  style={{
-                    ...styles.navButton,
-                    opacity: currentIndex === 0 || isAutoSubmitting ? 0.5 : 1
-                  }}
-                >
-                  ← Previous
-                </button>
-
-                {isLastQuestion ? (
-                  <button
-                    onClick={() => setShowSubmitModal(true)}
-                    disabled={isAutoSubmitting || violationCount >= 3}
-                    style={{
-                      ...styles.submitButton,
-                      background: violationCount >= 3 ? "#ccc" : "#4caf50",
-                      cursor: violationCount >= 3 ? "not-allowed" : "pointer"
-                    }}
-                  >
-                    {violationCount >= 3 ? "Blocked - Violations" : "Submit"}
-                  </button>
-                ) : (
-                  <button onClick={handleNext} disabled={isAutoSubmitting} style={styles.nextButton}>
-                    Next →
-                  </button>
-                )}
+                <button onClick={() => moveToQuestion(currentIndex - 1)} disabled={currentIndex === 0 || isAutoSubmitting} style={{ ...styles.navButton, opacity: currentIndex === 0 || isAutoSubmitting ? 0.5 : 1 }}>← Previous</button>
+                {isLastQuestion ? <button onClick={() => setShowSubmitModal(true)} disabled={isAutoSubmitting || violationCount >= 3} style={{ ...styles.submitButton, background: violationCount >= 3 ? "#ccc" : "#4caf50", cursor: violationCount >= 3 ? "not-allowed" : "pointer" }}>{violationCount >= 3 ? "Blocked - Violations" : "Submit"}</button> : <button onClick={() => moveToQuestion(currentIndex + 1)} disabled={isAutoSubmitting} style={styles.nextButton}>Next →</button>}
               </div>
             </div>
           </div>
@@ -1101,78 +940,25 @@ function AssessmentContent() {
           <div style={styles.navigatorColumn}>
             <div style={styles.navigatorCard}>
               <h3>Question Navigator</h3>
-
               <div style={styles.statsGrid}>
-                <div style={styles.statCard}>
-                  <div style={styles.statValue}>{totalAnswered}</div>
-                  <div style={styles.statLabel}>Answered</div>
-                </div>
-
-                <div style={styles.statCard}>
-                  <div style={styles.statValue}>{questions.length - totalAnswered}</div>
-                  <div style={styles.statLabel}>Remaining</div>
-                </div>
-
-                <div style={styles.statCard}>
-                  <div style={styles.statValue}>{Object.values(answerChangeCount).reduce((a, b) => a + b, 0)}</div>
-                  <div style={styles.statLabel}>Changes</div>
-                </div>
+                <div style={styles.statCard}><div style={styles.statValue}>{totalAnswered}</div><div style={styles.statLabel}>Answered</div></div>
+                <div style={styles.statCard}><div style={styles.statValue}>{questions.length - totalAnswered}</div><div style={styles.statLabel}>Remaining</div></div>
+                <div style={styles.statCard}><div style={styles.statValue}>{Object.values(answerChangeCount).reduce((a, b) => a + b, 0)}</div><div style={styles.statLabel}>Changes</div></div>
               </div>
-
               <div style={styles.questionGrid}>
-                {questions.map((q, index) => {
-                  const isAnswered =
-                    answers[q.id] !== undefined &&
-                    (Array.isArray(answers[q.id]) ? answers[q.id].length > 0 : answers[q.id] !== null);
-
+                {questions.map((question, index) => {
+                  const questionAnswer = answers[question.id];
+                  const isAnswered = questionAnswer !== undefined && (Array.isArray(questionAnswer) ? questionAnswer.length > 0 : questionAnswer !== null);
                   const isCurrent = index === currentIndex;
-                  const hasChanges = answerChangeCount[q.id] > 0;
-
-                  return (
-                    <button
-                      key={q.id}
-                      onClick={() => jumpToQuestion(index)}
-                      disabled={isAutoSubmitting}
-                      style={{
-                        ...styles.gridItem,
-                        background: isCurrent
-                          ? getGradientStart()
-                          : isAnswered
-                          ? hasChanges
-                            ? "#ff9800"
-                            : "#4caf50"
-                          : "white",
-                        color: isCurrent || isAnswered ? "white" : "#1e293b",
-                        borderColor: isCurrent ? getGradientStart() : "#e2e8f0",
-                        opacity: isAutoSubmitting ? 0.6 : 1
-                      }}
-                    >
-                      {index + 1}
-                    </button>
-                  );
+                  const hasChanges = answerChangeCount[question.id] > 0;
+                  return <button key={question.id} onClick={() => moveToQuestion(index)} disabled={isAutoSubmitting} style={{ ...styles.gridItem, background: isCurrent ? getGradientStart() : isAnswered ? hasChanges ? "#ff9800" : "#4caf50" : "white", color: isCurrent || isAnswered ? "white" : "#1e293b", borderColor: isCurrent ? getGradientStart() : "#e2e8f0", opacity: isAutoSubmitting ? 0.6 : 1 }}>{index + 1}</button>;
                 })}
               </div>
-
               <div style={styles.legend}>
-                <div style={styles.legendItem}>
-                  <div style={{ ...styles.legendDot, background: "#4caf50" }} />
-                  Answered
-                </div>
-
-                <div style={styles.legendItem}>
-                  <div style={{ ...styles.legendDot, background: "#ff9800" }} />
-                  Changed
-                </div>
-
-                <div style={styles.legendItem}>
-                  <div style={{ ...styles.legendDot, background: getGradientStart() }} />
-                  Current
-                </div>
-
-                <div style={styles.legendItem}>
-                  <div style={{ ...styles.legendDot, background: "white", border: "2px solid #e2e8f0" }} />
-                  Pending
-                </div>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: "#4caf50" }} />Answered</div>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: "#ff9800" }} />Changed</div>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: getGradientStart() }} />Current</div>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: "white", border: "2px solid #e2e8f0" }} />Pending</div>
               </div>
             </div>
           </div>
@@ -1182,392 +968,69 @@ function AssessmentContent() {
   );
 }
 
-// Styles
 const styles = {
-  loadingContainer: {
-    minHeight: "100vh",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "#f8fafc",
-    gap: "20px"
-  },
-  loadingSpinner: {
-    width: "50px",
-    height: "50px",
-    border: "4px solid #e2e8f0",
-    borderTop: "4px solid #667eea",
-    borderRadius: "50%",
-    animation: "spin 1s linear infinite"
-  },
-  messageContainer: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-    padding: "20px"
-  },
-  messageCard: {
-    background: "white",
-    padding: "40px",
-    borderRadius: "16px",
-    maxWidth: "500px",
-    textAlign: "center",
-    boxShadow: "0 20px 40px rgba(0,0,0,0.2)"
-  },
+  loadingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#f8fafc", gap: "20px" },
+  loadingSpinner: { width: "50px", height: "50px", border: "4px solid #e2e8f0", borderTop: "4px solid #667eea", borderRadius: "50%", animation: "spin 1s linear infinite" },
+  messageContainer: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)", padding: "20px" },
+  messageCard: { background: "white", padding: "40px", borderRadius: "16px", maxWidth: "500px", textAlign: "center", boxShadow: "0 20px 40px rgba(0,0,0,0.2)" },
   errorIcon: { fontSize: "64px", marginBottom: "20px" },
   successIcon: { fontSize: "64px", marginBottom: "20px" },
-  successIconLarge: {
-    width: "80px",
-    height: "80px",
-    background: "#4caf50",
-    borderRadius: "50%",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    margin: "0 auto 20px",
-    fontSize: "40px",
-    color: "white"
-  },
-  primaryButton: {
-    padding: "12px 30px",
-    background: "linear-gradient(135deg, #667eea, #764ba2)",
-    color: "white",
-    border: "none",
-    borderRadius: "8px",
-    cursor: "pointer"
-  },
-  violationBanner: {
-    position: "fixed",
-    top: "20px",
-    left: "50%",
-    transform: "translateX(-50%)",
-    background: "#f44336",
-    color: "white",
-    padding: "12px 24px",
-    borderRadius: "8px",
-    fontWeight: "bold",
-    zIndex: 10001,
-    fontSize: "14px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
-    display: "flex",
-    alignItems: "center",
-    gap: "10px"
-  },
-  autoSubmitOverlay: {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: "rgba(0,0,0,0.7)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10002
-  },
-  autoSubmitCard: {
-    background: "white",
-    padding: "30px",
-    borderRadius: "16px",
-    textAlign: "center",
-    maxWidth: "400px"
-  },
-  autoSubmitSpinner: {
-    width: "40px",
-    height: "40px",
-    border: "4px solid #e2e8f0",
-    borderTop: "4px solid #f44336",
-    borderRadius: "50%",
-    animation: "spin 1s linear infinite",
-    margin: "0 auto 20px"
-  },
+  successIconLarge: { width: "80px", height: "80px", background: "#4caf50", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", fontSize: "40px", color: "white" },
+  primaryButton: { padding: "12px 30px", background: "linear-gradient(135deg, #667eea, #764ba2)", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" },
+  violationBanner: { position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)", background: "#f44336", color: "white", padding: "12px 24px", borderRadius: "8px", fontWeight: "bold", zIndex: 10001, fontSize: "14px", boxShadow: "0 4px 12px rgba(0,0,0,0.2)", display: "flex", alignItems: "center", gap: "10px" },
+  autoSubmitOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10002 },
+  autoSubmitCard: { background: "white", padding: "30px", borderRadius: "16px", textAlign: "center", maxWidth: "400px" },
+  autoSubmitSpinner: { width: "40px", height: "40px", border: "4px solid #e2e8f0", borderTop: "4px solid #f44336", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 20px" },
   container: { minHeight: "100vh", background: "#f8fafc" },
-  header: {
-    position: "sticky",
-    top: 0,
-    zIndex: 100,
-    color: "white",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
-  },
-  headerContent: {
-    maxWidth: "1400px",
-    margin: "0 auto",
-    padding: "16px 24px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: "10px"
-  },
+  header: { position: "sticky", top: 0, zIndex: 100, color: "white", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" },
+  headerContent: { maxWidth: "1400px", margin: "0 auto", padding: "16px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" },
   headerLeft: { display: "flex", alignItems: "center", gap: "20px" },
-  backButton: {
-    width: "40px",
-    height: "40px",
-    background: "rgba(255,255,255,0.2)",
-    border: "none",
-    borderRadius: "10px",
-    color: "white",
-    fontSize: "24px",
-    cursor: "pointer"
-  },
+  backButton: { width: "40px", height: "40px", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: "10px", color: "white", fontSize: "24px", cursor: "pointer" },
   headerTitle: { fontSize: "20px", fontWeight: 700, marginBottom: "4px" },
   headerMeta: { fontSize: "14px", opacity: 0.9 },
-  timer: {
-    padding: "10px 20px",
-    borderRadius: "12px",
-    border: "1px solid rgba(255,255,255,0.3)",
-    textAlign: "center",
-    minWidth: "160px"
-  },
+  timer: { padding: "10px 20px", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.3)", textAlign: "center", minWidth: "160px" },
   timerLabel: { fontSize: "12px", fontWeight: 600, marginBottom: "4px" },
   timerValue: { fontSize: "24px", fontWeight: 700, fontFamily: "monospace" },
-  mainContent: {
-    maxWidth: "1400px",
-    margin: "0 auto",
-    padding: "24px",
-    display: "grid",
-    gridTemplateColumns: "1fr 320px",
-    gap: "24px"
-  },
+  mainContent: { maxWidth: "1400px", margin: "0 auto", padding: "24px", display: "grid", gridTemplateColumns: "1fr 320px", gap: "24px" },
   questionColumn: { display: "flex", flexDirection: "column", gap: "20px" },
-  questionCard: {
-    background: "white",
-    borderRadius: "16px",
-    padding: "24px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
-  },
-  questionText: {
-    fontSize: "18px",
-    lineHeight: "1.5",
-    color: "#1e293b",
-    marginBottom: "20px",
-    fontWeight: 500,
-    padding: "16px",
-    background: "#f8fafc",
-    borderRadius: "10px"
-  },
-  changeIndicator: {
-    padding: "6px 12px",
-    background: "#FFF8E1",
-    borderRadius: "20px",
-    fontSize: "11px",
-    color: "#F57C00",
-    marginBottom: "12px",
-    display: "inline-block"
-  },
-  answersContainer: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "10px",
-    marginBottom: "24px"
-  },
-  answerCard: {
-    padding: "12px 16px",
-    border: "2px solid",
-    borderRadius: "12px",
-    cursor: "pointer",
-    textAlign: "left",
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    transition: "all 0.2s"
-  },
-  answerLetter: {
-    width: "28px",
-    height: "28px",
-    borderRadius: "8px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "14px",
-    fontWeight: 700
-  },
-  multipleHint: {
-    padding: "10px 16px",
-    background: "#E3F2FD",
-    borderRadius: "8px",
-    fontSize: "13px",
-    color: "#1565C0",
-    marginBottom: "16px"
-  },
-  navigation: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "12px",
-    marginTop: "8px"
-  },
-  navButton: {
-    padding: "10px 20px",
-    borderRadius: "10px",
-    fontSize: "14px",
-    fontWeight: 600,
-    border: "2px solid #667eea",
-    background: "white",
-    color: "#667eea",
-    cursor: "pointer"
-  },
-  nextButton: {
-    padding: "10px 20px",
-    borderRadius: "10px",
-    fontSize: "14px",
-    fontWeight: 600,
-    border: "none",
-    background: "linear-gradient(135deg, #667eea, #764ba2)",
-    color: "white",
-    cursor: "pointer"
-  },
-  submitButton: {
-    padding: "10px 20px",
-    borderRadius: "10px",
-    fontSize: "14px",
-    fontWeight: 600,
-    border: "none",
-    background: "#4caf50",
-    color: "white",
-    cursor: "pointer"
-  },
-  navigatorColumn: {
-    position: "sticky",
-    top: "100px",
-    height: "fit-content"
-  },
-  navigatorCard: {
-    background: "white",
-    borderRadius: "16px",
-    padding: "20px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
-  },
-  statsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: "8px",
-    marginBottom: "20px"
-  },
-  statCard: {
-    background: "#f8fafc",
-    padding: "12px",
-    borderRadius: "10px",
-    textAlign: "center"
-  },
+  questionCard: { background: "white", borderRadius: "16px", padding: "24px", boxShadow: "0 4px 12px rgba(0,0,0,0.05)" },
+  questionText: { fontSize: "18px", lineHeight: "1.5", color: "#1e293b", marginBottom: "20px", fontWeight: 500, padding: "16px", background: "#f8fafc", borderRadius: "10px" },
+  changeIndicator: { padding: "6px 12px", background: "#FFF8E1", borderRadius: "20px", fontSize: "11px", color: "#F57C00", marginBottom: "12px", display: "inline-block" },
+  answersContainer: { display: "flex", flexDirection: "column", gap: "10px", marginBottom: "24px" },
+  answerCard: { padding: "12px 16px", border: "2px solid", borderRadius: "12px", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: "12px", transition: "all 0.2s" },
+  answerLetter: { width: "28px", height: "28px", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: 700 },
+  multipleHint: { padding: "10px 16px", background: "#E3F2FD", borderRadius: "8px", fontSize: "13px", color: "#1565C0", marginBottom: "16px" },
+  navigation: { display: "flex", justifyContent: "space-between", gap: "12px", marginTop: "8px" },
+  navButton: { padding: "10px 20px", borderRadius: "10px", fontSize: "14px", fontWeight: 600, border: "2px solid #667eea", background: "white", color: "#667eea", cursor: "pointer" },
+  nextButton: { padding: "10px 20px", borderRadius: "10px", fontSize: "14px", fontWeight: 600, border: "none", background: "linear-gradient(135deg, #667eea, #764ba2)", color: "white", cursor: "pointer" },
+  submitButton: { padding: "10px 20px", borderRadius: "10px", fontSize: "14px", fontWeight: 600, border: "none", background: "#4caf50", color: "white", cursor: "pointer" },
+  navigatorColumn: { position: "sticky", top: "100px", height: "fit-content" },
+  navigatorCard: { background: "white", borderRadius: "16px", padding: "20px", boxShadow: "0 4px 12px rgba(0,0,0,0.05)" },
+  statsGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", marginBottom: "20px" },
+  statCard: { background: "#f8fafc", padding: "12px", borderRadius: "10px", textAlign: "center" },
   statValue: { fontSize: "20px", fontWeight: 800 },
   statLabel: { fontSize: "10px", color: "#64748b" },
-  questionGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(5, 1fr)",
-    gap: "6px",
-    marginBottom: "16px",
-    maxHeight: "260px",
-    overflowY: "auto",
-    padding: "4px"
-  },
-  gridItem: {
-    aspectRatio: "1",
-    border: "2px solid",
-    borderRadius: "8px",
-    fontSize: "13px",
-    fontWeight: 600,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer"
-  },
-  legend: {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "12px 0",
-    borderTop: "1px solid #e2e8f0",
-    flexWrap: "wrap",
-    gap: "8px"
-  },
-  legendItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    fontSize: "11px"
-  },
+  questionGrid: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "6px", marginBottom: "16px", maxHeight: "260px", overflowY: "auto", padding: "4px" },
+  gridItem: { aspectRatio: "1", border: "2px solid", borderRadius: "8px", fontSize: "13px", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" },
+  legend: { display: "flex", justifyContent: "space-between", padding: "12px 0", borderTop: "1px solid #e2e8f0", flexWrap: "wrap", gap: "8px" },
+  legendItem: { display: "flex", alignItems: "center", gap: "6px", fontSize: "11px" },
   legendDot: { width: "10px", height: "10px", borderRadius: "2px" },
-  modalOverlay: {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: "rgba(0,0,0,0.5)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000
-  },
-  modalContent: {
-    background: "white",
-    padding: "30px",
-    borderRadius: "20px",
-    maxWidth: "450px",
-    width: "90%"
-  },
-  modalIcon: {
-    fontSize: "48px",
-    textAlign: "center",
-    marginBottom: "15px"
-  },
-  modalTitle: {
-    fontSize: "24px",
-    fontWeight: 700,
-    textAlign: "center",
-    marginBottom: "20px"
-  },
-  modalStats: {
-    background: "#f8fafc",
-    padding: "15px",
-    borderRadius: "12px",
-    marginBottom: "20px"
-  },
-  modalStat: {
-    display: "flex",
-    justifyContent: "space-between",
-    marginBottom: "10px"
-  },
-  modalWarning: {
-    display: "flex",
-    gap: "10px",
-    padding: "12px",
-    background: "#fff8e1",
-    borderRadius: "10px",
-    fontSize: "13px",
-    marginBottom: "20px"
-  },
+  modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
+  modalContent: { background: "white", padding: "30px", borderRadius: "20px", maxWidth: "450px", width: "90%" },
+  modalIcon: { fontSize: "48px", textAlign: "center", marginBottom: "15px" },
+  modalTitle: { fontSize: "24px", fontWeight: 700, textAlign: "center", marginBottom: "20px" },
+  modalStats: { background: "#f8fafc", padding: "15px", borderRadius: "12px", marginBottom: "20px" },
+  modalStat: { display: "flex", justifyContent: "space-between", marginBottom: "10px" },
+  modalWarning: { display: "flex", gap: "10px", padding: "12px", background: "#fff8e1", borderRadius: "10px", fontSize: "13px", marginBottom: "20px" },
   modalActions: { display: "flex", gap: "12px" },
-  modalSecondaryButton: {
-    flex: 1,
-    padding: "12px",
-    background: "#f1f5f9",
-    border: "none",
-    borderRadius: "10px",
-    cursor: "pointer"
-  },
-  modalPrimaryButton: {
-    flex: 1,
-    padding: "12px",
-    background: "#4caf50",
-    color: "white",
-    border: "none",
-    borderRadius: "10px",
-    cursor: "pointer"
-  }
+  modalSecondaryButton: { flex: 1, padding: "12px", background: "#f1f5f9", border: "none", borderRadius: "10px", cursor: "pointer" },
+  modalPrimaryButton: { flex: 1, padding: "12px", background: "#4caf50", color: "white", border: "none", borderRadius: "10px", cursor: "pointer" }
 };
 
-// Add keyframes globally
-if (typeof document !== "undefined") {
+if (typeof document !== "undefined" && !document.getElementById("assessment-spin-keyframes")) {
   const style = document.createElement("style");
-  style.textContent = `
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-  `;
+  style.id = "assessment-spin-keyframes";
+  style.textContent = "@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }";
   document.head.appendChild(style);
 }
 
