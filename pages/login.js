@@ -1,9 +1,91 @@
 // pages/login.js
-import { useState } from "react";
+
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { supabase } from "../supabase/client";
 import AppLayout from "../components/AppLayout";
+
+function cleanEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getSafeName(user) {
+  if (!user) return "User";
+  return user.user_metadata?.full_name || user.email?.split("@")[0] || "User";
+}
+
+function buildSessionData(user, authSession, role, fullName) {
+  return {
+    loggedIn: true,
+    user_id: user.id,
+    email: user.email,
+    full_name: fullName || getSafeName(user),
+    role: role || "candidate",
+    access_token: authSession?.access_token || null,
+    refresh_token: authSession?.refresh_token || null,
+    timestamp: Date.now()
+  };
+}
+
+async function getSupervisorProfile(userId, email) {
+  const byIdResponse = await supabase
+    .from("supervisor_profiles")
+    .select("*")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (byIdResponse.error && byIdResponse.error.code !== "PGRST116") {
+    throw byIdResponse.error;
+  }
+
+  if (byIdResponse.data) return byIdResponse.data;
+
+  const byEmailResponse = await supabase
+    .from("supervisor_profiles")
+    .select("*")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (byEmailResponse.error && byEmailResponse.error.code !== "PGRST116") {
+    throw byEmailResponse.error;
+  }
+
+  return byEmailResponse.data || null;
+}
+
+async function getCandidateProfile(userId, email, user) {
+  const profileResponse = await supabase
+    .from("candidate_profiles")
+    .select("id, full_name, email")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (profileResponse.error && profileResponse.error.code !== "PGRST116") {
+    throw profileResponse.error;
+  }
+
+  if (profileResponse.data) return profileResponse.data;
+
+  const fallbackName = getSafeName(user);
+
+  const insertResponse = await supabase
+    .from("candidate_profiles")
+    .upsert({
+      id: userId,
+      email,
+      full_name: fallbackName,
+      updated_at: new Date().toISOString()
+    }, { onConflict: "id" })
+    .select("id, full_name, email")
+    .maybeSingle();
+
+  if (insertResponse.error && insertResponse.error.code !== "PGRST116") {
+    console.error("Candidate profile upsert warning:", insertResponse.error);
+  }
+
+  return insertResponse.data || { id: userId, email, full_name: fallbackName };
+}
 
 export default function Login() {
   const router = useRouter();
@@ -11,653 +93,387 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [loginMode, setLoginMode] = useState('candidate');
-  
-  // Forgot Password State
+  const [loginMode, setLoginMode] = useState("candidate");
+  const [checkingSession, setCheckingSession] = useState(true);
+
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetMessage, setResetMessage] = useState(null);
   const [resetLoading, setResetLoading] = useState(false);
 
-  const handleCandidateLogin = async (e) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
+  useEffect(() => {
+    checkExistingSession();
+  }, []);
 
+  async function checkExistingSession() {
     try {
-      console.log('🔵 Candidate login attempt for:', email);
-      
-      const { data, error } = await supabase.auth.signInWithPassword({ 
-        email, 
-        password 
-      });
+      const authResponse = await supabase.auth.getSession();
+      const currentSession = authResponse?.data?.session || null;
+      const currentUser = currentSession?.user || null;
 
-      if (error || !data.user) {
-        throw new Error("Invalid email or password");
+      if (!currentUser) {
+        setCheckingSession(false);
+        return;
       }
 
-      // Ensure user metadata has role
-      if (data.user.user_metadata?.role !== 'candidate') {
-        await supabase.auth.updateUser({
-          data: { role: 'candidate' }
-        });
+      const role = currentUser.user_metadata?.role || null;
+
+      if (role === "admin") {
+        router.replace("/admin");
+        return;
       }
 
-      const sessionData = {
-        loggedIn: true,
-        user_id: data.user.id,
-        email: data.user.email,
-        full_name: data.user.user_metadata?.full_name || data.user.email?.split('@')[0],
-        role: 'candidate',
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
-        timestamp: Date.now()
-      };
-      
-      localStorage.setItem("userSession", JSON.stringify(sessionData));
-      console.log('✅ Candidate logged in, redirecting to dashboard');
-      router.push('/candidate/dashboard');
+      if (role === "supervisor") {
+        router.replace("/supervisor");
+        return;
+      }
 
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+      if (role === "candidate") {
+        router.replace("/candidate/dashboard");
+        return;
+      }
+
+      setCheckingSession(false);
+    } catch (sessionError) {
+      console.error("Session check warning:", sessionError);
+      setCheckingSession(false);
     }
-  };
+  }
 
-  const handleSupervisorLogin = async (e) => {
-    e.preventDefault();
+  async function handleLogin(event) {
+    event.preventDefault();
     setError("");
     setLoading(true);
 
     try {
-      console.log('🟠 Supervisor login attempt for:', email);
-      
-      const { data, error } = await supabase.auth.signInWithPassword({ 
-        email, 
-        password 
+      const safeEmail = cleanEmail(email);
+
+      if (!safeEmail || !password) {
+        throw new Error("Please enter your email and password.");
+      }
+
+      await supabase.auth.signOut();
+      localStorage.removeItem("userSession");
+
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: safeEmail,
+        password
       });
 
-      if (error || !data.user) {
-        console.error('Auth error:', error);
-        throw new Error("Invalid email or password");
+      if (signInError || !data?.user) {
+        throw new Error("Invalid email or password.");
       }
 
-      console.log('✅ Auth successful, user ID:', data.user.id);
+      const user = data.user;
+      const authSession = data.session;
 
-      let supervisor = null;
-      let queryError = null;
-      
-      try {
-        const result = await supabase
-          .from('supervisor_profiles')
-          .select('*')
-          .eq('id', data.user.id);
-        
-        supervisor = result.data;
-        queryError = result.error;
-        
-        console.log('📊 Query result:', { 
-          data: supervisor, 
-          error: queryError,
-          status: result.status,
-          statusText: result.statusText
-        });
-        
-      } catch (queryErr) {
-        console.error('💥 Query exception:', queryErr);
-        throw new Error(`Database query failed: ${queryErr.message}`);
-      }
+      if (loginMode === "supervisor") {
+        const supervisorProfile = await getSupervisorProfile(user.id, safeEmail);
 
-      if (queryError) {
-        console.error('❌ Supervisor query error details:', queryError);
-        
-        if (queryError.code === '42P01') {
-          throw new Error("Supervisor table does not exist");
-        } else if (queryError.code === '42501' || queryError.message?.includes('permission')) {
-          throw new Error("Permission denied - check RLS policies");
-        } else {
-          throw new Error(`Database error: ${queryError.message}`);
-        }
-      }
-
-      if (!supervisor || supervisor.length === 0) {
-        console.log('❌ No supervisor found with ID:', data.user.id);
-        
-        console.log('🔍 Trying fallback search by email...');
-        const { data: byEmail, error: emailError } = await supabase
-          .from('supervisor_profiles')
-          .select('*')
-          .eq('email', email);
-        
-        console.log('📊 Email search result:', { data: byEmail, error: emailError });
-        
-        if (byEmail && byEmail.length > 0) {
-          console.log('✅ Found supervisor by email:', byEmail[0]);
-          supervisor = byEmail;
-        } else {
+        if (!supervisorProfile) {
           await supabase.auth.signOut();
-          throw new Error("No supervisor account found with these credentials");
+          localStorage.removeItem("userSession");
+          throw new Error("No supervisor account found for these credentials.");
         }
+
+        const role = supervisorProfile.role || "supervisor";
+        const fullName = supervisorProfile.full_name || getSafeName(user);
+
+        await supabase.auth.updateUser({
+          data: {
+            role,
+            full_name: fullName
+          }
+        });
+
+        localStorage.setItem("userSession", JSON.stringify(buildSessionData(user, authSession, role, fullName)));
+
+        if (role === "admin") {
+          router.push("/admin");
+        } else {
+          router.push("/supervisor");
+        }
+
+        return;
       }
 
-      const supervisorData = supervisor[0];
-      console.log('✅ Supervisor found:', { 
-        id: supervisorData.id,
-        email: supervisorData.email,
-        role: supervisorData.role,
-        name: supervisorData.full_name 
-      });
+      const candidateProfile = await getCandidateProfile(user.id, safeEmail, user);
+      const candidateName = candidateProfile?.full_name || getSafeName(user);
 
       await supabase.auth.updateUser({
-        data: { 
-          role: supervisorData.role || 'supervisor',
-          full_name: supervisorData.full_name 
+        data: {
+          role: "candidate",
+          full_name: candidateName
         }
       });
 
-      const sessionData = {
-        loggedIn: true,
-        user_id: data.user.id,
-        email: data.user.email,
-        full_name: supervisorData.full_name,
-        role: supervisorData.role || 'supervisor',
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
-        timestamp: Date.now()
-      };
-      
-      localStorage.setItem("userSession", JSON.stringify(sessionData));
-      console.log('✅ Session stored, redirecting based on role:', sessionData.role);
-
-      if (supervisorData.role === 'admin') {
-        router.push('/admin');
-      } else {
-        router.push('/supervisor');
-      }
-
-    } catch (err) {
-      console.error('🔴 Login error:', err);
-      setError(err.message);
+      localStorage.setItem("userSession", JSON.stringify(buildSessionData(user, authSession, "candidate", candidateName)));
+      router.push("/candidate/dashboard");
+    } catch (loginError) {
+      console.error("Login error:", loginError);
+      setError(loginError?.message || "Login failed. Please try again.");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  // Handle password reset
-  const handleResetPassword = async (e) => {
-    e.preventDefault();
+  async function handleResetPassword(event) {
+    event.preventDefault();
     setResetLoading(true);
     setResetMessage(null);
 
     try {
-      const response = await fetch('/api/admin/set-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: resetEmail,
-          newPassword: 'Temp123!'
-        })
+      const safeEmail = cleanEmail(resetEmail);
+      if (!safeEmail) throw new Error("Please enter your email address.");
+
+      const redirectTo = typeof window !== "undefined" ? window.location.origin + "/reset-password" : undefined;
+
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(safeEmail, {
+        redirectTo
       });
 
-      const data = await response.json();
+      if (resetError) throw resetError;
 
-      if (data.success) {
-        setResetMessage({ 
-          type: 'success', 
-          text: `✅ Password reset successfully!\n\nTemporary password: Temp123!\n\nPlease log in with this temporary password and change it immediately in your Profile settings.` 
-        });
-        // Clear email field after 6 seconds
-        setTimeout(() => {
-          setShowResetModal(false);
-          setResetEmail("");
-          setResetMessage(null);
-        }, 6000);
-      } else {
-        setResetMessage({ 
-          type: 'error', 
-          text: data.error || 'User not found. Please check your email address.' 
-        });
-      }
-    } catch (err) {
-      setResetMessage({ type: 'error', text: 'Something went wrong. Please try again later.' });
+      setResetMessage({
+        type: "success",
+        text: "If an account exists for this email, a password reset link has been sent. Please check your inbox."
+      });
+
+      setTimeout(() => {
+        setShowResetModal(false);
+        setResetEmail("");
+        setResetMessage(null);
+      }, 5000);
+    } catch (resetError) {
+      console.error("Password reset error:", resetError);
+      setResetMessage({
+        type: "error",
+        text: resetError?.message || "Unable to send reset link. Please try again later."
+      });
     } finally {
       setResetLoading(false);
     }
-  };
+  }
+
+  if (checkingSession) {
+    return (
+      <AppLayout background="/images/login-bg.jpg" showNavigation={false}>
+        <div style={styles.centerOverlay}>
+          <div style={styles.loadingCard}>
+            <div style={styles.spinner} />
+            <p style={styles.loadingText}>Checking session...</p>
+          </div>
+        </div>
+        <style jsx>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout background="/images/login-bg.jpg" showNavigation={false}>
-      {/* Glassmorphism Container - Centers the card */}
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
-        background: 'rgba(0, 0, 0, 0.3)'
-      }}>
-        
-        {/* Glass Card */}
-        <div style={{
-          backgroundColor: "rgba(255, 255, 255, 0.15)",
-          backdropFilter: "blur(20px)",
-          padding: "48px 40px",
-          borderRadius: "24px",
-          width: "420px",
-          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2)",
-          border: "1px solid rgba(255, 255, 255, 0.2)",
-          transition: "transform 0.3s ease"
-        }}>
-          
-          <div style={{ marginBottom: 24, textAlign: "center" }}>
-            <div style={{
-              width: "64px",
-              height: "64px",
-              background: "linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.5) 100%)",
-              borderRadius: "18px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              margin: "0 auto 16px",
-              fontSize: "32px",
-              boxShadow: "0 8px 16px rgba(0,0,0,0.1)"
-            }}>
-              🏢
-            </div>
-            <h1 style={{ 
-              marginBottom: 8, 
-              color: "white",
-              fontSize: "28px",
-              fontWeight: "700",
-              letterSpacing: "-0.5px"
-            }}>
-              Stratavax
-            </h1>
-            <p style={{ 
-              color: "rgba(255,255,255,0.7)", 
-              fontSize: "13px",
-              margin: 0,
-              letterSpacing: "0.5px"
-            }}>
-              Talent Assessment Portal
-            </p>
+      <div style={styles.centerOverlay}>
+        <div style={styles.card}>
+          <div style={styles.brandSection}>
+            <div style={styles.brandIcon}>🏢</div>
+            <h1 style={styles.brandTitle}>Stratavax</h1>
+            <p style={styles.brandSubtitle}>Talent Assessment Portal</p>
           </div>
 
-          {/* Mode Toggle - Glass Style */}
-          <div style={{
-            display: 'flex',
-            gap: '10px',
-            marginBottom: '24px',
-            borderRadius: '14px',
-            background: 'rgba(0, 0, 0, 0.25)',
-            padding: '5px'
-          }}>
-            <button
-              onClick={() => setLoginMode('candidate')}
-              style={{
-                flex: 1,
-                padding: '12px',
-                border: 'none',
-                borderRadius: '10px',
-                background: loginMode === 'candidate' ? 'rgba(255,255,255,0.95)' : 'transparent',
-                color: loginMode === 'candidate' ? '#1a1a2e' : 'rgba(255,255,255,0.8)',
-                cursor: 'pointer',
-                fontWeight: '600',
-                fontSize: '14px',
-                transition: 'all 0.3s ease'
-              }}
-            >
+          <div style={styles.modeToggle}>
+            <button type="button" onClick={() => setLoginMode("candidate")} style={loginMode === "candidate" ? styles.modeButtonActive : styles.modeButton}>
               👤 Candidate
             </button>
-            <button
-              onClick={() => setLoginMode('supervisor')}
-              style={{
-                flex: 1,
-                padding: '12px',
-                border: 'none',
-                borderRadius: '10px',
-                background: loginMode === 'supervisor' ? 'rgba(255,255,255,0.95)' : 'transparent',
-                color: loginMode === 'supervisor' ? '#1a1a2e' : 'rgba(255,255,255,0.8)',
-                cursor: 'pointer',
-                fontWeight: '600',
-                fontSize: '14px',
-                transition: 'all 0.3s ease'
-              }}
-            >
+            <button type="button" onClick={() => setLoginMode("supervisor")} style={loginMode === "supervisor" ? styles.modeButtonActive : styles.modeButton}>
               👑 Supervisor
             </button>
           </div>
 
-          {error && (
-            <div style={{
-              backgroundColor: "rgba(239, 68, 68, 0.2)",
-              backdropFilter: "blur(10px)",
-              color: "#fee2e2",
-              padding: "12px 16px",
-              borderRadius: "12px",
-              marginBottom: "20px",
-              fontSize: "13px",
-              border: "1px solid rgba(239, 68, 68, 0.3)",
-              textAlign: "center"
-            }}>
-              {error}
-            </div>
-          )}
+          {error && <div style={styles.errorBox}>{error}</div>}
 
-          <form onSubmit={loginMode === 'candidate' ? handleCandidateLogin : handleSupervisorLogin}>
-            <div style={{ textAlign: "left", marginBottom: "18px" }}>
-              <label style={{
-                display: "block",
-                marginBottom: "8px",
-                fontWeight: "500",
-                color: "rgba(255,255,255,0.9)",
-                fontSize: "13px"
-              }}>
-                Email
-              </label>
+          <form onSubmit={handleLogin}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Email</label>
               <input
                 type="email"
                 placeholder="Enter your email"
                 value={email}
                 required
-                onChange={(e) => setEmail(e.target.value)}
-                style={{ 
-                  width: "100%", 
-                  padding: "14px 16px",
-                  borderRadius: "14px", 
-                  border: "1px solid rgba(255,255,255,0.2)",
-                  background: "rgba(255, 255, 255, 0.1)",
-                  fontSize: "14px",
-                  color: "white",
-                  boxSizing: "border-box",
-                  transition: "all 0.3s ease",
-                  outline: "none"
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = "rgba(255,255,255,0.5)";
-                  e.target.style.background = "rgba(255, 255, 255, 0.15)";
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = "rgba(255,255,255,0.2)";
-                  e.target.style.background = "rgba(255, 255, 255, 0.1)";
-                }}
+                onChange={(event) => setEmail(event.target.value)}
+                style={styles.input}
               />
             </div>
 
-            <div style={{ textAlign: "left", marginBottom: "22px" }}>
-              <label style={{
-                display: "block",
-                marginBottom: "8px",
-                fontWeight: "500",
-                color: "rgba(255,255,255,0.9)",
-                fontSize: "13px"
-              }}>
-                Password
-              </label>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Password</label>
               <input
                 type="password"
                 placeholder="Enter your password"
                 value={password}
                 required
-                onChange={(e) => setPassword(e.target.value)}
-                style={{ 
-                  width: "100%", 
-                  padding: "14px 16px",
-                  borderRadius: "14px", 
-                  border: "1px solid rgba(255,255,255,0.2)",
-                  background: "rgba(255, 255, 255, 0.1)",
-                  fontSize: "14px",
-                  color: "white",
-                  boxSizing: "border-box",
-                  transition: "all 0.3s ease",
-                  outline: "none"
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = "rgba(255,255,255,0.5)";
-                  e.target.style.background = "rgba(255, 255, 255, 0.15)";
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = "rgba(255,255,255,0.2)";
-                  e.target.style.background = "rgba(255, 255, 255, 0.1)";
-                }}
+                onChange={(event) => setPassword(event.target.value)}
+                style={styles.input}
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                width: "100%",
-                padding: "14px",
-                background: loading 
-                  ? "rgba(255,255,255,0.3)" 
-                  : "linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%)",
-                color: "#1a1a2e",
-                border: "none",
-                borderRadius: "14px",
-                cursor: loading ? "not-allowed" : "pointer",
-                fontWeight: "700",
-                fontSize: "15px",
-                transition: "all 0.3s ease"
-              }}
-              onMouseEnter={(e) => {
-                if (!loading) {
-                  e.target.style.transform = "translateY(-2px)";
-                  e.target.style.boxShadow = "0 8px 20px rgba(0,0,0,0.2)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!loading) {
-                  e.target.style.transform = "translateY(0)";
-                  e.target.style.boxShadow = "none";
-                }
-              }}
-            >
-              {loading ? "Logging in..." : `Login as ${loginMode === 'candidate' ? 'Candidate' : 'Supervisor'}`}
+            <button type="submit" disabled={loading} style={{ ...styles.loginButton, opacity: loading ? 0.7 : 1, cursor: loading ? "not-allowed" : "pointer" }}>
+              {loading ? "Logging in..." : "Login as " + (loginMode === "candidate" ? "Candidate" : "Supervisor")}
             </button>
           </form>
 
-          {/* Forgot Password Link */}
-          <div style={{ 
-            marginTop: "20px", 
-            textAlign: "center"
-          }}>
-            <button
-              onClick={() => setShowResetModal(true)}
-              style={{
-                background: "none",
-                border: "none",
-                color: "rgba(255,255,255,0.7)",
-                cursor: "pointer",
-                fontSize: "13px",
-                transition: "color 0.2s"
-              }}
-              onMouseEnter={(e) => e.target.style.color = "white"}
-              onMouseLeave={(e) => e.target.style.color = "rgba(255,255,255,0.7)"}
-            >
+          <div style={styles.forgotWrapper}>
+            <button type="button" onClick={() => setShowResetModal(true)} style={styles.forgotButton}>
               Forgot Password?
             </button>
           </div>
 
-          <div style={{ 
-            marginTop: "24px", 
-            fontSize: "13px", 
-            color: "rgba(255,255,255,0.5)",
-            textAlign: "center",
-            paddingTop: "20px",
-            borderTop: "1px solid rgba(255,255,255,0.1)"
-          }}>
-            <p style={{ margin: 0 }}>
-              Don't have an account?{" "}
+          <div style={styles.registerWrapper}>
+            <p style={styles.registerText}>
+              Do not have an account?{" "}
               <Link href="/register" legacyBehavior>
-                <a style={{ 
-                  color: "white", 
-                  textDecoration: "none",
-                  fontWeight: "600"
-                }}>
-                  Register here
-                </a>
+                <a style={styles.registerLink}>Register here</a>
               </Link>
             </p>
           </div>
         </div>
       </div>
 
-      {/* Reset Password Modal - Glass Style */}
       {showResetModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.6)',
-          backdropFilter: 'blur(12px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            background: 'rgba(30, 30, 40, 0.95)',
-            backdropFilter: 'blur(20px)',
-            borderRadius: '24px',
-            padding: '32px',
-            width: '100%',
-            maxWidth: '400px',
-            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
-            border: '1px solid rgba(255,255,255,0.2)'
-          }}>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '24px'
-            }}>
-              <h3 style={{
-                fontSize: '22px',
-                fontWeight: '700',
-                color: 'white',
-                margin: 0
-              }}>
-                Reset Password
-              </h3>
-              <button
-                onClick={() => {
-                  setShowResetModal(false);
-                  setResetEmail("");
-                  setResetMessage(null);
-                }}
-                style={{
-                  background: 'rgba(255,255,255,0.1)',
-                  border: 'none',
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '10px',
-                  fontSize: '20px',
-                  cursor: 'pointer',
-                  color: 'rgba(255,255,255,0.7)',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.background = 'rgba(255,255,255,0.2)';
-                  e.target.style.color = 'white';
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.background = 'rgba(255,255,255,0.1)';
-                  e.target.style.color = 'rgba(255,255,255,0.7)';
-                }}
-              >
-                ✕
-              </button>
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalCard}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>Reset Password</h3>
+              <button type="button" onClick={() => { setShowResetModal(false); setResetEmail(""); setResetMessage(null); }} style={styles.modalCloseButton}>×</button>
             </div>
-            
+
             <form onSubmit={handleResetPassword}>
-              <div style={{ marginBottom: '24px' }}>
-                <label style={{
-                  display: 'block',
-                  marginBottom: '8px',
-                  fontWeight: '500',
-                  color: 'rgba(255,255,255,0.9)',
-                  fontSize: '13px'
-                }}>
-                  Email Address
-                </label>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Email Address</label>
                 <input
                   type="email"
                   value={resetEmail}
-                  onChange={(e) => setResetEmail(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '14px',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: '14px',
-                    fontSize: '14px',
-                    boxSizing: 'border-box',
-                    outline: 'none',
-                    background: 'rgba(255,255,255,0.1)',
-                    color: 'white',
-                    transition: 'all 0.2s'
-                  }}
+                  onChange={(event) => setResetEmail(event.target.value)}
+                  style={styles.input}
                   placeholder="Enter your email address"
                   required
-                  onFocus={(e) => e.target.style.borderColor = "rgba(255,255,255,0.5)"}
-                  onBlur={(e) => e.target.style.borderColor = "rgba(255,255,255,0.2)"}
                 />
               </div>
 
               {resetMessage && (
                 <div style={{
-                  padding: '12px',
-                  borderRadius: '12px',
-                  fontSize: '13px',
-                  marginBottom: '20px',
-                  whiteSpace: 'pre-line',
-                  background: resetMessage.type === 'success' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                  color: resetMessage.type === 'success' ? '#bbf7d0' : '#fecaca',
-                  border: `1px solid ${resetMessage.type === 'success' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                  ...styles.resetMessage,
+                  background: resetMessage.type === "success" ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)",
+                  color: resetMessage.type === "success" ? "#bbf7d0" : "#fecaca",
+                  border: "1px solid " + (resetMessage.type === "success" ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)")
                 }}>
                   {resetMessage.text}
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={resetLoading}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  background: resetLoading ? 'rgba(255,255,255,0.2)' : 'linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%)',
-                  color: '#1a1a2e',
-                  border: 'none',
-                  borderRadius: '14px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: resetLoading ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s'
-                }}
-              >
-                {resetLoading ? 'Resetting...' : 'Reset Password'}
+              <button type="submit" disabled={resetLoading} style={{ ...styles.loginButton, opacity: resetLoading ? 0.7 : 1 }}>
+                {resetLoading ? "Sending..." : "Send Reset Link"}
               </button>
             </form>
-            
-            <div style={{
-              marginTop: '16px',
-              fontSize: '12px',
-              color: 'rgba(255,255,255,0.5)',
-              textAlign: 'center'
-            }}>
-              <p>A temporary password will be set to: <strong style={{ color: 'white' }}>Temp123!</strong></p>
-              <p>After logging in, go to Profile → Change Password to set a new password.</p>
+
+            <div style={styles.resetNote}>
+              A secure password reset link will be sent to the email address if the account exists.
             </div>
           </div>
         </div>
       )}
+
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        input::placeholder {
+          color: rgba(255,255,255,0.55);
+        }
+      `}</style>
     </AppLayout>
   );
 }
+
+const styles = {
+  centerOverlay: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "20px",
+    background: "rgba(0,0,0,0.3)"
+  },
+  loadingCard: {
+    backgroundColor: "rgba(255,255,255,0.15)",
+    backdropFilter: "blur(20px)",
+    padding: "30px",
+    borderRadius: "20px",
+    border: "1px solid rgba(255,255,255,0.2)",
+    color: "white",
+    textAlign: "center"
+  },
+  spinner: {
+    width: "40px",
+    height: "40px",
+    border: "4px solid rgba(255,255,255,0.2)",
+    borderTop: "4px solid white",
+    borderRadius: "50%",
+    animation: "spin 1s linear infinite",
+    margin: "0 auto 14px"
+  },
+  loadingText: { margin: 0, color: "white" },
+  card: {
+    backgroundColor: "rgba(255,255,255,0.15)",
+    backdropFilter: "blur(20px)",
+    padding: "48px 40px",
+    borderRadius: "24px",
+    width: "420px",
+    maxWidth: "100%",
+    boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.2)",
+    border: "1px solid rgba(255,255,255,0.2)"
+  },
+  brandSection: { marginBottom: "24px", textAlign: "center" },
+  brandIcon: {
+    width: "64px",
+    height: "64px",
+    background: "linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.5) 100%)",
+    borderRadius: "18px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    margin: "0 auto 16px",
+    fontSize: "32px",
+    boxShadow: "0 8px 16px rgba(0,0,0,0.1)"
+  },
+  brandTitle: { margin: "0 0 8px", color: "white", fontSize: "28px", fontWeight: "700", letterSpacing: "-0.5px" },
+  brandSubtitle: { color: "rgba(255,255,255,0.7)", fontSize: "13px", margin: 0, letterSpacing: "0.5px" },
+  modeToggle: { display: "flex", gap: "10px", marginBottom: "24px", borderRadius: "14px", background: "rgba(0,0,0,0.25)", padding: "5px" },
+  modeButton: { flex: 1, padding: "12px", border: "none", borderRadius: "10px", background: "transparent", color: "rgba(255,255,255,0.8)", cursor: "pointer", fontWeight: "600", fontSize: "14px" },
+  modeButtonActive: { flex: 1, padding: "12px", border: "none", borderRadius: "10px", background: "rgba(255,255,255,0.95)", color: "#1a1a2e", cursor: "pointer", fontWeight: "600", fontSize: "14px" },
+  errorBox: { backgroundColor: "rgba(239,68,68,0.2)", color: "#fee2e2", padding: "12px 16px", borderRadius: "12px", marginBottom: "20px", fontSize: "13px", border: "1px solid rgba(239,68,68,0.3)", textAlign: "center" },
+  formGroup: { textAlign: "left", marginBottom: "18px" },
+  label: { display: "block", marginBottom: "8px", fontWeight: "500", color: "rgba(255,255,255,0.9)", fontSize: "13px" },
+  input: { width: "100%", padding: "14px 16px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.1)", fontSize: "14px", color: "white", boxSizing: "border-box", outline: "none" },
+  loginButton: { width: "100%", padding: "14px", background: "linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%)", color: "#1a1a2e", border: "none", borderRadius: "14px", cursor: "pointer", fontWeight: "700", fontSize: "15px" },
+  forgotWrapper: { marginTop: "20px", textAlign: "center" },
+  forgotButton: { background: "none", border: "none", color: "rgba(255,255,255,0.75)", cursor: "pointer", fontSize: "13px" },
+  registerWrapper: { marginTop: "24px", fontSize: "13px", color: "rgba(255,255,255,0.55)", textAlign: "center", paddingTop: "20px", borderTop: "1px solid rgba(255,255,255,0.1)" },
+  registerText: { margin: 0 },
+  registerLink: { color: "white", textDecoration: "none", fontWeight: "600" },
+  modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(12px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" },
+  modalCard: { background: "rgba(30,30,40,0.95)", backdropFilter: "blur(20px)", borderRadius: "24px", padding: "32px", width: "100%", maxWidth: "400px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.2)" },
+  modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" },
+  modalTitle: { fontSize: "22px", fontWeight: "700", color: "white", margin: 0 },
+  modalCloseButton: { background: "rgba(255,255,255,0.1)", border: "none", width: "32px", height: "32px", borderRadius: "10px", fontSize: "20px", cursor: "pointer", color: "rgba(255,255,255,0.7)" },
+  resetMessage: { padding: "12px", borderRadius: "12px", fontSize: "13px", marginBottom: "20px", whiteSpace: "pre-line" },
+  resetNote: { marginTop: "16px", fontSize: "12px", color: "rgba(255,255,255,0.55)", textAlign: "center", lineHeight: 1.5 }
+};
