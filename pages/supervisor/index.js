@@ -47,7 +47,6 @@ function calculatePercentage(score, maxScore, fallbackPercentage) {
   var maxValue = safeNumber(maxScore, null);
   var fallbackValue = safeNumber(fallbackPercentage, null);
 
-  // Important: score/max_score takes priority because percentage_score may be stored as 0.
   if (scoreValue !== null && maxValue !== null && maxValue > 0) {
     return Math.round((scoreValue / maxValue) * 100);
   }
@@ -94,6 +93,29 @@ function getBestCompletedAssessment(candidate) {
   });
 
   return completed.length > 0 ? completed[0] : null;
+}
+
+function makeResetKey(candidateId, assessmentId) {
+  return safeText(candidateId, "") + "::" + safeText(assessmentId, "");
+}
+
+function parseResetKey(key) {
+  var parts = safeText(key, "").split("::");
+  return { userId: parts[0] || "", assessmentId: parts[1] || "" };
+}
+
+function countSelectedItems(selectedMap) {
+  return Object.keys(selectedMap || {}).filter(function (key) { return selectedMap[key] === true; }).length;
+}
+
+function selectedMapToItems(selectedMap) {
+  return Object.keys(selectedMap || {}).filter(function (key) {
+    return selectedMap[key] === true;
+  }).map(function (key) {
+    return parseResetKey(key);
+  }).filter(function (item) {
+    return item.userId && item.assessmentId;
+  });
 }
 
 // ======================================================
@@ -189,6 +211,16 @@ export default function SupervisorDashboard() {
   var statsState = useState({ totalCandidates: 0, totalAssessments: 0, completedAssessments: 0, readyAssessments: 0, blockedAssessments: 0, completionRate: 0 });
   var stats = statsState[0];
   var setStats = statsState[1];
+
+  var selectedResetState = useState({});
+  var selectedResetItems = selectedResetState[0];
+  var setSelectedResetItems = selectedResetState[1];
+
+  var bulkState = useState({ loading: false, dryRunLoading: false, message: "", error: "", result: null });
+  var bulkReset = bulkState[0];
+  var setBulkReset = bulkState[1];
+
+  var selectedResetCount = countSelectedItems(selectedResetItems);
 
   useEffect(function () {
     if (!router.isReady) return;
@@ -464,6 +496,104 @@ export default function SupervisorDashboard() {
     setExpandedCandidate(null);
   }
 
+  function toggleResetSelection(candidateId, assessmentId) {
+    var key = makeResetKey(candidateId, assessmentId);
+    var next = {};
+    Object.keys(selectedResetItems).forEach(function (existingKey) {
+      next[existingKey] = selectedResetItems[existingKey];
+    });
+    next[key] = !next[key];
+    setSelectedResetItems(next);
+    setBulkReset({ loading: false, dryRunLoading: false, message: "", error: "", result: null });
+  }
+
+  function clearSelectedResetItems() {
+    setSelectedResetItems({});
+    setBulkReset({ loading: false, dryRunLoading: false, message: "", error: "", result: null });
+  }
+
+  function selectCompletedVisibleAssessments() {
+    var next = {};
+    filteredCandidates.forEach(function (candidate) {
+      safeArray(candidate.assessments).forEach(function (assessment) {
+        if (assessment.result || assessment.status === "completed") {
+          next[makeResetKey(candidate.id, assessment.assessment_id)] = true;
+        }
+      });
+    });
+    setSelectedResetItems(next);
+    setBulkReset({ loading: false, dryRunLoading: false, message: "", error: "", result: null });
+  }
+
+  function selectAllVisibleAssessments() {
+    var next = {};
+    filteredCandidates.forEach(function (candidate) {
+      safeArray(candidate.assessments).forEach(function (assessment) {
+        if (assessment.assessment_id) {
+          next[makeResetKey(candidate.id, assessment.assessment_id)] = true;
+        }
+      });
+    });
+    setSelectedResetItems(next);
+    setBulkReset({ loading: false, dryRunLoading: false, message: "", error: "", result: null });
+  }
+
+  async function runBulkReset(dryRun) {
+    var items = selectedMapToItems(selectedResetItems);
+    var response;
+    var data;
+    var promptText;
+
+    if (items.length === 0) {
+      setBulkReset({ loading: false, dryRunLoading: false, message: "", error: "Select at least one candidate assessment to reset.", result: null });
+      return;
+    }
+
+    if (!dryRun) {
+      promptText = "You are about to reset " + items.length + " candidate assessment(s). This will clear responses, results, sessions, progress and reports. Type RESET to continue.";
+      if (typeof window !== "undefined") {
+        if (window.prompt(promptText) !== "RESET") return;
+      }
+    }
+
+    setBulkReset({ loading: !dryRun, dryRunLoading: dryRun, message: "", error: "", result: null });
+
+    try {
+      response = await fetch("/api/supervisor/bulk-reset-assessments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dryRun: dryRun === true, confirmBulkReset: dryRun === true ? false : true, items: items })
+      });
+
+      data = null;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        data = null;
+      }
+
+      if (!response.ok) {
+        setBulkReset({ loading: false, dryRunLoading: false, message: "", error: data && data.message ? data.message : data && data.error ? data.error : "Bulk reset request failed.", result: data });
+        return;
+      }
+
+      setBulkReset({
+        loading: false,
+        dryRunLoading: false,
+        message: dryRun ? "Dry run completed. Review the summary before actual reset." : "Bulk reset completed. Refreshing dashboard...",
+        error: "",
+        result: data
+      });
+
+      if (!dryRun) {
+        setSelectedResetItems({});
+        setTimeout(function () { router.reload(); }, 1200);
+      }
+    } catch (error) {
+      setBulkReset({ loading: false, dryRunLoading: false, message: "", error: error && error.message ? error.message : "Bulk reset failed.", result: null });
+    }
+  }
+
   async function handleLogout() {
     await supabase.auth.signOut();
     if (typeof window !== "undefined") localStorage.removeItem("userSession");
@@ -518,13 +648,34 @@ export default function SupervisorDashboard() {
           <button type="button" style={styles.clearButton} onClick={clearFilters}>Clear</button>
         </div>
 
+        <div style={styles.bulkCard}>
+          <div>
+            <h2 style={styles.bulkTitle}>Bulk Reset Tools</h2>
+            <p style={styles.bulkText}>Select assessment cards below, then use dry run before actual reset. Selected: <strong>{selectedResetCount}</strong></p>
+          </div>
+          <div style={styles.bulkActions}>
+            <button type="button" style={styles.lightButton} onClick={selectCompletedVisibleAssessments}>Select Completed Shown</button>
+            <button type="button" style={styles.lightButton} onClick={selectAllVisibleAssessments}>Select All Shown</button>
+            <button type="button" style={styles.lightButton} onClick={clearSelectedResetItems}>Clear Selection</button>
+            <button type="button" style={styles.dryRunButton} onClick={function () { runBulkReset(true); }} disabled={bulkReset.dryRunLoading || bulkReset.loading || selectedResetCount === 0}>{bulkReset.dryRunLoading ? "Checking..." : "Dry Run"}</button>
+            <button type="button" style={styles.dangerButton} onClick={function () { runBulkReset(false); }} disabled={bulkReset.dryRunLoading || bulkReset.loading || selectedResetCount === 0}>{bulkReset.loading ? "Resetting..." : "Bulk Reset"}</button>
+          </div>
+          {bulkReset.error && <div style={styles.bulkError}>{bulkReset.error}</div>}
+          {bulkReset.message && <div style={styles.bulkSuccess}>{bulkReset.message}</div>}
+          {bulkReset.result && (
+            <div style={styles.bulkSummary}>
+              <strong>Summary:</strong> {safeNumber(bulkReset.result.successful, 0)} successful, {safeNumber(bulkReset.result.failed, 0)} failed, {safeNumber(bulkReset.result.totalDeduped, 0)} total.
+            </div>
+          )}
+        </div>
+
         <div style={styles.contentCard}>
           <div style={styles.contentHeader}>
             <div>
               <h2 style={styles.contentTitle}>Assigned Candidates</h2>
               <p style={styles.contentSubtitle}>{filteredCandidates.length} of {candidates.length} candidate(s) shown</p>
             </div>
-            <Pill color="#175cd3" bg="#eff8ff">Score corrected from score/max</Pill>
+            <Pill color="#175cd3" bg="#eff8ff">Bulk reset enabled</Pill>
           </div>
 
           {errorMessage && <div style={styles.errorBox}>{errorMessage}</div>}
@@ -581,8 +732,15 @@ export default function SupervisorDashboard() {
                             var status = getStatusBadge(assessment.status, assessment.result !== null);
                             var percentage = assessment.result ? calculatePercentage(assessment.result.score, assessment.result.max_score, assessment.result.percentage) : 0;
                             var assessmentClassification = getClassification(percentage);
+                            var resetKey = makeResetKey(candidate.id, assessment.assessment_id);
+                            var isSelected = selectedResetItems[resetKey] === true;
+
                             return (
-                              <div key={assessment.id} style={styles.assessmentCard}>
+                              <div key={assessment.id} style={isSelected ? styles.assessmentCardSelected : styles.assessmentCard}>
+                                <label style={styles.resetCheckboxRow}>
+                                  <input type="checkbox" checked={isSelected} onChange={function () { toggleResetSelection(candidate.id, assessment.assessment_id); }} />
+                                  <span>Select for reset</span>
+                                </label>
                                 <div style={styles.assessmentTop}>
                                   <div style={{ ...styles.assessmentIcon, background: "linear-gradient(135deg, " + assessment.type_gradient_start + " 0%, " + assessment.type_gradient_end + " 100%)" }}>{assessment.type_icon}</div>
                                   <div>
@@ -621,10 +779,6 @@ export default function SupervisorDashboard() {
   );
 }
 
-// ======================================================
-// STYLES
-// ======================================================
-
 var spinStyles = `
   @keyframes spin {
     0% { transform: rotate(0deg); }
@@ -654,6 +808,16 @@ var styles = {
   searchInput: { width: "100%", boxSizing: "border-box", padding: "13px 14px", border: "1px solid #d0d5dd", borderRadius: "14px", outline: "none", color: "#101828", background: "#ffffff" },
   selectInput: { width: "100%", padding: "13px 12px", border: "1px solid #d0d5dd", borderRadius: "14px", outline: "none", color: "#101828", background: "#ffffff" },
   clearButton: { border: 0, padding: "13px 14px", borderRadius: "14px", background: "#101828", color: "#ffffff", cursor: "pointer", fontWeight: 900 },
+  bulkCard: { background: "linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)", border: "1px solid #d0d5dd", borderRadius: "24px", padding: "18px", marginBottom: "20px", boxShadow: "0 16px 42px rgba(16,24,40,0.08)", display: "grid", gridTemplateColumns: "minmax(260px, 1fr) auto", gap: "14px", alignItems: "center" },
+  bulkTitle: { margin: 0, color: "#101828", fontSize: "19px" },
+  bulkText: { margin: "6px 0 0", color: "#667085", fontSize: "13px" },
+  bulkActions: { display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" },
+  lightButton: { border: "1px solid #d0d5dd", background: "#ffffff", color: "#344054", padding: "10px 12px", borderRadius: "12px", cursor: "pointer", fontWeight: 900, fontSize: "12px" },
+  dryRunButton: { border: 0, background: "#1d4ed8", color: "#ffffff", padding: "10px 12px", borderRadius: "12px", cursor: "pointer", fontWeight: 900, fontSize: "12px" },
+  dangerButton: { border: 0, background: "#b42318", color: "#ffffff", padding: "10px 12px", borderRadius: "12px", cursor: "pointer", fontWeight: 900, fontSize: "12px" },
+  bulkError: { gridColumn: "1 / -1", padding: "12px", borderRadius: "14px", background: "#fef3f2", color: "#b42318", fontSize: "13px", fontWeight: 800 },
+  bulkSuccess: { gridColumn: "1 / -1", padding: "12px", borderRadius: "14px", background: "#ecfdf3", color: "#027a48", fontSize: "13px", fontWeight: 800 },
+  bulkSummary: { gridColumn: "1 / -1", padding: "12px", borderRadius: "14px", background: "#eff6ff", color: "#175cd3", fontSize: "13px" },
   contentCard: { background: "rgba(255,255,255,0.96)", border: "1px solid #eaecf0", borderRadius: "26px", padding: "22px", boxShadow: "0 20px 56px rgba(16,24,40,0.09)" },
   contentHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "18px" },
   contentTitle: { margin: 0, color: "#101828", fontSize: "24px" },
@@ -682,6 +846,8 @@ var styles = {
   assessmentPanel: { borderTop: "1px solid #eaecf0", background: "#f8fafc", padding: "18px" },
   assessmentGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "12px" },
   assessmentCard: { background: "#ffffff", border: "1px solid #eaecf0", borderRadius: "18px", padding: "16px", boxShadow: "0 8px 22px rgba(16,24,40,0.04)" },
+  assessmentCardSelected: { background: "#fef3f2", border: "2px solid #f04438", borderRadius: "18px", padding: "15px", boxShadow: "0 8px 22px rgba(180,35,24,0.10)" },
+  resetCheckboxRow: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px", color: "#344054", fontSize: "12px", fontWeight: 900, cursor: "pointer" },
   assessmentTop: { display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" },
   assessmentIcon: { width: "42px", height: "42px", borderRadius: "14px", color: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", fontWeight: 900 },
   assessmentTitle: { margin: 0, color: "#101828", fontSize: "15px", overflowWrap: "anywhere" },
