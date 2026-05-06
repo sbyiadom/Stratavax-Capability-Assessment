@@ -24,7 +24,6 @@ function cleanText(value, fallback = "") {
 function decodeHtmlEntities(value) {
   let text;
   let previousText;
-  let textarea;
 
   if (value === null || value === undefined) return value;
   text = String(value);
@@ -38,13 +37,6 @@ function decodeHtmlEntities(value) {
     text = text.replace(/&#039;/gi, "'");
     text = text.replace(/&#39;/gi, "'");
     text = text.replace(/&nbsp;/gi, " ");
-
-    if (typeof window !== "undefined" && typeof document !== "undefined") {
-      textarea = document.createElement("textarea");
-      textarea.innerHTML = text;
-      text = textarea.value;
-    }
-
     if (text === previousText) break;
   }
 
@@ -161,8 +153,8 @@ function getAssessmentPriority(assessment, accessMap, resultMap, latestSessionMa
   const result = resultMap[assessment.id] || null;
   const session = latestSessionMap[assessment.id] || null;
 
-  // Most important: after a reset, an unblocked access row with no result must win over
-  // any duplicate active assessment of the same type that has no access row.
+  // Critical fix: if an assessment has been reset and is now unblocked,
+  // this assessment must be selected over any duplicate assessment under the same type.
   if (access?.status === "unblocked" && !access?.result_id && !access?.completed_at && !result) return 100;
   if (session?.status === "in_progress" && access?.status !== "blocked") return 90;
   if (result || access?.status === "completed" || access?.result_id || access?.completed_at) return 80;
@@ -199,14 +191,12 @@ function determineCardStatus(access, latestSession, result) {
 
   if (isCompleted) return "completed";
 
-  // Critical retake rule:
-  // If bulk reset has cleared result/completed data and candidate_assessments is unblocked,
-  // the candidate must be able to start/retake immediately.
+  // Critical reset/retake rule:
+  // if candidate_assessments.status is unblocked and there is no result/completion data,
+  // the candidate must see Start Assessment, not Blocked.
   if (access?.status === "unblocked") return "unblocked";
 
   if (latestSession?.status === "in_progress" && access?.status !== "blocked") return "in_progress";
-
-  if (access?.status === "blocked") return "blocked";
 
   return "blocked";
 }
@@ -254,9 +244,12 @@ export default function CandidateDashboard() {
         .select("*, assessment_type:assessment_types(*)")
         .eq("is_active", true);
 
+      // IMPORTANT:
+      // Do not select score, max_score, or percentage here. Those columns do not exist
+      // in candidate_assessments and will break the dashboard.
       const accessPromise = supabase
         .from("candidate_assessments")
-        .select("id, assessment_id, status, result_id, score, max_score, percentage, completed_at, unblocked_at, created_at")
+        .select("id, assessment_id, status, result_id, completed_at, unblocked_at, created_at")
         .eq("user_id", userId);
 
       const sessionsPromise = supabase
@@ -290,6 +283,9 @@ export default function CandidateDashboard() {
       if (sessionsResponse.error) throw sessionsResponse.error;
       if (resultsResponse.error) throw resultsResponse.error;
 
+      const filteredTypes = safeArray(typesResponse.data).filter((type) => !excludedTypes.includes(type.code));
+      const filteredAssessments = safeArray(assessmentsResponse.data).filter((assessment) => !excludedTypes.includes(assessment.assessment_type?.code));
+
       const accessMap = {};
       safeArray(accessResponse.data).forEach((item) => {
         accessMap[item.assessment_id] = item;
@@ -311,8 +307,9 @@ export default function CandidateDashboard() {
         }
       });
 
-      const filteredTypes = safeArray(typesResponse.data).filter((type) => !excludedTypes.includes(type.code));
-      const filteredAssessments = safeArray(assessmentsResponse.data).filter((assessment) => !excludedTypes.includes(assessment.assessment_type?.code));
+      // IMPORTANT:
+      // Duplicate assessments under the same type are resolved only after access/result/session maps exist,
+      // so the candidate's actual unblocked/reset assessment is selected.
       const uniqueAssessments = removeDuplicateAssessments(filteredAssessments, accessMap, resultMap, latestSessionMap);
 
       const typeOptions = filteredTypes.map((type) => ({
@@ -333,8 +330,7 @@ export default function CandidateDashboard() {
         const latestSession = latestSessionMap[assessment.id] || null;
         const result = resultMap[assessment.id] || null;
         const resultScore = getScorePercentage(result);
-        const accessScore = getScorePercentage(access);
-        const scorePercentage = resultScore !== null ? resultScore : accessScore;
+        const scorePercentage = resultScore !== null ? resultScore : null;
         const status = determineCardStatus(access, latestSession, result);
 
         return {
@@ -571,7 +567,27 @@ export default function CandidateDashboard() {
 
           <div style={styles.infoNote}>
             <span style={styles.infoIcon}>ℹ️</span>
-            <span><strong>Note:</strong> Assessments must be unblocked by your supervisor before starting. If an assessment has been reset, it will show as ready after a fresh dashboard reload.</span>
+            <span><strong>Note:</strong> Assessments must be unblocked by your supervisor before starting. If an assessment has been reset, refresh the dashboard and it will show as ready.</span>
+          </div>
+
+          <div style={styles.guidelinesWrapper}>
+            <div style={styles.guidelinesBackground} />
+            <div style={styles.guidelinesContent}>
+              <div style={styles.guidelinesHeader}>
+                <span style={styles.guidelinesIcon}>📋</span>
+                <h3 style={styles.guidelinesTitle}>Assessment Guidelines</h3>
+              </div>
+              <div style={styles.guidelinesGrid}>
+                <Guideline icon="⏱️" title="3-Hour Time Limit" text="All assessments have a 3-hour time limit. The timer starts when the assessment begins." />
+                <Guideline icon="🔄" title="One Attempt Only" text="Each assessment can only be taken once unless reset by a supervisor." />
+                <Guideline icon="🔓" title="Supervisor Access" text="A supervisor must unblock each assessment before the assessment can be started." />
+                <Guideline icon="💾" title="Auto-Save Enabled" text="Answers are automatically saved. In-progress assessments can be resumed." />
+              </div>
+              <div style={styles.tipCard}>
+                <span style={styles.tipIcon}>💡</span>
+                <div style={styles.tipContent}><strong>Pro Tip:</strong> If an assessment was reset but still appears blocked, sign out and reload the dashboard.</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -582,6 +598,18 @@ export default function CandidateDashboard() {
           100% { transform: rotate(360deg); }
         }
       `}</style>
+    </div>
+  );
+}
+
+function Guideline(props) {
+  return (
+    <div style={styles.guidelineCard}>
+      <div style={styles.guidelineIconWrapper}><span style={styles.guidelineIcon}>{props.icon}</span></div>
+      <div style={styles.guidelineTextWrapper}>
+        <h4 style={styles.guidelineTitle}>{props.title}</h4>
+        <p style={styles.guidelineText}>{props.text}</p>
+      </div>
     </div>
   );
 }
@@ -649,5 +677,21 @@ const styles = {
   progressName: { fontSize: "14px", fontWeight: "600" },
   progressStatus: { fontSize: "12px", fontWeight: "600", padding: "4px 10px", borderRadius: "20px" },
   infoNote: { marginBottom: "24px", padding: "12px 20px", background: "rgba(227,242,253,0.95)", borderRadius: "10px", display: "flex", alignItems: "center", gap: "10px", color: "#1565c0", fontSize: "14px", border: "1px solid #90caf9", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" },
-  infoIcon: { fontSize: "18px" }
+  infoIcon: { fontSize: "18px" },
+  guidelinesWrapper: { position: "relative", borderRadius: "16px", overflow: "hidden", marginTop: "20px" },
+  guidelinesBackground: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundImage: "url(https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1920&q=80)", backgroundSize: "cover", backgroundPosition: "center", filter: "brightness(0.3)" },
+  guidelinesContent: { position: "relative", padding: "40px", background: "linear-gradient(135deg, rgba(30,41,59,0.98) 0%, rgba(15,23,42,0.98) 100%)", backdropFilter: "blur(10px)" },
+  guidelinesHeader: { display: "flex", alignItems: "center", gap: "12px", marginBottom: "30px" },
+  guidelinesIcon: { fontSize: "28px" },
+  guidelinesTitle: { fontSize: "22px", fontWeight: "600", color: "white", margin: 0 },
+  guidelinesGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "20px", marginBottom: "30px" },
+  guidelineCard: { display: "flex", alignItems: "flex-start", gap: "15px", padding: "20px", background: "rgba(255,255,255,0.05)", borderRadius: "12px", backdropFilter: "blur(5px)", border: "1px solid rgba(255,255,255,0.1)" },
+  guidelineIconWrapper: { width: "44px", height: "44px", background: "rgba(255,255,255,0.1)", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "22px", flexShrink: 0 },
+  guidelineIcon: { fontSize: "22px" },
+  guidelineTextWrapper: { flex: 1 },
+  guidelineTitle: { fontSize: "15px", fontWeight: "600", color: "white", margin: "0 0 6px 0" },
+  guidelineText: { fontSize: "13px", color: "#cbd5e1", lineHeight: "1.5", margin: 0 },
+  tipCard: { display: "flex", alignItems: "center", gap: "16px", padding: "16px 20px", background: "rgba(37,99,235,0.15)", borderRadius: "10px", border: "1px solid rgba(37,99,235,0.3)" },
+  tipIcon: { fontSize: "24px" },
+  tipContent: { fontSize: "14px", color: "#e2e8f0", lineHeight: "1.5" }
 };
