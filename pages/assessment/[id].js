@@ -1,6 +1,6 @@
 // pages/assessment/[id].js
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import dynamic from "next/dynamic";
 import { supabase } from "../../supabase/client";
@@ -19,6 +19,10 @@ import {
 
 const AssessmentPage = dynamic(() => Promise.resolve(AssessmentContent), { ssr: false });
 
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function safeNumber(value, fallback) {
   var fallbackValue = fallback === undefined ? 0 : fallback;
   var numberValue = Number(value);
@@ -26,8 +30,12 @@ function safeNumber(value, fallback) {
   return numberValue;
 }
 
-function safeArray(value) {
-  return Array.isArray(value) ? value : [];
+function parseDateMs(value) {
+  var ms;
+  if (!value) return 0;
+  ms = new Date(value).getTime();
+  if (Number.isNaN(ms)) return 0;
+  return ms;
 }
 
 function formatTime(seconds) {
@@ -36,15 +44,6 @@ function formatTime(seconds) {
   var mins = Math.floor((safeSeconds % 3600) / 60);
   var secs = safeSeconds % 60;
   return hrs.toString().padStart(2, "0") + ":" + mins.toString().padStart(2, "0") + ":" + secs.toString().padStart(2, "0");
-}
-
-function isMultipleCorrectQuestion(question) {
-  var correctAnswers;
-  if (!question || !Array.isArray(question.answers)) return false;
-  correctAnswers = question.answers.filter(function (answer) {
-    return safeNumber(answer.score, 0) === 1;
-  });
-  return correctAnswers.length > 1;
 }
 
 function getAnswerArray(value) {
@@ -60,6 +59,15 @@ function countAnswered(answerMap) {
   }).length;
 }
 
+function isMultipleCorrectQuestion(question) {
+  var correctAnswers;
+  if (!question || !Array.isArray(question.answers)) return false;
+  correctAnswers = question.answers.filter(function (answer) {
+    return safeNumber(answer.score, 0) === 1;
+  });
+  return correctAnswers.length > 1;
+}
+
 function getSessionBasedLimit(sessionData, progressElapsed, defaultLimit) {
   var elapsed = safeNumber(progressElapsed, 0);
   var fallbackLimit = defaultLimit || 10800;
@@ -69,17 +77,27 @@ function getSessionBasedLimit(sessionData, progressElapsed, defaultLimit) {
   if (!sessionData || !sessionData.expires_at) return fallbackLimit;
   expiresAt = new Date(sessionData.expires_at).getTime();
   if (Number.isNaN(expiresAt)) return fallbackLimit;
+
   remaining = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
   if (remaining <= 0) return elapsed;
   return elapsed + remaining;
 }
 
-function parseDateMs(value) {
-  var ms;
-  if (!value) return 0;
-  ms = new Date(value).getTime();
-  if (Number.isNaN(ms)) return 0;
-  return ms;
+function isSessionOlderThanUnblock(sessionData, accessData) {
+  var unblockedAt;
+  var sessionCreatedAt;
+  var sessionUpdatedAt;
+
+  if (!sessionData || !accessData || !accessData.unblocked_at) return false;
+
+  unblockedAt = parseDateMs(accessData.unblocked_at);
+  sessionCreatedAt = parseDateMs(sessionData.created_at);
+  sessionUpdatedAt = parseDateMs(sessionData.updated_at);
+
+  if (!unblockedAt) return false;
+  if (sessionCreatedAt && sessionCreatedAt < unblockedAt) return true;
+  if (sessionUpdatedAt && sessionUpdatedAt < unblockedAt) return true;
+  return false;
 }
 
 function clearBrowserAttemptStorage(userId, assessmentId) {
@@ -130,7 +148,7 @@ async function fetchCandidateAccess(userId, assessmentId) {
 
   response = await supabase
     .from("candidate_assessments")
-    .select("id, status, result_id, completed_at, unblocked_at, session_id")
+    .select("id,status,result_id,completed_at,unblocked_at,session_id")
     .eq("user_id", userId)
     .eq("assessment_id", assessmentId)
     .maybeSingle();
@@ -173,9 +191,7 @@ async function safeDelete(tableName, filters) {
 }
 
 async function clearStaleAttemptData(userId, assessmentId) {
-  var sessionIds;
-
-  sessionIds = await collectSessionIds(userId, assessmentId);
+  var sessionIds = await collectSessionIds(userId, assessmentId);
 
   if (sessionIds.length > 0) {
     await safeDelete("answer_history", [{ column: "session_id", operator: "in", value: sessionIds }]);
@@ -213,28 +229,6 @@ async function clearStaleAttemptData(userId, assessmentId) {
     .update({ session_id: null, updated_at: new Date().toISOString() })
     .eq("user_id", userId)
     .eq("assessment_id", assessmentId);
-}
-
-function isSessionOlderThanUnblock(sessionData, accessData) {
-  var unblockedAt;
-  var sessionCreatedAt;
-  var sessionUpdatedAt;
-
-  if (!sessionData || !accessData || !accessData.unblocked_at) return false;
-
-  unblockedAt = parseDateMs(accessData.unblocked_at);
-  sessionCreatedAt = parseDateMs(sessionData.created_at);
-  sessionUpdatedAt = parseDateMs(sessionData.updated_at);
-
-  if (!unblockedAt) return false;
-  if (sessionCreatedAt && sessionCreatedAt < unblockedAt) return true;
-  if (sessionUpdatedAt && sessionUpdatedAt < unblockedAt) return true;
-
-  return false;
-}
-
-function isFreshResetAccess(accessData) {
-  return !!accessData && accessData.status === "unblocked" && !accessData.result_id && !accessData.completed_at;
 }
 
 function AssessmentContent() {
@@ -320,7 +314,6 @@ function AssessmentContent() {
     var answeredCount;
 
     if (!sessionIdRef.current) return;
-
     answeredCount = countAnswered(answerMap);
 
     const { error: updateError } = await supabase
@@ -362,6 +355,21 @@ function AssessmentContent() {
     }
   };
 
+  const markCandidateAssessmentInProgress = async (sessionId) => {
+    if (!user || !assessmentId || !sessionId) return;
+
+    await supabase
+      .from("candidate_assessments")
+      .update({
+        status: "in_progress",
+        session_id: sessionId,
+        updated_at: new Date().toISOString()
+      })
+      .eq("user_id", user.id)
+      .eq("assessment_id", assessmentId)
+      .is("result_id", null);
+  };
+
   const completeAssessmentSafely = async (autoSubmitted, reason) => {
     var result;
     var resultId = null;
@@ -401,7 +409,6 @@ function AssessmentContent() {
       .eq("id", session.id);
 
     await markCandidateAssessmentCompleted(resultId, autoSubmitted, reason);
-
     return result;
   };
 
@@ -423,7 +430,6 @@ function AssessmentContent() {
       router.push("/assessment/terminated?reason=violations&count=" + violationCount + "&answered=" + countAnswered(answers) + "&total=" + questions.length);
     } catch (submitError) {
       console.error("Auto-submit failed:", submitError);
-
       if (session && session.id) {
         await supabase
           .from("assessment_sessions")
@@ -436,7 +442,6 @@ function AssessmentContent() {
           })
           .eq("id", session.id);
       }
-
       await markCandidateAssessmentCompleted(null, true, "Auto-submitted due to rule violations.");
       setAlreadySubmitted(true);
       router.push("/assessment/terminated?reason=violations&count=" + violationCount + "&answered=" + countAnswered(answers) + "&total=" + questions.length);
@@ -545,7 +550,8 @@ function AssessmentContent() {
 
       const data = await fetchCandidateAccess(userId, assessmentIdValue);
 
-      if (!data || data.status !== "unblocked") {
+      // Correct access logic: allow both a freshly unblocked assessment and an active in-progress attempt.
+      if (!data || !["unblocked", "in_progress"].includes(data.status)) {
         setAccessDenied(true);
         setAccessChecked(true);
         return false;
@@ -577,8 +583,8 @@ function AssessmentContent() {
       var formattedAnswers = {};
       var restoredInitialAnswers = {};
       var restoredChangeCount = {};
-      var sessionViolations;
       var lastIndex;
+      var sessionViolations;
       var shouldRestorePreviousState = true;
 
       try {
@@ -596,8 +602,6 @@ function AssessmentContent() {
 
         setUser(authSession.user);
         if (!assessmentId) return;
-
-        clearBrowserAttemptStorage(authSession.user.id, assessmentId);
 
         hasAccess = await checkAssessmentAccess(authSession.user.id, assessmentId);
         if (!hasAccess) {
@@ -620,10 +624,9 @@ function AssessmentContent() {
 
         sessionData = await createAssessmentSession(authSession.user.id, assessmentId, assessmentData && assessmentData.assessment_type ? assessmentData.assessment_type.id : null);
 
-        // Critical fix:
-        // If createAssessmentSession returns an old session from before the reset/unblock timestamp,
-        // delete stale session-linked behavioral data and create a clean session.
-        if (isFreshResetAccess(accessData) && isSessionOlderThanUnblock(sessionData, accessData)) {
+        // Only clear browser/database attempt state when we detect that an old session predates the latest reset/unblock.
+        // This avoids breaking Continue Assessment for a valid in-progress attempt.
+        if (accessData && accessData.status === "unblocked" && !accessData.result_id && !accessData.completed_at && isSessionOlderThanUnblock(sessionData, accessData)) {
           await clearStaleAttemptData(authSession.user.id, assessmentId);
           clearBrowserAttemptStorage(authSession.user.id, assessmentId);
           replacementSessionData = await createAssessmentSession(authSession.user.id, assessmentId, assessmentData && assessmentData.assessment_type ? assessmentData.assessment_type.id : null);
@@ -632,10 +635,12 @@ function AssessmentContent() {
         }
 
         setSession(sessionData);
-        if (sessionData && sessionData.id) sessionIdRef.current = sessionData.id;
+        if (sessionData && sessionData.id) {
+          sessionIdRef.current = sessionData.id;
+          await markCandidateAssessmentInProgress(sessionData.id);
+        }
 
         progress = await getProgress(authSession.user.id, assessmentId);
-
         if (!shouldRestorePreviousState) {
           progress = null;
           progressElapsed = 0;
@@ -661,7 +666,6 @@ function AssessmentContent() {
                 formattedAnswers[qId] = parseInt(answer, 10);
               }
             });
-
             setAnswers(formattedAnswers);
           }
 
@@ -730,7 +734,6 @@ function AssessmentContent() {
           saveProgress(session.id, user.id, assessmentId, newElapsed, questions[currentIndex] ? questions[currentIndex].id : null);
           updateSessionTimer(session.id, newElapsed);
         }
-
         return newElapsed;
       });
     }, 1000);
@@ -748,7 +751,6 @@ function AssessmentContent() {
     try {
       questionIdNum = parseInt(questionId, 10);
       if (Number.isNaN(questionIdNum)) return false;
-
       currentTiming = questionTimings[questionIdNum] || {};
 
       payload = {
@@ -776,7 +778,6 @@ function AssessmentContent() {
           }
         };
       });
-
       return true;
     } catch (timingError) {
       console.error("Error in saveQuestionTiming:", timingError);
@@ -799,7 +800,6 @@ function AssessmentContent() {
     var nextAnswers;
 
     if (alreadySubmitted || !session || !questionId || !answerId || accessDenied || isAutoSubmitting) return;
-
     timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
 
     if (isMultipleCorrect) {
@@ -837,7 +837,6 @@ function AssessmentContent() {
 
     try {
       answerToStore = Array.isArray(newSelectedAnswers) ? newSelectedAnswers.join(",") : newSelectedAnswers;
-
       result = await saveUniqueResponse(session.id, user.id, assessmentId, questionId, answerToStore, {
         time_spent_seconds: timeSpentSeconds,
         times_changed: newChangeCount,
@@ -864,7 +863,6 @@ function AssessmentContent() {
         return newStatus;
       });
     }, 900);
-
     setQuestionStartTime(Date.now());
   };
 
@@ -879,7 +877,6 @@ function AssessmentContent() {
       await saveQuestionTiming(currentQuestionId, timeSpent);
       if (session && user) await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, currentQuestionId);
     }
-
     setCurrentIndex(nextIndex);
     setQuestionStartTime(Date.now());
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -890,7 +887,6 @@ function AssessmentContent() {
     var confirmed;
 
     if (!session || alreadySubmitted || accessDenied || isAutoSubmitting || submittingRef.current) return;
-
     if (violationCount >= 3) {
       alert("Cannot submit: the assessment reached the violation limit and must be auto-submitted.");
       return;
@@ -906,9 +902,7 @@ function AssessmentContent() {
       submittingRef.current = true;
       setIsSubmitting(true);
       setShowSubmitModal(false);
-
       await completeAssessmentSafely(false, null);
-
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
       setTimeout(function () { router.push("/candidate/dashboard"); }, 2000);
@@ -1003,9 +997,7 @@ function AssessmentContent() {
 
   return (
     <>
-      {showViolationWarning && (
-        <div style={styles.violationBanner}><span>⚠️</span><span>{violationMessage}</span></div>
-      )}
+      {showViolationWarning && <div style={styles.violationBanner}><span>⚠️</span><span>{violationMessage}</span></div>}
 
       {isAutoSubmitting && (
         <div style={styles.autoSubmitOverlay}>
