@@ -1,14 +1,10 @@
 // pages/supervisor/index.js
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
-
-// ======================================================
-// SAFE HELPERS
-// ======================================================
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -35,38 +31,30 @@ function formatDate(value) {
   }
 }
 
-function getInitials(value) {
-  var text = safeText(value, "C").trim();
-  var parts = text.split(" ").filter(Boolean);
-  if (parts.length >= 2) return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
-  return text ? text.charAt(0).toUpperCase() : "C";
-}
-
 function calculatePercentage(score, maxScore, fallbackPercentage) {
   var scoreValue = safeNumber(score, null);
   var maxValue = safeNumber(maxScore, null);
   var fallbackValue = safeNumber(fallbackPercentage, null);
-
-  if (scoreValue !== null && maxValue !== null && maxValue > 0) {
-    return Math.round((scoreValue / maxValue) * 100);
-  }
-
-  if (fallbackValue !== null && fallbackValue !== undefined && Number.isFinite(Number(fallbackValue))) {
-    return Math.round(Number(fallbackValue));
-  }
-
+  if (scoreValue !== null && maxValue !== null && maxValue > 0) return Math.round((scoreValue / maxValue) * 100);
+  if (fallbackValue !== null && fallbackValue !== undefined && Number.isFinite(Number(fallbackValue))) return Math.round(Number(fallbackValue));
   return 0;
 }
 
 function getClassification(percentage) {
   var value = safeNumber(percentage, 0);
   if (value >= 85) return { label: "Exceptional", color: "#0f766e", bg: "#ecfdf3" };
-  if (value >= 75) return { label: "Strong Performer", color: "#2563eb", bg: "#eff6ff" };
+  if (value >= 75) return { label: "Strong", color: "#2563eb", bg: "#eff6ff" };
   if (value >= 65) return { label: "Capable", color: "#4f46e5", bg: "#eef2ff" };
   if (value >= 55) return { label: "Developing", color: "#d97706", bg: "#fffaeb" };
-  if (value >= 40) return { label: "At Risk", color: "#ea580c", bg: "#fff7ed" };
-  if (value > 0) return { label: "High Risk", color: "#b42318", bg: "#fef3f2" };
+  if (value > 0) return { label: "At Risk", color: "#b42318", bg: "#fef3f2" };
   return { label: "No Data", color: "#667085", bg: "#f2f4f7" };
+}
+
+function getInitials(value) {
+  var text = safeText(value, "C").trim();
+  var parts = text.split(" ").filter(Boolean);
+  if (parts.length >= 2) return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+  return text ? text.charAt(0).toUpperCase() : "C";
 }
 
 function getStatusBadge(status, hasResult) {
@@ -82,66 +70,17 @@ function displayTypeName(type) {
 }
 
 function getBestCompletedAssessment(candidate) {
-  var completed = safeArray(candidate.assessments).filter(function (item) {
-    return item.result !== null && item.result !== undefined;
-  });
-
+  var completed = safeArray(candidate.assessments).filter(function (item) { return item.result !== null && item.result !== undefined; });
   completed.sort(function (a, b) {
     var aDate = a.result && a.result.completed_at ? new Date(a.result.completed_at).getTime() : 0;
     var bDate = b.result && b.result.completed_at ? new Date(b.result.completed_at).getTime() : 0;
     return bDate - aDate;
   });
-
   return completed.length > 0 ? completed[0] : null;
 }
 
-function makeResetKey(candidateId, assessmentId) {
-  return safeText(candidateId, "") + "::" + safeText(assessmentId, "");
-}
-
-function parseResetKey(key) {
-  var parts = safeText(key, "").split("::");
-  return { userId: parts[0] || "", assessmentId: parts[1] || "" };
-}
-
-function countSelectedItems(selectedMap) {
-  return Object.keys(selectedMap || {}).filter(function (key) { return selectedMap[key] === true; }).length;
-}
-
-function selectedMapToItems(selectedMap) {
-  return Object.keys(selectedMap || {}).filter(function (key) {
-    return selectedMap[key] === true;
-  }).map(function (key) {
-    return parseResetKey(key);
-  }).filter(function (item) {
-    return item.userId && item.assessmentId;
-  });
-}
-
-// ======================================================
-// UI COMPONENTS
-// ======================================================
-
 function Pill(props) {
-  return (
-    <span style={{ ...styles.pill, color: props.color, background: props.bg }}>
-      {props.icon && <span>{props.icon}</span>}
-      {props.children}
-    </span>
-  );
-}
-
-function StatCard(props) {
-  return (
-    <div style={{ ...styles.statCard, background: props.background }}>
-      <div style={styles.statIcon}>{props.icon}</div>
-      <div>
-        <p style={styles.statLabel}>{props.label}</p>
-        <p style={styles.statValue}>{props.value}</p>
-        <p style={styles.statNote}>{props.note}</p>
-      </div>
-    </div>
-  );
+  return <span style={{ ...styles.pill, color: props.color, background: props.bg }}>{props.children}</span>;
 }
 
 function ProgressBar(props) {
@@ -151,22 +90,12 @@ function ProgressBar(props) {
   return <div style={styles.progressTrack}><div style={{ width: value + "%", height: "100%", borderRadius: "999px", background: props.color || "#0f766e" }} /></div>;
 }
 
-function EmptyState(props) {
-  return (
-    <div style={styles.emptyState}>
-      <div style={styles.emptyIcon}>{props.icon || "⌕"}</div>
-      <h3 style={styles.emptyTitle}>{props.title}</h3>
-      <p style={styles.emptyText}>{props.message}</p>
-    </div>
-  );
-}
-
-// ======================================================
-// PAGE COMPONENT
-// ======================================================
-
 export default function SupervisorDashboard() {
   var router = useRouter();
+
+  var currentSupervisorState = useState(null);
+  var currentSupervisor = currentSupervisorState[0];
+  var setCurrentSupervisor = currentSupervisorState[1];
 
   var candidatesState = useState([]);
   var candidates = candidatesState[0];
@@ -180,65 +109,43 @@ export default function SupervisorDashboard() {
   var loading = loadingState[0];
   var setLoading = loadingState[1];
 
-  var supervisorState = useState(null);
-  var currentSupervisor = supervisorState[0];
-  var setCurrentSupervisor = supervisorState[1];
+  var errorState = useState("");
+  var errorMessage = errorState[0];
+  var setErrorMessage = errorState[1];
 
   var searchState = useState("");
   var searchTerm = searchState[0];
   var setSearchTerm = searchState[1];
 
-  var statusState = useState("all");
-  var filterStatus = statusState[0];
-  var setFilterStatus = statusState[1];
-
-  var typeState = useState("all");
-  var selectedAssessmentType = typeState[0];
-  var setSelectedAssessmentType = typeState[1];
-
   var expandedState = useState(null);
   var expandedCandidate = expandedState[0];
   var setExpandedCandidate = expandedState[1];
 
-  var assessmentTypesState = useState([{ code: "all", name: "All Assessments" }]);
-  var assessmentTypes = assessmentTypesState[0];
-  var setAssessmentTypes = assessmentTypesState[1];
+  var assessmentOptionsState = useState([]);
+  var assessmentOptions = assessmentOptionsState[0];
+  var setAssessmentOptions = assessmentOptionsState[1];
 
-  var errorState = useState("");
-  var errorMessage = errorState[0];
-  var setErrorMessage = errorState[1];
+  var resetAssessmentState = useState("");
+  var resetAssessmentId = resetAssessmentState[0];
+  var setResetAssessmentId = resetAssessmentState[1];
 
-  var statsState = useState({ totalCandidates: 0, totalAssessments: 0, completedAssessments: 0, readyAssessments: 0, blockedAssessments: 0, completionRate: 0 });
-  var stats = statsState[0];
-  var setStats = statsState[1];
+  var resetModeState = useState("all");
+  var resetMode = resetModeState[0];
+  var setResetMode = resetModeState[1];
 
-  var selectedResetState = useState({});
-  var selectedResetItems = selectedResetState[0];
-  var setSelectedResetItems = selectedResetState[1];
+  var resetCandidateState = useState([]);
+  var resetCandidates = resetCandidateState[0];
+  var setResetCandidates = resetCandidateState[1];
 
-  var bulkState = useState({ loading: false, dryRunLoading: false, message: "", error: "", result: null });
-  var bulkReset = bulkState[0];
-  var setBulkReset = bulkState[1];
+  var selectedState = useState({});
+  var selectedMap = selectedState[0];
+  var setSelectedMap = selectedState[1];
 
-  var selectedResetCount = countSelectedItems(selectedResetItems);
+  var actionState = useState({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: "", result: null });
+  var action = actionState[0];
+  var setAction = actionState[1];
 
-  useEffect(function () {
-    if (!router.isReady) return;
-    if (router.query.expanded) setExpandedCandidate(String(router.query.expanded));
-    if (router.query.search) setSearchTerm(String(router.query.search));
-    if (router.query.filterStatus) setFilterStatus(String(router.query.filterStatus));
-    if (router.query.filterType) setSelectedAssessmentType(String(router.query.filterType));
-  }, [router.isReady]);
-
-  useEffect(function () {
-    if (!router.isReady) return;
-    var query = {};
-    if (expandedCandidate) query.expanded = expandedCandidate;
-    if (searchTerm) query.search = searchTerm;
-    if (filterStatus !== "all") query.filterStatus = filterStatus;
-    if (selectedAssessmentType !== "all") query.filterType = selectedAssessmentType;
-    router.replace({ pathname: router.pathname, query: query }, undefined, { shallow: true });
-  }, [expandedCandidate, searchTerm, filterStatus, selectedAssessmentType, router.isReady]);
+  var selectedCount = Object.keys(selectedMap).filter(function (key) { return selectedMap[key] === true; }).length;
 
   useEffect(function () {
     async function checkAuth() {
@@ -247,48 +154,34 @@ export default function SupervisorDashboard() {
       var userRole;
       var stored;
       var session;
-
       try {
         authResult = await supabase.auth.getSession();
         supabaseSession = authResult && authResult.data ? authResult.data.session : null;
-
         if (supabaseSession) {
           userRole = supabaseSession.user && supabaseSession.user.user_metadata ? supabaseSession.user.user_metadata.role : null;
           if (userRole === "supervisor" || userRole === "admin") {
-            setCurrentSupervisor({
-              id: supabaseSession.user.id,
-              email: supabaseSession.user.email,
-              name: (supabaseSession.user.user_metadata && supabaseSession.user.user_metadata.full_name) || supabaseSession.user.email,
-              role: userRole
-            });
+            setCurrentSupervisor({ id: supabaseSession.user.id, email: supabaseSession.user.email, name: (supabaseSession.user.user_metadata && supabaseSession.user.user_metadata.full_name) || supabaseSession.user.email, role: userRole });
             return;
           }
         }
-
         if (typeof window === "undefined") return;
         stored = localStorage.getItem("userSession");
         if (!stored) {
           router.push("/login");
           return;
         }
-
         session = JSON.parse(stored);
-        if (session.loggedIn && (session.role === "supervisor" || session.role === "admin")) {
-          setCurrentSupervisor({ id: session.user_id, email: session.email, name: session.full_name || session.email, role: session.role });
-        } else {
-          router.push("/login");
-        }
+        if (session.loggedIn && (session.role === "supervisor" || session.role === "admin")) setCurrentSupervisor({ id: session.user_id, email: session.email, name: session.full_name || session.email, role: session.role });
+        else router.push("/login");
       } catch (error) {
         router.push("/login");
       }
     }
-
     checkAuth();
   }, [router]);
 
   useEffect(function () {
     if (!currentSupervisor) return;
-
     var cancelled = false;
 
     async function fetchData() {
@@ -297,12 +190,7 @@ export default function SupervisorDashboard() {
       var candidatesResponse;
       var candidatesData;
       var processedCandidates;
-      var typeMap = {};
-      var totalAssessments = 0;
-      var completedAssessments = 0;
-      var readyAssessments = 0;
-      var blockedAssessments = 0;
-      var completionRate = 0;
+      var assessmentOptionMap = {};
 
       try {
         setLoading(true);
@@ -311,10 +199,8 @@ export default function SupervisorDashboard() {
 
         candidatesQuery = supabase.from("candidate_profiles").select("id, full_name, email, phone, created_at, supervisor_id");
         if (!isAdmin) candidatesQuery = candidatesQuery.eq("supervisor_id", currentSupervisor.id);
-
         candidatesResponse = await candidatesQuery.order("created_at", { ascending: false });
         if (candidatesResponse.error) throw candidatesResponse.error;
-
         candidatesData = safeArray(candidatesResponse.data);
 
         processedCandidates = await Promise.all(candidatesData.map(async function (candidate) {
@@ -329,25 +215,15 @@ export default function SupervisorDashboard() {
           var completedList;
           var readyList;
           var blockedList;
-          var breakdown = {};
           var latestAssessment;
 
           resultsResponse = await supabase
             .from("assessment_results")
-            .select("id, assessment_id, total_score, max_score, percentage_score, completed_at, is_valid, is_auto_submitted, violation_count")
+            .select("id, assessment_id, total_score, max_score, percentage_score, completed_at")
             .eq("user_id", candidate.id);
 
           safeArray(resultsResponse.data).forEach(function (result) {
-            resultsMap[result.assessment_id] = {
-              id: result.id,
-              score: result.total_score,
-              max_score: result.max_score,
-              percentage: result.percentage_score,
-              completed_at: result.completed_at,
-              is_valid: result.is_valid,
-              is_auto_submitted: result.is_auto_submitted,
-              violation_count: result.violation_count
-            };
+            resultsMap[result.assessment_id] = { id: result.id, score: result.total_score, max_score: result.max_score, percentage: result.percentage_score, completed_at: result.completed_at };
           });
 
           accessResponse = await supabase
@@ -366,6 +242,7 @@ export default function SupervisorDashboard() {
 
             safeArray(assessmentsResponse.data).forEach(function (assessment) {
               assessmentMap[assessment.id] = assessment;
+              assessmentOptionMap[assessment.id] = assessment.title || "Unknown Assessment";
             });
           }
 
@@ -373,18 +250,13 @@ export default function SupervisorDashboard() {
             var result = resultsMap[access.assessment_id] || null;
             var assessment = assessmentMap[access.assessment_id] || {};
             var type = assessment.assessment_types || {};
-            var typeCode = type.code || "general";
             var displayStatus = access.status;
-
             if (result || access.result_id || displayStatus === "completed") displayStatus = "completed";
-            typeMap[typeCode] = type.name || displayTypeName(typeCode);
-
             return {
               id: access.id,
               assessment_id: access.assessment_id,
               assessment_title: assessment.title || "Unknown Assessment",
-              assessment_type: typeCode,
-              assessment_type_name: type.name || displayTypeName(typeCode),
+              assessment_type_name: type.name || displayTypeName(type.code || "general"),
               type_icon: type.icon || "📋",
               type_gradient_start: type.gradient_start || "#0f766e",
               type_gradient_end: type.gradient_end || "#14b8a6",
@@ -395,53 +267,18 @@ export default function SupervisorDashboard() {
             };
           });
 
-          assessmentsWithDetails.sort(function (a, b) {
-            if (a.result && !b.result) return -1;
-            if (!a.result && b.result) return 1;
-            return new Date((b.result && b.result.completed_at) || b.created_at || 0).getTime() - new Date((a.result && a.result.completed_at) || a.created_at || 0).getTime();
-          });
-
           completedList = assessmentsWithDetails.filter(function (item) { return item.status === "completed" || item.result !== null; });
           readyList = assessmentsWithDetails.filter(function (item) { return item.status === "unblocked" && !item.result; });
           blockedList = assessmentsWithDetails.filter(function (item) { return item.status === "blocked" && !item.result; });
-
-          assessmentsWithDetails.forEach(function (assessment) {
-            breakdown[assessment.assessment_type] = (breakdown[assessment.assessment_type] || 0) + 1;
-          });
-
           latestAssessment = getBestCompletedAssessment({ assessments: assessmentsWithDetails });
 
-          return {
-            id: candidate.id,
-            full_name: candidate.full_name || "Unnamed Candidate",
-            email: candidate.email || "No email provided",
-            phone: candidate.phone || "",
-            created_at: candidate.created_at,
-            totalAssessments: assessmentsWithDetails.length,
-            completedAssessments: completedList.length,
-            readyAssessments: readyList.length,
-            blockedAssessments: blockedList.length,
-            assessment_breakdown: breakdown,
-            latestAssessment: latestAssessment,
-            assessments: assessmentsWithDetails
-          };
+          return { id: candidate.id, full_name: candidate.full_name || "Unnamed Candidate", email: candidate.email || "No email provided", phone: candidate.phone || "", created_at: candidate.created_at, totalAssessments: assessmentsWithDetails.length, completedAssessments: completedList.length, readyAssessments: readyList.length, blockedAssessments: blockedList.length, latestAssessment: latestAssessment, assessments: assessmentsWithDetails };
         }));
 
         if (cancelled) return;
-
-        processedCandidates.forEach(function (candidate) {
-          totalAssessments += candidate.totalAssessments;
-          completedAssessments += candidate.completedAssessments;
-          readyAssessments += candidate.readyAssessments;
-          blockedAssessments += candidate.blockedAssessments;
-        });
-
-        if (totalAssessments > 0) completionRate = Math.round((completedAssessments / totalAssessments) * 100);
-
         setCandidates(processedCandidates);
         setFilteredCandidates(processedCandidates);
-        setAssessmentTypes([{ code: "all", name: "All Assessments" }].concat(Object.keys(typeMap).sort().map(function (key) { return { code: key, name: typeMap[key] || displayTypeName(key) }; })));
-        setStats({ totalCandidates: processedCandidates.length, totalAssessments: totalAssessments, completedAssessments: completedAssessments, readyAssessments: readyAssessments, blockedAssessments: blockedAssessments, completionRate: completionRate });
+        setAssessmentOptions(Object.keys(assessmentOptionMap).sort(function (a, b) { return assessmentOptionMap[a].localeCompare(assessmentOptionMap[b]); }).map(function (id) { return { id: id, title: assessmentOptionMap[id] }; }));
       } catch (error) {
         if (!cancelled) setErrorMessage(error && error.message ? error.message : "Unable to load supervisor dashboard data.");
       } finally {
@@ -450,147 +287,98 @@ export default function SupervisorDashboard() {
     }
 
     fetchData();
-
-    return function () {
-      cancelled = true;
-    };
+    return function () { cancelled = true; };
   }, [currentSupervisor]);
 
   useEffect(function () {
     var filtered = candidates.slice();
-
-    if (selectedAssessmentType !== "all") {
-      filtered = filtered.filter(function (candidate) {
-        return safeNumber(candidate.assessment_breakdown && candidate.assessment_breakdown[selectedAssessmentType], 0) > 0;
-      });
-    }
-
-    if (filterStatus !== "all") {
-      filtered = filtered.filter(function (candidate) {
-        if (filterStatus === "completed") return candidate.completedAssessments > 0;
-        if (filterStatus === "ready") return candidate.readyAssessments > 0;
-        if (filterStatus === "blocked") return candidate.blockedAssessments > 0;
-        if (filterStatus === "no-score") return !candidate.latestAssessment;
-        return true;
-      });
-    }
-
     if (searchTerm.trim()) {
       var term = searchTerm.toLowerCase().trim();
       filtered = filtered.filter(function (candidate) {
         return safeText(candidate.full_name, "").toLowerCase().indexOf(term) >= 0 || safeText(candidate.email, "").toLowerCase().indexOf(term) >= 0 || safeText(candidate.id, "").toLowerCase().indexOf(term) >= 0;
       });
     }
-
     setFilteredCandidates(filtered);
-  }, [candidates, selectedAssessmentType, filterStatus, searchTerm]);
+  }, [candidates, searchTerm]);
 
-  function toggleCandidate(candidateIdValue) {
-    setExpandedCandidate(expandedCandidate === candidateIdValue ? null : candidateIdValue);
+  async function loadAssessmentResetCandidates() {
+    var response;
+    var data;
+    if (!resetAssessmentId) {
+      setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: "Select an assessment first.", result: null });
+      return;
+    }
+    setAction({ loading: false, dryRunLoading: false, loadLoading: true, message: "", error: "", result: null });
+    setResetCandidates([]);
+    setSelectedMap({});
+    try {
+      response = await fetch("/api/supervisor/assessment-reset-candidates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assessmentId: resetAssessmentId, mode: resetMode }) });
+      data = await response.json();
+      if (!response.ok || !data || data.success !== true) {
+        setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: data && data.message ? data.message : "Unable to load reset candidates.", result: data });
+        return;
+      }
+      setResetCandidates(safeArray(data.candidates));
+      setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: data.count + " candidate(s) loaded for selected assessment.", error: "", result: data });
+    } catch (error) {
+      setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: error && error.message ? error.message : "Unable to load reset candidates.", result: null });
+    }
   }
 
-  function clearFilters() {
-    setSearchTerm("");
-    setFilterStatus("all");
-    setSelectedAssessmentType("all");
-    setExpandedCandidate(null);
-  }
-
-  function toggleResetSelection(candidateId, assessmentId) {
-    var key = makeResetKey(candidateId, assessmentId);
+  function toggleCandidateSelection(userId) {
     var next = {};
-    Object.keys(selectedResetItems).forEach(function (existingKey) {
-      next[existingKey] = selectedResetItems[existingKey];
-    });
-    next[key] = !next[key];
-    setSelectedResetItems(next);
-    setBulkReset({ loading: false, dryRunLoading: false, message: "", error: "", result: null });
+    Object.keys(selectedMap).forEach(function (key) { next[key] = selectedMap[key]; });
+    next[userId] = !next[userId];
+    setSelectedMap(next);
   }
 
-  function clearSelectedResetItems() {
-    setSelectedResetItems({});
-    setBulkReset({ loading: false, dryRunLoading: false, message: "", error: "", result: null });
-  }
-
-  function selectCompletedVisibleAssessments() {
+  function selectAllLoadedCandidates() {
     var next = {};
-    filteredCandidates.forEach(function (candidate) {
-      safeArray(candidate.assessments).forEach(function (assessment) {
-        if (assessment.result || assessment.status === "completed") {
-          next[makeResetKey(candidate.id, assessment.assessment_id)] = true;
-        }
-      });
-    });
-    setSelectedResetItems(next);
-    setBulkReset({ loading: false, dryRunLoading: false, message: "", error: "", result: null });
+    resetCandidates.forEach(function (candidate) { next[candidate.userId] = true; });
+    setSelectedMap(next);
   }
 
-  function selectAllVisibleAssessments() {
-    var next = {};
-    filteredCandidates.forEach(function (candidate) {
-      safeArray(candidate.assessments).forEach(function (assessment) {
-        if (assessment.assessment_id) {
-          next[makeResetKey(candidate.id, assessment.assessment_id)] = true;
-        }
-      });
-    });
-    setSelectedResetItems(next);
-    setBulkReset({ loading: false, dryRunLoading: false, message: "", error: "", result: null });
+  function clearSelectedCandidates() {
+    setSelectedMap({});
   }
 
-  async function runBulkReset(dryRun) {
-    var items = selectedMapToItems(selectedResetItems);
+  function buildBulkItems() {
+    return Object.keys(selectedMap).filter(function (userId) { return selectedMap[userId] === true; }).map(function (userId) { return { userId: userId, assessmentId: resetAssessmentId }; });
+  }
+
+  async function runAssessmentBulkReset(dryRun) {
+    var items;
     var response;
     var data;
     var promptText;
-
-    if (items.length === 0) {
-      setBulkReset({ loading: false, dryRunLoading: false, message: "", error: "Select at least one candidate assessment to reset.", result: null });
+    if (!resetAssessmentId) {
+      setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: "Select an assessment first.", result: null });
       return;
     }
-
-    if (!dryRun) {
-      promptText = "You are about to reset " + items.length + " candidate assessment(s). This will clear responses, results, sessions, progress and reports. Type RESET to continue.";
-      if (typeof window !== "undefined") {
-        if (window.prompt(promptText) !== "RESET") return;
-      }
+    items = buildBulkItems();
+    if (items.length === 0) {
+      setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: "Select at least one candidate to reset.", result: null });
+      return;
     }
-
-    setBulkReset({ loading: !dryRun, dryRunLoading: dryRun, message: "", error: "", result: null });
-
+    if (!dryRun && typeof window !== "undefined") {
+      promptText = "You are about to reset " + items.length + " candidate(s) for ONLY the selected assessment. Other assessments will not be touched. Type RESET to continue.";
+      if (window.prompt(promptText) !== "RESET") return;
+    }
+    setAction({ loading: !dryRun, dryRunLoading: dryRun, loadLoading: false, message: "", error: "", result: null });
     try {
-      response = await fetch("/api/supervisor/bulk-reset-assessments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dryRun: dryRun === true, confirmBulkReset: dryRun === true ? false : true, items: items })
-      });
-
-      data = null;
-      try {
-        data = await response.json();
-      } catch (jsonError) {
-        data = null;
-      }
-
+      response = await fetch("/api/supervisor/bulk-reset-assessments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dryRun: dryRun === true, confirmBulkReset: dryRun === true ? false : true, items: items }) });
+      data = await response.json();
       if (!response.ok) {
-        setBulkReset({ loading: false, dryRunLoading: false, message: "", error: data && data.message ? data.message : data && data.error ? data.error : "Bulk reset request failed.", result: data });
+        setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: data && data.message ? data.message : data && data.error ? data.error : "Bulk reset request failed.", result: data });
         return;
       }
-
-      setBulkReset({
-        loading: false,
-        dryRunLoading: false,
-        message: dryRun ? "Dry run completed. Review the summary before actual reset." : "Bulk reset completed. Refreshing dashboard...",
-        error: "",
-        result: data
-      });
-
+      setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: dryRun ? "Dry run completed. Review summary before actual reset." : "Bulk reset completed. Refreshing dashboard...", error: "", result: data });
       if (!dryRun) {
-        setSelectedResetItems({});
+        setSelectedMap({});
         setTimeout(function () { router.reload(); }, 1200);
       }
     } catch (error) {
-      setBulkReset({ loading: false, dryRunLoading: false, message: "", error: error && error.message ? error.message : "Bulk reset failed.", result: null });
+      setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: error && error.message ? error.message : "Bulk reset failed.", result: null });
     }
   }
 
@@ -601,12 +389,7 @@ export default function SupervisorDashboard() {
   }
 
   if (!currentSupervisor) {
-    return (
-      <AppLayout background="/images/supervisor-bg.jpg">
-        <div style={styles.centerLoader}><div style={styles.spinner} /></div>
-        <style jsx>{spinStyles}</style>
-      </AppLayout>
-    );
+    return <AppLayout background="/images/supervisor-bg.jpg"><div style={styles.centerLoader}><div style={styles.spinner} /></div><style jsx>{spinStyles}</style></AppLayout>;
   }
 
   return (
@@ -625,48 +408,60 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        <div style={styles.statsGrid}>
-          <StatCard icon="👥" label="Candidates" value={stats.totalCandidates} note="Assigned profiles" background="linear-gradient(135deg, #0f172a 0%, #334155 100%)" />
-          <StatCard icon="📋" label="Assessments" value={stats.totalAssessments} note="Total assigned" background="linear-gradient(135deg, #1d4ed8 0%, #38bdf8 100%)" />
-          <StatCard icon="✓" label="Completed" value={stats.completedAssessments} note={stats.completionRate + "% completion"} background="linear-gradient(135deg, #047857 0%, #34d399 100%)" />
-          <StatCard icon="↗" label="Ready" value={stats.readyAssessments} note="Awaiting completion" background="linear-gradient(135deg, #4338ca 0%, #8b5cf6 100%)" />
-          <StatCard icon="●" label="Blocked" value={stats.blockedAssessments} note="Not yet released" background="linear-gradient(135deg, #c2410c 0%, #fb923c 100%)" />
+        <div style={styles.bulkCard}>
+          <h2 style={styles.bulkTitle}>Bulk Reset by Assessment</h2>
+          <p style={styles.bulkText}>Select one assessment, load candidates, choose the candidates to reset, run Dry Run, then Bulk Reset Selected. Only the selected assessment will be reset.</p>
+          <div style={styles.bulkGrid}>
+            <select value={resetAssessmentId} onChange={function (event) { setResetAssessmentId(event.target.value); setResetCandidates([]); setSelectedMap({}); }} style={styles.selectInput}>
+              <option value="">Select assessment...</option>
+              {assessmentOptions.map(function (assessment) { return <option key={assessment.id} value={assessment.id}>{assessment.title}</option>; })}
+            </select>
+            <select value={resetMode} onChange={function (event) { setResetMode(event.target.value); setResetCandidates([]); setSelectedMap({}); }} style={styles.selectInput}>
+              <option value="all">All assigned candidates</option>
+              <option value="completed">Completed candidates</option>
+              <option value="incomplete">Started but incomplete</option>
+              <option value="ready">Ready/unstarted candidates</option>
+            </select>
+            <button type="button" style={styles.loadButton} onClick={loadAssessmentResetCandidates} disabled={action.loadLoading || !resetAssessmentId}>{action.loadLoading ? "Loading..." : "Load Candidates"}</button>
+          </div>
+
+          {resetCandidates.length > 0 && (
+            <div style={styles.resetCandidatePanel}>
+              <div style={styles.resetCandidateHeader}>
+                <strong>{resetCandidates.length} candidate(s) loaded</strong>
+                <span>{selectedCount} selected</span>
+                <button type="button" style={styles.lightButton} onClick={selectAllLoadedCandidates}>Select All</button>
+                <button type="button" style={styles.lightButton} onClick={clearSelectedCandidates}>Clear</button>
+                <button type="button" style={styles.dryRunButton} onClick={function () { runAssessmentBulkReset(true); }} disabled={action.dryRunLoading || action.loading || selectedCount === 0}>{action.dryRunLoading ? "Checking..." : "Dry Run"}</button>
+                <button type="button" style={styles.dangerButton} onClick={function () { runAssessmentBulkReset(false); }} disabled={action.dryRunLoading || action.loading || selectedCount === 0}>{action.loading ? "Resetting..." : "Bulk Reset Selected"}</button>
+              </div>
+              <div style={styles.resetCandidateList}>
+                {resetCandidates.map(function (candidate) {
+                  var selected = selectedMap[candidate.userId] === true;
+                  return (
+                    <label key={candidate.userId} style={selected ? styles.resetCandidateSelected : styles.resetCandidateRow}>
+                      <input type="checkbox" checked={selected} onChange={function () { toggleCandidateSelection(candidate.userId); }} />
+                      <div style={styles.resetCandidateInfo}>
+                        <strong>{candidate.fullName}</strong>
+                        <span>{candidate.email}</span>
+                      </div>
+                      <Pill color="#175cd3" bg="#eff8ff">{candidate.resetCategory}</Pill>
+                      <span style={styles.resetMeta}>Responses: {candidate.responseCount}</span>
+                      <span style={styles.resetMeta}>Sessions: {candidate.sessionCount}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {action.error && <div style={styles.bulkError}>{action.error}</div>}
+          {action.message && <div style={styles.bulkSuccess}>{action.message}</div>}
+          {action.result && <div style={styles.bulkSummary}><strong>Summary:</strong> {safeNumber(action.result.successful, 0)} successful, {safeNumber(action.result.failed, 0)} failed, {safeNumber(action.result.totalDeduped || action.result.count, 0)} total.</div>}
         </div>
 
         <div style={styles.filterCard}>
           <input value={searchTerm} onChange={function (event) { setSearchTerm(event.target.value); }} placeholder="Search by name, email, or candidate ID..." style={styles.searchInput} />
-          <select value={filterStatus} onChange={function (event) { setFilterStatus(event.target.value); }} style={styles.selectInput}>
-            <option value="all">All Status</option>
-            <option value="completed">Completed</option>
-            <option value="ready">Ready</option>
-            <option value="blocked">Blocked</option>
-            <option value="no-score">No Score</option>
-          </select>
-          <select value={selectedAssessmentType} onChange={function (event) { setSelectedAssessmentType(event.target.value); }} style={styles.selectInput}>
-            {assessmentTypes.map(function (type) { return <option key={type.code} value={type.code}>{type.name}</option>; })}
-          </select>
-          <button type="button" style={styles.clearButton} onClick={clearFilters}>Clear</button>
-        </div>
-
-        <div style={styles.bulkCard}>
-          <div>
-            <h2 style={styles.bulkTitle}>Bulk Reset Tools</h2>
-            <p style={styles.bulkText}>Select assessment cards below, then use dry run before actual reset. Selected: <strong>{selectedResetCount}</strong></p>
-          </div>
-          <div style={styles.bulkActions}>
-            <button type="button" style={styles.lightButton} onClick={selectCompletedVisibleAssessments}>Select Completed Shown</button>
-            <button type="button" style={styles.lightButton} onClick={selectAllVisibleAssessments}>Select All Shown</button>
-            <button type="button" style={styles.lightButton} onClick={clearSelectedResetItems}>Clear Selection</button>
-            <button type="button" style={styles.dryRunButton} onClick={function () { runBulkReset(true); }} disabled={bulkReset.dryRunLoading || bulkReset.loading || selectedResetCount === 0}>{bulkReset.dryRunLoading ? "Checking..." : "Dry Run"}</button>
-            <button type="button" style={styles.dangerButton} onClick={function () { runBulkReset(false); }} disabled={bulkReset.dryRunLoading || bulkReset.loading || selectedResetCount === 0}>{bulkReset.loading ? "Resetting..." : "Bulk Reset"}</button>
-          </div>
-          {bulkReset.error && <div style={styles.bulkError}>{bulkReset.error}</div>}
-          {bulkReset.message && <div style={styles.bulkSuccess}>{bulkReset.message}</div>}
-          {bulkReset.result && (
-            <div style={styles.bulkSummary}>
-              <strong>Summary:</strong> {safeNumber(bulkReset.result.successful, 0)} successful, {safeNumber(bulkReset.result.failed, 0)} failed, {safeNumber(bulkReset.result.totalDeduped, 0)} total.
-            </div>
-          )}
         </div>
 
         <div style={styles.contentCard}>
@@ -675,23 +470,21 @@ export default function SupervisorDashboard() {
               <h2 style={styles.contentTitle}>Assigned Candidates</h2>
               <p style={styles.contentSubtitle}>{filteredCandidates.length} of {candidates.length} candidate(s) shown</p>
             </div>
-            <Pill color="#175cd3" bg="#eff8ff">Bulk reset enabled</Pill>
+            <Pill color="#175cd3" bg="#eff8ff">Assessment-specific reset enabled</Pill>
           </div>
 
           {errorMessage && <div style={styles.errorBox}>{errorMessage}</div>}
+          {loading ? <div style={styles.loadingBlock}><div style={styles.spinner} /><p style={styles.loadingText}>Loading candidates and assessments...</p></div> : null}
 
-          {loading ? (
-            <div style={styles.loadingBlock}><div style={styles.spinner} /><p style={styles.loadingText}>Loading candidates and assessments...</p></div>
-          ) : filteredCandidates.length === 0 ? (
-            <EmptyState title="No candidates found" message="No candidates match the selected search and filter criteria." />
-          ) : (
+          {!loading && filteredCandidates.length === 0 ? <div style={styles.emptyState}>No candidates found.</div> : null}
+
+          {!loading && filteredCandidates.length > 0 && (
             <div style={styles.candidateList}>
               {filteredCandidates.map(function (candidate) {
                 var latestAssessment = candidate.latestAssessment;
                 var latestPercentage = latestAssessment && latestAssessment.result ? calculatePercentage(latestAssessment.result.score, latestAssessment.result.max_score, latestAssessment.result.percentage) : 0;
                 var classification = getClassification(latestPercentage);
                 var isExpanded = expandedCandidate === candidate.id;
-
                 return (
                   <div key={candidate.id} style={styles.candidateCard}>
                     <div style={styles.candidateMainRow}>
@@ -703,70 +496,20 @@ export default function SupervisorDashboard() {
                           <p style={styles.candidateId}>ID: {safeText(candidate.id, "").substring(0, 12)}...</p>
                         </div>
                       </div>
-
                       <div style={styles.scoreBlock}>
-                        <div style={styles.scoreTopLine}>
-                          <span style={styles.scoreValue}>{latestAssessment ? latestPercentage + "%" : "N/A"}</span>
-                          <Pill color={classification.color} bg={classification.bg}>{classification.label}</Pill>
-                        </div>
+                        <div style={styles.scoreTopLine}><span style={styles.scoreValue}>{latestAssessment ? latestPercentage + "%" : "N/A"}</span><Pill color={classification.color} bg={classification.bg}>{classification.label}</Pill></div>
                         <ProgressBar value={latestPercentage} color={classification.color} />
                         <p style={styles.lastActive}>Last completed: {latestAssessment && latestAssessment.result ? formatDate(latestAssessment.result.completed_at) : "Never"}</p>
                       </div>
-
-                      <div style={styles.summaryPills}>
-                        <Pill color="#027a48" bg="#ecfdf3">✓ {candidate.completedAssessments} completed</Pill>
-                        <Pill color="#175cd3" bg="#eff8ff">↗ {candidate.readyAssessments} ready</Pill>
-                        <Pill color="#c2410c" bg="#fff7ed">● {candidate.blockedAssessments} blocked</Pill>
-                      </div>
-
-                      <div style={styles.rowActions}>
-                        <Link href={`/supervisor/manage-candidate/${candidate.id}`} style={styles.secondaryLink}>Profile</Link>
-                        <button type="button" onClick={function () { toggleCandidate(candidate.id); }} style={styles.primaryButton}>{isExpanded ? "Hide" : "Assessments"}</button>
-                      </div>
+                      <div style={styles.summaryPills}><Pill color="#027a48" bg="#ecfdf3">✓ {candidate.completedAssessments} completed</Pill><Pill color="#175cd3" bg="#eff8ff">↗ {candidate.readyAssessments} ready</Pill><Pill color="#c2410c" bg="#fff7ed">● {candidate.blockedAssessments} blocked</Pill></div>
+                      <div style={styles.rowActions}><button type="button" onClick={function () { setExpandedCandidate(isExpanded ? null : candidate.id); }} style={styles.primaryButton}>{isExpanded ? "Hide" : "Assessments"}</button></div>
                     </div>
-
-                    {isExpanded && (
-                      <div style={styles.assessmentPanel}>
-                        <div style={styles.assessmentGrid}>
-                          {candidate.assessments.map(function (assessment) {
-                            var status = getStatusBadge(assessment.status, assessment.result !== null);
-                            var percentage = assessment.result ? calculatePercentage(assessment.result.score, assessment.result.max_score, assessment.result.percentage) : 0;
-                            var assessmentClassification = getClassification(percentage);
-                            var resetKey = makeResetKey(candidate.id, assessment.assessment_id);
-                            var isSelected = selectedResetItems[resetKey] === true;
-
-                            return (
-                              <div key={assessment.id} style={isSelected ? styles.assessmentCardSelected : styles.assessmentCard}>
-                                <label style={styles.resetCheckboxRow}>
-                                  <input type="checkbox" checked={isSelected} onChange={function () { toggleResetSelection(candidate.id, assessment.assessment_id); }} />
-                                  <span>Select for reset</span>
-                                </label>
-                                <div style={styles.assessmentTop}>
-                                  <div style={{ ...styles.assessmentIcon, background: "linear-gradient(135deg, " + assessment.type_gradient_start + " 0%, " + assessment.type_gradient_end + " 100%)" }}>{assessment.type_icon}</div>
-                                  <div>
-                                    <h4 style={styles.assessmentTitle}>{assessment.assessment_title}</h4>
-                                    <p style={styles.assessmentType}>{assessment.assessment_type_name}</p>
-                                  </div>
-                                </div>
-                                <div style={styles.assessmentPills}>
-                                  <Pill color={status.color} bg={status.bg}>{status.icon} {status.label}</Pill>
-                                  {assessment.result && <Pill color={assessmentClassification.color} bg={assessmentClassification.bg}>{percentage}%</Pill>}
-                                </div>
-                                {assessment.result ? (
-                                  <React.Fragment>
-                                    <ProgressBar value={percentage} color={assessmentClassification.color} />
-                                    <p style={styles.lastActive}>Completed: {formatDate(assessment.result.completed_at)}</p>
-                                    <Link href={`/supervisor/${candidate.id}?assessment=${assessment.assessment_id}`} style={styles.reportLink}>View Report</Link>
-                                  </React.Fragment>
-                                ) : (
-                                  <p style={styles.waitingText}>{assessment.status === "unblocked" ? "Candidate can take this assessment." : "Assessment is currently blocked or scheduled."}</p>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
+                    {isExpanded && <div style={styles.assessmentPanel}><div style={styles.assessmentGrid}>{candidate.assessments.map(function (assessment) {
+                      var status = getStatusBadge(assessment.status, assessment.result !== null);
+                      var percentage = assessment.result ? calculatePercentage(assessment.result.score, assessment.result.max_score, assessment.result.percentage) : 0;
+                      var assessmentClassification = getClassification(percentage);
+                      return <div key={assessment.id} style={styles.assessmentCard}><div style={styles.assessmentTop}><div style={{ ...styles.assessmentIcon, background: "linear-gradient(135deg, " + assessment.type_gradient_start + " 0%, " + assessment.type_gradient_end + " 100%)" }}>{assessment.type_icon}</div><div><h4 style={styles.assessmentTitle}>{assessment.assessment_title}</h4><p style={styles.assessmentType}>{assessment.assessment_type_name}</p></div></div><div style={styles.assessmentPills}><Pill color={status.color} bg={status.bg}>{status.icon} {status.label}</Pill>{assessment.result && <Pill color={assessmentClassification.color} bg={assessmentClassification.bg}>{percentage}%</Pill>}</div>{assessment.result ? <React.Fragment><ProgressBar value={percentage} color={assessmentClassification.color} /><p style={styles.lastActive}>Completed: {formatDate(assessment.result.completed_at)}</p><Link href={`/supervisor/${candidate.id}?assessment=${assessment.assessment_id}`} style={styles.reportLink}>View Report</Link></React.Fragment> : <p style={styles.waitingText}>{assessment.status === "unblocked" ? "Candidate can take this assessment." : "Assessment is currently blocked or scheduled."}</p>}</div>;
+                    })}</div></div>}
                   </div>
                 );
               })}
@@ -798,26 +541,27 @@ var styles = {
   heroActions: { display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "flex-end" },
   refreshButton: { border: "1px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.12)", color: "#ffffff", padding: "11px 16px", borderRadius: "14px", cursor: "pointer", fontWeight: 900 },
   logoutButton: { border: 0, background: "#ef4444", color: "#ffffff", padding: "11px 18px", borderRadius: "14px", cursor: "pointer", fontWeight: 900 },
-  statsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "16px", marginBottom: "20px" },
-  statCard: { display: "flex", alignItems: "center", gap: "14px", padding: "20px", borderRadius: "22px", color: "#ffffff", minHeight: "96px", boxShadow: "0 18px 42px rgba(15,23,42,0.14)" },
-  statIcon: { width: "48px", height: "48px", borderRadius: "16px", background: "rgba(255,255,255,0.16)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px", fontWeight: 900 },
-  statLabel: { margin: 0, color: "rgba(255,255,255,0.78)", fontSize: "12px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.05em" },
-  statValue: { margin: "4px 0 0", color: "#ffffff", fontSize: "30px", lineHeight: 1, fontWeight: 900 },
-  statNote: { margin: "5px 0 0", color: "rgba(255,255,255,0.72)", fontSize: "12px" },
-  filterCard: { display: "grid", gridTemplateColumns: "minmax(280px, 1fr) 180px 220px 90px", gap: "12px", background: "rgba(255,255,255,0.94)", border: "1px solid #eaecf0", borderRadius: "22px", padding: "14px", marginBottom: "20px", boxShadow: "0 16px 42px rgba(16,24,40,0.08)" },
-  searchInput: { width: "100%", boxSizing: "border-box", padding: "13px 14px", border: "1px solid #d0d5dd", borderRadius: "14px", outline: "none", color: "#101828", background: "#ffffff" },
-  selectInput: { width: "100%", padding: "13px 12px", border: "1px solid #d0d5dd", borderRadius: "14px", outline: "none", color: "#101828", background: "#ffffff" },
-  clearButton: { border: 0, padding: "13px 14px", borderRadius: "14px", background: "#101828", color: "#ffffff", cursor: "pointer", fontWeight: 900 },
-  bulkCard: { background: "linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)", border: "1px solid #d0d5dd", borderRadius: "24px", padding: "18px", marginBottom: "20px", boxShadow: "0 16px 42px rgba(16,24,40,0.08)", display: "grid", gridTemplateColumns: "minmax(260px, 1fr) auto", gap: "14px", alignItems: "center" },
-  bulkTitle: { margin: 0, color: "#101828", fontSize: "19px" },
-  bulkText: { margin: "6px 0 0", color: "#667085", fontSize: "13px" },
-  bulkActions: { display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" },
+  bulkCard: { background: "linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)", border: "1px solid #d0d5dd", borderRadius: "24px", padding: "18px", marginBottom: "20px", boxShadow: "0 16px 42px rgba(16,24,40,0.08)", display: "grid", gap: "14px" },
+  bulkTitle: { margin: 0, color: "#101828", fontSize: "20px" },
+  bulkText: { margin: "6px 0 0", color: "#667085", fontSize: "13px", lineHeight: 1.5 },
+  bulkGrid: { display: "grid", gridTemplateColumns: "minmax(260px, 1fr) 220px 150px", gap: "12px", alignItems: "center" },
+  selectInput: { width: "100%", boxSizing: "border-box", padding: "13px 12px", border: "1px solid #d0d5dd", borderRadius: "14px", outline: "none", color: "#101828", background: "#ffffff" },
+  loadButton: { border: 0, background: "#101828", color: "#ffffff", padding: "13px 14px", borderRadius: "14px", cursor: "pointer", fontWeight: 900 },
   lightButton: { border: "1px solid #d0d5dd", background: "#ffffff", color: "#344054", padding: "10px 12px", borderRadius: "12px", cursor: "pointer", fontWeight: 900, fontSize: "12px" },
   dryRunButton: { border: 0, background: "#1d4ed8", color: "#ffffff", padding: "10px 12px", borderRadius: "12px", cursor: "pointer", fontWeight: 900, fontSize: "12px" },
   dangerButton: { border: 0, background: "#b42318", color: "#ffffff", padding: "10px 12px", borderRadius: "12px", cursor: "pointer", fontWeight: 900, fontSize: "12px" },
-  bulkError: { gridColumn: "1 / -1", padding: "12px", borderRadius: "14px", background: "#fef3f2", color: "#b42318", fontSize: "13px", fontWeight: 800 },
-  bulkSuccess: { gridColumn: "1 / -1", padding: "12px", borderRadius: "14px", background: "#ecfdf3", color: "#027a48", fontSize: "13px", fontWeight: 800 },
-  bulkSummary: { gridColumn: "1 / -1", padding: "12px", borderRadius: "14px", background: "#eff6ff", color: "#175cd3", fontSize: "13px" },
+  resetCandidatePanel: { border: "1px solid #eaecf0", borderRadius: "18px", background: "#ffffff", padding: "14px" },
+  resetCandidateHeader: { display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", justifyContent: "space-between", marginBottom: "12px", color: "#344054", fontSize: "13px" },
+  resetCandidateList: { display: "grid", gap: "8px", maxHeight: "360px", overflowY: "auto" },
+  resetCandidateRow: { display: "grid", gridTemplateColumns: "24px minmax(220px, 1fr) auto auto auto", gap: "10px", alignItems: "center", padding: "11px", border: "1px solid #eaecf0", borderRadius: "14px", cursor: "pointer", background: "#ffffff" },
+  resetCandidateSelected: { display: "grid", gridTemplateColumns: "24px minmax(220px, 1fr) auto auto auto", gap: "10px", alignItems: "center", padding: "11px", border: "2px solid #f04438", borderRadius: "14px", cursor: "pointer", background: "#fef3f2" },
+  resetCandidateInfo: { display: "grid", gap: "2px", color: "#101828" },
+  resetMeta: { color: "#667085", fontSize: "12px", whiteSpace: "nowrap" },
+  bulkError: { padding: "12px", borderRadius: "14px", background: "#fef3f2", color: "#b42318", fontSize: "13px", fontWeight: 800 },
+  bulkSuccess: { padding: "12px", borderRadius: "14px", background: "#ecfdf3", color: "#027a48", fontSize: "13px", fontWeight: 800 },
+  bulkSummary: { padding: "12px", borderRadius: "14px", background: "#eff6ff", color: "#175cd3", fontSize: "13px" },
+  filterCard: { display: "grid", gridTemplateColumns: "1fr", gap: "12px", background: "rgba(255,255,255,0.94)", border: "1px solid #eaecf0", borderRadius: "22px", padding: "14px", marginBottom: "20px", boxShadow: "0 16px 42px rgba(16,24,40,0.08)" },
+  searchInput: { width: "100%", boxSizing: "border-box", padding: "13px 14px", border: "1px solid #d0d5dd", borderRadius: "14px", outline: "none", color: "#101828", background: "#ffffff" },
   contentCard: { background: "rgba(255,255,255,0.96)", border: "1px solid #eaecf0", borderRadius: "26px", padding: "22px", boxShadow: "0 20px 56px rgba(16,24,40,0.09)" },
   contentHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "18px" },
   contentTitle: { margin: 0, color: "#101828", fontSize: "24px" },
@@ -841,13 +585,10 @@ var styles = {
   summaryPills: { display: "flex", gap: "7px", flexWrap: "wrap" },
   pill: { display: "inline-flex", alignItems: "center", gap: "5px", padding: "6px 10px", borderRadius: "999px", border: "1px solid transparent", fontSize: "12px", fontWeight: 900, whiteSpace: "nowrap" },
   rowActions: { display: "flex", gap: "8px", justifyContent: "flex-end", flexWrap: "wrap" },
-  secondaryLink: { display: "inline-flex", alignItems: "center", justifyContent: "center", textDecoration: "none", padding: "10px 12px", borderRadius: "12px", background: "#f2f4f7", color: "#344054", fontSize: "13px", fontWeight: 900 },
   primaryButton: { border: 0, padding: "10px 12px", borderRadius: "12px", background: "#101828", color: "#ffffff", fontSize: "13px", fontWeight: 900, cursor: "pointer" },
   assessmentPanel: { borderTop: "1px solid #eaecf0", background: "#f8fafc", padding: "18px" },
   assessmentGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "12px" },
   assessmentCard: { background: "#ffffff", border: "1px solid #eaecf0", borderRadius: "18px", padding: "16px", boxShadow: "0 8px 22px rgba(16,24,40,0.04)" },
-  assessmentCardSelected: { background: "#fef3f2", border: "2px solid #f04438", borderRadius: "18px", padding: "15px", boxShadow: "0 8px 22px rgba(180,35,24,0.10)" },
-  resetCheckboxRow: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px", color: "#344054", fontSize: "12px", fontWeight: 900, cursor: "pointer" },
   assessmentTop: { display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" },
   assessmentIcon: { width: "42px", height: "42px", borderRadius: "14px", color: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", fontWeight: 900 },
   assessmentTitle: { margin: 0, color: "#101828", fontSize: "15px", overflowWrap: "anywhere" },
@@ -855,8 +596,5 @@ var styles = {
   assessmentPills: { display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "12px" },
   reportLink: { display: "inline-flex", alignItems: "center", justifyContent: "center", textDecoration: "none", width: "100%", marginTop: "12px", padding: "11px 12px", borderRadius: "12px", background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)", color: "#ffffff", fontSize: "13px", fontWeight: 900 },
   waitingText: { color: "#667085", fontSize: "13px", lineHeight: 1.5 },
-  emptyState: { padding: "38px 20px", border: "1px dashed #cbd5e1", borderRadius: "22px", background: "#ffffff", textAlign: "center" },
-  emptyIcon: { width: "54px", height: "54px", margin: "0 auto 12px", borderRadius: "18px", background: "#eff6ff", color: "#175cd3", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px", fontWeight: 900 },
-  emptyTitle: { margin: 0, color: "#101828", fontSize: "18px" },
-  emptyText: { margin: "8px auto 0", maxWidth: "520px", color: "#667085", lineHeight: 1.6, fontSize: "14px" }
+  emptyState: { padding: "38px 20px", border: "1px dashed #cbd5e1", borderRadius: "22px", background: "#ffffff", textAlign: "center" }
 };
