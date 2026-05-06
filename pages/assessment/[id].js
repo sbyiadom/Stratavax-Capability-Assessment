@@ -35,7 +35,6 @@ function formatTime(seconds) {
   var hrs = Math.floor(safeSeconds / 3600);
   var mins = Math.floor((safeSeconds % 3600) / 60);
   var secs = safeSeconds % 60;
-
   return hrs.toString().padStart(2, "0") + ":" + mins.toString().padStart(2, "0") + ":" + secs.toString().padStart(2, "0");
 }
 
@@ -68,14 +67,174 @@ function getSessionBasedLimit(sessionData, progressElapsed, defaultLimit) {
   var remaining;
 
   if (!sessionData || !sessionData.expires_at) return fallbackLimit;
-
   expiresAt = new Date(sessionData.expires_at).getTime();
   if (Number.isNaN(expiresAt)) return fallbackLimit;
-
   remaining = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
-
   if (remaining <= 0) return elapsed;
   return elapsed + remaining;
+}
+
+function parseDateMs(value) {
+  var ms;
+  if (!value) return 0;
+  ms = new Date(value).getTime();
+  if (Number.isNaN(ms)) return 0;
+  return ms;
+}
+
+function clearBrowserAttemptStorage(userId, assessmentId) {
+  var stores;
+  var patterns;
+
+  if (typeof window === "undefined") return;
+
+  stores = [window.localStorage, window.sessionStorage].filter(Boolean);
+  patterns = [
+    String(assessmentId || ""),
+    String(userId || "") + "_" + String(assessmentId || ""),
+    String(userId || "") + ":" + String(assessmentId || ""),
+    "assessment_" + String(assessmentId || ""),
+    "responses_" + String(assessmentId || ""),
+    "answers_" + String(assessmentId || ""),
+    "answerChanges_" + String(assessmentId || ""),
+    "questionTiming_" + String(assessmentId || ""),
+    "behavioral_" + String(assessmentId || "")
+  ].filter(Boolean);
+
+  stores.forEach(function (store) {
+    var keys = [];
+    var i;
+    var key;
+
+    try {
+      for (i = 0; i < store.length; i += 1) {
+        key = store.key(i);
+        if (key) keys.push(key);
+      }
+
+      keys.forEach(function (storageKey) {
+        var lowerKey = String(storageKey).toLowerCase();
+        var shouldRemove = patterns.some(function (pattern) {
+          return pattern && lowerKey.indexOf(String(pattern).toLowerCase()) >= 0;
+        });
+        if (shouldRemove) store.removeItem(storageKey);
+      });
+    } catch (storageError) {
+      console.warn("Unable to clear browser attempt storage:", storageError);
+    }
+  });
+}
+
+async function fetchCandidateAccess(userId, assessmentId) {
+  var response;
+
+  response = await supabase
+    .from("candidate_assessments")
+    .select("id, status, result_id, completed_at, unblocked_at, session_id")
+    .eq("user_id", userId)
+    .eq("assessment_id", assessmentId)
+    .maybeSingle();
+
+  if (response.error) throw response.error;
+  return response.data || null;
+}
+
+async function collectSessionIds(userId, assessmentId) {
+  var response;
+
+  try {
+    response = await supabase
+      .from("assessment_sessions")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("assessment_id", assessmentId);
+
+    if (response.error) return [];
+    return safeArray(response.data).map(function (row) { return row.id; }).filter(Boolean);
+  } catch (error) {
+    return [];
+  }
+}
+
+async function safeDelete(tableName, filters) {
+  var query;
+  var i;
+
+  try {
+    query = supabase.from(tableName).delete();
+    for (i = 0; i < filters.length; i += 1) {
+      if (filters[i].operator === "in") query = query.in(filters[i].column, filters[i].value);
+      else query = query.eq(filters[i].column, filters[i].value);
+    }
+    await query;
+  } catch (error) {
+    console.warn("Cleanup skipped for " + tableName + ":", error && error.message ? error.message : error);
+  }
+}
+
+async function clearStaleAttemptData(userId, assessmentId) {
+  var sessionIds;
+
+  sessionIds = await collectSessionIds(userId, assessmentId);
+
+  if (sessionIds.length > 0) {
+    await safeDelete("answer_history", [{ column: "session_id", operator: "in", value: sessionIds }]);
+    await safeDelete("question_timing", [{ column: "session_id", operator: "in", value: sessionIds }]);
+    await safeDelete("candidate_personality_scores", [{ column: "session_id", operator: "in", value: sessionIds }]);
+  }
+
+  await safeDelete("assessment_violations", [
+    { column: "user_id", value: userId },
+    { column: "assessment_id", value: assessmentId }
+  ]);
+
+  await safeDelete("responses", [
+    { column: "user_id", value: userId },
+    { column: "assessment_id", value: assessmentId }
+  ]);
+
+  await safeDelete("behavioral_metrics", [
+    { column: "user_id", value: userId },
+    { column: "assessment_id", value: assessmentId }
+  ]);
+
+  await safeDelete("assessment_progress", [
+    { column: "user_id", value: userId },
+    { column: "assessment_id", value: assessmentId }
+  ]);
+
+  await safeDelete("assessment_sessions", [
+    { column: "user_id", value: userId },
+    { column: "assessment_id", value: assessmentId }
+  ]);
+
+  await supabase
+    .from("candidate_assessments")
+    .update({ session_id: null, updated_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("assessment_id", assessmentId);
+}
+
+function isSessionOlderThanUnblock(sessionData, accessData) {
+  var unblockedAt;
+  var sessionCreatedAt;
+  var sessionUpdatedAt;
+
+  if (!sessionData || !accessData || !accessData.unblocked_at) return false;
+
+  unblockedAt = parseDateMs(accessData.unblocked_at);
+  sessionCreatedAt = parseDateMs(sessionData.created_at);
+  sessionUpdatedAt = parseDateMs(sessionData.updated_at);
+
+  if (!unblockedAt) return false;
+  if (sessionCreatedAt && sessionCreatedAt < unblockedAt) return true;
+  if (sessionUpdatedAt && sessionUpdatedAt < unblockedAt) return true;
+
+  return false;
+}
+
+function isFreshResetAccess(accessData) {
+  return !!accessData && accessData.status === "unblocked" && !accessData.result_id && !accessData.completed_at;
 }
 
 function AssessmentContent() {
@@ -130,6 +289,26 @@ function AssessmentContent() {
     return selected.map(String).includes(String(answerId));
   };
 
+  const resetClientAttemptState = () => {
+    setCurrentIndex(0);
+    setAnswers({});
+    setInitialAnswers({});
+    setAnswerChangeCount({});
+    setSaveStatus({});
+    setQuestionTimings({});
+    setElapsedSeconds(0);
+    setViolationCount(0);
+    setAlreadySubmitted(false);
+    setAccessDenied(false);
+    setShowSubmitModal(false);
+    setIsSubmitting(false);
+    setIsAutoSubmitting(false);
+    sessionIdRef.current = null;
+    autoSubmitRef.current = false;
+    submittingRef.current = false;
+    setQuestionStartTime(Date.now());
+  };
+
   const showViolationWarningMessage = (message) => {
     setViolationMessage(message);
     setShowViolationWarning(true);
@@ -164,6 +343,8 @@ function AssessmentContent() {
       .update({
         status: "completed",
         result_id: resultId || null,
+        completed_at: new Date().toISOString(),
+        session_id: sessionIdRef.current || null,
         updated_at: new Date().toISOString()
       })
       .eq("user_id", user.id)
@@ -301,63 +482,18 @@ function AssessmentContent() {
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session) return;
 
-    const handleCopy = (event) => {
-      event.preventDefault();
-      logViolation("Copy attempt");
-      return false;
-    };
-
-    const handlePaste = (event) => {
-      event.preventDefault();
-      logViolation("Paste attempt");
-      return false;
-    };
-
-    const handleCut = (event) => {
-      event.preventDefault();
-      logViolation("Cut attempt");
-      return false;
-    };
-
+    const handleCopy = (event) => { event.preventDefault(); logViolation("Copy attempt"); return false; };
+    const handlePaste = (event) => { event.preventDefault(); logViolation("Paste attempt"); return false; };
+    const handleCut = (event) => { event.preventDefault(); logViolation("Cut attempt"); return false; };
     const handleKeyDown = (event) => {
       var key = String(event.key || "").toLowerCase();
-
-      if (event.key === "PrintScreen") {
-        event.preventDefault();
-        logViolation("Screenshot attempt");
-        return false;
-      }
-
-      if (event.key === "F12") {
-        event.preventDefault();
-        logViolation("DevTools attempt");
-        return false;
-      }
-
-      if (event.ctrlKey && event.shiftKey && ["i", "j", "c"].includes(key)) {
-        event.preventDefault();
-        logViolation("DevTools shortcut attempt");
-        return false;
-      }
-
-      if (event.ctrlKey && key === "u") {
-        event.preventDefault();
-        logViolation("View source attempt");
-        return false;
-      }
-
-      if (event.metaKey && event.altKey && key === "i") {
-        event.preventDefault();
-        logViolation("DevTools shortcut attempt");
-        return false;
-      }
+      if (event.key === "PrintScreen") { event.preventDefault(); logViolation("Screenshot attempt"); return false; }
+      if (event.key === "F12") { event.preventDefault(); logViolation("DevTools attempt"); return false; }
+      if (event.ctrlKey && event.shiftKey && ["i", "j", "c"].includes(key)) { event.preventDefault(); logViolation("DevTools shortcut attempt"); return false; }
+      if (event.ctrlKey && key === "u") { event.preventDefault(); logViolation("View source attempt"); return false; }
+      if (event.metaKey && event.altKey && key === "i") { event.preventDefault(); logViolation("DevTools shortcut attempt"); return false; }
     };
-
-    const handleContextMenu = (event) => {
-      event.preventDefault();
-      logViolation("Right-click attempt");
-      return false;
-    };
+    const handleContextMenu = (event) => { event.preventDefault(); logViolation("Right-click attempt"); return false; };
 
     const devToolsInterval = setInterval(() => {
       if (!sessionIdRef.current || alreadySubmitted) return;
@@ -407,14 +543,7 @@ function AssessmentContent() {
         return false;
       }
 
-      const { data, error: accessError } = await supabase
-        .from("candidate_assessments")
-        .select("status")
-        .eq("user_id", userId)
-        .eq("assessment_id", assessmentIdValue)
-        .maybeSingle();
-
-      if (accessError) throw accessError;
+      const data = await fetchCandidateAccess(userId, assessmentIdValue);
 
       if (!data || data.status !== "unblocked") {
         setAccessDenied(true);
@@ -438,7 +567,9 @@ function AssessmentContent() {
       var hasAccess;
       var completed;
       var assessmentData;
+      var accessData;
       var sessionData;
+      var replacementSessionData;
       var progress;
       var progressElapsed;
       var uniqueQuestions;
@@ -448,9 +579,12 @@ function AssessmentContent() {
       var restoredChangeCount = {};
       var sessionViolations;
       var lastIndex;
+      var shouldRestorePreviousState = true;
 
       try {
         setLoading(true);
+        setError(null);
+        resetClientAttemptState();
 
         const authResponse = await supabase.auth.getSession();
         authSession = authResponse && authResponse.data ? authResponse.data.session : null;
@@ -462,6 +596,8 @@ function AssessmentContent() {
 
         setUser(authSession.user);
         if (!assessmentId) return;
+
+        clearBrowserAttemptStorage(authSession.user.id, assessmentId);
 
         hasAccess = await checkAssessmentAccess(authSession.user.id, assessmentId);
         if (!hasAccess) {
@@ -476,25 +612,45 @@ function AssessmentContent() {
           return;
         }
 
+        accessData = await fetchCandidateAccess(authSession.user.id, assessmentId);
+
         assessmentData = await getAssessmentById(assessmentId);
         setAssessment(assessmentData);
         setAssessmentType(assessmentData ? assessmentData.assessment_type : null);
 
         sessionData = await createAssessmentSession(authSession.user.id, assessmentId, assessmentData && assessmentData.assessment_type ? assessmentData.assessment_type.id : null);
-        setSession(sessionData);
 
+        // Critical fix:
+        // If createAssessmentSession returns an old session from before the reset/unblock timestamp,
+        // delete stale session-linked behavioral data and create a clean session.
+        if (isFreshResetAccess(accessData) && isSessionOlderThanUnblock(sessionData, accessData)) {
+          await clearStaleAttemptData(authSession.user.id, assessmentId);
+          clearBrowserAttemptStorage(authSession.user.id, assessmentId);
+          replacementSessionData = await createAssessmentSession(authSession.user.id, assessmentId, assessmentData && assessmentData.assessment_type ? assessmentData.assessment_type.id : null);
+          if (replacementSessionData) sessionData = replacementSessionData;
+          shouldRestorePreviousState = false;
+        }
+
+        setSession(sessionData);
         if (sessionData && sessionData.id) sessionIdRef.current = sessionData.id;
 
         progress = await getProgress(authSession.user.id, assessmentId);
-        progressElapsed = progress && progress.elapsed_seconds ? progress.elapsed_seconds : 0;
-        setElapsedSeconds(progressElapsed);
-        setTimeLimit(getSessionBasedLimit(sessionData, progressElapsed, 10800));
+
+        if (!shouldRestorePreviousState) {
+          progress = null;
+          progressElapsed = 0;
+        } else {
+          progressElapsed = progress && progress.elapsed_seconds ? progress.elapsed_seconds : 0;
+        }
+
+        setElapsedSeconds(progressElapsed || 0);
+        setTimeLimit(getSessionBasedLimit(sessionData, progressElapsed || 0, 10800));
 
         uniqueQuestions = await getUniqueQuestions(assessmentId);
         uniqueQuestions = safeArray(uniqueQuestions);
         setQuestions(uniqueQuestions);
 
-        if (sessionData && sessionData.id) {
+        if (sessionData && sessionData.id && shouldRestorePreviousState) {
           responses = await getSessionResponses(sessionData.id);
 
           if (responses && responses.answerMap) {
@@ -515,12 +671,12 @@ function AssessmentContent() {
           }
         }
 
-        if (progress && progress.last_question_id && uniqueQuestions.length > 0) {
+        if (progress && progress.last_question_id && uniqueQuestions.length > 0 && shouldRestorePreviousState) {
           lastIndex = uniqueQuestions.findIndex(function (question) { return String(question.id) === String(progress.last_question_id); });
           if (lastIndex >= 0) setCurrentIndex(lastIndex);
         }
 
-        if (sessionData && sessionData.id) {
+        if (sessionData && sessionData.id && shouldRestorePreviousState) {
           const violationResponse = await supabase
             .from("assessment_sessions")
             .select("violation_count")
@@ -872,7 +1028,7 @@ function AssessmentContent() {
               <div style={styles.modalStat}><span>Answer Changes</span><strong>{Object.values(answerChangeCount).reduce((a, b) => a + b, 0)}</strong></div>
               {violationCount > 0 && <div style={styles.modalStat}><span>Violations</span><strong style={{ color: violationCount >= 3 ? "#f44336" : "#ff9800" }}>{violationCount}/3</strong></div>}
             </div>
-            <div style={styles.modalWarning}><span>⚠️</span><span><strong>One attempt only:</strong> After submission, the assessment cannot be retaken.</span></div>
+            <div style={styles.modalWarning}><span>⚠️</span><span><strong>One attempt only:</strong> After submission, the assessment cannot be retaken unless reset by your supervisor.</span></div>
             <div style={styles.modalActions}>
               <button onClick={() => setShowSubmitModal(false)} style={styles.modalSecondaryButton}>Continue Reviewing</button>
               <button onClick={handleSubmit} disabled={isSubmitting || violationCount >= 3} style={{ ...styles.modalPrimaryButton, background: violationCount >= 3 ? "#ccc" : "#4caf50", cursor: violationCount >= 3 ? "not-allowed" : "pointer" }}>{isSubmitting ? "Submitting..." : violationCount >= 3 ? "Cannot Submit" : "Submit Assessment"}</button>
