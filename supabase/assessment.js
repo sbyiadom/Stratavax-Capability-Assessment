@@ -2,6 +2,20 @@
 
 import { supabase } from "./client";
 
+// ======================================================
+// PLATFORM-WIDE ASSESSMENT HELPERS
+// ======================================================
+// Key platform fixes implemented in this file:
+// 1) Never reuse stale sessions after a supervisor reset.
+//    - After reset, candidate_assessments.status becomes 'unblocked' and session_id is cleared.
+//    - createAssessmentSession will always create a fresh session in that state.
+// 2) Completion detection is based on authoritative sources only:
+//    - candidate_assessments.status === 'completed' OR assessment_results exists
+//    - We do NOT treat historical completed sessions as completion, to avoid phantom completion counts.
+// 3) All comparisons/logic are based on session_id, so stale response rows cannot leak into a new attempt.
+//
+// NOTE: This file is a FULL replacement (not a patch).
+
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -34,7 +48,10 @@ function getAnswerIdsArray(answerId) {
   }
 
   if (typeof answerId === "string" && answerId.includes(",")) {
-    return answerId.split(",").map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id));
+    return answerId
+      .split(",")
+      .map((id) => parseInt(id, 10))
+      .filter((id) => !Number.isNaN(id));
   }
 
   if (answerId !== null && answerId !== undefined && answerId !== "") {
@@ -85,32 +102,26 @@ async function safeSelectSingle(tableName, configureQuery, selectText = "*") {
 }
 
 async function getSessionById(sessionId) {
-  const result = await safeSelectSingle(
-    "assessment_sessions",
-    (query) => query.eq("id", sessionId),
-    "*"
-  );
+  const result = await safeSelectSingle("assessment_sessions", (query) => query.eq("id", sessionId), "*");
   return result.data;
 }
 
 async function getAssessmentQuestionCount(assessmentTypeId) {
   if (!assessmentTypeId) return 0;
-  const result = await safeSelectRows(
-    "unique_questions",
-    (query) => query.eq("assessment_type_id", assessmentTypeId),
-    "id"
-  );
+  const result = await safeSelectRows("unique_questions", (query) => query.eq("assessment_type_id", assessmentTypeId), "id");
   return result.data.length;
 }
 
-async function updateCandidateAssessmentStatus(userId, assessmentId, status, resultId) {
+async function updateCandidateAssessmentStatus(userId, assessmentId, status, resultId, extra = {}) {
   try {
     const payload = {
       status,
-      updated_at: nowIso()
+      updated_at: nowIso(),
+      ...extra
     };
 
     if (status === "completed") payload.completed_at = nowIso();
+    if (status === "in_progress") payload.started_at = payload.started_at || nowIso();
     if (resultId !== undefined) payload.result_id = resultId || null;
 
     await supabase
@@ -121,6 +132,15 @@ async function updateCandidateAssessmentStatus(userId, assessmentId, status, res
   } catch (error) {
     console.error("Error updating candidate assessment status:", error);
   }
+}
+
+async function getCandidateAssessmentAccess(userId, assessmentId) {
+  const result = await safeSelectSingle(
+    "candidate_assessments",
+    (query) => query.eq("user_id", userId).eq("assessment_id", assessmentId),
+    "id, status, session_id, result_id, completed_at, unblocked_at, updated_at"
+  );
+  return result.data;
 }
 
 // ======================================================
@@ -145,12 +165,7 @@ export async function getAssessmentTypes() {
 
 export async function getAssessmentTypeByCode(code) {
   try {
-    const { data, error } = await supabase
-      .from("assessment_types")
-      .select("*")
-      .eq("code", code)
-      .single();
-
+    const { data, error } = await supabase.from("assessment_types").select("*").eq("code", code).single();
     if (error) throw error;
     return data;
   } catch (error) {
@@ -196,6 +211,37 @@ export async function getAssessmentById(id) {
 }
 
 // ======================================================
+// COMPLETION CHECK
+// ======================================================
+
+export async function isAssessmentCompleted(userId, assessmentId) {
+  try {
+    // Authoritative: candidate_assessments completed
+    const candidateAssessment = await safeSelectSingle(
+      "candidate_assessments",
+      (query) => query.eq("user_id", userId).eq("assessment_id", assessmentId).eq("status", "completed"),
+      "id, status, result_id, completed_at"
+    );
+    if (candidateAssessment.data) return true;
+
+    // Authoritative: assessment_results exists
+    const resultRecord = await safeSelectSingle(
+      "assessment_results",
+      (query) => query.eq("user_id", userId).eq("assessment_id", assessmentId),
+      "id"
+    );
+    if (resultRecord.data) return true;
+
+    // IMPORTANT: Do NOT use historical completed sessions as completion.
+    // This prevents phantom completion when old sessions exist for audit/history.
+    return false;
+  } catch (error) {
+    console.error("Error in isAssessmentCompleted:", error);
+    return false;
+  }
+}
+
+// ======================================================
 // ASSESSMENT SESSIONS
 // ======================================================
 
@@ -203,27 +249,56 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
   try {
     if (!userId || !assessmentId) throw new Error("Missing userId or assessmentId");
 
+    // If completed by authoritative sources, block new session creation.
     const completed = await isAssessmentCompleted(userId, assessmentId);
     if (completed) throw new Error("Assessment already completed");
 
-    const existing = await safeSelectSingle(
-      "assessment_sessions",
-      (query) => query
-        .eq("user_id", userId)
-        .eq("assessment_id", assessmentId)
-        .eq("status", "in_progress")
-        .order("created_at", { ascending: false }),
-      "*"
-    );
+    // Read candidate assignment state.
+    const access = await getCandidateAssessmentAccess(userId, assessmentId);
 
-    if (existing.data) return existing.data;
+    // If the supervisor has reset the assessment correctly:
+    // - candidate_assessments.status should be 'unblocked'
+    // - session_id should be null
+    // In this case we MUST create a fresh session and must NOT reuse anything.
+    const forceNewSession =
+      access &&
+      access.status === "unblocked" &&
+      !access.session_id &&
+      !access.result_id &&
+      !access.completed_at;
 
+    // If candidate is in progress and session_id exists, prefer that session.
+    if (!forceNewSession && access && access.status === "in_progress" && access.session_id) {
+      const existingSession = await getSessionById(access.session_id);
+      if (existingSession && existingSession.status === "in_progress") return existingSession;
+    }
+
+    // As a fallback, only reuse an in_progress session if candidate_assessments is also in_progress.
+    // This prevents resurrection of old sessions after reset.
+    if (!forceNewSession && access && access.status === "in_progress") {
+      const existing = await safeSelectSingle(
+        "assessment_sessions",
+        (query) =>
+          query
+            .eq("user_id", userId)
+            .eq("assessment_id", assessmentId)
+            .eq("status", "in_progress")
+            .order("created_at", { ascending: false }),
+        "*"
+      );
+      if (existing.data) return existing.data;
+    }
+
+    // Create a new session.
     const assessment = await getAssessmentById(assessmentId);
     const resolvedAssessmentTypeId = assessmentTypeId || assessment?.assessment_type_id || null;
     const totalQuestions = await getAssessmentQuestionCount(resolvedAssessmentTypeId);
 
-    // Use assessment duration if present, otherwise fall back to 180 minutes.
-    const durationMinutes = Math.max(1, toNumber(assessment?.duration_minutes || assessment?.duration || assessment?.time_limit_minutes, 180));
+    // Duration: assessment duration if present, else fall back to 180 minutes.
+    const durationMinutes = Math.max(
+      1,
+      toNumber(assessment?.duration_minutes || assessment?.duration || assessment?.time_limit_minutes, 180)
+    );
 
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + durationMinutes);
@@ -252,6 +327,15 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
       .single();
 
     if (error) throw error;
+
+    // Sync candidate_assessments to in_progress and attach session_id.
+    // If the assignment row does not exist (rare), this update will no-op.
+    await updateCandidateAssessmentStatus(userId, assessmentId, "in_progress", undefined, {
+      session_id: data.id,
+      session_status: "in_progress",
+      started_at: nowIso()
+    });
+
     return data;
   } catch (error) {
     console.error("Create assessment session error:", error);
@@ -313,7 +397,7 @@ export async function getSessionResponses(sessionId) {
     }
 
     safeArray(data).forEach((response) => {
-      if (response?.question_id) {
+      if (response && response.question_id) {
         answerMap[response.question_id] = response.answer_id;
         if (response.initial_answer_id !== null && response.initial_answer_id !== undefined) {
           initialAnswerMap[response.question_id] = response.initial_answer_id;
@@ -369,19 +453,26 @@ export async function submitAssessment(sessionId, options = {}) {
 
     const result = await response.json().catch(() => ({}));
 
-    // Treat already_submitted as success to make submits idempotent.
+    // Idempotent: treat already_submitted as success.
     if (!response.ok) {
-      if (result?.error === "already_submitted") {
-        const resultId = result?.id || result?.result_id || result?.result?.id || result?.data?.id || null;
-        await updateCandidateAssessmentStatus(assessmentSession.user_id, assessmentSession.assessment_id, "completed", resultId);
+      if (result && result.error === "already_submitted") {
+        const resultId = result.id || result.result_id || (result.result && result.result.id) || (result.data && result.data.id) || null;
+        await updateCandidateAssessmentStatus(assessmentSession.user_id, assessmentSession.assessment_id, "completed", resultId, {
+          session_id: sessionId,
+          session_status: "completed"
+        });
         return result;
       }
-      if (result?.error === "incomplete_assessment") throw new Error("incomplete_assessment");
-      throw new Error(result?.message || result?.error || "Submission failed");
+      if (result && result.error === "incomplete_assessment") throw new Error("incomplete_assessment");
+      throw new Error(result.message || result.error || "Submission failed");
     }
 
-    const resultId = result?.id || result?.result?.id || result?.data?.id || result?.result_id || null;
-    await updateCandidateAssessmentStatus(assessmentSession.user_id, assessmentSession.assessment_id, "completed", resultId);
+    const resultId = result.id || (result.result && result.result.id) || (result.data && result.data.id) || result.result_id || null;
+
+    await updateCandidateAssessmentStatus(assessmentSession.user_id, assessmentSession.assessment_id, "completed", resultId, {
+      session_id: sessionId,
+      session_status: "completed"
+    });
 
     return result;
   } catch (error) {
@@ -464,14 +555,17 @@ export async function saveProgress(sessionId, userId, assessmentId, elapsedSecon
 
     const { error } = await supabase
       .from("assessment_progress")
-      .upsert({
-        user_id: userId,
-        assessment_id: assessmentId,
-        elapsed_seconds: Math.max(0, toNumber(elapsedSeconds, 0)),
-        last_question_id: lastQuestionId || null,
-        last_saved_at: nowIso(),
-        updated_at: nowIso()
-      }, { onConflict: "user_id,assessment_id" });
+      .upsert(
+        {
+          user_id: userId,
+          assessment_id: assessmentId,
+          elapsed_seconds: Math.max(0, toNumber(elapsedSeconds, 0)),
+          last_question_id: lastQuestionId || null,
+          last_saved_at: nowIso(),
+          updated_at: nowIso()
+        },
+        { onConflict: "user_id,assessment_id" }
+      );
 
     if (error) {
       console.error("Error saving progress:", error);
@@ -507,35 +601,6 @@ export async function getProgress(userId, assessmentId) {
   }
 }
 
-export async function isAssessmentCompleted(userId, assessmentId) {
-  try {
-    const candidateAssessment = await safeSelectSingle(
-      "candidate_assessments",
-      (query) => query.eq("user_id", userId).eq("assessment_id", assessmentId).eq("status", "completed"),
-      "id, status, result_id"
-    );
-    if (candidateAssessment.data) return true;
-
-    const resultRecord = await safeSelectSingle(
-      "assessment_results",
-      (query) => query.eq("user_id", userId).eq("assessment_id", assessmentId),
-      "id"
-    );
-    if (resultRecord.data) return true;
-
-    const completedSession = await safeSelectSingle(
-      "assessment_sessions",
-      (query) => query.eq("user_id", userId).eq("assessment_id", assessmentId).eq("status", "completed"),
-      "id"
-    );
-
-    return !!completedSession.data;
-  } catch (error) {
-    console.error("Error in isAssessmentCompleted:", error);
-    return false;
-  }
-}
-
 // ======================================================
 // QUESTIONS
 // ======================================================
@@ -554,7 +619,10 @@ export async function getUniqueQuestions(assessmentId) {
 
     const questionsResult = await safeSelectRows(
       "unique_questions",
-      (query) => query.eq("assessment_type_id", assessmentResult.data.assessment_type_id).order("display_order", { ascending: true }),
+      (query) =>
+        query
+          .eq("assessment_type_id", assessmentResult.data.assessment_type_id)
+          .order("display_order", { ascending: true }),
       "id, section, subsection, question_text, display_order, unique_answers(id, answer_text, score, display_order)"
     );
 
@@ -758,10 +826,16 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
     await updateQuestionTiming(session_id, questionIdNum, metadata);
     await updateSessionAnsweredCount(session_id);
 
-    return { success: true, data, isNewResponse, isAnswerChange, timesChanged: responseData.times_changed };
+    return {
+      success: true,
+      data,
+      isNewResponse,
+      isAnswerChange,
+      timesChanged: responseData.times_changed
+    };
   } catch (error) {
     console.error("Error in saveUniqueResponse:", error);
-    return { success: false, error: error?.message || "Failed to save response" };
+    return { success: false, error: error && error.message ? error.message : "Failed to save response" };
   }
 }
 
