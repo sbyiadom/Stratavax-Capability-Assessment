@@ -110,6 +110,7 @@ async function updateCandidateAssessmentStatus(userId, assessmentId, status, res
       updated_at: nowIso()
     };
 
+    if (status === "completed") payload.completed_at = nowIso();
     if (resultId !== undefined) payload.result_id = resultId || null;
 
     await supabase
@@ -329,7 +330,7 @@ export async function getSessionResponses(sessionId) {
 // SUBMISSION
 // ======================================================
 
-export async function submitAssessment(sessionId) {
+export async function submitAssessment(sessionId, options = {}) {
   try {
     if (!sessionId) throw new Error("Missing sessionId");
 
@@ -339,6 +340,9 @@ export async function submitAssessment(sessionId) {
 
     const assessmentSession = await getSessionById(sessionId);
     if (!assessmentSession) throw new Error("Could not verify session");
+
+    const autoSubmitted = options.autoSubmitted === true || options.auto_submitted === true;
+    const allowIncomplete = options.allowIncomplete === true || options.allow_incomplete === true || autoSubmitted;
 
     const response = await fetch("/api/submit-assessment", {
       method: "POST",
@@ -350,7 +354,13 @@ export async function submitAssessment(sessionId) {
         sessionId,
         session_id: sessionId,
         user_id: assessmentSession.user_id,
-        assessment_id: assessmentSession.assessment_id
+        assessment_id: assessmentSession.assessment_id,
+        auto_submit: autoSubmitted,
+        auto_submitted: autoSubmitted,
+        is_auto_submitted: autoSubmitted,
+        auto_submit_reason: options.autoSubmitReason || options.auto_submit_reason || null,
+        allow_incomplete: allowIncomplete,
+        allowIncomplete
       })
     });
 
