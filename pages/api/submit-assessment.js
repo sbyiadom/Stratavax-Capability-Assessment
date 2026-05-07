@@ -183,6 +183,7 @@ async function updateCandidateAssessment(serviceClient, session, result, scoreDa
     result_id: result ? result.id : null,
     completed_at: nowIso(),
     session_id: session.id,
+    session_status: "completed",
     updated_at: nowIso()
   };
 
@@ -192,6 +193,7 @@ async function updateCandidateAssessment(serviceClient, session, result, scoreDa
     percentage: scoreData.percentage
   };
 
+  // Update the assignment record. If optional columns do not exist, fall back.
   let updateResponse = await serviceClient
     .from("candidate_assessments")
     .update({ ...updatePayload, ...optionalPayload })
@@ -244,6 +246,18 @@ async function fetchExistingResult(serviceClient, sessionId) {
   return existing.data || null;
 }
 
+async function fetchCandidateAssessment(serviceClient, userId, assessmentId) {
+  const res = await serviceClient
+    .from("candidate_assessments")
+    .select("id, status, session_id, result_id, completed_at, unblocked_at, updated_at")
+    .eq("user_id", userId)
+    .eq("assessment_id", assessmentId)
+    .maybeSingle();
+
+  if (res.error) return null;
+  return res.data || null;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
@@ -278,7 +292,7 @@ export default async function handler(req, res) {
 
     const sessionResponse = await serviceClient
       .from("assessment_sessions")
-      .select("id, user_id, assessment_id, assessment_type_id, violation_count, auto_submitted, answered_questions, total_questions, status, copy_paste_count, right_click_count, devtools_count, screenshot_count, time_spent_seconds")
+      .select("id, user_id, assessment_id, assessment_type_id, violation_count, auto_submitted, answered_questions, total_questions, status, copy_paste_count, right_click_count, devtools_count, screenshot_count, time_spent_seconds, started_at, created_at")
       .eq("id", sessionId)
       .single();
 
@@ -294,6 +308,32 @@ export default async function handler(req, res) {
         error: "forbidden",
         message: "You cannot submit another user's assessment session"
       });
+    }
+
+    // PLATFORM-WIDE GUARD:
+    // If a supervisor reset happened (assignment unblocked AND session_id cleared),
+    // block submission so we do not resurrect completion after reset.
+    const assignment = await fetchCandidateAssessment(serviceClient, session.user_id, session.assessment_id);
+
+    if (assignment) {
+      const looksReset = assignment.status === "unblocked" && !assignment.session_id && !assignment.result_id && !assignment.completed_at;
+      const sessionMismatch = assignment.session_id && String(assignment.session_id) !== String(sessionId);
+
+      if (looksReset) {
+        return res.status(409).json({
+          success: false,
+          error: "assessment_reset",
+          message: "This assessment was reset by your supervisor. Please restart the assessment from your dashboard."
+        });
+      }
+
+      if (sessionMismatch && assignment.status !== "blocked") {
+        return res.status(409).json({
+          success: false,
+          error: "session_mismatch",
+          message: "Your active assessment session is no longer valid. Please restart from your dashboard."
+        });
+      }
     }
 
     // Idempotent: if already completed, return the existing result (200 OK)
@@ -317,15 +357,9 @@ export default async function handler(req, res) {
     const violationCount = toNumber(session.violation_count, 0);
     const maxViolations = 3;
 
-    const requestAutoSubmit =
-      body.auto_submit === true ||
-      body.auto_submitted === true ||
-      body.is_auto_submitted === true;
+    const requestAutoSubmit = body.auto_submit === true || body.auto_submitted === true || body.is_auto_submitted === true;
 
-    const allowIncomplete =
-      body.allow_incomplete === true ||
-      body.allowIncomplete === true ||
-      requestAutoSubmit;
+    const allowIncomplete = body.allow_incomplete === true || body.allowIncomplete === true || requestAutoSubmit;
 
     const isAutoSubmit = violationCount >= maxViolations || requestAutoSubmit || allowIncomplete;
 
