@@ -222,8 +222,11 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
     const resolvedAssessmentTypeId = assessmentTypeId || assessment?.assessment_type_id || null;
     const totalQuestions = await getAssessmentQuestionCount(resolvedAssessmentTypeId);
 
+    // Use assessment duration if present, otherwise fall back to 180 minutes.
+    const durationMinutes = Math.max(1, toNumber(assessment?.duration_minutes || assessment?.duration || assessment?.time_limit_minutes, 180));
+
     const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + 180);
+    expiresAt.setMinutes(expiresAt.getMinutes() + durationMinutes);
 
     const { data, error } = await supabase
       .from("assessment_sessions")
@@ -341,7 +344,7 @@ export async function submitAssessment(sessionId, options = {}) {
     const assessmentSession = await getSessionById(sessionId);
     if (!assessmentSession) throw new Error("Could not verify session");
 
-    const autoSubmitted = options.autoSubmitted === true || options.auto_submitted === true;
+    const autoSubmitted = options.autoSubmitted === true || options.auto_submitted === true || options.auto_submit === true;
     const allowIncomplete = options.allowIncomplete === true || options.allow_incomplete === true || autoSubmitted;
 
     const response = await fetch("/api/submit-assessment", {
@@ -364,15 +367,20 @@ export async function submitAssessment(sessionId, options = {}) {
       })
     });
 
-    const result = await response.json();
+    const result = await response.json().catch(() => ({}));
 
+    // Treat already_submitted as success to make submits idempotent.
     if (!response.ok) {
+      if (result?.error === "already_submitted") {
+        const resultId = result?.id || result?.result_id || result?.result?.id || result?.data?.id || null;
+        await updateCandidateAssessmentStatus(assessmentSession.user_id, assessmentSession.assessment_id, "completed", resultId);
+        return result;
+      }
       if (result?.error === "incomplete_assessment") throw new Error("incomplete_assessment");
-      if (result?.error === "already_submitted") throw new Error("already_submitted");
       throw new Error(result?.message || result?.error || "Submission failed");
     }
 
-    const resultId = result?.id || result?.result?.id || result?.data?.id || null;
+    const resultId = result?.id || result?.result?.id || result?.data?.id || result?.result_id || null;
     await updateCandidateAssessmentStatus(assessmentSession.user_id, assessmentSession.assessment_id, "completed", resultId);
 
     return result;
