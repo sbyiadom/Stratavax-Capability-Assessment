@@ -3,91 +3,140 @@
 import { createClient } from "@supabase/supabase-js";
 
 /*
-  Supervisor/Admin Assessment Reset API
+  Supervisor/Admin Assessment Reset API (FULL FILE)
 
   Purpose:
-  - Fully reset a candidate assessment so the candidate can retake it.
-  - Clear old responses, results, sessions, progress, reports, and behavioral data where those tables exist.
-  - Reset candidate_assessments without deleting the assignment.
-  - Keep the assessment assigned and unblocked for the candidate.
+  - Fully reset a candidate assessment so the candidate can retake it cleanly.
+  - Clears attempt-linked data (responses, answer history, timings, violations, progress, metrics).
+  - Removes old sessions for that candidate+assessment.
+  - Resets candidate_assessments back to UNBLOCKED (session_id/result_id/completed_at cleared).
 
-  Important:
-  - This file is intentionally defensive.
-  - Optional cleanup tables may not exist in every deployment, so failures on optional cleanup are logged and returned in resetSummary but do not stop the reset.
-  - The required step is updating or creating candidate_assessments as unblocked.
+  Why this fix is necessary:
+  - You had responses still existing after “reset”
+  - candidate_assessments remained status=completed and session_id stayed pointing to the old completed session
+  Which causes:
+  - “Changed answer” on first selection after reset
+  - Behavioral insights referencing stale attempt data
+  - Supervisor dashboard counting extra completed items
+
+  Design:
+  - Uses SERVICE ROLE key (server-side) to bypass RLS safely.
+  - Defensive: optional tables might not exist; failures are captured in resetSummary but do not stop required steps.
+  - Required outcome: candidate_assessments must be set to status='unblocked' and session_id/result_id/completed_at cleared.
+
+  Request body accepted keys:
+  - userId | user_id | candidateId | candidate_id
+  - assessmentId | assessment_id
+
+  Notes:
+  - Keep this endpoint protected on the UI side (supervisor-only).
 */
 
 function nowIso() {
   return new Date().toISOString();
 }
 
-function cleanText(value, fallback) {
-  if (value === null || value === undefined || value === "") return fallback || "";
+function cleanText(value, fallback = "") {
+  if (value === null || value === undefined || value === "") return fallback;
   return String(value);
 }
 
 function getRequestValue(body, keys) {
-  var i;
   if (!body || typeof body !== "object") return null;
-  for (i = 0; i < keys.length; i += 1) {
-    if (body[keys[i]] !== undefined && body[keys[i]] !== null && body[keys[i]] !== "") return body[keys[i]];
+  for (let i = 0; i < keys.length; i += 1) {
+    const key = keys[i];
+    if (body[key] !== undefined && body[key] !== null && body[key] !== "") return body[key];
   }
   return null;
 }
 
 function makeSupabaseClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error(
+      "Missing Supabase env vars: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required"
+    );
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
 }
 
 function addSummary(summary, tableName, action, ok, message, count) {
   summary.push({
     table: tableName,
-    action: action,
-    ok: ok,
+    action,
+    ok,
     message: message || "",
     count: count === undefined || count === null ? null : count
   });
 }
 
-async function safeDeleteRows(supabase, summary, tableName, filters, label) {
-  var query;
-  var i;
-  var result;
+function isMissingTableError(error) {
+  const msg = error && (error.message || error.details || "") ? String(error.message || error.details) : "";
+  return msg.toLowerCase().includes("does not exist");
+}
+
+async function safeDelete(supabase, summary, tableName, whereClauses, label, options = {}) {
+  const required = options.required === true;
 
   try {
-    query = supabase.from(tableName).delete({ count: "exact" });
+    let query = supabase.from(tableName).delete({ count: "exact" });
 
-    for (i = 0; i < filters.length; i += 1) {
-      query = query.eq(filters[i].column, filters[i].value);
+    for (let i = 0; i < whereClauses.length; i += 1) {
+      const clause = whereClauses[i];
+      if (!clause) continue;
+
+      if (clause.op === "in") query = query.in(clause.column, clause.value);
+      else query = query.eq(clause.column, clause.value);
     }
 
-    result = await query;
+    const result = await query;
 
     if (result.error) {
-      console.error("Reset cleanup skipped/failed for " + tableName + " (" + label + "):", result.error);
-      addSummary(summary, tableName, "delete", false, result.error.message || "Delete failed", null);
+      const msg = result.error.message || "Delete failed";
+      console.error(`Reset cleanup failed for ${tableName} (${label}):`, result.error);
+
+      // Optional table might not exist – log and continue.
+      if (!required && isMissingTableError(result.error)) {
+        addSummary(summary, tableName, "delete", true, `${label} (table missing – skipped safely)`, 0);
+        return true;
+      }
+
+      addSummary(summary, tableName, "delete", false, `${label}: ${msg}`, null);
       return false;
     }
 
     addSummary(summary, tableName, "delete", true, label || "Deleted", result.count);
     return true;
   } catch (error) {
-    console.error("Reset cleanup exception for " + tableName + " (" + label + "):", error);
-    addSummary(summary, tableName, "delete", false, error && error.message ? error.message : "Delete exception", null);
+    console.error(`Reset cleanup exception for ${tableName} (${label}):`, error);
+
+    if (!required && isMissingTableError(error)) {
+      addSummary(summary, tableName, "delete", true, `${label} (table missing – skipped safely)`, 0);
+      return true;
+    }
+
+    addSummary(
+      summary,
+      tableName,
+      "delete",
+      false,
+      label + ": " + (error && error.message ? error.message : "Delete exception"),
+      null
+    );
     return false;
   }
 }
 
-async function safeUpdateCandidateAssessment(supabase, summary, userId, assessmentId, updatePayload, label) {
-  var result;
-
+async function safeUpdateCandidateAssessment(supabase, summary, userId, assessmentId, payload, label) {
   try {
-    result = await supabase
+    const result = await supabase
       .from("candidate_assessments")
-      .update(updatePayload)
+      .update(payload)
       .eq("user_id", userId)
       .eq("assessment_id", assessmentId);
 
@@ -106,13 +155,9 @@ async function safeUpdateCandidateAssessment(supabase, summary, userId, assessme
   }
 }
 
-async function safeInsertCandidateAssessment(supabase, summary, insertPayload) {
-  var result;
-
+async function safeInsertCandidateAssessment(supabase, summary, payload) {
   try {
-    result = await supabase
-      .from("candidate_assessments")
-      .insert(insertPayload);
+    const result = await supabase.from("candidate_assessments").insert(payload);
 
     if (result.error) {
       console.error("candidate_assessments insert failed:", result.error);
@@ -130,71 +175,56 @@ async function safeInsertCandidateAssessment(supabase, summary, insertPayload) {
 }
 
 async function resetCandidateAssessmentRecord(supabase, summary, userId, assessmentId) {
-  var existingResult;
-  var existingRecord;
-  var timestamp;
-  var baseUpdate;
-  var requiredUpdated;
-  var insertPayload;
-  var optionalFields;
-  var i;
-  var oneFieldPayload;
+  const timestamp = nowIso();
 
-  timestamp = nowIso();
-
-  existingResult = await supabase
+  const existing = await supabase
     .from("candidate_assessments")
     .select("id")
     .eq("user_id", userId)
     .eq("assessment_id", assessmentId)
     .maybeSingle();
 
-  if (existingResult.error) {
-    console.error("candidate_assessments lookup failed:", existingResult.error);
-    addSummary(summary, "candidate_assessments", "select", false, existingResult.error.message || "Lookup failed", null);
+  if (existing.error) {
+    console.error("candidate_assessments lookup failed:", existing.error);
+    addSummary(summary, "candidate_assessments", "select", false, existing.error.message || "Lookup failed", null);
     return false;
   }
 
-  existingRecord = existingResult.data;
-
-  if (!existingRecord) {
-    insertPayload = {
+  if (!existing.data) {
+    return safeInsertCandidateAssessment(supabase, summary, {
       user_id: userId,
       assessment_id: assessmentId,
       status: "unblocked",
       unblocked_at: timestamp,
+      session_id: null,
       result_id: null,
       completed_at: null,
       created_at: timestamp,
       updated_at: timestamp
-    };
-
-    return await safeInsertCandidateAssessment(supabase, summary, insertPayload);
+    });
   }
 
-  // Required/base reset. Keep assignment row, but make it retakable.
-  baseUpdate = {
-    status: "unblocked",
-    unblocked_at: timestamp,
-    result_id: null,
-    completed_at: null,
-    updated_at: timestamp
-  };
-
-  requiredUpdated = await safeUpdateCandidateAssessment(
+  // REQUIRED: must succeed
+  const baseOk = await safeUpdateCandidateAssessment(
     supabase,
     summary,
     userId,
     assessmentId,
-    baseUpdate,
-    "Base reset: status unblocked, result cleared, completion cleared"
+    {
+      status: "unblocked",
+      unblocked_at: timestamp,
+      session_id: null,
+      result_id: null,
+      completed_at: null,
+      updated_at: timestamp
+    },
+    "Base reset: status=unblocked, session/result/completed cleared"
   );
 
-  if (!requiredUpdated) return false;
+  if (!baseOk) return false;
 
-  // Optional columns. These may or may not exist depending on the current schema.
-  // Each field is updated independently so one missing column does not break the reset.
-  optionalFields = [
+  // OPTIONAL columns (schema-dependent)
+  const optionalFields = [
     { column: "started_at", value: null },
     { column: "submitted_at", value: null },
     { column: "finished_at", value: null },
@@ -204,7 +234,6 @@ async function resetCandidateAssessmentRecord(supabase, summary, userId, assessm
     { column: "percentage", value: null },
     { column: "grade", value: null },
     { column: "classification", value: null },
-    { column: "session_id", value: null },
     { column: "session_status", value: null },
     { column: "current_question_index", value: null },
     { column: "current_section", value: null },
@@ -214,19 +243,18 @@ async function resetCandidateAssessmentRecord(supabase, summary, userId, assessm
     { column: "completed", value: false },
     { column: "blocked", value: false },
     { column: "is_blocked", value: false },
-    { column: "reset_at", value: timestamp },
-    { column: "reset_count", value: null }
+    { column: "reset_at", value: timestamp }
   ];
 
-  for (i = 0; i < optionalFields.length; i += 1) {
-    oneFieldPayload = {};
-    oneFieldPayload[optionalFields[i].column] = optionalFields[i].value;
+  for (let i = 0; i < optionalFields.length; i += 1) {
+    const payload = {};
+    payload[optionalFields[i].column] = optionalFields[i].value;
     await safeUpdateCandidateAssessment(
       supabase,
       summary,
       userId,
       assessmentId,
-      oneFieldPayload,
+      payload,
       "Optional reset field: " + optionalFields[i].column
     );
   }
@@ -235,23 +263,22 @@ async function resetCandidateAssessmentRecord(supabase, summary, userId, assessm
 }
 
 async function createAuditLog(supabase, summary, userId, assessmentId, req) {
-  var timestamp;
-  var performedBy;
-  var result;
-
-  timestamp = nowIso();
-  performedBy = cleanText(req.headers["x-user-id"] || req.headers["x-user-email"] || "supervisor_or_admin", "supervisor_or_admin");
+  const timestamp = nowIso();
+  const performedBy = cleanText(
+    req.headers["x-user-id"] || req.headers["x-user-email"] || "supervisor_or_admin",
+    "supervisor_or_admin"
+  );
 
   try {
-    result = await supabase
+    const result = await supabase
       .from("assessment_audit_logs")
       .insert({
         user_id: userId,
         assessment_id: assessmentId,
         action: "reset",
         performed_by: performedBy,
-        timestamp: timestamp,
-        details: "Assessment reset by supervisor/admin. Previous responses, result/session/progress data cleared where available. Candidate assessment kept assigned and unblocked for retake."
+        timestamp,
+        details: "Assessment reset by supervisor/admin. Attempt data cleared and candidate_assessments set to unblocked."
       });
 
     if (result.error) {
@@ -269,134 +296,154 @@ async function createAuditLog(supabase, summary, userId, assessmentId, req) {
   }
 }
 
-export default async function handler(req, res) {
-  var userId;
-  var assessmentId;
-  var supabaseUrl;
-  var serviceRoleKey;
-  var supabase;
-  var resetSummary;
-  var requiredResetOk;
+async function getSessionIdsForCandidate(supabase, userId, assessmentId, summary) {
+  try {
+    const result = await supabase
+      .from("assessment_sessions")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("assessment_id", assessmentId);
 
+    if (result.error) {
+      addSummary(summary, "assessment_sessions", "select", false, result.error.message || "Failed to fetch session IDs", null);
+      return [];
+    }
+
+    const ids = (Array.isArray(result.data) ? result.data : [])
+      .map((r) => (r ? r.id : null))
+      .filter(Boolean);
+
+    addSummary(summary, "assessment_sessions", "select", true, "Fetched session IDs", ids.length);
+    return ids;
+  } catch (error) {
+    addSummary(summary, "assessment_sessions", "select", false, error && error.message ? error.message : "Failed to fetch session IDs", null);
+    return [];
+  }
+}
+
+export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  const resetSummary = [];
+
   try {
-    userId = getRequestValue(req.body, ["userId", "user_id", "candidateId", "candidate_id"]);
-    assessmentId = getRequestValue(req.body, ["assessmentId", "assessment_id"]);
+    const userId = getRequestValue(req.body, ["userId", "user_id", "candidateId", "candidate_id"]);
+    const assessmentId = getRequestValue(req.body, ["assessmentId", "assessment_id"]);
 
     if (!userId || !assessmentId) {
       return res.status(400).json({
-        error: "Missing required fields",
+        success: false,
+        error: "missing_required_fields",
         required: ["userId", "assessmentId"]
       });
     }
 
-    supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabase = makeSupabaseClient();
 
-    if (!supabaseUrl || !serviceRoleKey) {
-      return res.status(500).json({
-        error: "server_config_error",
-        message: "Supabase environment variables are missing. NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required."
-      });
+    console.log("Reset assessment requested", { userId, assessmentId });
+
+    // 1) Collect session IDs first (for dependent tables)
+    const sessionIds = await getSessionIdsForCandidate(supabase, userId, assessmentId, resetSummary);
+
+    // 2) Delete dependent tables by session_id (optional tables handled safely)
+    if (sessionIds.length > 0) {
+      await safeDelete(supabase, resetSummary, "answer_history", [{ column: "session_id", op: "in", value: sessionIds }], "Answer history cleared");
+      await safeDelete(supabase, resetSummary, "question_timing", [{ column: "session_id", op: "in", value: sessionIds }], "Question timing cleared");
+      await safeDelete(supabase, resetSummary, "candidate_personality_scores", [{ column: "session_id", op: "in", value: sessionIds }], "Personality scores cleared");
+      await safeDelete(supabase, resetSummary, "assessment_results", [{ column: "session_id", op: "in", value: sessionIds }], "Assessment results cleared by session_id");
     }
 
-    supabase = makeSupabaseClient();
-    resetSummary = [];
+    // 3) Delete core attempt data by user+assessment
+    const responsesOk = await safeDelete(
+      supabase,
+      resetSummary,
+      "responses",
+      [
+        { column: "user_id", value: userId },
+        { column: "assessment_id", value: assessmentId }
+      ],
+      "Responses cleared",
+      { required: true }
+    );
 
-    console.log("Reset assessment requested", { userId: userId, assessmentId: assessmentId });
+    const sessionsOk = await safeDelete(
+      supabase,
+      resetSummary,
+      "assessment_sessions",
+      [
+        { column: "user_id", value: userId },
+        { column: "assessment_id", value: assessmentId }
+      ],
+      "Assessment sessions cleared",
+      { required: true }
+    );
 
-    // Delete primary attempt/result data.
-    await safeDeleteRows(supabase, resetSummary, "assessment_results", [
+    await safeDelete(supabase, resetSummary, "assessment_violations", [
       { column: "user_id", value: userId },
       { column: "assessment_id", value: assessmentId }
-    ], "Assessment results cleared");
+    ], "Violations cleared");
 
-    await safeDeleteRows(supabase, resetSummary, "responses", [
+    await safeDelete(supabase, resetSummary, "assessment_progress", [
       { column: "user_id", value: userId },
       { column: "assessment_id", value: assessmentId }
-    ], "Responses cleared");
+    ], "Progress cleared");
 
-    await safeDeleteRows(supabase, resetSummary, "assessment_sessions", [
-      { column: "user_id", value: userId },
-      { column: "assessment_id", value: assessmentId }
-    ], "Assessment sessions cleared by user_id");
-
-    // Some schemas use candidate_id instead of user_id. If this column does not exist, this safely logs and continues.
-    await safeDeleteRows(supabase, resetSummary, "assessment_sessions", [
-      { column: "candidate_id", value: userId },
-      { column: "assessment_id", value: assessmentId }
-    ], "Assessment sessions cleared by candidate_id");
-
-    await safeDeleteRows(supabase, resetSummary, "assessment_progress", [
-      { column: "user_id", value: userId },
-      { column: "assessment_id", value: assessmentId }
-    ], "Assessment progress cleared");
-
-    // Delete generated reports and computed metrics if these tables exist.
-    await safeDeleteRows(supabase, resetSummary, "assessment_reports", [
-      { column: "user_id", value: userId },
-      { column: "assessment_id", value: assessmentId }
-    ], "Generated assessment reports cleared");
-
-    await safeDeleteRows(supabase, resetSummary, "behavioral_metrics", [
+    await safeDelete(supabase, resetSummary, "behavioral_metrics", [
       { column: "user_id", value: userId },
       { column: "assessment_id", value: assessmentId }
     ], "Behavioral metrics cleared");
 
-    await safeDeleteRows(supabase, resetSummary, "candidate_behavioral_metrics", [
+    await safeDelete(supabase, resetSummary, "assessment_reports", [
       { column: "user_id", value: userId },
       { column: "assessment_id", value: assessmentId }
-    ], "Candidate behavioral metrics cleared by user_id");
+    ], "Generated reports cleared");
 
-    await safeDeleteRows(supabase, resetSummary, "candidate_behavioral_metrics", [
-      { column: "candidate_id", value: userId },
-      { column: "assessment_id", value: assessmentId }
-    ], "Candidate behavioral metrics cleared by candidate_id");
-
-    await safeDeleteRows(supabase, resetSummary, "candidate_assessment_sessions", [
+    await safeDelete(supabase, resetSummary, "assessment_results", [
       { column: "user_id", value: userId },
       { column: "assessment_id", value: assessmentId }
-    ], "Candidate assessment sessions cleared by user_id");
+    ], "Assessment results cleared by user_id");
 
-    await safeDeleteRows(supabase, resetSummary, "candidate_assessment_sessions", [
-      { column: "candidate_id", value: userId },
-      { column: "assessment_id", value: assessmentId }
-    ], "Candidate assessment sessions cleared by candidate_id");
+    if (!responsesOk || !sessionsOk) {
+      return res.status(500).json({
+        success: false,
+        error: "required_cleanup_failed",
+        message: "Reset failed because required cleanup (responses/sessions) did not complete.",
+        resetSummary
+      });
+    }
 
-    await safeDeleteRows(supabase, resetSummary, "assessment_attempts", [
-      { column: "user_id", value: userId },
-      { column: "assessment_id", value: assessmentId }
-    ], "Assessment attempts cleared");
-
-    // Required assignment reset. This is what makes the candidate dashboard show the assessment as retakable.
-    requiredResetOk = await resetCandidateAssessmentRecord(supabase, resetSummary, userId, assessmentId);
+    // 4) REQUIRED: reset candidate_assessments record
+    const requiredResetOk = await resetCandidateAssessmentRecord(supabase, resetSummary, userId, assessmentId);
 
     if (!requiredResetOk) {
       return res.status(500).json({
         success: false,
         error: "candidate_assessment_reset_failed",
-        message: "Old data cleanup was attempted, but candidate_assessments could not be reset to unblocked.",
-        resetSummary: resetSummary
+        message: "Cleanup attempted, but candidate_assessments could not be reset to unblocked.",
+        resetSummary
       });
     }
 
+    // 5) Audit (optional)
     await createAuditLog(supabase, resetSummary, userId, assessmentId, req);
 
     return res.status(200).json({
       success: true,
       message: "Assessment reset successfully. Candidate can now retake the assessment.",
-      userId: userId,
-      assessmentId: assessmentId,
-      resetSummary: resetSummary
+      userId,
+      assessmentId,
+      clearedSessionIds: sessionIds,
+      resetSummary
     });
   } catch (err) {
     console.error("Error resetting assessment:", err);
     return res.status(500).json({
+      success: false,
       error: "server_error",
-      message: err && err.message ? err.message : "Unexpected server error while resetting assessment."
+      message: err && err.message ? err.message : "Unexpected server error while resetting assessment.",
+      resetSummary
     });
   }
 }
