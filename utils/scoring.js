@@ -1,3 +1,4 @@
+
 // utils/scoring.js
 
 /**
@@ -342,6 +343,16 @@ export const classifyScore = function (score, maxScore) {
   };
 };
 
+
+// Alias used by pages/api/save-classification.js
+// Accepts (score, maxScore) or (percentage) depending on caller.
+export const getOverallClassification = function (scoreOrPercentage, maxScore) {
+  if (maxScore !== undefined && maxScore !== null) {
+    return classifyScore(scoreOrPercentage, maxScore);
+  }
+  return getClassificationDetailsFromPercentage(scoreOrPercentage);
+};
+
 export const calculateAssessmentScore = function (responses, questions) {
   const totalScore = calculateTotalScore(responses);
   const maxScore = calculateMaxScore(questions);
@@ -564,6 +575,7 @@ export default {
   calculateAverageScore: calculateAverageScore,
   calculateAssessmentScore: calculateAssessmentScore,
   classifyScore: classifyScore,
+  getOverallClassification: getOverallClassification,
 
   getPerformanceBand: getPerformanceBand,
   getGradeInfo: getGradeInfo,
