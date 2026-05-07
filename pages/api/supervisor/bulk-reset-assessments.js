@@ -3,35 +3,34 @@
 import { createClient } from "@supabase/supabase-js";
 
 /*
-  PLATFORM-WIDE SUPERVISOR RESET (BULK)
-  ------------------------------------
-  Goal:
-  - Supervisor/Admin can bulk reset candidate assessments for clean retakes.
-  - Deletes ALL attempt data (responses, sessions, progress, violations, behavioral metrics, personality scores, timing, history, results).
-  - Resets candidate_assessments back to UNBLOCKED.
+  PLATFORM-WIDE SUPERVISOR RESET (BULK) - HOTFIXED
+  ------------------------------------------------
+  Purpose:
+  - Bulk reset candidate assessments for clean retakes.
+  - Delete all attempt-related data for each selected candidate + assessment.
+  - Clear behavioral metrics and session-linked behavioral tracking.
+  - Reset candidate_assessments to a clean retake state.
+
+  Hotfix reason:
+  - Your candidate_assessments table DOES NOT have session_status.
+  - Any update payload containing session_status fails completely in Supabase/PostgREST.
+  - This file updates only confirmed existing columns in the required reset step.
+  - Optional columns are updated separately and safely.
+
+  Required candidate_assessments reset columns used here:
+  - status
+  - session_id
+  - result_id
+  - completed_at
+  - unblocked_at
+  - updated_at
+  - started_at
+  - score
 
   Security:
-  - Requires Authorization: Bearer <supabase_jwt>
-  - JWT user must have role supervisor/admin (user_metadata.role)
-  - Uses SERVICE ROLE key for deletes/updates.
-
-  Request body:
-  {
-    dryRun?: boolean,
-    confirmBulkReset?: boolean (required when dryRun=false),
-    items: [ { userId|user_id|candidateId|candidate_id, assessmentId|assessment_id } ]
-  }
-
-  Response:
-  {
-    success,
-    dryRun,
-    total,
-    totalDeduped,
-    successful,
-    failed,
-    results: [ { userId, assessmentId, reset, dryRun, resetSummary|wouldDelete|error } ]
-  }
+  - Requires Authorization: Bearer <Supabase access token>
+  - User must have role supervisor/admin in user_metadata or app_metadata.
+  - Uses SUPABASE_SERVICE_ROLE_KEY server-side for cleanup.
 */
 
 function nowIso() {
@@ -45,8 +44,8 @@ function safeArray(value) {
 function getValue(object, names) {
   if (!object || typeof object !== "object") return null;
   for (let i = 0; i < names.length; i += 1) {
-    const k = names[i];
-    if (object[k] !== undefined && object[k] !== null && object[k] !== "") return object[k];
+    const key = names[i];
+    if (object[key] !== undefined && object[key] !== null && object[key] !== "") return object[key];
   }
   return null;
 }
@@ -58,9 +57,12 @@ function dedupeItems(items) {
   safeArray(items).forEach((item) => {
     const userId = getValue(item, ["userId", "user_id", "candidateId", "candidate_id"]);
     const assessmentId = getValue(item, ["assessmentId", "assessment_id"]);
+
     if (!userId || !assessmentId) return;
+
     const key = String(userId) + "::" + String(assessmentId);
     if (seen[key]) return;
+
     seen[key] = true;
     output.push({ userId, assessmentId });
   });
@@ -69,143 +71,196 @@ function dedupeItems(items) {
 }
 
 function getServiceClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
-  if (!url || !key) throw new Error("Supabase env vars missing: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY");
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
-  return createClient(url, key, {
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase env vars missing: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false }
   });
 }
 
+function isMissingTableOrColumnError(error) {
+  const msg = error && (error.message || error.details || error.hint || "") ? String(error.message || error.details || error.hint) : "";
+  const lower = msg.toLowerCase();
+  return lower.includes("does not exist") || lower.includes("could not find") || lower.includes("schema cache");
+}
+
 async function requireSupervisor(serviceClient, req) {
   const authHeader = req.headers.authorization || req.headers.Authorization || "";
+
   if (!String(authHeader).startsWith("Bearer ")) {
-    return { ok: false, status: 401, error: "missing_token", message: "Authorization Bearer token is required" };
+    return { ok: false, status: 401, error: "missing_token", message: "Authorization Bearer token is required." };
   }
 
   const token = String(authHeader).replace("Bearer ", "").trim();
-  const userResp = await serviceClient.auth.getUser(token);
-  const user = userResp?.data?.user || null;
+  const userResponse = await serviceClient.auth.getUser(token);
+  const user = userResponse && userResponse.data ? userResponse.data.user : null;
 
-  if (userResp.error || !user) {
-    return { ok: false, status: 401, error: "invalid_token", message: "Invalid or expired token" };
+  if (userResponse.error || !user) {
+    return { ok: false, status: 401, error: "invalid_token", message: "Invalid or expired token." };
   }
 
-  const role = user.user_metadata?.role || user.app_metadata?.role || null;
+  const role = (user.user_metadata && user.user_metadata.role) || (user.app_metadata && user.app_metadata.role) || null;
+
   if (role !== "supervisor" && role !== "admin") {
-    return { ok: false, status: 403, error: "forbidden", message: "Supervisor/Admin role required" };
+    return { ok: false, status: 403, error: "forbidden", message: "Supervisor/Admin role required." };
   }
 
   return { ok: true, user };
 }
 
-function isMissingTableError(err) {
-  const msg = err && (err.message || err.details || "") ? String(err.message || err.details) : "";
-  return msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("relation") && msg.toLowerCase().includes("does not exist");
+function addStep(summary, table, action, ok, message, count = null) {
+  summary.steps.push({ table, action, ok, message: message || "", count });
 }
 
 async function safeCount(serviceClient, tableName, filters) {
   try {
-    let q = serviceClient.from(tableName).select("*", { count: "exact", head: true });
+    let query = serviceClient.from(tableName).select("*", { count: "exact", head: true });
+
     for (let i = 0; i < filters.length; i += 1) {
-      const f = filters[i];
-      if (f.op === "in") q = q.in(f.column, f.value);
-      else q = q.eq(f.column, f.value);
+      const filter = filters[i];
+      if (!filter) continue;
+      if (filter.op === "in") query = query.in(filter.column, filter.value);
+      else query = query.eq(filter.column, filter.value);
     }
-    const res = await q;
-    if (res.error) return 0;
-    return res.count || 0;
-  } catch {
+
+    const response = await query;
+    if (response.error) return 0;
+    return response.count || 0;
+  } catch (error) {
     return 0;
-  }
-}
-
-
-async function deleteRows(serviceClient, summary, tableName, filters, label, required = false) {
-  try {
-    let q = serviceClient.from(tableName).delete({ count: "exact" });
-    for (let i = 0; i < filters.length; i += 1) {
-      const f = filters[i];
-      if (f.op === "in") q = q.in(f.column, f.value);
-      else q = q.eq(f.column, f.value);
-    }
-    const res = await q;
-
-    if (res.error) {
-      if (!required && isMissingTableError(res.error)) {
-        summary.steps.push({ table: tableName, action: "delete", ok: true, message: label + " (table missing – skipped)", count: 0 });
-        return true;
-      }
-      summary.steps.push({ table: tableName, action: "delete", ok: false, message: label + ": " + (res.error.message || "delete failed"), count: null });
-      return false;
-    }
-
-    summary.steps.push({ table: tableName, action: "delete", ok: true, message: label, count: res.count ?? null });
-    return true;
-  } catch (err) {
-    if (!required && isMissingTableError(err)) {
-      summary.steps.push({ table: tableName, action: "delete", ok: true, message: label + " (table missing – skipped)", count: 0 });
-      return true;
-    }
-    summary.steps.push({ table: tableName, action: "delete", ok: false, message: label + ": " + (err && err.message ? err.message : "delete exception"), count: null });
-    return false;
   }
 }
 
 async function fetchSessionIds(serviceClient, summary, userId, assessmentId) {
   try {
-    const res = await serviceClient
+    const response = await serviceClient
       .from("assessment_sessions")
       .select("id")
       .eq("user_id", userId)
       .eq("assessment_id", assessmentId);
 
-    if (res.error) {
-      summary.steps.push({ table: "assessment_sessions", action: "select", ok: false, message: res.error.message || "failed to fetch session ids", count: null });
+    if (response.error) {
+      addStep(summary, "assessment_sessions", "select", false, response.error.message || "Failed to fetch session IDs", null);
       return [];
     }
 
-    const ids = safeArray(res.data).map((r) => r && r.id).filter(Boolean);
-    summary.steps.push({ table: "assessment_sessions", action: "select", ok: true, message: "Fetched session IDs", count: ids.length });
+    const ids = safeArray(response.data).map((row) => row && row.id).filter(Boolean);
+    addStep(summary, "assessment_sessions", "select", true, "Fetched session IDs", ids.length);
     return ids;
-  } catch (err) {
-    summary.steps.push({ table: "assessment_sessions", action: "select", ok: false, message: err && err.message ? err.message : "failed to fetch session ids", count: null });
+  } catch (error) {
+    addStep(summary, "assessment_sessions", "select", false, error && error.message ? error.message : "Failed to fetch session IDs", null);
     return [];
   }
 }
 
-async function resetCandidateAssessmentsRow(serviceClient, summary, userId, assessmentId) {
-  const ts = nowIso();
+async function safeDelete(serviceClient, summary, tableName, filters, label, required = false) {
+  try {
+    let query = serviceClient.from(tableName).delete({ count: "exact" });
 
-  const updatePayload = {
+    for (let i = 0; i < filters.length; i += 1) {
+      const filter = filters[i];
+      if (!filter) continue;
+      if (filter.op === "in") query = query.in(filter.column, filter.value);
+      else query = query.eq(filter.column, filter.value);
+    }
+
+    const response = await query;
+
+    if (response.error) {
+      if (!required && isMissingTableOrColumnError(response.error)) {
+        addStep(summary, tableName, "delete", true, label + " (missing table/column skipped safely)", 0);
+        return true;
+      }
+
+      addStep(summary, tableName, "delete", false, label + ": " + (response.error.message || "Delete failed"), null);
+      return false;
+    }
+
+    addStep(summary, tableName, "delete", true, label, response.count === undefined ? null : response.count);
+    return true;
+  } catch (error) {
+    if (!required && isMissingTableOrColumnError(error)) {
+      addStep(summary, tableName, "delete", true, label + " (missing table/column skipped safely)", 0);
+      return true;
+    }
+
+    addStep(summary, tableName, "delete", false, label + ": " + (error && error.message ? error.message : "Delete exception"), null);
+    return false;
+  }
+}
+
+async function updateOptionalCandidateField(serviceClient, summary, userId, assessmentId, column, value) {
+  try {
+    const payload = {};
+    payload[column] = value;
+
+    const response = await serviceClient
+      .from("candidate_assessments")
+      .update(payload)
+      .eq("user_id", userId)
+      .eq("assessment_id", assessmentId);
+
+    if (response.error) {
+      if (isMissingTableOrColumnError(response.error)) {
+        addStep(summary, "candidate_assessments", "optional_update", true, "Optional field skipped: " + column, 0);
+        return true;
+      }
+
+      addStep(summary, "candidate_assessments", "optional_update", false, "Optional field failed: " + column + " - " + response.error.message, null);
+      return false;
+    }
+
+    addStep(summary, "candidate_assessments", "optional_update", true, "Optional field reset: " + column, null);
+    return true;
+  } catch (error) {
+    if (isMissingTableOrColumnError(error)) {
+      addStep(summary, "candidate_assessments", "optional_update", true, "Optional field skipped: " + column, 0);
+      return true;
+    }
+
+    addStep(summary, "candidate_assessments", "optional_update", false, "Optional field exception: " + column + " - " + (error && error.message ? error.message : "Unknown"), null);
+    return false;
+  }
+}
+
+async function resetCandidateAssessmentRow(serviceClient, summary, userId, assessmentId) {
+  const timestamp = nowIso();
+
+  const requiredPayload = {
     status: "unblocked",
     session_id: null,
-    session_status: null,
     result_id: null,
     completed_at: null,
-    unblocked_at: ts,
-    updated_at: ts
+    unblocked_at: timestamp,
+    updated_at: timestamp,
+    started_at: null,
+    score: null
   };
 
-  const upd = await serviceClient
+  const updateResponse = await serviceClient
     .from("candidate_assessments")
-    .update(updatePayload)
+    .update(requiredPayload)
     .eq("user_id", userId)
     .eq("assessment_id", assessmentId)
-    .select("id")
+    .select("id,status,session_id,result_id,completed_at,unblocked_at,updated_at")
     .maybeSingle();
 
-  if (!upd.error && upd.data && upd.data.id) {
-    summary.steps.push({ table: "candidate_assessments", action: "update", ok: true, message: "candidate_assessments set to unblocked", count: 1 });
+  if (!updateResponse.error && updateResponse.data && updateResponse.data.id) {
+    addStep(summary, "candidate_assessments", "update", true, "Assignment reset to unblocked", 1);
     return true;
   }
 
-  if (upd.error && !isMissingTableError(upd.error)) {
-    summary.steps.push({ table: "candidate_assessments", action: "update", ok: false, message: upd.error.message || "update failed", count: null });
+  if (updateResponse.error) {
+    addStep(summary, "candidate_assessments", "update", false, updateResponse.error.message || "Assignment reset update failed", null);
+    return false;
   }
 
-  const ins = await serviceClient
+  const insertResponse = await serviceClient
     .from("candidate_assessments")
     .insert({
       user_id: userId,
@@ -214,19 +269,19 @@ async function resetCandidateAssessmentsRow(serviceClient, summary, userId, asse
       session_id: null,
       result_id: null,
       completed_at: null,
-      unblocked_at: ts,
-      created_at: ts,
-      updated_at: ts
+      unblocked_at: timestamp,
+      created_at: timestamp,
+      updated_at: timestamp
     })
-    .select("id")
+    .select("id,status,session_id,result_id,completed_at,unblocked_at,updated_at")
     .maybeSingle();
 
-  if (ins.error) {
-    summary.steps.push({ table: "candidate_assessments", action: "insert", ok: false, message: ins.error.message || "insert failed", count: null });
+  if (insertResponse.error) {
+    addStep(summary, "candidate_assessments", "insert", false, insertResponse.error.message || "Assignment insert failed", null);
     return false;
   }
 
-  summary.steps.push({ table: "candidate_assessments", action: "insert", ok: true, message: "candidate_assessments created as unblocked", count: 1 });
+  addStep(summary, "candidate_assessments", "insert", true, "Assignment created as unblocked", 1);
   return true;
 }
 
@@ -235,11 +290,14 @@ async function dryRunOne(serviceClient, userId, assessmentId) {
     userId,
     assessmentId,
     dryRun: true,
-    wouldDelete: {},
-    reset: true
+    reset: true,
+    sessionIds: [],
+    wouldDelete: {}
   };
 
-  const sessionIds = await fetchSessionIds(serviceClient, { steps: [] }, userId, assessmentId);
+  const tempSummary = { steps: [] };
+  const sessionIds = await fetchSessionIds(serviceClient, tempSummary, userId, assessmentId);
+  summary.sessionIds = sessionIds;
 
   summary.wouldDelete.answer_history = sessionIds.length > 0 ? await safeCount(serviceClient, "answer_history", [{ column: "session_id", op: "in", value: sessionIds }]) : 0;
   summary.wouldDelete.question_timing = sessionIds.length > 0 ? await safeCount(serviceClient, "question_timing", [{ column: "session_id", op: "in", value: sessionIds }]) : 0;
@@ -267,57 +325,87 @@ async function resetOne(serviceClient, userId, assessmentId) {
 
   const sessionIds = await fetchSessionIds(serviceClient, summary, userId, assessmentId);
 
-  // session-linked deletes
   if (sessionIds.length > 0) {
-    await deleteRows(serviceClient, summary, "answer_history", [{ column: "session_id", op: "in", value: sessionIds }], "Answer history cleared");
-    await deleteRows(serviceClient, summary, "question_timing", [{ column: "session_id", op: "in", value: sessionIds }], "Question timing cleared");
-    await deleteRows(serviceClient, summary, "candidate_personality_scores", [{ column: "session_id", op: "in", value: sessionIds }], "Candidate personality scores cleared");
-    await deleteRows(serviceClient, summary, "assessment_results", [{ column: "session_id", op: "in", value: sessionIds }], "Assessment results cleared by session_id");
+    await safeDelete(serviceClient, summary, "answer_history", [{ column: "session_id", op: "in", value: sessionIds }], "Answer history cleared");
+    await safeDelete(serviceClient, summary, "question_timing", [{ column: "session_id", op: "in", value: sessionIds }], "Question timing cleared");
+    await safeDelete(serviceClient, summary, "candidate_personality_scores", [{ column: "session_id", op: "in", value: sessionIds }], "Candidate personality scores cleared");
+    await safeDelete(serviceClient, summary, "assessment_results", [{ column: "session_id", op: "in", value: sessionIds }], "Assessment results cleared by session_id");
   }
 
-  // required deletes
-  const responsesOk = await deleteRows(
+  const responsesOk = await safeDelete(
     serviceClient,
     summary,
     "responses",
-    [{ column: "user_id", value: userId }, { column: "assessment_id", value: assessmentId }],
+    [
+      { column: "user_id", value: userId },
+      { column: "assessment_id", value: assessmentId }
+    ],
     "Responses cleared",
     true
   );
 
-  const resultsOk = await deleteRows(
+  const resultsOk = await safeDelete(
     serviceClient,
     summary,
     "assessment_results",
-    [{ column: "user_id", value: userId }, { column: "assessment_id", value: assessmentId }],
+    [
+      { column: "user_id", value: userId },
+      { column: "assessment_id", value: assessmentId }
+    ],
     "Assessment results cleared by user_id",
     true
   );
 
-  // optional deletes
-  await deleteRows(serviceClient, summary, "assessment_violations", [{ column: "user_id", value: userId }, { column: "assessment_id", value: assessmentId }], "Violations cleared");
-  await deleteRows(serviceClient, summary, "assessment_progress", [{ column: "user_id", value: userId }, { column: "assessment_id", value: assessmentId }], "Progress cleared");
-  await deleteRows(serviceClient, summary, "behavioral_metrics", [{ column: "user_id", value: userId }, { column: "assessment_id", value: assessmentId }], "Behavioral metrics cleared");
-  await deleteRows(serviceClient, summary, "assessment_reports", [{ column: "user_id", value: userId }, { column: "assessment_id", value: assessmentId }], "Generated reports cleared");
-  await deleteRows(serviceClient, summary, "assessment_classifications", [{ column: "user_id", value: userId }, { column: "assessment_id", value: assessmentId }], "Assessment classifications cleared");
+  await safeDelete(serviceClient, summary, "assessment_violations", [
+    { column: "user_id", value: userId },
+    { column: "assessment_id", value: assessmentId }
+  ], "Violations cleared");
 
-  // sessions last (required)
-  const sessionsOk = await deleteRows(
+  await safeDelete(serviceClient, summary, "assessment_progress", [
+    { column: "user_id", value: userId },
+    { column: "assessment_id", value: assessmentId }
+  ], "Progress cleared");
+
+  await safeDelete(serviceClient, summary, "behavioral_metrics", [
+    { column: "user_id", value: userId },
+    { column: "assessment_id", value: assessmentId }
+  ], "Behavioral metrics cleared");
+
+  await safeDelete(serviceClient, summary, "assessment_reports", [
+    { column: "user_id", value: userId },
+    { column: "assessment_id", value: assessmentId }
+  ], "Generated reports cleared");
+
+  await safeDelete(serviceClient, summary, "assessment_classifications", [
+    { column: "user_id", value: userId },
+    { column: "assessment_id", value: assessmentId }
+  ], "Assessment classifications cleared");
+
+  const sessionsOk = await safeDelete(
     serviceClient,
     summary,
     "assessment_sessions",
-    [{ column: "user_id", value: userId }, { column: "assessment_id", value: assessmentId }],
+    [
+      { column: "user_id", value: userId },
+      { column: "assessment_id", value: assessmentId }
+    ],
     "Assessment sessions cleared",
     true
   );
 
-  // assignment reset (required)
-  const assignmentOk = await resetCandidateAssessmentsRow(serviceClient, summary, userId, assessmentId);
+  const assignmentOk = await resetCandidateAssessmentRow(serviceClient, summary, userId, assessmentId);
+
+  await updateOptionalCandidateField(serviceClient, summary, userId, assessmentId, "time_extension_minutes", null);
+  await updateOptionalCandidateField(serviceClient, summary, userId, assessmentId, "original_time_limit", null);
+  await updateOptionalCandidateField(serviceClient, summary, userId, assessmentId, "extended_until", null);
+  await updateOptionalCandidateField(serviceClient, summary, userId, assessmentId, "is_scheduled", false);
+  await updateOptionalCandidateField(serviceClient, summary, userId, assessmentId, "scheduled_start", null);
+  await updateOptionalCandidateField(serviceClient, summary, userId, assessmentId, "scheduled_end", null);
 
   summary.reset = Boolean(responsesOk && resultsOk && sessionsOk && assignmentOk);
 
   if (!summary.reset) {
-    summary.error = "Reset did not fully complete (responses/results/sessions/assignment).";
+    summary.error = "Reset did not fully complete. Required cleanup or assignment reset failed.";
   }
 
   return summary;
@@ -325,15 +413,20 @@ async function resetOne(serviceClient, userId, assessmentId) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ success: false, error: "method_not_allowed" });
+    return res.status(405).json({ success: false, error: "method_not_allowed", message: "Method not allowed" });
   }
 
   try {
-    const body = req.body || {};
+    const serviceClient = getServiceClient();
 
+    const authCheck = await requireSupervisor(serviceClient, req);
+    if (!authCheck.ok) {
+      return res.status(authCheck.status).json({ success: false, error: authCheck.error, message: authCheck.message });
+    }
+
+    const body = req.body || {};
     const dryRun = body.dryRun === true;
     const confirmBulkReset = body.confirmBulkReset === true;
-
     const items = dedupeItems(body.items || body.resetItems || []);
 
     if (items.length === 0) {
@@ -344,40 +437,32 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: "missing_confirmation", message: "confirmBulkReset must be true for a real reset." });
     }
 
-    const serviceClient = getServiceClient();
-
-    // Enforce supervisor/admin
-    const authCheck = await requireSupervisor(serviceClient, req);
-    if (!authCheck.ok) {
-      return res.status(authCheck.status).json({ success: false, error: authCheck.error, message: authCheck.message });
-    }
-
     const results = [];
 
-    // Sequential processing keeps the DB load predictable.
     for (let i = 0; i < items.length; i += 1) {
-      const it = items[i];
-      const userId = it.userId;
-      const assessmentId = it.assessmentId;
+      const item = items[i];
 
       try {
-        if (dryRun) results.push(await dryRunOne(serviceClient, userId, assessmentId));
-        else results.push(await resetOne(serviceClient, userId, assessmentId));
-      } catch (err) {
+        if (dryRun) {
+          results.push(await dryRunOne(serviceClient, item.userId, item.assessmentId));
+        } else {
+          results.push(await resetOne(serviceClient, item.userId, item.assessmentId));
+        }
+      } catch (error) {
         results.push({
-          userId,
-          assessmentId,
+          userId: item.userId,
+          assessmentId: item.assessmentId,
           dryRun,
           reset: false,
-          error: err && err.message ? err.message : "Unexpected reset error"
+          error: error && error.message ? error.message : "Unexpected reset error."
         });
       }
     }
 
-    const successful = results.filter((r) => r && r.reset === true).length;
+    const successful = results.filter((item) => item && item.reset === true).length;
     const failed = results.length - successful;
 
-    return res.status(200).json({
+    return res.status(failed === 0 ? 200 : 207).json({
       success: failed === 0,
       dryRun,
       total: results.length,
@@ -386,12 +471,12 @@ export default async function handler(req, res) {
       failed,
       results
     });
-  } catch (err) {
-    console.error("bulk-reset fatal error:", err);
+  } catch (error) {
+    console.error("bulk-reset fatal error:", error);
     return res.status(500).json({
       success: false,
       error: "server_error",
-      message: err && err.message ? err.message : "Unexpected server error"
+      message: error && error.message ? error.message : "Unexpected server error while bulk resetting assessments."
     });
   }
 }
