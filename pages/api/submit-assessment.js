@@ -234,6 +234,16 @@ async function createSupervisorNotification(serviceClient, session, result, prof
   }
 }
 
+async function fetchExistingResult(serviceClient, sessionId) {
+  const existing = await serviceClient
+    .from("assessment_results")
+    .select("id, session_id, user_id, assessment_id, percentage_score, answered_questions, total_questions, is_auto_submitted, auto_submit_reason")
+    .eq("session_id", sessionId)
+    .maybeSingle();
+  if (existing.error) return null;
+  return existing.data || null;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
@@ -286,8 +296,22 @@ export default async function handler(req, res) {
       });
     }
 
+    // Idempotent: if already completed, return the existing result (200 OK)
     if (session.status === "completed") {
-      return res.status(400).json({ success: false, error: "already_submitted" });
+      const existing = await fetchExistingResult(serviceClient, sessionId);
+      if (existing) {
+        return res.status(200).json({
+          success: true,
+          id: existing.id,
+          result_id: existing.id,
+          result: existing,
+          isAutoSubmitted: Boolean(existing.is_auto_submitted),
+          is_auto_submitted: Boolean(existing.is_auto_submitted),
+          auto_submit_reason: existing.auto_submit_reason || null,
+          message: "Assessment already submitted."
+        });
+      }
+      return res.status(200).json({ success: true, error: "already_submitted", message: "Assessment already submitted." });
     }
 
     const violationCount = toNumber(session.violation_count, 0);
@@ -378,8 +402,6 @@ export default async function handler(req, res) {
     const metadataResult = buildQuestionMetadata(questions, isBaseline);
     const earnedScore = calculateEarnedScore(responsesByQuestion, metadataResult.metadata, isBaseline);
 
-    // Critical rule: maxScore is always the FULL assessment max score.
-    // Unanswered questions are scored as zero. Example: 40 correct from 80 answered in a 100-question test = 40/100, not 40/80.
     const maxScore = metadataResult.totalMaxScore > 0 ? metadataResult.totalMaxScore : totalQuestions;
 
     let percentage = maxScore > 0 ? (earnedScore / maxScore) * 100 : 0;
