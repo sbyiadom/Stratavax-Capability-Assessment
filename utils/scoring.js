@@ -1,4 +1,3 @@
-
 // utils/scoring.js
 
 /**
@@ -342,7 +341,6 @@ export const classifyScore = function (score, maxScore) {
     description: details.description
   };
 };
-
 
 // Alias used by pages/api/save-classification.js
 // Accepts (score, maxScore) or (percentage) depending on caller.
