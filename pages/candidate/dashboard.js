@@ -16,11 +16,6 @@ function toNumber(value, fallback = 0) {
   return numberValue;
 }
 
-function cleanText(value, fallback = "") {
-  if (value === null || value === undefined || value === "") return fallback;
-  return String(value);
-}
-
 function decodeHtmlEntities(value) {
   let text;
   let previousText;
@@ -28,15 +23,28 @@ function decodeHtmlEntities(value) {
   if (value === null || value === undefined) return value;
   text = String(value);
 
+  // Decode repeatedly because some values are double-encoded.
   for (let i = 0; i < 10; i += 1) {
     previousText = text;
+    text = text.replace(/&amp;amp;/gi, "&");
+    text = text.replace(/&amp;lt;/gi, "<");
+    text = text.replace(/&amp;gt;/gi, ">"
+    );
+    text = text.replace(/&amp;quot;/gi, '"');
+    text = text.replace(/&amp;#039;/gi, "'");
+    text = text.replace(/&amp;#39;/gi, "'");
+    text = text.replace(/&amp;nbsp;/gi, " ");
+
+    // Common single-encoding patterns
     text = text.replace(/&amp;/gi, "&");
     text = text.replace(/&lt;/gi, "<");
-    text = text.replace(/&gt;/gi, ">");
+    text = text.replace(/&gt;/gi, ">"
+    );
     text = text.replace(/&quot;/gi, '"');
     text = text.replace(/&#039;/gi, "'");
     text = text.replace(/&#39;/gi, "'");
     text = text.replace(/&nbsp;/gi, " ");
+
     if (text === previousText) break;
   }
 
@@ -148,17 +156,17 @@ function getStatusConfig(status, scorePercentage) {
   };
 }
 
+// Platform-wide priority rules for duplicate assessments under the same type.
 function getAssessmentPriority(assessment, accessMap, resultMap, latestSessionMap) {
   const access = accessMap[assessment.id] || null;
   const result = resultMap[assessment.id] || null;
   const session = latestSessionMap[assessment.id] || null;
 
-  // Critical fix: if an assessment has been reset and is now unblocked,
-  // this assessment must be selected over any duplicate assessment under the same type.
-  if (access?.status === "unblocked" && !access?.result_id && !access?.completed_at && !result) return 100;
-  if (session?.status === "in_progress" && access?.status !== "blocked") return 90;
-  if (result || access?.status === "completed" || access?.result_id || access?.completed_at) return 80;
-  if (access?.status === "blocked") return 70;
+  // If reset/unblocked with no results, prefer this one.
+  if (access && access.status === "unblocked" && !access.result_id && !access.completed_at && !result) return 100;
+  if (session && session.status === "in_progress" && (!access || access.status !== "blocked")) return 90;
+  if (result || (access && (access.status === "completed" || access.result_id || access.completed_at))) return 80;
+  if (access && access.status === "blocked") return 70;
   if (access) return 60;
   return 0;
 }
@@ -186,17 +194,22 @@ function removeDuplicateAssessments(assessments, accessMap, resultMap, latestSes
   return Array.from(map.values());
 }
 
+// PLATFORM-WIDE STATUS RULES
+// IMPORTANT: Do NOT treat historical completed sessions as completion.
+// Completion is authoritative only via candidate_assessments or assessment_results.
 function determineCardStatus(access, latestSession, result) {
-  const isCompleted = !!result || access?.status === "completed" || latestSession?.status === "completed" || !!access?.result_id || !!access?.completed_at;
+  const isCompleted = Boolean(
+    !!result ||
+      (access && (access.status === "completed" || access.result_id || access.completed_at))
+  );
 
   if (isCompleted) return "completed";
 
-  // Critical reset/retake rule:
-  // if candidate_assessments.status is unblocked and there is no result/completion data,
-  // the candidate must see Start Assessment, not Blocked.
-  if (access?.status === "unblocked") return "unblocked";
+  // If assignment unblocked, candidate must see Ready to Start.
+  if (access && access.status === "unblocked") return "unblocked";
 
-  if (latestSession?.status === "in_progress" && access?.status !== "blocked") return "in_progress";
+  // In progress should be driven by an active session, but never override explicit blocked.
+  if (latestSession && latestSession.status === "in_progress" && (!access || access.status !== "blocked")) return "in_progress";
 
   return "blocked";
 }
@@ -213,7 +226,7 @@ export default function CandidateDashboard() {
   const [selectedAssessmentAreas, setSelectedAssessmentAreas] = useState([]);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const excludedTypes = ["manufacturing"];
+  const excludedTypes = ["manufacturing"]; // keep your existing exclusion
 
   useEffect(() => {
     if (!session?.user) return;
@@ -244,12 +257,10 @@ export default function CandidateDashboard() {
         .select("*, assessment_type:assessment_types(*)")
         .eq("is_active", true);
 
-      // IMPORTANT:
-      // Do not select score, max_score, or percentage here. Those columns do not exist
-      // in candidate_assessments and will break the dashboard.
+      // Candidate assignment state
       const accessPromise = supabase
         .from("candidate_assessments")
-        .select("id, assessment_id, status, result_id, completed_at, unblocked_at, created_at")
+        .select("id, assessment_id, status, result_id, completed_at, unblocked_at, created_at, session_id")
         .eq("user_id", userId);
 
       const sessionsPromise = supabase
@@ -307,9 +318,6 @@ export default function CandidateDashboard() {
         }
       });
 
-      // IMPORTANT:
-      // Duplicate assessments under the same type are resolved only after access/result/session maps exist,
-      // so the candidate's actual unblocked/reset assessment is selected.
       const uniqueAssessments = removeDuplicateAssessments(filteredAssessments, accessMap, resultMap, latestSessionMap);
 
       const typeOptions = filteredTypes.map((type) => ({
@@ -329,8 +337,7 @@ export default function CandidateDashboard() {
         const access = accessMap[assessment.id] || null;
         const latestSession = latestSessionMap[assessment.id] || null;
         const result = resultMap[assessment.id] || null;
-        const resultScore = getScorePercentage(result);
-        const scorePercentage = resultScore !== null ? resultScore : null;
+        const scorePercentage = getScorePercentage(result);
         const status = determineCardStatus(access, latestSession, result);
 
         return {
@@ -341,9 +348,9 @@ export default function CandidateDashboard() {
           typeName: decodeHtmlEntities(assessment.assessment_type?.name || typeCode),
           icon: assessment.assessment_type?.icon || "📋",
           status,
-          scorePercentage,
-          completedAt: result?.completed_at || access?.completed_at || null,
-          unblockedAt: access?.unblocked_at || null,
+          scorePercentage: scorePercentage !== null ? scorePercentage : null,
+          completedAt: (result && result.completed_at) || (access && access.completed_at) || null,
+          unblockedAt: access && access.unblocked_at ? access.unblocked_at : null,
           session: latestSession,
           result,
           access
@@ -353,8 +360,16 @@ export default function CandidateDashboard() {
       setAssessmentTypes(typeOptions);
       setAssessmentCards(cards);
 
-      const firstReadyType = typeOptions.find((type) => cards.some((card) => card.typeCode === type.id && (card.status === "unblocked" || card.status === "in_progress"))) || null;
-      const firstAvailableType = firstReadyType || typeOptions.find((type) => cards.some((card) => card.typeCode === type.id)) || typeOptions[0] || null;
+      const firstReadyType =
+        typeOptions.find((type) =>
+          cards.some((card) => card.typeCode === type.id && (card.status === "unblocked" || card.status === "in_progress"))
+        ) || null;
+
+      const firstAvailableType =
+        firstReadyType ||
+        typeOptions.find((type) => cards.some((card) => card.typeCode === type.id)) ||
+        typeOptions[0] ||
+        null;
 
       if (firstAvailableType) {
         setActiveTab(firstAvailableType.id);
@@ -403,6 +418,7 @@ export default function CandidateDashboard() {
   const readyCount = assessmentCards.filter((card) => card.status === "unblocked").length;
   const inProgressCount = assessmentCards.filter((card) => card.status === "in_progress").length;
   const totalAssessments = assessmentCards.length;
+
   const activeTypeConfig = assessmentTypes.find((type) => type.id === activeTab) || assessmentTypes[0] || null;
   const activeAssessment = activeTab ? getAssessmentByType(activeTab) : null;
   const activeColors = getAssessmentColor(activeTab || "general");
@@ -445,7 +461,9 @@ export default function CandidateDashboard() {
 
         <div style={styles.welcomeSection}>
           <div style={styles.welcomeContent}>
-            <h2 style={styles.welcomeTitle}>Welcome back, <span style={styles.welcomeName}>{userName}</span></h2>
+            <h2 style={styles.welcomeTitle}>
+              Welcome back, <span style={styles.welcomeName}>{userName}</span>
+            </h2>
             <p style={styles.welcomeText}>
               {readyCount + inProgressCount > 0
                 ? "You have " + (readyCount + inProgressCount) + " assessment(s) ready or in progress."
@@ -492,7 +510,9 @@ export default function CandidateDashboard() {
             <div style={styles.assessmentDetailsSection}>
               <div style={{ ...styles.card, border: "1px solid " + activeColors.color + "40" }}>
                 <div style={styles.cardHeader}>
-                  <div style={{ ...styles.cardIconLarge, background: activeColors.gradient }}>{activeTypeConfig?.icon || activeAssessment.icon || "📋"}</div>
+                  <div style={{ ...styles.cardIconLarge, background: activeColors.gradient }}>
+                    {activeTypeConfig?.icon || activeAssessment.icon || "📋"}
+                  </div>
                   <div style={styles.cardInfo}>
                     <h3 style={styles.cardTitle}>{activeAssessment.title}</h3>
                     <p style={styles.cardDescription}>{activeAssessment.description}</p>
@@ -567,7 +587,9 @@ export default function CandidateDashboard() {
 
           <div style={styles.infoNote}>
             <span style={styles.infoIcon}>ℹ️</span>
-            <span><strong>Note:</strong> Assessments must be unblocked by your supervisor before starting. If an assessment has been reset, refresh the dashboard and it will show as ready.</span>
+            <span>
+              <strong>Note:</strong> Assessments must be unblocked by your supervisor before starting. If an assessment has been reset, refresh the dashboard and it will show as ready.
+            </span>
           </div>
 
           <div style={styles.guidelinesWrapper}>
