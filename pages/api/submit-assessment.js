@@ -69,11 +69,8 @@ function uniqueNumbers(values) {
 
 function calculateQuestionMaxScore(question, isBaseline) {
   const answers = safeArray(question.unique_answers);
-
   if (isBaseline) return 1;
-
   if (answers.length === 0) return 0;
-
   return Math.max(...answers.map((answer) => toNumber(answer.score, 0)));
 }
 
@@ -92,12 +89,8 @@ function buildQuestionMetadata(questions, isBaseline) {
       const answerScore = toNumber(answer.score, 0);
 
       if (answerId === null) return;
-
       answerScores[answerId] = answerScore;
-
-      if (answerScore === 1) {
-        correctAnswerIds.push(answerId);
-      }
+      if (answerScore === 1) correctAnswerIds.push(answerId);
     });
 
     if (!isBaseline && maxScore < 0) maxScore = 0;
@@ -142,7 +135,6 @@ function calculateEarnedScore(responsesByQuestion, questionMetadata, isBaseline)
       selectedAnswerIds.forEach((answerId) => {
         questionScore += toNumber(metadata.answerScores[answerId], 0);
       });
-
       if (questionScore > metadata.maxScore) questionScore = metadata.maxScore;
     }
 
@@ -157,26 +149,14 @@ function groupResponsesByQuestion(responses) {
 
   safeArray(responses).forEach((response) => {
     if (!response || !response.question_id) return;
-
     const answerIds = parseAnswerIds(response.answer_id);
     if (answerIds.length === 0) return;
 
-    if (!responsesByQuestion[response.question_id]) {
-      responsesByQuestion[response.question_id] = [];
-    }
-
+    if (!responsesByQuestion[response.question_id]) responsesByQuestion[response.question_id] = [];
     responsesByQuestion[response.question_id].push(...answerIds);
   });
 
   return responsesByQuestion;
-}
-
-function extractResultId(result) {
-  if (!result) return null;
-  if (result.id) return result.id;
-  if (result.result && result.result.id) return result.result.id;
-  if (result.data && result.data.id) return result.data.id;
-  return null;
 }
 
 async function upsertAssessmentResult(serviceClient, resultData) {
@@ -201,14 +181,15 @@ async function updateCandidateAssessment(serviceClient, session, result, scoreDa
   const updatePayload = {
     status: "completed",
     result_id: result ? result.id : null,
+    completed_at: nowIso(),
+    session_id: session.id,
     updated_at: nowIso()
   };
 
   const optionalPayload = {
     score: scoreData.earnedScore,
     max_score: scoreData.maxScore,
-    percentage: scoreData.percentage,
-    completed_at: nowIso()
+    percentage: scoreData.percentage
   };
 
   let updateResponse = await serviceClient
@@ -228,14 +209,14 @@ async function updateCandidateAssessment(serviceClient, session, result, scoreDa
   return updateResponse;
 }
 
-async function createSupervisorNotification(serviceClient, session, result, profile, scoreData, isAutoSubmit, violationCount) {
+async function createSupervisorNotification(serviceClient, session, result, profile, scoreData, isAutoSubmit, autoSubmitReason) {
   try {
     const supervisorId = profile?.created_by || profile?.supervisor_id || null;
     if (!supervisorId) return;
 
     const candidateName = profile.full_name || profile.email || "Candidate";
     const message = isAutoSubmit
-      ? "Assessment auto-submitted for " + candidateName + " due to " + violationCount + " violation(s). Score: " + Math.round(scoreData.percentage) + "%"
+      ? "Assessment auto-submitted for " + candidateName + ". Reason: " + (autoSubmitReason || "Auto-submit") + ". Score: " + Math.round(scoreData.percentage) + "%"
       : candidateName + " completed an assessment. Score: " + Math.round(scoreData.percentage) + "%";
 
     await serviceClient.from("supervisor_notifications").insert({
@@ -311,7 +292,18 @@ export default async function handler(req, res) {
 
     const violationCount = toNumber(session.violation_count, 0);
     const maxViolations = 3;
-    const isAutoSubmit = violationCount >= maxViolations || body.auto_submit === true || body.is_auto_submitted === true;
+
+    const requestAutoSubmit =
+      body.auto_submit === true ||
+      body.auto_submitted === true ||
+      body.is_auto_submitted === true;
+
+    const allowIncomplete =
+      body.allow_incomplete === true ||
+      body.allowIncomplete === true ||
+      requestAutoSubmit;
+
+    const isAutoSubmit = violationCount >= maxViolations || requestAutoSubmit || allowIncomplete;
 
     const assessmentResponse = await serviceClient
       .from("assessments")
@@ -371,7 +363,7 @@ export default async function handler(req, res) {
     const responsesByQuestion = groupResponsesByQuestion(responses);
     const answeredCount = Object.keys(responsesByQuestion).length;
 
-    if (!isAutoSubmit && answeredCount < totalQuestions) {
+    if (!allowIncomplete && answeredCount < totalQuestions) {
       const unansweredCount = totalQuestions - answeredCount;
       return res.status(400).json({
         success: false,
@@ -385,6 +377,9 @@ export default async function handler(req, res) {
 
     const metadataResult = buildQuestionMetadata(questions, isBaseline);
     const earnedScore = calculateEarnedScore(responsesByQuestion, metadataResult.metadata, isBaseline);
+
+    // Critical rule: maxScore is always the FULL assessment max score.
+    // Unanswered questions are scored as zero. Example: 40 correct from 80 answered in a 100-question test = 40/100, not 40/80.
     const maxScore = metadataResult.totalMaxScore > 0 ? metadataResult.totalMaxScore : totalQuestions;
 
     let percentage = maxScore > 0 ? (earnedScore / maxScore) * 100 : 0;
@@ -392,9 +387,18 @@ export default async function handler(req, res) {
     percentage = Math.round(percentage * 100) / 100;
 
     const isValid = !isAutoSubmit && answeredCount === totalQuestions;
-    const autoSubmitReason = isAutoSubmit
-      ? "Auto-submitted due to " + violationCount + " violation(s). Answered " + answeredCount + " of " + totalQuestions + " questions."
-      : null;
+
+    let autoSubmitReason = null;
+    if (isAutoSubmit) {
+      autoSubmitReason = body.auto_submit_reason || null;
+      if (!autoSubmitReason && violationCount >= maxViolations) {
+        autoSubmitReason = "Auto-submitted due to " + violationCount + " violation(s).";
+      }
+      if (!autoSubmitReason) {
+        autoSubmitReason = "Auto-submitted because the assessment timer expired.";
+      }
+      autoSubmitReason += " Answered " + answeredCount + " of " + totalQuestions + " questions.";
+    }
 
     const resultData = {
       user_id: session.user_id,
@@ -452,11 +456,7 @@ export default async function handler(req, res) {
       });
     }
 
-    await updateCandidateAssessment(serviceClient, session, result, {
-      earnedScore,
-      maxScore,
-      percentage
-    });
+    await updateCandidateAssessment(serviceClient, session, result, { earnedScore, maxScore, percentage });
 
     const profileResponse = await serviceClient
       .from("candidate_profiles")
@@ -465,7 +465,7 @@ export default async function handler(req, res) {
       .maybeSingle();
 
     if (profileResponse.data) {
-      await createSupervisorNotification(serviceClient, session, result, profileResponse.data, { percentage }, isAutoSubmit, violationCount);
+      await createSupervisorNotification(serviceClient, session, result, profileResponse.data, { percentage }, isAutoSubmit, autoSubmitReason);
     }
 
     return res.status(200).json({
@@ -486,8 +486,9 @@ export default async function handler(req, res) {
       is_auto_submitted: Boolean(isAutoSubmit),
       violationCount: toNumber(violationCount, 0),
       violation_count: toNumber(violationCount, 0),
+      auto_submit_reason: autoSubmitReason,
       message: isAutoSubmit
-        ? "Assessment auto-submitted due to " + violationCount + " violation(s). Score calculated on " + answeredCount + " of " + totalQuestions + " questions."
+        ? "Assessment auto-submitted. Score calculated as " + toNumber(earnedScore, 0) + " out of " + toNumber(maxScore, 0) + ". Answered " + answeredCount + " of " + totalQuestions + " questions."
         : "Assessment submitted successfully. Score: " + Math.round(percentage) + "%"
     });
   } catch (error) {
