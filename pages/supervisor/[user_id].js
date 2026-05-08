@@ -3,97 +3,65 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 
-// ======================================================
-// SAFE HELPERS
-// ======================================================
-
-function decodeHtmlEntities(value) {
-  var text;
-  var previousText;
-  var i;
-
-  if (value === null || value === undefined) return value;
-
-  text = String(value);
-
-  for (i = 0; i < 10; i += 1) {
-    previousText = text;
-    text = text.replace(/&amp;/g, "&");
-    text = text.replace(/&lt;/g, "<");
-    text = text.replace(/&gt;/g, ">");
-    text = text.replace(/&quot;/g, '"');
-    text = text.replace(/&#039;/g, "'");
-    text = text.replace(/&#39;/g, "'");
-    text = text.replace(/&nbsp;/g, " ");
-    if (text === previousText) break;
-  }
-
-  return text;
-}
-
-function decodeObjectDeep(value) {
-  var output;
-  var keys;
-  var i;
-
-  if (typeof value === "string") return decodeHtmlEntities(value);
-
-  if (Array.isArray(value)) {
-    return value.map(function (item) {
-      return decodeObjectDeep(item);
-    });
-  }
-
-  if (value && typeof value === "object") {
-    output = {};
-    keys = Object.keys(value);
-    for (i = 0; i < keys.length; i += 1) {
-      output[keys[i]] = decodeObjectDeep(value[keys[i]]);
-    }
-    return output;
-  }
-
-  return value;
-}
-
 function safeObject(value) {
-  if (value && typeof value === "object" && !Array.isArray(value)) return value;
-  return {};
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function safeText(value, fallback) {
-  if (value === null || value === undefined || value === "") return fallback || "Not available";
-  return decodeHtmlEntities(value);
+function safeNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
-function safeNumber(value, fallback) {
-  var defaultValue = fallback === undefined ? 0 : fallback;
-  var number = Number(value);
-  if (Number.isNaN(number) || !Number.isFinite(number)) return defaultValue;
-  return number;
+function safeText(value, fallback = "Not available") {
+  if (value === null || value === undefined || value === "") return fallback;
+  return String(value)
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
 }
 
-function clampPercentage(value) {
-  var number = safeNumber(value, 0);
-  if (number < 0) return 0;
-  if (number > 100) return 100;
-  return number;
+function decodeDeep(value) {
+  if (typeof value === "string") return safeText(value, value);
+  if (Array.isArray(value)) return value.map((item) => decodeDeep(item));
+  if (value && typeof value === "object") {
+    const out = {};
+    Object.keys(value).forEach((key) => {
+      out[key] = decodeDeep(value[key]);
+    });
+    return out;
+  }
+  return value;
+}
+
+function round(value, places = 2) {
+  const factor = Math.pow(10, places);
+  return Math.round(safeNumber(value, 0) * factor) / factor;
 }
 
 function formatPercentage(value) {
-  return safeNumber(value, 0) + "%";
+  return round(value, 0) + "%";
 }
 
-// ======================================================
-// VISUAL HELPERS
-// ======================================================
+function plural(count, one, many) {
+  return safeNumber(count, 0) === 1 ? one : many;
+}
 
-function getScoreTone(score) {
-  var value = safeNumber(score, 0);
+function buildReportUrl(userId, assessmentId) {
+  let url = "/api/supervisor/report?user_id=" + encodeURIComponent(userId);
+  if (assessmentId) url += "&assessment_id=" + encodeURIComponent(assessmentId);
+  return url;
+}
+
+function getTone(score) {
+  const value = safeNumber(score, 0);
   if (value >= 85) return "excellent";
   if (value >= 75) return "strong";
   if (value >= 65) return "capable";
@@ -103,7 +71,7 @@ function getScoreTone(score) {
 }
 
 function getToneLabel(score) {
-  var tone = getScoreTone(score);
+  const tone = getTone(score);
   if (tone === "excellent") return "Excellent";
   if (tone === "strong") return "Strong";
   if (tone === "capable") return "Capable";
@@ -113,7 +81,7 @@ function getToneLabel(score) {
 }
 
 function getToneColor(score) {
-  var tone = getScoreTone(score);
+  const tone = getTone(score);
   if (tone === "excellent") return "#0f766e";
   if (tone === "strong") return "#2563eb";
   if (tone === "capable") return "#4f46e5";
@@ -123,7 +91,7 @@ function getToneColor(score) {
 }
 
 function getToneGradient(score) {
-  var tone = getScoreTone(score);
+  const tone = getTone(score);
   if (tone === "excellent") return "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)";
   if (tone === "strong") return "linear-gradient(135deg, #1d4ed8 0%, #38bdf8 100%)";
   if (tone === "capable") return "linear-gradient(135deg, #4338ca 0%, #8b5cf6 100%)";
@@ -132,75 +100,54 @@ function getToneGradient(score) {
   return "linear-gradient(135deg, #991b1b 0%, #ef4444 100%)";
 }
 
-function getRiskStyle(value) {
-  var risk = safeText(value, "").toLowerCase();
-  if (risk === "low") return styles.badgeLow;
-  if (risk === "moderate") return styles.badgeModerate;
-  if (risk === "elevated") return styles.badgeElevated;
-  if (risk === "high") return styles.badgeHigh;
-  if (risk === "critical") return styles.badgeCritical;
+function getBadgeStyle(value) {
+  const text = safeText(value, "").toLowerCase();
+  if (text.includes("critical") || text.includes("high")) return styles.badgeCritical;
+  if (text.includes("elevated") || text.includes("risk") || text.includes("develop")) return styles.badgeWarm;
+  if (text.includes("low") || text.includes("strong") || text.includes("excellent")) return styles.badgeGood;
   return styles.badgeNeutral;
 }
 
-function getPriorityStyle(priority) {
-  var value = safeText(priority, "Medium").toLowerCase();
-  if (value === "critical") return styles.priorityCritical;
-  if (value === "high") return styles.priorityHigh;
-  if (value === "leverage") return styles.priorityLeverage;
-  if (value === "low") return styles.priorityLow;
-  return styles.priorityMedium;
-}
-
-// ======================================================
-// REPORT DATA HELPERS
-// ======================================================
-
-function buildReportUrl(userId, assessmentId) {
-  var url = "/api/supervisor/report?user_id=" + encodeURIComponent(userId);
-  if (assessmentId) url += "&assessment_id=" + encodeURIComponent(assessmentId);
-  return url;
-}
-
-function getCandidateName(candidate, report) {
-  var c = safeObject(candidate);
-  var r = safeObject(report);
-  return safeText(c.full_name || c.name || c.display_name || c.email || c.candidate_name || r.candidateName || r.candidate_name || "Candidate", "Candidate");
-}
-
-function getAssessmentName(assessment, report) {
-  var a = safeObject(assessment);
-  var r = safeObject(report);
-  return safeText(a.title || a.name || a.assessment_name || r.assessmentName || r.assessment_name || "Assessment", "Assessment");
-}
-
-function getAssessmentIdFromData(assessment, report, fallback) {
-  var a = safeObject(assessment);
-  var r = safeObject(report);
-  return a.id || a.assessment_id || r.assessmentId || r.assessment_id || fallback || "";
-}
-
 function getOverallScore(report) {
-  var r = safeObject(report);
+  const r = safeObject(report);
   return r.percentage || r.overallPercentage || r.overall_score || r.overallScore || r.totalPercentage || r.score || 0;
 }
 
 function getClassification(report) {
-  var r = safeObject(report);
+  const r = safeObject(report);
   return safeText(r.classification || r.overallClassification || r.performanceBand || r.performance_band || r.label || "Not classified", "Not classified");
 }
 
 function getRiskLevel(report) {
-  var r = safeObject(report);
+  const r = safeObject(report);
   return safeText(r.riskLevel || r.risk_level || "Not available", "Not available");
 }
 
+function getCandidateName(candidate, report) {
+  const c = safeObject(candidate);
+  const r = safeObject(report);
+  return safeText(c.full_name || c.name || c.display_name || c.email || c.candidate_name || r.candidateName || r.candidate_name || "Candidate", "Candidate");
+}
+
+function getAssessmentName(assessment, report) {
+  const a = safeObject(assessment);
+  const r = safeObject(report);
+  return safeText(a.title || a.name || a.assessment_name || r.assessmentName || r.assessment_name || "Assessment", "Assessment");
+}
+
+function getAssessmentId(assessment, report, fallback) {
+  const a = safeObject(assessment);
+  const r = safeObject(report);
+  return a.id || a.assessment_id || r.assessmentId || r.assessment_id || fallback || "";
+}
+
 function getResponseCount(report) {
-  var r = safeObject(report);
-  return r.responseCount || r.response_count || r.totalResponses || r.total_responses || 0;
+  const r = safeObject(report);
+  return r.responseCount || r.response_count || r.totalResponses || r.total_responses || r.answeredQuestions || r.answered_questions || 0;
 }
 
 function getCategoryScores(report) {
-  var r = safeObject(report);
+  const r = safeObject(report);
   if (Array.isArray(r.categoryScores)) return r.categoryScores;
   if (Array.isArray(r.category_scores)) return r.category_scores;
   if (Array.isArray(r.competencyScores)) return r.competencyScores;
@@ -211,201 +158,216 @@ function getCategoryScores(report) {
 }
 
 function getStrengths(report) {
-  var r = safeObject(report);
-  if (Array.isArray(r.strengths)) return r.strengths;
-  if (Array.isArray(r.topStrengths)) return r.topStrengths;
-  if (Array.isArray(r.top_strengths)) return r.top_strengths;
-  return [];
+  const r = safeObject(report);
+  return safeArray(r.strengths || r.topStrengths || r.top_strengths);
 }
 
 function getDevelopmentAreas(report) {
-  var r = safeObject(report);
-  if (Array.isArray(r.developmentAreas)) return r.developmentAreas;
-  if (Array.isArray(r.development_areas)) return r.development_areas;
-  if (Array.isArray(r.topDevelopmentNeeds)) return r.topDevelopmentNeeds;
-  if (Array.isArray(r.top_development_needs)) return r.top_development_needs;
-  return [];
+  const r = safeObject(report);
+  return safeArray(r.developmentAreas || r.development_areas || r.topDevelopmentNeeds || r.top_development_needs);
 }
 
 function getRecommendations(report) {
-  var r = safeObject(report);
-  if (Array.isArray(r.recommendations)) return r.recommendations;
-  if (Array.isArray(r.actionPlan)) return r.actionPlan;
-  if (Array.isArray(r.action_plan)) return r.action_plan;
-  return [];
+  const r = safeObject(report);
+  return safeArray(r.recommendations || r.actionPlan || r.action_plan);
 }
 
 function getFollowUpQuestions(report) {
-  var r = safeObject(report);
-  if (Array.isArray(r.followUpQuestions)) return r.followUpQuestions;
-  if (Array.isArray(r.follow_up_questions)) return r.follow_up_questions;
-  if (Array.isArray(r.supervisorQuestions)) return r.supervisorQuestions;
-  if (Array.isArray(r.supervisor_questions)) return r.supervisor_questions;
-  return [];
+  const r = safeObject(report);
+  return safeArray(r.followUpQuestions || r.follow_up_questions || r.supervisorQuestions || r.supervisor_questions);
 }
 
 function getBehavioralInsights(report) {
-  var r = safeObject(report);
+  const r = safeObject(report);
   return r.behavioralInsights || r.behavioral_insights || r.behavioralSummary || r.behavioral_summary || null;
 }
 
 function getRoleReadiness(report) {
-  var r = safeObject(report);
-  return safeText(r.roleReadiness || r.role_readiness || r.readinessStatement || r.readiness_statement || r.roleReadinessStatement || r.role_readiness_statement || "No role readiness statement is available yet.", "No role readiness statement is available yet.");
+  const r = safeObject(report);
+  return safeText(
+    r.roleReadiness ||
+      r.role_readiness ||
+      r.readinessStatement ||
+      r.readiness_statement ||
+      r.roleReadinessStatement ||
+      r.role_readiness_statement ||
+      "No role readiness statement is available yet.",
+    "No role readiness statement is available yet."
+  );
 }
 
 function getRowTitle(row) {
-  var item = safeObject(row);
+  const item = safeObject(row);
   return safeText(item.category || item.name || item.competency || item.title, "General");
 }
 
 function getRowPercentage(row) {
-  var item = safeObject(row);
+  const item = safeObject(row);
   return item.percentage || item.score || item.currentScore || item.current_score || 0;
 }
 
 function getRowNarrative(row) {
-  var item = safeObject(row);
-  return safeText(item.narrative || item.supervisorMeaning || item.supervisor_meaning || item.supervisorImplication || item.supervisor_implication || item.comment || item.performanceComment || item.performance_comment || item.recommendation || item.description, "No interpretation available.");
-}
-
-function getRowAction(row) {
-  var item = safeObject(row);
-  return safeText(item.action || item.suggestedAction || item.suggested_action || "", "");
-}
-
-function shouldShowBehavioralMetrics(behavioralInsights) {
-  var item = safeObject(behavioralInsights);
-  var quality = safeText(item.dataQuality || item.data_quality || "", "").toLowerCase();
-  var totalTime = safeNumber(item.totalTimeSpent || item.total_time_spent, 0);
-  if (quality === "limited") return false;
-  if (totalTime <= 0) return false;
-  return true;
-}
-
-function getTabCount(tab, data) {
-  if (tab === "overview") return "";
-  if (tab === "categories") return data.categoryScores.length;
-  if (tab === "strengths") return data.strengths.length;
-  if (tab === "development") return data.developmentAreas.length;
-  if (tab === "questions") return data.followUpQuestions.length;
-  if (tab === "recommendations") return data.recommendations.length;
-  return "";
-}
-
-// ======================================================
-// UI COMPONENTS
-// ======================================================
-
-function ProgressBar(props) {
-  var value = clampPercentage(props.value);
-  var color = props.color || getToneColor(value);
-  return (
-    <div style={styles.progressTrack}>
-      <div style={{ width: value + "%", height: "100%", borderRadius: "999px", background: color, transition: "width 0.45s ease" }} />
-    </div>
+  const item = safeObject(row);
+  return safeText(
+    item.narrative ||
+      item.supervisorMeaning ||
+      item.supervisor_meaning ||
+      item.supervisorImplication ||
+      item.supervisor_implication ||
+      item.comment ||
+      item.performanceComment ||
+      item.performance_comment ||
+      item.recommendation ||
+      item.description,
+    "No interpretation available."
   );
 }
 
-function MetricCard(props) {
+function normalizeBehavior(behavioralInsights, responseCount) {
+  const b = safeObject(behavioralInsights);
+  let answered = safeNumber(b.answeredQuestions || b.answered_questions || b.responseCount || b.response_count || responseCount, safeNumber(responseCount, 0));
+  let totalQuestions = safeNumber(b.totalQuestions || b.total_questions || b.questionCount || b.question_count, 0);
+  let averageTime = safeNumber(b.averageTimePerQuestion || b.average_time_per_question || b.averageTime || b.average_time, 0);
+  let totalTime = safeNumber(b.totalTimeSpent || b.total_time_spent || b.totalTime || b.total_time, 0);
+  let totalChanges = safeNumber(b.totalChanges || b.total_changes || b.answerChanges || b.answer_changes, 0);
+  let averageChanges = safeNumber(b.averageChangesPerQuestion || b.average_changes_per_question || b.averageChanges || b.average_changes, 0);
+  let violations = safeNumber(b.violationCount || b.violation_count || b.violations || b.totalViolations || b.total_violations, 0);
+
+  if (averageTime <= 0 && totalTime > 0 && answered > 0) averageTime = totalTime / answered;
+  if (totalTime <= 0 && averageTime > 0 && answered > 0) totalTime = averageTime * answered;
+  if (averageChanges <= 0 && totalChanges > 0 && answered > 0) averageChanges = totalChanges / answered;
+
+  return {
+    answered,
+    totalQuestions,
+    unanswered: totalQuestions > 0 ? Math.max(0, totalQuestions - answered) : 0,
+    averageTime,
+    totalTime,
+    totalChanges,
+    averageChanges,
+    violations
+  };
+}
+
+function buildBehavioralNarrative(behavioralInsights, responseCount, overallScore, classification) {
+  const b = normalizeBehavior(behavioralInsights, responseCount);
+  const observations = [];
+  const flags = [];
+  const answeredText = b.answered > 0 ? b.answered + " " + plural(b.answered, "recorded response", "recorded responses") : "the recorded responses";
+
+  if (b.averageTime > 0) {
+    if (b.averageTime < 2) {
+      observations.push("The candidate moved through questions very quickly, with an average response time of " + round(b.averageTime, 2) + " seconds per question.");
+      flags.push("Very rapid response time may indicate high confidence, but may also indicate limited reflection on some items.");
+    } else if (b.averageTime < 8) {
+      observations.push("The candidate maintained a brisk pace, averaging " + round(b.averageTime, 2) + " seconds per question.");
+    } else if (b.averageTime <= 45) {
+      observations.push("The candidate used a measured pace, averaging " + round(b.averageTime, 2) + " seconds per question.");
+    } else {
+      observations.push("The candidate spent a relatively long time on each item, averaging " + round(b.averageTime, 2) + " seconds per question.");
+      flags.push("Longer response time may reflect careful consideration, but may also indicate hesitation or difficulty with some questions.");
+    }
+  } else {
+    observations.push("The timing record is limited, so response-time behavior should be interpreted cautiously.");
+  }
+
+  if (b.totalChanges === 0) {
+    observations.push("No answer changes were recorded, indicating a stable first-choice response pattern.");
+  } else if (b.averageChanges <= 0.05) {
+    observations.push("The candidate made " + b.totalChanges + " " + plural(b.totalChanges, "answer change", "answer changes") + ", which is low relative to " + answeredText + ". This suggests limited second-guessing after initial selections.");
+  } else if (b.averageChanges <= 0.2) {
+    observations.push("The candidate made " + b.totalChanges + " " + plural(b.totalChanges, "answer change", "answer changes") + ", showing some review and adjustment without indicating major instability.");
+  } else {
+    observations.push("The candidate made " + b.totalChanges + " " + plural(b.totalChanges, "answer change", "answer changes") + ", indicating frequent answer revision and possible uncertainty on several items.");
+    flags.push("Frequent answer changes should be reviewed alongside the competency breakdown and follow-up questions before a final readiness decision.");
+  }
+
+  if (b.violations > 0) {
+    flags.push("The assessment recorded " + b.violations + " platform rule " + plural(b.violations, "violation", "violations") + ". Review the session behavior before relying fully on the result.");
+  }
+
+  if (b.totalQuestions > 0 && b.unanswered > 0) {
+    flags.push("The candidate had " + b.unanswered + " unanswered " + plural(b.unanswered, "question", "questions") + ". Consider whether the score fully represents capability.");
+  }
+
+  const paragraphs = [];
+  paragraphs.push("Behavioral tracking reviewed " + answeredText + " from the assessment session. " + observations.join(" "));
+
+  if (flags.length > 0) {
+    paragraphs.push("Supervisor interpretation: " + flags.join(" "));
+  } else {
+    paragraphs.push("Supervisor interpretation: The response behavior appears stable. The available timing and answer-change indicators do not show major behavioral red flags, but should still be interpreted together with the score, classification, and role-readiness decision.");
+  }
+
+  paragraphs.push("Decision support note: Behavioral indicators do not replace the assessment score or supervisor judgment. They explain how the candidate engaged with the platform while completing the assessment. Current classification: " + safeText(classification, "Not classified") + "; current score: " + formatPercentage(overallScore) + ".");
+
+  return {
+    data: b,
+    paragraphs,
+    flags,
+    paceLabel: b.averageTime > 0 && b.averageTime < 2 ? "Very Fast" : b.averageTime <= 8 ? "Fast" : b.averageTime <= 45 ? "Measured" : "Slow",
+    stabilityLabel: b.totalChanges === 0 ? "Very Stable" : b.averageChanges <= 0.05 ? "Stable" : b.averageChanges <= 0.2 ? "Moderate Review" : "High Revision",
+    focusLabel: flags.length > 0 ? "Review Required" : "No Major Concern"
+  };
+}
+
+function ProgressBar({ value, color }) {
+  const v = Math.max(0, Math.min(100, safeNumber(value, 0)));
+  return <div style={styles.progressTrack}><div style={{ width: v + "%", height: "100%", borderRadius: 999, background: color || getToneColor(v) }} /></div>;
+}
+
+function MetricCard({ label, value, note, icon, background, color }) {
   return (
     <div style={styles.metricCard}>
-      <div style={{ ...styles.metricIcon, background: props.background || "#eef4ff", color: props.color || "#3538cd" }}>{props.icon}</div>
+      <div style={{ ...styles.metricIcon, background: background || "#eef4ff", color: color || "#3538cd" }}>{icon}</div>
       <div>
-        <p style={styles.metricCardLabel}>{safeText(props.label, "Metric")}</p>
-        <p style={styles.metricCardValue}>{props.value}</p>
-        {props.note && <p style={styles.metricCardNote}>{safeText(props.note, "")}</p>}
+        <p style={styles.metricCardLabel}>{label}</p>
+        <p style={styles.metricCardValue}>{value}</p>
+        {note ? <p style={styles.metricCardNote}>{note}</p> : null}
       </div>
     </div>
   );
 }
 
-function SectionShell(props) {
+function SectionShell({ title, eyebrow, badge, badgeStyle, highlight, children }) {
   return (
-    <section style={props.highlight ? styles.sectionShellHighlight : styles.sectionShell}>
+    <section style={highlight ? styles.sectionShellHighlight : styles.sectionShell}>
       <div style={styles.sectionHeader}>
         <div>
-          <p style={styles.sectionEyebrow}>{safeText(props.eyebrow || "Report Section", "Report Section")}</p>
-          <h2 style={styles.sectionTitle}>{safeText(props.title, "Section")}</h2>
+          <p style={styles.sectionEyebrow}>{eyebrow || "Report Section"}</p>
+          <h2 style={styles.sectionTitle}>{title}</h2>
         </div>
-        {props.badge !== undefined && props.badge !== null && props.badge !== "" && <span style={props.badgeStyle || styles.badgeNeutral}>{props.badge}</span>}
+        {badge ? <span style={badgeStyle || styles.badgeNeutral}>{badge}</span> : null}
       </div>
-      {props.children}
+      {children}
     </section>
   );
 }
 
-function EmptyState(props) {
-  return (
-    <div style={styles.emptyState}>
-      <div style={styles.emptyIcon}>{props.icon || "✓"}</div>
-      <p style={styles.emptyTitle}>{safeText(props.title, "Nothing to show")}</p>
-      <p style={styles.emptyText}>{safeText(props.message, "No information is available for this section.")}</p>
-    </div>
-  );
+function EmptyState({ title, message, icon }) {
+  return <div style={styles.emptyState}><div style={styles.emptyIcon}>{icon || "✓"}</div><p style={styles.emptyTitle}>{title}</p><p style={styles.emptyText}>{message}</p></div>;
 }
 
-// ======================================================
-// PAGE COMPONENT
-// ======================================================
-
 export default function SupervisorUserReportPage() {
-  var router = useRouter();
-  var userId = router.query.user_id;
-  var assessmentId = router.query.assessment || router.query.assessment_id;
+  const router = useRouter();
+  const userId = router.query.user_id;
+  const assessmentId = router.query.assessment || router.query.assessment_id;
 
-  var loadingState = useState(true);
-  var loading = loadingState[0];
-  var setLoading = loadingState[1];
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [candidate, setCandidate] = useState(null);
+  const [assessment, setAssessment] = useState(null);
+  const [report, setReport] = useState(null);
+  const [activeTab, setActiveTab] = useState("overview");
+  const [expandedRows, setExpandedRows] = useState({});
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState("");
 
-  var errorState = useState("");
-  var errorMessage = errorState[0];
-  var setErrorMessage = errorState[1];
-
-  var candidateState = useState(null);
-  var candidate = candidateState[0];
-  var setCandidate = candidateState[1];
-
-  var assessmentState = useState(null);
-  var assessment = assessmentState[0];
-  var setAssessment = assessmentState[1];
-
-  var reportState = useState(null);
-  var report = reportState[0];
-  var setReport = reportState[1];
-
-  var activeTabState = useState("overview");
-  var activeTab = activeTabState[0];
-  var setActiveTab = activeTabState[1];
-
-  var expandedState = useState({});
-  var expandedRows = expandedState[0];
-  var setExpandedRows = expandedState[1];
-
-  var pdfLoadingState = useState(false);
-  var pdfLoading = pdfLoadingState[0];
-  var setPdfLoading = pdfLoadingState[1];
-
-  var pdfErrorState = useState("");
-  var pdfError = pdfErrorState[0];
-  var setPdfError = pdfErrorState[1];
-
-  useEffect(function () {
-    if (!router.isReady) return;
-    if (!userId) return;
-
-    var mounted = true;
+  useEffect(() => {
+    if (!router.isReady || !userId) return;
+    let mounted = true;
 
     async function loadReport() {
-      var url;
-      var response;
-      var data;
-      var cleanData;
-      var loadedCandidate;
-      var loadedAssessment;
-      var loadedReport;
-      var errorText;
-
       setLoading(true);
       setErrorMessage("");
       setCandidate(null);
@@ -414,33 +376,30 @@ export default function SupervisorUserReportPage() {
       setPdfError("");
 
       try {
-        url = buildReportUrl(userId, assessmentId);
-        response = await fetch(url);
-        data = null;
-
+        const response = await fetch(buildReportUrl(userId, assessmentId));
+        let data = null;
         try {
           data = await response.json();
-        } catch (jsonError) {
+        } catch (e) {
           data = null;
         }
 
         if (!mounted) return;
 
         if (!response.ok) {
-          errorText = data && data.error ? data.error : "Request failed with status " + response.status;
-          setErrorMessage(errorText);
+          setErrorMessage(data && data.error ? data.error : "Request failed with status " + response.status);
           setLoading(false);
           return;
         }
 
-        cleanData = safeObject(data);
-        loadedCandidate = cleanData.candidate || cleanData.user || cleanData.profile || cleanData.candidateProfile || cleanData.candidate_profile || null;
-        loadedAssessment = cleanData.assessment || null;
-        loadedReport = cleanData.generatedReport || cleanData.generated_report || cleanData.report || cleanData.assessmentReport || cleanData.assessment_report || cleanData.result || cleanData;
+        const cleanData = safeObject(data);
+        const loadedCandidate = cleanData.candidate || cleanData.user || cleanData.profile || cleanData.candidateProfile || cleanData.candidate_profile || null;
+        const loadedAssessment = cleanData.assessment || null;
+        const loadedReport = cleanData.generatedReport || cleanData.generated_report || cleanData.report || cleanData.assessmentReport || cleanData.assessment_report || cleanData.result || cleanData;
 
-        setCandidate(decodeObjectDeep(loadedCandidate));
-        setAssessment(decodeObjectDeep(loadedAssessment));
-        setReport(decodeObjectDeep(loadedReport));
+        setCandidate(decodeDeep(loadedCandidate));
+        setAssessment(decodeDeep(loadedAssessment));
+        setReport(decodeDeep(loadedReport));
         setLoading(false);
       } catch (error) {
         if (!mounted) return;
@@ -450,69 +409,45 @@ export default function SupervisorUserReportPage() {
     }
 
     loadReport();
-
-    return function () {
+    return () => {
       mounted = false;
     };
   }, [router.isReady, userId, assessmentId]);
 
-  var cleanReport = safeObject(decodeObjectDeep(report));
-  var categoryScores = safeArray(decodeObjectDeep(getCategoryScores(cleanReport)));
-  var strengths = safeArray(decodeObjectDeep(getStrengths(cleanReport)));
-  var developmentAreas = safeArray(decodeObjectDeep(getDevelopmentAreas(cleanReport)));
-  var recommendations = safeArray(decodeObjectDeep(getRecommendations(cleanReport)));
-  var followUpQuestions = safeArray(decodeObjectDeep(getFollowUpQuestions(cleanReport)));
-  var behavioralInsights = decodeObjectDeep(getBehavioralInsights(cleanReport));
+  const cleanReport = safeObject(decodeDeep(report));
+  const categoryScores = safeArray(decodeDeep(getCategoryScores(cleanReport)));
+  const strengths = safeArray(decodeDeep(getStrengths(cleanReport)));
+  const developmentAreas = safeArray(decodeDeep(getDevelopmentAreas(cleanReport)));
+  const recommendations = safeArray(decodeDeep(getRecommendations(cleanReport)));
+  const followUpQuestions = safeArray(decodeDeep(getFollowUpQuestions(cleanReport)));
+  const behavioralInsights = decodeDeep(getBehavioralInsights(cleanReport));
 
-  var roleReadiness = getRoleReadiness(cleanReport);
-  var candidateName = getCandidateName(candidate, cleanReport);
-  var assessmentName = getAssessmentName(assessment, cleanReport);
-  var effectiveAssessmentId = getAssessmentIdFromData(assessment, cleanReport, assessmentId);
-  var overallScore = getOverallScore(cleanReport);
-  var classification = getClassification(cleanReport);
-  var riskLevel = getRiskLevel(cleanReport);
-  var responseCount = getResponseCount(cleanReport);
-  var scoreColor = getToneColor(overallScore);
-  var scoreGradient = getToneGradient(overallScore);
-  var scoreToneLabel = getToneLabel(overallScore);
-  var showBehavioralMetrics = shouldShowBehavioralMetrics(behavioralInsights);
+  const candidateName = getCandidateName(candidate, cleanReport);
+  const assessmentName = getAssessmentName(assessment, cleanReport);
+  const effectiveAssessmentId = getAssessmentId(assessment, cleanReport, assessmentId);
+  const overallScore = getOverallScore(cleanReport);
+  const classification = getClassification(cleanReport);
+  const riskLevel = getRiskLevel(cleanReport);
+  const responseCount = getResponseCount(cleanReport);
+  const roleReadiness = getRoleReadiness(cleanReport);
+  const scoreColor = getToneColor(overallScore);
+  const scoreGradient = getToneGradient(overallScore);
+  const behavioralNarrative = buildBehavioralNarrative(behavioralInsights, responseCount, overallScore, classification);
 
-  var tabs = useMemo(function () {
-    return [
-      { key: "overview", label: "Overview", icon: "◈" },
-      { key: "categories", label: "Categories", icon: "▦" },
-      { key: "strengths", label: "Strengths", icon: "★" },
-      { key: "development", label: "Development", icon: "△" },
-      { key: "questions", label: "Questions", icon: "?" },
-      { key: "recommendations", label: "Recommendations", icon: "✓" }
-    ];
-  }, []);
-
-  var countData = {
-    categoryScores: categoryScores,
-    strengths: strengths,
-    developmentAreas: developmentAreas,
-    followUpQuestions: followUpQuestions,
-    recommendations: recommendations
-  };
+  const tabs = useMemo(() => [
+    { key: "overview", label: "Overview", icon: "◈" },
+    { key: "categories", label: "Categories", icon: "▦", count: categoryScores.length },
+    { key: "strengths", label: "Strengths", icon: "★", count: strengths.length },
+    { key: "development", label: "Development", icon: "△", count: developmentAreas.length },
+    { key: "questions", label: "Questions", icon: "?", count: followUpQuestions.length },
+    { key: "recommendations", label: "Recommendations", icon: "✓", count: recommendations.length }
+  ], [categoryScores.length, strengths.length, developmentAreas.length, followUpQuestions.length, recommendations.length]);
 
   function toggleRow(key) {
-    var next = {};
-    Object.keys(expandedRows).forEach(function (itemKey) {
-      next[itemKey] = expandedRows[itemKey];
-    });
-    next[key] = !next[key];
-    setExpandedRows(next);
+    setExpandedRows((previous) => ({ ...previous, [key]: !previous[key] }));
   }
 
   async function downloadPdfReport() {
-    var response;
-    var blob;
-    var downloadUrl;
-    var link;
-    var fileName;
-    var errorData;
-
     if (!userId || !effectiveAssessmentId) {
       setPdfError("Cannot generate PDF because candidate ID or assessment ID is missing.");
       return;
@@ -522,17 +457,17 @@ export default function SupervisorUserReportPage() {
     setPdfError("");
 
     try {
-      response = await fetch("/api/generate-pdf-report", {
+      const response = await fetch("/api/generate-pdf-report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: userId, assessmentId: effectiveAssessmentId })
+        body: JSON.stringify({ userId, assessmentId: effectiveAssessmentId })
       });
 
       if (!response.ok) {
-        errorData = null;
+        let errorData = null;
         try {
           errorData = await response.json();
-        } catch (jsonError) {
+        } catch (e) {
           errorData = null;
         }
         setPdfError(errorData && errorData.message ? errorData.message : errorData && errorData.error ? errorData.error : "PDF generation failed. Please try again.");
@@ -540,10 +475,10 @@ export default function SupervisorUserReportPage() {
         return;
       }
 
-      blob = await response.blob();
-      downloadUrl = window.URL.createObjectURL(blob);
-      link = document.createElement("a");
-      fileName = safeText(candidateName || "Candidate", "Candidate").replace(/[^a-zA-Z0-9_-]+/g, "_");
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const fileName = safeText(candidateName || "Candidate", "Candidate").replace(/[^a-zA-Z0-9_-]+/g, "_");
       link.href = downloadUrl;
       link.download = fileName + "_supervisor_report.pdf";
       document.body.appendChild(link);
@@ -555,6 +490,43 @@ export default function SupervisorUserReportPage() {
       setPdfError(error && error.message ? error.message : "PDF generation failed. Please try again.");
       setPdfLoading(false);
     }
+  }
+
+  function renderBehavioralInsightsSection() {
+    if (!behavioralInsights) return null;
+    const b = behavioralNarrative.data;
+    const showMetrics = b.totalTime > 0 || b.averageTime > 0 || b.totalChanges > 0 || b.averageChanges > 0;
+
+    return (
+      <SectionShell title="Behavioral Insights" eyebrow="Response behavior" badge={behavioralNarrative.focusLabel} badgeStyle={behavioralNarrative.flags.length > 0 ? styles.badgeWarm : styles.badgeNeutral}>
+        {showMetrics ? (
+          <div style={styles.miniMetrics}>
+            <MetricCard label="Average Time" value={round(b.averageTime, 2) + "s"} icon="⏱" background="#ecfeff" color="#0e7490" />
+            <MetricCard label="Average Changes" value={round(b.averageChanges, 2)} icon="↺" background="#f5f3ff" color="#6d28d9" />
+            <MetricCard label="Total Changes" value={b.totalChanges} icon="✦" background="#fff7ed" color="#c2410c" />
+            <MetricCard label="Behavioral Pace" value={behavioralNarrative.paceLabel} icon="➤" background="#eef4ff" color="#3538cd" />
+            <MetricCard label="Answer Stability" value={behavioralNarrative.stabilityLabel} icon="◆" background="#ecfdf3" color="#027a48" />
+            <MetricCard label="Violations" value={b.violations} icon="!" background="#fef3f2" color="#b42318" />
+          </div>
+        ) : null}
+
+        <div style={styles.behaviorNarrativeBox}>
+          <p style={styles.behaviorNarrativeTitle}>Supervisor Behavioral Narrative</p>
+          {behavioralNarrative.paragraphs.map((paragraph, index) => (
+            <p key={index} style={styles.bodyText}>{paragraph}</p>
+          ))}
+        </div>
+
+        {behavioralNarrative.flags.length > 0 ? (
+          <div style={styles.behaviorFlagBox}>
+            <p style={styles.behaviorNarrativeTitle}>Items for Supervisor Review</p>
+            <ul style={styles.behaviorList}>
+              {behavioralNarrative.flags.map((flag, index) => <li key={index} style={styles.behaviorListItem}>{flag}</li>)}
+            </ul>
+          </div>
+        ) : null}
+      </SectionShell>
+    );
   }
 
   function renderOverview() {
@@ -570,46 +542,30 @@ export default function SupervisorUserReportPage() {
         </div>
 
         <SectionShell title="Role Readiness" eyebrow="Readiness decision" badge="Readiness" badgeStyle={styles.badgeWarm} highlight={true}>
-          <p style={styles.bodyTextLarge}>{safeText(roleReadiness, "No role readiness statement is available yet.")}</p>
+          <p style={styles.bodyTextLarge}>{roleReadiness}</p>
         </SectionShell>
 
-        {behavioralInsights && (
-          <SectionShell title="Behavioral Insights" eyebrow="Response behavior" badge="Behavior">
-            {showBehavioralMetrics && (
-              <div style={styles.miniMetrics}>
-                <MetricCard label="Average Time" value={safeNumber(behavioralInsights.averageTimePerQuestion || behavioralInsights.average_time_per_question, 0) + "s"} icon="⏱" background="#ecfeff" color="#0e7490" />
-                <MetricCard label="Average Changes" value={safeNumber(behavioralInsights.averageChangesPerQuestion || behavioralInsights.average_changes_per_question, 0)} icon="↺" background="#f5f3ff" color="#6d28d9" />
-                <MetricCard label="Total Changes" value={safeNumber(behavioralInsights.totalChanges || behavioralInsights.total_changes, 0)} icon="✦" background="#fff7ed" color="#c2410c" />
-              </div>
-            )}
-            <p style={styles.bodyText}>{safeText(behavioralInsights.note || behavioralInsights.summary || behavioralInsights.interpretation || "No behavioral timing insight is available.", "No behavioral timing insight is available.")}</p>
-          </SectionShell>
-        )}
+        {renderBehavioralInsightsSection()}
       </React.Fragment>
     );
   }
 
   function renderCategories() {
-    if (categoryScores.length === 0) {
-      return <EmptyState title="No category scores found" message="No category or competency scores were found in the generated report." icon="▦" />;
-    }
+    if (categoryScores.length === 0) return <EmptyState title="No category scores found" message="No category or competency scores were found in the generated report." icon="▦" />;
 
     return (
       <SectionShell title="Category / Competency Scores" eyebrow="Expandable performance breakdown" badge={categoryScores.length}>
         <div style={styles.categoryDeck}>
-          {categoryScores.map(function (item, index) {
-            var row = safeObject(decodeObjectDeep(item));
-            var rowTitle = getRowTitle(row);
-            var rowPercentage = getRowPercentage(row);
-            var rowNarrative = getRowNarrative(row);
-            var rowAction = getRowAction(row);
-            var key = "category-" + index;
-            var isOpen = expandedRows[key] || false;
-            var color = getToneColor(rowPercentage);
-
+          {categoryScores.map((item, index) => {
+            const row = safeObject(decodeDeep(item));
+            const rowTitle = getRowTitle(row);
+            const rowPercentage = getRowPercentage(row);
+            const color = getToneColor(rowPercentage);
+            const key = "category-" + index;
+            const isOpen = !!expandedRows[key];
             return (
               <article key={key} style={styles.categoryCard}>
-                <button type="button" style={styles.categoryButton} onClick={function () { toggleRow(key); }}>
+                <button type="button" style={styles.categoryButton} onClick={() => toggleRow(key)}>
                   <div style={styles.categoryLeft}>
                     <div style={{ ...styles.categoryIcon, background: getToneGradient(rowPercentage) }}>{index + 1}</div>
                     <div>
@@ -618,24 +574,18 @@ export default function SupervisorUserReportPage() {
                     </div>
                   </div>
                   <div style={styles.categoryRight}>
-                    <strong style={{ ...styles.categoryScore, color: color }}>{formatPercentage(rowPercentage)}</strong>
-                    <span style={getRiskStyle(row.riskLevel || row.risk_level)}>{safeText(row.riskLevel || row.risk_level, "N/A")}</span>
+                    <strong style={{ ...styles.categoryScore, color }}>{formatPercentage(rowPercentage)}</strong>
+                    <span style={getBadgeStyle(row.riskLevel || row.risk_level)}>{safeText(row.riskLevel || row.risk_level, "N/A")}</span>
                     <span style={styles.chevron}>{isOpen ? "−" : "+"}</span>
                   </div>
                 </button>
-
                 <div style={styles.categoryProgressWrap}><ProgressBar value={rowPercentage} color={color} /></div>
-
-                {isOpen && (
+                {isOpen ? (
                   <div style={styles.categoryDetails}>
-                    <div style={styles.detailPills}>
-                      <span style={styles.classificationPill}>{safeText(row.classification || row.label || row.scoreLevel || row.score_level, "Not classified")}</span>
-                      <span style={getRiskStyle(row.riskLevel || row.risk_level)}>{safeText(row.riskLevel || row.risk_level, "N/A")}</span>
-                    </div>
-                    <p style={styles.bodyText}>{rowNarrative}</p>
-                    {rowAction && <p style={styles.actionText}><strong>Action:</strong> {rowAction}</p>}
+                    <p style={styles.bodyText}>{getRowNarrative(row)}</p>
+                    {(row.action || row.suggestedAction || row.suggested_action) ? <p style={styles.actionText}><strong>Action:</strong> {safeText(row.action || row.suggestedAction || row.suggested_action, "")}</p> : null}
                   </div>
-                )}
+                ) : null}
               </article>
             );
           })}
@@ -644,41 +594,21 @@ export default function SupervisorUserReportPage() {
     );
   }
 
-  function renderStrengths() {
-    if (strengths.length === 0) return <EmptyState title="No strengths available" message="No strengths have been identified for this candidate yet." icon="★" />;
+  function renderInsightCards(items, type) {
+    const isStrength = type === "strength";
+    if (items.length === 0) {
+      return <EmptyState title={isStrength ? "No strengths available" : "No priority development areas detected"} message={isStrength ? "No strengths have been identified for this candidate yet." : "The candidate scored above the development threshold across all measured areas."} icon={isStrength ? "★" : "✓"} />;
+    }
 
     return (
-      <SectionShell title="Top Strengths" eyebrow="Leverage areas" badge={strengths.length}>
+      <SectionShell title={isStrength ? "Top Strengths" : "Development Areas"} eyebrow={isStrength ? "Leverage areas" : "Priority improvement areas"} badge={items.length} badgeStyle={isStrength ? styles.badgeGood : styles.badgeWarm}>
         <div style={styles.cardGrid}>
-          {strengths.map(function (item, index) {
-            var row = safeObject(decodeObjectDeep(item));
-            var score = getRowPercentage(row);
+          {items.map((item, index) => {
+            const row = safeObject(decodeDeep(item));
+            const score = getRowPercentage(row);
             return (
-              <article key={index} style={styles.insightCard}>
-                <div style={styles.insightTop}><span style={styles.strengthIcon}>★</span><strong style={{ ...styles.insightScore, color: getToneColor(score) }}>{formatPercentage(score)}</strong></div>
-                <h3 style={styles.insightTitle}>{getRowTitle(row)}</h3>
-                <ProgressBar value={score} color={getToneColor(score)} />
-                <p style={styles.insightText}>{getRowNarrative(row)}</p>
-              </article>
-            );
-          })}
-        </div>
-      </SectionShell>
-    );
-  }
-
-  function renderDevelopment() {
-    if (developmentAreas.length === 0) return <EmptyState title="No priority development areas detected" message="The candidate scored above the development threshold across all measured areas." icon="✓" />;
-
-    return (
-      <SectionShell title="Development Areas" eyebrow="Priority improvement areas" badge={developmentAreas.length} badgeStyle={styles.badgeWarm}>
-        <div style={styles.cardGrid}>
-          {developmentAreas.map(function (item, index) {
-            var row = safeObject(decodeObjectDeep(item));
-            var score = getRowPercentage(row);
-            return (
-              <article key={index} style={styles.developmentCard}>
-                <div style={styles.insightTop}><span style={styles.developmentIcon}>△</span><strong style={{ ...styles.insightScore, color: getToneColor(score) }}>{formatPercentage(score)}</strong></div>
+              <article key={index} style={isStrength ? styles.insightCard : styles.developmentCard}>
+                <div style={styles.insightTop}><span style={isStrength ? styles.strengthIcon : styles.developmentIcon}>{isStrength ? "★" : "△"}</span><strong style={{ ...styles.insightScore, color: getToneColor(score) }}>{formatPercentage(score)}</strong></div>
                 <h3 style={styles.insightTitle}>{getRowTitle(row)}</h3>
                 <ProgressBar value={score} color={getToneColor(score)} />
                 <p style={styles.insightText}>{getRowNarrative(row)}</p>
@@ -695,12 +625,12 @@ export default function SupervisorUserReportPage() {
 
     return (
       <SectionShell title="Supervisor Follow-up Questions" eyebrow="Interview and validation prompts" badge={followUpQuestions.length}>
-        <div style={styles.questionGrid}>
-          {followUpQuestions.map(function (item, index) {
-            var row = safeObject(decodeObjectDeep(item));
+        <div style={styles.questionGridModern}>
+          {followUpQuestions.map((item, index) => {
+            const row = safeObject(decodeDeep(item));
             return (
               <article key={index} style={styles.questionCardModern}>
-                <div style={styles.questionHeader}><span style={styles.questionNumber}>{index + 1}</span><span style={getPriorityStyle(row.priority)}>{safeText(row.priority, "Medium")}</span></div>
+                <div style={styles.questionHeader}><span style={styles.questionNumber}>{index + 1}</span><span style={styles.badgeNeutral}>{safeText(row.priority, "Medium")}</span></div>
                 <h3 style={styles.insightTitle}>{safeText(row.category || row.competency || row.area, "Follow-up Area")}</h3>
                 <p style={styles.bodyText}>{safeText(row.question || row.prompt, "No question text available.")}</p>
               </article>
@@ -717,18 +647,17 @@ export default function SupervisorUserReportPage() {
     return (
       <SectionShell title="Recommendations" eyebrow={developmentAreas.length === 0 ? "Leverage plan" : "Action plan"} badge={recommendations.length}>
         <div style={styles.recommendationTimeline}>
-          {recommendations.map(function (item, index) {
-            var row = safeObject(decodeObjectDeep(item));
+          {recommendations.map((item, index) => {
+            const row = safeObject(decodeDeep(item));
             return (
               <article key={index} style={styles.recommendationModern}>
                 <div style={styles.timelineDot}>{index + 1}</div>
                 <div style={styles.recommendationContent}>
-                  <div style={styles.recommendationHeader}><h3 style={styles.recommendationTitle}>{safeText(row.competency || row.category || row.title, "Recommendation")}</h3><span style={getPriorityStyle(row.priority)}>{safeText(row.priority, "Medium")}</span></div>
+                  <div style={styles.recommendationHeader}><h3 style={styles.recommendationTitle}>{safeText(row.competency || row.category || row.title, "Recommendation")}</h3><span style={getBadgeStyle(row.priority)}>{safeText(row.priority, "Medium")}</span></div>
                   <p style={styles.bodyText}>{safeText(row.recommendation || row.description, "No recommendation text available.")}</p>
-                  {row.action && <p style={styles.actionText}><strong>Action:</strong> {safeText(row.action, "")}</p>}
-                  {row.impact && <p style={styles.mutedText}><strong>Impact:</strong> {safeText(row.impact, "")}</p>}
-                  {row.followUpQuestion && <p style={styles.mutedText}><strong>Follow-up:</strong> {safeText(row.followUpQuestion, "")}</p>}
-                  {row.follow_up_question && <p style={styles.mutedText}><strong>Follow-up:</strong> {safeText(row.follow_up_question, "")}</p>}
+                  {row.action ? <p style={styles.actionText}><strong>Action:</strong> {safeText(row.action, "")}</p> : null}
+                  {row.impact ? <p style={styles.mutedText}><strong>Impact:</strong> {safeText(row.impact, "")}</p> : null}
+                  {row.followUpQuestion || row.follow_up_question ? <p style={styles.mutedText}><strong>Follow-up:</strong> {safeText(row.followUpQuestion || row.follow_up_question, "")}</p> : null}
                 </div>
               </article>
             );
@@ -740,8 +669,8 @@ export default function SupervisorUserReportPage() {
 
   function renderActiveTab() {
     if (activeTab === "categories") return renderCategories();
-    if (activeTab === "strengths") return renderStrengths();
-    if (activeTab === "development") return renderDevelopment();
+    if (activeTab === "strengths") return renderInsightCards(strengths, "strength");
+    if (activeTab === "development") return renderInsightCards(developmentAreas, "development");
     if (activeTab === "questions") return renderQuestions();
     if (activeTab === "recommendations") return renderRecommendations();
     return renderOverview();
@@ -757,7 +686,7 @@ export default function SupervisorUserReportPage() {
             <div style={styles.heroTextBlock}>
               <div style={styles.heroBadge}>Supervisor Assessment Report</div>
               <h1 style={styles.heroTitle}>{candidateName}</h1>
-              <p style={styles.heroSubtitle}>Assessment: {safeText(assessmentName, "Assessment")}</p>
+              <p style={styles.heroSubtitle}>Assessment: {assessmentName}</p>
               <p style={styles.heroMeta}>Candidate ID: {safeText(userId, "Not available")}</p>
               <p style={styles.heroMeta}>Assessment ID: {safeText(effectiveAssessmentId, "Not available")}</p>
             </div>
@@ -768,12 +697,12 @@ export default function SupervisorUserReportPage() {
               <ProgressBar value={overallScore} color={scoreColor} />
               <div style={styles.scorePanelFooter}>
                 <span style={styles.classificationBadge}>{classification}</span>
-                <span style={styles.classificationBadge}>{scoreToneLabel}</span>
-                <span style={getRiskStyle(riskLevel)}>{riskLevel}</span>
+                <span style={styles.classificationBadge}>{getToneLabel(overallScore)}</span>
+                <span style={getBadgeStyle(riskLevel)}>{riskLevel}</span>
               </div>
               <p style={styles.scorePanelMeta}>Responses: {safeNumber(responseCount, 0)}</p>
               <button type="button" style={pdfLoading ? styles.buttonDisabled : styles.downloadButton} onClick={downloadPdfReport} disabled={pdfLoading || loading}>{pdfLoading ? "Generating PDF..." : "Download PDF"}</button>
-              {pdfError && <p style={styles.pdfError}>{pdfError}</p>}
+              {pdfError ? <p style={styles.pdfError}>{pdfError}</p> : null}
             </div>
           </div>
         </header>
@@ -785,49 +714,44 @@ export default function SupervisorUserReportPage() {
           <MetricCard label="Questions" value={followUpQuestions.length} note="Supervisor prompts" icon="?" background="#f5f3ff" color="#6d28d9" />
         </div>
 
-        {loading && (
+        {loading ? (
           <SectionShell title="Loading report" eyebrow="Please wait">
             <div style={styles.loadingBar}><div style={styles.loadingPulse} /></div>
             <p style={styles.bodyText}>Loading supervisor report...</p>
           </SectionShell>
-        )}
+        ) : null}
 
-        {!loading && errorMessage && (
+        {!loading && errorMessage ? (
           <section style={styles.errorCard}>
             <h2 style={styles.sectionTitle}>Report not loaded</h2>
             <p style={styles.errorText}>{errorMessage}</p>
             <p style={styles.mutedText}>The supervisor page loaded, but the report API did not return report data.</p>
           </section>
-        )}
+        ) : null}
 
-        {!loading && !errorMessage && (
+        {!loading && !errorMessage ? (
           <React.Fragment>
             <nav style={styles.tabBar}>
-              {tabs.map(function (tab) {
-                var isActive = activeTab === tab.key;
-                var count = getTabCount(tab.key, countData);
+              {tabs.map((tab) => {
+                const isActive = activeTab === tab.key;
                 return (
-                  <button key={tab.key} type="button" style={isActive ? styles.tabActive : styles.tabButton} onClick={function () { setActiveTab(tab.key); }}>
+                  <button key={tab.key} type="button" style={isActive ? styles.tabActive : styles.tabButton} onClick={() => setActiveTab(tab.key)}>
                     <span style={styles.tabIcon}>{tab.icon}</span>
                     <span>{tab.label}</span>
-                    {count !== "" && <span style={isActive ? styles.tabCountActive : styles.tabCount}>{count}</span>}
+                    {tab.count !== undefined ? <span style={isActive ? styles.tabCountActive : styles.tabCount}>{tab.count}</span> : null}
                   </button>
                 );
               })}
             </nav>
             <div style={styles.tabContent}>{renderActiveTab()}</div>
           </React.Fragment>
-        )}
+        ) : null}
       </div>
     </div>
   );
 }
 
-// ======================================================
-// STYLES
-// ======================================================
-
-var styles = {
+const styles = {
   page: { minHeight: "100vh", background: "#f3f6fb", padding: "28px 16px 48px", color: "#172033", position: "relative", overflow: "hidden", fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif' },
   backgroundBlobOne: { position: "absolute", width: "420px", height: "420px", borderRadius: "999px", background: "rgba(20, 184, 166, 0.18)", top: "-160px", right: "-120px", filter: "blur(10px)" },
   backgroundBlobTwo: { position: "absolute", width: "360px", height: "360px", borderRadius: "999px", background: "rgba(79, 70, 229, 0.12)", bottom: "-160px", left: "-120px", filter: "blur(12px)" },
@@ -868,11 +792,16 @@ var styles = {
   sectionHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "14px", marginBottom: "16px" },
   sectionEyebrow: { margin: "0 0 4px", color: "#667085", fontSize: "12px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em" },
   sectionTitle: { margin: 0, fontSize: "22px", color: "#101828" },
-  bodyText: { margin: 0, color: "#344054", lineHeight: 1.7, fontSize: "15px" },
+  bodyText: { margin: "0 0 12px", color: "#344054", lineHeight: 1.7, fontSize: "15px" },
   bodyTextLarge: { margin: 0, color: "#344054", lineHeight: 1.75, fontSize: "16px" },
   mutedText: { margin: "8px 0 0", color: "#667085", lineHeight: 1.6, fontSize: "14px" },
   actionText: { margin: "10px 0 0", color: "#344054", lineHeight: 1.6, fontSize: "14px" },
   miniMetrics: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px", marginBottom: "16px" },
+  behaviorNarrativeBox: { background: "linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)", border: "1px solid #eaecf0", borderRadius: "18px", padding: "18px", marginTop: "10px" },
+  behaviorFlagBox: { background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: "18px", padding: "18px", marginTop: "14px" },
+  behaviorNarrativeTitle: { margin: "0 0 10px", color: "#101828", fontSize: "15px", fontWeight: 900 },
+  behaviorList: { margin: 0, paddingLeft: "20px", color: "#344054", lineHeight: 1.7 },
+  behaviorListItem: { marginBottom: "8px" },
   categoryDeck: { display: "grid", gap: "14px" },
   categoryCard: { background: "#ffffff", border: "1px solid #eaecf0", borderRadius: "18px", overflow: "hidden", boxShadow: "0 10px 26px rgba(16, 24, 40, 0.05)" },
   categoryButton: { width: "100%", border: 0, background: "transparent", padding: "16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", cursor: "pointer", textAlign: "left" },
@@ -884,9 +813,7 @@ var styles = {
   categoryScore: { fontSize: "20px", fontWeight: 900 },
   chevron: { width: "30px", height: "30px", borderRadius: "999px", background: "#f2f4f7", color: "#344054", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: "18px" },
   categoryProgressWrap: { padding: "0 16px 14px" },
-  categoryDetails: { padding: "0 16px 16px", borderTop: "1px solid #eaecf0" },
-  detailPills: { display: "flex", gap: "8px", flexWrap: "wrap", margin: "14px 0 10px" },
-  classificationPill: { display: "inline-flex", borderRadius: "999px", padding: "6px 10px", background: "#f2f4f7", color: "#344054", fontSize: "12px", fontWeight: 900 },
+  categoryDetails: { padding: "14px 16px 16px", borderTop: "1px solid #eaecf0" },
   cardGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "14px" },
   insightCard: { background: "linear-gradient(135deg, #ffffff 0%, #ecfdf3 100%)", border: "1px solid #bbf7d0", borderRadius: "20px", padding: "18px", boxShadow: "0 14px 34px rgba(16, 24, 40, 0.06)" },
   developmentCard: { background: "linear-gradient(135deg, #ffffff 0%, #fff7ed 100%)", border: "1px solid #fed7aa", borderRadius: "20px", padding: "18px", boxShadow: "0 14px 34px rgba(16, 24, 40, 0.06)" },
@@ -896,7 +823,7 @@ var styles = {
   insightScore: { fontSize: "22px", fontWeight: 900 },
   insightTitle: { margin: "0 0 10px", color: "#101828", fontSize: "17px" },
   insightText: { margin: "12px 0 0", color: "#475467", lineHeight: 1.6, fontSize: "14px" },
-  questionGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "14px" },
+  questionGridModern: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "14px" },
   questionCardModern: { background: "linear-gradient(135deg, #ffffff 0%, #f5f3ff 100%)", border: "1px solid #ddd6fe", borderRadius: "20px", padding: "18px", boxShadow: "0 14px 34px rgba(16, 24, 40, 0.06)" },
   questionHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" },
   questionNumber: { width: "34px", height: "34px", borderRadius: "12px", background: "#ede9fe", color: "#6d28d9", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 900 },
@@ -916,14 +843,6 @@ var styles = {
   errorText: { margin: "10px 0", color: "#b42318", fontWeight: 900 },
   badgeNeutral: { display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "999px", padding: "7px 11px", background: "#eef4ff", color: "#3538cd", fontWeight: 900, fontSize: "12px" },
   badgeWarm: { display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "999px", padding: "7px 11px", background: "#fff7ed", color: "#c2410c", fontWeight: 900, fontSize: "12px" },
-  badgeLow: { display: "inline-flex", borderRadius: "999px", padding: "6px 10px", background: "#ecfdf3", color: "#027a48", fontWeight: 900, fontSize: "12px" },
-  badgeModerate: { display: "inline-flex", borderRadius: "999px", padding: "6px 10px", background: "#eff6ff", color: "#1d4ed8", fontWeight: 900, fontSize: "12px" },
-  badgeElevated: { display: "inline-flex", borderRadius: "999px", padding: "6px 10px", background: "#fffaeb", color: "#b54708", fontWeight: 900, fontSize: "12px" },
-  badgeHigh: { display: "inline-flex", borderRadius: "999px", padding: "6px 10px", background: "#fff7ed", color: "#c2410c", fontWeight: 900, fontSize: "12px" },
-  badgeCritical: { display: "inline-flex", borderRadius: "999px", padding: "6px 10px", background: "#fef3f2", color: "#b42318", fontWeight: 900, fontSize: "12px" },
-  priorityHigh: { padding: "6px 10px", borderRadius: "999px", background: "#fff7ed", color: "#c2410c", fontSize: "12px", fontWeight: 900, whiteSpace: "nowrap" },
-  priorityCritical: { padding: "6px 10px", borderRadius: "999px", background: "#fef3f2", color: "#b42318", fontSize: "12px", fontWeight: 900, whiteSpace: "nowrap" },
-  priorityMedium: { padding: "6px 10px", borderRadius: "999px", background: "#fffaeb", color: "#b54708", fontSize: "12px", fontWeight: 900, whiteSpace: "nowrap" },
-  priorityLow: { padding: "6px 10px", borderRadius: "999px", background: "#eff6ff", color: "#1d4ed8", fontSize: "12px", fontWeight: 900, whiteSpace: "nowrap" },
-  priorityLeverage: { padding: "6px 10px", borderRadius: "999px", background: "#ecfdf3", color: "#027a48", fontSize: "12px", fontWeight: 900, whiteSpace: "nowrap" }
+  badgeGood: { display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "999px", padding: "7px 11px", background: "#ecfdf3", color: "#027a48", fontWeight: 900, fontSize: "12px" },
+  badgeCritical: { display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "999px", padding: "7px 11px", background: "#fef3f2", color: "#b42318", fontWeight: 900, fontSize: "12px" }
 };
