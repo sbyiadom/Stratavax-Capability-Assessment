@@ -25,8 +25,7 @@ function safeArray(value) {
 
 function safeNumber(value, fallback = 0) {
   const n = Number(value);
-  if (Number.isNaN(n) || !Number.isFinite(n)) return fallback;
-  return n;
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function formatTime(seconds) {
@@ -34,7 +33,7 @@ function formatTime(seconds) {
   const hrs = Math.floor(safeSeconds / 3600);
   const mins = Math.floor((safeSeconds % 3600) / 60);
   const secs = safeSeconds % 60;
-  return hrs.toString().padStart(2, "0") + ":" + mins.toString().padStart(2, "0") + ":" + secs.toString().padStart(2, "0");
+  return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
 function getAnswerArray(value) {
@@ -48,6 +47,29 @@ function countAnswered(answerMap) {
     if (Array.isArray(answer)) return answer.length > 0;
     return answer !== null && answer !== undefined && answer !== "";
   }).length;
+}
+
+function isManufacturingBaselineAssessment(assessment, assessmentType) {
+  const typeId = safeNumber(
+    assessment && assessment.assessment_type_id
+      ? assessment.assessment_type_id
+      : assessmentType && assessmentType.id
+      ? assessmentType.id
+      : 0,
+    0
+  );
+
+  const assessmentTitle = String((assessment && assessment.title) || "").toLowerCase();
+  const typeCode = String((assessmentType && assessmentType.code) || "").toLowerCase();
+  const typeName = String((assessmentType && assessmentType.name) || "").toLowerCase();
+
+  return (
+    typeId === 19 ||
+    assessmentTitle.includes("manufacturing baseline") ||
+    typeCode.includes("manufacturing_baseline") ||
+    typeCode.includes("manufacturing-baseline") ||
+    typeName.includes("manufacturing baseline")
+  );
 }
 
 function isMultipleCorrectQuestion(question) {
@@ -116,7 +138,8 @@ function AssessmentContent() {
   const gradientEnd = assessmentType && assessmentType.gradient_end ? assessmentType.gradient_end : "#006064";
 
   const currentQuestion = questions[currentIndex] || {};
-  const isMultipleCorrect = isMultipleCorrectQuestion(currentQuestion);
+  const allowMultipleSelection = isManufacturingBaselineAssessment(assessment, assessmentType);
+  const isMultipleCorrect = allowMultipleSelection && isMultipleCorrectQuestion(currentQuestion);
   const totalAnswered = countAnswered(answers);
   const totalChanges = Object.values(answerChangeCount).reduce((a, b) => a + safeNumber(b, 0), 0);
   const isLastQuestion = currentIndex === questions.length - 1;
@@ -146,7 +169,11 @@ function AssessmentContent() {
     const answeredCount = countAnswered(nextAnswers || answers);
     await supabase
       .from("assessment_sessions")
-      .update({ answered_questions: answeredCount, total_questions: questions.length, updated_at: new Date().toISOString() })
+      .update({
+        answered_questions: answeredCount,
+        total_questions: questions.length,
+        updated_at: new Date().toISOString()
+      })
       .eq("id", sessionIdRef.current);
   }
 
@@ -218,7 +245,10 @@ function AssessmentContent() {
     setViolationCount(newCount);
 
     try {
-      await supabase.from("assessment_sessions").update({ violation_count: newCount, updated_at: new Date().toISOString() }).eq("id", sessionIdRef.current);
+      await supabase
+        .from("assessment_sessions")
+        .update({ violation_count: newCount, updated_at: new Date().toISOString() })
+        .eq("id", sessionIdRef.current);
       await supabase.from("assessment_violations").insert({
         session_id: sessionIdRef.current,
         user_id: user ? user.id : null,
@@ -315,6 +345,11 @@ function AssessmentContent() {
         setAssessment(assessmentData);
         setAssessmentType(assessmentData ? assessmentData.assessment_type : null);
 
+        const allowMultipleForThisAssessment = isManufacturingBaselineAssessment(
+          assessmentData,
+          assessmentData ? assessmentData.assessment_type : null
+        );
+
         const sessionData = await createAssessmentSession(
           currentUser.id,
           assessmentId,
@@ -345,7 +380,8 @@ function AssessmentContent() {
         if (responses && responses.answerMap) {
           Object.entries(responses.answerMap).forEach(([qId, answer]) => {
             if (typeof answer === "string" && answer.includes(",")) {
-              restoredAnswers[qId] = answer.split(",").map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id));
+              const answerList = answer.split(",").map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id));
+              restoredAnswers[qId] = allowMultipleForThisAssessment ? answerList : answerList[0];
             } else if (answer !== null && answer !== undefined && answer !== "") {
               restoredAnswers[qId] = parseInt(answer, 10);
             }
@@ -354,12 +390,15 @@ function AssessmentContent() {
 
         if (responses && responses.initialAnswerMap) {
           Object.entries(responses.initialAnswerMap).forEach(([qId, answer]) => {
-            restoredInitialAnswers[qId] = answer;
+            if (typeof answer === "string" && answer.includes(",") && !allowMultipleForThisAssessment) {
+              const firstAnswer = answer.split(",").map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id))[0];
+              restoredInitialAnswers[qId] = firstAnswer;
+            } else {
+              restoredInitialAnswers[qId] = answer;
+            }
           });
         }
 
-        // Restore historical change counts only when they exist for this active session.
-        // The first click on a fresh question will NOT be counted as a change.
         if (responses && responses.changeCountMap) {
           Object.entries(responses.changeCountMap).forEach(([qId, count]) => {
             restoredChangeCount[qId] = safeNumber(count, 0);
@@ -375,7 +414,11 @@ function AssessmentContent() {
           if (lastIndex >= 0) setCurrentIndex(lastIndex);
         }
 
-        const violationResponse = await supabase.from("assessment_sessions").select("violation_count").eq("id", sessionData.id).maybeSingle();
+        const violationResponse = await supabase
+          .from("assessment_sessions")
+          .select("violation_count")
+          .eq("id", sessionData.id)
+          .maybeSingle();
         if (violationResponse.data && violationResponse.data.violation_count) {
           setViolationCount(safeNumber(violationResponse.data.violation_count, 0));
         }
@@ -408,7 +451,6 @@ function AssessmentContent() {
         return next;
       });
     }, 1000);
-
     return () => clearInterval(timer);
   }, [loading, alreadySubmitted, accessDenied, session, isAutoSubmitting, timeLimitSeconds, user, assessmentId, currentIndex, questions]);
 
@@ -531,25 +573,11 @@ function AssessmentContent() {
     router.push("/candidate/dashboard");
   }
 
-  if (loading) {
-    return <div style={styles.loadingContainer}><div style={styles.loadingSpinner} /><h2>Loading Assessment...</h2><p>Preparing your questions</p></div>;
-  }
-
-  if (accessDenied) {
-    return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.errorIcon}>🔒</div><h2>Access Denied</h2><p>This assessment is not currently available for your account.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
-  }
-
-  if (alreadySubmitted && !showSuccessModal) {
-    return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.successIcon}>✅</div><h2>Assessment Completed</h2><p>This assessment has already been submitted.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
-  }
-
-  if (pageError) {
-    return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.errorIcon}>⚠️</div><h2>Error Loading Assessment</h2><p>{pageError}</p><button onClick={() => window.location.reload()} style={styles.primaryButton}>Try Again</button></div></div>;
-  }
-
-  if (!questions.length) {
-    return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.errorIcon}>📭</div><h2>No Questions Available</h2><p>This assessment does not have any questions yet.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
-  }
+  if (loading) return <div style={styles.loadingContainer}><div style={styles.loadingSpinner} /><h2>Loading Assessment...</h2><p>Preparing your questions</p></div>;
+  if (accessDenied) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.errorIcon}>🔒</div><h2>Access Denied</h2><p>This assessment is not currently available for your account.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
+  if (alreadySubmitted && !showSuccessModal) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.successIcon}>✅</div><h2>Assessment Completed</h2><p>This assessment has already been submitted.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
+  if (pageError) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.errorIcon}>⚠️</div><h2>Error Loading Assessment</h2><p>{pageError}</p><button onClick={() => window.location.reload()} style={styles.primaryButton}>Try Again</button></div></div>;
+  if (!questions.length) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.errorIcon}>📭</div><h2>No Questions Available</h2><p>This assessment does not have any questions yet.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
 
   return (
     <>
