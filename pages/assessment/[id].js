@@ -1,7 +1,8 @@
 // pages/assessment/[id].js
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
+import dynamic from "next/dynamic";
 import { supabase } from "../../supabase/client";
 import {
   getAssessmentById,
@@ -16,33 +17,24 @@ import {
   saveUniqueResponse
 } from "../../supabase/assessment";
 
-
-function safeNumber(value, fallback) {
-  var fallbackValue = fallback === undefined ? 0 : fallback;
-  var numberValue = Number(value);
-  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) return fallbackValue;
-  return numberValue;
-}
+const AssessmentPage = dynamic(() => Promise.resolve(AssessmentContent), { ssr: false });
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function formatTime(seconds) {
-  var safeSeconds = Math.max(0, Math.floor(safeNumber(seconds, 0)));
-  var hrs = Math.floor(safeSeconds / 3600);
-  var mins = Math.floor((safeSeconds % 3600) / 60);
-  var secs = safeSeconds % 60;
-  return hrs.toString().padStart(2, "0") + ":" + mins.toString().padStart(2, "0") + ":" + secs.toString().padStart(2, "0");
+function safeNumber(value, fallback = 0) {
+  const n = Number(value);
+  if (Number.isNaN(n) || !Number.isFinite(n)) return fallback;
+  return n;
 }
 
-function isMultipleCorrectQuestion(question) {
-  var correctAnswers;
-  if (!question || !Array.isArray(question.answers)) return false;
-  correctAnswers = question.answers.filter(function (answer) {
-    return safeNumber(answer.score, 0) === 1;
-  });
-  return correctAnswers.length > 1;
+function formatTime(seconds) {
+  const safeSeconds = Math.max(0, Math.floor(safeNumber(seconds, 0)));
+  const hrs = Math.floor(safeSeconds / 3600);
+  const mins = Math.floor((safeSeconds % 3600) / 60);
+  const secs = safeSeconds % 60;
+  return hrs.toString().padStart(2, "0") + ":" + mins.toString().padStart(2, "0") + ":" + secs.toString().padStart(2, "0");
 }
 
 function getAnswerArray(value) {
@@ -52,83 +44,29 @@ function getAnswerArray(value) {
 }
 
 function countAnswered(answerMap) {
-  return Object.values(answerMap || {}).filter(function (answer) {
+  return Object.values(answerMap || {}).filter((answer) => {
     if (Array.isArray(answer)) return answer.length > 0;
     return answer !== null && answer !== undefined && answer !== "";
   }).length;
 }
 
-function getSessionBasedLimit(sessionData, progressElapsed, defaultLimit) {
-  var elapsed = safeNumber(progressElapsed, 0);
-  var fallbackLimit = defaultLimit || 10800;
-  var expiresAt;
-  var remaining;
-
-  if (!sessionData || !sessionData.expires_at) return fallbackLimit;
-  expiresAt = new Date(sessionData.expires_at).getTime();
-  if (Number.isNaN(expiresAt)) return fallbackLimit;
-  remaining = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
-  if (remaining <= 0) return elapsed;
-  return elapsed + remaining;
+function isMultipleCorrectQuestion(question) {
+  if (!question || !Array.isArray(question.answers)) return false;
+  const correctAnswers = question.answers.filter((answer) => safeNumber(answer.score, 0) === 1);
+  return correctAnswers.length > 1;
 }
 
-function parseDateMs(value) {
-  var ms;
-  if (!value) return 0;
-  ms = new Date(value).getTime();
-  if (Number.isNaN(ms)) return 0;
-  return ms;
-}
-
-function clearBrowserAttemptStorage(userId, assessmentId) {
-  var stores;
-  var patterns;
-
-  if (typeof window === "undefined") return;
-
-  stores = [window.localStorage, window.sessionStorage].filter(Boolean);
-  patterns = [
-    String(assessmentId || ""),
-    String(userId || "") + "_" + String(assessmentId || ""),
-    String(userId || "") + ":" + String(assessmentId || ""),
-    "assessment_" + String(assessmentId || ""),
-    "responses_" + String(assessmentId || ""),
-    "answers_" + String(assessmentId || ""),
-    "answerChanges_" + String(assessmentId || ""),
-    "questionTiming_" + String(assessmentId || ""),
-    "behavioral_" + String(assessmentId || "")
-  ].filter(Boolean);
-
-  stores.forEach(function (store) {
-    var keys = [];
-    var i;
-    var key;
-
-    try {
-      for (i = 0; i < store.length; i += 1) {
-        key = store.key(i);
-        if (key) keys.push(key);
-      }
-
-      keys.forEach(function (storageKey) {
-        var lowerKey = String(storageKey).toLowerCase();
-        var shouldRemove = patterns.some(function (pattern) {
-          return pattern && lowerKey.indexOf(String(pattern).toLowerCase()) >= 0;
-        });
-        if (shouldRemove) store.removeItem(storageKey);
-      });
-    } catch (storageError) {
-      console.warn("Unable to clear browser attempt storage:", storageError);
-    }
-  });
+function getRemainingFromSession(sessionData, fallbackSeconds) {
+  if (!sessionData || !sessionData.expires_at) return fallbackSeconds;
+  const expiresAtMs = new Date(sessionData.expires_at).getTime();
+  if (Number.isNaN(expiresAtMs)) return fallbackSeconds;
+  return Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
 }
 
 async function fetchCandidateAccess(userId, assessmentId) {
-  var response;
-
-  response = await supabase
+  const response = await supabase
     .from("candidate_assessments")
-    .select("id, status, result_id, completed_at, unblocked_at, session_id")
+    .select("id,status,result_id,completed_at,unblocked_at,session_id")
     .eq("user_id", userId)
     .eq("assessment_id", assessmentId)
     .maybeSingle();
@@ -137,109 +75,12 @@ async function fetchCandidateAccess(userId, assessmentId) {
   return response.data || null;
 }
 
-async function collectSessionIds(userId, assessmentId) {
-  var response;
-
-  try {
-    response = await supabase
-      .from("assessment_sessions")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("assessment_id", assessmentId);
-
-    if (response.error) return [];
-    return safeArray(response.data).map(function (row) { return row.id; }).filter(Boolean);
-  } catch (error) {
-    return [];
-  }
-}
-
-async function safeDelete(tableName, filters) {
-  var query;
-  var i;
-
-  try {
-    query = supabase.from(tableName).delete();
-    for (i = 0; i < filters.length; i += 1) {
-      if (filters[i].operator === "in") query = query.in(filters[i].column, filters[i].value);
-      else query = query.eq(filters[i].column, filters[i].value);
-    }
-    await query;
-  } catch (error) {
-    console.warn("Cleanup skipped for " + tableName + ":", error && error.message ? error.message : error);
-  }
-}
-
-async function clearStaleAttemptData(userId, assessmentId) {
-  var sessionIds;
-
-  sessionIds = await collectSessionIds(userId, assessmentId);
-
-  if (sessionIds.length > 0) {
-    await safeDelete("answer_history", [{ column: "session_id", operator: "in", value: sessionIds }]);
-    await safeDelete("question_timing", [{ column: "session_id", operator: "in", value: sessionIds }]);
-    await safeDelete("candidate_personality_scores", [{ column: "session_id", operator: "in", value: sessionIds }]);
-  }
-
-  await safeDelete("assessment_violations", [
-    { column: "user_id", value: userId },
-    { column: "assessment_id", value: assessmentId }
-  ]);
-
-  await safeDelete("responses", [
-    { column: "user_id", value: userId },
-    { column: "assessment_id", value: assessmentId }
-  ]);
-
-  await safeDelete("behavioral_metrics", [
-    { column: "user_id", value: userId },
-    { column: "assessment_id", value: assessmentId }
-  ]);
-
-  await safeDelete("assessment_progress", [
-    { column: "user_id", value: userId },
-    { column: "assessment_id", value: assessmentId }
-  ]);
-
-  await safeDelete("assessment_sessions", [
-    { column: "user_id", value: userId },
-    { column: "assessment_id", value: assessmentId }
-  ]);
-
-  await supabase
-    .from("candidate_assessments")
-    .update({ session_id: null, updated_at: new Date().toISOString() })
-    .eq("user_id", userId)
-    .eq("assessment_id", assessmentId);
-}
-
-function isSessionOlderThanUnblock(sessionData, accessData) {
-  var unblockedAt;
-  var sessionCreatedAt;
-  var sessionUpdatedAt;
-
-  if (!sessionData || !accessData || !accessData.unblocked_at) return false;
-
-  unblockedAt = parseDateMs(accessData.unblocked_at);
-  sessionCreatedAt = parseDateMs(sessionData.created_at);
-  sessionUpdatedAt = parseDateMs(sessionData.updated_at);
-
-  if (!unblockedAt) return false;
-  if (sessionCreatedAt && sessionCreatedAt < unblockedAt) return true;
-  if (sessionUpdatedAt && sessionUpdatedAt < unblockedAt) return true;
-
-  return false;
-}
-
-function isFreshResetAccess(accessData) {
-  return !!accessData && accessData.status === "unblocked" && !accessData.result_id && !accessData.completed_at;
-}
-
 function AssessmentContent() {
   const router = useRouter();
   const assessmentId = router.query.id || router.query.assessment_id;
 
   const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState("");
   const [assessment, setAssessment] = useState(null);
   const [assessmentType, setAssessmentType] = useState(null);
   const [questions, setQuestions] = useState([]);
@@ -252,47 +93,730 @@ function AssessmentContent() {
   const [answerChangeCount, setAnswerChangeCount] = useState({});
   const [saveStatus, setSaveStatus] = useState({});
 
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [timeLimitSeconds, setTimeLimitSeconds] = useState(10800);
   const [questionStartTime, setQuestionStartTime] = useState(Date.now());
-  const [questionTimings, setQuestionTimings] = useState({});
-  const sessionIdRef = useRef(null);
-  const autoSubmitRef = useRef(false);
-  const submittingRef = useRef(false);
 
   const [violationCount, setViolationCount] = useState(0);
-  const [isAutoSubmitting, setIsAutoSubmitting] = useState(false);
-
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [timeLimit, setTimeLimit] = useState(10800);
-
-  const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [error, setError] = useState(null);
-  const [alreadySubmitted, setAlreadySubmitted] = useState(false);
-  const [accessDenied, setAccessDenied] = useState(false);
-  const [accessChecked, setAccessChecked] = useState(false);
-  const [showViolationWarning, setShowViolationWarning] = useState(false);
   const [violationMessage, setViolationMessage] = useState("");
+  const [showViolationWarning, setShowViolationWarning] = useState(false);
 
-  const DEFAULT_GRADIENT_START = "#667eea";
-  const DEFAULT_GRADIENT_END = "#764ba2";
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [alreadySubmitted, setAlreadySubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAutoSubmitting, setIsAutoSubmitting] = useState(false);
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-  const getGradientStart = () => (assessmentType && assessmentType.gradient_start ? assessmentType.gradient_start : DEFAULT_GRADIENT_START);
-  const getGradientEnd = () => (assessmentType && assessmentType.gradient_end ? assessmentType.gradient_end : DEFAULT_GRADIENT_END);
+  const sessionIdRef = useRef(null);
+  const submittingRef = useRef(false);
+  const autoSubmitRef = useRef(false);
 
-  const getSelectedAnswersForQuestion = (questionId) => getAnswerArray(answers[questionId]);
+  const gradientStart = assessmentType && assessmentType.gradient_start ? assessmentType.gradient_start : "#667eea";
+  const gradientEnd = assessmentType && assessmentType.gradient_end ? assessmentType.gradient_end : "#764ba2";
 
-  const isAnswerSelected = (questionId, answerId) => {
+  const currentQuestion = questions[currentIndex] || {};
+  const isMultipleCorrect = isMultipleCorrectQuestion(currentQuestion);
+  const totalAnswered = countAnswered(answers);
+  const isLastQuestion = currentIndex === questions.length - 1;
+  const remainingSeconds = Math.max(0, timeLimitSeconds - elapsedSeconds);
+  const timeRemainingFormatted = formatTime(remainingSeconds);
+  const timeUsedPercent = timeLimitSeconds > 0 ? (elapsedSeconds / timeLimitSeconds) * 100 : 0;
+  const isTimeWarning = timeUsedPercent > 80;
+  const isTimeCritical = timeUsedPercent > 90;
+
+  function getSelectedAnswersForQuestion(questionId) {
+    return getAnswerArray(answers[questionId]);
+  }
+
+  function isAnswerSelected(questionId, answerId) {
     const selected = getSelectedAnswersForQuestion(questionId);
     return selected.map(String).includes(String(answerId));
-  };
+  }
 
-  // NOTE: The remainder of your AssessmentContent is not included in the snippet you provided.
-  // Paste the rest of your file to regenerate a true full file with UI intact.
+  function showViolation(message) {
+    setViolationMessage(message);
+    setShowViolationWarning(true);
+    setTimeout(() => setShowViolationWarning(false), 3000);
+  }
 
-  return null;
+  async function updateAnsweredQuestionsCount(nextAnswers) {
+    if (!sessionIdRef.current) return;
+    const answeredCount = countAnswered(nextAnswers || answers);
+    await supabase
+      .from("assessment_sessions")
+      .update({
+        answered_questions: answeredCount,
+        total_questions: questions.length,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", sessionIdRef.current);
+  }
+
+  async function saveQuestionTiming(questionId, timeSpentSeconds) {
+    if (!sessionIdRef.current || !questionId) return;
+    const questionIdNum = parseInt(questionId, 10);
+    if (Number.isNaN(questionIdNum)) return;
+
+    try {
+      await supabase.from("question_timing").upsert(
+        {
+          session_id: sessionIdRef.current,
+          question_id: questionIdNum,
+          question_number: currentIndex + 1,
+          time_spent_seconds: Math.max(0, safeNumber(timeSpentSeconds, 0)),
+          last_answered_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: "session_id,question_id" }
+      );
+    } catch (err) {
+      console.warn("Question timing save skipped:", err);
+    }
+  }
+
+  async function completeAssessmentSafely(autoSubmitted, reason) {
+    if (!session || !session.id || !user || !assessmentId) {
+      throw new Error("Assessment session is not ready.");
+    }
+
+    const lastQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
+
+    if (lastQuestionId) {
+      await saveQuestionTiming(lastQuestionId, Math.floor((Date.now() - questionStartTime) / 1000));
+    }
+
+    await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, lastQuestionId);
+    await updateSessionTimer(session.id, elapsedSeconds);
+    await updateAnsweredQuestionsCount(answers);
+
+    return submitAssessment(session.id, {
+      autoSubmitted: autoSubmitted === true,
+      autoSubmitReason: reason || null,
+      allowIncomplete: autoSubmitted === true
+    });
+  }
+
+  async function handleAutoSubmit(reason) {
+    if (alreadySubmitted || submittingRef.current || autoSubmitRef.current) return;
+
+    try {
+      autoSubmitRef.current = true;
+      submittingRef.current = true;
+      setIsSubmitting(true);
+      setIsAutoSubmitting(true);
+      await completeAssessmentSafely(true, reason);
+      setAlreadySubmitted(true);
+      setShowSuccessModal(true);
+      setTimeout(() => router.push("/candidate/dashboard"), 1500);
+    } catch (err) {
+      console.error("Auto-submit failed:", err);
+      alert("Auto-submit failed. Please contact support.");
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
+      setIsAutoSubmitting(false);
+    }
+  }
+
+  async function logViolation(violationType) {
+    if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting) return;
+
+    const newCount = violationCount + 1;
+    setViolationCount(newCount);
+
+    try {
+      await supabase
+        .from("assessment_sessions")
+        .update({ violation_count: newCount, updated_at: new Date().toISOString() })
+        .eq("id", sessionIdRef.current);
+
+      await supabase.from("assessment_violations").insert({
+        session_id: sessionIdRef.current,
+        user_id: user ? user.id : null,
+        assessment_id: assessmentId,
+        violation_type: violationType,
+        created_at: new Date().toISOString()
+      });
+    } catch (err) {
+      console.warn("Violation logging failed:", err);
+    }
+
+    showViolation(violationType + ". Violation " + newCount + " of 3.");
+
+    if (newCount >= 3) {
+      showViolation("Maximum violations reached. Auto-submitting assessment...");
+      setTimeout(() => handleAutoSubmit("Auto-submitted due to rule violations."), 1000);
+    }
+  }
+
+  useEffect(() => {
+    if (loading || alreadySubmitted || accessDenied || !session) return;
+
+    const handleCopy = (event) => { event.preventDefault(); logViolation("Copy attempt"); return false; };
+    const handlePaste = (event) => { event.preventDefault(); logViolation("Paste attempt"); return false; };
+    const handleCut = (event) => { event.preventDefault(); logViolation("Cut attempt"); return false; };
+    const handleContextMenu = (event) => { event.preventDefault(); logViolation("Right-click attempt"); return false; };
+    const handleKeyDown = (event) => {
+      const key = String(event.key || "").toLowerCase();
+      if (event.key === "PrintScreen") { event.preventDefault(); logViolation("Screenshot attempt"); return false; }
+      if (event.key === "F12") { event.preventDefault(); logViolation("DevTools attempt"); return false; }
+      if (event.ctrlKey && event.shiftKey && ["i", "j", "c"].includes(key)) { event.preventDefault(); logViolation("DevTools shortcut attempt"); return false; }
+      if (event.ctrlKey && key === "u") { event.preventDefault(); logViolation("View source attempt"); return false; }
+      return true;
+    };
+
+    document.addEventListener("copy", handleCopy);
+    document.addEventListener("paste", handlePaste);
+    document.addEventListener("cut", handleCut);
+    document.addEventListener("contextmenu", handleContextMenu);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("copy", handleCopy);
+      document.removeEventListener("paste", handlePaste);
+      document.removeEventListener("cut", handleCut);
+      document.removeEventListener("contextmenu", handleContextMenu);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [loading, alreadySubmitted, accessDenied, session, violationCount, isAutoSubmitting]);
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        setLoading(true);
+        setPageError("");
+        setAccessDenied(false);
+        setAlreadySubmitted(false);
+        setQuestions([]);
+        setAnswers({});
+        setInitialAnswers({});
+        setAnswerChangeCount({});
+        setSaveStatus({});
+        setElapsedSeconds(0);
+        setViolationCount(0);
+        sessionIdRef.current = null;
+        submittingRef.current = false;
+        autoSubmitRef.current = false;
+
+        const authResponse = await supabase.auth.getSession();
+        const authSession = authResponse && authResponse.data ? authResponse.data.session : null;
+
+        if (!authSession) {
+          router.push("/login");
+          return;
+        }
+
+        if (!assessmentId) return;
+
+        const currentUser = authSession.user;
+        setUser(currentUser);
+
+        const completed = await isAssessmentCompleted(currentUser.id, assessmentId);
+        if (completed) {
+          setAlreadySubmitted(true);
+          setLoading(false);
+          return;
+        }
+
+        const accessData = await fetchCandidateAccess(currentUser.id, assessmentId);
+        if (!accessData || !["unblocked", "in_progress"].includes(accessData.status)) {
+          setAccessDenied(true);
+          setLoading(false);
+          return;
+        }
+
+        const assessmentData = await getAssessmentById(assessmentId);
+        setAssessment(assessmentData);
+        setAssessmentType(assessmentData ? assessmentData.assessment_type : null);
+
+        const sessionData = await createAssessmentSession(
+          currentUser.id,
+          assessmentId,
+          assessmentData && assessmentData.assessment_type_id ? assessmentData.assessment_type_id : null
+        );
+
+        if (!sessionData || !sessionData.id) {
+          throw new Error("Unable to create assessment session.");
+        }
+
+        setSession(sessionData);
+        sessionIdRef.current = sessionData.id;
+
+        const progress = await getProgress(currentUser.id, assessmentId);
+        const progressElapsed = progress && progress.elapsed_seconds ? safeNumber(progress.elapsed_seconds, 0) : 0;
+        setElapsedSeconds(progressElapsed);
+        setTimeLimitSeconds(progressElapsed + getRemainingFromSession(sessionData, 10800));
+
+        const uniqueQuestions = safeArray(await getUniqueQuestions(assessmentId));
+        setQuestions(uniqueQuestions);
+
+        if (uniqueQuestions.length === 0) {
+          setLoading(false);
+          return;
+        }
+
+        const responses = await getSessionResponses(sessionData.id);
+        const restoredAnswers = {};
+        const restoredInitialAnswers = {};
+        const restoredChangeCount = {};
+
+        if (responses && responses.answerMap) {
+          Object.entries(responses.answerMap).forEach(([qId, answer]) => {
+            if (typeof answer === "string" && answer.includes(",")) {
+              restoredAnswers[qId] = answer.split(",").map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id));
+            } else if (answer !== null && answer !== undefined && answer !== "") {
+              restoredAnswers[qId] = parseInt(answer, 10);
+            }
+          });
+        }
+
+        if (responses && responses.initialAnswerMap) {
+          Object.entries(responses.initialAnswerMap).forEach(([qId, answer]) => {
+            restoredInitialAnswers[qId] = answer;
+          });
+        }
+
+        if (responses && responses.changeCountMap) {
+          Object.entries(responses.changeCountMap).forEach(([qId, count]) => {
+            restoredChangeCount[qId] = safeNumber(count, 0);
+          });
+        }
+
+        setAnswers(restoredAnswers);
+        setInitialAnswers(restoredInitialAnswers);
+        setAnswerChangeCount(restoredChangeCount);
+
+        if (progress && progress.last_question_id) {
+          const lastIndex = uniqueQuestions.findIndex((question) => String(question.id) === String(progress.last_question_id));
+          if (lastIndex >= 0) setCurrentIndex(lastIndex);
+        }
+
+        const violationResponse = await supabase
+          .from("assessment_sessions")
+          .select("violation_count")
+          .eq("id", sessionData.id)
+          .maybeSingle();
+
+        if (violationResponse.data && violationResponse.data.violation_count) {
+          setViolationCount(safeNumber(violationResponse.data.violation_count, 0));
+        }
+
+        setQuestionStartTime(Date.now());
+        setLoading(false);
+      } catch (err) {
+        console.error("Assessment initialization error:", err);
+        setPageError(err && err.message ? err.message : "Failed to load assessment.");
+        setLoading(false);
+      }
+    };
+
+    if (assessmentId) init();
+  }, [assessmentId, router]);
+
+  useEffect(() => {
+    if (loading || alreadySubmitted || accessDenied || !session || isAutoSubmitting) return;
+
+    const timer = setInterval(() => {
+      setElapsedSeconds((previous) => {
+        const next = previous + 1;
+
+        if (timeLimitSeconds > 0 && next >= timeLimitSeconds) {
+          handleAutoSubmit("Auto-submitted because the assessment timer expired.");
+        }
+
+        if (next % 30 === 0 && session && user) {
+          const currentQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
+          saveProgress(session.id, user.id, assessmentId, next, currentQuestionId);
+          updateSessionTimer(session.id, next);
+        }
+
+        return next;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [loading, alreadySubmitted, accessDenied, session, isAutoSubmitting, timeLimitSeconds, user, assessmentId, currentIndex, questions]);
+
+  async function handleAnswerSelect(questionId, answerId, multipleCorrect) {
+    if (alreadySubmitted || !session || !user || !questionId || !answerId || accessDenied || isAutoSubmitting) return;
+
+    const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
+    let newSelectedAnswer;
+    let isAnswerChange = false;
+    let isFirstAnswer = false;
+
+    if (multipleCorrect) {
+      const currentSelected = getSelectedAnswersForQuestion(questionId);
+      if (currentSelected.map(String).includes(String(answerId))) {
+        newSelectedAnswer = currentSelected.filter((id) => String(id) !== String(answerId));
+      } else {
+        newSelectedAnswer = currentSelected.concat([answerId]);
+      }
+      isFirstAnswer = currentSelected.length === 0 && newSelectedAnswer.length > 0;
+      isAnswerChange = currentSelected.map(String).join(",") !== newSelectedAnswer.map(String).join(",");
+    } else {
+      const previousAnswer = answers[questionId];
+      newSelectedAnswer = answerId;
+      isFirstAnswer = previousAnswer === undefined || previousAnswer === null || previousAnswer === "";
+      isAnswerChange = previousAnswer !== undefined && previousAnswer !== null && previousAnswer !== "" && String(previousAnswer) !== String(answerId);
+    }
+
+    const currentChangeCount = safeNumber(answerChangeCount[questionId], 0);
+    const nextChangeCount = isAnswerChange ? currentChangeCount + 1 : currentChangeCount;
+    let initialAnswerId = initialAnswers[questionId];
+
+    if (isFirstAnswer) {
+      initialAnswerId = multipleCorrect ? newSelectedAnswer : answerId;
+      setInitialAnswers((previous) => ({ ...previous, [questionId]: initialAnswerId }));
+    }
+
+    if (isAnswerChange) {
+      setAnswerChangeCount((previous) => ({ ...previous, [questionId]: nextChangeCount }));
+    }
+
+    const nextAnswers = { ...answers, [questionId]: newSelectedAnswer };
+    setAnswers(nextAnswers);
+    setSaveStatus((previous) => ({ ...previous, [questionId]: "saving" }));
+
+    try {
+      const answerToStore = Array.isArray(newSelectedAnswer) ? newSelectedAnswer.join(",") : newSelectedAnswer;
+      const result = await saveUniqueResponse(session.id, user.id, assessmentId, questionId, answerToStore, {
+        time_spent_seconds: timeSpentSeconds,
+        times_changed: nextChangeCount,
+        initial_answer_id: Array.isArray(initialAnswerId) ? initialAnswerId.join(",") : initialAnswerId,
+        is_answer_change: isAnswerChange
+      });
+
+      if (result && result.success) {
+        setSaveStatus((previous) => ({ ...previous, [questionId]: "saved" }));
+        await saveQuestionTiming(questionId, timeSpentSeconds);
+        await updateAnsweredQuestionsCount(nextAnswers);
+      } else {
+        setSaveStatus((previous) => ({ ...previous, [questionId]: "error" }));
+      }
+    } catch (err) {
+      console.error("Answer save error:", err);
+      setSaveStatus((previous) => ({ ...previous, [questionId]: "error" }));
+    }
+
+    setTimeout(() => {
+      setSaveStatus((previous) => {
+        const next = { ...previous };
+        delete next[questionId];
+        return next;
+      });
+    }, 900);
+
+    setQuestionStartTime(Date.now());
+  }
+
+  async function moveToQuestion(nextIndex) {
+    if (isAutoSubmitting || nextIndex < 0 || nextIndex >= questions.length) return;
+
+    const currentQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
+    if (currentQuestionId) {
+      const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
+      await saveQuestionTiming(currentQuestionId, timeSpentSeconds);
+      if (session && user) {
+        await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, currentQuestionId);
+      }
+    }
+
+    setCurrentIndex(nextIndex);
+    setQuestionStartTime(Date.now());
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function handleSubmit() {
+    if (!session || alreadySubmitted || accessDenied || isAutoSubmitting || submittingRef.current) return;
+
+    const unansweredCount = questions.length - countAnswered(answers);
+    if (unansweredCount > 0) {
+      alert("Please answer all questions before submitting. " + unansweredCount + " question(s) remaining.");
+      return;
+    }
+
+    try {
+      submittingRef.current = true;
+      setIsSubmitting(true);
+      setShowSubmitModal(false);
+      await completeAssessmentSafely(false, null);
+      setAlreadySubmitted(true);
+      setShowSuccessModal(true);
+      setTimeout(() => router.push("/candidate/dashboard"), 2000);
+    } catch (err) {
+      console.error("Submission error:", err);
+      alert("Failed to submit assessment: " + (err && err.message ? err.message : "Unknown error"));
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleBackClick() {
+    if (session && user && !alreadySubmitted) {
+      const currentQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
+      await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, currentQuestionId);
+      await updateSessionTimer(session.id, elapsedSeconds);
+    }
+    router.push("/candidate/dashboard");
+  }
+
+  if (loading) {
+    return (
+      <div style={styles.loadingContainer}>
+        <div style={styles.loadingSpinner} />
+        <h2>Loading Assessment...</h2>
+        <p>Preparing your questions</p>
+      </div>
+    );
+  }
+
+  if (accessDenied) {
+    return (
+      <div style={styles.messageContainer}>
+        <div style={styles.messageCard}>
+          <div style={styles.errorIcon}>🔒</div>
+          <h2>Access Denied</h2>
+          <p>This assessment is not currently available for your account.</p>
+          <button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (alreadySubmitted && !showSuccessModal) {
+    return (
+      <div style={styles.messageContainer}>
+        <div style={styles.messageCard}>
+          <div style={styles.successIcon}>✅</div>
+          <h2>Assessment Completed</h2>
+          <p>This assessment has already been submitted.</p>
+          <button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (pageError) {
+    return (
+      <div style={styles.messageContainer}>
+        <div style={styles.messageCard}>
+          <div style={styles.errorIcon}>⚠️</div>
+          <h2>Error Loading Assessment</h2>
+          <p>{pageError}</p>
+          <button onClick={() => window.location.reload()} style={styles.primaryButton}>Try Again</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!questions.length) {
+    return (
+      <div style={styles.messageContainer}>
+        <div style={styles.messageCard}>
+          <div style={styles.errorIcon}>📭</div>
+          <h2>No Questions Available</h2>
+          <p>This assessment does not have any questions yet.</p>
+          <button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {showViolationWarning && <div style={styles.violationBanner}><span>⚠️</span><span>{violationMessage}</span></div>}
+
+      {isAutoSubmitting && (
+        <div style={styles.autoSubmitOverlay}>
+          <div style={styles.autoSubmitCard}>
+            <div style={styles.autoSubmitSpinner} />
+            <h3>Auto-submitting assessment...</h3>
+            <p>Please wait while your assessment is submitted.</p>
+          </div>
+        </div>
+      )}
+
+      {showSubmitModal && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalContent}>
+            <div style={styles.modalIcon}>📋</div>
+            <h2 style={styles.modalTitle}>Ready to Submit?</h2>
+            <div style={styles.modalStats}>
+              <div style={styles.modalStat}><span>Questions Answered</span><strong style={{ color: "#4caf50" }}>{totalAnswered}/{questions.length}</strong></div>
+              <div style={styles.modalStat}><span>Completion Rate</span><strong>{Math.round((totalAnswered / questions.length) * 100)}%</strong></div>
+              <div style={styles.modalStat}><span>Answer Changes</span><strong>{Object.values(answerChangeCount).reduce((a, b) => a + b, 0)}</strong></div>
+              {violationCount > 0 && <div style={styles.modalStat}><span>Violations</span><strong style={{ color: violationCount >= 3 ? "#f44336" : "#ff9800" }}>{violationCount}/3</strong></div>}
+            </div>
+            <div style={styles.modalWarning}><span>⚠️</span><span><strong>One attempt only:</strong> After submission, the assessment cannot be retaken unless reset by your supervisor.</span></div>
+            <div style={styles.modalActions}>
+              <button onClick={() => setShowSubmitModal(false)} style={styles.modalSecondaryButton}>Continue Reviewing</button>
+              <button onClick={handleSubmit} disabled={isSubmitting} style={{ ...styles.modalPrimaryButton, background: isSubmitting ? "#ccc" : "#4caf50", cursor: isSubmitting ? "not-allowed" : "pointer" }}>{isSubmitting ? "Submitting..." : "Submit Assessment"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSuccessModal && (
+        <div style={styles.modalOverlay}>
+          <div style={{ ...styles.modalContent, textAlign: "center" }}>
+            <div style={styles.successIconLarge}>✓</div>
+            <h2 style={{ color: "#2e7d32" }}>Assessment Complete!</h2>
+            <p>Your assessment has been successfully submitted.</p>
+            <p style={{ color: "#64748b" }}>Redirecting to dashboard...</p>
+          </div>
+        </div>
+      )}
+
+      <div style={styles.container}>
+        <div style={{ ...styles.header, background: "linear-gradient(135deg, " + gradientStart + ", " + gradientEnd + ")" }}>
+          <div style={styles.headerContent}>
+            <div style={styles.headerLeft}>
+              <button onClick={handleBackClick} style={styles.backButton}>←</button>
+              <div>
+                <div style={styles.headerTitle}>{assessment ? assessment.title : "Assessment"}</div>
+                <div style={styles.headerMeta}>Question {currentIndex + 1} of {questions.length} • {currentQuestion.section || "General"}{isMultipleCorrect && <span style={{ marginLeft: "10px", color: "#ff9800", fontSize: "12px" }}>(Select all that apply)</span>}</div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+              {violationCount > 0 && <div style={{ background: violationCount >= 3 ? "#f44336" : "#ff9800", color: "white", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold" }}>⚠️ {violationCount}/3 Violations</div>}
+              <div style={{ ...styles.timer, background: isTimeCritical ? "rgba(211,47,47,0.1)" : isTimeWarning ? "rgba(255,152,0,0.1)" : "rgba(255,255,255,0.15)" }}>
+                <div style={styles.timerLabel}>TIME REMAINING</div>
+                <div style={{ ...styles.timerValue, color: isTimeCritical ? "#d32f2f" : isTimeWarning ? "#ff9800" : "white" }}>{timeRemainingFormatted}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={styles.mainContent}>
+          <div style={styles.questionColumn}>
+            <div style={styles.questionCard}>
+              <div style={styles.questionText}>{currentQuestion.question_text}</div>
+
+              {answerChangeCount[currentQuestion.id] > 0 && <div style={styles.changeIndicator}>✏️ Changed answer {answerChangeCount[currentQuestion.id]} time{answerChangeCount[currentQuestion.id] !== 1 ? "s" : ""}</div>}
+
+              <div style={styles.answersContainer}>
+                {safeArray(currentQuestion.answers).map((answer, index) => {
+                  const selected = isAnswerSelected(currentQuestion.id, answer.id);
+                  const optionLetter = String.fromCharCode(65 + index);
+                  return (
+                    <button key={answer.id} onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)} disabled={alreadySubmitted || isAutoSubmitting} style={{ ...styles.answerCard, background: selected ? "linear-gradient(135deg, " + gradientStart + ", " + gradientEnd + ")" : "white", borderColor: selected ? gradientStart : "#e2e8f0", opacity: isAutoSubmitting ? 0.6 : 1 }}>
+                      <div style={{ ...styles.answerLetter, background: selected ? "rgba(255,255,255,0.2)" : "#f1f5f9", color: selected ? "white" : "#475569" }}>{optionLetter}</div>
+                      <span style={{ color: selected ? "white" : "#1e293b" }}>{answer.answer_text}{isMultipleCorrect && selected && <span style={{ marginLeft: "8px", fontSize: "12px" }}>✓</span>}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {isMultipleCorrect && <div style={styles.multipleHint}>💡 This question has multiple correct answers. Select all that apply.</div>}
+
+              <div style={styles.navigation}>
+                <button onClick={() => moveToQuestion(currentIndex - 1)} disabled={currentIndex === 0 || isAutoSubmitting} style={{ ...styles.navButton, opacity: currentIndex === 0 || isAutoSubmitting ? 0.5 : 1 }}>← Previous</button>
+                {isLastQuestion ? <button onClick={() => setShowSubmitModal(true)} disabled={isAutoSubmitting} style={styles.submitButton}>Submit</button> : <button onClick={() => moveToQuestion(currentIndex + 1)} disabled={isAutoSubmitting} style={styles.nextButton}>Next →</button>}
+              </div>
+            </div>
+          </div>
+
+          <div style={styles.navigatorColumn}>
+            <div style={styles.navigatorCard}>
+              <h3>Question Navigator</h3>
+              <div style={styles.statsGrid}>
+                <div style={styles.statCard}><div style={styles.statValue}>{totalAnswered}</div><div style={styles.statLabel}>Answered</div></div>
+                <div style={styles.statCard}><div style={styles.statValue}>{questions.length - totalAnswered}</div><div style={styles.statLabel}>Remaining</div></div>
+                <div style={styles.statCard}><div style={styles.statValue}>{Object.values(answerChangeCount).reduce((a, b) => a + b, 0)}</div><div style={styles.statLabel}>Changes</div></div>
+              </div>
+
+              <div style={styles.questionGrid}>
+                {questions.map((question, index) => {
+                  const questionAnswer = answers[question.id];
+                  const answered = questionAnswer !== undefined && (Array.isArray(questionAnswer) ? questionAnswer.length > 0 : questionAnswer !== null);
+                  const current = index === currentIndex;
+                  const changed = answerChangeCount[question.id] > 0;
+                  return <button key={question.id} onClick={() => moveToQuestion(index)} disabled={isAutoSubmitting} style={{ ...styles.gridItem, background: current ? gradientStart : answered ? changed ? "#ff9800" : "#4caf50" : "white", color: current || answered ? "white" : "#1e293b", borderColor: current ? gradientStart : "#e2e8f0", opacity: isAutoSubmitting ? 0.6 : 1 }}>{index + 1}</button>;
+                })}
+              </div>
+
+              <div style={styles.legend}>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: "#4caf50" }} />Answered</div>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: "#ff9800" }} />Changed</div>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: gradientStart }} />Current</div>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: "white", border: "2px solid #e2e8f0" }} />Pending</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
 }
 
-export default function AssessmentPage() {
-  return <AssessmentContent />;
+const styles = {
+  loadingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#f8fafc", gap: "20px" },
+  loadingSpinner: { width: "50px", height: "50px", border: "4px solid #e2e8f0", borderTop: "4px solid #667eea", borderRadius: "50%", animation: "spin 1s linear infinite" },
+  messageContainer: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)", padding: "20px" },
+  messageCard: { background: "white", padding: "40px", borderRadius: "16px", maxWidth: "500px", textAlign: "center", boxShadow: "0 20px 40px rgba(0,0,0,0.2)" },
+  errorIcon: { fontSize: "64px", marginBottom: "20px" },
+  successIcon: { fontSize: "64px", marginBottom: "20px" },
+  successIconLarge: { width: "80px", height: "80px", background: "#4caf50", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", fontSize: "40px", color: "white" },
+  primaryButton: { padding: "12px 30px", background: "linear-gradient(135deg, #667eea, #764ba2)", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" },
+  violationBanner: { position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)", background: "#f44336", color: "white", padding: "12px 24px", borderRadius: "8px", fontWeight: "bold", zIndex: 10001, fontSize: "14px", boxShadow: "0 4px 12px rgba(0,0,0,0.2)", display: "flex", alignItems: "center", gap: "10px" },
+  autoSubmitOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10002 },
+  autoSubmitCard: { background: "white", padding: "30px", borderRadius: "16px", textAlign: "center", maxWidth: "400px" },
+  autoSubmitSpinner: { width: "40px", height: "40px", border: "4px solid #e2e8f0", borderTop: "4px solid #f44336", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 20px" },
+  container: { minHeight: "100vh", background: "#f8fafc" },
+  header: { position: "sticky", top: 0, zIndex: 100, color: "white", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" },
+  headerContent: { maxWidth: "1400px", margin: "0 auto", padding: "16px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" },
+  headerLeft: { display: "flex", alignItems: "center", gap: "20px" },
+  backButton: { width: "40px", height: "40px", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: "10px", color: "white", fontSize: "24px", cursor: "pointer" },
+  headerTitle: { fontSize: "20px", fontWeight: 700, marginBottom: "4px" },
+  headerMeta: { fontSize: "14px", opacity: 0.9 },
+  timer: { padding: "10px 20px", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.3)", textAlign: "center", minWidth: "160px" },
+  timerLabel: { fontSize: "12px", fontWeight: 600, marginBottom: "4px" },
+  timerValue: { fontSize: "24px", fontWeight: 700, fontFamily: "monospace" },
+  mainContent: { maxWidth: "1400px", margin: "0 auto", padding: "24px", display: "grid", gridTemplateColumns: "1fr 320px", gap: "24px" },
+  questionColumn: { display: "flex", flexDirection: "column", gap: "20px" },
+  questionCard: { background: "white", borderRadius: "16px", padding: "24px", boxShadow: "0 4px 12px rgba(0,0,0,0.05)" },
+  questionText: { fontSize: "18px", lineHeight: "1.5", color: "#1e293b", marginBottom: "20px", fontWeight: 500, padding: "16px", background: "#f8fafc", borderRadius: "10px" },
+  changeIndicator: { padding: "6px 12px", background: "#FFF8E1", borderRadius: "20px", fontSize: "11px", color: "#F57C00", marginBottom: "12px", display: "inline-block" },
+  answersContainer: { display: "flex", flexDirection: "column", gap: "10px", marginBottom: "24px" },
+  answerCard: { padding: "12px 16px", border: "2px solid", borderRadius: "12px", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: "12px", transition: "all 0.2s" },
+  answerLetter: { width: "28px", height: "28px", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: 700 },
+  multipleHint: { padding: "10px 16px", background: "#E3F2FD", borderRadius: "8px", fontSize: "13px", color: "#1565C0", marginBottom: "16px" },
+  navigation: { display: "flex", justifyContent: "space-between", gap: "12px", marginTop: "8px" },
+  navButton: { padding: "10px 20px", borderRadius: "10px", fontSize: "14px", fontWeight: 600, border: "2px solid #667eea", background: "white", color: "#667eea", cursor: "pointer" },
+  nextButton: { padding: "10px 20px", borderRadius: "10px", fontSize: "14px", fontWeight: 600, border: "none", background: "linear-gradient(135deg, #667eea, #764ba2)", color: "white", cursor: "pointer" },
+  submitButton: { padding: "10px 20px", borderRadius: "10px", fontSize: "14px", fontWeight: 600, border: "none", background: "#4caf50", color: "white", cursor: "pointer" },
+  navigatorColumn: { position: "sticky", top: "100px", height: "fit-content" },
+  navigatorCard: { background: "white", borderRadius: "16px", padding: "20px", boxShadow: "0 4px 12px rgba(0,0,0,0.05)" },
+  statsGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", marginBottom: "20px" },
+  statCard: { background: "#f8fafc", padding: "12px", borderRadius: "10px", textAlign: "center" },
+  statValue: { fontSize: "20px", fontWeight: 800 },
+  statLabel: { fontSize: "10px", color: "#64748b" },
+  questionGrid: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "6px", marginBottom: "16px", maxHeight: "260px", overflowY: "auto", padding: "4px" },
+  gridItem: { aspectRatio: "1", border: "2px solid", borderRadius: "8px", fontSize: "13px", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" },
+  legend: { display: "flex", justifyContent: "space-between", padding: "12px 0", borderTop: "1px solid #e2e8f0", flexWrap: "wrap", gap: "8px" },
+  legendItem: { display: "flex", alignItems: "center", gap: "6px", fontSize: "11px" },
+  legendDot: { width: "10px", height: "10px", borderRadius: "2px" },
+  modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
+  modalContent: { background: "white", padding: "30px", borderRadius: "20px", maxWidth: "450px", width: "90%" },
+  modalIcon: { fontSize: "48px", textAlign: "center", marginBottom: "15px" },
+  modalTitle: { fontSize: "24px", fontWeight: 700, textAlign: "center", marginBottom: "20px" },
+  modalStats: { background: "#f8fafc", padding: "15px", borderRadius: "12px", marginBottom: "20px" },
+  modalStat: { display: "flex", justifyContent: "space-between", marginBottom: "10px" },
+  modalWarning: { display: "flex", gap: "10px", padding: "12px", background: "#fff8e1", borderRadius: "10px", fontSize: "13px", marginBottom: "20px" },
+  modalActions: { display: "flex", gap: "12px" },
+  modalSecondaryButton: { flex: 1, padding: "12px", background: "#f1f5f9", border: "none", borderRadius: "10px", cursor: "pointer" },
+  modalPrimaryButton: { flex: 1, padding: "12px", background: "#4caf50", color: "white", border: "none", borderRadius: "10px", cursor: "pointer" }
+};
+
+if (typeof document !== "undefined" && !document.getElementById("assessment-spin-keyframes")) {
+  const style = document.createElement("style");
+  style.id = "assessment-spin-keyframes";
+  style.textContent = "@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }";
+  document.head.appendChild(style);
 }
+
+export default AssessmentPage;
