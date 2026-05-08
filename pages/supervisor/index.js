@@ -17,9 +17,9 @@ function safeText(value, fallback) {
 
 function safeNumber(value, fallback) {
   var fallbackValue = fallback === undefined ? 0 : fallback;
-  var numberValue = Number(value);
-  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) return fallbackValue;
-  return numberValue;
+  var n = Number(value);
+  if (!Number.isFinite(n)) return fallbackValue;
+  return n;
 }
 
 function formatDate(value) {
@@ -132,7 +132,11 @@ async function fetchWithSupervisorAuth(url, body) {
   if (token) headers.Authorization = "Bearer " + token;
   const response = await fetch(url, { method: "POST", headers: headers, body: JSON.stringify(body || {}) });
   let data = {};
-  try { data = await response.json(); } catch (e) { data = {}; }
+  try {
+    data = await response.json();
+  } catch (error) {
+    data = {};
+  }
   return { response: response, data: data };
 }
 
@@ -243,7 +247,16 @@ export default function SupervisorDashboard() {
         var id = assessment.assessment_id;
         if (!id) return;
         if (!map[id]) {
-          map[id] = { id: id, title: assessment.assessment_title || "Unknown Assessment", type: assessment.assessment_type_name || "General", icon: assessment.type_icon || "📋", total: 0, completed: 0, ready: 0, blocked: 0 };
+          map[id] = {
+            id: id,
+            title: assessment.assessment_title || "Unknown Assessment",
+            type: assessment.assessment_type_name || "General",
+            icon: assessment.type_icon || "📋",
+            total: 0,
+            completed: 0,
+            ready: 0,
+            blocked: 0
+          };
         }
         map[id].total += 1;
         if (assessment.status === "completed" || assessment.result) map[id].completed += 1;
@@ -260,7 +273,13 @@ export default function SupervisorDashboard() {
       safeArray(candidate.assessments).forEach(function (assessment) {
         if (assessment.result) {
           var percentage = calculatePercentage(assessment.result.score, assessment.result.max_score, assessment.result.percentage);
-          rows.push({ candidate: candidate, assessment: assessment, percentage: percentage, classification: getClassification(percentage), completedAt: assessment.result.completed_at });
+          rows.push({
+            candidate: candidate,
+            assessment: assessment,
+            percentage: percentage,
+            classification: getClassification(percentage),
+            completedAt: assessment.result.completed_at
+          });
         }
       });
     });
@@ -268,24 +287,32 @@ export default function SupervisorDashboard() {
     return rows;
   }, [candidates]);
 
-  var reportCandidateGroups = useMemo(function () {
+  var reportAssessmentOptions = useMemo(function () {
     var map = {};
     completedReports.forEach(function (row) {
-      var term = reportSearch.toLowerCase().trim();
+      map[row.assessment.assessment_id] = row.assessment.assessment_title;
+    });
+    return Object.keys(map)
+      .sort(function (a, b) { return map[a].localeCompare(map[b]); })
+      .map(function (id) { return { id: id, title: map[id] }; });
+  }, [completedReports]);
+
+  var reportCandidateGroups = useMemo(function () {
+    var map = {};
+    var term = reportSearch.toLowerCase().trim();
+    completedReports.forEach(function (row) {
       var assessmentMatches = reportAssessmentFilter === "all" || row.assessment.assessment_id === reportAssessmentFilter;
-      var textMatches = !term || safeText(row.candidate.full_name, "").toLowerCase().indexOf(term) >= 0 || safeText(row.candidate.email, "").toLowerCase().indexOf(term) >= 0 || safeText(row.assessment.assessment_title, "").toLowerCase().indexOf(term) >= 0;
+      var textMatches =
+        !term ||
+        safeText(row.candidate.full_name, "").toLowerCase().indexOf(term) >= 0 ||
+        safeText(row.candidate.email, "").toLowerCase().indexOf(term) >= 0 ||
+        safeText(row.assessment.assessment_title, "").toLowerCase().indexOf(term) >= 0;
       if (!assessmentMatches || !textMatches) return;
       if (!map[row.candidate.id]) map[row.candidate.id] = { candidate: row.candidate, reports: [] };
       map[row.candidate.id].reports.push(row);
     });
     return Object.values(map).sort(function (a, b) { return a.candidate.full_name.localeCompare(b.candidate.full_name); });
   }, [completedReports, reportSearch, reportAssessmentFilter]);
-
-  var reportAssessmentOptions = useMemo(function () {
-    var map = {};
-    completedReports.forEach(function (row) { map[row.assessment.assessment_id] = row.assessment.assessment_title; });
-    return Object.keys(map).sort(function (a, b) { return map[a].localeCompare(map[b]); }).map(function (id) { return { id: id, title: map[id] }; });
-  }, [completedReports]);
 
   useEffect(function () {
     async function checkAuth() {
@@ -304,9 +331,14 @@ export default function SupervisorDashboard() {
         var stored = localStorage.getItem("userSession");
         if (!stored) { router.push("/login"); return; }
         var session = JSON.parse(stored);
-        if (session.loggedIn && (session.role === "supervisor" || session.role === "admin")) setCurrentSupervisor({ id: session.user_id, email: session.email, name: session.full_name || session.email, role: session.role });
-        else router.push("/login");
-      } catch (error) { router.push("/login"); }
+        if (session.loggedIn && (session.role === "supervisor" || session.role === "admin")) {
+          setCurrentSupervisor({ id: session.user_id, email: session.email, name: session.full_name || session.email, role: session.role });
+        } else {
+          router.push("/login");
+        }
+      } catch (error) {
+        router.push("/login");
+      }
     }
     checkAuth();
   }, [router]);
@@ -314,46 +346,111 @@ export default function SupervisorDashboard() {
   useEffect(function () {
     if (!currentSupervisor) return;
     var cancelled = false;
+
     async function fetchData() {
       try {
-        setLoading(true); setErrorMessage("");
+        setLoading(true);
+        setErrorMessage("");
+
         var isAdmin = currentSupervisor.role === "admin";
         var candidatesQuery = supabase.from("candidate_profiles").select("id, full_name, email, phone, created_at, supervisor_id");
         if (!isAdmin) candidatesQuery = candidatesQuery.eq("supervisor_id", currentSupervisor.id);
+
         var candidatesResponse = await candidatesQuery.order("created_at", { ascending: false });
         if (candidatesResponse.error) throw candidatesResponse.error;
+
         var assessmentOptionMap = {};
         var processedCandidates = await Promise.all(safeArray(candidatesResponse.data).map(async function (candidate) {
-          var resultsResponse = await supabase.from("assessment_results").select("id, assessment_id, total_score, max_score, percentage_score, completed_at").eq("user_id", candidate.id);
+          var resultsResponse = await supabase
+            .from("assessment_results")
+            .select("id, assessment_id, total_score, max_score, percentage_score, completed_at")
+            .eq("user_id", candidate.id);
+
           var resultsMap = {};
-          safeArray(resultsResponse.data).forEach(function (result) { resultsMap[result.assessment_id] = { id: result.id, score: result.total_score, max_score: result.max_score, percentage: result.percentage_score, completed_at: result.completed_at }; });
-          var accessResponse = await supabase.from("candidate_assessments").select("id, assessment_id, status, created_at, unblocked_at, result_id").eq("user_id", candidate.id);
+          safeArray(resultsResponse.data).forEach(function (result) {
+            resultsMap[result.assessment_id] = {
+              id: result.id,
+              score: result.total_score,
+              max_score: result.max_score,
+              percentage: result.percentage_score,
+              completed_at: result.completed_at
+            };
+          });
+
+          var accessResponse = await supabase
+            .from("candidate_assessments")
+            .select("id, assessment_id, status, created_at, unblocked_at, result_id")
+            .eq("user_id", candidate.id);
+
           var accessData = safeArray(accessResponse.data);
           var assessmentIds = Array.from(new Set(accessData.map(function (item) { return item.assessment_id; }).filter(Boolean)));
           var assessmentMap = {};
+
           if (assessmentIds.length > 0) {
-            var assessmentsResponse = await supabase.from("assessments").select("id, title, description, assessment_type_id, assessment_types(id, code, name, icon, gradient_start, gradient_end)").in("id", assessmentIds);
-            safeArray(assessmentsResponse.data).forEach(function (assessment) { assessmentMap[assessment.id] = assessment; assessmentOptionMap[assessment.id] = assessment.title || "Unknown Assessment"; });
+            var assessmentsResponse = await supabase
+              .from("assessments")
+              .select("id, title, description, assessment_type_id, assessment_types(id, code, name, icon, gradient_start, gradient_end)")
+              .in("id", assessmentIds);
+
+            safeArray(assessmentsResponse.data).forEach(function (assessment) {
+              assessmentMap[assessment.id] = assessment;
+              assessmentOptionMap[assessment.id] = assessment.title || "Unknown Assessment";
+            });
           }
+
           var assessmentsWithDetails = accessData.map(function (access) {
             var result = resultsMap[access.assessment_id] || null;
             var assessment = assessmentMap[access.assessment_id] || {};
             var type = assessment.assessment_types || {};
             var displayStatus = access.status;
             if (result || access.result_id || displayStatus === "completed") displayStatus = "completed";
-            return { id: access.id, assessment_id: access.assessment_id, assessment_title: assessment.title || "Unknown Assessment", assessment_type_name: type.name || displayTypeName(type.code || "general"), type_icon: type.icon || "📋", type_gradient_start: type.gradient_start || "#0f766e", type_gradient_end: type.gradient_end || "#14b8a6", status: displayStatus, created_at: access.created_at, unblocked_at: access.unblocked_at, result: result };
+            return {
+              id: access.id,
+              assessment_id: access.assessment_id,
+              assessment_title: assessment.title || "Unknown Assessment",
+              assessment_type_name: type.name || displayTypeName(type.code || "general"),
+              type_icon: type.icon || "📋",
+              type_gradient_start: type.gradient_start || "#0f766e",
+              type_gradient_end: type.gradient_end || "#14b8a6",
+              status: displayStatus,
+              created_at: access.created_at,
+              unblocked_at: access.unblocked_at,
+              result: result
+            };
           });
+
           var completedList = assessmentsWithDetails.filter(function (item) { return item.status === "completed" || item.result; });
           var readyList = assessmentsWithDetails.filter(function (item) { return item.status === "unblocked" && !item.result; });
           var blockedList = assessmentsWithDetails.filter(function (item) { return item.status === "blocked" && !item.result; });
-          return { id: candidate.id, full_name: candidate.full_name || "Unnamed Candidate", email: candidate.email || "No email provided", phone: candidate.phone || "", created_at: candidate.created_at, totalAssessments: assessmentsWithDetails.length, completedAssessments: completedList.length, readyAssessments: readyList.length, blockedAssessments: blockedList.length, latestAssessment: getBestCompletedAssessment({ assessments: assessmentsWithDetails }), assessments: assessmentsWithDetails };
+
+          return {
+            id: candidate.id,
+            full_name: candidate.full_name || "Unnamed Candidate",
+            email: candidate.email || "No email provided",
+            phone: candidate.phone || "",
+            created_at: candidate.created_at,
+            totalAssessments: assessmentsWithDetails.length,
+            completedAssessments: completedList.length,
+            readyAssessments: readyList.length,
+            blockedAssessments: blockedList.length,
+            latestAssessment: getBestCompletedAssessment({ assessments: assessmentsWithDetails }),
+            assessments: assessmentsWithDetails
+          };
         }));
+
         if (cancelled) return;
-        setCandidates(processedCandidates); setFilteredCandidates(processedCandidates);
-        setAssessmentOptions(Object.keys(assessmentOptionMap).sort(function (a, b) { return assessmentOptionMap[a].localeCompare(assessmentOptionMap[b]); }).map(function (id) { return { id: id, title: assessmentOptionMap[id] }; }));
-      } catch (error) { if (!cancelled) setErrorMessage(error && error.message ? error.message : "Unable to load supervisor dashboard data."); }
-      finally { if (!cancelled) setLoading(false); }
+        setCandidates(processedCandidates);
+        setFilteredCandidates(processedCandidates);
+        setAssessmentOptions(Object.keys(assessmentOptionMap)
+          .sort(function (a, b) { return assessmentOptionMap[a].localeCompare(assessmentOptionMap[b]); })
+          .map(function (id) { return { id: id, title: assessmentOptionMap[id] }; }));
+      } catch (error) {
+        if (!cancelled) setErrorMessage(error && error.message ? error.message : "Unable to load supervisor dashboard data.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
+
     fetchData();
     return function () { cancelled = true; };
   }, [currentSupervisor]);
@@ -362,7 +459,9 @@ export default function SupervisorDashboard() {
     var filtered = candidates.slice();
     if (searchTerm.trim()) {
       var term = searchTerm.toLowerCase().trim();
-      filtered = filtered.filter(function (candidate) { return safeText(candidate.full_name, "").toLowerCase().indexOf(term) >= 0 || safeText(candidate.email, "").toLowerCase().indexOf(term) >= 0 || safeText(candidate.id, "").toLowerCase().indexOf(term) >= 0; });
+      filtered = filtered.filter(function (candidate) {
+        return safeText(candidate.full_name, "").toLowerCase().indexOf(term) >= 0 || safeText(candidate.email, "").toLowerCase().indexOf(term) >= 0 || safeText(candidate.id, "").toLowerCase().indexOf(term) >= 0;
+      });
     }
     if (statusFilter !== "all") {
       filtered = filtered.filter(function (candidate) {
@@ -391,29 +490,57 @@ export default function SupervisorDashboard() {
     setExpandedReports(next);
   }
 
-  function collapseAllReports() { setExpandedReports({}); }
-
-  async function loadAssessmentResetCandidates() {
-    if (!resetAssessmentId) { setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: "Select an assessment first.", result: null }); return; }
-    setAction({ loading: false, dryRunLoading: false, loadLoading: true, message: "", error: "", result: null });
-    setResetCandidates([]); setSelectedMap({});
-    try {
-      const { response, data } = await fetchWithSupervisorAuth("/api/supervisor/assessment-reset-candidates", { assessmentId: resetAssessmentId, mode: resetMode });
-      if (!response.ok || !data || data.success !== true) { setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: data && (data.message || data.error) ? data.message || data.error : "Unable to load reset candidates.", result: data }); return; }
-      setResetCandidates(safeArray(data.candidates));
-      setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: data.count + " candidate(s) loaded for selected assessment.", error: "", result: data });
-    } catch (error) { setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: error && error.message ? error.message : "Unable to load reset candidates.", result: null }); }
+  function collapseAllReports() {
+    setExpandedReports({});
   }
 
-  function toggleCandidateSelection(userId) { setSelectedMap(function (previous) { return { ...previous, [userId]: !previous[userId] }; }); }
-  function selectAllLoadedCandidates() { var next = {}; resetCandidates.forEach(function (candidate) { next[candidate.userId] = true; }); setSelectedMap(next); }
+  async function loadAssessmentResetCandidates() {
+    if (!resetAssessmentId) {
+      setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: "Select an assessment first.", result: null });
+      return;
+    }
+    setAction({ loading: false, dryRunLoading: false, loadLoading: true, message: "", error: "", result: null });
+    setResetCandidates([]);
+    setSelectedMap({});
+    try {
+      const { response, data } = await fetchWithSupervisorAuth("/api/supervisor/assessment-reset-candidates", { assessmentId: resetAssessmentId, mode: resetMode });
+      if (!response.ok || !data || data.success !== true) {
+        setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: data && (data.message || data.error) ? data.message || data.error : "Unable to load reset candidates.", result: data });
+        return;
+      }
+      setResetCandidates(safeArray(data.candidates));
+      setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: data.count + " candidate(s) loaded for selected assessment.", error: "", result: data });
+    } catch (error) {
+      setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: error && error.message ? error.message : "Unable to load reset candidates.", result: null });
+    }
+  }
+
+  function toggleCandidateSelection(userId) {
+    setSelectedMap(function (previous) { return { ...previous, [userId]: !previous[userId] }; });
+  }
+
+  function selectAllLoadedCandidates() {
+    var next = {};
+    resetCandidates.forEach(function (candidate) { next[candidate.userId] = true; });
+    setSelectedMap(next);
+  }
+
   function clearSelectedCandidates() { setSelectedMap({}); }
-  function buildBulkItems() { return Object.keys(selectedMap).filter(function (userId) { return selectedMap[userId] === true; }).map(function (userId) { return { userId: userId, assessmentId: resetAssessmentId }; }); }
+
+  function buildBulkItems() {
+    return Object.keys(selectedMap).filter(function (userId) { return selectedMap[userId] === true; }).map(function (userId) { return { userId: userId, assessmentId: resetAssessmentId }; });
+  }
 
   async function runAssessmentBulkReset(dryRun) {
-    if (!resetAssessmentId) { setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: "Select an assessment first.", result: null }); return; }
+    if (!resetAssessmentId) {
+      setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: "Select an assessment first.", result: null });
+      return;
+    }
     var items = buildBulkItems();
-    if (items.length === 0) { setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: "Select at least one candidate to reset.", result: null }); return; }
+    if (items.length === 0) {
+      setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: "Select at least one candidate to reset.", result: null });
+      return;
+    }
     if (!dryRun && typeof window !== "undefined") {
       var promptText = "You are about to reset " + items.length + " candidate(s) for ONLY the selected assessment. Other assessments will not be touched. Type RESET to continue.";
       if (window.prompt(promptText) !== "RESET") return;
@@ -421,13 +548,25 @@ export default function SupervisorDashboard() {
     setAction({ loading: !dryRun, dryRunLoading: dryRun, loadLoading: false, message: "", error: "", result: null });
     try {
       const { response, data } = await fetchWithSupervisorAuth("/api/supervisor/bulk-reset-assessments", { dryRun: dryRun === true, confirmBulkReset: dryRun === true ? false : true, items: items });
-      if (!response.ok || !data) { setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: data && (data.message || data.error) ? data.message || data.error : "Bulk reset request failed.", result: data }); return; }
+      if (!response.ok || !data) {
+        setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: data && (data.message || data.error) ? data.message || data.error : "Bulk reset request failed.", result: data });
+        return;
+      }
       setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: dryRun ? "Dry run completed. Review summary before actual reset." : "Bulk reset completed. Refreshing dashboard...", error: "", result: data });
-      if (!dryRun) { setSelectedMap({}); setTimeout(function () { router.reload(); }, 1200); }
-    } catch (error) { setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: error && error.message ? error.message : "Bulk reset failed.", result: null }); }
+      if (!dryRun) {
+        setSelectedMap({});
+        setTimeout(function () { router.reload(); }, 1200);
+      }
+    } catch (error) {
+      setAction({ loading: false, dryRunLoading: false, loadLoading: false, message: "", error: error && error.message ? error.message : "Bulk reset failed.", result: null });
+    }
   }
 
-  async function handleLogout() { await supabase.auth.signOut(); if (typeof window !== "undefined") localStorage.removeItem("userSession"); router.push("/login"); }
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    if (typeof window !== "undefined") localStorage.removeItem("userSession");
+    router.push("/login");
+  }
 
   function renderOverviewTab() {
     return (
@@ -438,22 +577,42 @@ export default function SupervisorDashboard() {
           <StatCard label="Ready" value={dashboardStats.ready} note="Available to candidates" icon="↗" bg="#eff8ff" color="#175cd3" />
           <StatCard label="Blocked" value={dashboardStats.blocked} note="Awaiting release/reset" icon="●" bg="#fff7ed" color="#c2410c" />
         </div>
+
         <div style={styles.overviewGrid}>
-          <section style={styles.workspaceCard}>
-            <div style={styles.sectionHeaderRow}><div><p style={styles.sectionEyebrow}>Progress Summary</p><h2 style={styles.sectionTitle}>Assessment Completion</h2></div><Pill color="#175cd3" bg="#eff8ff">{dashboardStats.completionRate}% complete</Pill></div>
+          <section style={styles.overviewCompactCard}>
+            <div style={styles.compactSectionHeaderRow}>
+              <div>
+                <p style={styles.sectionEyebrow}>Progress Summary</p>
+                <h2 style={styles.compactSectionTitle}>Assessment Completion</h2>
+              </div>
+              <Pill color="#175cd3" bg="#eff8ff">{dashboardStats.completionRate}% complete</Pill>
+            </div>
             <ProgressBar value={dashboardStats.completionRate} color="#0f766e" />
-            <p style={styles.bodyText}>{dashboardStats.completed} of {dashboardStats.totalAssessments} assigned assessment records are completed.</p>
+            <p style={styles.compactBodyText}>{dashboardStats.completed} of {dashboardStats.totalAssessments} assigned assessment records are completed.</p>
           </section>
-          <section style={styles.workspaceCard}>
-            <div style={styles.sectionHeaderRow}><div><p style={styles.sectionEyebrow}>Reports</p><h2 style={styles.sectionTitle}>Candidates with Reports</h2></div><button type="button" style={styles.textButton} onClick={function () { setActiveTab("reports"); }}>View reports</button></div>
+
+          <section style={styles.overviewCompactCard}>
+            <div style={styles.compactSectionHeaderRow}>
+              <div>
+                <p style={styles.sectionEyebrow}>Reports</p>
+                <h2 style={styles.compactSectionTitle}>Candidates with Reports</h2>
+              </div>
+              <button type="button" style={styles.textButton} onClick={function () { setActiveTab("reports"); }}>View reports</button>
+            </div>
             <div style={styles.compactList}>
               {reportCandidateGroups.slice(0, 5).map(function (group) {
-                return <button key={group.candidate.id} type="button" style={styles.compactButtonRow} onClick={function () { openCandidateReports(group.candidate.id); }}><span><strong>{group.candidate.full_name}</strong> {group.reports.length} completed report{group.reports.length === 1 ? "" : "s"}</span><Pill color="#175cd3" bg="#eff8ff">View</Pill></button>;
+                return (
+                  <button key={group.candidate.id} type="button" style={styles.compactButtonRow} onClick={function () { openCandidateReports(group.candidate.id); }}>
+                    <span style={styles.compactReportText}><strong>{group.candidate.full_name}</strong> {group.reports.length} completed report{group.reports.length === 1 ? "" : "s"}</span>
+                    <Pill color="#175cd3" bg="#eff8ff">View</Pill>
+                  </button>
+                );
               })}
               {reportCandidateGroups.length === 0 ? <div style={styles.emptyInline}>No completed reports yet.</div> : null}
             </div>
           </section>
         </div>
+
         <section style={styles.workspaceCard}>
           <div style={styles.sectionHeaderRow}><div><p style={styles.sectionEyebrow}>Quick Actions</p><h2 style={styles.sectionTitle}>Common Supervisor Tasks</h2></div></div>
           <div style={styles.quickActionGrid}>
@@ -468,12 +627,24 @@ export default function SupervisorDashboard() {
   }
 
   function renderCandidateFilters() {
-    return <div style={styles.filterBar}><input value={searchTerm} onChange={function (event) { setSearchTerm(event.target.value); }} placeholder="Search by name, email, or candidate ID..." style={styles.searchInput} /><select value={statusFilter} onChange={function (event) { setStatusFilter(event.target.value); }} style={styles.filterSelect}><option value="all">All candidates</option><option value="completed">Has completed result</option><option value="ready">Has ready assessment</option><option value="blocked">Has blocked assessment</option><option value="no_result">No completed result</option></select></div>;
+    return (
+      <div style={styles.filterBar}>
+        <input value={searchTerm} onChange={function (event) { setSearchTerm(event.target.value); }} placeholder="Search by name, email, or candidate ID..." style={styles.searchInput} />
+        <select value={statusFilter} onChange={function (event) { setStatusFilter(event.target.value); }} style={styles.filterSelect}>
+          <option value="all">All candidates</option>
+          <option value="completed">Has completed result</option>
+          <option value="ready">Has ready assessment</option>
+          <option value="blocked">Has blocked assessment</option>
+          <option value="no_result">No completed result</option>
+        </select>
+      </div>
+    );
   }
 
   function renderCandidateList() {
     if (loading) return <div style={styles.loadingBlock}><div style={styles.spinner} /><p style={styles.loadingText}>Loading candidates and assessments...</p></div>;
     if (filteredCandidates.length === 0) return <div style={styles.emptyState}>No candidates found.</div>;
+
     return (
       <div style={styles.candidateList}>
         {filteredCandidates.map(function (candidate) {
@@ -484,12 +655,54 @@ export default function SupervisorDashboard() {
           return (
             <div key={candidate.id} style={styles.candidateCard}>
               <div style={styles.candidateMainRow}>
-                <div style={styles.candidateIdentity}><div style={styles.avatar}>{getInitials(candidate.full_name || candidate.email)}</div><div><h3 style={styles.candidateName}>{candidate.full_name}</h3><p style={styles.candidateEmail}>{candidate.email}</p><p style={styles.candidateId}>ID: {safeText(candidate.id, "").substring(0, 12)}...</p></div></div>
-                <div style={styles.scoreBlock}><div style={styles.scoreTopLine}><span style={styles.scoreValue}>{latestAssessment ? latestPercentage + "%" : "N/A"}</span><Pill color={classification.color} bg={classification.bg}>{classification.label}</Pill></div><ProgressBar value={latestPercentage} color={classification.color} /><p style={styles.lastActive}>Last completed: {latestAssessment && latestAssessment.result ? formatDate(latestAssessment.result.completed_at) : "Never"}</p></div>
-                <div style={styles.summaryPills}><Pill color="#027a48" bg="#ecfdf3">✓ {candidate.completedAssessments} completed</Pill><Pill color="#175cd3" bg="#eff8ff">↗ {candidate.readyAssessments} ready</Pill><Pill color="#c2410c" bg="#fff7ed">● {candidate.blockedAssessments} blocked</Pill></div>
-                <div style={styles.rowActions}><button type="button" onClick={function () { setExpandedCandidate(isExpanded ? null : candidate.id); }} style={styles.primaryButton}>{isExpanded ? "Hide" : "Assessments"}</button>{candidate.completedAssessments > 0 ? <button type="button" onClick={function () { openCandidateReports(candidate.id); }} style={styles.secondaryButton}>Reports</button> : null}</div>
+                <div style={styles.candidateIdentity}>
+                  <div style={styles.avatar}>{getInitials(candidate.full_name || candidate.email)}</div>
+                  <div>
+                    <h3 style={styles.candidateName}>{candidate.full_name}</h3>
+                    <p style={styles.candidateEmail}>{candidate.email}</p>
+                    <p style={styles.candidateId}>ID: {safeText(candidate.id, "").substring(0, 12)}...</p>
+                  </div>
+                </div>
+
+                <div style={styles.scoreBlock}>
+                  <div style={styles.scoreTopLine}><span style={styles.scoreValue}>{latestAssessment ? latestPercentage + "%" : "N/A"}</span><Pill color={classification.color} bg={classification.bg}>{classification.label}</Pill></div>
+                  <ProgressBar value={latestPercentage} color={classification.color} />
+                  <p style={styles.lastActive}>Last completed: {latestAssessment && latestAssessment.result ? formatDate(latestAssessment.result.completed_at) : "Never"}</p>
+                </div>
+
+                <div style={styles.summaryPills}>
+                  <Pill color="#027a48" bg="#ecfdf3">✓ {candidate.completedAssessments} completed</Pill>
+                  <Pill color="#175cd3" bg="#eff8ff">↗ {candidate.readyAssessments} ready</Pill>
+                  <Pill color="#c2410c" bg="#fff7ed">● {candidate.blockedAssessments} blocked</Pill>
+                </div>
+
+                <div style={styles.rowActions}>
+                  <button type="button" onClick={function () { setExpandedCandidate(isExpanded ? null : candidate.id); }} style={styles.primaryButton}>{isExpanded ? "Hide" : "Assessments"}</button>
+                  {candidate.completedAssessments > 0 ? <button type="button" onClick={function () { openCandidateReports(candidate.id); }} style={styles.secondaryButton}>Reports</button> : null}
+                </div>
               </div>
-              {isExpanded ? <div style={styles.assessmentPanel}><div style={styles.assessmentGrid}>{candidate.assessments.map(function (assessment) { var status = getStatusBadge(assessment.status, assessment.result !== null); var percentage = assessment.result ? calculatePercentage(assessment.result.score, assessment.result.max_score, assessment.result.percentage) : 0; var assessmentClassification = getClassification(percentage); return <div key={assessment.id} style={styles.assessmentCard}><div style={styles.assessmentTop}><div style={{ ...styles.assessmentIcon, background: "linear-gradient(135deg, " + assessment.type_gradient_start + " 0%, " + assessment.type_gradient_end + " 100%)" }}>{assessment.type_icon}</div><div><h4 style={styles.assessmentTitle}>{assessment.assessment_title}</h4><p style={styles.assessmentType}>{assessment.assessment_type_name}</p></div></div><div style={styles.assessmentPills}><Pill color={status.color} bg={status.bg}>{status.icon} {status.label}</Pill>{assessment.result ? <Pill color={assessmentClassification.color} bg={assessmentClassification.bg}>{percentage}%</Pill> : null}</div>{assessment.result ? <React.Fragment><ProgressBar value={percentage} color={assessmentClassification.color} /><p style={styles.lastActive}>Completed: {formatDate(assessment.result.completed_at)}</p><Link href={`/supervisor/${candidate.id}?assessment=${assessment.assessment_id}`} style={styles.reportLink}>View Report</Link></React.Fragment> : <p style={styles.waitingText}>{assessment.status === "unblocked" ? "Candidate can take this assessment." : "Assessment is currently blocked or scheduled."}</p>}</div>; })}</div></div> : null}
+
+              {isExpanded ? (
+                <div style={styles.assessmentPanel}>
+                  <div style={styles.assessmentGrid}>
+                    {candidate.assessments.map(function (assessment) {
+                      var status = getStatusBadge(assessment.status, assessment.result !== null);
+                      var percentage = assessment.result ? calculatePercentage(assessment.result.score, assessment.result.max_score, assessment.result.percentage) : 0;
+                      var assessmentClassification = getClassification(percentage);
+                      return (
+                        <div key={assessment.id} style={styles.assessmentCard}>
+                          <div style={styles.assessmentTop}>
+                            <div style={{ ...styles.assessmentIcon, background: "linear-gradient(135deg, " + assessment.type_gradient_start + " 0%, " + assessment.type_gradient_end + " 100%)" }}>{assessment.type_icon}</div>
+                            <div><h4 style={styles.assessmentTitle}>{assessment.assessment_title}</h4><p style={styles.assessmentType}>{assessment.assessment_type_name}</p></div>
+                          </div>
+                          <div style={styles.assessmentPills}><Pill color={status.color} bg={status.bg}>{status.icon} {status.label}</Pill>{assessment.result ? <Pill color={assessmentClassification.color} bg={assessmentClassification.bg}>{percentage}%</Pill> : null}</div>
+                          {assessment.result ? <React.Fragment><ProgressBar value={percentage} color={assessmentClassification.color} /><p style={styles.lastActive}>Completed: {formatDate(assessment.result.completed_at)}</p><Link href={`/supervisor/${candidate.id}?assessment=${assessment.assessment_id}`} style={styles.reportLink}>View Report</Link></React.Fragment> : <p style={styles.waitingText}>{assessment.status === "unblocked" ? "Candidate can take this assessment." : "Assessment is currently blocked or scheduled."}</p>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
             </div>
           );
         })}
@@ -506,7 +719,21 @@ export default function SupervisorDashboard() {
   }
 
   function renderBulkResetTab() {
-    return <section style={styles.workspaceCard}><div style={styles.sectionHeaderRow}><div><p style={styles.sectionEyebrow}>Controlled Reset Workflow</p><h2 style={styles.sectionTitle}>Bulk Reset by Assessment</h2><p style={styles.sectionSubtitle}>Recommended sequence: select assessment → load candidates → dry run → reset selected.</p></div><Pill color="#c2410c" bg="#fff7ed">Assessment-specific reset</Pill></div><div style={styles.stepGrid}><div style={styles.stepCard}><strong>1</strong><span>Select one assessment</span></div><div style={styles.stepCard}><strong>2</strong><span>Load matching candidates</span></div><div style={styles.stepCard}><strong>3</strong><span>Run Dry Run first</span></div><div style={styles.stepCard}><strong>4</strong><span>Bulk Reset Selected</span></div></div><div style={styles.bulkGrid}><select value={resetAssessmentId} onChange={function (event) { setResetAssessmentId(event.target.value); setResetCandidates([]); setSelectedMap({}); }} style={styles.selectInput}><option value="">Select assessment...</option>{assessmentOptions.map(function (assessment) { return <option key={assessment.id} value={assessment.id}>{assessment.title}</option>; })}</select><select value={resetMode} onChange={function (event) { setResetMode(event.target.value); setResetCandidates([]); setSelectedMap({}); }} style={styles.selectInput}><option value="all">All assigned candidates</option><option value="completed">Completed candidates</option><option value="incomplete">Started but incomplete</option><option value="ready">Ready/unstarted candidates</option></select><button type="button" style={styles.loadButton} onClick={loadAssessmentResetCandidates} disabled={action.loadLoading || !resetAssessmentId}>{action.loadLoading ? "Loading..." : "Load Candidates"}</button></div>{resetCandidates.length > 0 ? <div style={styles.resetCandidatePanel}><div style={styles.resetCandidateHeader}><strong>{resetCandidates.length} candidate(s) loaded</strong><span>{selectedCount} selected</span><button type="button" style={styles.lightButton} onClick={selectAllLoadedCandidates}>Select All</button><button type="button" style={styles.lightButton} onClick={clearSelectedCandidates}>Clear</button><button type="button" style={styles.dryRunButton} onClick={function () { runAssessmentBulkReset(true); }} disabled={action.dryRunLoading || action.loading || selectedCount === 0}>{action.dryRunLoading ? "Checking..." : "Dry Run"}</button><button type="button" style={styles.dangerButton} onClick={function () { runAssessmentBulkReset(false); }} disabled={action.dryRunLoading || action.loading || selectedCount === 0}>{action.loading ? "Resetting..." : "Bulk Reset Selected"}</button></div><div style={styles.resetCandidateList}>{resetCandidates.map(function (candidate) { var selected = selectedMap[candidate.userId] === true; return <label key={candidate.userId} style={selected ? styles.resetCandidateSelected : styles.resetCandidateRow}><input type="checkbox" checked={selected} onChange={function () { toggleCandidateSelection(candidate.userId); }} /><div style={styles.resetCandidateInfo}><strong>{candidate.fullName}</strong><span>{candidate.email}</span></div><Pill color="#175cd3" bg="#eff8ff">{candidate.resetCategory}</Pill><span style={styles.resetMeta}>Responses: {candidate.responseCount}</span><span style={styles.resetMeta}>Sessions: {candidate.sessionCount}</span></label>; })}</div></div> : null}{action.error ? <div style={styles.bulkError}>{action.error}</div> : null}{action.message ? <div style={styles.bulkSuccess}>{action.message}</div> : null}{action.result ? <div style={styles.bulkSummary}><strong>Summary:</strong> {safeNumber(action.result.successful, 0)} successful, {safeNumber(action.result.failed, 0)} failed, {safeNumber(action.result.totalDeduped || action.result.count, 0)} total.</div> : null}</section>;
+    return (
+      <section style={styles.workspaceCard}>
+        <div style={styles.sectionHeaderRow}><div><p style={styles.sectionEyebrow}>Controlled Reset Workflow</p><h2 style={styles.sectionTitle}>Bulk Reset by Assessment</h2><p style={styles.sectionSubtitle}>Recommended sequence: select assessment → load candidates → dry run → reset selected.</p></div><Pill color="#c2410c" bg="#fff7ed">Assessment-specific reset</Pill></div>
+        <div style={styles.stepGrid}><div style={styles.stepCard}><strong>1</strong><span>Select one assessment</span></div><div style={styles.stepCard}><strong>2</strong><span>Load matching candidates</span></div><div style={styles.stepCard}><strong>3</strong><span>Run Dry Run first</span></div><div style={styles.stepCard}><strong>4</strong><span>Bulk Reset Selected</span></div></div>
+        <div style={styles.bulkGrid}>
+          <select value={resetAssessmentId} onChange={function (event) { setResetAssessmentId(event.target.value); setResetCandidates([]); setSelectedMap({}); }} style={styles.selectInput}><option value="">Select assessment...</option>{assessmentOptions.map(function (assessment) { return <option key={assessment.id} value={assessment.id}>{assessment.title}</option>; })}</select>
+          <select value={resetMode} onChange={function (event) { setResetMode(event.target.value); setResetCandidates([]); setSelectedMap({}); }} style={styles.selectInput}><option value="all">All assigned candidates</option><option value="completed">Completed candidates</option><option value="incomplete">Started but incomplete</option><option value="ready">Ready/unstarted candidates</option></select>
+          <button type="button" style={styles.loadButton} onClick={loadAssessmentResetCandidates} disabled={action.loadLoading || !resetAssessmentId}>{action.loadLoading ? "Loading..." : "Load Candidates"}</button>
+        </div>
+        {resetCandidates.length > 0 ? <div style={styles.resetCandidatePanel}><div style={styles.resetCandidateHeader}><strong>{resetCandidates.length} candidate(s) loaded</strong><span>{selectedCount} selected</span><button type="button" style={styles.lightButton} onClick={selectAllLoadedCandidates}>Select All</button><button type="button" style={styles.lightButton} onClick={clearSelectedCandidates}>Clear</button><button type="button" style={styles.dryRunButton} onClick={function () { runAssessmentBulkReset(true); }} disabled={action.dryRunLoading || action.loading || selectedCount === 0}>{action.dryRunLoading ? "Checking..." : "Dry Run"}</button><button type="button" style={styles.dangerButton} onClick={function () { runAssessmentBulkReset(false); }} disabled={action.dryRunLoading || action.loading || selectedCount === 0}>{action.loading ? "Resetting..." : "Bulk Reset Selected"}</button></div><div style={styles.resetCandidateList}>{resetCandidates.map(function (candidate) { var selected = selectedMap[candidate.userId] === true; return <label key={candidate.userId} style={selected ? styles.resetCandidateSelected : styles.resetCandidateRow}><input type="checkbox" checked={selected} onChange={function () { toggleCandidateSelection(candidate.userId); }} /><div style={styles.resetCandidateInfo}><strong>{candidate.fullName}</strong><span>{candidate.email}</span></div><Pill color="#175cd3" bg="#eff8ff">{candidate.resetCategory}</Pill><span style={styles.resetMeta}>Responses: {candidate.responseCount}</span><span style={styles.resetMeta}>Sessions: {candidate.sessionCount}</span></label>; })}</div></div> : null}
+        {action.error ? <div style={styles.bulkError}>{action.error}</div> : null}
+        {action.message ? <div style={styles.bulkSuccess}>{action.message}</div> : null}
+        {action.result ? <div style={styles.bulkSummary}><strong>Summary:</strong> {safeNumber(action.result.successful, 0)} successful, {safeNumber(action.result.failed, 0)} failed, {safeNumber(action.result.totalDeduped || action.result.count, 0)} total.</div> : null}
+      </section>
+    );
   }
 
   function renderReportsTab() {
@@ -570,18 +797,22 @@ var styles = {
   statLabel: { margin: 0, color: "#667085", fontSize: "12px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em" },
   statValue: { margin: "3px 0 0", color: "#101828", fontSize: "26px", fontWeight: 900 },
   statNote: { margin: "2px 0 0", color: "#667085", fontSize: "12px" },
-  overviewGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(330px, 1fr))", gap: "18px" },
+  overviewGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(330px, 1fr))", gap: "12px" },
   workspaceCard: { background: "rgba(255,255,255,0.96)", border: "1px solid #eaecf0", borderRadius: "26px", padding: "22px", boxShadow: "0 20px 56px rgba(16,24,40,0.09)", marginBottom: "18px" },
+  overviewCompactCard: { background: "rgba(255,255,255,0.96)", border: "1px solid #eaecf0", borderRadius: "20px", padding: "14px", boxShadow: "0 12px 30px rgba(16,24,40,0.06)", marginBottom: "0", minHeight: "auto" },
+  compactSectionHeaderRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", marginBottom: "10px", flexWrap: "wrap" },
+  compactSectionTitle: { margin: 0, color: "#101828", fontSize: "18px", lineHeight: 1.2 },
+  compactBodyText: { color: "#475467", fontSize: "13px", lineHeight: 1.45, margin: "8px 0 0" },
   sectionHeaderRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "18px", flexWrap: "wrap" },
   sectionEyebrow: { margin: "0 0 4px", color: "#667085", fontSize: "12px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em" },
   sectionTitle: { margin: 0, color: "#101828", fontSize: "24px" },
   sectionSubtitle: { margin: "5px 0 0", color: "#667085", fontSize: "13px", lineHeight: 1.5 },
-  bodyText: { color: "#475467", fontSize: "14px", lineHeight: 1.6, margin: "12px 0 0" },
   quickActionGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px" },
   quickActionCard: { textAlign: "left", border: "1px solid #eaecf0", background: "#ffffff", borderRadius: "20px", padding: "18px", cursor: "pointer", display: "grid", gap: "8px", color: "#344054", boxShadow: "0 10px 26px rgba(16,24,40,0.05)" },
   quickActionIcon: { width: "40px", height: "40px", borderRadius: "14px", background: "#eef4ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px" },
-  compactList: { display: "grid", gap: "10px" },
-  compactButtonRow: { width: "100%", border: "1px solid #eaecf0", borderRadius: "16px", padding: "12px", background: "#ffffff", color: "#101828", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", textAlign: "left" },
+  compactList: { display: "grid", gap: "7px" },
+  compactButtonRow: { width: "100%", border: "1px solid #eaecf0", borderRadius: "13px", padding: "8px 10px", background: "#ffffff", color: "#101828", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", textAlign: "left", minHeight: "44px" },
+  compactReportText: { fontSize: "13px", lineHeight: 1.35, overflowWrap: "anywhere" },
   emptyInline: { padding: "18px", border: "1px dashed #cbd5e1", borderRadius: "16px", color: "#667085", textAlign: "center" },
   textButton: { border: 0, background: "#eef4ff", color: "#175cd3", borderRadius: "12px", padding: "10px 12px", cursor: "pointer", fontWeight: 900 },
   filterBar: { display: "grid", gridTemplateColumns: "minmax(260px, 1fr) 220px", gap: "12px", marginBottom: "18px" },
