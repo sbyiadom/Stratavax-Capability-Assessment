@@ -2,6 +2,9 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
+import Link from "next/link";
+import AppLayout from "../../components/AppLayout";
+import { supabase } from "../../supabase/client";
 
 function safeObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -102,9 +105,9 @@ function getToneGradient(score) {
 
 function getBadgeStyle(value) {
   const text = safeText(value, "").toLowerCase();
-  if (text.includes("critical") || text.includes("high") || text.includes("risk")) return styles.badgeCritical;
-  if (text.includes("elevated") || text.includes("develop")) return styles.badgeWarm;
-  if (text.includes("low") || text.includes("strong") || text.includes("exceptional") || text.includes("excellent")) return styles.badgeGood;
+  if (text.includes("critical") || text.includes("high")) return styles.badgeCritical;
+  if (text.includes("elevated") || text.includes("risk") || text.includes("develop")) return styles.badgeWarm;
+  if (text.includes("low") || text.includes("strong") || text.includes("excellent")) return styles.badgeGood;
   return styles.badgeNeutral;
 }
 
@@ -208,7 +211,6 @@ function getRowPercentage(row) {
 
 function getRowQuestionCount(row) {
   const item = safeObject(row);
-  // Handle both field names: maxScore (from our storage) or questionCount
   return item.maxScore || item.questionCount || item.question_count || 0;
 }
 
@@ -373,57 +375,101 @@ export default function SupervisorUserReportPage() {
   const [expandedRows, setExpandedRows] = useState({});
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState("");
+  const [fetchingLatestAssessment, setFetchingLatestAssessment] = useState(false);
+
+  // Auto-fetch the most recent assessment if none is provided
+  useEffect(() => {
+    if (!router.isReady || !userId) return;
+    
+    const fetchLatestAssessment = async () => {
+      if (assessmentId) return; // Already have an assessment ID
+      
+      setFetchingLatestAssessment(true);
+      try {
+        const { data, error } = await supabase
+          .from('assessment_results')
+          .select('assessment_id')
+          .eq('user_id', userId)
+          .order('completed_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (error) {
+          console.error("Error fetching latest assessment:", error);
+          return;
+        }
+        
+        if (data?.assessment_id) {
+          // Update URL with the assessment_id without reloading
+          router.replace(`/supervisor/${userId}?assessment=${data.assessment_id}`, undefined, { shallow: true });
+        } else {
+          // No assessments found - show error
+          setErrorMessage("No completed assessments found for this candidate.");
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error("Failed to fetch latest assessment:", error);
+      } finally {
+        setFetchingLatestAssessment(false);
+      }
+    };
+    
+    fetchLatestAssessment();
+  }, [router.isReady, userId, assessmentId]);
 
   useEffect(() => {
     if (!router.isReady || !userId) return;
-    let mounted = true;
-
-    async function loadReport() {
-      setLoading(true);
-      setErrorMessage("");
-      setCandidate(null);
-      setAssessment(null);
-      setReport(null);
-      setPdfError("");
-
-      try {
-        const response = await fetch(buildReportUrl(userId, assessmentId));
-        let data = null;
-        try {
-          data = await response.json();
-        } catch (e) {
-          data = null;
-        }
-
-        if (!mounted) return;
-
-        if (!response.ok) {
-          setErrorMessage(data && data.error ? data.error : "Request failed with status " + response.status);
-          setLoading(false);
-          return;
-        }
-
-        const cleanData = safeObject(data);
-        const loadedCandidate = cleanData.candidate || cleanData.user || cleanData.profile || cleanData.candidateProfile || cleanData.candidate_profile || null;
-        const loadedAssessment = cleanData.assessment || null;
-        const loadedReport = cleanData.generatedReport || cleanData.generated_report || cleanData.report || cleanData.assessmentReport || cleanData.assessment_report || cleanData.result || cleanData;
-
-        setCandidate(decodeDeep(loadedCandidate));
-        setAssessment(decodeDeep(loadedAssessment));
-        setReport(decodeDeep(loadedReport));
-        setLoading(false);
-      } catch (error) {
-        if (!mounted) return;
-        setErrorMessage(error && error.message ? error.message : "Something went wrong while loading the report.");
+    if (!assessmentId && !fetchingLatestAssessment) {
+      // If we're not fetching and still no assessment ID, show error
+      if (!fetchingLatestAssessment) {
+        setErrorMessage("No assessment selected and no completed assessments found.");
         setLoading(false);
       }
+      return;
     }
+    if (assessmentId) {
+      loadReport();
+    }
+  }, [router.isReady, userId, assessmentId, fetchingLatestAssessment]);
 
-    loadReport();
-    return () => {
-      mounted = false;
-    };
-  }, [router.isReady, userId, assessmentId]);
+  async function loadReport() {
+    setLoading(true);
+    setErrorMessage("");
+    setCandidate(null);
+    setAssessment(null);
+    setReport(null);
+    setPdfError("");
+
+    try {
+      const response = await fetch(buildReportUrl(userId, assessmentId));
+      let data = null;
+      try {
+        data = await response.json();
+      } catch (e) {
+        data = null;
+      }
+
+      if (!response.ok) {
+        setErrorMessage(data && data.error ? data.error : "Request failed with status " + response.status);
+        setLoading(false);
+        return;
+      }
+
+      const cleanData = safeObject(data);
+      const loadedCandidate = cleanData.candidate || cleanData.user || cleanData.profile || cleanData.candidateProfile || cleanData.candidate_profile || null;
+      const loadedAssessment = cleanData.assessment || null;
+      const loadedReport = cleanData.generatedReport || cleanData.generated_report || cleanData.report || cleanData.assessmentReport || cleanData.assessment_report || cleanData.result || cleanData;
+
+      setCandidate(decodeDeep(loadedCandidate));
+      setAssessment(decodeDeep(loadedAssessment));
+      setReport(decodeDeep(loadedReport));
+      setLoading(false);
+    } catch (error) {
+      console.error("Load report error:", error);
+      setErrorMessage(error && error.message ? error.message : "Something went wrong while loading the report.");
+      setLoading(false);
+    }
+  }
 
   const cleanReport = safeObject(decodeDeep(report));
   const categoryScores = safeArray(decodeDeep(getCategoryScores(cleanReport)));
@@ -688,6 +734,38 @@ export default function SupervisorUserReportPage() {
     return renderOverview();
   }
 
+  if (loading || fetchingLatestAssessment) {
+    return (
+      <div style={styles.page}>
+        <div style={styles.backgroundBlobOne} />
+        <div style={styles.backgroundBlobTwo} />
+        <div style={styles.container}>
+          <SectionShell title="Loading report" eyebrow="Please wait">
+            <div style={styles.loadingBar}><div style={styles.loadingPulse} /></div>
+            <p style={styles.bodyText}>Loading supervisor report...</p>
+          </SectionShell>
+        </div>
+      </div>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <div style={styles.page}>
+        <div style={styles.backgroundBlobOne} />
+        <div style={styles.backgroundBlobTwo} />
+        <div style={styles.container}>
+          <section style={styles.errorCard}>
+            <h2 style={styles.sectionTitle}>Report not loaded</h2>
+            <p style={styles.errorText}>{errorMessage}</p>
+            <p style={styles.mutedText}>The supervisor page loaded, but the report API did not return report data.</p>
+            <button onClick={() => router.push("/supervisor")} style={styles.backButton}>Back to Dashboard</button>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={styles.page}>
       <div style={styles.backgroundBlobOne} />
@@ -726,38 +804,19 @@ export default function SupervisorUserReportPage() {
           <MetricCard label="Questions" value={followUpQuestions.length} note="Supervisor prompts" icon="?" background="#f5f3ff" color="#6d28d9" />
         </div>
 
-        {loading ? (
-          <SectionShell title="Loading report" eyebrow="Please wait">
-            <div style={styles.loadingBar}><div style={styles.loadingPulse} /></div>
-            <p style={styles.bodyText}>Loading supervisor report...</p>
-          </SectionShell>
-        ) : null}
-
-        {!loading && errorMessage ? (
-          <section style={styles.errorCard}>
-            <h2 style={styles.sectionTitle}>Report not loaded</h2>
-            <p style={styles.errorText}>{errorMessage}</p>
-            <p style={styles.mutedText}>The supervisor page loaded, but the report API did not return report data.</p>
-          </section>
-        ) : null}
-
-        {!loading && !errorMessage ? (
-          <React.Fragment>
-            <nav style={styles.tabBar}>
-              {tabs.map((tab) => {
-                const isActive = activeTab === tab.key;
-                return (
-                  <button key={tab.key} type="button" style={isActive ? styles.tabActive : styles.tabButton} onClick={() => setActiveTab(tab.key)}>
-                    <span style={styles.tabIcon}>{tab.icon}</span>
-                    <span>{tab.label}</span>
-                    {tab.count !== undefined ? <span style={isActive ? styles.tabCountActive : styles.tabCount}>{tab.count}</span> : null}
-                  </button>
-                );
-              })}
-            </nav>
-            <div style={styles.tabContent}>{renderActiveTab()}</div>
-          </React.Fragment>
-        ) : null}
+        <nav style={styles.tabBar}>
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <button key={tab.key} type="button" style={isActive ? styles.tabActive : styles.tabButton} onClick={() => setActiveTab(tab.key)}>
+                <span style={styles.tabIcon}>{tab.icon}</span>
+                <span>{tab.label}</span>
+                {tab.count !== undefined ? <span style={isActive ? styles.tabCountActive : styles.tabCount}>{tab.count}</span> : null}
+              </button>
+            );
+          })}
+        </nav>
+        <div style={styles.tabContent}>{renderActiveTab()}</div>
       </div>
     </div>
   );
@@ -853,6 +912,7 @@ const styles = {
   loadingPulse: { height: "100%", width: "45%", borderRadius: "999px", background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)" },
   errorCard: { background: "#fff5f5", borderRadius: "24px", padding: "24px", border: "1px solid #fecaca", marginBottom: "18px" },
   errorText: { margin: "10px 0", color: "#b42318", fontWeight: 900 },
+  backButton: { padding: "10px 20px", background: "#0a1929", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 700, cursor: "pointer", marginTop: "20px" },
   badgeNeutral: { display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "999px", padding: "7px 11px", background: "#eef4ff", color: "#3538cd", fontWeight: 900, fontSize: "12px" },
   badgeWarm: { display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "999px", padding: "7px 11px", background: "#fff7ed", color: "#c2410c", fontWeight: 900, fontSize: "12px" },
   badgeGood: { display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "999px", padding: "7px 11px", background: "#ecfdf3", color: "#027a48", fontWeight: 900, fontSize: "12px" },
