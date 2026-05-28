@@ -157,6 +157,7 @@ export default function SupervisorDashboard() {
 
   const [currentSupervisor, setCurrentSupervisor] = useState(null);
   const [candidates, setCandidates] = useState([]);
+  const [sharedReports, setSharedReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -201,9 +202,10 @@ export default function SupervisorDashboard() {
       completed,
       ready,
       blocked,
-      completionRate: totalAssignments > 0 ? Math.round((completed / totalAssignments) * 100) : 0
+      completionRate: totalAssignments > 0 ? Math.round((completed / totalAssignments) * 100) : 0,
+      sharedWithMe: sharedReports.length
     };
-  }, [candidates]);
+  }, [candidates, sharedReports]);
 
   const assessmentSummary = useMemo(function () {
     const map = {};
@@ -471,9 +473,65 @@ export default function SupervisorDashboard() {
           };
         }));
 
+        // Fetch shared reports
+        const { data: sharedData, error: sharedError } = await supabase
+          .from("shared_report_access")
+          .select(`
+            id,
+            candidate_id,
+            assessment_id,
+            granted_by,
+            expires_at,
+            created_at,
+            candidate_profiles!candidate_id (
+              id,
+              full_name,
+              email
+            ),
+            assessments!assessment_id (
+              id,
+              title,
+              assessment_types(id, code, name, icon, gradient_start, gradient_end)
+            ),
+            granted_by_supervisor:supervisor_profiles!granted_by (
+              id,
+              full_name,
+              email
+            )
+          `)
+          .eq("granted_to", currentSupervisor.id)
+          .gte("expires_at", new Date().toISOString());
+
+        const processedShared = safeArray(sharedData)
+          .filter(share => share.assessment_results)
+          .map(share => {
+            const type = share.assessments?.assessment_types || {};
+            const percentage = share.assessment_results?.percentage_score || 0;
+            return {
+              id: share.id,
+              candidateId: share.candidate_id,
+              candidateName: share.candidate_profiles?.full_name || "Candidate",
+              candidateEmail: share.candidate_profiles?.email,
+              assessmentId: share.assessment_id,
+              assessmentTitle: share.assessments?.title || "Assessment",
+              assessmentType: type.name || displayTypeName(type.code || "general"),
+              assessmentIcon: type.icon || "📋",
+              assessmentGradientStart: type.gradient_start || "#0f766e",
+              assessmentGradientEnd: type.gradient_end || "#14b8a6",
+              result: share.assessment_results,
+              percentage: safeNumber(percentage, 0),
+              classification: getClassification(percentage),
+              sharedBy: share.granted_by_supervisor?.full_name || "Another Supervisor",
+              sharedByEmail: share.granted_by_supervisor?.email,
+              expiresAt: share.expires_at,
+              sharedAt: share.created_at
+            };
+          });
+
         if (cancelled) return;
 
         setCandidates(processedCandidates);
+        setSharedReports(processedShared);
         setAssessmentOptions(Object.keys(assessmentOptionMap)
           .sort(function (a, b) { return assessmentOptionMap[a].localeCompare(assessmentOptionMap[b]); })
           .map(function (id) { return { id, title: assessmentOptionMap[id] }; }));
@@ -639,7 +697,31 @@ export default function SupervisorDashboard() {
           <MetricCard label="Completed" value={dashboardStats.completed} note="Submitted assessments" icon="✓" color="#027a48" bg="#ecfdf3" />
           <MetricCard label="Ready" value={dashboardStats.ready} note="Available to candidates" icon="↗" color="#175cd3" bg="#eff8ff" />
           <MetricCard label="Blocked" value={dashboardStats.blocked} note="Awaiting release/reset" icon="●" color="#c2410c" bg="#fff7ed" />
+          <MetricCard label="Shared With Me" value={dashboardStats.sharedWithMe} note="Reports shared by others" icon="🔗" color="#8b5cf6" bg="#f5f3ff" />
         </section>
+
+        {/* Shared With Me Section in Overview */}
+        {sharedReports.length > 0 && (
+          <section style={styles.card}>
+            <div style={styles.sectionTopLine}>
+              <div>
+                <p style={styles.eyebrow}>Recently Shared</p>
+                <h2 style={styles.compactTitle}>Reports Shared With You</h2>
+              </div>
+              <button type="button" style={styles.softButton} onClick={function () { setActiveTab("shared"); }}>View All →</button>
+            </div>
+            <div style={styles.compactList}>
+              {sharedReports.slice(0, 3).map(function (share) {
+                return (
+                  <Link key={share.id} href={`/supervisor/${share.candidateId}?assessment=${share.assessmentId}`} style={styles.compactReportRow}>
+                    <span style={styles.compactReportText}><strong>{share.candidateName}</strong> — {share.assessmentTitle} — Shared by {share.sharedBy}</span>
+                    <Pill color={share.classification.color} bg={share.classification.bg}>{share.percentage}%</Pill>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         <section style={styles.overviewPanel}>
           <div style={styles.overviewProgressBlock}>
@@ -934,6 +1016,90 @@ export default function SupervisorDashboard() {
     );
   }
 
+  function renderSharedTab() {
+    if (sharedReports.length === 0) {
+      return (
+        <section style={styles.card}>
+          <div style={styles.sectionTopLine}>
+            <div>
+              <p style={styles.eyebrow}>Shared Reports</p>
+              <h2 style={styles.sectionTitle}>Reports Shared With You</h2>
+              <p style={styles.mutedText}>No reports have been shared with you yet.</p>
+            </div>
+            <Pill color="#8b5cf6" bg="#f5f3ff">0 shared</Pill>
+          </div>
+        </section>
+      );
+    }
+
+    return (
+      <section style={styles.card}>
+        <div style={styles.sectionTopLine}>
+          <div>
+            <p style={styles.eyebrow}>Shared Reports</p>
+            <h2 style={styles.sectionTitle}>Reports Shared With You</h2>
+            <p style={styles.mutedText}>Assessment reports that other supervisors have shared with you.</p>
+          </div>
+          <Pill color="#8b5cf6" bg="#f5f3ff">{sharedReports.length} shared</Pill>
+        </div>
+
+        <div style={styles.sharedTableContainer}>
+          <table style={styles.sharedTable}>
+            <thead>
+              <tr>
+                <th>Candidate</th>
+                <th>Assessment</th>
+                <th>Score</th>
+                <th>Shared By</th>
+                <th>Expires</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sharedReports.map((share) => (
+                <tr key={share.id}>
+                  <td style={styles.sharedCell}>
+                    <div>
+                      <div style={styles.sharedCandidateName}>{share.candidateName}</div>
+                      <div style={styles.sharedCandidateEmail}>{share.candidateEmail}</div>
+                    </div>
+                  </td>
+                  <td style={styles.sharedCell}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <div style={{ ...styles.assessmentIconSmall, background: `linear-gradient(135deg, ${share.assessmentGradientStart} 0%, ${share.assessmentGradientEnd} 100%)`, width: "28px", height: "28px", fontSize: "12px" }}>{share.assessmentIcon}</div>
+                      <span>{share.assessmentTitle}</span>
+                    </div>
+                  </td>
+                  <td style={styles.sharedCell}>
+                    <span style={{ ...styles.sharedScoreBadge, background: share.classification.bg, color: share.classification.color }}>
+                      {share.percentage}%
+                    </span>
+                  </td>
+                  <td style={styles.sharedCell}>
+                    <div>
+                      <div>{share.sharedBy}</div>
+                      <div style={styles.sharedByEmail}>{share.sharedByEmail}</div>
+                    </div>
+                  </td>
+                  <td style={styles.sharedCell}>
+                    <span style={share.expiresAt ? styles.expiryBadge : styles.noExpiryBadge}>
+                      {share.expiresAt ? formatDate(share.expiresAt) : "No expiry"}
+                    </span>
+                  </td>
+                  <td style={styles.sharedCell}>
+                    <Link href={`/supervisor/${share.candidateId}?assessment=${share.assessmentId}`} style={styles.viewSharedButton}>
+                      View Report →
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    );
+  }
+
   function renderBulkResetTab() {
     return (
       <section style={styles.card}>
@@ -1005,6 +1171,7 @@ export default function SupervisorDashboard() {
     if (activeTab === "candidates") return renderCandidatesTab();
     if (activeTab === "assessments") return renderAssessmentsTab();
     if (activeTab === "reports") return renderReportsTab();
+    if (activeTab === "shared") return renderSharedTab();
     if (activeTab === "bulk-reset") return renderBulkResetTab();
     return renderOverviewTab();
   }
@@ -1036,6 +1203,7 @@ export default function SupervisorDashboard() {
           <TabButton active={activeTab === "candidates"} icon="👥" label="Candidates" count={candidates.length} onClick={function () { setActiveTab("candidates"); }} />
           <TabButton active={activeTab === "assessments"} icon="📋" label="Assessments" count={assessmentSummary.length} onClick={function () { setActiveTab("assessments"); }} />
           <TabButton active={activeTab === "reports"} icon="📊" label="Reports" count={completedReports.length} onClick={function () { setActiveTab("reports"); }} />
+          <TabButton active={activeTab === "shared"} icon="🔗" label="Shared" count={sharedReports.length} onClick={function () { setActiveTab("shared"); }} />
           <TabButton active={activeTab === "bulk-reset"} icon="♻️" label="Bulk Reset" onClick={function () { setActiveTab("bulk-reset"); }} />
         </nav>
 
@@ -1073,7 +1241,7 @@ var styles = {
   tabCountActive: { minWidth: "23px", height: "21px", padding: "0 7px", borderRadius: "999px", background: "rgba(255,255,255,0.18)", color: "#ffffff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "12px" },
 
   stack: { display: "grid", gap: "14px" },
-  metricsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "12px" },
+  metricsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px" },
   metricCard: { display: "flex", alignItems: "center", gap: "12px", background: "rgba(255,255,255,0.96)", border: "1px solid #eaecf0", borderRadius: "20px", padding: "14px", boxShadow: "0 12px 32px rgba(16,24,40,0.06)" },
   metricIcon: { width: "42px", height: "42px", borderRadius: "14px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", fontWeight: 900, flex: "0 0 auto" },
   metricTextWrap: { minWidth: 0 },
@@ -1099,7 +1267,7 @@ var styles = {
   quickActionIcon: { width: "38px", height: "38px", borderRadius: "13px", background: "#eef4ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" },
 
   compactList: { display: "grid", gap: "7px" },
-  compactReportRow: { width: "100%", border: "1px solid #eaecf0", borderRadius: "13px", padding: "8px 10px", background: "#ffffff", color: "#101828", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", textAlign: "left", minHeight: "42px" },
+  compactReportRow: { width: "100%", border: "1px solid #eaecf0", borderRadius: "13px", padding: "8px 10px", background: "#ffffff", color: "#101828", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", textAlign: "left", minHeight: "42px", textDecoration: "none" },
   compactReportText: { fontSize: "13px", lineHeight: 1.35, overflowWrap: "anywhere" },
   emptyInline: { padding: "16px", border: "1px dashed #cbd5e1", borderRadius: "14px", color: "#667085", textAlign: "center", fontSize: "13px" },
 
@@ -1147,6 +1315,17 @@ var styles = {
   reportAssessmentRow: { display: "grid", gridTemplateColumns: "minmax(280px, 1fr) 210px 130px", gap: "12px", alignItems: "center", border: "1px solid #eaecf0", borderRadius: "15px", padding: "11px", background: "#f8fafc", marginTop: "10px" },
   reportAssessmentInfo: { display: "flex", alignItems: "center", gap: "11px", minWidth: 0 },
   reportButton: { textDecoration: "none", textAlign: "center", border: 0, padding: "10px 12px", borderRadius: "12px", background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)", color: "#ffffff", fontSize: "13px", fontWeight: 900 },
+
+  sharedTableContainer: { overflowX: "auto" },
+  sharedTable: { width: "100%", borderCollapse: "collapse", fontSize: "13px" },
+  sharedCell: { padding: "12px", borderBottom: "1px solid #e2e8f0", verticalAlign: "top" },
+  sharedCandidateName: { fontWeight: 700, color: "#0a1929", marginBottom: "2px" },
+  sharedCandidateEmail: { fontSize: "11px", color: "#64748b" },
+  sharedByEmail: { fontSize: "10px", color: "#94a3b8", marginTop: "2px" },
+  sharedScoreBadge: { display: "inline-block", padding: "4px 8px", borderRadius: "8px", fontSize: "12px", fontWeight: 700 },
+  expiryBadge: { fontSize: "11px", padding: "2px 8px", borderRadius: "12px", background: "#fff3e0", color: "#f57c00" },
+  noExpiryBadge: { fontSize: "11px", padding: "2px 8px", borderRadius: "12px", background: "#e8f5e9", color: "#2e7d32" },
+  viewSharedButton: { padding: "6px 12px", background: "#8b5cf6", color: "white", borderRadius: "6px", fontSize: "11px", textDecoration: "none", cursor: "pointer", display: "inline-block" },
 
   stepGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "10px", marginBottom: "14px" },
   stepCard: { display: "flex", alignItems: "center", gap: "10px", border: "1px solid #eaecf0", background: "#ffffff", borderRadius: "15px", padding: "11px", color: "#344054", fontSize: "13px" },
