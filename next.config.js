@@ -2,6 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   
+  // Use standalone output for better Vercel compatibility
+  output: 'standalone',
+  
   // Add cache-busting for builds
   generateBuildId: async () => {
     return `build-${Date.now()}`;
@@ -37,6 +40,19 @@ const nextConfig = {
       );
     }
     return config;
+  },
+  
+  // Ensure API routes are excluded from static generation
+  exportPathMap: async function (defaultPathMap, { dev, dir, outDir, distDir, buildId }) {
+    // Filter out API routes from static export
+    const filteredPaths = {};
+    for (const [path, page] of Object.entries(defaultPathMap)) {
+      // Skip API routes - they should be serverless functions, not static pages
+      if (!path.startsWith('/api/')) {
+        filteredPaths[path] = page;
+      }
+    }
+    return filteredPaths;
   },
 };
 
