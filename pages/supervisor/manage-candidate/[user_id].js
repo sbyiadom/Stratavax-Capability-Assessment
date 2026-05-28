@@ -1,10 +1,10 @@
-// pages/supervisor/manage-candidates.js
+// pages/supervisor/manage-candidate/[user_id].js
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import AppLayout from "../../components/AppLayout";
-import { supabase } from "../../supabase/client";
+import AppLayout from "../../../components/AppLayout";
+import { supabase } from "../../../supabase/client";
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -64,15 +64,15 @@ function getReadableError(error) {
   return error.message || String(error) || "Something went wrong.";
 }
 
-export default function SupervisorManageCandidates() {
+export default function ManageSingleCandidate() {
   const router = useRouter();
-  const [candidates, setCandidates] = useState([]);
-  const [filteredCandidates, setFilteredCandidates] = useState([]);
+  const { user_id } = router.query;
+
+  const [candidate, setCandidate] = useState(null);
+  const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [supervisorId, setSupervisorId] = useState(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [expandedCandidate, setExpandedCandidate] = useState(null);
   const [message, setMessage] = useState({ type: "", text: "" });
   
   // Share modal state
@@ -82,12 +82,9 @@ export default function SupervisorManageCandidates() {
   const [sharedAccessList, setSharedAccessList] = useState({});
 
   useEffect(() => {
+    if (!router.isReady) return;
     checkAuth();
-  }, []);
-
-  useEffect(() => {
-    applyFilters(candidates, searchTerm);
-  }, [searchTerm, candidates]);
+  }, [router.isReady]);
 
   async function checkAuth() {
     try {
@@ -126,8 +123,10 @@ export default function SupervisorManageCandidates() {
       }
 
       setSupervisorId(userId);
-      await fetchCandidates(userId);
-      await fetchAvailableSupervisors();
+      await Promise.all([
+        fetchCandidateDetails(userId),
+        fetchAvailableSupervisors()
+      ]);
     } catch (error) {
       console.error("Auth error:", error);
       router.push("/login");
@@ -171,101 +170,102 @@ export default function SupervisorManageCandidates() {
     }
   }
 
-  async function fetchCandidates(supervisorUserId) {
+  async function fetchCandidateDetails(currentSupervisorId) {
     try {
       setLoading(true);
       setMessage({ type: "", text: "" });
 
-      // Fetch candidates assigned to this supervisor
-      const { data: candidatesData, error: candidatesError } = await supabase
+      // Check if supervisor has access to this candidate
+      const { data: candidateData, error: candidateError } = await supabase
         .from("candidate_profiles")
         .select("*, supervisor:supervisor_profiles(id, full_name, email)")
-        .eq("supervisor_id", supervisorUserId)
-        .order("created_at", { ascending: false });
+        .eq("id", user_id)
+        .single();
 
-      if (candidatesError) throw candidatesError;
-
-      const candidateIds = safeArray(candidatesData).map((candidate) => candidate.id).filter(Boolean);
-
-      let resultsData = [];
-      let accessData = [];
-
-      if (candidateIds.length > 0) {
-        const [resultsResponse, accessResponse] = await Promise.all([
-          supabase
-            .from("assessment_results")
-            .select("id, user_id, assessment_id, total_score, max_score, percentage_score, completed_at, is_valid, is_auto_submitted, assessment:assessments(id, title)")
-            .in("user_id", candidateIds)
-            .order("completed_at", { ascending: false }),
-          supabase
-            .from("candidate_assessments")
-            .select("id, user_id, assessment_id, status, result_id, assessments(id, title)")
-            .in("user_id", candidateIds)
-        ]);
-
-        if (resultsResponse.error) throw resultsResponse.error;
-        if (accessResponse.error) throw accessResponse.error;
-
-        resultsData = resultsResponse.data || [];
-        accessData = accessResponse.data || [];
+      if (candidateError) {
+        setMessage({ type: "error", text: "Candidate not found." });
+        setLoading(false);
+        return;
       }
 
-      const resultsByUser = {};
-      safeArray(resultsData).forEach((result) => {
-        if (!resultsByUser[result.user_id]) resultsByUser[result.user_id] = [];
-        resultsByUser[result.user_id].push(result);
+      // Check permission (admin or assigned supervisor)
+      const isAdmin = currentSupervisorId.role === "admin";
+      const isAssignedSupervisor = candidateData.supervisor_id === currentSupervisorId.id;
+      
+      // Check shared access
+      const { data: sharedAccess } = await supabase
+        .from("shared_report_access")
+        .select("*")
+        .eq("candidate_id", user_id)
+        .eq("granted_to", currentSupervisorId.id)
+        .maybeSingle();
+      
+      const hasSharedAccess = sharedAccess && (!sharedAccess.expires_at || new Date(sharedAccess.expires_at) > new Date());
+
+      if (!isAdmin && !isAssignedSupervisor && !hasSharedAccess) {
+        setMessage({ type: "error", text: "You do not have permission to view this candidate." });
+        setLoading(false);
+        return;
+      }
+
+      setCandidate(candidateData);
+
+      // Fetch assessments for this candidate
+      const [resultsResponse, accessResponse] = await Promise.all([
+        supabase
+          .from("assessment_results")
+          .select("id, assessment_id, total_score, max_score, percentage_score, completed_at, is_valid, is_auto_submitted, assessment:assessments(id, title, assessment_types(id, name, icon, gradient_start, gradient_end))")
+          .eq("user_id", user_id)
+          .order("completed_at", { ascending: false }),
+        supabase
+          .from("candidate_assessments")
+          .select("id, assessment_id, status, result_id, created_at, unblocked_at, assessments(id, title, assessment_types(id, name, icon, gradient_start, gradient_end))")
+          .eq("user_id", user_id)
+      ]);
+
+      if (resultsResponse.error) throw resultsResponse.error;
+      if (accessResponse.error) throw accessResponse.error;
+
+      const resultsMap = {};
+      safeArray(resultsResponse.data).forEach(result => {
+        resultsMap[result.assessment_id] = result;
       });
 
-      const accessByUser = {};
-      safeArray(accessData).forEach((access) => {
-        if (!accessByUser[access.user_id]) accessByUser[access.user_id] = [];
-        accessByUser[access.user_id].push(access);
-      });
-
-      const enrichedCandidates = safeArray(candidatesData).map((candidate) => {
-        const results = resultsByUser[candidate.id] || [];
-        const assessments = accessByUser[candidate.id] || [];
-        const completedAssessments = assessments.filter((a) => a.status === "completed").length;
-        const unblockedAssessments = assessments.filter((a) => a.status === "unblocked").length;
-        const blockedAssessments = assessments.filter((a) => a.status === "blocked").length;
-        const latestResult = results[0] || null;
-
+      const processedAssessments = safeArray(accessResponse.data).map(access => {
+        const result = resultsMap[access.assessment_id] || null;
+        const assessment = access.assessments || {};
+        const type = assessment.assessment_types || {};
+        
         return {
-          ...candidate,
-          completedAssessments,
-          unblockedAssessments,
-          blockedAssessments,
-          latestResult,
-          results,
-          assessments
+          id: access.id,
+          assessment_id: access.assessment_id,
+          title: assessment.title || "Unknown Assessment",
+          type_name: type.name || "General",
+          type_icon: type.icon || "📋",
+          type_gradient_start: type.gradient_start || "#0f766e",
+          type_gradient_end: type.gradient_end || "#14b8a6",
+          status: result ? "completed" : access.status,
+          result,
+          completed_at: result?.completed_at,
+          score: result?.total_score,
+          max_score: result?.max_score,
+          percentage: result?.percentage_score
         };
       });
 
-      setCandidates(enrichedCandidates);
-      applyFilters(enrichedCandidates, searchTerm);
+      setAssessments(processedAssessments);
+      
+      // Fetch shared access for each assessment
+      processedAssessments.forEach(assessment => {
+        fetchSharedAccess(user_id, assessment.assessment_id);
+      });
+
     } catch (error) {
-      console.error("Error fetching candidates:", error);
-      setMessage({ type: "error", text: "Failed to load candidates: " + getReadableError(error) });
+      console.error("Error fetching candidate:", error);
+      setMessage({ type: "error", text: "Failed to load candidate data." });
     } finally {
       setLoading(false);
     }
-  }
-
-  function applyFilters(candidatesList, search) {
-    let filtered = [...safeArray(candidatesList)];
-
-    if (cleanText(search).trim()) {
-      const term = search.toLowerCase().trim();
-      filtered = filtered.filter((candidate) => {
-        return (
-          cleanText(candidate.full_name).toLowerCase().includes(term) ||
-          cleanText(candidate.email).toLowerCase().includes(term) ||
-          cleanText(candidate.phone).toLowerCase().includes(term)
-        );
-      });
-    }
-
-    setFilteredCandidates(filtered);
   }
 
   function clearMessagesAfterDelay() {
@@ -308,9 +308,7 @@ export default function SupervisorManageCandidates() {
 
       setMessage({ type: "success", text: `Report access granted to ${result.data?.granted_to_name || "supervisor"} for ${candidateName} - ${assessmentTitle}` });
       
-      // Refresh shared access list
       await fetchSharedAccess(candidateId, assessmentId);
-      
       setShowShareModal(null);
     } catch (error) {
       console.error("Grant access error:", error);
@@ -357,26 +355,22 @@ export default function SupervisorManageCandidates() {
     }
   }
 
-  function openShareModal(candidate, assessment) {
-    fetchSharedAccess(candidate.id, assessment.assessment_id);
+  function openShareModal(assessment) {
+    fetchSharedAccess(user_id, assessment.assessment_id);
     setShowShareModal({
-      candidateId: candidate.id,
-      candidateName: candidate.full_name || candidate.email,
+      candidateId: user_id,
+      candidateName: candidate?.full_name || candidate?.email || "Candidate",
       assessmentId: assessment.assessment_id,
-      assessmentTitle: assessment.assessments?.title || "Assessment",
-      candidate
+      assessmentTitle: assessment.title,
+      assessment
     });
   }
 
-  function toggleCandidateDetails(candidateId) {
-    setExpandedCandidate((current) => (current === candidateId ? null : candidateId));
-  }
-
-  if (checkingAuth) {
+  if (checkingAuth || !router.isReady) {
     return (
       <div style={styles.checkingContainer}>
         <div style={styles.spinner} />
-        <p style={styles.checkingText}>Checking access...</p>
+        <p style={styles.checkingText}>Loading...</p>
       </div>
     );
   }
@@ -390,11 +384,15 @@ export default function SupervisorManageCandidates() {
 
         <div style={styles.header}>
           <div>
-            <h1 style={styles.title}>My Candidates</h1>
-            <p style={styles.subtitle}>View assigned candidates, assessment reports, and share access with other supervisors.</p>
+            <h1 style={styles.title}>Manage Candidate</h1>
+            {candidate && (
+              <p style={styles.subtitle}>
+                {candidate.full_name || "Candidate"} • {candidate.email || "No email"}
+              </p>
+            )}
           </div>
           <div style={styles.headerButtons}>
-            <button onClick={() => fetchCandidates(supervisorId)} style={styles.refreshButton}>Refresh</button>
+            <button onClick={() => fetchCandidateDetails(supervisorId)} style={styles.refreshButton}>Refresh</button>
           </div>
         </div>
 
@@ -409,177 +407,106 @@ export default function SupervisorManageCandidates() {
           </div>
         )}
 
-        <div style={styles.filterSection}>
-          <div style={styles.searchContainer}>
-            <span style={styles.searchIcon}>🔍</span>
-            <input
-              type="text"
-              placeholder="Search candidates by name, email, or phone..."
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              style={styles.searchInput}
-            />
-            {searchTerm && <button onClick={() => setSearchTerm("")} style={styles.clearButton}>×</button>}
-          </div>
-
-          {(filteredCandidates.length !== candidates.length || searchTerm) && (
-            <div style={styles.filterStats}>
-              Showing {filteredCandidates.length} of {candidates.length} candidates
-              <button onClick={() => { setSearchTerm(""); }} style={styles.clearFiltersButton}>Clear Filters</button>
-            </div>
-          )}
-        </div>
-
         {loading ? (
-          <div style={styles.loading}>Loading candidates...</div>
+          <div style={styles.loading}>Loading assessments...</div>
         ) : (
           <div style={styles.tableContainer}>
             <div style={styles.tableScroll}>
               <table style={styles.table}>
                 <thead>
                   <tr style={styles.tableHeadRow}>
-                    <th style={styles.th}>Candidate</th>
-                    <th style={styles.th}>Contact</th>
-                    <th style={styles.th}>Assessments</th>
-                    <th style={styles.th}>Latest Score</th>
+                    <th style={styles.th}>Assessment</th>
+                    <th style={styles.th}>Type</th>
+                    <th style={styles.th}>Status</th>
+                    <th style={styles.th}>Score</th>
+                    <th style={styles.th}>Completed Date</th>
                     <th style={styles.th}>Actions</th>
-                  </tr>
+                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCandidates.length === 0 ? (
+                  {assessments.length === 0 ? (
                     <tr>
-                      <td colSpan="5" style={styles.noData}>
-                        {searchTerm ? "No candidates match your search." : "No candidates assigned yet."}
+                      <td colSpan="6" style={styles.noData}>
+                        No assessments found for this candidate.
                       </td>
                     </tr>
                   ) : (
-                    filteredCandidates.map((candidate) => {
-                      const latestResult = candidate.latestResult;
-                      const percentage = getPercentage(latestResult);
+                    assessments.map((assessment) => {
+                      const percentage = getPercentage(assessment.result);
                       const classification = getClassification(percentage);
-                      const isExpanded = expandedCandidate === candidate.id;
+                      const sharedKey = `${user_id}_${assessment.assessment_id}`;
+                      const sharedWith = sharedAccessList[sharedKey] || [];
+                      const isCompleted = assessment.status === "completed" || assessment.result;
 
                       return (
-                        <React.Fragment key={candidate.id}>
+                        <React.Fragment key={assessment.id}>
                           <tr style={styles.tableRow}>
                             <td style={styles.td}>
-                              <div style={styles.candidateInfo}>
-                                <div style={styles.avatar}>{getInitial(candidate.full_name, candidate.email)}</div>
+                              <div style={styles.assessmentInfo}>
+                                <div style={{ ...styles.assessmentIcon, background: `linear-gradient(135deg, ${assessment.type_gradient_start} 0%, ${assessment.type_gradient_end} 100%)` }}>
+                                  {assessment.type_icon}
+                                </div>
                                 <div>
-                                  <div style={styles.candidateName}>{candidate.full_name || "Unnamed Candidate"}</div>
-                                  <div style={styles.candidateId}>ID: {candidate.id ? candidate.id.substring(0, 8) : "N/A"}...</div>
+                                  <div style={styles.assessmentTitle}>{assessment.title}</div>
+                                  <div style={styles.assessmentType}>{assessment.type_name}</div>
                                 </div>
                               </div>
                             </td>
+                            <td style={styles.td}>{assessment.type_name}</td>
                             <td style={styles.td}>
-                              <div style={styles.contactInfo}>
-                                <div style={styles.email}>{candidate.email || "No email"}</div>
-                                {candidate.phone && <div style={styles.phone}>{candidate.phone}</div>}
-                              </div>
+                              <span style={{
+                                ...styles.statusBadge,
+                                background: isCompleted ? "#e8f5e9" : assessment.status === "unblocked" ? "#e3f2fd" : "#fff3e0",
+                                color: isCompleted ? "#2e7d32" : assessment.status === "unblocked" ? "#1565c0" : "#f57c00"
+                              }}>
+                                {isCompleted ? "Completed" : assessment.status === "unblocked" ? "Ready" : "Blocked"}
+                              </span>
                             </td>
                             <td style={styles.td}>
-                              <div style={styles.assessmentBadges}>
-                                <span style={{ ...styles.badge, background: "#e8f5e9", color: "#2e7d32" }}>✅ {candidate.completedAssessments} completed</span>
-                                <span style={{ ...styles.badge, background: "#e3f2fd", color: "#1565c0" }}>🔓 {candidate.unblockedAssessments} ready</span>
-                                <span style={{ ...styles.badge, background: "#fff3e0", color: "#f57c00" }}>🔒 {candidate.blockedAssessments} blocked</span>
-                              </div>
-                              {candidate.assessments?.length > 0 && (
-                                <button onClick={() => toggleCandidateDetails(candidate.id)} style={styles.viewDetailsButton}>
-                                  {isExpanded ? "▲ Hide Assessments" : "▼ View Assessments"}
-                                </button>
-                              )}
-                            </td>
-                            <td style={styles.td}>
-                              {latestResult ? (
-                                <div>
-                                  <span style={{ ...styles.scoreBadge, background: classification.bg, color: classification.color }}>
-                                    {toNumber(latestResult.total_score, 0)}/{toNumber(latestResult.max_score, 0)} ({percentage}%)
-                                  </span>
-                                  <div style={styles.classification}>{classification.label}</div>
-                                  <div style={styles.completedDate}>{formatDate(latestResult.completed_at)}</div>
-                                </div>
+                              {isCompleted ? (
+                                <span style={{ ...styles.scoreBadge, background: classification.bg, color: classification.color }}>
+                                  {percentage}%
+                                </span>
                               ) : (
-                                <span style={styles.noScore}>Not started</span>
+                                <span style={styles.noScore}>—</span>
                               )}
+                            </td>
+                            <td style={styles.td}>
+                              {assessment.completed_at ? formatDate(assessment.completed_at) : "—"}
                             </td>
                             <td style={styles.td}>
                               <div style={styles.actionGroup}>
-                                {latestResult && (
-                                  <Link href={`/supervisor/${candidate.id}?assessment_id=${latestResult.assessment_id}`} legacyBehavior>
-                                    <a style={styles.viewButton}>📄 View Report</a>
+                                {isCompleted && (
+                                  <Link href={`/supervisor/${user_id}?assessment=${assessment.assessment_id}`} legacyBehavior>
+                                    <a style={styles.viewButton}>View Report</a>
                                   </Link>
                                 )}
+                                <button
+                                  onClick={() => openShareModal(assessment)}
+                                  style={styles.shareButton}
+                                >
+                                  🔗 Share
+                                </button>
                               </div>
                             </td>
                           </tr>
-
-                          {isExpanded && candidate.assessments?.length > 0 && (
-                            <tr style={styles.expandedRow}>
-                              <td colSpan="5" style={styles.expandedCell}>
-                                <div style={styles.expandedContent}>
-                                  <h4 style={styles.expandedTitle}>Individual Assessments</h4>
-                                  <div style={styles.assessmentsGrid}>
-                                    {candidate.assessments.map((assessment) => {
-                                      const result = candidate.results?.find((item) => item.assessment_id === assessment.assessment_id);
-                                      const resultPercentage = getPercentage(result);
-                                      const sharedKey = `${candidate.id}_${assessment.assessment_id}`;
-                                      const sharedWith = sharedAccessList[sharedKey] || [];
-
-                                      return (
-                                        <div key={assessment.id} style={{
-                                          ...styles.assessmentCard,
-                                          borderLeftColor: result ? "#4caf50" : assessment.status === "unblocked" ? "#2196f3" : "#ff9800"
-                                        }}>
-                                          <div style={styles.assessmentHeader}>
-                                            <span style={styles.assessmentTitle}>{assessment.assessments?.title || "Assessment"}</span>
-                                            <span style={{
-                                              ...styles.assessmentStatus,
-                                              background: result ? "#e8f5e9" : assessment.status === "unblocked" ? "#e3f2fd" : "#fff3e0",
-                                              color: result ? "#2e7d32" : assessment.status === "unblocked" ? "#1565c0" : "#f57c00"
-                                            }}>
-                                              {result ? "Completed" : assessment.status === "unblocked" ? "Ready" : "Blocked"}
-                                            </span>
-                                          </div>
-
-                                          {result && (
-                                            <div style={styles.assessmentDetails}>
-                                              <div>Score: {toNumber(result.total_score, 0)}/{toNumber(result.max_score, 0)} ({resultPercentage}%)</div>
-                                              <div style={styles.assessmentDate}>Completed: {formatDate(result.completed_at)}</div>
-                                              <Link href={`/supervisor/${candidate.id}?assessment_id=${assessment.assessment_id}`} legacyBehavior>
-                                                <a style={styles.viewReportLink}>View Full Report →</a>
-                                              </Link>
-                                            </div>
-                                          )}
-
-                                          <div style={styles.assessmentActions}>
-                                            <button
-                                              onClick={() => openShareModal(candidate, assessment)}
-                                              style={styles.shareButton}
-                                            >
-                                              🔗 Share Report
-                                            </button>
-                                          </div>
-
-                                          {sharedWith.length > 0 && (
-                                            <div style={styles.sharedAccessList}>
-                                              <div style={styles.sharedAccessHeader}>Shared with:</div>
-                                              {sharedWith.map(access => (
-                                                <div key={access.granted_to} style={styles.sharedAccessItem}>
-                                                  <span>{access.supervisor_profiles?.full_name || access.granted_to}</span>
-                                                  <button
-                                                    onClick={() => revokeReportAccess(candidate.id, assessment.assessment_id, access.granted_to, access.supervisor_profiles?.full_name)}
-                                                    style={styles.revokeButton}
-                                                  >
-                                                    Revoke
-                                                  </button>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
+                          
+                          {sharedWith.length > 0 && (
+                            <tr style={styles.sharedRow}>
+                              <td colSpan="6" style={styles.sharedCell}>
+                                <div style={styles.sharedAccessList}>
+                                  <div style={styles.sharedAccessHeader}>Shared with:</div>
+                                  {sharedWith.map(access => (
+                                    <div key={access.granted_to} style={styles.sharedAccessItem}>
+                                      <span>{access.supervisor_profiles?.full_name || access.granted_to}</span>
+                                      <button
+                                        onClick={() => revokeReportAccess(user_id, assessment.assessment_id, access.granted_to, access.supervisor_profiles?.full_name)}
+                                        style={styles.revokeButton}
+                                      >
+                                        Revoke
+                                      </button>
+                                    </div>
+                                  ))}
                                 </div>
                               </td>
                             </tr>
@@ -685,56 +612,31 @@ const styles = {
   subtitle: { fontSize: "14px", color: "#667085", margin: 0 },
   refreshButton: { padding: "12px 20px", background: "#1565c0", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 700, cursor: "pointer" },
   message: { padding: "12px 20px", borderRadius: "8px", marginBottom: "20px", fontSize: "14px", lineHeight: 1.5 },
-  filterSection: { display: "flex", gap: "20px", marginBottom: "20px", flexWrap: "wrap", alignItems: "center" },
-  searchContainer: { position: "relative", flex: 2, minWidth: "250px" },
-  searchIcon: { position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#999", fontSize: "16px" },
-  searchInput: { width: "100%", padding: "12px 38px 12px 36px", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", outline: "none", boxSizing: "border-box" },
-  clearButton: { position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#999", fontSize: "18px" },
-  filterStats: { display: "flex", alignItems: "center", gap: "12px", padding: "8px 16px", background: "#e3f2fd", borderRadius: "8px", fontSize: "13px", color: "#1565c0" },
-  clearFiltersButton: { background: "none", border: "none", color: "#1565c0", cursor: "pointer", fontSize: "12px", textDecoration: "underline", padding: "4px 8px" },
   tableContainer: { background: "white", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", overflow: "hidden" },
   tableScroll: { overflowX: "auto" },
-  table: { width: "100%", borderCollapse: "collapse", fontSize: "13px", minWidth: "880px" },
+  table: { width: "100%", borderCollapse: "collapse", fontSize: "13px", minWidth: "800px" },
   tableHeadRow: { background: "#f8fafc", borderBottom: "2px solid #0a1929" },
   th: { textAlign: "left", padding: "15px 20px", fontWeight: 800, color: "#0a1929" },
-  td: { padding: "15px 20px", borderBottom: "1px solid #e2e8f0", verticalAlign: "top" },
+  td: { padding: "15px 20px", borderBottom: "1px solid #e2e8f0", verticalAlign: "middle" },
   tableRow: { background: "white" },
+  sharedRow: { background: "#f8fafc" },
   noData: { padding: "40px", textAlign: "center", color: "#718096", fontStyle: "italic" },
   loading: { textAlign: "center", padding: "60px", color: "#667085", background: "white", borderRadius: "16px" },
-  candidateInfo: { display: "flex", alignItems: "center", gap: "12px" },
-  avatar: { width: "40px", height: "40px", borderRadius: "20px", background: "linear-gradient(135deg, #667eea, #764ba2)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: 800 },
-  candidateName: { fontWeight: 800, color: "#0a1929", marginBottom: "2px" },
-  candidateId: { fontSize: "11px", color: "#718096", fontFamily: "monospace" },
-  contactInfo: { fontSize: "13px" },
-  email: { color: "#0a1929", marginBottom: "2px" },
-  phone: { fontSize: "11px", color: "#718096" },
-  assessmentBadges: { display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "8px" },
-  badge: { padding: "2px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: 700, display: "inline-block" },
-  viewDetailsButton: { background: "none", border: "1px solid #0a1929", borderRadius: "6px", padding: "4px 10px", fontSize: "11px", color: "#0a1929", cursor: "pointer" },
-  scoreBadge: { display: "inline-block", padding: "4px 10px", borderRadius: "12px", fontSize: "12px", fontWeight: 700, marginBottom: "4px" },
-  classification: { fontSize: "11px", color: "#64748b", marginTop: "2px" },
-  completedDate: { fontSize: "10px", color: "#94a3b8", marginTop: "2px" },
+  assessmentInfo: { display: "flex", alignItems: "center", gap: "12px" },
+  assessmentIcon: { width: "40px", height: "40px", borderRadius: "10px", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" },
+  assessmentTitle: { fontWeight: 700, color: "#0a1929", marginBottom: "2px" },
+  assessmentType: { fontSize: "11px", color: "#718096" },
+  statusBadge: { display: "inline-block", padding: "4px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 700 },
+  scoreBadge: { display: "inline-block", padding: "4px 10px", borderRadius: "12px", fontSize: "12px", fontWeight: 700 },
   noScore: { fontSize: "12px", color: "#9e9e9e", fontStyle: "italic" },
   actionGroup: { display: "flex", gap: "8px", flexWrap: "wrap" },
   viewButton: { padding: "6px 12px", background: "#0a1929", color: "white", borderRadius: "6px", fontSize: "12px", textDecoration: "none", cursor: "pointer", display: "inline-block" },
-  expandedRow: { background: "#f8fafc" },
-  expandedCell: { padding: "20px 30px" },
-  expandedContent: { width: "100%" },
-  expandedTitle: { margin: "0 0 15px", fontSize: "14px", fontWeight: 800, color: "#0a1929" },
-  assessmentsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "15px" },
-  assessmentCard: { borderLeft: "4px solid", padding: "15px", background: "white", borderRadius: "8px", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" },
-  assessmentHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "8px" },
-  assessmentTitle: { fontSize: "13px", fontWeight: 800, color: "#0a1929" },
-  assessmentStatus: { padding: "2px 8px", borderRadius: "12px", fontSize: "10px", fontWeight: 700 },
-  assessmentDetails: { fontSize: "12px", color: "#4a5568", marginBottom: "8px" },
-  assessmentDate: { fontSize: "10px", color: "#94a3b8", marginTop: "4px" },
-  viewReportLink: { display: "inline-block", marginTop: "8px", fontSize: "11px", color: "#1565c0", textDecoration: "none" },
-  assessmentActions: { display: "flex", gap: "8px", marginTop: "8px" },
-  shareButton: { background: "#8b5cf6", color: "white", padding: "5px 10px", borderRadius: "4px", border: "none", fontSize: "11px", cursor: "pointer" },
-  sharedAccessList: { marginTop: "10px", paddingTop: "10px", borderTop: "1px solid #e2e8f0" },
-  sharedAccessHeader: { fontSize: "10px", color: "#667085", marginBottom: "6px", fontWeight: 700 },
-  sharedAccessItem: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "10px", padding: "4px 0" },
-  revokeButton: { background: "#ef4444", color: "white", border: "none", borderRadius: "4px", padding: "2px 8px", fontSize: "9px", cursor: "pointer" },
+  shareButton: { padding: "6px 12px", background: "#8b5cf6", color: "white", borderRadius: "6px", fontSize: "12px", border: "none", cursor: "pointer" },
+  revokeButton: { background: "#ef4444", color: "white", border: "none", borderRadius: "4px", padding: "2px 8px", fontSize: "10px", cursor: "pointer" },
+  sharedAccessList: { display: "flex", flexWrap: "wrap", gap: "15px", alignItems: "center" },
+  sharedAccessHeader: { fontSize: "11px", color: "#667085", fontWeight: 700 },
+  sharedAccessItem: { display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", background: "#e2e8f0", padding: "4px 10px", borderRadius: "20px" },
+  sharedCell: { padding: "10px 20px" },
   modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px", backdropFilter: "blur(5px)" },
   shareModal: { background: "white", borderRadius: "20px", maxWidth: "500px", width: "100%", maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" },
   modalHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px", borderBottom: "2px solid #e2e8f0", background: "#f8fafc" },
