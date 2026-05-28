@@ -581,20 +581,19 @@ export default function SupervisorManageCandidates() {
                                     })}
                                   </div>
                                 </div>
-                              <\/div>
-                            <\/td>
-                          <\/tr>
+                              </td>
+                            </tr>
                           )}
-                        <\/React.Fragment>
+                        </React.Fragment>
                       );
                     })
                   )}
-                <\/tbody>
-              <\/table>
-            <\/div>
-          <\/div>
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
-      <\/div>
+      </div>
 
       {/* Share Modal */}
       {showShareModal && (
@@ -604,38 +603,38 @@ export default function SupervisorManageCandidates() {
               <span style={styles.modalIcon}>🔗</span>
               <h3 style={styles.modalTitle}>Share Report</h3>
               <button onClick={() => setShowShareModal(null)} style={styles.closeButton}>×</button>
-            <\/div>
+            </div>
             <div style={styles.modalBody}>
-              <p><strong>Candidate:<\/strong> {showShareModal.candidateName}</p>
-              <p><strong>Assessment:<\/strong> {showShareModal.assessmentTitle}</p>
+              <p><strong>Candidate:</strong> {showShareModal.candidateName}</p>
+              <p><strong>Assessment:</strong> {showShareModal.assessmentTitle}</p>
 
               <div style={styles.formGroup}>
-                <label style={styles.label}>Select Supervisor:<\/label>
+                <label style={styles.label}>Select Supervisor:</label>
                 <select id="supervisorSelect" style={styles.select} defaultValue="">
                   <option value="">-- Select a supervisor --</option>
                   {availableSupervisors.map(sup => (
                     <option key={sup.id} value={sup.id}>{sup.full_name || sup.email} {sup.role === 'admin' ? '(Admin)' : ''}</option>
                   ))}
-                <\/select>
-              <\/div>
+                </select>
+              </div>
 
               <div style={styles.formGroup}>
-                <label style={styles.label}>Access Duration:<\/label>
+                <label style={styles.label}>Access Duration:</label>
                 <select id="durationSelect" style={styles.select} defaultValue="30">
                   <option value="7">7 days</option>
                   <option value="30">30 days</option>
                   <option value="90">90 days</option>
                   <option value="">No expiration</option>
-                <\/select>
-              <\/div>
+                </select>
+              </div>
 
               <div style={styles.noteBox}>
-                <span>💡<\/span>
-                <span>The supervisor will receive a notification and can view this report from their dashboard.<\/span>
-              <\/div>
-            <\/div>
+                <span>💡</span>
+                <span>The supervisor will receive a notification and can view this report from their dashboard.</span>
+              </div>
+            </div>
             <div style={styles.modalFooter}>
-              <button onClick={() => setShowShareModal(null)} style={styles.cancelButton}>Cancel<\/button>
+              <button onClick={() => setShowShareModal(null)} style={styles.cancelButton}>Cancel</button>
               <button
                 onClick={() => {
                   const supervisorIdSelected = document.getElementById("supervisorSelect").value;
@@ -657,10 +656,10 @@ export default function SupervisorManageCandidates() {
                 style={{ ...styles.grantButton, opacity: sharingInProgress ? 0.7 : 1 }}
               >
                 {sharingInProgress ? "Granting..." : "Grant Access"}
-              <\/button>
-            <\/div>
-          <\/div>
-        <\/div>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <style jsx>{`
@@ -668,8 +667,8 @@ export default function SupervisorManageCandidates() {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
-      `}<\/style>
-    <\/AppLayout>
+      `}</style>
+    </AppLayout>
   );
 }
 
