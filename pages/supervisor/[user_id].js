@@ -102,9 +102,9 @@ function getToneGradient(score) {
 
 function getBadgeStyle(value) {
   const text = safeText(value, "").toLowerCase();
-  if (text.includes("critical") || text.includes("high")) return styles.badgeCritical;
-  if (text.includes("elevated") || text.includes("risk") || text.includes("develop")) return styles.badgeWarm;
-  if (text.includes("low") || text.includes("strong") || text.includes("excellent")) return styles.badgeGood;
+  if (text.includes("critical") || text.includes("high") || text.includes("risk")) return styles.badgeCritical;
+  if (text.includes("elevated") || text.includes("develop")) return styles.badgeWarm;
+  if (text.includes("low") || text.includes("strong") || text.includes("exceptional") || text.includes("excellent")) return styles.badgeGood;
   return styles.badgeNeutral;
 }
 
@@ -204,6 +204,17 @@ function getRowTitle(row) {
 function getRowPercentage(row) {
   const item = safeObject(row);
   return item.percentage || item.score || item.currentScore || item.current_score || 0;
+}
+
+function getRowQuestionCount(row) {
+  const item = safeObject(row);
+  // Handle both field names: maxScore (from our storage) or questionCount
+  return item.maxScore || item.questionCount || item.question_count || 0;
+}
+
+function getRowClassification(row) {
+  const item = safeObject(row);
+  return item.classification || item.riskLevel || item.risk_level || "N/A";
 }
 
 function getRowNarrative(row) {
@@ -560,6 +571,8 @@ export default function SupervisorUserReportPage() {
             const row = safeObject(decodeDeep(item));
             const rowTitle = getRowTitle(row);
             const rowPercentage = getRowPercentage(row);
+            const rowQuestionCount = getRowQuestionCount(row);
+            const rowClassification = getRowClassification(row);
             const color = getToneColor(rowPercentage);
             const key = "category-" + index;
             const isOpen = !!expandedRows[key];
@@ -570,12 +583,12 @@ export default function SupervisorUserReportPage() {
                     <div style={{ ...styles.categoryIcon, background: getToneGradient(rowPercentage) }}>{index + 1}</div>
                     <div>
                       <h3 style={styles.categoryTitle}>{rowTitle}</h3>
-                      <p style={styles.categoryMeta}>{safeNumber(row.questionCount || row.question_count, 0)} question(s)</p>
+                      <p style={styles.categoryMeta}>{rowQuestionCount} question(s)</p>
                     </div>
                   </div>
                   <div style={styles.categoryRight}>
                     <strong style={{ ...styles.categoryScore, color }}>{formatPercentage(rowPercentage)}</strong>
-                    <span style={getBadgeStyle(row.riskLevel || row.risk_level)}>{safeText(row.riskLevel || row.risk_level, "N/A")}</span>
+                    <span style={getBadgeStyle(rowClassification)}>{rowClassification}</span>
                     <span style={styles.chevron}>{isOpen ? "−" : "+"}</span>
                   </div>
                 </button>
@@ -583,7 +596,6 @@ export default function SupervisorUserReportPage() {
                 {isOpen ? (
                   <div style={styles.categoryDetails}>
                     <p style={styles.bodyText}>{getRowNarrative(row)}</p>
-                    {(row.action || row.suggestedAction || row.suggested_action) ? <p style={styles.actionText}><strong>Action:</strong> {safeText(row.action || row.suggestedAction || row.suggested_action, "")}</p> : null}
                   </div>
                 ) : null}
               </article>
