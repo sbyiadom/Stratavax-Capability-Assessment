@@ -159,6 +159,100 @@ function groupResponsesByQuestion(responses) {
   return responsesByQuestion;
 }
 
+// ======================================================
+// NEW: Category scoring helper functions
+// ======================================================
+
+function classifyScore(percentage) {
+  const value = toNumber(percentage, 0);
+  if (value >= 85) return "Exceptional";
+  if (value >= 75) return "Strong Performer";
+  if (value >= 65) return "Capable Contributor";
+  if (value >= 55) return "Developing";
+  if (value >= 40) return "At Risk";
+  return "High Risk";
+}
+
+async function calculateCategoryScores(serviceClient, sessionId, isBaseline) {
+  if (!isBaseline) return { categoryScores: [], strengths: [], weaknesses: [] };
+
+  // Fetch all responses for this session with question details
+  const { data: responses, error: responsesError } = await serviceClient
+    .from("responses")
+    .select(`
+      question_id,
+      answer_id,
+      unique_questions!inner (
+        id,
+        section,
+        subsection
+      ),
+      unique_answers!inner (
+        id,
+        score
+      )
+    `)
+    .eq("session_id", sessionId);
+
+  if (responsesError || !responses || responses.length === 0) {
+    return { categoryScores: [], strengths: [], weaknesses: [] };
+  }
+
+  const categoryMap = {};
+
+  for (const response of responses) {
+    const section = response.unique_questions?.section;
+    const score = toNumber(response.unique_answers?.score, 0);
+
+    if (!section) continue;
+
+    if (!categoryMap[section]) {
+      categoryMap[section] = {
+        totalScore: 0,
+        maxScore: 0,
+        count: 0
+      };
+    }
+
+    categoryMap[section].totalScore += score;
+    categoryMap[section].maxScore += 1; // Each question max 1 point for baseline
+    categoryMap[section].count += 1;
+  }
+
+  const categoryScores = [];
+  const strengthsList = [];
+  const weaknessesList = [];
+
+  for (const [name, data] of Object.entries(categoryMap)) {
+    const percentage = (data.totalScore / data.maxScore) * 100;
+    const roundedPercentage = Math.round(percentage * 100) / 100;
+    
+    categoryScores.push({
+      name,
+      score: data.totalScore,
+      maxScore: data.maxScore,
+      percentage: roundedPercentage,
+      classification: classifyScore(percentage)
+    });
+
+    if (percentage >= 85) {
+      strengthsList.push(name);
+    } else if (percentage < 75) {
+      weaknessesList.push(name);
+    }
+  }
+
+  // Sort strengths by percentage descending
+  strengthsList.sort();
+  weaknessesList.sort();
+
+  return {
+    categoryScores,
+    strengths: strengthsList,
+    weaknesses: weaknessesList
+  };
+}
+
 async function upsertAssessmentResult(serviceClient, resultData) {
   const upsertResponse = await serviceClient
     .from("assessment_results")
@@ -177,7 +271,6 @@ async function upsertAssessmentResult(serviceClient, resultData) {
   return fallbackResponse;
 }
 
-// ===== FIXED: Only update columns that exist in candidate_assessments =====
 async function updateCandidateAssessment(serviceClient, session, result, earnedScore) {
   const basePayload = {
     status: "completed",
@@ -187,7 +280,6 @@ async function updateCandidateAssessment(serviceClient, session, result, earnedS
     updated_at: nowIso()
   };
 
-  // Try with score first (score column exists)
   let updateResponse = await serviceClient
     .from("candidate_assessments")
     .update({
@@ -197,7 +289,6 @@ async function updateCandidateAssessment(serviceClient, session, result, earnedS
     .eq("user_id", session.user_id)
     .eq("assessment_id", session.assessment_id);
 
-  // If that fails, try without score
   if (updateResponse.error) {
     updateResponse = await serviceClient
       .from("candidate_assessments")
@@ -308,7 +399,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // PLATFORM-WIDE GUARD: Check if supervisor reset happened
     const assignment = await fetchCandidateAssessment(serviceClient, session.user_id, session.assessment_id);
 
     if (assignment) {
@@ -332,7 +422,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // Idempotent: if already completed, return the existing result
     if (session.status === "completed") {
       const existing = await fetchExistingResult(serviceClient, sessionId);
       if (existing) {
@@ -450,6 +539,11 @@ export default async function handler(req, res) {
       autoSubmitReason += " Answered " + answeredCount + " of " + totalQuestions + " questions.";
     }
 
+    // ======================================================
+    // NEW: Calculate category scores (only for baseline)
+    // ======================================================
+    const { categoryScores, strengths, weaknesses } = await calculateCategoryScores(serviceClient, sessionId, isBaseline);
+
     const resultData = {
       user_id: session.user_id,
       assessment_id: session.assessment_id,
@@ -469,7 +563,11 @@ export default async function handler(req, res) {
         devtools: toNumber(session.devtools_count, 0),
         screenshots: toNumber(session.screenshot_count, 0)
       },
-      completed_at: nowIso()
+      completed_at: nowIso(),
+      // NEW: Add category scores
+      category_scores: categoryScores.length > 0 ? categoryScores : null,
+      strengths: strengths.length > 0 ? strengths : null,
+      weaknesses: weaknesses.length > 0 ? weaknesses : null
     };
 
     const resultResponse = await upsertAssessmentResult(serviceClient, resultData);
@@ -506,7 +604,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // ===== FIXED: Only pass earnedScore (not maxScore or percentage) =====
     await updateCandidateAssessment(serviceClient, session, result, earnedScore);
 
     const profileResponse = await serviceClient
@@ -538,6 +635,9 @@ export default async function handler(req, res) {
       violationCount: toNumber(violationCount, 0),
       violation_count: toNumber(violationCount, 0),
       auto_submit_reason: autoSubmitReason,
+      category_scores: categoryScores,
+      strengths: strengths,
+      weaknesses: weaknesses,
       message: isAutoSubmit
         ? "Assessment auto-submitted. Score calculated as " + toNumber(earnedScore, 0) + " out of " + toNumber(maxScore, 0) + ". Answered " + answeredCount + " of " + totalQuestions + " questions."
         : "Assessment submitted successfully. Score: " + Math.round(percentage) + "%"
