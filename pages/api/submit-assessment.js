@@ -177,33 +177,31 @@ async function upsertAssessmentResult(serviceClient, resultData) {
   return fallbackResponse;
 }
 
-async function updateCandidateAssessment(serviceClient, session, result, scoreData) {
-  const updatePayload = {
+// ===== FIXED: Only update columns that exist in candidate_assessments =====
+async function updateCandidateAssessment(serviceClient, session, result, earnedScore) {
+  const basePayload = {
     status: "completed",
     result_id: result ? result.id : null,
     completed_at: nowIso(),
     session_id: session.id,
-    session_status: "completed",
     updated_at: nowIso()
   };
 
-  const optionalPayload = {
-    score: scoreData.earnedScore,
-    max_score: scoreData.maxScore,
-    percentage: scoreData.percentage
-  };
-
-  // Update the assignment record. If optional columns do not exist, fall back.
+  // Try with score first (score column exists)
   let updateResponse = await serviceClient
     .from("candidate_assessments")
-    .update({ ...updatePayload, ...optionalPayload })
+    .update({
+      ...basePayload,
+      score: earnedScore
+    })
     .eq("user_id", session.user_id)
     .eq("assessment_id", session.assessment_id);
 
+  // If that fails, try without score
   if (updateResponse.error) {
     updateResponse = await serviceClient
       .from("candidate_assessments")
-      .update(updatePayload)
+      .update(basePayload)
       .eq("user_id", session.user_id)
       .eq("assessment_id", session.assessment_id);
   }
@@ -211,15 +209,15 @@ async function updateCandidateAssessment(serviceClient, session, result, scoreDa
   return updateResponse;
 }
 
-async function createSupervisorNotification(serviceClient, session, result, profile, scoreData, isAutoSubmit, autoSubmitReason) {
+async function createSupervisorNotification(serviceClient, session, result, profile, percentage, isAutoSubmit, autoSubmitReason) {
   try {
     const supervisorId = profile?.created_by || profile?.supervisor_id || null;
     if (!supervisorId) return;
 
     const candidateName = profile.full_name || profile.email || "Candidate";
     const message = isAutoSubmit
-      ? "Assessment auto-submitted for " + candidateName + ". Reason: " + (autoSubmitReason || "Auto-submit") + ". Score: " + Math.round(scoreData.percentage) + "%"
-      : candidateName + " completed an assessment. Score: " + Math.round(scoreData.percentage) + "%";
+      ? "Assessment auto-submitted for " + candidateName + ". Reason: " + (autoSubmitReason || "Auto-submit") + ". Score: " + Math.round(percentage) + "%"
+      : candidateName + " completed an assessment. Score: " + Math.round(percentage) + "%";
 
     await serviceClient.from("supervisor_notifications").insert({
       supervisor_id: supervisorId,
@@ -310,9 +308,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // PLATFORM-WIDE GUARD:
-    // If a supervisor reset happened (assignment unblocked AND session_id cleared),
-    // block submission so we do not resurrect completion after reset.
+    // PLATFORM-WIDE GUARD: Check if supervisor reset happened
     const assignment = await fetchCandidateAssessment(serviceClient, session.user_id, session.assessment_id);
 
     if (assignment) {
@@ -336,7 +332,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // Idempotent: if already completed, return the existing result (200 OK)
+    // Idempotent: if already completed, return the existing result
     if (session.status === "completed") {
       const existing = await fetchExistingResult(serviceClient, sessionId);
       if (existing) {
@@ -358,9 +354,7 @@ export default async function handler(req, res) {
     const maxViolations = 3;
 
     const requestAutoSubmit = body.auto_submit === true || body.auto_submitted === true || body.is_auto_submitted === true;
-
     const allowIncomplete = body.allow_incomplete === true || body.allowIncomplete === true || requestAutoSubmit;
-
     const isAutoSubmit = violationCount >= maxViolations || requestAutoSubmit || allowIncomplete;
 
     const assessmentResponse = await serviceClient
@@ -512,7 +506,8 @@ export default async function handler(req, res) {
       });
     }
 
-    await updateCandidateAssessment(serviceClient, session, result, { earnedScore, maxScore, percentage });
+    // ===== FIXED: Only pass earnedScore (not maxScore or percentage) =====
+    await updateCandidateAssessment(serviceClient, session, result, earnedScore);
 
     const profileResponse = await serviceClient
       .from("candidate_profiles")
@@ -521,7 +516,7 @@ export default async function handler(req, res) {
       .maybeSingle();
 
     if (profileResponse.data) {
-      await createSupervisorNotification(serviceClient, session, result, profileResponse.data, { percentage }, isAutoSubmit, autoSubmitReason);
+      await createSupervisorNotification(serviceClient, session, result, profileResponse.data, percentage, isAutoSubmit, autoSubmitReason);
     }
 
     return res.status(200).json({
