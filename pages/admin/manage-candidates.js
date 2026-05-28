@@ -209,10 +209,12 @@ export default function ManageCandidates() {
         accessByUser[access.user_id].push(access);
       });
 
+      // FIXED: Use candidate_assessments status to count completed assessments
       const enrichedCandidates = safeArray(candidatesData).map((candidate) => {
         const results = resultsByUser[candidate.id] || [];
         const assessments = accessByUser[candidate.id] || [];
-        const completedAssessments = results.length;
+        // Count completed from candidate_assessments status, not from results
+        const completedAssessments = assessments.filter((assessment) => assessment.status === "completed").length;
         const totalAssessments = assessments.length;
         const unblockedAssessments = assessments.filter((assessment) => assessment.status === "unblocked").length;
         const blockedAssessments = assessments.filter((assessment) => assessment.status === "blocked").length;
@@ -463,7 +465,7 @@ export default function ManageCandidates() {
                     <th style={styles.th}>Assessments</th>
                     <th style={styles.th}>Latest Score</th>
                     <th style={styles.th}>Actions</th>
-                  </tr>
+                  </td>
                 </thead>
                 <tbody>
                   {filteredCandidates.length === 0 ? (
