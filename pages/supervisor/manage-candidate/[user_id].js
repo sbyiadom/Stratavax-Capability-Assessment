@@ -1,701 +1,753 @@
-// pages/supervisor/manage-candidate/[id].js
+// pages/supervisor/manage-candidates.js
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import AppLayout from "../../../components/AppLayout";
-import { supabase } from "../../../supabase/client";
+import AppLayout from "../../components/AppLayout";
+import { supabase } from "../../supabase/client";
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function safeText(value, fallback) {
-  if (value === null || value === undefined || value === "") return fallback || "";
-  return String(value);
+function toNumber(value, fallback = 0) {
+  const numberValue = Number(value);
+  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) return fallback;
+  return numberValue;
 }
 
-function safeNumber(value, fallback) {
-  var fallbackValue = fallback === undefined ? 0 : fallback;
-  var numberValue = Number(value);
-  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) return fallbackValue;
-  return numberValue;
+function cleanText(value, fallback = "") {
+  if (value === null || value === undefined || value === "") return fallback;
+  return String(value);
 }
 
 function formatDate(value) {
   if (!value) return "N/A";
   try {
-    return new Date(value).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+    return new Date(value).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    });
   } catch (error) {
     return "N/A";
   }
 }
 
-function initials(value) {
-  var text = safeText(value, "C").trim();
-  var parts = text.split(" ").filter(Boolean);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return text ? text[0].toUpperCase() : "C";
-}
-
-function calculatePercentage(score, maxScore, fallbackPercentage) {
-  var scoreValue = safeNumber(score, null);
-  var maxValue = safeNumber(maxScore, null);
-  var fallbackValue = safeNumber(fallbackPercentage, null);
-
-  if (scoreValue !== null && maxValue !== null && maxValue > 0) {
-    return Math.round((scoreValue / maxValue) * 100);
+function getPercentage(result) {
+  if (!result) return 0;
+  if (result.percentage_score !== null && result.percentage_score !== undefined) {
+    return Math.round(toNumber(result.percentage_score, 0));
   }
-
-  if (fallbackValue !== null && fallbackValue !== undefined && Number.isFinite(Number(fallbackValue))) {
-    return Math.round(Number(fallbackValue));
-  }
-
-  return 0;
+  const score = toNumber(result.total_score, 0);
+  const maxScore = toNumber(result.max_score, 0);
+  if (maxScore <= 0) return 0;
+  return Math.round((score / maxScore) * 100);
 }
 
 function getClassification(percentage) {
-  var value = safeNumber(percentage, 0);
-  if (value >= 85) return { label: "Exceptional", color: "#0f766e", bg: "#ecfdf3" };
-  if (value >= 75) return { label: "Strong Performer", color: "#2563eb", bg: "#eff6ff" };
-  if (value >= 65) return { label: "Capable", color: "#4f46e5", bg: "#eef2ff" };
-  if (value >= 55) return { label: "Developing", color: "#d97706", bg: "#fffaeb" };
-  if (value >= 40) return { label: "At Risk", color: "#ea580c", bg: "#fff7ed" };
-  if (value > 0) return { label: "High Risk", color: "#b42318", bg: "#fef3f2" };
+  if (percentage >= 85) return { label: "High Potential", color: "#2e7d32", bg: "#e8f5e9" };
+  if (percentage >= 70) return { label: "Strong Performer", color: "#1565c0", bg: "#e3f2fd" };
+  if (percentage >= 55) return { label: "Developing", color: "#f57c00", bg: "#fff3e0" };
+  if (percentage >= 40) return { label: "At Risk", color: "#ef6c00", bg: "#fff3e0" };
+  if (percentage > 0) return { label: "High Risk", color: "#c62828", bg: "#ffebee" };
   return { label: "No Data", color: "#667085", bg: "#f2f4f7" };
 }
 
-function getStatus(assessment) {
-  if (assessment.result || assessment.status === "completed") return { label: "Completed", color: "#027a48", bg: "#ecfdf3", icon: "✓" };
-  if (assessment.status === "unblocked") return { label: "Ready", color: "#175cd3", bg: "#eff8ff", icon: "↗" };
-  if (assessment.status === "blocked") return { label: "Blocked", color: "#c2410c", bg: "#fff7ed", icon: "●" };
-  return { label: safeText(assessment.status, "Scheduled"), color: "#475467", bg: "#f2f4f7", icon: "•" };
+function getInitial(name, email) {
+  const source = cleanText(name, cleanText(email, "C"));
+  return source.charAt(0).toUpperCase();
 }
 
-function assessmentTypeName(value) {
-  if (!value || value === "general") return "General";
-  return String(value).replace(/_/g, " ").replace(/-/g, " ").replace(/\b\w/g, function (letter) { return letter.toUpperCase(); });
+function getReadableError(error) {
+  if (!error) return "Something went wrong.";
+  return error.message || String(error) || "Something went wrong.";
 }
 
-function Pill(props) {
-  return <span style={{ ...styles.pill, color: props.color, background: props.bg }}>{props.children}</span>;
-}
+export default function SupervisorManageCandidates() {
+  const router = useRouter();
+  const [candidates, setCandidates] = useState([]);
+  const [filteredCandidates, setFilteredCandidates] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [supervisorId, setSupervisorId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [expandedCandidate, setExpandedCandidate] = useState(null);
+  const [message, setMessage] = useState({ type: "", text: "" });
+  
+  // Share modal state
+  const [showShareModal, setShowShareModal] = useState(null);
+  const [availableSupervisors, setAvailableSupervisors] = useState([]);
+  const [sharingInProgress, setSharingInProgress] = useState(false);
+  const [sharedAccessList, setSharedAccessList] = useState({});
 
-function ProgressBar(props) {
-  var value = safeNumber(props.value, 0);
-  if (value < 0) value = 0;
-  if (value > 100) value = 100;
-  return <div style={styles.progressTrack}><div style={{ width: value + "%", height: "100%", background: props.color, borderRadius: "999px" }} /></div>;
-}
-
-function StatCard(props) {
-  return (
-    <div style={{ ...styles.statCard, background: props.background }}>
-      <div style={styles.statIcon}>{props.icon}</div>
-      <div>
-        <p style={styles.statLabel}>{props.label}</p>
-        <p style={styles.statValue}>{props.value}</p>
-        <p style={styles.statNote}>{props.note}</p>
-      </div>
-    </div>
-  );
-}
-
-export default function ManageCandidate() {
-  var router = useRouter();
-  var candidateId = router.query.id || router.query.user_id || router.query.candidate_id;
-
-  var loadingState = useState(true);
-  var loading = loadingState[0];
-  var setLoading = loadingState[1];
-
-  var candidateState = useState(null);
-  var candidate = candidateState[0];
-  var setCandidate = candidateState[1];
-
-  var assessmentsState = useState([]);
-  var assessments = assessmentsState[0];
-  var setAssessments = assessmentsState[1];
-
-  var supervisorState = useState(null);
-  var supervisor = supervisorState[0];
-  var setSupervisor = supervisorState[1];
-
-  var messageState = useState(null);
-  var message = messageState[0];
-  var setMessage = messageState[1];
-
-  var processingState = useState(null);
-  var processingId = processingState[0];
-  var setProcessingId = processingState[1];
-
-  var modalState = useState(null);
-  var unblockModal = modalState[0];
-  var setUnblockModal = modalState[1];
-
-  var timeState = useState(30);
-  var timeExtension = timeState[0];
-  var setTimeExtension = timeState[1];
-
-  var resetState = useState(false);
-  var resetFullTime = resetState[0];
-  var setResetFullTime = resetState[1];
-
-  useEffect(function () {
-    async function checkAuth() {
-      var authResult;
-      var supabaseSession;
-      var userRole;
-      var stored;
-      var session;
-
-      try {
-        authResult = await supabase.auth.getSession();
-        supabaseSession = authResult && authResult.data ? authResult.data.session : null;
-
-        if (supabaseSession) {
-          userRole = supabaseSession.user && supabaseSession.user.user_metadata ? supabaseSession.user.user_metadata.role : null;
-          if (userRole === "supervisor" || userRole === "admin") {
-            setSupervisor({
-              id: supabaseSession.user.id,
-              email: supabaseSession.user.email,
-              name: (supabaseSession.user.user_metadata && supabaseSession.user.user_metadata.full_name) || supabaseSession.user.email,
-              role: userRole
-            });
-            return;
-          }
-        }
-
-        if (typeof window === "undefined") return;
-        stored = localStorage.getItem("userSession");
-        if (!stored) {
-          router.push("/login");
-          return;
-        }
-
-        session = JSON.parse(stored);
-        if (session.loggedIn && (session.role === "supervisor" || session.role === "admin")) {
-          setSupervisor({ id: session.user_id, email: session.email, name: session.full_name || session.email, role: session.role });
-        } else {
-          router.push("/login");
-        }
-      } catch (error) {
-        router.push("/login");
-      }
-    }
-
+  useEffect(() => {
     checkAuth();
-  }, [router]);
+  }, []);
 
-  useEffect(function () {
-    if (!router.isReady || !candidateId || !supervisor) return;
+  useEffect(() => {
+    applyFilters(candidates, searchTerm);
+  }, [searchTerm, candidates]);
 
-    var cancelled = false;
+  async function checkAuth() {
+    try {
+      setCheckingAuth(true);
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
 
-    async function loadData() {
-      var isAdmin;
-      var candidateResponse;
-      var candidateData;
-      var supervisorName = "Unassigned";
-      var supervisorResponse;
-      var resultsResponse;
-      var accessResponse;
-      var resultsMap = {};
-      var accessData;
-      var ids;
-      var assessmentResponse;
-      var assessmentMap = {};
-      var mappedAssessments;
-
-      setLoading(true);
-      setMessage(null);
-
-      try {
-        isAdmin = supervisor.role === "admin";
-
-        candidateResponse = await supabase.from("candidate_profiles").select("*").eq("id", candidateId).single();
-        if (candidateResponse.error) throw candidateResponse.error;
-        candidateData = candidateResponse.data;
-
-        if (!isAdmin && candidateData.supervisor_id !== supervisor.id) {
-          router.push("/supervisor");
-          return;
-        }
-
-        if (candidateData.supervisor_id) {
-          supervisorResponse = await supabase.from("supervisor_profiles").select("full_name").eq("id", candidateData.supervisor_id).single();
-          if (supervisorResponse.data && supervisorResponse.data.full_name) supervisorName = supervisorResponse.data.full_name;
-        }
-
-        resultsResponse = await supabase
-          .from("assessment_results")
-          .select("id, assessment_id, total_score, max_score, percentage_score, completed_at, is_valid, is_auto_submitted, violation_count")
-          .eq("user_id", candidateId);
-
-        safeArray(resultsResponse.data).forEach(function (result) {
-          resultsMap[result.assessment_id] = {
-            id: result.id,
-            score: result.total_score,
-            max_score: result.max_score,
-            percentage: result.percentage_score,
-            completed_at: result.completed_at,
-            is_valid: result.is_valid,
-            is_auto_submitted: result.is_auto_submitted,
-            violation_count: result.violation_count
-          };
-        });
-
-        accessResponse = await supabase
-          .from("candidate_assessments")
-          .select("id, assessment_id, status, created_at, unblocked_at, result_id")
-          .eq("user_id", candidateId);
-
-        if (accessResponse.error) throw accessResponse.error;
-        accessData = safeArray(accessResponse.data);
-        ids = Array.from(new Set(accessData.map(function (item) { return item.assessment_id; }).filter(Boolean)));
-
-        if (ids.length > 0) {
-          assessmentResponse = await supabase
-            .from("assessments")
-            .select("id, title, description, assessment_type_id, assessment_types(id, code, name, icon, gradient_start, gradient_end)")
-            .in("id", ids);
-
-          safeArray(assessmentResponse.data).forEach(function (assessment) {
-            assessmentMap[assessment.id] = assessment;
-          });
-        }
-
-        mappedAssessments = accessData.map(function (access) {
-          var assessment = assessmentMap[access.assessment_id] || {};
-          var type = assessment.assessment_types || {};
-          var result = resultsMap[access.assessment_id] || null;
-          var status = access.status;
-          var code = type.code || "general";
-
-          if (result || access.result_id || status === "completed") status = "completed";
-
-          return {
-            id: access.id,
-            assessment_id: access.assessment_id,
-            assessment_title: assessment.title || "Unknown Assessment",
-            assessment_description: assessment.description || "",
-            assessment_type: code,
-            assessment_type_name: type.name || assessmentTypeName(code),
-            type_icon: type.icon || "📋",
-            type_gradient_start: type.gradient_start || "#0f766e",
-            type_gradient_end: type.gradient_end || "#14b8a6",
-            status: status,
-            created_at: access.created_at,
-            unblocked_at: access.unblocked_at,
-            result: result
-          };
-        });
-
-        mappedAssessments.sort(function (a, b) {
-          if (a.result && !b.result) return -1;
-          if (!a.result && b.result) return 1;
-          return new Date((b.result && b.result.completed_at) || b.created_at || 0).getTime() - new Date((a.result && a.result.completed_at) || a.created_at || 0).getTime();
-        });
-
-        if (!cancelled) {
-          setCandidate({ ...candidateData, supervisor_name: supervisorName });
-          setAssessments(mappedAssessments);
-        }
-      } catch (error) {
-        if (!cancelled) setMessage({ type: "error", text: "Failed to load candidate data: " + (error && error.message ? error.message : "Unknown error") });
-      } finally {
-        if (!cancelled) setLoading(false);
+      const activeSession = data?.session || null;
+      if (!activeSession?.user) {
+        router.push("/login");
+        return;
       }
+
+      const userId = activeSession.user.id;
+      const metadataRole = activeSession.user.user_metadata?.role || null;
+
+      const { data: profile, error: profileError } = await supabase
+        .from("supervisor_profiles")
+        .select("id, full_name, email, role, is_active")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (profileError && profileError.code !== "PGRST116") throw profileError;
+
+      const resolvedRole = profile?.role || metadataRole;
+
+      if (resolvedRole !== "supervisor" && resolvedRole !== "admin") {
+        router.push("/");
+        return;
+      }
+
+      if (profile?.is_active === false) {
+        await supabase.auth.signOut();
+        router.push("/login");
+        return;
+      }
+
+      setSupervisorId(userId);
+      await fetchCandidates(userId);
+      await fetchAvailableSupervisors();
+    } catch (error) {
+      console.error("Auth error:", error);
+      router.push("/login");
+    } finally {
+      setCheckingAuth(false);
     }
-
-    loadData();
-
-    return function () {
-      cancelled = true;
-    };
-  }, [router.isReady, candidateId, supervisor, router]);
-
-  var completedCount = assessments.filter(function (item) { return item.result || item.status === "completed"; }).length;
-  var readyCount = assessments.filter(function (item) { return item.status === "unblocked" && !item.result; }).length;
-  var blockedCount = assessments.filter(function (item) { return item.status === "blocked" && !item.result; }).length;
-  var completionRate = assessments.length > 0 ? Math.round((completedCount / assessments.length) * 100) : 0;
-
-  var latestCompleted = useMemo(function () {
-    var completed = assessments.filter(function (item) { return item.result; });
-    completed.sort(function (a, b) {
-      return new Date((b.result && b.result.completed_at) || 0).getTime() - new Date((a.result && a.result.completed_at) || 0).getTime();
-    });
-    return completed.length > 0 ? completed[0] : null;
-  }, [assessments]);
-
-  var latestPercentage = latestCompleted && latestCompleted.result ? calculatePercentage(latestCompleted.result.score, latestCompleted.result.max_score, latestCompleted.result.percentage) : 0;
-  var latestClassification = getClassification(latestPercentage);
-
-  function showMessage(type, text) {
-    setMessage({ type: type, text: text });
-    setTimeout(function () { setMessage(null); }, 6000);
   }
 
-  async function handleUnblock(assessmentId, assessmentTitle) {
-    var response;
-    var result;
-    var text;
+  async function fetchAvailableSupervisors() {
+    try {
+      const { data, error } = await supabase
+        .from("supervisor_profiles")
+        .select("id, full_name, email, role")
+        .eq("is_active", true)
+        .neq("id", supervisorId);
+      
+      if (!error && data) {
+        setAvailableSupervisors(data);
+      }
+    } catch (error) {
+      console.error("Error fetching supervisors:", error);
+    }
+  }
 
-    setProcessingId(assessmentId);
+  async function fetchSharedAccess(candidateId, assessmentId) {
+    try {
+      const { data, error } = await supabase
+        .from("shared_report_access")
+        .select("granted_to, granted_by, expires_at, supervisor_profiles!granted_to(id, full_name, email)")
+        .eq("candidate_id", candidateId)
+        .eq("assessment_id", assessmentId);
+      
+      if (!error && data) {
+        setSharedAccessList(prev => ({
+          ...prev,
+          [`${candidateId}_${assessmentId}`]: data
+        }));
+      }
+    } catch (error) {
+      console.error("Error fetching shared access:", error);
+    }
+  }
+
+  async function fetchCandidates(supervisorUserId) {
+    try {
+      setLoading(true);
+      setMessage({ type: "", text: "" });
+
+      // Fetch candidates assigned to this supervisor
+      const { data: candidatesData, error: candidatesError } = await supabase
+        .from("candidate_profiles")
+        .select("*, supervisor:supervisor_profiles(id, full_name, email)")
+        .eq("supervisor_id", supervisorUserId)
+        .order("created_at", { ascending: false });
+
+      if (candidatesError) throw candidatesError;
+
+      const candidateIds = safeArray(candidatesData).map((candidate) => candidate.id).filter(Boolean);
+
+      let resultsData = [];
+      let accessData = [];
+
+      if (candidateIds.length > 0) {
+        const [resultsResponse, accessResponse] = await Promise.all([
+          supabase
+            .from("assessment_results")
+            .select("id, user_id, assessment_id, total_score, max_score, percentage_score, completed_at, is_valid, is_auto_submitted, assessment:assessments(id, title)")
+            .in("user_id", candidateIds)
+            .order("completed_at", { ascending: false }),
+          supabase
+            .from("candidate_assessments")
+            .select("id, user_id, assessment_id, status, result_id, assessments(id, title)")
+            .in("user_id", candidateIds)
+        ]);
+
+        if (resultsResponse.error) throw resultsResponse.error;
+        if (accessResponse.error) throw accessResponse.error;
+
+        resultsData = resultsResponse.data || [];
+        accessData = accessResponse.data || [];
+      }
+
+      const resultsByUser = {};
+      safeArray(resultsData).forEach((result) => {
+        if (!resultsByUser[result.user_id]) resultsByUser[result.user_id] = [];
+        resultsByUser[result.user_id].push(result);
+      });
+
+      const accessByUser = {};
+      safeArray(accessData).forEach((access) => {
+        if (!accessByUser[access.user_id]) accessByUser[access.user_id] = [];
+        accessByUser[access.user_id].push(access);
+      });
+
+      const enrichedCandidates = safeArray(candidatesData).map((candidate) => {
+        const results = resultsByUser[candidate.id] || [];
+        const assessments = accessByUser[candidate.id] || [];
+        const completedAssessments = assessments.filter((a) => a.status === "completed").length;
+        const unblockedAssessments = assessments.filter((a) => a.status === "unblocked").length;
+        const blockedAssessments = assessments.filter((a) => a.status === "blocked").length;
+        const latestResult = results[0] || null;
+
+        return {
+          ...candidate,
+          completedAssessments,
+          unblockedAssessments,
+          blockedAssessments,
+          latestResult,
+          results,
+          assessments
+        };
+      });
+
+      setCandidates(enrichedCandidates);
+      applyFilters(enrichedCandidates, searchTerm);
+    } catch (error) {
+      console.error("Error fetching candidates:", error);
+      setMessage({ type: "error", text: "Failed to load candidates: " + getReadableError(error) });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function applyFilters(candidatesList, search) {
+    let filtered = [...safeArray(candidatesList)];
+
+    if (cleanText(search).trim()) {
+      const term = search.toLowerCase().trim();
+      filtered = filtered.filter((candidate) => {
+        return (
+          cleanText(candidate.full_name).toLowerCase().includes(term) ||
+          cleanText(candidate.email).toLowerCase().includes(term) ||
+          cleanText(candidate.phone).toLowerCase().includes(term)
+        );
+      });
+    }
+
+    setFilteredCandidates(filtered);
+  }
+
+  function clearMessagesAfterDelay() {
+    setTimeout(() => {
+      setMessage({ type: "", text: "" });
+    }, 5000);
+  }
+
+  async function grantReportAccess(candidateId, assessmentId, targetSupervisorId, expiresInDays, assessmentTitle, candidateName) {
+    if (!targetSupervisorId) {
+      alert("Please select a supervisor");
+      return;
+    }
+
+    setSharingInProgress(true);
 
     try {
-      response = await fetch("/api/supervisor/unblock-assessment", {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token || null;
+
+      const response = await fetch("/api/supervisor/grant-report-access", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: "Bearer " + accessToken } : {})
+        },
         body: JSON.stringify({
-          userId: candidateId,
-          assessmentId: assessmentId,
-          extendMinutes: resetFullTime ? 0 : timeExtension,
-          resetTime: resetFullTime,
-          performed_by: supervisor.id
+          candidateId,
+          assessmentId,
+          targetSupervisorId,
+          expiresInDays: expiresInDays || 30
         })
       });
 
-      result = await response.json();
-      if (!response.ok || !result.success) throw new Error(result.message || result.error || "Unblock failed");
+      const result = await response.json();
 
-      text = "✓ " + assessmentTitle + " unblocked successfully. ";
-      if (resetFullTime) text += "Time reset to full time. ";
-      else if (timeExtension > 0) text += "Time extended by " + timeExtension + " minutes. ";
-      text += result.hasExistingProgress ? "Candidate can continue where they left off." : "Candidate can start a new session.";
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || result?.error || "Failed to grant access.");
+      }
 
-      setAssessments(function (previous) {
-        return previous.map(function (item) {
-          return item.assessment_id === assessmentId ? { ...item, status: "unblocked" } : item;
-        });
-      });
-
-      showMessage("success", text);
+      setMessage({ type: "success", text: `Report access granted to ${result.data?.granted_to_name || "supervisor"} for ${candidateName} - ${assessmentTitle}` });
+      
+      // Refresh shared access list
+      await fetchSharedAccess(candidateId, assessmentId);
+      
+      setShowShareModal(null);
     } catch (error) {
-      showMessage("error", "Failed to unblock assessment: " + (error && error.message ? error.message : "Unknown error"));
+      console.error("Grant access error:", error);
+      setMessage({ type: "error", text: "Failed to grant access: " + getReadableError(error) });
     } finally {
-      setProcessingId(null);
-      setUnblockModal(null);
-      setTimeExtension(30);
-      setResetFullTime(false);
+      setSharingInProgress(false);
+      clearMessagesAfterDelay();
     }
   }
 
-  async function handleBlock(assessmentId, assessmentTitle) {
-    if (!window.confirm("Block \"" + assessmentTitle + "\"?")) return;
-    setProcessingId(assessmentId);
+  async function revokeReportAccess(candidateId, assessmentId, targetSupervisorId, targetSupervisorName) {
+    if (!confirm(`Revoke report access for ${targetSupervisorName}?`)) return;
+
     try {
-      await supabase.from("candidate_assessments").update({ status: "blocked" }).eq("user_id", candidateId).eq("assessment_id", assessmentId);
-      setAssessments(function (previous) {
-        return previous.map(function (item) { return item.assessment_id === assessmentId ? { ...item, status: "blocked" } : item; });
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token || null;
+
+      const response = await fetch("/api/supervisor/revoke-report-access", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: "Bearer " + accessToken } : {})
+        },
+        body: JSON.stringify({
+          candidateId,
+          assessmentId,
+          targetSupervisorId
+        })
       });
-      showMessage("success", "Assessment blocked successfully.");
+
+      const result = await response.json();
+
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || result?.error || "Failed to revoke access.");
+      }
+
+      setMessage({ type: "success", text: `Access revoked for ${targetSupervisorName}` });
+      await fetchSharedAccess(candidateId, assessmentId);
     } catch (error) {
-      showMessage("error", "Failed to block assessment: " + (error && error.message ? error.message : "Unknown error"));
+      console.error("Revoke access error:", error);
+      setMessage({ type: "error", text: "Failed to revoke access: " + getReadableError(error) });
     } finally {
-      setProcessingId(null);
+      clearMessagesAfterDelay();
     }
   }
 
-  async function handleReset(assessmentId, assessmentTitle) {
-    if (!window.confirm("Reset \"" + assessmentTitle + "\"?\n\nThis will delete all progress and results for this assessment.")) return;
-    setProcessingId(assessmentId);
-    try {
-      await supabase.from("responses").delete().eq("user_id", candidateId).eq("assessment_id", assessmentId);
-      await supabase.from("assessment_sessions").delete().eq("user_id", candidateId).eq("assessment_id", assessmentId);
-      await supabase.from("assessment_results").delete().eq("user_id", candidateId).eq("assessment_id", assessmentId);
-      await supabase.from("assessment_progress").delete().eq("user_id", candidateId).eq("assessment_id", assessmentId);
-      await supabase.from("candidate_assessments").update({ status: "blocked", unblocked_at: null, result_id: null }).eq("user_id", candidateId).eq("assessment_id", assessmentId);
-      setAssessments(function (previous) {
-        return previous.map(function (item) { return item.assessment_id === assessmentId ? { ...item, status: "blocked", result: null } : item; });
-      });
-      showMessage("success", "Assessment reset successfully.");
-    } catch (error) {
-      showMessage("error", "Failed to reset assessment: " + (error && error.message ? error.message : "Unknown error"));
-    } finally {
-      setProcessingId(null);
-    }
+  function openShareModal(candidate, assessment) {
+    fetchSharedAccess(candidate.id, assessment.assessment_id);
+    setShowShareModal({
+      candidateId: candidate.id,
+      candidateName: candidate.full_name || candidate.email,
+      assessmentId: assessment.assessment_id,
+      assessmentTitle: assessment.assessments?.title || "Assessment",
+      candidate
+    });
   }
 
-  if (loading) {
-    return (
-      <AppLayout background="/images/supervisor-bg.jpg">
-        <div style={styles.centerLoader}>
-          <div style={styles.spinner} />
-          <p style={styles.loadingText}>Loading candidate information...</p>
-        </div>
-        <style jsx>{spinStyles}</style>
-      </AppLayout>
-    );
+  function toggleCandidateDetails(candidateId) {
+    setExpandedCandidate((current) => (current === candidateId ? null : candidateId));
   }
 
-  if (!candidate) {
+  if (checkingAuth) {
     return (
-      <AppLayout background="/images/supervisor-bg.jpg">
-        <div style={styles.notFoundCard}>
-          <div style={styles.notFoundIcon}>👤</div>
-          <h2 style={styles.notFoundTitle}>Candidate Not Found</h2>
-          <p style={styles.notFoundText}>The candidate does not exist or you do not have access.</p>
-          <Link href="/supervisor" style={styles.primaryLink}>Back to Dashboard</Link>
-        </div>
-      </AppLayout>
+      <div style={styles.checkingContainer}>
+        <div style={styles.spinner} />
+        <p style={styles.checkingText}>Checking access...</p>
+      </div>
     );
   }
 
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
-      <div style={styles.pageShell}>
-        <div style={styles.heroCard}>
-          <div style={styles.heroTopRow}>
-            <Link href="/supervisor" style={styles.backLink}>← Back to Dashboard</Link>
-            <div style={styles.heroActions}>
-              {latestCompleted && <Link href={`/supervisor/${candidate.id}?assessment=${latestCompleted.assessment_id}`} style={styles.reportHeroLink}>View Latest Report</Link>}
-              <Link href={`/supervisor/assign-assessment/${candidate.id}`} style={styles.assignLink}>+ Assign Assessment</Link>
-            </div>
-          </div>
+      <div style={styles.container}>
+        <div style={styles.backButtonContainer}>
+          <button onClick={() => router.push("/supervisor")} style={styles.backButton}>← Back to Dashboard</button>
+        </div>
 
-          <div style={styles.profileRow}>
-            <div style={styles.avatar}>{initials(candidate.full_name || candidate.email)}</div>
-            <div style={styles.profileMain}>
-              <div style={styles.profileBadge}>Candidate Profile</div>
-              <h1 style={styles.profileName}>{safeText(candidate.full_name, "Unnamed Candidate")}</h1>
-              <div style={styles.profileMetaGrid}>
-                <span>{safeText(candidate.email, "No email provided")}</span>
-                {candidate.phone && <span>Phone: {candidate.phone}</span>}
-                <span>Supervisor: {safeText(candidate.supervisor_name, "Unassigned")}</span>
-                <span>Joined: {formatDate(candidate.created_at)}</span>
-              </div>
-            </div>
-            <div style={styles.latestScoreCard}>
-              <p style={styles.latestScoreLabel}>Latest Score</p>
-              <p style={{ ...styles.latestScoreValue, color: latestClassification.color }}>{latestCompleted ? latestPercentage + "%" : "N/A"}</p>
-              <ProgressBar value={latestPercentage} color={latestClassification.color} />
-              <div style={styles.latestScoreFooter}><Pill color={latestClassification.color} bg={latestClassification.bg}>{latestClassification.label}</Pill></div>
-            </div>
+        <div style={styles.header}>
+          <div>
+            <h1 style={styles.title}>My Candidates</h1>
+            <p style={styles.subtitle}>View assigned candidates, assessment reports, and share access with other supervisors.</p>
+          </div>
+          <div style={styles.headerButtons}>
+            <button onClick={() => fetchCandidates(supervisorId)} style={styles.refreshButton}>Refresh</button>
           </div>
         </div>
 
-        {message && <div style={message.type === "success" ? styles.successMessage : styles.errorMessage}>{message.text}</div>}
+        {message.text && (
+          <div style={{
+            ...styles.message,
+            background: message.type === "success" ? "#e8f5e9" : "#ffebee",
+            color: message.type === "success" ? "#2e7d32" : "#c62828",
+            border: "1px solid " + (message.type === "success" ? "#a5d6a7" : "#ffcdd2")
+          }}>
+            {message.text}
+          </div>
+        )}
 
-        <div style={styles.statsGrid}>
-          <StatCard icon="📋" label="Total" value={assessments.length} note="Assigned assessments" background="linear-gradient(135deg, #0f172a 0%, #334155 100%)" />
-          <StatCard icon="✓" label="Completed" value={completedCount} note={completionRate + "% complete"} background="linear-gradient(135deg, #047857 0%, #34d399 100%)" />
-          <StatCard icon="↗" label="Ready" value={readyCount} note="Available to candidate" background="linear-gradient(135deg, #1d4ed8 0%, #38bdf8 100%)" />
-          <StatCard icon="●" label="Blocked" value={blockedCount} note="Locked assessments" background="linear-gradient(135deg, #c2410c 0%, #fb923c 100%)" />
-        </div>
-
-        <div style={styles.contentCard}>
-          <div style={styles.contentHeader}>
-            <div>
-              <h2 style={styles.contentTitle}>Assessments</h2>
-              <p style={styles.contentSubtitle}>Manage assessment status, reports, resets, and release access.</p>
-            </div>
-            <Pill color="#175cd3" bg="#eff8ff">{assessments.length} assigned</Pill>
+        <div style={styles.filterSection}>
+          <div style={styles.searchContainer}>
+            <span style={styles.searchIcon}>🔍</span>
+            <input
+              type="text"
+              placeholder="Search candidates by name, email, or phone..."
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              style={styles.searchInput}
+            />
+            {searchTerm && <button onClick={() => setSearchTerm("")} style={styles.clearButton}>×</button>}
           </div>
 
-          {assessments.length === 0 ? (
-            <div style={styles.emptyState}>
-              <div style={styles.emptyIcon}>📋</div>
-              <h3 style={styles.emptyTitle}>No assessments assigned</h3>
-              <p style={styles.emptyText}>Assign an assessment to make it available for this candidate.</p>
-              <Link href={`/supervisor/assign-assessment/${candidate.id}`} style={styles.primaryLink}>+ Assign Assessment</Link>
-            </div>
-          ) : (
-            <div style={styles.assessmentGrid}>
-              {assessments.map(function (assessment) {
-                var status = getStatus(assessment);
-                var hasResult = assessment.result !== null;
-                var percentage = hasResult ? calculatePercentage(assessment.result.score, assessment.result.max_score, assessment.result.percentage) : 0;
-                var classification = getClassification(percentage);
-                var isProcessing = processingId === assessment.assessment_id;
-
-                return (
-                  <article key={assessment.id} style={styles.assessmentCard}>
-                    <div style={styles.assessmentCardTop}>
-                      <div style={{ ...styles.assessmentIcon, background: "linear-gradient(135deg, " + assessment.type_gradient_start + " 0%, " + assessment.type_gradient_end + " 100%)" }}>{assessment.type_icon}</div>
-                      <div style={styles.assessmentTitleBlock}>
-                        <h3 style={styles.assessmentTitle}>{assessment.assessment_title}</h3>
-                        <p style={styles.assessmentType}>{assessment.assessment_type_name}</p>
-                      </div>
-                    </div>
-
-                    <div style={styles.assessmentPills}>
-                      <Pill color={status.color} bg={status.bg}>{status.icon} {status.label}</Pill>
-                      {hasResult && <Pill color={classification.color} bg={classification.bg}>{classification.label}</Pill>}
-                      {hasResult && assessment.result.is_auto_submitted && <Pill color="#b42318" bg="#fef3f2">Auto-submitted</Pill>}
-                    </div>
-
-                    {hasResult ? (
-                      <div style={styles.resultBox}>
-                        <div style={styles.resultTopLine}>
-                          <strong style={{ color: classification.color, fontSize: "28px" }}>{percentage}%</strong>
-                          <span style={styles.resultScore}>{safeNumber(assessment.result.score, 0)}/{safeNumber(assessment.result.max_score, 0)}</span>
-                        </div>
-                        <ProgressBar value={percentage} color={classification.color} />
-                        <p style={styles.resultMeta}>Completed: {formatDate(assessment.result.completed_at)}</p>
-                        {assessment.result.is_auto_submitted && <p style={styles.autoSubmitText}>Auto-submitted after {safeNumber(assessment.result.violation_count, 0)}/3 violation(s).</p>}
-                      </div>
-                    ) : (
-                      <div style={styles.pendingBox}>
-                        <p style={styles.pendingText}>{assessment.status === "unblocked" ? "Candidate can currently access this assessment." : assessment.status === "blocked" ? "This assessment is currently blocked." : "Assessment is awaiting candidate action."}</p>
-                        <p style={styles.resultMeta}>Assigned: {formatDate(assessment.created_at)}</p>
-                        {assessment.unblocked_at && <p style={styles.resultMeta}>Last unblocked: {formatDate(assessment.unblocked_at)}</p>}
-                      </div>
-                    )}
-
-                    <div style={styles.cardActions}>
-                      {hasResult ? (
-                        <React.Fragment>
-                          <Link href={`/supervisor/${candidate.id}?assessment=${assessment.assessment_id}`} style={styles.reportLink}>View Report</Link>
-                          <button type="button" onClick={function () { handleReset(assessment.assessment_id, assessment.assessment_title); }} disabled={isProcessing} style={styles.resetButton}>{isProcessing ? "Processing..." : "Reset"}</button>
-                        </React.Fragment>
-                      ) : assessment.status === "blocked" ? (
-                        <button type="button" onClick={function () { setUnblockModal({ assessmentId: assessment.assessment_id, assessmentTitle: assessment.assessment_title }); }} disabled={isProcessing} style={styles.unblockButton}>{isProcessing ? "Processing..." : "Unblock"}</button>
-                      ) : (
-                        <button type="button" onClick={function () { handleBlock(assessment.assessment_id, assessment.assessment_title); }} disabled={isProcessing} style={styles.blockButton}>{isProcessing ? "Processing..." : "Block"}</button>
-                      )}
-                    </div>
-                  </article>
-                );
-              })}
+          {(filteredCandidates.length !== candidates.length || searchTerm) && (
+            <div style={styles.filterStats}>
+              Showing {filteredCandidates.length} of {candidates.length} candidates
+              <button onClick={() => { setSearchTerm(""); }} style={styles.clearFiltersButton}>Clear Filters</button>
             </div>
           )}
         </div>
-      </div>
 
-      {unblockModal && (
-        <div style={styles.modalBackdrop}>
-          <div style={styles.modalCard}>
+        {loading ? (
+          <div style={styles.loading}>Loading candidates...</div>
+        ) : (
+          <div style={styles.tableContainer}>
+            <div style={styles.tableScroll}>
+              <table style={styles.table}>
+                <thead>
+                  <tr style={styles.tableHeadRow}>
+                    <th style={styles.th}>Candidate</th>
+                    <th style={styles.th}>Contact</th>
+                    <th style={styles.th}>Assessments</th>
+                    <th style={styles.th}>Latest Score</th>
+                    <th style={styles.th}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCandidates.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" style={styles.noData}>
+                        {searchTerm ? "No candidates match your search." : "No candidates assigned yet."}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredCandidates.map((candidate) => {
+                      const latestResult = candidate.latestResult;
+                      const percentage = getPercentage(latestResult);
+                      const classification = getClassification(percentage);
+                      const isExpanded = expandedCandidate === candidate.id;
+
+                      return (
+                        <React.Fragment key={candidate.id}>
+                          <tr style={styles.tableRow}>
+                            <td style={styles.td}>
+                              <div style={styles.candidateInfo}>
+                                <div style={styles.avatar}>{getInitial(candidate.full_name, candidate.email)}</div>
+                                <div>
+                                  <div style={styles.candidateName}>{candidate.full_name || "Unnamed Candidate"}</div>
+                                  <div style={styles.candidateId}>ID: {candidate.id ? candidate.id.substring(0, 8) : "N/A"}...</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td style={styles.td}>
+                              <div style={styles.contactInfo}>
+                                <div style={styles.email}>{candidate.email || "No email"}</div>
+                                {candidate.phone && <div style={styles.phone}>{candidate.phone}</div>}
+                              </div>
+                            </td>
+                            <td style={styles.td}>
+                              <div style={styles.assessmentBadges}>
+                                <span style={{ ...styles.badge, background: "#e8f5e9", color: "#2e7d32" }}>✅ {candidate.completedAssessments} completed</span>
+                                <span style={{ ...styles.badge, background: "#e3f2fd", color: "#1565c0" }}>🔓 {candidate.unblockedAssessments} ready</span>
+                                <span style={{ ...styles.badge, background: "#fff3e0", color: "#f57c00" }}>🔒 {candidate.blockedAssessments} blocked</span>
+                              </div>
+                              {candidate.assessments?.length > 0 && (
+                                <button onClick={() => toggleCandidateDetails(candidate.id)} style={styles.viewDetailsButton}>
+                                  {isExpanded ? "▲ Hide Assessments" : "▼ View Assessments"}
+                                </button>
+                              )}
+                            </td>
+                            <td style={styles.td}>
+                              {latestResult ? (
+                                <div>
+                                  <span style={{ ...styles.scoreBadge, background: classification.bg, color: classification.color }}>
+                                    {toNumber(latestResult.total_score, 0)}/{toNumber(latestResult.max_score, 0)} ({percentage}%)
+                                  </span>
+                                  <div style={styles.classification}>{classification.label}</div>
+                                  <div style={styles.completedDate}>{formatDate(latestResult.completed_at)}</div>
+                                </div>
+                              ) : (
+                                <span style={styles.noScore}>Not started</span>
+                              )}
+                            </td>
+                            <td style={styles.td}>
+                              <div style={styles.actionGroup}>
+                                {latestResult && (
+                                  <Link href={`/supervisor/${candidate.id}?assessment_id=${latestResult.assessment_id}`} legacyBehavior>
+                                    <a style={styles.viewButton}>📄 View Report</a>
+                                  </Link>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+
+                          {isExpanded && candidate.assessments?.length > 0 && (
+                            <tr style={styles.expandedRow}>
+                              <td colSpan="5" style={styles.expandedCell}>
+                                <div style={styles.expandedContent}>
+                                  <h4 style={styles.expandedTitle}>Individual Assessments</h4>
+                                  <div style={styles.assessmentsGrid}>
+                                    {candidate.assessments.map((assessment) => {
+                                      const result = candidate.results?.find((item) => item.assessment_id === assessment.assessment_id);
+                                      const resultPercentage = getPercentage(result);
+                                      const sharedKey = `${candidate.id}_${assessment.assessment_id}`;
+                                      const sharedWith = sharedAccessList[sharedKey] || [];
+
+                                      return (
+                                        <div key={assessment.id} style={{
+                                          ...styles.assessmentCard,
+                                          borderLeftColor: result ? "#4caf50" : assessment.status === "unblocked" ? "#2196f3" : "#ff9800"
+                                        }}>
+                                          <div style={styles.assessmentHeader}>
+                                            <span style={styles.assessmentTitle}>{assessment.assessments?.title || "Assessment"}</span>
+                                            <span style={{
+                                              ...styles.assessmentStatus,
+                                              background: result ? "#e8f5e9" : assessment.status === "unblocked" ? "#e3f2fd" : "#fff3e0",
+                                              color: result ? "#2e7d32" : assessment.status === "unblocked" ? "#1565c0" : "#f57c00"
+                                            }}>
+                                              {result ? "Completed" : assessment.status === "unblocked" ? "Ready" : "Blocked"}
+                                            </span>
+                                          </div>
+
+                                          {result && (
+                                            <div style={styles.assessmentDetails}>
+                                              <div>Score: {toNumber(result.total_score, 0)}/{toNumber(result.max_score, 0)} ({resultPercentage}%)</div>
+                                              <div style={styles.assessmentDate}>Completed: {formatDate(result.completed_at)}</div>
+                                              <Link href={`/supervisor/${candidate.id}?assessment_id=${assessment.assessment_id}`} legacyBehavior>
+                                                <a style={styles.viewReportLink}>View Full Report →</a>
+                                              </Link>
+                                            </div>
+                                          )}
+
+                                          <div style={styles.assessmentActions}>
+                                            <button
+                                              onClick={() => openShareModal(candidate, assessment)}
+                                              style={styles.shareButton}
+                                            >
+                                              🔗 Share Report
+                                            </button>
+                                          </div>
+
+                                          {sharedWith.length > 0 && (
+                                            <div style={styles.sharedAccessList}>
+                                              <div style={styles.sharedAccessHeader}>Shared with:</div>
+                                              {sharedWith.map(access => (
+                                                <div key={access.granted_to} style={styles.sharedAccessItem}>
+                                                  <span>{access.supervisor_profiles?.full_name || access.granted_to}</span>
+                                                  <button
+                                                    onClick={() => revokeReportAccess(candidate.id, assessment.assessment_id, access.granted_to, access.supervisor_profiles?.full_name)}
+                                                    style={styles.revokeButton}
+                                                  >
+                                                    Revoke
+                                                  </button>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              <\/div>
+                            <\/td>
+                          <\/tr>
+                          )}
+                        <\/React.Fragment>
+                      );
+                    })
+                  )}
+                <\/tbody>
+              <\/table>
+            <\/div>
+          <\/div>
+        )}
+      <\/div>
+
+      {/* Share Modal */}
+      {showShareModal && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.shareModal}>
             <div style={styles.modalHeader}>
-              <div style={styles.modalIcon}>↗</div>
-              <div>
-                <h3 style={styles.modalTitle}>Unblock Assessment</h3>
-                <p style={styles.modalSubtitle}>{unblockModal.assessmentTitle}</p>
-              </div>
-              <button type="button" onClick={function () { setUnblockModal(null); }} style={styles.modalClose}>×</button>
-            </div>
+              <span style={styles.modalIcon}>🔗</span>
+              <h3 style={styles.modalTitle}>Share Report</h3>
+              <button onClick={() => setShowShareModal(null)} style={styles.closeButton}>×</button>
+            <\/div>
             <div style={styles.modalBody}>
-              <p style={styles.modalText}><strong>Candidate:</strong> {candidate.full_name}</p>
-              <p style={styles.modalText}><strong>Assessment:</strong> {unblockModal.assessmentTitle}</p>
-              <div style={styles.optionStack}>
-                <h4 style={styles.optionTitle}>Time Options</h4>
-                {[30, 60, 120].map(function (minutes) {
-                  return (
-                    <label key={minutes} style={styles.optionRow}>
-                      <input type="radio" checked={!resetFullTime && timeExtension === minutes} onChange={function () { setResetFullTime(false); setTimeExtension(minutes); }} />
-                      <span><strong>Extend by {minutes} minutes</strong><br /><small>Add {minutes} minutes to remaining time</small></span>
-                    </label>
-                  );
-                })}
-                <label style={styles.optionRow}>
-                  <input type="radio" checked={resetFullTime} onChange={function () { setResetFullTime(true); }} />
-                  <span><strong>Reset to full time</strong><br /><small>Reset timer to full assessment duration</small></span>
-                </label>
-                <label style={styles.optionRow}>
-                  <input type="radio" checked={!resetFullTime && timeExtension === 0} onChange={function () { setResetFullTime(false); setTimeExtension(0); }} />
-                  <span><strong>No time change</strong><br /><small>Only unblock access without changing time</small></span>
-                </label>
-              </div>
-              <div style={styles.infoBox}>Existing answers are preserved. The candidate can continue from where they stopped if previous progress exists.</div>
-            </div>
+              <p><strong>Candidate:<\/strong> {showShareModal.candidateName}</p>
+              <p><strong>Assessment:<\/strong> {showShareModal.assessmentTitle}</p>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Select Supervisor:<\/label>
+                <select id="supervisorSelect" style={styles.select} defaultValue="">
+                  <option value="">-- Select a supervisor --</option>
+                  {availableSupervisors.map(sup => (
+                    <option key={sup.id} value={sup.id}>{sup.full_name || sup.email} {sup.role === 'admin' ? '(Admin)' : ''}</option>
+                  ))}
+                <\/select>
+              <\/div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Access Duration:<\/label>
+                <select id="durationSelect" style={styles.select} defaultValue="30">
+                  <option value="7">7 days</option>
+                  <option value="30">30 days</option>
+                  <option value="90">90 days</option>
+                  <option value="">No expiration</option>
+                <\/select>
+              <\/div>
+
+              <div style={styles.noteBox}>
+                <span>💡<\/span>
+                <span>The supervisor will receive a notification and can view this report from their dashboard.<\/span>
+              <\/div>
+            <\/div>
             <div style={styles.modalFooter}>
-              <button type="button" onClick={function () { setUnblockModal(null); }} style={styles.cancelButton}>Cancel</button>
-              <button type="button" onClick={function () { handleUnblock(unblockModal.assessmentId, unblockModal.assessmentTitle); }} disabled={processingId === unblockModal.assessmentId} style={styles.modalPrimaryButton}>{processingId === unblockModal.assessmentId ? "Processing..." : "Unblock Assessment"}</button>
-            </div>
-          </div>
-        </div>
+              <button onClick={() => setShowShareModal(null)} style={styles.cancelButton}>Cancel<\/button>
+              <button
+                onClick={() => {
+                  const supervisorIdSelected = document.getElementById("supervisorSelect").value;
+                  const days = document.getElementById("durationSelect").value;
+                  if (!supervisorIdSelected) {
+                    alert("Please select a supervisor");
+                    return;
+                  }
+                  grantReportAccess(
+                    showShareModal.candidateId,
+                    showShareModal.assessmentId,
+                    supervisorIdSelected,
+                    days ? parseInt(days) : null,
+                    showShareModal.assessmentTitle,
+                    showShareModal.candidateName
+                  );
+                }}
+                disabled={sharingInProgress}
+                style={{ ...styles.grantButton, opacity: sharingInProgress ? 0.7 : 1 }}
+              >
+                {sharingInProgress ? "Granting..." : "Grant Access"}
+              <\/button>
+            <\/div>
+          <\/div>
+        <\/div>
       )}
 
-      <style jsx>{spinStyles}</style>
-    </AppLayout>
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}<\/style>
+    <\/AppLayout>
   );
 }
 
-var spinStyles = `
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-`;
-
-var styles = {
-  pageShell: { maxWidth: "1280px", margin: "0 auto", padding: "30px 20px 48px", fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif' },
-  centerLoader: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "70vh", gap: "16px" },
-  spinner: { width: "42px", height: "42px", border: "4px solid rgba(15, 23, 42, 0.15)", borderTopColor: "#0f172a", borderRadius: "50%", animation: "spin 1s linear infinite" },
-  loadingText: { margin: 0, color: "#475467", fontSize: "14px" },
-  notFoundCard: { textAlign: "center", padding: "60px 24px", background: "#ffffff", borderRadius: "24px", margin: "40px auto", maxWidth: "520px", boxShadow: "0 20px 56px rgba(16,24,40,0.1)" },
-  notFoundIcon: { fontSize: "60px", marginBottom: "16px" },
-  notFoundTitle: { margin: 0, color: "#101828" },
-  notFoundText: { color: "#667085", lineHeight: 1.6 },
-  heroCard: { background: "linear-gradient(135deg, #0f172a 0%, #1e3a8a 55%, #0f766e 100%)", color: "#ffffff", borderRadius: "30px", padding: "28px", marginBottom: "20px", boxShadow: "0 24px 80px rgba(15, 23, 42, 0.22)" },
-  heroTopRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", marginBottom: "22px" },
-  backLink: { color: "#ffffff", textDecoration: "none", padding: "9px 14px", borderRadius: "999px", border: "1px solid rgba(255,255,255,0.28)", background: "rgba(255,255,255,0.12)", fontSize: "13px", fontWeight: 900 },
-  heroActions: { display: "flex", gap: "10px", flexWrap: "wrap" },
-  reportHeroLink: { color: "#ffffff", textDecoration: "none", padding: "10px 16px", borderRadius: "14px", background: "rgba(255,255,255,0.16)", fontSize: "13px", fontWeight: 900 },
-  assignLink: { color: "#101828", textDecoration: "none", padding: "10px 16px", borderRadius: "14px", background: "#ffffff", fontSize: "13px", fontWeight: 900 },
-  profileRow: { display: "grid", gridTemplateColumns: "92px minmax(0, 1fr) 300px", gap: "20px", alignItems: "center" },
-  avatar: { width: "82px", height: "82px", borderRadius: "28px", background: "rgba(255,255,255,0.18)", color: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "32px", fontWeight: 900, border: "1px solid rgba(255,255,255,0.24)" },
-  profileMain: { minWidth: 0 },
-  profileBadge: { display: "inline-flex", padding: "6px 10px", borderRadius: "999px", background: "rgba(255,255,255,0.14)", fontSize: "11px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: "10px" },
-  profileName: { margin: 0, color: "#ffffff", fontSize: "36px", lineHeight: 1.08, overflowWrap: "anywhere" },
-  profileMetaGrid: { display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "12px", color: "rgba(255,255,255,0.78)", fontSize: "13px" },
-  latestScoreCard: { background: "rgba(255,255,255,0.95)", color: "#101828", borderRadius: "22px", padding: "20px", boxShadow: "0 18px 45px rgba(15,23,42,0.16)" },
-  latestScoreLabel: { margin: 0, color: "#667085", fontSize: "12px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em" },
-  latestScoreValue: { margin: "8px 0 10px", fontSize: "42px", lineHeight: 1, fontWeight: 900 },
-  latestScoreFooter: { marginTop: "12px" },
-  successMessage: { padding: "14px 18px", borderRadius: "16px", marginBottom: "18px", background: "#ecfdf3", color: "#027a48", border: "1px solid #bbf7d0", fontWeight: 800 },
-  errorMessage: { padding: "14px 18px", borderRadius: "16px", marginBottom: "18px", background: "#fef3f2", color: "#b42318", border: "1px solid #fecaca", fontWeight: 800 },
-  statsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "20px" },
-  statCard: { display: "flex", alignItems: "center", gap: "14px", padding: "20px", borderRadius: "22px", color: "#ffffff", minHeight: "96px", boxShadow: "0 18px 42px rgba(15,23,42,0.14)" },
-  statIcon: { width: "46px", height: "46px", borderRadius: "16px", background: "rgba(255,255,255,0.16)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "22px", fontWeight: 900 },
-  statLabel: { margin: 0, color: "rgba(255,255,255,0.78)", fontSize: "12px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.05em" },
-  statValue: { margin: "4px 0 0", color: "#ffffff", fontSize: "30px", lineHeight: 1, fontWeight: 900 },
-  statNote: { margin: "5px 0 0", color: "rgba(255,255,255,0.72)", fontSize: "12px" },
-  contentCard: { background: "rgba(255,255,255,0.96)", border: "1px solid #eaecf0", borderRadius: "26px", padding: "22px", boxShadow: "0 20px 56px rgba(16,24,40,0.09)" },
-  contentHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "18px" },
-  contentTitle: { margin: 0, color: "#101828", fontSize: "24px" },
-  contentSubtitle: { margin: "5px 0 0", color: "#667085", fontSize: "13px" },
-  assessmentGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(310px, 1fr))", gap: "14px" },
-  assessmentCard: { background: "#ffffff", border: "1px solid #eaecf0", borderRadius: "22px", padding: "18px", boxShadow: "0 10px 28px rgba(16,24,40,0.05)" },
-  assessmentCardTop: { display: "grid", gridTemplateColumns: "46px minmax(0,1fr)", gap: "12px", alignItems: "center", marginBottom: "14px" },
-  assessmentIcon: { width: "44px", height: "44px", borderRadius: "15px", color: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", fontWeight: 900 },
-  assessmentTitleBlock: { minWidth: 0 },
-  assessmentTitle: { margin: 0, color: "#101828", fontSize: "16px", overflowWrap: "anywhere" },
-  assessmentType: { margin: "4px 0 0", color: "#667085", fontSize: "12px" },
-  assessmentPills: { display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "14px" },
-  pill: { display: "inline-flex", alignItems: "center", gap: "5px", padding: "6px 10px", borderRadius: "999px", border: "1px solid transparent", fontSize: "12px", fontWeight: 900, whiteSpace: "nowrap" },
-  resultBox: { background: "#f8fafc", borderRadius: "16px", padding: "14px", marginBottom: "14px" },
-  resultTopLine: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", marginBottom: "10px" },
-  resultScore: { color: "#667085", fontWeight: 900, fontSize: "13px" },
-  resultMeta: { margin: "8px 0 0", color: "#667085", fontSize: "12px" },
-  autoSubmitText: { margin: "8px 0 0", color: "#b42318", fontSize: "12px", fontWeight: 800 },
-  pendingBox: { background: "#f8fafc", borderRadius: "16px", padding: "14px", marginBottom: "14px" },
-  pendingText: { margin: 0, color: "#344054", fontSize: "13px", lineHeight: 1.55 },
-  progressTrack: { width: "100%", height: "9px", borderRadius: "999px", background: "#e4e7ec", overflow: "hidden" },
-  cardActions: { display: "flex", gap: "8px", flexWrap: "wrap" },
-  reportLink: { flex: 1, textAlign: "center", textDecoration: "none", padding: "11px 12px", borderRadius: "12px", background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)", color: "#ffffff", fontWeight: 900, fontSize: "13px" },
-  unblockButton: { width: "100%", border: 0, padding: "11px 12px", borderRadius: "12px", background: "linear-gradient(135deg, #1d4ed8 0%, #38bdf8 100%)", color: "#ffffff", fontWeight: 900, cursor: "pointer" },
-  blockButton: { width: "100%", border: 0, padding: "11px 12px", borderRadius: "12px", background: "#c2410c", color: "#ffffff", fontWeight: 900, cursor: "pointer" },
-  resetButton: { border: 0, padding: "11px 12px", borderRadius: "12px", background: "#344054", color: "#ffffff", fontWeight: 900, cursor: "pointer" },
-  primaryLink: { display: "inline-flex", marginTop: "18px", textDecoration: "none", padding: "11px 16px", borderRadius: "12px", background: "#101828", color: "#ffffff", fontWeight: 900 },
-  emptyState: { padding: "44px 20px", border: "1px dashed #cbd5e1", borderRadius: "22px", background: "#ffffff", textAlign: "center" },
-  emptyIcon: { width: "54px", height: "54px", margin: "0 auto 12px", borderRadius: "18px", background: "#eff6ff", color: "#175cd3", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px", fontWeight: 900 },
-  emptyTitle: { margin: 0, color: "#101828", fontSize: "18px" },
-  emptyText: { margin: "8px auto 0", maxWidth: "520px", color: "#667085", lineHeight: 1.6, fontSize: "14px" },
-  modalBackdrop: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(15,23,42,0.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" },
-  modalCard: { background: "#ffffff", borderRadius: "24px", maxWidth: "540px", width: "100%", maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.35)" },
-  modalHeader: { display: "grid", gridTemplateColumns: "46px minmax(0, 1fr) 40px", alignItems: "center", gap: "12px", padding: "20px 22px", borderBottom: "1px solid #eaecf0", background: "#f8fafc" },
-  modalIcon: { width: "42px", height: "42px", borderRadius: "14px", background: "#eff8ff", color: "#175cd3", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: "20px" },
-  modalTitle: { margin: 0, color: "#101828", fontSize: "18px" },
-  modalSubtitle: { margin: "4px 0 0", color: "#667085", fontSize: "13px", overflowWrap: "anywhere" },
-  modalClose: { border: 0, background: "transparent", color: "#667085", fontSize: "28px", cursor: "pointer" },
-  modalBody: { padding: "22px", overflowY: "auto" },
-  modalText: { margin: "0 0 8px", color: "#344054", fontSize: "14px" },
-  optionStack: { marginTop: "18px", display: "grid", gap: "10px" },
-  optionTitle: { margin: "0 0 4px", color: "#101828" },
-  optionRow: { display: "flex", alignItems: "flex-start", gap: "12px", padding: "13px", borderRadius: "14px", background: "#f8fafc", cursor: "pointer", color: "#344054", lineHeight: 1.45 },
-  infoBox: { marginTop: "18px", padding: "13px", borderRadius: "14px", background: "#eff8ff", color: "#175cd3", fontSize: "13px", lineHeight: 1.5 },
-  modalFooter: { display: "flex", justifyContent: "flex-end", gap: "10px", padding: "16px 22px", borderTop: "1px solid #eaecf0", background: "#f8fafc" },
-  cancelButton: { border: "1px solid #d0d5dd", background: "#ffffff", color: "#344054", padding: "11px 16px", borderRadius: "12px", cursor: "pointer", fontWeight: 900 },
-  modalPrimaryButton: { border: 0, background: "linear-gradient(135deg, #1d4ed8 0%, #38bdf8 100%)", color: "#ffffff", padding: "11px 16px", borderRadius: "12px", cursor: "pointer", fontWeight: 900 }
+const styles = {
+  checkingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #0a1929 0%, #1a2a3a 100%)", color: "white", padding: "20px", textAlign: "center" },
+  spinner: { width: "42px", height: "42px", border: "4px solid rgba(255,255,255,0.3)", borderTop: "4px solid white", borderRadius: "50%", animation: "spin 1s linear infinite", marginBottom: "18px" },
+  checkingText: { margin: 0, color: "rgba(255,255,255,0.9)", fontSize: "14px" },
+  container: { maxWidth: "1400px", margin: "0 auto", padding: "40px 20px" },
+  backButtonContainer: { marginBottom: "20px" },
+  backButton: { display: "inline-flex", alignItems: "center", gap: "8px", padding: "10px 20px", background: "white", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", fontWeight: 700, color: "#0a1929", cursor: "pointer" },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "24px", background: "white", padding: "22px 30px", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", flexWrap: "wrap" },
+  headerButtons: { display: "flex", gap: "12px", flexWrap: "wrap" },
+  title: { fontSize: "24px", fontWeight: 800, color: "#0a1929", margin: "0 0 5px" },
+  subtitle: { fontSize: "14px", color: "#667085", margin: 0 },
+  refreshButton: { padding: "12px 20px", background: "#1565c0", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 700, cursor: "pointer" },
+  message: { padding: "12px 20px", borderRadius: "8px", marginBottom: "20px", fontSize: "14px", lineHeight: 1.5 },
+  filterSection: { display: "flex", gap: "20px", marginBottom: "20px", flexWrap: "wrap", alignItems: "center" },
+  searchContainer: { position: "relative", flex: 2, minWidth: "250px" },
+  searchIcon: { position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#999", fontSize: "16px" },
+  searchInput: { width: "100%", padding: "12px 38px 12px 36px", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", outline: "none", boxSizing: "border-box" },
+  clearButton: { position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#999", fontSize: "18px" },
+  filterStats: { display: "flex", alignItems: "center", gap: "12px", padding: "8px 16px", background: "#e3f2fd", borderRadius: "8px", fontSize: "13px", color: "#1565c0" },
+  clearFiltersButton: { background: "none", border: "none", color: "#1565c0", cursor: "pointer", fontSize: "12px", textDecoration: "underline", padding: "4px 8px" },
+  tableContainer: { background: "white", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", overflow: "hidden" },
+  tableScroll: { overflowX: "auto" },
+  table: { width: "100%", borderCollapse: "collapse", fontSize: "13px", minWidth: "880px" },
+  tableHeadRow: { background: "#f8fafc", borderBottom: "2px solid #0a1929" },
+  th: { textAlign: "left", padding: "15px 20px", fontWeight: 800, color: "#0a1929" },
+  td: { padding: "15px 20px", borderBottom: "1px solid #e2e8f0", verticalAlign: "top" },
+  tableRow: { background: "white" },
+  noData: { padding: "40px", textAlign: "center", color: "#718096", fontStyle: "italic" },
+  loading: { textAlign: "center", padding: "60px", color: "#667085", background: "white", borderRadius: "16px" },
+  candidateInfo: { display: "flex", alignItems: "center", gap: "12px" },
+  avatar: { width: "40px", height: "40px", borderRadius: "20px", background: "linear-gradient(135deg, #667eea, #764ba2)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: 800 },
+  candidateName: { fontWeight: 800, color: "#0a1929", marginBottom: "2px" },
+  candidateId: { fontSize: "11px", color: "#718096", fontFamily: "monospace" },
+  contactInfo: { fontSize: "13px" },
+  email: { color: "#0a1929", marginBottom: "2px" },
+  phone: { fontSize: "11px", color: "#718096" },
+  assessmentBadges: { display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "8px" },
+  badge: { padding: "2px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: 700, display: "inline-block" },
+  viewDetailsButton: { background: "none", border: "1px solid #0a1929", borderRadius: "6px", padding: "4px 10px", fontSize: "11px", color: "#0a1929", cursor: "pointer" },
+  scoreBadge: { display: "inline-block", padding: "4px 10px", borderRadius: "12px", fontSize: "12px", fontWeight: 700, marginBottom: "4px" },
+  classification: { fontSize: "11px", color: "#64748b", marginTop: "2px" },
+  completedDate: { fontSize: "10px", color: "#94a3b8", marginTop: "2px" },
+  noScore: { fontSize: "12px", color: "#9e9e9e", fontStyle: "italic" },
+  actionGroup: { display: "flex", gap: "8px", flexWrap: "wrap" },
+  viewButton: { padding: "6px 12px", background: "#0a1929", color: "white", borderRadius: "6px", fontSize: "12px", textDecoration: "none", cursor: "pointer", display: "inline-block" },
+  expandedRow: { background: "#f8fafc" },
+  expandedCell: { padding: "20px 30px" },
+  expandedContent: { width: "100%" },
+  expandedTitle: { margin: "0 0 15px", fontSize: "14px", fontWeight: 800, color: "#0a1929" },
+  assessmentsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "15px" },
+  assessmentCard: { borderLeft: "4px solid", padding: "15px", background: "white", borderRadius: "8px", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" },
+  assessmentHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "8px" },
+  assessmentTitle: { fontSize: "13px", fontWeight: 800, color: "#0a1929" },
+  assessmentStatus: { padding: "2px 8px", borderRadius: "12px", fontSize: "10px", fontWeight: 700 },
+  assessmentDetails: { fontSize: "12px", color: "#4a5568", marginBottom: "8px" },
+  assessmentDate: { fontSize: "10px", color: "#94a3b8", marginTop: "4px" },
+  viewReportLink: { display: "inline-block", marginTop: "8px", fontSize: "11px", color: "#1565c0", textDecoration: "none" },
+  assessmentActions: { display: "flex", gap: "8px", marginTop: "8px" },
+  shareButton: { background: "#8b5cf6", color: "white", padding: "5px 10px", borderRadius: "4px", border: "none", fontSize: "11px", cursor: "pointer" },
+  sharedAccessList: { marginTop: "10px", paddingTop: "10px", borderTop: "1px solid #e2e8f0" },
+  sharedAccessHeader: { fontSize: "10px", color: "#667085", marginBottom: "6px", fontWeight: 700 },
+  sharedAccessItem: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "10px", padding: "4px 0" },
+  revokeButton: { background: "#ef4444", color: "white", border: "none", borderRadius: "4px", padding: "2px 8px", fontSize: "9px", cursor: "pointer" },
+  modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px", backdropFilter: "blur(5px)" },
+  shareModal: { background: "white", borderRadius: "20px", maxWidth: "500px", width: "100%", maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" },
+  modalHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px", borderBottom: "2px solid #e2e8f0", background: "#f8fafc" },
+  modalIcon: { fontSize: "28px" },
+  modalTitle: { margin: 0, fontSize: "18px", color: "#0a1929" },
+  closeButton: { background: "none", border: "none", fontSize: "24px", cursor: "pointer", color: "#667085", padding: "4px 8px", borderRadius: "8px" },
+  modalBody: { padding: "24px", overflowY: "auto", flex: 1 },
+  formGroup: { marginBottom: "20px" },
+  label: { display: "block", marginBottom: "8px", fontWeight: 700, color: "#0a1929", fontSize: "14px" },
+  select: { width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "14px", background: "white" },
+  noteBox: { marginTop: "20px", padding: "12px", background: "#e3f2fd", borderRadius: "8px", display: "flex", gap: "12px", fontSize: "13px", color: "#1565c0" },
+  modalFooter: { display: "flex", justifyContent: "flex-end", gap: "12px", padding: "16px 24px", borderTop: "1px solid #e2e8f0", background: "#f8fafc" },
+  cancelButton: { padding: "10px 24px", background: "#f1f5f9", border: "1px solid #cbd5e1", borderRadius: "8px", fontSize: "14px", fontWeight: 700, cursor: "pointer", color: "#475569" },
+  grantButton: { padding: "10px 24px", background: "#8b5cf6", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 800, cursor: "pointer" }
 };
