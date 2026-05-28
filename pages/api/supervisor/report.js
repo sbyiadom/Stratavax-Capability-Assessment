@@ -129,24 +129,38 @@ export default async function handler(req, res) {
     // ===== STEP 1: Get the requesting user from authorization header =====
     const authHeader = req.headers.authorization || "";
     let requestingUserId = null;
+    let requestingUserEmail = null;
     let requestingUserRole = null;
     let requestingUserIsAdmin = false;
+
+    // Hardcoded admin emails for fallback
+    const ADMIN_EMAILS = ['sbyiadom88@gmail.com'];
 
     if (authHeader.startsWith("Bearer ")) {
       const token = authHeader.replace("Bearer ", "");
       const { data: { user }, error: userError } = await supabase.auth.getUser(token);
       if (!userError && user) {
         requestingUserId = user.id;
+        requestingUserEmail = user.email;
         
-        // Check if user is admin via supervisor_profiles
+        // Check multiple sources for admin role
+        // 1. Check supervisor_profiles table
         const { data: supervisorProfile } = await supabase
           .from("supervisor_profiles")
-          .select("role")
+          .select("role, is_active")
           .eq("id", requestingUserId)
           .maybeSingle();
         
-        requestingUserRole = supervisorProfile?.role || user.user_metadata?.role || null;
-        requestingUserIsAdmin = requestingUserRole === "admin";
+        // 2. Check user_metadata
+        const metadataRole = user.user_metadata?.role;
+        
+        // 3. Check if email is in admin list
+        const isAdminEmail = ADMIN_EMAILS.includes(user.email);
+        
+        requestingUserRole = supervisorProfile?.role || metadataRole || (isAdminEmail ? "admin" : null);
+        requestingUserIsAdmin = requestingUserRole === "admin" || isAdminEmail;
+        
+        console.log(`🔐 User: ${user.email}, Role: ${requestingUserRole}, IsAdmin: ${requestingUserIsAdmin}`);
       }
     }
 
@@ -165,22 +179,23 @@ export default async function handler(req, res) {
     let hasPermission = false;
     let permissionReason = null;
 
+    // Case 0: Admin has full access (check this FIRST)
+    if (requestingUserIsAdmin) {
+      hasPermission = true;
+      permissionReason = "Admin access";
+      console.log(`✅ Admin access granted for ${requestingUserEmail}`);
+    }
     // Case 1: No authenticated user (public access) - deny
-    if (!requestingUserId) {
+    else if (!requestingUserId) {
       hasPermission = false;
       permissionReason = "Not authenticated";
     }
-    // Case 2: Admin has full access
-    else if (requestingUserIsAdmin) {
-      hasPermission = true;
-      permissionReason = "Admin access";
-    }
-    // Case 3: Direct supervisor of the candidate
+    // Case 2: Direct supervisor of the candidate
     else if (candidate && candidate.supervisor_id === requestingUserId) {
       hasPermission = true;
       permissionReason = "Direct supervisor";
     }
-    // Case 4: Shared access
+    // Case 3: Shared access
     else if (candidate && assessmentId) {
       const { data: sharedAccess, error: sharedError } = await supabase
         .from("shared_report_access")
@@ -191,7 +206,6 @@ export default async function handler(req, res) {
         .maybeSingle();
 
       if (sharedAccess && !sharedError) {
-        // Check if expired
         const isExpired = sharedAccess.expires_at && new Date(sharedAccess.expires_at) < new Date();
         if (!isExpired) {
           hasPermission = true;
@@ -203,16 +217,16 @@ export default async function handler(req, res) {
         permissionReason = "No shared access found";
       }
     }
-    // Case 5: No candidate found
+    // Case 4: No candidate found
     else if (!candidate) {
       permissionReason = "Candidate not found";
     }
-    // Case 6: No permission
+    // Case 5: No permission
     else {
       permissionReason = `Not authorized - Candidate supervisor_id: ${candidate?.supervisor_id}, Requesting user: ${requestingUserId}`;
     }
 
-    console.log(`Permission check: ${hasPermission ? "GRANTED" : "DENIED"} - ${permissionReason}`);
+    console.log(`🔐 Permission check: ${hasPermission ? "GRANTED" : "DENIED"} - ${permissionReason}`);
 
     // If no permission, return 403 with details
     if (!hasPermission) {
