@@ -209,11 +209,9 @@ export default function ManageCandidates() {
         accessByUser[access.user_id].push(access);
       });
 
-      // FIXED: Use candidate_assessments status to count completed assessments
       const enrichedCandidates = safeArray(candidatesData).map((candidate) => {
         const results = resultsByUser[candidate.id] || [];
         const assessments = accessByUser[candidate.id] || [];
-        // Count completed from candidate_assessments status, not from results
         const completedAssessments = assessments.filter((assessment) => assessment.status === "completed").length;
         const totalAssessments = assessments.length;
         const unblockedAssessments = assessments.filter((assessment) => assessment.status === "unblocked").length;
@@ -359,12 +357,6 @@ export default function ManageCandidates() {
       <div style={styles.checkingContainer}>
         <div style={styles.spinner} />
         <p style={styles.checkingText}>Checking admin access...</p>
-        <style jsx>{`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        `}</style>
       </div>
     );
   }
@@ -465,12 +457,14 @@ export default function ManageCandidates() {
                     <th style={styles.th}>Assessments</th>
                     <th style={styles.th}>Latest Score</th>
                     <th style={styles.th}>Actions</th>
-                  </td>
+                  </tr>
                 </thead>
                 <tbody>
                   {filteredCandidates.length === 0 ? (
                     <tr>
-                      <td colSpan="6" style={styles.noData}>{searchTerm || selectedSupervisor !== "all" ? "No candidates match your filters." : "No candidates found."}</td>
+                      <td colSpan="6" style={styles.noData}>
+                        {searchTerm || selectedSupervisor !== "all" ? "No candidates match your filters." : "No candidates found."}
+                      </td>
                     </tr>
                   ) : (
                     filteredCandidates.map((candidate) => {
@@ -629,11 +623,51 @@ export default function ManageCandidates() {
 
               <div style={styles.timeOptions}>
                 <h4 style={styles.timeTitle}>Time Options</h4>
-                <TimeOption checked={!resetFullTime && timeExtension === 30} onChange={() => { setResetFullTime(false); setTimeExtension(30); }} title="Extend by 30 minutes" text="Add 30 minutes to remaining time" />
-                <TimeOption checked={!resetFullTime && timeExtension === 60} onChange={() => { setResetFullTime(false); setTimeExtension(60); }} title="Extend by 1 hour" text="Add 60 minutes to remaining time" />
-                <TimeOption checked={!resetFullTime && timeExtension === 120} onChange={() => { setResetFullTime(false); setTimeExtension(120); }} title="Extend by 2 hours" text="Add 120 minutes to remaining time" />
-                <TimeOption checked={resetFullTime} onChange={() => setResetFullTime(true)} title="Reset to full time" text="Reset timer to 3 hours from now" />
-                <TimeOption checked={!resetFullTime && timeExtension === 0} onChange={() => { setResetFullTime(false); setTimeExtension(0); }} title="No time change" text="Unblock without changing time" />
+                <div style={styles.optionCard}>
+                  <label style={styles.radioLabel}>
+                    <input type="radio" checked={!resetFullTime && timeExtension === 30} onChange={() => { setResetFullTime(false); setTimeExtension(30); }} />
+                    <div>
+                      <strong>Extend by 30 minutes</strong>
+                      <span style={styles.optionText}>Add 30 minutes to remaining time</span>
+                    </div>
+                  </label>
+                </div>
+                <div style={styles.optionCard}>
+                  <label style={styles.radioLabel}>
+                    <input type="radio" checked={!resetFullTime && timeExtension === 60} onChange={() => { setResetFullTime(false); setTimeExtension(60); }} />
+                    <div>
+                      <strong>Extend by 1 hour</strong>
+                      <span style={styles.optionText}>Add 60 minutes to remaining time</span>
+                    </div>
+                  </label>
+                </div>
+                <div style={styles.optionCard}>
+                  <label style={styles.radioLabel}>
+                    <input type="radio" checked={!resetFullTime && timeExtension === 120} onChange={() => { setResetFullTime(false); setTimeExtension(120); }} />
+                    <div>
+                      <strong>Extend by 2 hours</strong>
+                      <span style={styles.optionText}>Add 120 minutes to remaining time</span>
+                    </div>
+                  </label>
+                </div>
+                <div style={styles.optionCard}>
+                  <label style={styles.radioLabel}>
+                    <input type="radio" checked={resetFullTime} onChange={() => setResetFullTime(true)} />
+                    <div>
+                      <strong>Reset to full time</strong>
+                      <span style={styles.optionText}>Reset timer to 3 hours from now</span>
+                    </div>
+                  </label>
+                </div>
+                <div style={styles.optionCard}>
+                  <label style={styles.radioLabel}>
+                    <input type="radio" checked={!resetFullTime && timeExtension === 0} onChange={() => { setResetFullTime(false); setTimeExtension(0); }} />
+                    <div>
+                      <strong>No time change</strong>
+                      <span style={styles.optionText}>Unblock without changing time</span>
+                    </div>
+                  </label>
+                </div>
               </div>
 
               <div style={styles.noteBox}><span>💡</span><span>Existing answers will be preserved where available.</span></div>
@@ -659,20 +693,6 @@ export default function ManageCandidates() {
         }
       `}</style>
     </AppLayout>
-  );
-}
-
-function TimeOption({ checked, onChange, title, text }) {
-  return (
-    <div style={styles.optionCard}>
-      <label style={styles.radioLabel}>
-        <input type="radio" checked={checked} onChange={onChange} />
-        <div>
-          <strong>{title}</strong>
-          <span style={styles.optionText}>{text}</span>
-        </div>
-      </label>
-    </div>
   );
 }
 
