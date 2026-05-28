@@ -53,10 +53,6 @@ function formatPercentage(value) {
   return round(value, 0) + "%";
 }
 
-function plural(count, one, many) {
-  return safeNumber(count, 0) === 1 ? one : many;
-}
-
 function getTone(score) {
   const value = safeNumber(score, 0);
   if (value >= 85) return "excellent";
@@ -166,53 +162,56 @@ export default function SupervisorUserReportPage() {
   const [expandedRows, setExpandedRows] = useState({});
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState("");
-  const [fetchingLatest, setFetchingLatest] = useState(false);
 
-  // Auto-fetch the most recent assessment if none is provided
+  // Load report when userId and assessmentId are available
   useEffect(() => {
     if (!router.isReady || !userId) return;
     
-    if (!assessmentId && !fetchingLatest) {
-      setFetchingLatest(true);
-      const fetchLatestAssessment = async () => {
-        try {
-          const { data, error } = await supabase
-            .from('assessment_results')
-            .select('assessment_id')
-            .eq('user_id', userId)
-            .order('completed_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          
-          if (error) {
-            console.error("Error fetching latest assessment:", error);
-            return;
-          }
-          
-          if (data?.assessment_id) {
-            router.replace(`/supervisor/${userId}?assessment=${data.assessment_id}`, undefined, { shallow: true });
-          } else {
-            setErrorMessage("No completed assessments found for this candidate.");
-            setLoading(false);
-          }
-        } catch (error) {
-          console.error("Failed to fetch latest assessment:", error);
-          setErrorMessage("Failed to load assessment data.");
-          setLoading(false);
-        } finally {
-          setFetchingLatest(false);
-        }
-      };
-      fetchLatestAssessment();
+    // If assessmentId is provided in URL, load report directly
+    if (assessmentId) {
+      loadReport();
+    } else {
+      // If no assessmentId, try to find the most recent one
+      findAndLoadLatestAssessment();
     }
   }, [router.isReady, userId, assessmentId]);
 
-  useEffect(() => {
-    if (!router.isReady || !userId) return;
-    if (assessmentId) {
-      loadReport();
+  async function findAndLoadLatestAssessment() {
+    try {
+      setLoading(true);
+      setErrorMessage("");
+      
+      // Fetch the most recent completed assessment for this candidate
+      const { data, error } = await supabase
+        .from('assessment_results')
+        .select('assessment_id')
+        .eq('user_id', userId)
+        .order('completed_at', { ascending: false })
+        .limit(1);
+      
+      if (error) {
+        console.error("Error fetching latest assessment:", error);
+        setErrorMessage("Failed to find completed assessments for this candidate.");
+        setLoading(false);
+        return;
+      }
+      
+      if (!data || data.length === 0) {
+        setErrorMessage("No completed assessments found for this candidate.");
+        setLoading(false);
+        return;
+      }
+      
+      // Update URL with the assessment_id and reload
+      const latestAssessmentId = data[0].assessment_id;
+      router.replace(`/supervisor/${userId}?assessment=${latestAssessmentId}`, undefined, { shallow: true });
+      // The useEffect will trigger again with the new assessmentId
+    } catch (error) {
+      console.error("Error finding latest assessment:", error);
+      setErrorMessage("Failed to load assessment data.");
+      setLoading(false);
     }
-  }, [router.isReady, userId, assessmentId]);
+  }
 
   async function loadReport() {
     setLoading(true);
@@ -223,7 +222,7 @@ export default function SupervisorUserReportPage() {
     setPdfError("");
 
     try {
-      const url = `/api/supervisor/report?user_id=${userId}${assessmentId ? `&assessment_id=${assessmentId}` : ''}`;
+      const url = `/api/supervisor/report?user_id=${userId}&assessment_id=${assessmentId}`;
       console.log("Fetching report from:", url);
       
       const response = await fetch(url);
@@ -512,7 +511,7 @@ export default function SupervisorUserReportPage() {
     return renderOverview();
   }
 
-  if (loading || fetchingLatest) {
+  if (loading) {
     return (
       <div style={styles.page}>
         <div style={styles.backgroundBlobOne} />
