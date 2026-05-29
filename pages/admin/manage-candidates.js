@@ -1,124 +1,158 @@
-// pages/admin/manage-candidates.js - FULL FIXED VERSION (CORRECT REPORT LINK)
-
-import React, { useEffect, useState } from "react";
-import { useRouter } from "next/router";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 
-function safeArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-function toNumber(value, fallback = 0) {
-  const numberValue = Number(value);
-  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) return fallback;
-  return numberValue;
-}
-
-function cleanText(value, fallback = "") {
-  if (value === null || value === undefined || value === "") return fallback;
-  return String(value);
-}
-
-function formatDate(value) {
-  if (!value) return "N/A";
-  try {
-    return new Date(value).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric"
-    });
-  } catch (error) {
-    return "N/A";
-  }
-}
-
-function getPercentage(result) {
-  if (!result) return 0;
-  if (result.percentage_score !== null && result.percentage_score !== undefined) {
-    return Math.round(toNumber(result.percentage_score, 0));
-  }
-  const score = toNumber(result.total_score, 0);
-  const maxScore = toNumber(result.max_score, 0);
-  if (maxScore <= 0) return 0;
-  return Math.round((score / maxScore) * 100);
-}
-
 export default function ManageCandidates() {
-  const router = useRouter();
   const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchCandidates();
+    fetchData();
   }, []);
 
-  async function fetchCandidates() {
-    try {
-      setLoading(true);
+  async function fetchData() {
+    setLoading(true);
 
-      const { data: candidatesData } = await supabase
-        .from("candidate_profiles")
-        .select("*")
-        .order("created_at", { ascending: false });
+    const { data: candidateData } = await supabase
+      .from("candidate_profiles")
+      .select("*")
+      .order("created_at", { ascending: false });
 
-      const { data: results } = await supabase
-        .from("assessment_results")
-        .select("*")
-        .order("completed_at", { ascending: false });
+    const { data: results } = await supabase
+      .from("assessment_results")
+      .select("*")
+      .order("completed_at", { ascending: false });
 
-      const resultsByUser = {};
-      safeArray(results).forEach((r) => {
-        if (!resultsByUser[r.user_id]) resultsByUser[r.user_id] = [];
-        resultsByUser[r.user_id].push(r);
-      });
+    const resultsMap = {};
+    (results || []).forEach((r) => {
+      if (!resultsMap[r.user_id]) resultsMap[r.user_id] = [];
+      resultsMap[r.user_id].push(r);
+    });
 
-      const enriched = safeArray(candidatesData).map((c) => ({
-        ...c,
-        results: resultsByUser[c.id] || [],
-        latestResult: (resultsByUser[c.id] || [])[0] || null
-      }));
+    const enriched = (candidateData || []).map((c) => ({
+      ...c,
+      results: resultsMap[c.id] || [],
+      latestResult: (resultsMap[c.id] || [])[0] || null
+    }));
 
-      setCandidates(enriched);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
+    setCandidates(enriched);
+    setLoading(false);
   }
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) {
+    return <div style={{ padding: 40 }}>Loading candidates...</div>;
+  }
 
   return (
     <AppLayout>
-      <div style={{ padding: 20 }}>
-        <h2>Manage Candidates</h2>
+      <div style={styles.container}>
+        <h1 style={styles.title}>Manage Candidates</h1>
 
-        {candidates.map((candidate) => {
-          const result = candidate.latestResult;
+        <table style={styles.table}>
+          <thead>
+            <tr>
+              <th>Candidate</th>
+              <th>Assessments</th>
+              <th>Status</th>
+              <th>Latest Score</th>
+              <th>Action</th>
+            </tr>
+          </thead>
 
-          // ✅ FIX: use correct user_id and pass assessment_id
-          const userId = candidate.id;
-          const assessmentId = result?.assessment_id;
+          <tbody>
+            {candidates.map((candidate) => {
+              const latest = candidate.latestResult;
+              const percentage = latest?.percentage_score
+                ? Math.round(Number(latest.percentage_score))
+                : 0;
 
-          const reportUrl = assessmentId
-            ? `/supervisor/${userId}?assessment=${assessmentId}`
-            : `/supervisor/${userId}`;
+              const reportUrl = latest
+                ? `/supervisor/${candidate.id}?assessment=${latest.assessment_id}`
+                : `/supervisor/${candidate.id}`;
 
-          return (
-            <div key={candidate.id} style={{ padding: 10, border: "1px solid #ddd", marginBottom: 10 }}>
-              <div><strong>{candidate.full_name || candidate.email}</strong></div>
+              return (
+                <tr key={candidate.id}>
+                  <td>
+                    <strong>{candidate.full_name || candidate.email}</strong>
+                    <div style={styles.subText}>{candidate.email}</div>
+                  </td>
 
-              <Link href={reportUrl}>
-                <a style={{ background: "#0a1929", color: "white", padding: 8, display: "inline-block", marginTop: 6 }}>
-                  View Report
-                </a>
-              </Link>
-            </div>
-          );
-        })}
+                  <td>{candidate.results.length}</td>
+
+                  <td>
+                    {latest ? (
+                      <span style={styles.completed}>✅ Completed</span>
+                    ) : (
+                      <span style={styles.pending}>⏳ Not Started</span>
+                    )}
+                  </td>
+
+                  <td>
+                    {latest ? (
+                      <span style={styles.score}>{percentage}%</span>
+                    ) : (
+                      <span style={styles.na}>N/A</span>
+                    )}
+                  </td>
+
+                  <td>
+                    <Link href={reportUrl}>
+                      <a style={styles.button}>View Report</a>
+                    </Link>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </AppLayout>
   );
 }
+
+const styles = {
+  container: {
+    padding: "40px",
+    maxWidth: "1200px",
+    margin: "0 auto"
+  },
+  title: {
+    fontSize: "28px",
+    fontWeight: "bold",
+    marginBottom: "20px"
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    background: "white",
+    borderRadius: "12px",
+    overflow: "hidden"
+  },
+  subText: {
+    fontSize: "12px",
+    color: "#666"
+  },
+  score: {
+    fontWeight: "bold",
+    color: "#027a48"
+  },
+  na: {
+    color: "#999"
+  },
+  completed: {
+    color: "#027a48",
+    fontWeight: "bold"
+  },
+  pending: {
+    color: "#d97706",
+    fontWeight: "bold"
+  },
+  button: {
+    background: "#0a1929",
+    color: "white",
+    padding: "6px 12px",
+    borderRadius: "6px",
+    textDecoration: "none"
+  }
+};
