@@ -1,267 +1,380 @@
+// pages/admin/manage-candidates.js
+
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/router";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 
 export default function ManageCandidates() {
+  const router = useRouter();
+
   const [candidates, setCandidates] = useState([]);
-  const [expanded, setExpanded] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [expandedCandidate, setExpandedCandidate] = useState(null);
 
   useEffect(() => {
-    loadData();
+    fetchCandidates();
   }, []);
 
-  async function loadData() {
-    setLoading(true);
+  async function fetchCandidates() {
+    try {
+      setLoading(true);
 
-    const { data: users } = await supabase
-      .from("candidate_profiles")
-      .select("*")
-      .order("created_at", { ascending: false });
+      const { data: candidateData, error: candidateError } = await supabase
+        .from("candidate_profiles")
+        .select("*")
+        .order("created_at", { ascending: false });
 
-    const { data: results } = await supabase
-      .from("assessment_results")
-      .select("*")
-      .order("completed_at", { ascending: false });
+      if (candidateError) throw candidateError;
 
-    const map = {};
+      const { data: results, error: resultsError } = await supabase
+        .from("assessment_results")
+        .select("*")
+        .order("completed_at", { ascending: false });
 
-    (results || []).forEach((r) => {
-      if (!map[r.user_id]) map[r.user_id] = [];
-      map[r.user_id].push(r);
-    });
+      if (resultsError) throw resultsError;
 
-    const enriched = (users || []).map((u) => ({
-      ...u,
-      results: map[u.id] || [],
-      latest: (map[u.id] || [])[0] || null
-    }));
+      const resultMap = {};
 
-    setCandidates(enriched);
-    setLoading(false);
+      (results || []).forEach((r) => {
+        if (!resultMap[r.user_id]) resultMap[r.user_id] = [];
+        resultMap[r.user_id].push(r);
+      });
+
+      const enriched = (candidateData || []).map((c) => ({
+        ...c,
+        results: resultMap[c.id] || [],
+        latest: (resultMap[c.id] || [])[0] || null
+      }));
+
+      setCandidates(enriched);
+
+    } catch (err) {
+      console.error("Error fetching candidates:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  if (loading) {
-    return <div style={{ padding: 40 }}>Loading dashboard...</div>;
+  function toggleExpand(id) {
+    setExpandedCandidate(prev => (prev === id ? null : id));
   }
 
   return (
-    <AppLayout>
-      <div style={styles.page}>
+    <AppLayout background="/images/admin-bg.jpg">
+      <div style={styles.container}>
+
+        {/* HEADER */}
         <div style={styles.header}>
-          <h1 style={styles.title}>Manage Candidates</h1>
-          <p style={styles.subtitle}>Interactive control panel for candidate assessments</p>
-        </div>
-
-        <div style={styles.panel}>
-          <div style={styles.tableHeader}>
-            <div>Candidate</div>
-            <div>Assessments</div>
-            <div>Status</div>
-            <div>Performance</div>
-            <div>Action</div>
+          <div>
+            <h1 style={styles.title}>Manage Candidates</h1>
+            <p style={styles.subtitle}>
+              View, explore, and manage candidate assessments
+            </p>
           </div>
-
-          {candidates.map((c) => {
-            const latest = c.latest;
-            const percent = latest?.percentage_score
-              ? Math.round(Number(latest.percentage_score))
-              : 0;
-
-            const isOpen = expanded === c.id;
-
-            const reportUrl = latest
-              ? `/supervisor/${c.id}?assessment=${latest.assessment_id}`
-              : `/supervisor/${c.id}`;
-
-            return (
-              <div key={c.id}>
-                <div
-                  style={{ ...styles.row, ...(isOpen ? styles.activeRow : {}) }}
-                  onClick={() => setExpanded(isOpen ? null : c.id)}
-                >
-                  <div>
-                    <div style={styles.name}>{c.full_name || "Candidate"}</div>
-                    <div style={styles.email}>{c.email}</div>
-                  </div>
-
-                  <div>{c.results.length}</div>
-
-                  <div>
-                    {latest ? (
-                      <span style={styles.badgeGreen}>Completed</span>
-                    ) : (
-                      <span style={styles.badgeAmber}>Not Started</span>
-                    )}
-                  </div>
-
-                  <div>
-                    {latest ? (
-                      <>
-                        <div style={styles.score}>{percent}%</div>
-                        <div style={styles.bar}>
-                          <div
-                            style={{ ...styles.fill, width: `${percent}%` }}
-                          />
-                        </div>
-                      </>
-                    ) : (
-                      <span style={styles.na}>—</span>
-                    )}
-                  </div>
-
-                  <div onClick={(e) => e.stopPropagation()}>
-                    <Link href={reportUrl}>
-                      <a style={styles.btnPrimary}>View</a>
-                    </Link>
-                  </div>
-                </div>
-
-                {isOpen && (
-                  <div style={styles.expand}>
-                    <h4 style={styles.sectionTitle}>Assessments</h4>
-
-                    {c.results.length === 0 && (
-                      <div style={styles.empty}>No assessments yet</div>
-                    )}
-
-                    {c.results.map((r) => {
-                      const score = Math.round(Number(r.percentage_score));
-
-                      return (
-                        <div key={r.id} style={styles.card}>
-                          <div style={styles.cardRow}>
-                            <span>{r.assessment_id}</span>
-                            <span style={styles.cardScore}>{score}%</span>
-                          </div>
-
-                          <Link href={`/supervisor/${c.id}?assessment=${r.assessment_id}`}>
-                            <a style={styles.btnSecondary}>Open Report</a>
-                          </Link>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
         </div>
+
+        {/* TABLE */}
+        {loading ? (
+          <div style={styles.loading}>Loading candidates...</div>
+        ) : (
+          <div style={styles.tableContainer}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Candidate</th>
+                  <th style={styles.th}>Assessments</th>
+                  <th style={styles.th}>Status</th>
+                  <th style={styles.th}>Score</th>
+                  <th style={styles.th}>Actions</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {candidates.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" style={styles.noData}>
+                      No candidates found.
+                    </td>
+                  </tr>
+                ) : (
+                  candidates.map((c) => {
+                    const latest = c.latest;
+                    const score = latest
+                      ? Math.round(Number(latest.percentage_score))
+                      : null;
+
+                    return (
+                      <>
+                        {/* MAIN ROW */}
+                        <tr
+                          key={c.id}
+                          style={styles.row}
+                          onClick={() => toggleExpand(c.id)}
+                        >
+                          <td style={styles.td}>
+                            <div style={styles.userInfo}>
+                              <div style={styles.avatar}>
+                                {c.full_name?.charAt(0) || "C"}
+                              </div>
+
+                              <div>
+                                <div style={styles.name}>
+                                  {c.full_name || "Candidate"}
+                                </div>
+                                <div style={styles.email}>{c.email}</div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td style={styles.td}>{c.results.length}</td>
+
+                          <td style={styles.td}>
+                            {latest ? (
+                              <span style={styles.success}>Completed</span>
+                            ) : (
+                              <span style={styles.warning}>Not Started</span>
+                            )}
+                          </td>
+
+                          <td style={styles.td}>
+                            {score !== null ? (
+                              <div>
+                                <strong>{score}%</strong>
+                                <div style={styles.bar}>
+                                  <div
+                                    style={{
+                                      ...styles.fill,
+                                      width: `${score}%`
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+
+                          <td
+                            style={styles.td}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {latest && (
+                              <button
+                                style={styles.button}
+                                onClick={() =>
+                                  router.push(
+                                    `/supervisor/${c.id}?assessment=${latest.assessment_id}`
+                                  )
+                                }
+                              >
+                                View Report
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+
+                        {/* EXPANDED ROW */}
+                        {expandedCandidate === c.id && (
+                          <tr>
+                            <td colSpan="5" style={styles.expandRow}>
+                              {c.results.length === 0 ? (
+                                <div>No assessments available</div>
+                              ) : (
+                                c.results.map((r) => (
+                                  <div key={r.id} style={styles.card}>
+                                    
+                                    <div style={styles.cardTop}>
+                                      <span>
+                                        Assessment: {r.assessment_id}
+                                      </span>
+                                      <span>
+                                        {Math.round(Number(r.percentage_score))}%
+                                      </span>
+                                    </div>
+
+                                    <button
+                                      style={styles.smallButton}
+                                      onClick={() =>
+                                        router.push(
+                                          `/supervisor/${c.id}?assessment=${r.assessment_id}`
+                                        )
+                                      }
+                                    >
+                                      Open Report
+                                    </button>
+
+                                  </div>
+                                ))
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </AppLayout>
   );
 }
 
+/* ================= STYLES ================= */
+
 const styles = {
-  page: {
-    background: "#f8fafc",
-    minHeight: "100vh",
-    padding: "32px"
+  container: {
+    maxWidth: "1200px",
+    margin: "0 auto",
+    padding: "40px 20px"
   },
-  header: { marginBottom: 20 },
-  title: { fontSize: 28, fontWeight: 700 },
-  subtitle: { color: "#6b7280" },
 
-  panel: {
+  header: {
+    marginBottom: "30px",
     background: "white",
-    borderRadius: 14,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.05)",
-    overflow: "hidden"
+    padding: "20px 30px",
+    borderRadius: "16px",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
   },
 
-  tableHeader: {
-    display: "grid",
-    gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr",
-    padding: 16,
-    background: "#f1f5f9",
-    fontWeight: 600
+  title: {
+    fontSize: "24px",
+    fontWeight: 600,
+    margin: "0 0 5px"
+  },
+
+  subtitle: {
+    fontSize: "14px",
+    color: "#666",
+    margin: 0
+  },
+
+  tableContainer: {
+    background: "white",
+    borderRadius: "16px",
+    overflow: "hidden",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
+  },
+
+  table: {
+    width: "100%",
+    borderCollapse: "collapse"
+  },
+
+  th: {
+    textAlign: "left",
+    padding: "15px",
+    background: "#F8FAFC",
+    borderBottom: "2px solid #0A1929"
+  },
+
+  td: {
+    padding: "15px",
+    borderBottom: "1px solid #E2E8F0"
+  },
+
+  noData: {
+    padding: "40px",
+    textAlign: "center",
+    color: "#718096"
   },
 
   row: {
-    display: "grid",
-    gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr",
-    padding: 16,
-    borderBottom: "1px solid #eee",
-    cursor: "pointer",
-    transition: "0.2s"
+    cursor: "pointer"
   },
 
-  activeRow: { background: "#f9fafb" },
+  userInfo: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px"
+  },
 
-  name: { fontWeight: 600 },
-  email: { fontSize: 12, color: "#6b7280" },
+  avatar: {
+    width: "32px",
+    height: "32px",
+    borderRadius: "16px",
+    background: "#0A1929",
+    color: "white",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center"
+  },
 
-  score: { fontWeight: 600 },
-  na: { color: "#9ca3af" },
+  name: {
+    fontWeight: 600
+  },
+
+  email: {
+    fontSize: "12px",
+    color: "#666"
+  },
+
+  success: {
+    color: "#2E7D32",
+    fontWeight: 600
+  },
+
+  warning: {
+    color: "#E65100",
+    fontWeight: 600
+  },
 
   bar: {
-    height: 6,
-    background: "#e5e7eb",
-    borderRadius: 4,
-    marginTop: 4
+    height: "6px",
+    background: "#E2E8F0",
+    borderRadius: "4px",
+    marginTop: "5px"
   },
+
   fill: {
     height: "100%",
-    background: "linear-gradient(90deg,#22c55e,#16a34a)",
-    borderRadius: 4
+    background: "#16a34a",
+    borderRadius: "4px"
   },
 
-  badgeGreen: {
-    background: "#dcfce7",
-    color: "#166534",
-    padding: "4px 10px",
-    borderRadius: 99,
-    fontSize: 12
-  },
-
-  badgeAmber: {
-    background: "#fef3c7",
-    color: "#92400e",
-    padding: "4px 10px",
-    borderRadius: 99,
-    fontSize: 12
-  },
-
-  btnPrimary: {
-    background: "#0f172a",
-    color: "white",
+  button: {
     padding: "6px 12px",
-    borderRadius: 6,
-    textDecoration: "none"
+    background: "#0A1929",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer"
   },
 
-  expand: {
-    padding: 16,
+  expandRow: {
     background: "#f9fafb"
   },
 
-  sectionTitle: { marginBottom: 10 },
-
   card: {
-    background: "white",
-    border: "1px solid #eee",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8
+    padding: "12px",
+    border: "1px solid #E2E8F0",
+    borderRadius: "8px",
+    marginBottom: "10px",
+    background: "white"
   },
 
-  cardRow: {
+  cardTop: {
     display: "flex",
-    justifyContent: "space-between"
+    justifyContent: "space-between",
+    marginBottom: "6px"
   },
 
-  cardScore: { fontWeight: 600 },
-
-  btnSecondary: {
-    display: "inline-block",
-    marginTop: 6,
-    padding: "5px 10px",
-    background: "#1e293b",
+  smallButton: {
+    padding: "6px 10px",
+    background: "#111",
     color: "white",
-    borderRadius: 4,
-    textDecoration: "none"
+    border: "none",
+    borderRadius: "6px",
+    cursor: "pointer"
   },
 
-  empty: { color: "#9ca3af" }
+  loading: {
+    textAlign: "center",
+    padding: "60px",
+    background: "white",
+    borderRadius: "16px"
+  }
 };
