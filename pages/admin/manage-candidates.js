@@ -5,16 +5,17 @@ import { supabase } from "../../supabase/client";
 
 export default function ManageCandidates() {
   const [candidates, setCandidates] = useState([]);
+  const [expanded, setExpanded] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchData();
+    loadData();
   }, []);
 
-  async function fetchData() {
+  async function loadData() {
     setLoading(true);
 
-    const { data: candidateData } = await supabase
+    const { data: users } = await supabase
       .from("candidate_profiles")
       .select("*")
       .order("created_at", { ascending: false });
@@ -24,16 +25,16 @@ export default function ManageCandidates() {
       .select("*")
       .order("completed_at", { ascending: false });
 
-    const resultsMap = {};
+    const map = {};
     (results || []).forEach((r) => {
-      if (!resultsMap[r.user_id]) resultsMap[r.user_id] = [];
-      resultsMap[r.user_id].push(r);
+      if (!map[r.user_id]) map[r.user_id] = [];
+      map[r.user_id].push(r);
     });
 
-    const enriched = (candidateData || []).map((c) => ({
-      ...c,
-      results: resultsMap[c.id] || [],
-      latestResult: (resultsMap[c.id] || [])[0] || null
+    const enriched = (users || []).map((u) => ({
+      ...u,
+      results: map[u.id] || [],
+      latest: (map[u.id] || [])[0] || null
     }));
 
     setCandidates(enriched);
@@ -49,110 +50,184 @@ export default function ManageCandidates() {
       <div style={styles.container}>
         <h1 style={styles.title}>Manage Candidates</h1>
 
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th>Candidate</th>
-              <th>Assessments</th>
-              <th>Status</th>
-              <th>Latest Score</th>
-              <th>Action</th>
-            </tr>
-          </thead>
+        <div style={styles.table}>
+          <div style={styles.header}>
+            <div>Candidate</div>
+            <div>Assessments</div>
+            <div>Status</div>
+            <div>Score</div>
+            <div>Action</div>
+          </div>
 
-          <tbody>
-            {candidates.map((candidate) => {
-              const latest = candidate.latestResult;
-              const percentage = latest?.percentage_score
-                ? Math.round(Number(latest.percentage_score))
-                : 0;
+          {candidates.map((c) => {
+            const latest = c.latest;
+            const percent = latest?.percentage_score
+              ? Math.round(Number(latest.percentage_score))
+              : 0;
 
-              const reportUrl = latest
-                ? `/supervisor/${candidate.id}?assessment=${latest.assessment_id}`
-                : `/supervisor/${candidate.id}`;
+            const expandedRow = expanded === c.id;
 
-              return (
-                <tr key={candidate.id}>
-                  <td>
-                    <strong>{candidate.full_name || candidate.email}</strong>
-                    <div style={styles.subText}>{candidate.email}</div>
-                  </td>
+            const reportUrl = latest
+              ? `/supervisor/${c.id}?assessment=${latest.assessment_id}`
+              : `/supervisor/${c.id}`;
 
-                  <td>{candidate.results.length}</td>
+            return (
+              <div key={c.id}>
 
-                  <td>
+                <div
+                  style={{
+                    ...styles.row,
+                    background: expandedRow ? "#f1f5f9" : "white"
+                  }}
+                  onClick={() => setExpanded(expandedRow ? null : c.id)}
+                >
+                  <div>
+                    <div style={styles.name}>{c.full_name || "Candidate"}</div>
+                    <div style={styles.email}>{c.email}</div>
+                  </div>
+
+                  <div>{c.results.length}</div>
+
+                  <div>
                     {latest ? (
                       <span style={styles.completed}>✅ Completed</span>
                     ) : (
                       <span style={styles.pending}>⏳ Not Started</span>
                     )}
-                  </td>
+                  </div>
 
-                  <td>
+                  <div style={{ width: 120 }}>
                     {latest ? (
-                      <span style={styles.score}>{percentage}%</span>
+                      <>
+                        <div style={styles.score}>{percent}%</div>
+                        <div style={styles.bar}>
+                          <div
+                            style={{
+                              ...styles.fill,
+                              width: `${percent}%`
+                            }}
+                          />
+                        </div>
+                      </>
                     ) : (
-                      <span style={styles.na}>N/A</span>
+                      "—"
                     )}
-                  </td>
+                  </div>
 
-                  <td>
+                  <div onClick={(e) => e.stopPropagation()}>
                     <Link href={reportUrl}>
                       <a style={styles.button}>View Report</a>
                     </Link>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                  </div>
+                </div>
+
+                {expandedRow && (
+                  <div style={styles.expanded}>
+                    <h4>Assessments</h4>
+
+                    {c.results.length === 0 && (
+                      <div style={styles.empty}>No assessments yet</div>
+                    )}
+
+                    {c.results.map((r) => {
+                      const score = Math.round(Number(r.percentage_score));
+
+                      return (
+                        <div key={r.id} style={styles.card}>
+                          <div>Assessment ID: {r.assessment_id}</div>
+                          <div>Score: {score}%</div>
+
+                          <Link href={`/supervisor/${c.id}?assessment=${r.assessment_id}`}>
+                            <a style={styles.smallButton}>Open</a>
+                          </Link>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+              </div>
+            );
+          })}
+        </div>
       </div>
     </AppLayout>
   );
 }
 
 const styles = {
-  container: {
-    padding: "40px",
-    maxWidth: "1200px",
-    margin: "0 auto"
-  },
-  title: {
-    fontSize: "28px",
+  container: { padding: 40, maxWidth: 1200, margin: "auto" },
+  title: { fontSize: 28, marginBottom: 20 },
+
+  table: { background: "white", borderRadius: 12 },
+
+  header: {
+    display: "grid",
+    gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr",
+    padding: 16,
     fontWeight: "bold",
-    marginBottom: "20px"
+    borderBottom: "1px solid #ddd"
   },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    background: "white",
-    borderRadius: "12px",
-    overflow: "hidden"
+
+  row: {
+    display: "grid",
+    gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr",
+    padding: 16,
+    cursor: "pointer",
+    borderBottom: "1px solid #eee"
   },
-  subText: {
-    fontSize: "12px",
-    color: "#666"
+
+  name: { fontWeight: "bold" },
+  email: { fontSize: 12, color: "#666" },
+
+  completed: { color: "green", fontWeight: "bold" },
+  pending: { color: "orange", fontWeight: "bold" },
+
+  score: { fontWeight: "bold" },
+
+  bar: {
+    height: 6,
+    background: "#eee",
+    borderRadius: 4,
+    marginTop: 4
   },
-  score: {
-    fontWeight: "bold",
-    color: "#027a48"
+
+  fill: {
+    height: "100%",
+    background: "#16a34a",
+    borderRadius: 4
   },
-  na: {
-    color: "#999"
-  },
-  completed: {
-    color: "#027a48",
-    fontWeight: "bold"
-  },
-  pending: {
-    color: "#d97706",
-    fontWeight: "bold"
-  },
+
   button: {
     background: "#0a1929",
     color: "white",
     padding: "6px 12px",
-    borderRadius: "6px",
+    borderRadius: 6,
     textDecoration: "none"
-  }
+  },
+
+  expanded: {
+    padding: 16,
+    background: "#f9fafb"
+  },
+
+  card: {
+    padding: 12,
+    background: "white",
+    border: "1px solid #ddd",
+    borderRadius: 8,
+    marginBottom: 8
+  },
+
+  smallButton: {
+    display: "inline-block",
+    marginTop: 6,
+    padding: "4px 10px",
+    background: "#111",
+    color: "white",
+    borderRadius: 4,
+    textDecoration: "none"
+  },
+
+  empty: { color: "#777" }
 };
