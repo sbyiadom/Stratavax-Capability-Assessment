@@ -26,6 +26,7 @@ export default function ManageCandidates() {
       .order("completed_at", { ascending: false });
 
     const map = {};
+
     (results || []).forEach((r) => {
       if (!map[r.user_id]) map[r.user_id] = [];
       map[r.user_id].push(r);
@@ -42,20 +43,23 @@ export default function ManageCandidates() {
   }
 
   if (loading) {
-    return <div style={{ padding: 40 }}>Loading candidates...</div>;
+    return <div style={{ padding: 40 }}>Loading dashboard...</div>;
   }
 
   return (
     <AppLayout>
-      <div style={styles.container}>
-        <h1 style={styles.title}>Manage Candidates</h1>
+      <div style={styles.page}>
+        <div style={styles.header}>
+          <h1 style={styles.title}>Manage Candidates</h1>
+          <p style={styles.subtitle}>Interactive control panel for candidate assessments</p>
+        </div>
 
-        <div style={styles.table}>
-          <div style={styles.header}>
+        <div style={styles.panel}>
+          <div style={styles.tableHeader}>
             <div>Candidate</div>
             <div>Assessments</div>
             <div>Status</div>
-            <div>Score</div>
+            <div>Performance</div>
             <div>Action</div>
           </div>
 
@@ -65,7 +69,7 @@ export default function ManageCandidates() {
               ? Math.round(Number(latest.percentage_score))
               : 0;
 
-            const expandedRow = expanded === c.id;
+            const isOpen = expanded === c.id;
 
             const reportUrl = latest
               ? `/supervisor/${c.id}?assessment=${latest.assessment_id}`
@@ -73,13 +77,9 @@ export default function ManageCandidates() {
 
             return (
               <div key={c.id}>
-
                 <div
-                  style={{
-                    ...styles.row,
-                    background: expandedRow ? "#f1f5f9" : "white"
-                  }}
-                  onClick={() => setExpanded(expandedRow ? null : c.id)}
+                  style={{ ...styles.row, ...(isOpen ? styles.activeRow : {}) }}
+                  onClick={() => setExpanded(isOpen ? null : c.id)}
                 >
                   <div>
                     <div style={styles.name}>{c.full_name || "Candidate"}</div>
@@ -90,40 +90,37 @@ export default function ManageCandidates() {
 
                   <div>
                     {latest ? (
-                      <span style={styles.completed}>✅ Completed</span>
+                      <span style={styles.badgeGreen}>Completed</span>
                     ) : (
-                      <span style={styles.pending}>⏳ Not Started</span>
+                      <span style={styles.badgeAmber}>Not Started</span>
                     )}
                   </div>
 
-                  <div style={{ width: 120 }}>
+                  <div>
                     {latest ? (
                       <>
                         <div style={styles.score}>{percent}%</div>
                         <div style={styles.bar}>
                           <div
-                            style={{
-                              ...styles.fill,
-                              width: `${percent}%`
-                            }}
+                            style={{ ...styles.fill, width: `${percent}%` }}
                           />
                         </div>
                       </>
                     ) : (
-                      "—"
+                      <span style={styles.na}>—</span>
                     )}
                   </div>
 
                   <div onClick={(e) => e.stopPropagation()}>
                     <Link href={reportUrl}>
-                      <a style={styles.button}>View Report</a>
+                      <a style={styles.btnPrimary}>View</a>
                     </Link>
                   </div>
                 </div>
 
-                {expandedRow && (
-                  <div style={styles.expanded}>
-                    <h4>Assessments</h4>
+                {isOpen && (
+                  <div style={styles.expand}>
+                    <h4 style={styles.sectionTitle}>Assessments</h4>
 
                     {c.results.length === 0 && (
                       <div style={styles.empty}>No assessments yet</div>
@@ -134,18 +131,19 @@ export default function ManageCandidates() {
 
                       return (
                         <div key={r.id} style={styles.card}>
-                          <div>Assessment ID: {r.assessment_id}</div>
-                          <div>Score: {score}%</div>
+                          <div style={styles.cardRow}>
+                            <span>{r.assessment_id}</span>
+                            <span style={styles.cardScore}>{score}%</span>
+                          </div>
 
                           <Link href={`/supervisor/${c.id}?assessment=${r.assessment_id}`}>
-                            <a style={styles.smallButton}>Open</a>
+                            <a style={styles.btnSecondary}>Open Report</a>
                           </Link>
                         </div>
                       );
                     })}
                   </div>
                 )}
-
               </div>
             );
           })}
@@ -156,78 +154,114 @@ export default function ManageCandidates() {
 }
 
 const styles = {
-  container: { padding: 40, maxWidth: 1200, margin: "auto" },
-  title: { fontSize: 28, marginBottom: 20 },
+  page: {
+    background: "#f8fafc",
+    minHeight: "100vh",
+    padding: "32px"
+  },
+  header: { marginBottom: 20 },
+  title: { fontSize: 28, fontWeight: 700 },
+  subtitle: { color: "#6b7280" },
 
-  table: { background: "white", borderRadius: 12 },
+  panel: {
+    background: "white",
+    borderRadius: 14,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.05)",
+    overflow: "hidden"
+  },
 
-  header: {
+  tableHeader: {
     display: "grid",
     gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr",
     padding: 16,
-    fontWeight: "bold",
-    borderBottom: "1px solid #ddd"
+    background: "#f1f5f9",
+    fontWeight: 600
   },
 
   row: {
     display: "grid",
     gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr",
     padding: 16,
+    borderBottom: "1px solid #eee",
     cursor: "pointer",
-    borderBottom: "1px solid #eee"
+    transition: "0.2s"
   },
 
-  name: { fontWeight: "bold" },
-  email: { fontSize: 12, color: "#666" },
+  activeRow: { background: "#f9fafb" },
 
-  completed: { color: "green", fontWeight: "bold" },
-  pending: { color: "orange", fontWeight: "bold" },
+  name: { fontWeight: 600 },
+  email: { fontSize: 12, color: "#6b7280" },
 
-  score: { fontWeight: "bold" },
+  score: { fontWeight: 600 },
+  na: { color: "#9ca3af" },
 
   bar: {
     height: 6,
-    background: "#eee",
+    background: "#e5e7eb",
     borderRadius: 4,
     marginTop: 4
   },
-
   fill: {
     height: "100%",
-    background: "#16a34a",
+    background: "linear-gradient(90deg,#22c55e,#16a34a)",
     borderRadius: 4
   },
 
-  button: {
-    background: "#0a1929",
+  badgeGreen: {
+    background: "#dcfce7",
+    color: "#166534",
+    padding: "4px 10px",
+    borderRadius: 99,
+    fontSize: 12
+  },
+
+  badgeAmber: {
+    background: "#fef3c7",
+    color: "#92400e",
+    padding: "4px 10px",
+    borderRadius: 99,
+    fontSize: 12
+  },
+
+  btnPrimary: {
+    background: "#0f172a",
     color: "white",
     padding: "6px 12px",
     borderRadius: 6,
     textDecoration: "none"
   },
 
-  expanded: {
+  expand: {
     padding: 16,
     background: "#f9fafb"
   },
 
+  sectionTitle: { marginBottom: 10 },
+
   card: {
-    padding: 12,
     background: "white",
-    border: "1px solid #ddd",
+    border: "1px solid #eee",
     borderRadius: 8,
+    padding: 12,
     marginBottom: 8
   },
 
-  smallButton: {
+  cardRow: {
+    display: "flex",
+    justifyContent: "space-between"
+  },
+
+  cardScore: { fontWeight: 600 },
+
+  btnSecondary: {
     display: "inline-block",
     marginTop: 6,
-    padding: "4px 10px",
-    background: "#111",
+    padding: "5px 10px",
+    background: "#1e293b",
     color: "white",
     borderRadius: 4,
     textDecoration: "none"
   },
 
-  empty: { color: "#777" }
+  empty: { color: "#9ca3af" }
 };
