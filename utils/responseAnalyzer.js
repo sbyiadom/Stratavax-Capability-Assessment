@@ -3,58 +3,128 @@
 /**
  * RESPONSE ANALYZER
  *
- * percentage; * Uses actual question and answer data to generate category-level insights.
-    data.level = getScoreLevel(percentage);
-    data.performanceComment = getScoreComment(percentage);
-    data.supervisorImplication = getSupervisorImplication(percentage);
-    data.gapToTarget = calculateGapToTarget(percentage);
-    data.summary = generateUniqueSummary(category, data, percentage);
+ * Corrected version:
+ * - Uses the shared scoring engine from utils/scoring.js
+ * - Supports BOTH scoring models:
+ *   1) Baseline exact-match scoring
+ *   2) Weighted single-select scoring
+ * - Removes all fixed max-score assumptions (no hardcoded 5)
+ * - Keeps existing exports:
+ *   - analyzeResponses
+ *   - getCategorySpecificRecommendations
+ */
 
-    /**
-     * Keep only the most useful insights:
-     * - prioritize low/critical score evidence
-     * - then include high score evidence
-     */
-    const criticalOrLowInsights = data.questionDetails
-      .filter((item) => item.percentage < 55)
-      .slice(0, 2)
-      .map((item) =>
-        generateInsight(
-          category,
-          item.fullQuestion,
-          item.answer,
-          item.score,
-          item.maxScore
-        )
-      );
+import {
+  calculatePercentage,
+  getScoreLevel,
+  getScoreComment,
+  getSupervisorImplication,
+  isStrength,
+  isDevelopmentArea,
+  isCriticalGap,
+  isPriorityDevelopment,
+  calculateGapToTarget,
+  roundNumber,
+  normalizeText,
+  scoreQuestionResponse,
+  isBaselineAssessmentType
+} from "./scoring";
 
-    const strengthInsights = data.questionDetails
-      .filter((item) => item.percentage >= 75)
-      .slice(0, 1)
-      .map((item) =>
-        generateInsight(
-          category,
-          item.fullQuestion,
-          item.answer,
-          item.score,
-          item.maxScore
-        )
-      );
-
-    const selectedInsights = [...criticalOrLowInsights, ...strengthInsights];
-
-    data.insights =
-      selectedInsights.length > 0 ? selectedInsights : data.insights.slice(0, 3);
-  });
-
-  return categorizedInsights;
+const safeString = (value, fallback = "") => {
+  if (value === null || value === undefined) return fallback;
+  return String(value);
 };
 
-const generateInsight = (category, questionText, answerText, score, maxScore = 5) => {
+const safeNumber = (value, fallback = 0) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+};
+
+const truncateText = (text, maxLength = 80) => {
+  const value = safeString(text, "");
+
+  if (!value) return "";
+  if (value.length <= maxLength) return value;
+
+  return `${value.substring(0, maxLength)}...`;
+};
+
+const normalizeHtmlEntities = (value) => {
+  return normalizeText(value, "");
+};
+
+const getQuestionFromResponse = (response, questions = []) => {
+  if (response?.unique_questions) return response.unique_questions;
+  if (response?.question) return response.question;
+
+  const questionId = response?.question_id;
+  if (!questionId || !Array.isArray(questions)) return null;
+
+  return questions.find((question) => String(question.id) === String(questionId)) || null;
+};
+
+const getAnswerFromResponse = (response, answers = []) => {
+  if (response?.unique_answers) return response.unique_answers;
+  if (response?.answer) return response.answer;
+
+  const answerId = response?.answer_id;
+  if (!answerId || !Array.isArray(answers)) return null;
+
+  return answers.find((answer) => String(answer.id) === String(answerId)) || null;
+};
+
+const getCategoryFromQuestion = (question, response) => {
+  return (
+    normalizeHtmlEntities(question?.section) ||
+    normalizeHtmlEntities(question?.category) ||
+    normalizeHtmlEntities(question?.competency) ||
+    normalizeHtmlEntities(question?.dimension) ||
+    normalizeHtmlEntities(question?.subsection) ||
+    normalizeHtmlEntities(response?.category) ||
+    normalizeHtmlEntities(response?.dimension) ||
+    normalizeHtmlEntities(response?.competency) ||
+    "General"
+  );
+};
+
+const getQuestionText = (question) => {
+  return (
+    question?.question_text ||
+    question?.text ||
+    question?.question ||
+    "Question text not available"
+  );
+};
+
+const getAnswerText = (answer, response) => {
+  return (
+    answer?.answer_text ||
+    answer?.text ||
+    answer?.label ||
+    response?.answer_text ||
+    response?.selected_answer ||
+    response?.selected_answer_text ||
+    "Answer text not available"
+  );
+};
+
+const getScoredResponse = (response, question, assessmentType) => {
+  const isBaseline = isBaselineAssessmentType(assessmentType);
+
+  const enrichedResponse = question
+    ? {
+        ...response,
+        unique_questions: response?.unique_questions || question
+      }
+    : response;
+
+  return scoreQuestionResponse(enrichedResponse, isBaseline);
+};
+
+const generateInsight = (category, questionText, answerText, score, maxScore = 1) => {
   const questionShort = truncateText(questionText, 80);
   const answerShort = truncateText(answerText, 60);
   const percentage = calculatePercentage(score, maxScore);
-  const level = getScoreLevel(percentage);
 
   if (percentage >= 85) {
     return `Strong evidence was shown in ${category}. For the question "${questionShort}", the selected answer "${answerShort}" scored ${score}/${maxScore}, suggesting strong understanding of this concept.`;
@@ -94,10 +164,8 @@ const generateUniqueSummary = (category, data, percentage) => {
   const hasAllStrong = highScoreCount === questionCount && questionCount > 0;
   const hasMostlyStrong = highScoreCount > questionCount / 2;
   const hasMostlyWeak = lowScoreCount + criticalScoreCount > questionCount / 2;
-  const hasAllCritical =
-    criticalScoreCount === questionCount && questionCount > 0;
+  const hasAllCritical = criticalScoreCount === questionCount && questionCount > 0;
 
-  // Manufacturing baseline specific summaries
   if (categoryName === "Safety & Work Ethic") {
     if (hasAllStrong) {
       return `The candidate demonstrated strong safety awareness across all ${questionCount} questions. Evidence suggests reliable understanding of PPE, safety protocols, SOP expectations, teamwork, and professional conduct.`;
@@ -178,7 +246,6 @@ const generateUniqueSummary = (category, data, percentage) => {
     return `Numerical aptitude shows ${scoreLevel.label.toLowerCase()} evidence. Production math practice and guided metric interpretation are recommended.`;
   }
 
-  // General summary logic
   if (hasAllStrong) {
     return `Exceptional response pattern in ${categoryName}. All ${questionCount} responses showed strong evidence of understanding.`;
   }
@@ -204,6 +271,138 @@ const generateUniqueSummary = (category, data, percentage) => {
   }
 
   return `${categoryName} shows functional but non-dominant capability. Continued practice and role-specific reinforcement are recommended.`;
+};
+
+/**
+ * Main analyzer.
+ *
+ * Usage:
+ * analyzeResponses(responses, questions, answers, assessmentType)
+ *
+ * assessmentType is optional but strongly recommended.
+ */
+export const analyzeResponses = (
+  responses,
+  questions = [],
+  answers = [],
+  assessmentType = "general"
+) => {
+  const categorizedInsights = {};
+
+  if (!Array.isArray(responses) || responses.length === 0) {
+    return categorizedInsights;
+  }
+
+  responses.forEach((response) => {
+    const question = getQuestionFromResponse(response, questions);
+    const answer = getAnswerFromResponse(response, answers);
+
+    if (!question && !answer) return;
+
+    const category = getCategoryFromQuestion(question, response);
+    const questionText = getQuestionText(question);
+    const answerText = getAnswerText(answer, response);
+    const scored = getScoredResponse(response, question, assessmentType);
+    const score = safeNumber(scored.score, 0);
+    const maxScore = safeNumber(scored.maxScore, 0);
+
+    if (!categorizedInsights[category]) {
+      categorizedInsights[category] = {
+        insights: [],
+        scores: [],
+        maxScores: [],
+        totalScore: 0,
+        maxPossible: 0,
+        questionCount: 0,
+        highScoreCount: 0,
+        moderateScoreCount: 0,
+        lowScoreCount: 0,
+        criticalScoreCount: 0,
+        questionDetails: []
+      };
+    }
+
+    const insight = generateInsight(category, questionText, answerText, score, maxScore || 1);
+
+    categorizedInsights[category].insights.push(insight);
+    categorizedInsights[category].scores.push(score);
+    categorizedInsights[category].maxScores.push(maxScore);
+    categorizedInsights[category].totalScore += score;
+    categorizedInsights[category].maxPossible += maxScore;
+    categorizedInsights[category].questionCount += 1;
+
+    const questionPercentage = calculatePercentage(score, maxScore || 1);
+
+    if (questionPercentage >= 75) {
+      categorizedInsights[category].highScoreCount += 1;
+    } else if (questionPercentage >= 55) {
+      categorizedInsights[category].moderateScoreCount += 1;
+    } else if (questionPercentage >= 40) {
+      categorizedInsights[category].lowScoreCount += 1;
+    } else {
+      categorizedInsights[category].criticalScoreCount += 1;
+    }
+
+    categorizedInsights[category].questionDetails.push({
+      question: truncateText(questionText, 120),
+      fullQuestion: questionText,
+      answer: answerText,
+      score,
+      maxScore,
+      percentage: questionPercentage,
+      interpretation: getScoreComment(questionPercentage),
+      supervisorImplication: getSupervisorImplication(questionPercentage)
+    });
+  });
+
+  Object.keys(categorizedInsights).forEach((category) => {
+    const data = categorizedInsights[category];
+
+    const percentage = calculatePercentage(data.totalScore, data.maxPossible || 1);
+    const averageScore = data.questionCount > 0 ? data.totalScore / data.questionCount : 0;
+
+    data.averageScore = roundNumber(averageScore, 2);
+    data.percentage = percentage;
+    data.grade = getScoreLevel(percentage).label;
+    data.level = getScoreLevel(percentage);
+    data.performanceComment = getScoreComment(percentage);
+    data.supervisorImplication = getSupervisorImplication(percentage);
+    data.gapToTarget = calculateGapToTarget(percentage);
+    data.summary = generateUniqueSummary(category, data, percentage);
+
+    const criticalOrLowInsights = data.questionDetails
+      .filter((item) => item.percentage < 55)
+      .slice(0, 2)
+      .map((item) =>
+        generateInsight(
+          category,
+          item.fullQuestion,
+          item.answer,
+          item.score,
+          item.maxScore || 1
+        )
+      );
+
+    const strengthInsights = data.questionDetails
+      .filter((item) => item.percentage >= 75)
+      .slice(0, 1)
+      .map((item) =>
+        generateInsight(
+          category,
+          item.fullQuestion,
+          item.answer,
+          item.score,
+          item.maxScore || 1
+        )
+      );
+
+    const selectedInsights = [...criticalOrLowInsights, ...strengthInsights];
+
+    data.insights =
+      selectedInsights.length > 0 ? selectedInsights : data.insights.slice(0, 3);
+  });
+
+  return categorizedInsights;
 };
 
 export const getCategorySpecificRecommendations = (category, data = {}) => {
@@ -338,9 +537,6 @@ export const getCategorySpecificRecommendations = (category, data = {}) => {
   const selectedRecommendations =
     recommendations[categoryName] || defaultRecommendations;
 
-  /**
-   * Add specific weak-question evidence if available.
-   */
   if (weakAreas.length > 0) {
     return [
       ...selectedRecommendations,
@@ -348,9 +544,6 @@ export const getCategorySpecificRecommendations = (category, data = {}) => {
     ];
   }
 
-  /**
-   * Adjust recommendation if the area is already strong.
-   */
   if (isStrength(percentage)) {
     return [
       `Continue to leverage ${categoryName} as a strength.`,
@@ -366,200 +559,3 @@ export default {
   analyzeResponses,
   getCategorySpecificRecommendations
 };
- *
- * Corrected version:
- * - Uses central scoring standard from utils/scoring.js
- * - Supports all assessment types
- * - Handles different response/query shapes safely
- * - Keeps existing exports:
- *   - analyzeResponses
- *   - getCategorySpecificRecommendations
- */
-
-import {
-  calculatePercentage,
-  getScoreLevel,
-  getScoreComment,
-  getSupervisorImplication,
-  isStrength,
-  isDevelopmentArea,
-  isCriticalGap,
-  isPriorityDevelopment,
-  calculateGapToTarget,
-  roundNumber
-} from "./scoring";
-
-const safeString = (value, fallback = "") => {
-  if (value === null || value === undefined) return fallback;
-  return String(value);
-};
-
-const safeNumber = (value, fallback = 0) => {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-};
-
-const truncateText = (text, maxLength = 80) => {
-  const value = safeString(text, "");
-
-  if (!value) return "";
-
-  if (value.length <= maxLength) return value;
-
-  return `${value.substring(0, maxLength)}...`;
-};
-
-const normalizeHtmlEntities = (value) => {
-  return safeString(value, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'");
-};
-
-const getQuestionFromResponse = (response, questions = []) => {
-  if (response?.unique_questions) return response.unique_questions;
-  if (response?.question) return response.question;
-
-  const questionId = response?.question_id;
-
-  if (!questionId || !Array.isArray(questions)) return null;
-
-  return questions.find((question) => String(question.id) === String(questionId));
-};
-
-const getAnswerFromResponse = (response, answers = []) => {
-  if (response?.unique_answers) return response.unique_answers;
-  if (response?.answer) return response.answer;
-
-  const answerId = response?.answer_id;
-
-  if (!answerId || !Array.isArray(answers)) return null;
-
-  return answers.find((answer) => String(answer.id) === String(answerId));
-};
-
-const getCategoryFromQuestion = (question) => {
-  return (
-    normalizeHtmlEntities(question?.category) ||
-    normalizeHtmlEntities(question?.section) ||
-    normalizeHtmlEntities(question?.subsection) ||
-    "General"
-  );
-};
-
-const getQuestionText = (question) => {
-  return (
-    question?.question_text ||
-    question?.text ||
-    question?.question ||
-    "Question text not available"
-  );
-};
-
-const getAnswerText = (answer, response) => {
-  return (
-    answer?.answer_text ||
-    answer?.text ||
-    answer?.label ||
-    response?.answer_text ||
-    response?.selected_answer ||
-    "Answer text not available"
-  );
-};
-
-const getAnswerScore = (answer, response) => {
-  return safeNumber(answer?.score ?? response?.score ?? 0, 0);
-};
-
-const getMaxScoreForResponse = (response) => {
-  return safeNumber(response?.max_score ?? response?.maxScore ?? 5, 5);
-};
-
-/**
- * Main analyzer.
- *
- * Expected usage:
- * analyzeResponses(responses, questions, answers)
- *
- * It also works when responses already contain:
- * - unique_questions
- * - unique_answers
- */
-export const analyzeResponses = (responses, questions = [], answers = []) => {
-  const categorizedInsights = {};
-
-  if (!Array.isArray(responses) || responses.length === 0) {
-    return categorizedInsights;
-  }
-
-  responses.forEach((response) => {
-    const question = getQuestionFromResponse(response, questions);
-    const answer = getAnswerFromResponse(response, answers);
-
-    if (!question && !answer) return;
-
-    const category = getCategoryFromQuestion(question);
-    const questionText = getQuestionText(question);
-    const answerText = getAnswerText(answer, response);
-    const score = getAnswerScore(answer, response);
-    const maxScore = getMaxScoreForResponse(response);
-
-    if (!categorizedInsights[category]) {
-      categorizedInsights[category] = {
-        insights: [],
-        scores: [],
-        maxScores: [],
-        totalScore: 0,
-        maxPossible: 0,
-        questionCount: 0,
-        highScoreCount: 0,
-        moderateScoreCount: 0,
-        lowScoreCount: 0,
-        criticalScoreCount: 0,
-        questionDetails: []
-      };
-    }
-
-    const insight = generateInsight(category, questionText, answerText, score, maxScore);
-
-    categorizedInsights[category].insights.push(insight);
-    categorizedInsights[category].scores.push(score);
-    categorizedInsights[category].maxScores.push(maxScore);
-    categorizedInsights[category].totalScore += score;
-    categorizedInsights[category].maxPossible += maxScore;
-    categorizedInsights[category].questionCount += 1;
-
-    const questionPercentage = calculatePercentage(score, maxScore);
-
-    if (questionPercentage >= 75) {
-      categorizedInsights[category].highScoreCount += 1;
-    } else if (questionPercentage >= 55) {
-      categorizedInsights[category].moderateScoreCount += 1;
-    } else if (questionPercentage >= 40) {
-      categorizedInsights[category].lowScoreCount += 1;
-    } else {
-      categorizedInsights[category].criticalScoreCount += 1;
-    }
-
-    categorizedInsights[category].questionDetails.push({
-      question: truncateText(questionText, 120),
-      fullQuestion: questionText,
-      answer: answerText,
-      score,
-      maxScore,
-      percentage: questionPercentage,
-      interpretation: getScoreComment(questionPercentage),
-      supervisorImplication: getSupervisorImplication(questionPercentage)
-    });
-  });
-
-  Object.keys(categorizedInsights).forEach((category) => {
-    const data = categorizedInsights[category];
-
-    const percentage = calculatePercentage(data.totalScore, data.maxPossible);
-    const averageScore =
-      data.questionCount > 0 ? data.totalScore / data.questionCount : 0;
-
-    data.averageScore = roundNumber(averageScore, 2);
