@@ -9,9 +9,9 @@
  * - Uses central scoring standard from utils/scoring.js
  * - Supports all assessment types
  * - Handles Manufacturing Baseline role readiness separately
- * - Removes unstable Date.now()/Buffer randomness
  * - Keeps existing export: generateSuperAnalysis
  * - Keeps output structure expected by the report page
+ * - Aligns all output to corrected category percentages/max scores
  */
 
 import {
@@ -29,7 +29,10 @@ import {
   calculateGapToTarget,
   normalizeCategoryScore,
   REPORT_THRESHOLDS,
-  roundNumber
+  roundNumber,
+  normalizeText,
+  safeArray,
+  toNumber
 } from "./scoring";
 
 const safeNumber = (value, fallback = 0) => {
@@ -37,15 +40,8 @@ const safeNumber = (value, fallback = 0) => {
   return Number.isFinite(number) ? number : fallback;
 };
 
-const normalizeText = (value) => {
-  if (value === null || value === undefined) return "";
-
-  return String(value)
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'");
+const decodeText = (value) => {
+  return normalizeText(value, "");
 };
 
 const createStableHash = (input) => {
@@ -71,10 +67,10 @@ const getCategoryPercentage = (categoryScores, categoryName) => {
     return safeNumber(direct.percentage, 0);
   }
 
-  const normalizedName = normalizeText(categoryName);
+  const normalizedName = decodeText(categoryName);
 
   const matchedEntry = Object.entries(categoryScores || {}).find(
-    ([key]) => normalizeText(key) === normalizedName
+    ([key]) => decodeText(key) === normalizedName
   );
 
   if (!matchedEntry) return 0;
@@ -84,7 +80,7 @@ const getCategoryPercentage = (categoryScores, categoryName) => {
 
 const normalizeCategoryScoresForAnalysis = (categoryScores = {}) => {
   return Object.entries(categoryScores || {}).map(([category, data]) => {
-    const normalized = normalizeCategoryScore(normalizeText(category), data);
+    const normalized = normalizeCategoryScore(decodeText(category), data);
 
     return {
       area: normalized.category,
@@ -122,11 +118,18 @@ const calculateOverallPercentage = (categoryScores, totalScore, maxScore) => {
 
   if (categories.length === 0) return 0;
 
+  const numerator = categories.reduce((sum, item) => sum + safeNumber(item.score, 0), 0);
+  const denominator = categories.reduce((sum, item) => sum + safeNumber(item.maxPossible, 0), 0);
+
+  if (denominator > 0) {
+    return calculatePercentage(numerator, denominator);
+  }
+
   const average =
     categories.reduce((sum, item) => sum + safeNumber(item.percentage, 0), 0) /
     categories.length;
 
-  return Math.round(average);
+  return roundNumber(average, 2);
 };
 
 const buildProfileId = ({
@@ -143,6 +146,24 @@ const buildProfileId = ({
 
   const base = `${candidateName}-${assessmentType}-${totalScore}-${maxScore}-${scoreString}`;
   return `SVX-${createStableHash(base).slice(0, 10)}`;
+};
+
+const getAssessmentLabel = (assessmentType) => {
+  const labels = {
+    general: "General Assessment",
+    leadership: "Leadership Assessment",
+    cognitive: "Cognitive Ability Assessment",
+    technical: "Technical Competence Assessment",
+    personality: "Personality Assessment",
+    strategic_leadership: "Strategic Leadership Assessment",
+    performance: "Performance Assessment",
+    behavioral: "Behavioral & Soft Skills Assessment",
+    cultural: "Cultural & Attitudinal Fit Assessment",
+    manufacturing_baseline: "Manufacturing Baseline Assessment",
+    baseline: "Baseline Assessment"
+  };
+
+  return labels[assessmentType] || "Assessment";
 };
 
 const buildSummary = ({
@@ -183,23 +204,6 @@ const buildSummary = ({
     gradeDescription: classificationDetails.gradeDescription,
     overallScore: overallPercentage
   };
-};
-
-const getAssessmentLabel = (assessmentType) => {
-  const labels = {
-    general: "General Assessment",
-    leadership: "Leadership Assessment",
-    cognitive: "Cognitive Ability Assessment",
-    technical: "Technical Competence Assessment",
-    personality: "Personality Assessment",
-    strategic_leadership: "Strategic Leadership Assessment",
-    performance: "Performance Assessment",
-    behavioral: "Behavioral & Soft Skills Assessment",
-    cultural: "Cultural & Attitudinal Fit Assessment",
-    manufacturing_baseline: "Manufacturing Baseline Assessment"
-  };
-
-  return labels[assessmentType] || "Assessment";
 };
 
 const buildStrengths = (categories) => {
@@ -268,7 +272,7 @@ const buildDifferentiators = (categories, assessmentType) => {
 };
 
 const getDifferentiatorValue = (area, percentage, assessmentType) => {
-  const normalizedArea = normalizeText(area);
+  const normalizedArea = decodeText(area);
 
   const manufacturingValues = {
     "Technical Fundamentals":
@@ -341,7 +345,7 @@ const buildRiskFlags = (categories, assessmentType) => {
 };
 
 const getRiskImplication = (area, percentage, assessmentType) => {
-  const normalizedArea = normalizeText(area);
+  const normalizedArea = decodeText(area);
 
   if (assessmentType === "manufacturing_baseline") {
     const manufacturingRisks = {
@@ -364,7 +368,7 @@ const getRiskImplication = (area, percentage, assessmentType) => {
 };
 
 const getRiskRecommendation = (area, percentage, assessmentType) => {
-  const normalizedArea = normalizeText(area);
+  const normalizedArea = decodeText(area);
 
   if (assessmentType === "manufacturing_baseline") {
     const manufacturingRecommendations = {
@@ -468,7 +472,7 @@ const buildManufacturingRoleReadiness = (categoryScores, overallPercentage) => {
 };
 
 const getManufacturingReadinessReasoning = (role, score, data) => {
-  const { safety, technical, troubleshooting, numerical } = data;
+  const { safety } = data;
 
   if (safety < 60) {
     return `${role} readiness is limited because safety and work ethic require reinforcement before production exposure.`;
