@@ -3,7 +3,249 @@
 /**
  * STRATAVAX PROFESSIONAL REPORT GENERATOR
  *
- * Syntax-safeexport const buildStrengthsNarrative = function ( * Syntax-safe corrected version.
+ * Corrected version:
+ * - Uses shared scoring helpers from utils/scoring.js
+ * - Supports BOTH scoring models:
+ *   1) Baseline exact-match scoring
+ *   2) Weighted single-select scoring
+ * - Removes all fixed `5` max-score assumptions
+ * - Keeps existing exports used elsewhere
+ */
+
+import {
+  GRADE_SCALE,
+  calculatePercentage,
+  getGradeInfo as getCentralGradeInfo,
+  getClassificationDetailsFromPercentage,
+  getScoreComment,
+  getSupervisorImplication,
+  calculateGapToTarget,
+  isStrength,
+  isDevelopmentArea,
+  normalizeText,
+  safeArray,
+  scoreQuestionResponse,
+  isBaselineAssessmentType,
+  calculateMaxScore
+} from "./scoring";
+
+// ======================================================
+// BASIC HELPERS
+// ======================================================
+
+const safeNumber = function (value, fallback) {
+  const defaultValue = fallback === undefined ? 0 : fallback;
+  const number = Number(value);
+
+  if (Number.isNaN(number) || !Number.isFinite(number)) {
+    return defaultValue;
+  }
+
+  return number;
+};
+
+const normalizeAssessmentType = function (assessmentType) {
+  if (!assessmentType) {
+    return "general";
+  }
+
+  return assessmentType;
+};
+
+const createHash = function (input) {
+  const text = String(input || "");
+  let hash = 0;
+
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash << 5) - hash + text.charCodeAt(index);
+    hash |= 0;
+  }
+
+  return Math.abs(hash);
+};
+
+const selectPhrase = function (phrases, seed) {
+  if (!Array.isArray(phrases) || phrases.length === 0) {
+    return "";
+  }
+
+  const hash = createHash(seed || "");
+  const index = hash % phrases.length;
+
+  return phrases[index];
+};
+
+const isBaselineType = function (assessmentType) {
+  return isBaselineAssessmentType(assessmentType);
+};
+
+const getQuestionObject = function (response) {
+  if (!response) return null;
+  return response.unique_questions || response.question || null;
+};
+
+const getCategoryNameFromResponse = function (response) {
+  const question = getQuestionObject(response) || {};
+
+  return normalizeText(
+    question.section !== undefined
+      ? question.section
+      : question.category !== undefined
+      ? question.category
+      : question.subsection !== undefined
+      ? question.subsection
+      : response && response.section !== undefined
+      ? response.section
+      : response && response.category !== undefined
+      ? response.category
+      : response && response.subsection !== undefined
+      ? response.subsection
+      : "General",
+    "General"
+  );
+};
+
+// ======================================================
+// ASSESSMENT TEMPLATES
+// ======================================================
+
+export const assessmentTemplates = {
+  general: {
+    name: "General Assessment",
+    icon: "📊"
+  },
+  leadership: {
+    name: "Leadership Assessment",
+    icon: "👑"
+  },
+  cognitive: {
+    name: "Cognitive Ability Assessment",
+    icon: "🧠"
+  },
+  technical: {
+    name: "Technical Competence Assessment",
+    icon: "⚙️"
+  },
+  personality: {
+    name: "Personality Assessment",
+    icon: "🌟"
+  },
+  strategic_leadership: {
+    name: "Strategic Leadership Assessment",
+    icon: "👑"
+  },
+  performance: {
+    name: "Performance Assessment",
+    icon: "📈"
+  },
+  behavioral: {
+    name: "Behavioral & Soft Skills Assessment",
+    icon: "🗣️"
+  },
+  cultural: {
+    name: "Cultural & Attitudinal Fit Assessment",
+    icon: "🤝"
+  },
+  manufacturing_baseline: {
+    name: "Manufacturing Baseline Assessment",
+    icon: "🏭"
+  },
+  baseline: {
+    name: "Baseline Assessment",
+    icon: "🧩"
+  }
+};
+
+const getTemplate = function (assessmentType) {
+  const type = normalizeAssessmentType(assessmentType);
+
+  if (assessmentTemplates[type]) {
+    return assessmentTemplates[type];
+  }
+
+  return assessmentTemplates.general;
+};
+
+// ======================================================
+// BACKWARD-COMPATIBLE GRADE SCALE
+// ======================================================
+
+export const stratavaxGradeScale = GRADE_SCALE.map(function (item) {
+  const classificationDetails = getClassificationDetailsFromPercentage(item.min);
+
+  return {
+    grade: item.grade,
+    min: item.min,
+    max: item.max,
+    color: item.color,
+    bg: item.bg,
+    description: item.description,
+    professional: item.description,
+    classification: classificationDetails.classification
+  };
+});
+
+// ======================================================
+// CLASSIFICATION
+// ======================================================
+
+export const stratavaxClassification = function (percentage) {
+  const details = getClassificationDetailsFromPercentage(percentage);
+
+  let level = 1;
+  let tone = "cautious";
+
+  if (details.band === "exceptional") {
+    level = 5;
+    tone = "positive";
+  } else if (details.band === "strong") {
+    level = 4;
+    tone = "positive";
+  } else if (details.band === "adequate") {
+    level = 3;
+    tone = "neutral";
+  } else if (details.band === "developing") {
+    level = 2;
+    tone = "neutral";
+  }
+
+  return {
+    label: details.classification,
+    level: level,
+    color: details.color,
+    description: details.description,
+    tone: tone
+  };
+};
+
+// ======================================================
+// NARRATIVE HELPERS
+// ======================================================
+
+export const generateDynamicNarrative = function (
+  template,
+  variables,
+  classification,
+  availablePhrases
+) {
+  if (!template) {
+    return "";
+  }
+
+  const safeVariables = variables || {};
+  let narrative = String(template);
+
+  Object.keys(safeVariables).forEach(function (key) {
+    narrative = narrative.replace(
+      new RegExp("{{" + key + "}}", "g"),
+      safeVariables[key]
+    );
+  });
+
+  return narrative;
+};
+
+export const buildStrengthsNarrative = function (
   strengths,
   assessmentType,
   classification,
@@ -172,8 +414,14 @@ export const generateScoreBreakdown = function (categoryScores) {
 
     const percentage = safeNumber(data.percentage, 0);
     const gradeInfo = getCentralGradeInfo(percentage);
-    const scoreValue = safeNumber(data.score !== undefined ? data.score : data.total, 0);
-    const maxPossible = safeNumber(data.maxPossible, 0);
+    const scoreValue = safeNumber(
+      data.score !== undefined ? data.score : data.total !== undefined ? data.total : data.totalScore,
+      0
+    );
+    const maxPossible = safeNumber(
+      data.maxPossible !== undefined ? data.maxPossible : data.maxScore,
+      0
+    );
 
     return {
       category: category,
@@ -306,25 +554,16 @@ export const generateStratavaxReport = function (
   const safeAssessmentType = normalizeAssessmentType(assessmentType);
   const template = getTemplate(safeAssessmentType);
   const safeDateTaken = dateTaken || new Date().toISOString();
+  const baseline = isBaselineType(safeAssessmentType);
 
   const categoryScores = {};
   let totalScore = 0;
 
   safeResponses.forEach(function (response) {
-    const question = response.unique_questions || response.question || {};
-    const answer = response.unique_answers || response.answer || {};
-
-    const section = normalizeText(
-      question.section ||
-        question.category ||
-        question.subsection ||
-        "General"
-    );
-
-    const score = safeNumber(
-      answer.score !== undefined ? answer.score : response.score,
-      0
-    );
+    const section = getCategoryNameFromResponse(response);
+    const scored = scoreQuestionResponse(response, baseline);
+    const score = safeNumber(scored.score, 0);
+    const questionMaxScore = safeNumber(scored.maxScore, 0);
 
     totalScore += score;
 
@@ -335,13 +574,17 @@ export const generateStratavaxReport = function (
         maxPossible: 0,
         average: 0,
         percentage: 0,
-        score: 0
+        score: 0,
+        totalScore: 0,
+        maxScore: 0
       };
     }
 
     categoryScores[section].total += score;
+    categoryScores[section].totalScore += score;
     categoryScores[section].count += 1;
-    categoryScores[section].maxPossible += 5;
+    categoryScores[section].maxPossible += questionMaxScore;
+    categoryScores[section].maxScore += questionMaxScore;
   });
 
   Object.keys(categoryScores).forEach(function (section) {
@@ -370,7 +613,15 @@ export const generateStratavaxReport = function (
     data.supervisorImplication = getSupervisorImplication(data.percentage);
   });
 
-  const maxScore = safeResponses.length * 5;
+  const questions = safeResponses
+    .map(function (response) {
+      return getQuestionObject(response);
+    })
+    .filter(function (question) {
+      return question && question.id !== undefined && question.id !== null;
+    });
+
+  const maxScore = calculateMaxScore(questions, baseline ? 1 : 0, baseline);
   const percentageScore =
     maxScore > 0 ? calculatePercentage(totalScore, maxScore) : 0;
 
@@ -478,6 +729,7 @@ export const generateStratavaxReport = function (
     totalScore: totalScore,
     maxScore: maxScore,
     percentageScore: percentageScore,
+    scoringModel: baseline ? "baseline_exact_match" : "weighted_single_select",
 
     grade: gradeInfo.grade,
     gradeInfo: {
@@ -517,7 +769,8 @@ export const generateStratavaxReport = function (
         gradeDescription: gradeInfo.description,
         classification: classification.label,
         narrative: executiveSummary,
-        classificationDescription: classification.description
+        classificationDescription: classification.description,
+        scoringModel: baseline ? "baseline_exact_match" : "weighted_single_select"
       },
 
       scoreBreakdown: scoreBreakdown,
@@ -577,7 +830,8 @@ export const generateStratavaxReport = function (
       }),
       neutralAreas: neutralList.map(function (item) {
         return item.area + " (" + item.percentage + "%)";
-      })
+      }),
+      scoringModel: baseline ? "baseline_exact_match" : "weighted_single_select"
     }
   };
 };
@@ -619,228 +873,3 @@ export default {
   generateStratavaxReport: generateStratavaxReport,
   getGradeInfo: getGradeInfo
 };
- *
- * Keeps existing exports:
- * - stratavaxGradeScale
- * - stratavaxClassification
- * - assessmentTemplates
- * - generateDynamicNarrative
- * - buildStrengthsNarrative
- * - buildWeaknessesNarrative
- * - generateExecutiveSummary
- * - generateCoverPage
- * - generateScoreBreakdown
- * - getPerformanceComment
- * - generateChartData
- * - generateStructuredRecommendations
- * - generateStratavaxReport
- * - getGradeInfo
- */
-
-import {
-  GRADE_SCALE,
-  calculatePercentage,
-  getGradeInfo as getCentralGradeInfo,
-  getClassificationDetailsFromPercentage,
-  getScoreComment,
-  getSupervisorImplication,
-  calculateGapToTarget,
-  isStrength,
-  isDevelopmentArea
-} from "./scoring";
-
-// ======================================================
-// BASIC HELPERS
-// ======================================================
-
-const safeNumber = function (value, fallback) {
-  const defaultValue = fallback === undefined ? 0 : fallback;
-  const number = Number(value);
-
-  if (Number.isNaN(number) || !Number.isFinite(number)) {
-    return defaultValue;
-  }
-
-  return number;
-};
-
-const normalizeText = function (value) {
-  if (value === null || value === undefined) {
-    return "";
-  }
-
-  return String(value)
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'");
-};
-
-const normalizeAssessmentType = function (assessmentType) {
-  if (!assessmentType) {
-    return "general";
-  }
-
-  return assessmentType;
-};
-
-const createHash = function (input) {
-  const text = String(input || "");
-  let hash = 0;
-
-  for (let index = 0; index < text.length; index += 1) {
-    hash = (hash << 5) - hash + text.charCodeAt(index);
-    hash = hash | 0;
-  }
-
-  return Math.abs(hash);
-};
-
-const selectPhrase = function (phrases, seed) {
-  if (!Array.isArray(phrases) || phrases.length === 0) {
-    return "";
-  }
-
-  const hash = createHash(seed || "");
-  const index = hash % phrases.length;
-
-  return phrases[index];
-};
-
-// ======================================================
-// ASSESSMENT TEMPLATES
-// ======================================================
-
-export const assessmentTemplates = {
-  general: {
-    name: "General Assessment",
-    icon: "📊"
-  },
-  leadership: {
-    name: "Leadership Assessment",
-    icon: "👑"
-  },
-  cognitive: {
-    name: "Cognitive Ability Assessment",
-    icon: "🧠"
-  },
-  technical: {
-    name: "Technical Competence Assessment",
-    icon: "⚙️"
-  },
-  personality: {
-    name: "Personality Assessment",
-    icon: "🌟"
-  },
-  strategic_leadership: {
-    name: "Strategic Leadership Assessment",
-    icon: "👑"
-  },
-  performance: {
-    name: "Performance Assessment",
-    icon: "📈"
-  },
-  behavioral: {
-    name: "Behavioral & Soft Skills Assessment",
-    icon: "🗣️"
-  },
-  cultural: {
-    name: "Cultural & Attitudinal Fit Assessment",
-    icon: "🤝"
-  },
-  manufacturing_baseline: {
-    name: "Manufacturing Baseline Assessment",
-    icon: "🏭"
-  }
-};
-
-const getTemplate = function (assessmentType) {
-  const type = normalizeAssessmentType(assessmentType);
-
-  if (assessmentTemplates[type]) {
-    return assessmentTemplates[type];
-  }
-
-  return assessmentTemplates.general;
-};
-
-// ======================================================
-// BACKWARD-COMPATIBLE GRADE SCALE
-// ======================================================
-
-export const stratavaxGradeScale = GRADE_SCALE.map(function (item) {
-  const classificationDetails = getClassificationDetailsFromPercentage(item.min);
-
-  return {
-    grade: item.grade,
-    min: item.min,
-    max: item.max,
-    color: item.color,
-    bg: item.bg,
-    description: item.description,
-    professional: item.description,
-    classification: classificationDetails.classification
-  };
-});
-
-// ======================================================
-// CLASSIFICATION
-// ======================================================
-
-export const stratavaxClassification = function (percentage) {
-  const details = getClassificationDetailsFromPercentage(percentage);
-
-  let level = 1;
-  let tone = "cautious";
-
-  if (details.band === "exceptional") {
-    level = 5;
-    tone = "positive";
-  } else if (details.band === "strong") {
-    level = 4;
-    tone = "positive";
-  } else if (details.band === "adequate") {
-    level = 3;
-    tone = "neutral";
-  } else if (details.band === "developing") {
-    level = 2;
-    tone = "neutral";
-  }
-
-  return {
-    label: details.classification,
-    level: level,
-    color: details.color,
-    description: details.description,
-    tone: tone
-  };
-};
-
-// ======================================================
-// NARRATIVE HELPERS
-// ======================================================
-
-export const generateDynamicNarrative = function (
-  template,
-  variables,
-  classification,
-  availablePhrases
-) {
-  if (!template) {
-    return "";
-  }
-
-  const safeVariables = variables || {};
-  let narrative = String(template);
-
-  Object.keys(safeVariables).forEach(function (key) {
-    narrative = narrative.replace(
-      new RegExp("{{" + key + "}}", "g"),
-      safeVariables[key]
-    );
-  });
-
-  return narrative;
-};
-
