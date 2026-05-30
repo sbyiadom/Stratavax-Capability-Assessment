@@ -25,6 +25,16 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function roundNumber(value, decimals = 2) {
+  const factor = Math.pow(10, decimals);
+  return Math.round(toNumber(value, 0) * factor) / factor;
+}
+
+function cleanText(value, fallback = "") {
+  if (value === null || value === undefined || value === "") return fallback;
+  return String(value);
+}
+
 function getServiceClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
@@ -64,7 +74,13 @@ function parseAnswerIds(answerValue) {
 }
 
 function uniqueNumbers(values) {
-  return Array.from(new Set(safeArray(values).map((value) => toNumber(value, null)).filter((value) => value !== null)));
+  return Array.from(
+    new Set(
+      safeArray(values)
+        .map((value) => toNumber(value, null))
+        .filter((value) => value !== null)
+    )
+  );
 }
 
 function calculateQuestionMaxScore(question, isBaseline) {
@@ -159,10 +175,6 @@ function groupResponsesByQuestion(responses) {
   return responsesByQuestion;
 }
 
-// ======================================================
-// NEW: Category scoring helper functions
-// ======================================================
-
 function classifyScore(percentage) {
   const value = toNumber(percentage, 0);
   if (value >= 85) return "Exceptional";
@@ -173,83 +185,464 @@ function classifyScore(percentage) {
   return "High Risk";
 }
 
-async function calculateCategoryScores(serviceClient, sessionId, isBaseline) {
-  if (!isBaseline) return { categoryScores: [], strengths: [], weaknesses: [] };
+function getRiskLevel(percentage) {
+  const value = toNumber(percentage, 0);
+  if (value >= 75) return "Low";
+  if (value >= 65) return "Moderate";
+  if (value >= 55) return "Elevated";
+  if (value >= 40) return "High";
+  return "Critical";
+}
 
-  // Fetch all responses for this session with question details
-  const { data: responses, error: responsesError } = await serviceClient
-    .from("responses")
-    .select(`
-      question_id,
-      answer_id,
-      unique_questions!inner (
-        id,
-        section,
-        subsection
-      ),
-      unique_answers!inner (
-        id,
-        score
-      )
-    `)
-    .eq("session_id", sessionId);
+function getPriorityFromScore(percentage) {
+  const value = toNumber(percentage, 0);
+  if (value >= 75) return "Leverage";
+  if (value >= 65) return "Low";
+  if (value >= 55) return "Medium";
+  if (value >= 40) return "High";
+  return "Critical";
+}
 
-  if (responsesError || !responses || responses.length === 0) {
-    return { categoryScores: [], strengths: [], weaknesses: [] };
+function getScoreComment(percentage) {
+  const value = toNumber(percentage, 0);
+  if (value >= 85) return "Exceptional performance with strong evidence of readiness.";
+  if (value >= 75) return "Strong performance with reliable capability.";
+  if (value >= 65) return "Adequate performance with some areas requiring reinforcement.";
+  if (value >= 55) return "Developing performance requiring structured support.";
+  if (value >= 40) return "Priority development is required.";
+  return "Critical development support is required.";
+}
+
+function getSupervisorImplication(percentage) {
+  const value = toNumber(percentage, 0);
+  if (value >= 85) return "The candidate shows strong readiness and can be considered for role responsibilities with normal supervision, stretch assignments, and opportunities to leverage demonstrated strengths.";
+  if (value >= 75) return "The candidate can perform reliably with standard supervision while benefiting from targeted reinforcement and role-specific feedback.";
+  if (value >= 65) return "The candidate can perform with guidance, coaching, and periodic review in selected areas.";
+  if (value >= 55) return "The candidate requires structured support, close follow-up, and practical coaching before being relied upon independently.";
+  return "The candidate requires close supervision, targeted development, and careful validation before being assigned critical responsibilities.";
+}
+
+function getDomainContext(category) {
+  const value = cleanText(category, "General");
+  if (value === "Clinical") return "clinical interpretation, behavioral judgement, and response planning";
+  if (value === "Leadership") return "ownership, direction setting, accountability, and leadership follow-through";
+  if (value === "Decision-Making" || value === "Decision-Making & Problem-Solving") return "structured judgement, problem analysis, option evaluation, and decision quality";
+  if (value === "Communication Style" || value === "Communication & Influence") return "clarity, listening, influence, tone, and feedback response";
+  if (value === "Adaptability" || value === "Change Leadership & Agility") return "flexibility, change response, uncertainty management, and adjustment to new demands";
+  if (value === "Collaboration") return "team contribution, shared accountability, cooperation, and alignment with others";
+  if (value === "FBA") return "behavioral antecedents, consequences, triggers, function, and response planning";
+  if (value === "Role Readiness") return "readiness for role responsibilities, practical judgement, and supervised application";
+  if (value === "Execution & Results Orientation") return "execution discipline, results focus, follow-through, and delivery ownership";
+  return "this competency area and its practical application in role responsibilities";
+}
+
+function getScoreBandName(percentage) {
+  const value = toNumber(percentage, 0);
+  if (value >= 85) return "clear strength";
+  if (value >= 75) return "strong capability";
+  if (value >= 65) return "capable performance";
+  if (value >= 55) return "developing capability";
+  if (value >= 40) return "priority development area";
+  return "critical development area";
+}
+
+function getCategoryNarrative(category, percentage) {
+  const cleanCategory = cleanText(category, "General");
+  const value = toNumber(percentage, 0);
+  const context = getDomainContext(cleanCategory);
+  const band = getScoreBandName(value);
+
+  if (value >= 85) return cleanCategory + " scored " + value + "%, indicating a " + band + " in " + context + ". This area can be leveraged in role responsibilities, stretch assignments, mentoring opportunities, and higher-complexity work.";
+  if (value >= 75) return cleanCategory + " scored " + value + "%, indicating " + band + " in " + context + ". The candidate appears reliable in this area and should be encouraged to apply this capability consistently.";
+  if (value >= 65) return cleanCategory + " scored " + value + "%, indicating " + band + " in " + context + ". The area is broadly adequate, but the supervisor should monitor consistency and reinforce application in real work situations.";
+  if (value >= 55) return cleanCategory + " scored " + value + "%, indicating " + band + " in " + context + ". Structured coaching, guided practice, and periodic review are recommended.";
+  if (value >= 40) return cleanCategory + " scored " + value + "%, indicating a " + band + " in " + context + ". Targeted development, close supervision, practical exercises, and validation through observed application are recommended.";
+  return cleanCategory + " scored " + value + "%, indicating a " + band + " in " + context + ". Close support and validation through structured practice are recommended before assigning critical responsibilities.";
+}
+
+function getCategoryAction(category, percentage) {
+  const cleanCategory = cleanText(category, "General");
+  const value = toNumber(percentage, 0);
+  const priority = getPriorityFromScore(value);
+
+  if (value >= 85) return "Leverage this strength through stretch assignments, peer support, mentoring opportunities, and role tasks where " + cleanCategory + " can improve team or operational performance. Priority: " + priority + ".";
+  if (value >= 75) return "Maintain this capability through normal supervision, role-specific feedback, and opportunities to apply " + cleanCategory + " in practical work situations. Priority: " + priority + ".";
+  if (value >= 65) return "Reinforce this area through periodic review, targeted feedback, and practical application to improve consistency. Priority: " + priority + ".";
+  if (value >= 55) return "Provide structured coaching, guided practice, and review progress after applied tasks before increasing independence. Priority: " + priority + ".";
+  if (value >= 40) return "Create a targeted development plan with close supervision, practical scenarios, feedback cycles, and documented progress review. Priority: " + priority + ".";
+  return "Apply immediate development support, close supervision, simplified assignments, and formal progress validation before assigning critical responsibilities. Priority: " + priority + ".";
+}
+
+function getFollowUpQuestion(category, percentage) {
+  const cleanCategory = cleanText(category, "General");
+  const value = toNumber(percentage, 0);
+
+  if (value >= 75) return "Ask the candidate to describe how this strength can be applied to improve performance, support others, or handle a more complex responsibility in the role.";
+  if (cleanCategory === "Clinical") return "Ask the candidate to explain how the candidate would interpret and respond to a sensitive behavioral scenario, including what evidence would be checked before acting.";
+  if (cleanCategory === "Leadership") return "Ask the candidate to describe a situation where the candidate had to take ownership, guide others, and follow through despite uncertainty.";
+  if (cleanCategory === "Decision-Making" || cleanCategory === "Decision-Making & Problem-Solving") return "Ask the candidate to walk through a recent difficult decision, including options considered, risks identified, and how the final choice was made.";
+  if (cleanCategory === "Communication Style" || cleanCategory === "Communication & Influence") return "Ask the candidate to give an example of receiving difficult feedback and explain how the candidate responded and adjusted communication.";
+  if (cleanCategory === "Adaptability" || cleanCategory === "Change Leadership & Agility") return "Ask the candidate to describe how the candidate handles sudden changes in plans, priorities, or instructions.";
+  if (cleanCategory === "Collaboration") return "Ask the candidate to explain how the candidate works with team members when there are different opinions, unclear roles, or shared deadlines.";
+  if (cleanCategory === "FBA") return "Ask the candidate to analyze a behavior scenario by identifying antecedents, consequences, likely function, and appropriate response options.";
+  return "Ask the candidate to provide a practical example that demonstrates capability in " + cleanCategory + ", including what was done, why it was done, and what outcome resulted.";
+}
+
+function getQuestion(response) {
+  if (!response) return null;
+  return response.unique_questions || response.question || null;
+}
+
+function getAnswer(response) {
+  if (!response) return null;
+  return response.unique_answers || response.answer || response.selected_answer || null;
+}
+
+function getResponseScore(response) {
+  const answer = getAnswer(response);
+  if (!response) return 0;
+  return toNumber(
+    response.score ??
+      response.selected_score ??
+      response.answer_score ??
+      response.value ??
+      response.points ??
+      (answer ? answer.score ?? answer.value ?? answer.points : null),
+    0
+  );
+}
+
+function getResponseMaxScore(response) {
+  const question = getQuestion(response);
+  if (!response) return 5;
+  return toNumber(
+    response.max_score ??
+      response.maxScore ??
+      response.max_points ??
+      response.max ??
+      (question ? question.max_score ?? question.maxScore ?? question.max_points : null) ??
+      5,
+    5
+  );
+}
+
+function getResponseCategory(response) {
+  const question = getQuestion(response);
+  if (!response) return "General";
+  return cleanText(
+    (question && (question.section || question.category || question.competency || question.dimension)) ||
+      response.section ||
+      response.category ||
+      response.competency ||
+      response.dimension ||
+      "General",
+    "General"
+  );
+}
+
+function getResponseSubcategory(response) {
+  const question = getQuestion(response);
+  if (!response) return "";
+  return cleanText(
+    (question && (question.subsection || question.sub_category)) || response.subsection || response.sub_category || "",
+    ""
+  );
+}
+
+function getResponseQuestionText(response) {
+  const question = getQuestion(response);
+  if (!response) return "";
+  return cleanText(
+    (question && (question.question_text || question.text)) || response.question_text || response.question || "",
+    ""
+  );
+}
+
+function getResponseAnswerText(response) {
+  const answer = getAnswer(response);
+  if (!response) return "";
+  return cleanText(
+    (answer && (answer.answer_text || answer.text || answer.label)) || response.answer_text || response.selected_answer_text || "",
+    ""
+  );
+}
+
+function getResponseTime(response) {
+  if (!response) return 0;
+  return toNumber(
+    response.time_spent_seconds ?? response.time_spent ?? response.duration_seconds ?? response.response_time_seconds,
+    0
+  );
+}
+
+function getResponseChanges(response) {
+  if (!response) return 0;
+  return toNumber(
+    response.times_changed ?? response.changes ?? response.answer_changes ?? response.revision_count,
+    0
+  );
+}
+
+function buildBehavioralInsights(responses) {
+  let totalTime = 0;
+  let totalChanges = 0;
+  const count = safeArray(responses).length;
+  let averageTime = 0;
+  let averageChanges = 0;
+  let note = "";
+  let quality = "Limited";
+
+  safeArray(responses).forEach((response) => {
+    totalTime += getResponseTime(response);
+    totalChanges += getResponseChanges(response);
+  });
+
+  if (count > 0) {
+    averageTime = roundNumber(totalTime / count, 2);
+    averageChanges = roundNumber(totalChanges / count, 2);
   }
 
-  const categoryMap = {};
+  if (totalTime > 0) quality = "Available";
 
-  for (const response of responses) {
-    const section = response.unique_questions?.section;
-    const score = toNumber(response.unique_answers?.score, 0);
+  if (totalTime === 0) note = "Response timing data is not available or was recorded as zero, so timing should not be used to judge confidence or speed.";
+  else {
+    if (averageTime > 75) note += "Average response time suggests careful processing or possible uncertainty. ";
+    if (averageChanges > 1.5) note += "Frequent answer changes suggest possible second-guessing or low confidence. ";
+    if (!note) note = "Response behavior does not show major timing or answer-change concerns.";
+  }
 
-    if (!section) continue;
+  return {
+    totalTimeSpent: roundNumber(totalTime, 2),
+    totalChanges: roundNumber(totalChanges, 2),
+    averageTimePerQuestion: averageTime,
+    averageChangesPerQuestion: averageChanges,
+    dataQuality: quality,
+    note: note
+  };
+}
 
-    if (!categoryMap[section]) {
-      categoryMap[section] = {
+function buildDetailedCategoryScores(responses) {
+  const grouped = {};
+
+  safeArray(responses).forEach((response) => {
+    const category = getResponseCategory(response);
+    const subcategory = getResponseSubcategory(response);
+    const score = getResponseScore(response);
+    const maxScore = getResponseMaxScore(response);
+    const timeSpent = getResponseTime(response);
+    const changes = getResponseChanges(response);
+
+    if (!grouped[category]) {
+      grouped[category] = {
+        category,
+        name: category,
         totalScore: 0,
         maxScore: 0,
-        count: 0
+        questionCount: 0,
+        totalTimeSpent: 0,
+        totalChanges: 0,
+        subcategories: {},
+        answers: []
       };
     }
 
-    categoryMap[section].totalScore += score;
-    categoryMap[section].maxScore += 1; // Each question max 1 point for baseline
-    categoryMap[section].count += 1;
-  }
+    grouped[category].totalScore += score;
+    grouped[category].maxScore += maxScore;
+    grouped[category].questionCount += 1;
+    grouped[category].totalTimeSpent += timeSpent;
+    grouped[category].totalChanges += changes;
 
-  const categoryScores = [];
-  const strengthsList = [];
-  const weaknessesList = [];
-
-  for (const [name, data] of Object.entries(categoryMap)) {
-    const percentage = (data.totalScore / data.maxScore) * 100;
-    const roundedPercentage = Math.round(percentage * 100) / 100;
-    
-    categoryScores.push({
-      name,
-      score: data.totalScore,
-      maxScore: data.maxScore,
-      percentage: roundedPercentage,
-      classification: classifyScore(percentage)
-    });
-
-    if (percentage >= 85) {
-      strengthsList.push(name);
-    } else if (percentage < 75) {
-      weaknessesList.push(name);
+    if (subcategory) {
+      if (!grouped[category].subcategories[subcategory]) grouped[category].subcategories[subcategory] = 0;
+      grouped[category].subcategories[subcategory] += 1;
     }
+
+    grouped[category].answers.push({
+      section: category,
+      subsection: subcategory,
+      question: getResponseQuestionText(response),
+      answer: getResponseAnswerText(response),
+      score,
+      maxScore,
+      timeSpent,
+      changes
+    });
+  });
+
+  return Object.keys(grouped).map((key) => {
+    const item = grouped[key];
+    const percentage = item.maxScore > 0 ? roundNumber((item.totalScore / item.maxScore) * 100, 2) : 0;
+    return {
+      category: item.category,
+      name: item.name,
+      totalScore: roundNumber(item.totalScore, 2),
+      score: roundNumber(item.totalScore, 2),
+      maxScore: roundNumber(item.maxScore, 2),
+      questionCount: item.questionCount,
+      percentage,
+      classification: classifyScore(percentage),
+      comment: getScoreComment(percentage),
+      supervisorImplication: getSupervisorImplication(percentage),
+      narrative: getCategoryNarrative(item.category, percentage),
+      action: getCategoryAction(item.category, percentage),
+      riskLevel: getRiskLevel(percentage),
+      priority: getPriorityFromScore(percentage),
+      followUpQuestion: getFollowUpQuestion(item.category, percentage),
+      averageTimePerQuestion: item.questionCount > 0 ? roundNumber(item.totalTimeSpent / item.questionCount, 2) : 0,
+      averageChangesPerQuestion: item.questionCount > 0 ? roundNumber(item.totalChanges / item.questionCount, 2) : 0,
+      subcategories: item.subcategories,
+      answers: item.answers
+    };
+  });
+}
+
+function buildDetailedRecommendations(categoryScores) {
+  const recommendations = [];
+
+  const developmentAreas = safeArray(categoryScores)
+    .filter((item) => toNumber(item.percentage, 0) < 65)
+    .sort((a, b) => toNumber(a.percentage, 0) - toNumber(b.percentage, 0));
+
+  developmentAreas.forEach((area) => {
+    const percentage = toNumber(area.percentage, 0);
+    recommendations.push({
+      priority: getPriorityFromScore(percentage),
+      competency: area.name,
+      category: area.name,
+      currentScore: percentage,
+      gap: percentage < 80 ? roundNumber(80 - percentage, 2) : 0,
+      recommendation: area.narrative,
+      action: area.action,
+      impact: "Improving this area will increase role readiness, judgement reliability, consistency, and confidence in work-related decisions.",
+      followUpQuestion: getFollowUpQuestion(area.name, percentage),
+      isStrength: false
+    });
+  });
+
+  const strengths = safeArray(categoryScores)
+    .filter((item) => toNumber(item.percentage, 0) >= 75)
+    .sort((a, b) => toNumber(b.percentage, 0) - toNumber(a.percentage, 0));
+
+  strengths.forEach((area) => {
+    recommendations.push({
+      priority: "Leverage",
+      competency: area.name,
+      category: area.name,
+      currentScore: area.percentage,
+      gap: 0,
+      recommendation: area.narrative,
+      action: area.action,
+      impact: "Using this strength can improve candidate contribution, team support, role readiness, and development momentum.",
+      followUpQuestion: getFollowUpQuestion(area.name, area.percentage),
+      isStrength: true
+    });
+  });
+
+  return recommendations;
+}
+
+function buildExecutiveSummary(candidateName, assessmentName, percentage, classification, categoryScores) {
+  const lowestAreas = safeArray(categoryScores)
+    .filter((item) => toNumber(item.percentage, 0) < 65)
+    .sort((a, b) => toNumber(a.percentage, 0) - toNumber(b.percentage, 0))
+    .slice(0, 3);
+
+  const topAreas = safeArray(categoryScores)
+    .filter((item) => toNumber(item.percentage, 0) >= 75)
+    .sort((a, b) => toNumber(b.percentage, 0) - toNumber(a.percentage, 0))
+    .slice(0, 3);
+
+  let strengthText = "";
+  let areaText = "";
+
+  if (topAreas.length > 0) {
+    strengthText = " Key strengths include " + topAreas.map((item) => item.name + " (" + item.percentage + "%)").join(", ") + ".";
   }
 
-  // Sort strengths by percentage descending
-  strengthsList.sort();
-  weaknessesList.sort();
+  if (lowestAreas.length > 0) {
+    areaText = " The most important development areas are " + lowestAreas.map((item) => item.name + " (" + item.percentage + "%)").join(", ") + ".";
+  }
+
+  return candidateName + " completed the " + assessmentName + " assessment with an overall score of " + percentage + "%, classified as " + classification + ". " + getScoreComment(percentage) + strengthText + areaText;
+}
+
+function buildRoleReadiness(percentage, categoryScores) {
+  const weakAreas = safeArray(categoryScores).filter((item) => toNumber(item.percentage, 0) < 65);
+  const value = toNumber(percentage, 0);
+
+  if (value >= 85 && weakAreas.length === 0) return "The candidate appears highly ready for role responsibilities with normal supervision. The supervisor can consider stretch assignments, broader accountability, and opportunities to leverage demonstrated strengths.";
+  if (value >= 75 && weakAreas.length === 0) return "The candidate appears broadly ready for role responsibilities with normal supervision and role-specific reinforcement.";
+  if (value >= 65) return "The candidate may be considered for controlled role responsibilities with coaching, periodic review, and targeted reinforcement in weaker areas.";
+  if (value >= 55) return "The candidate should not be relied upon independently yet. Structured development, supervised practice, and progress review are recommended before broader responsibility.";
+  return "The candidate is not yet ready for independent critical responsibilities. Close supervision, targeted development, and validation through practical scenarios are recommended before role-critical assignment.";
+}
+
+function buildFollowUpQuestions(categoryScores) {
+  let selected = safeArray(categoryScores)
+    .filter((item) => toNumber(item.percentage, 0) < 75)
+    .sort((a, b) => toNumber(a.percentage, 0) - toNumber(b.percentage, 0));
+
+  if (selected.length === 0) {
+    selected = safeArray(categoryScores)
+      .filter((item) => toNumber(item.percentage, 0) >= 75)
+      .sort((a, b) => toNumber(b.percentage, 0) - toNumber(a.percentage, 0))
+      .slice(0, 3);
+  }
+
+  return selected.map((item) => ({
+    category: item.name,
+    priority: getPriorityFromScore(item.percentage),
+    score: item.percentage,
+    question: getFollowUpQuestion(item.name, item.percentage)
+  }));
+}
+
+function buildDetailedReportPayload(candidateProfile, assessment, responses, userId, assessmentId, overallPercentage, totalScore, maxScore, responseCount) {
+  const candidateName = cleanText(
+    candidateProfile?.full_name || candidateProfile?.name || candidateProfile?.display_name || candidateProfile?.candidate_name || candidateProfile?.email,
+    userId || "Candidate"
+  );
+  const assessmentName = cleanText(
+    assessment?.title || assessment?.name || assessment?.assessment_name || assessment?.description,
+    "Assessment"
+  );
+
+  const categoryScores = buildDetailedCategoryScores(responses);
+  const behavioralInsights = buildBehavioralInsights(responses);
+  const strengths = safeArray(categoryScores)
+    .filter((item) => toNumber(item.percentage, 0) >= 75)
+    .sort((a, b) => toNumber(b.percentage, 0) - toNumber(a.percentage, 0));
+  const developmentAreas = safeArray(categoryScores)
+    .filter((item) => toNumber(item.percentage, 0) < 65)
+    .sort((a, b) => toNumber(a.percentage, 0) - toNumber(b.percentage, 0));
+  const recommendations = buildDetailedRecommendations(categoryScores);
+  const followUpQuestions = buildFollowUpQuestions(categoryScores);
+
+  const classification = classifyScore(overallPercentage);
+  const executiveSummary = buildExecutiveSummary(candidateName, assessmentName, overallPercentage, classification, categoryScores);
+  const roleReadiness = buildRoleReadiness(overallPercentage, categoryScores);
 
   return {
+    candidateName,
+    assessmentName,
+    assessmentId: assessmentId || null,
+    userId,
+    totalScore: roundNumber(totalScore, 2),
+    maxScore: roundNumber(maxScore, 2),
+    percentage: roundNumber(overallPercentage, 2),
+    classification,
+    riskLevel: getRiskLevel(overallPercentage),
+    executiveSummary,
+    supervisorImplication: getSupervisorImplication(overallPercentage),
+    roleReadiness,
+    behavioralInsights,
     categoryScores,
-    strengths: strengthsList,
-    weaknesses: weaknessesList
+    strengths,
+    developmentAreas,
+    recommendations,
+    followUpQuestions,
+    responseCount: toNumber(responseCount, 0),
+    dataSource: "assessment_submission_engine"
   };
 }
 
@@ -539,10 +932,39 @@ export default async function handler(req, res) {
       autoSubmitReason += " Answered " + answeredCount + " of " + totalQuestions + " questions.";
     }
 
-    // ======================================================
-    // NEW: Calculate category scores (only for baseline)
-    // ======================================================
-    const { categoryScores, strengths, weaknesses } = await calculateCategoryScores(serviceClient, sessionId, isBaseline);
+    // Fetch candidate profile and fully joined responses so we can generate a detailed report for ALL assessments.
+    const profileResponse = await serviceClient
+      .from("candidate_profiles")
+      .select("id, full_name, email, created_by, supervisor_id")
+      .eq("id", session.user_id)
+      .maybeSingle();
+
+    const candidateProfile = profileResponse.data || { id: session.user_id, full_name: null, email: null };
+
+    const detailedResponsesResponse = await serviceClient
+      .from("responses")
+      .select(`
+        *,
+        unique_questions(*),
+        unique_answers(*)
+      `)
+      .eq("session_id", sessionId);
+
+    const detailedResponses = detailedResponsesResponse.error ? [] : safeArray(detailedResponsesResponse.data);
+
+    // Build a detailed report for every assessment type.
+    // Baseline assessments continue to submit as before, but now also get a full stored report payload.
+    const detailedReport = buildDetailedReportPayload(
+      candidateProfile,
+      assessment,
+      detailedResponses,
+      session.user_id,
+      session.assessment_id,
+      percentage,
+      earnedScore,
+      maxScore,
+      answeredCount
+    );
 
     const resultData = {
       user_id: session.user_id,
@@ -564,10 +986,20 @@ export default async function handler(req, res) {
         screenshots: toNumber(session.screenshot_count, 0)
       },
       completed_at: nowIso(),
-      // NEW: Add category scores
-      category_scores: categoryScores.length > 0 ? categoryScores : null,
-      strengths: strengths.length > 0 ? strengths : null,
-      weaknesses: weaknesses.length > 0 ? weaknesses : null
+      category_scores: detailedReport.categoryScores.length > 0 ? detailedReport.categoryScores : null,
+      strengths: detailedReport.strengths.length > 0 ? detailedReport.strengths : null,
+      weaknesses: detailedReport.developmentAreas.length > 0 ? detailedReport.developmentAreas : null,
+      recommendations: detailedReport.recommendations.length > 0 ? detailedReport.recommendations : null,
+      interpretations: {
+        executiveSummary: detailedReport.executiveSummary,
+        supervisorImplication: detailedReport.supervisorImplication,
+        roleReadiness: detailedReport.roleReadiness,
+        behavioralInsights: detailedReport.behavioralInsights,
+        followUpQuestions: detailedReport.followUpQuestions,
+        classification: detailedReport.classification,
+        riskLevel: detailedReport.riskLevel,
+        dataSource: detailedReport.dataSource
+      }
     };
 
     const resultResponse = await upsertAssessmentResult(serviceClient, resultData);
@@ -606,12 +1038,6 @@ export default async function handler(req, res) {
 
     await updateCandidateAssessment(serviceClient, session, result, earnedScore);
 
-    const profileResponse = await serviceClient
-      .from("candidate_profiles")
-      .select("full_name, email, created_by, supervisor_id")
-      .eq("id", session.user_id)
-      .maybeSingle();
-
     if (profileResponse.data) {
       await createSupervisorNotification(serviceClient, session, result, profileResponse.data, percentage, isAutoSubmit, autoSubmitReason);
     }
@@ -635,9 +1061,11 @@ export default async function handler(req, res) {
       violationCount: toNumber(violationCount, 0),
       violation_count: toNumber(violationCount, 0),
       auto_submit_reason: autoSubmitReason,
-      category_scores: categoryScores,
-      strengths: strengths,
-      weaknesses: weaknesses,
+      category_scores: detailedReport.categoryScores,
+      strengths: detailedReport.strengths,
+      weaknesses: detailedReport.developmentAreas,
+      recommendations: detailedReport.recommendations,
+      follow_up_questions: detailedReport.followUpQuestions,
       message: isAutoSubmit
         ? "Assessment auto-submitted. Score calculated as " + toNumber(earnedScore, 0) + " out of " + toNumber(maxScore, 0) + ". Answered " + answeredCount + " of " + totalQuestions + " questions."
         : "Assessment submitted successfully. Score: " + Math.round(percentage) + "%"
