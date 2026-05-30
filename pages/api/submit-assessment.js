@@ -1,6 +1,16 @@
 // pages/api/submit-assessment.js
 
 import { createClient } from "@supabase/supabase-js";
+import {
+  toNumber,
+  roundNumber,
+  safeArray,
+  normalizeText,
+  parseSelectedAnswerIds,
+  scoreQuestionResponse,
+  calculateMaxScore,
+  isBaselineAssessmentType
+} from "../../utils/scoring";
 
 export const config = {
   maxDuration: 60,
@@ -11,28 +21,12 @@ export const config = {
   }
 };
 
-function toNumber(value, fallback = 0) {
-  const numberValue = Number(value);
-  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) return fallback;
-  return numberValue;
-}
-
-function safeArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
 function nowIso() {
   return new Date().toISOString();
 }
 
-function roundNumber(value, decimals = 2) {
-  const factor = Math.pow(10, decimals);
-  return Math.round(toNumber(value, 0) * factor) / factor;
-}
-
 function cleanText(value, fallback = "") {
-  if (value === null || value === undefined || value === "") return fallback;
-  return String(value);
+  return normalizeText(value, fallback);
 }
 
 function getServiceClient() {
@@ -51,125 +45,23 @@ function getServiceClient() {
   });
 }
 
-function parseAnswerIds(answerValue) {
-  if (answerValue === null || answerValue === undefined || answerValue === "") return [];
-
-  if (Array.isArray(answerValue)) {
-    return answerValue
-      .map((value) => parseInt(value, 10))
-      .filter((value) => !Number.isNaN(value));
-  }
-
-  const text = String(answerValue);
-
-  if (text.includes(",")) {
-    return text
-      .split(",")
-      .map((value) => parseInt(value.trim(), 10))
-      .filter((value) => !Number.isNaN(value));
-  }
-
-  const parsed = parseInt(text, 10);
-  return Number.isNaN(parsed) ? [] : [parsed];
-}
-
-function uniqueNumbers(values) {
-  return Array.from(
-    new Set(
-      safeArray(values)
-        .map((value) => toNumber(value, null))
-        .filter((value) => value !== null)
-    )
-  );
-}
-
-function calculateQuestionMaxScore(question, isBaseline) {
-  const answers = safeArray(question.unique_answers);
-  if (isBaseline) return 1;
-  if (answers.length === 0) return 0;
-  return Math.max(...answers.map((answer) => toNumber(answer.score, 0)));
-}
-
-function buildQuestionMetadata(questions, isBaseline) {
-  const metadata = {};
-  let totalMaxScore = 0;
-
-  safeArray(questions).forEach((question) => {
-    const answers = safeArray(question.unique_answers);
-    const answerScores = {};
-    const correctAnswerIds = [];
-    let maxScore = calculateQuestionMaxScore(question, isBaseline);
-
-    answers.forEach((answer) => {
-      const answerId = toNumber(answer.id, null);
-      const answerScore = toNumber(answer.score, 0);
-
-      if (answerId === null) return;
-      answerScores[answerId] = answerScore;
-      if (answerScore === 1) correctAnswerIds.push(answerId);
-    });
-
-    if (!isBaseline && maxScore < 0) maxScore = 0;
-
-    metadata[question.id] = {
-      questionId: question.id,
-      answerScores,
-      correctAnswerIds,
-      isMultipleCorrect: correctAnswerIds.length > 1,
-      maxScore
-    };
-
-    totalMaxScore += maxScore;
-  });
-
-  return { metadata, totalMaxScore };
-}
-
-function calculateEarnedScore(responsesByQuestion, questionMetadata, isBaseline) {
-  let earnedScore = 0;
-
-  Object.entries(responsesByQuestion).forEach(([questionId, selectedAnswerIdsRaw]) => {
-    const selectedAnswerIds = uniqueNumbers(selectedAnswerIdsRaw);
-    const metadata = questionMetadata[questionId];
-    let questionScore = 0;
-
-    if (!metadata || selectedAnswerIds.length === 0) return;
-
-    if (isBaseline) {
-      const correctAnswerIds = uniqueNumbers(metadata.correctAnswerIds);
-
-      if (correctAnswerIds.length === 0) {
-        questionScore = 0;
-      } else if (metadata.isMultipleCorrect) {
-        const hasAllCorrect = correctAnswerIds.every((correctId) => selectedAnswerIds.includes(correctId));
-        const hasNoExtraIncorrect = selectedAnswerIds.every((selectedId) => correctAnswerIds.includes(selectedId));
-        questionScore = hasAllCorrect && hasNoExtraIncorrect ? 1 : 0;
-      } else {
-        questionScore = correctAnswerIds.includes(selectedAnswerIds[0]) ? 1 : 0;
-      }
-    } else {
-      selectedAnswerIds.forEach((answerId) => {
-        questionScore += toNumber(metadata.answerScores[answerId], 0);
-      });
-      if (questionScore > metadata.maxScore) questionScore = metadata.maxScore;
-    }
-
-    earnedScore += questionScore;
-  });
-
-  return earnedScore;
-}
-
 function groupResponsesByQuestion(responses) {
   const responsesByQuestion = {};
 
-  safeArray(responses).forEach((response) => {
+  safeArray(responses).forEach(function (response) {
     if (!response || !response.question_id) return;
-    const answerIds = parseAnswerIds(response.answer_id);
+
+    const answerIds = parseSelectedAnswerIds(response.answer_id);
     if (answerIds.length === 0) return;
 
-    if (!responsesByQuestion[response.question_id]) responsesByQuestion[response.question_id] = [];
-    responsesByQuestion[response.question_id].push(...answerIds);
+    if (!responsesByQuestion[response.question_id]) {
+      responsesByQuestion[response.question_id] = [];
+    }
+
+    responsesByQuestion[response.question_id].push.apply(
+      responsesByQuestion[response.question_id],
+      answerIds
+    );
   });
 
   return responsesByQuestion;
@@ -233,6 +125,10 @@ function getDomainContext(category) {
   if (value === "FBA") return "behavioral antecedents, consequences, triggers, function, and response planning";
   if (value === "Role Readiness") return "readiness for role responsibilities, practical judgement, and supervised application";
   if (value === "Execution & Results Orientation") return "execution discipline, results focus, follow-through, and delivery ownership";
+  if (value === "Safety & Work Ethic") return "safe work behavior, SOP discipline, PPE use, hazard awareness, and workplace conduct";
+  if (value === "Technical Fundamentals") return "foundational equipment knowledge, maintenance basics, and system understanding";
+  if (value === "Troubleshooting") return "diagnostic thinking, fault identification, and root-cause awareness";
+  if (value === "Numerical Aptitude") return "production math, rates, percentages, ratios, and numerical interpretation";
   return "this competency area and its practical application in role responsibilities";
 }
 
@@ -285,6 +181,10 @@ function getFollowUpQuestion(category, percentage) {
   if (cleanCategory === "Adaptability" || cleanCategory === "Change Leadership & Agility") return "Ask the candidate to describe how the candidate handles sudden changes in plans, priorities, or instructions.";
   if (cleanCategory === "Collaboration") return "Ask the candidate to explain how the candidate works with team members when there are different opinions, unclear roles, or shared deadlines.";
   if (cleanCategory === "FBA") return "Ask the candidate to analyze a behavior scenario by identifying antecedents, consequences, likely function, and appropriate response options.";
+  if (cleanCategory === "Safety & Work Ethic") return "Ask the candidate to describe how the candidate would maintain safe work behavior, follow SOPs, and respond to a potential hazard on the line.";
+  if (cleanCategory === "Technical Fundamentals") return "Ask the candidate to explain a basic equipment concept or maintenance principle and describe how it applies in practice.";
+  if (cleanCategory === "Troubleshooting") return "Ask the candidate to walk through how the candidate would diagnose a common line or equipment fault step by step.";
+  if (cleanCategory === "Numerical Aptitude") return "Ask the candidate to solve a basic production-math scenario aloud and explain the method used.";
   return "Ask the candidate to provide a practical example that demonstrates capability in " + cleanCategory + ", including what was done, why it was done, and what outcome resulted.";
 }
 
@@ -296,34 +196,6 @@ function getQuestion(response) {
 function getAnswer(response) {
   if (!response) return null;
   return response.unique_answers || response.answer || response.selected_answer || null;
-}
-
-function getResponseScore(response) {
-  const answer = getAnswer(response);
-  if (!response) return 0;
-  return toNumber(
-    response.score ??
-      response.selected_score ??
-      response.answer_score ??
-      response.value ??
-      response.points ??
-      (answer ? answer.score ?? answer.value ?? answer.points : null),
-    0
-  );
-}
-
-function getResponseMaxScore(response) {
-  const question = getQuestion(response);
-  if (!response) return 5;
-  return toNumber(
-    response.max_score ??
-      response.maxScore ??
-      response.max_points ??
-      response.max ??
-      (question ? question.max_score ?? question.maxScore ?? question.max_points : null) ??
-      5,
-    5
-  );
 }
 
 function getResponseCategory(response) {
@@ -370,7 +242,15 @@ function getResponseAnswerText(response) {
 function getResponseTime(response) {
   if (!response) return 0;
   return toNumber(
-    response.time_spent_seconds ?? response.time_spent ?? response.duration_seconds ?? response.response_time_seconds,
+    response.time_spent_seconds !== undefined
+      ? response.time_spent_seconds
+      : response.time_spent !== undefined
+      ? response.time_spent
+      : response.duration_seconds !== undefined
+      ? response.duration_seconds
+      : response.response_time_seconds !== undefined
+      ? response.response_time_seconds
+      : 0,
     0
   );
 }
@@ -378,7 +258,15 @@ function getResponseTime(response) {
 function getResponseChanges(response) {
   if (!response) return 0;
   return toNumber(
-    response.times_changed ?? response.changes ?? response.answer_changes ?? response.revision_count,
+    response.times_changed !== undefined
+      ? response.times_changed
+      : response.changes !== undefined
+      ? response.changes
+      : response.answer_changes !== undefined
+      ? response.answer_changes
+      : response.revision_count !== undefined
+      ? response.revision_count
+      : 0,
     0
   );
 }
@@ -392,7 +280,7 @@ function buildBehavioralInsights(responses) {
   let note = "";
   let quality = "Limited";
 
-  safeArray(responses).forEach((response) => {
+  safeArray(responses).forEach(function (response) {
     totalTime += getResponseTime(response);
     totalChanges += getResponseChanges(response);
   });
@@ -421,20 +309,21 @@ function buildBehavioralInsights(responses) {
   };
 }
 
-function buildDetailedCategoryScores(responses) {
+function buildDetailedCategoryScores(responses, isBaseline) {
   const grouped = {};
 
-  safeArray(responses).forEach((response) => {
+  safeArray(responses).forEach(function (response) {
     const category = getResponseCategory(response);
     const subcategory = getResponseSubcategory(response);
-    const score = getResponseScore(response);
-    const maxScore = getResponseMaxScore(response);
+    const scored = scoreQuestionResponse(response, Boolean(isBaseline));
+    const score = toNumber(scored.score, 0);
+    const maxScore = toNumber(scored.maxScore, 0);
     const timeSpent = getResponseTime(response);
     const changes = getResponseChanges(response);
 
     if (!grouped[category]) {
       grouped[category] = {
-        category,
+        category: category,
         name: category,
         totalScore: 0,
         maxScore: 0,
@@ -453,7 +342,9 @@ function buildDetailedCategoryScores(responses) {
     grouped[category].totalChanges += changes;
 
     if (subcategory) {
-      if (!grouped[category].subcategories[subcategory]) grouped[category].subcategories[subcategory] = 0;
+      if (!grouped[category].subcategories[subcategory]) {
+        grouped[category].subcategories[subcategory] = 0;
+      }
       grouped[category].subcategories[subcategory] += 1;
     }
 
@@ -462,14 +353,14 @@ function buildDetailedCategoryScores(responses) {
       subsection: subcategory,
       question: getResponseQuestionText(response),
       answer: getResponseAnswerText(response),
-      score,
-      maxScore,
-      timeSpent,
-      changes
+      score: score,
+      maxScore: maxScore,
+      timeSpent: timeSpent,
+      changes: changes
     });
   });
 
-  return Object.keys(grouped).map((key) => {
+  return Object.keys(grouped).map(function (key) {
     const item = grouped[key];
     const percentage = item.maxScore > 0 ? roundNumber((item.totalScore / item.maxScore) * 100, 2) : 0;
     return {
@@ -478,8 +369,9 @@ function buildDetailedCategoryScores(responses) {
       totalScore: roundNumber(item.totalScore, 2),
       score: roundNumber(item.totalScore, 2),
       maxScore: roundNumber(item.maxScore, 2),
+      maxPossible: roundNumber(item.maxScore, 2),
       questionCount: item.questionCount,
-      percentage,
+      percentage: percentage,
       classification: classifyScore(percentage),
       comment: getScoreComment(percentage),
       supervisorImplication: getSupervisorImplication(percentage),
@@ -500,10 +392,10 @@ function buildDetailedRecommendations(categoryScores) {
   const recommendations = [];
 
   const developmentAreas = safeArray(categoryScores)
-    .filter((item) => toNumber(item.percentage, 0) < 65)
-    .sort((a, b) => toNumber(a.percentage, 0) - toNumber(b.percentage, 0));
+    .filter(function (item) { return toNumber(item.percentage, 0) < 65; })
+    .sort(function (a, b) { return toNumber(a.percentage, 0) - toNumber(b.percentage, 0); });
 
-  developmentAreas.forEach((area) => {
+  developmentAreas.forEach(function (area) {
     const percentage = toNumber(area.percentage, 0);
     recommendations.push({
       priority: getPriorityFromScore(percentage),
@@ -520,10 +412,10 @@ function buildDetailedRecommendations(categoryScores) {
   });
 
   const strengths = safeArray(categoryScores)
-    .filter((item) => toNumber(item.percentage, 0) >= 75)
-    .sort((a, b) => toNumber(b.percentage, 0) - toNumber(a.percentage, 0));
+    .filter(function (item) { return toNumber(item.percentage, 0) >= 75; })
+    .sort(function (a, b) { return toNumber(b.percentage, 0) - toNumber(a.percentage, 0); });
 
-  strengths.forEach((area) => {
+  strengths.forEach(function (area) {
     recommendations.push({
       priority: "Leverage",
       competency: area.name,
@@ -543,31 +435,31 @@ function buildDetailedRecommendations(categoryScores) {
 
 function buildExecutiveSummary(candidateName, assessmentName, percentage, classification, categoryScores) {
   const lowestAreas = safeArray(categoryScores)
-    .filter((item) => toNumber(item.percentage, 0) < 65)
-    .sort((a, b) => toNumber(a.percentage, 0) - toNumber(b.percentage, 0))
+    .filter(function (item) { return toNumber(item.percentage, 0) < 65; })
+    .sort(function (a, b) { return toNumber(a.percentage, 0) - toNumber(b.percentage, 0); })
     .slice(0, 3);
 
   const topAreas = safeArray(categoryScores)
-    .filter((item) => toNumber(item.percentage, 0) >= 75)
-    .sort((a, b) => toNumber(b.percentage, 0) - toNumber(a.percentage, 0))
+    .filter(function (item) { return toNumber(item.percentage, 0) >= 75; })
+    .sort(function (a, b) { return toNumber(b.percentage, 0) - toNumber(a.percentage, 0); })
     .slice(0, 3);
 
   let strengthText = "";
   let areaText = "";
 
   if (topAreas.length > 0) {
-    strengthText = " Key strengths include " + topAreas.map((item) => item.name + " (" + item.percentage + "%)").join(", ") + ".";
+    strengthText = " Key strengths include " + topAreas.map(function (item) { return item.name + " (" + item.percentage + "%)"; }).join(", ") + ".";
   }
 
   if (lowestAreas.length > 0) {
-    areaText = " The most important development areas are " + lowestAreas.map((item) => item.name + " (" + item.percentage + "%)").join(", ") + ".";
+    areaText = " The most important development areas are " + lowestAreas.map(function (item) { return item.name + " (" + item.percentage + "%)"; }).join(", ") + ".";
   }
 
   return candidateName + " completed the " + assessmentName + " assessment with an overall score of " + percentage + "%, classified as " + classification + ". " + getScoreComment(percentage) + strengthText + areaText;
 }
 
 function buildRoleReadiness(percentage, categoryScores) {
-  const weakAreas = safeArray(categoryScores).filter((item) => toNumber(item.percentage, 0) < 65);
+  const weakAreas = safeArray(categoryScores).filter(function (item) { return toNumber(item.percentage, 0) < 65; });
   const value = toNumber(percentage, 0);
 
   if (value >= 85 && weakAreas.length === 0) return "The candidate appears highly ready for role responsibilities with normal supervision. The supervisor can consider stretch assignments, broader accountability, and opportunities to leverage demonstrated strengths.";
@@ -579,42 +471,45 @@ function buildRoleReadiness(percentage, categoryScores) {
 
 function buildFollowUpQuestions(categoryScores) {
   let selected = safeArray(categoryScores)
-    .filter((item) => toNumber(item.percentage, 0) < 75)
-    .sort((a, b) => toNumber(a.percentage, 0) - toNumber(b.percentage, 0));
+    .filter(function (item) { return toNumber(item.percentage, 0) < 75; })
+    .sort(function (a, b) { return toNumber(a.percentage, 0) - toNumber(b.percentage, 0); });
 
   if (selected.length === 0) {
     selected = safeArray(categoryScores)
-      .filter((item) => toNumber(item.percentage, 0) >= 75)
-      .sort((a, b) => toNumber(b.percentage, 0) - toNumber(a.percentage, 0))
+      .filter(function (item) { return toNumber(item.percentage, 0) >= 75; })
+      .sort(function (a, b) { return toNumber(b.percentage, 0) - toNumber(a.percentage, 0); })
       .slice(0, 3);
   }
 
-  return selected.map((item) => ({
-    category: item.name,
-    priority: getPriorityFromScore(item.percentage),
-    score: item.percentage,
-    question: getFollowUpQuestion(item.name, item.percentage)
-  }));
+  return selected.map(function (item) {
+    return {
+      category: item.name,
+      priority: getPriorityFromScore(item.percentage),
+      score: item.percentage,
+      question: getFollowUpQuestion(item.name, item.percentage)
+    };
+  });
 }
 
-function buildDetailedReportPayload(candidateProfile, assessment, responses, userId, assessmentId, overallPercentage, totalScore, maxScore, responseCount) {
+function buildDetailedReportPayload(candidateProfile, assessment, responses, userId, assessmentId, overallPercentage, totalScore, maxScore, responseCount, isBaseline) {
   const candidateName = cleanText(
-    candidateProfile?.full_name || candidateProfile?.name || candidateProfile?.display_name || candidateProfile?.candidate_name || candidateProfile?.email,
+    candidateProfile && (candidateProfile.full_name || candidateProfile.name || candidateProfile.display_name || candidateProfile.candidate_name || candidateProfile.email),
     userId || "Candidate"
   );
+
   const assessmentName = cleanText(
-    assessment?.title || assessment?.name || assessment?.assessment_name || assessment?.description,
+    assessment && (assessment.title || assessment.name || assessment.assessment_name || assessment.description),
     "Assessment"
   );
 
-  const categoryScores = buildDetailedCategoryScores(responses);
+  const categoryScores = buildDetailedCategoryScores(responses, isBaseline);
   const behavioralInsights = buildBehavioralInsights(responses);
   const strengths = safeArray(categoryScores)
-    .filter((item) => toNumber(item.percentage, 0) >= 75)
-    .sort((a, b) => toNumber(b.percentage, 0) - toNumber(a.percentage, 0));
+    .filter(function (item) { return toNumber(item.percentage, 0) >= 75; })
+    .sort(function (a, b) { return toNumber(b.percentage, 0) - toNumber(a.percentage, 0); });
   const developmentAreas = safeArray(categoryScores)
-    .filter((item) => toNumber(item.percentage, 0) < 65)
-    .sort((a, b) => toNumber(a.percentage, 0) - toNumber(b.percentage, 0));
+    .filter(function (item) { return toNumber(item.percentage, 0) < 65; })
+    .sort(function (a, b) { return toNumber(a.percentage, 0) - toNumber(b.percentage, 0); });
   const recommendations = buildDetailedRecommendations(categoryScores);
   const followUpQuestions = buildFollowUpQuestions(categoryScores);
 
@@ -623,24 +518,24 @@ function buildDetailedReportPayload(candidateProfile, assessment, responses, use
   const roleReadiness = buildRoleReadiness(overallPercentage, categoryScores);
 
   return {
-    candidateName,
-    assessmentName,
+    candidateName: candidateName,
+    assessmentName: assessmentName,
     assessmentId: assessmentId || null,
-    userId,
+    userId: userId,
     totalScore: roundNumber(totalScore, 2),
     maxScore: roundNumber(maxScore, 2),
     percentage: roundNumber(overallPercentage, 2),
-    classification,
+    classification: classification,
     riskLevel: getRiskLevel(overallPercentage),
-    executiveSummary,
+    executiveSummary: executiveSummary,
     supervisorImplication: getSupervisorImplication(overallPercentage),
-    roleReadiness,
-    behavioralInsights,
-    categoryScores,
-    strengths,
-    developmentAreas,
-    recommendations,
-    followUpQuestions,
+    roleReadiness: roleReadiness,
+    behavioralInsights: behavioralInsights,
+    categoryScores: categoryScores,
+    strengths: strengths,
+    developmentAreas: developmentAreas,
+    recommendations: recommendations,
+    followUpQuestions: followUpQuestions,
     responseCount: toNumber(responseCount, 0),
     dataSource: "assessment_submission_engine"
   };
@@ -676,8 +571,9 @@ async function updateCandidateAssessment(serviceClient, session, result, earnedS
   let updateResponse = await serviceClient
     .from("candidate_assessments")
     .update({
-      ...basePayload,
-      score: earnedScore
+      score: earnedScore,
+      total_score: earnedScore,
+      ...basePayload
     })
     .eq("user_id", session.user_id)
     .eq("assessment_id", session.assessment_id);
@@ -695,10 +591,10 @@ async function updateCandidateAssessment(serviceClient, session, result, earnedS
 
 async function createSupervisorNotification(serviceClient, session, result, profile, percentage, isAutoSubmit, autoSubmitReason) {
   try {
-    const supervisorId = profile?.created_by || profile?.supervisor_id || null;
+    const supervisorId = (profile && (profile.created_by || profile.supervisor_id)) || null;
     if (!supervisorId) return;
 
-    const candidateName = profile.full_name || profile.email || "Candidate";
+    const candidateName = (profile && (profile.full_name || profile.email)) || "Candidate";
     const message = isAutoSubmit
       ? "Assessment auto-submitted for " + candidateName + ". Reason: " + (autoSubmitReason || "Auto-submit") + ". Score: " + Math.round(percentage) + "%"
       : candidateName + " completed an assessment. Score: " + Math.round(percentage) + "%";
@@ -708,7 +604,7 @@ async function createSupervisorNotification(serviceClient, session, result, prof
       user_id: session.user_id,
       assessment_id: session.assessment_id,
       result_id: result.id,
-      message,
+      message: message,
       status: "unread",
       priority: isAutoSubmit ? "high" : "normal",
       created_at: nowIso()
@@ -724,6 +620,7 @@ async function fetchExistingResult(serviceClient, sessionId) {
     .select("id, session_id, user_id, assessment_id, percentage_score, answered_questions, total_questions, is_auto_submitted, auto_submit_reason")
     .eq("session_id", sessionId)
     .maybeSingle();
+
   if (existing.error) return null;
   return existing.data || null;
 }
@@ -762,7 +659,7 @@ export default async function handler(req, res) {
     const serviceClient = getServiceClient();
 
     const authResponse = await serviceClient.auth.getUser(accessToken);
-    const authenticatedUser = authResponse?.data?.user || null;
+    const authenticatedUser = authResponse && authResponse.data ? authResponse.data.user : null;
 
     if (authResponse.error || !authenticatedUser) {
       return res.status(401).json({
@@ -841,7 +738,7 @@ export default async function handler(req, res) {
 
     const assessmentResponse = await serviceClient
       .from("assessments")
-      .select("id, assessment_type_id, title")
+      .select("id, assessment_type_id, title, assessment_type:assessment_types(code)")
       .eq("id", session.assessment_id)
       .single();
 
@@ -854,11 +751,12 @@ export default async function handler(req, res) {
     }
 
     const assessment = assessmentResponse.data;
-    const isBaseline = toNumber(assessment.assessment_type_id, 0) === 19;
+    const assessmentTypeCode = assessment.assessment_type && assessment.assessment_type.code ? assessment.assessment_type.code : null;
+    const isBaseline = isBaselineAssessmentType(assessment.assessment_type_id) || isBaselineAssessmentType(assessmentTypeCode);
 
     const questionsResponse = await serviceClient
       .from("unique_questions")
-      .select("id, unique_answers(id, score)")
+      .select("id, unique_answers(id, score, answer_text, display_order)")
       .eq("assessment_type_id", assessment.assessment_type_id);
 
     if (questionsResponse.error) {
@@ -882,7 +780,17 @@ export default async function handler(req, res) {
 
     const responsesResponse = await serviceClient
       .from("responses")
-      .select("question_id, answer_id")
+      .select(`
+        *,
+        unique_questions(
+          id,
+          section,
+          subsection,
+          question_text,
+          unique_answers(id, score, answer_text, display_order)
+        ),
+        unique_answers(id, score, answer_text, display_order)
+      `)
       .eq("session_id", sessionId);
 
     if (responsesResponse.error) {
@@ -909,14 +817,16 @@ export default async function handler(req, res) {
       });
     }
 
-    const metadataResult = buildQuestionMetadata(questions, isBaseline);
-    const earnedScore = calculateEarnedScore(responsesByQuestion, metadataResult.metadata, isBaseline);
+    let earnedScore = 0;
+    safeArray(responses).forEach(function (response) {
+      earnedScore += toNumber(scoreQuestionResponse(response, isBaseline).score, 0);
+    });
 
-    const maxScore = metadataResult.totalMaxScore > 0 ? metadataResult.totalMaxScore : totalQuestions;
+    const maxScore = calculateMaxScore(questions, isBaseline ? 1 : 0, isBaseline);
 
     let percentage = maxScore > 0 ? (earnedScore / maxScore) * 100 : 0;
     if (Number.isNaN(percentage) || !Number.isFinite(percentage)) percentage = 0;
-    percentage = Math.round(percentage * 100) / 100;
+    percentage = roundNumber(percentage, 2);
 
     const isValid = !isAutoSubmit && answeredCount === totalQuestions;
 
@@ -932,7 +842,6 @@ export default async function handler(req, res) {
       autoSubmitReason += " Answered " + answeredCount + " of " + totalQuestions + " questions.";
     }
 
-    // Fetch candidate profile and fully joined responses so we can generate a detailed report for ALL assessments.
     const profileResponse = await serviceClient
       .from("candidate_profiles")
       .select("id, full_name, email, created_by, supervisor_id")
@@ -941,29 +850,17 @@ export default async function handler(req, res) {
 
     const candidateProfile = profileResponse.data || { id: session.user_id, full_name: null, email: null };
 
-    const detailedResponsesResponse = await serviceClient
-      .from("responses")
-      .select(`
-        *,
-        unique_questions(*),
-        unique_answers(*)
-      `)
-      .eq("session_id", sessionId);
-
-    const detailedResponses = detailedResponsesResponse.error ? [] : safeArray(detailedResponsesResponse.data);
-
-    // Build a detailed report for every assessment type.
-    // Baseline assessments continue to submit as before, but now also get a full stored report payload.
     const detailedReport = buildDetailedReportPayload(
       candidateProfile,
       assessment,
-      detailedResponses,
+      responses,
       session.user_id,
       session.assessment_id,
       percentage,
       earnedScore,
       maxScore,
-      answeredCount
+      answeredCount,
+      isBaseline
     );
 
     const resultData = {
@@ -986,6 +883,8 @@ export default async function handler(req, res) {
         screenshots: toNumber(session.screenshot_count, 0)
       },
       completed_at: nowIso(),
+      risk_level: detailedReport.riskLevel,
+      readiness: detailedReport.roleReadiness,
       category_scores: detailedReport.categoryScores.length > 0 ? detailedReport.categoryScores : null,
       strengths: detailedReport.strengths.length > 0 ? detailedReport.strengths : null,
       weaknesses: detailedReport.developmentAreas.length > 0 ? detailedReport.developmentAreas : null,
@@ -1046,7 +945,7 @@ export default async function handler(req, res) {
       success: true,
       result_id: result.id,
       id: result.id,
-      result,
+      result: result,
       score: toNumber(earnedScore, 0),
       total_score: toNumber(earnedScore, 0),
       max_score: toNumber(maxScore, 0),
