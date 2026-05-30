@@ -1,6 +1,255 @@
 // utils/detailedInterpreter.js
 
-import { assessmentTypes } through production math and metric interpretation practice.";import { assessmentTypes } from "./assessmentConfigs";
+/**
+ * Detailed Professional Interpreter
+ *
+ * Generates comprehensive narrative analysis based on corrected category scores.
+ *
+ * Corrected version:
+ * - Uses central scoring standard from utils/scoring.js
+ * - Keeps existing export: generateDetailedInterpretation
+ * - Keeps existing output structure
+ * - Supports all assessment types
+ * - Improves Manufacturing Baseline interpretation
+ * - Uses evidence-based supervisor-friendly wording
+ * - Removes corrupted duplicated content and syntax issues
+ */
+
+import { assessmentTypes } from "./assessmentConfigs";
+import {
+  getGrade,
+  getGradeDescription,
+  getScoreLevel,
+  getScoreComment,
+  getSupervisorImplication,
+  isStrength,
+  isDevelopmentArea,
+  isCriticalGap,
+  calculateGapToTarget,
+  REPORT_THRESHOLDS,
+  normalizeText,
+  toNumber
+} from "./scoring";
+
+const safeNumber = (value, fallback = 0) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+};
+
+const formatPercentage = (value) => {
+  const number = safeNumber(value, 0);
+  return `${Math.round(number * 100) / 100}%`;
+};
+
+const normalizeCategoryScore = (category, data = {}, responseInsights = {}) => {
+  const normalizedCategory = normalizeText(category, "General");
+  const percentage = safeNumber(data.percentage, 0);
+
+  return {
+    category: normalizedCategory,
+    percentage,
+    score: safeNumber(data.score ?? data.total ?? data.rawScore, 0),
+    maxPossible: safeNumber(data.maxPossible ?? data.max_score ?? data.maxScore, 0),
+    grade: getGrade(percentage),
+    gradeDesc: getGradeDescription(percentage),
+    scoreLevel: getScoreLevel(percentage),
+    performanceComment: getScoreComment(percentage),
+    supervisorImplication: getSupervisorImplication(percentage),
+    gapToTarget: calculateGapToTarget(percentage),
+    insights:
+      responseInsights?.[category] ||
+      responseInsights?.[normalizedCategory] ||
+      []
+  };
+};
+
+export const generateDetailedInterpretation = (
+  candidateName,
+  categoryScores,
+  assessmentType = "general",
+  responseInsights = {}
+) => {
+  const config = assessmentTypes?.[assessmentType] || assessmentTypes?.general || {
+    id: assessmentType,
+    name: "Assessment"
+  };
+
+  const strongAreas = [];
+  const moderateAreas = [];
+  const concernAreas = [];
+
+  Object.entries(categoryScores || {}).forEach(([category, data]) => {
+    const area = normalizeCategoryScore(category, data, responseInsights);
+
+    if (isStrength(area.percentage)) {
+      strongAreas.push(area);
+    } else if (isDevelopmentArea(area.percentage)) {
+      concernAreas.push(area);
+    } else {
+      moderateAreas.push(area);
+    }
+  });
+
+  strongAreas.sort((a, b) => b.percentage - a.percentage);
+  moderateAreas.sort((a, b) => b.percentage - a.percentage);
+  concernAreas.sort((a, b) => a.percentage - b.percentage);
+
+  return {
+    overallProfileSummary: generateOverallProfileSummary(
+      candidateName,
+      strongAreas,
+      moderateAreas,
+      concernAreas,
+      config,
+      assessmentType
+    ),
+
+    categoryBreakdown: {
+      strong: strongAreas.map((area) =>
+        formatStrongArea(area, config, assessmentType)
+      ),
+      moderate: moderateAreas.map((area) =>
+        formatModerateArea(area, config, assessmentType)
+      ),
+      concerns: concernAreas.map((area) =>
+        formatConcernArea(area, config, assessmentType)
+      )
+    },
+
+    hiringInterpretation: generateHiringInterpretation(
+      strongAreas,
+      moderateAreas,
+      concernAreas,
+      config,
+      assessmentType
+    ),
+
+    developmentPotential: generateDevelopmentPotential(
+      strongAreas,
+      moderateAreas,
+      concernAreas,
+      config,
+      assessmentType
+    ),
+
+    strategicObservation: generateStrategicObservation(
+      strongAreas,
+      moderateAreas,
+      concernAreas,
+      config,
+      assessmentType
+    ),
+
+    finalAssessment: generateFinalAssessment(
+      strongAreas,
+      moderateAreas,
+      concernAreas,
+      config,
+      assessmentType
+    ),
+
+    roleFit: generateRoleFitAnalysis(
+      strongAreas,
+      moderateAreas,
+      concernAreas,
+      config,
+      assessmentType
+    )
+  };
+};
+
+// ======================================================
+// OVERALL PROFILE SUMMARY
+// ======================================================
+
+const generateOverallProfileSummary = (
+  candidateName,
+  strongAreas,
+  moderateAreas,
+  concernAreas,
+  config,
+  assessmentType
+) => {
+  const strongCount = strongAreas.length;
+  const moderateCount = moderateAreas.length;
+  const concernCount = concernAreas.length;
+
+  let summary = `Overall Profile Summary\n\n`;
+
+  summary += `${candidateName} completed the ${config.name}. `;
+
+  if (assessmentType === "manufacturing_baseline" || assessmentType === "baseline") {
+    summary += generateManufacturingOverallSummary(
+      strongAreas,
+      moderateAreas,
+      concernAreas
+    );
+
+    return summary;
+  }
+
+  if (strongCount >= 3 && concernCount <= 1) {
+    summary +=
+      "The assessment evidence suggests a strong profile with multiple capability areas and limited development concern.";
+  } else if (strongCount >= 1 && concernCount <= 3) {
+    summary +=
+      "The assessment evidence suggests a balanced profile with usable strengths and manageable development areas.";
+  } else if (concernCount >= 4) {
+    summary += `The assessment evidence suggests significant development needs across several ${config.id} competencies.`;
+  } else if (moderateCount > 0 && concernCount <= 2) {
+    summary +=
+      "The assessment evidence suggests functional capability with role-specific reinforcement needs.";
+  } else {
+    summary +=
+      "The assessment evidence suggests a mixed profile requiring careful placement, structured support, and practical validation.";
+  }
+
+  summary +=
+    " Supervisor interpretation should consider interview evidence, practical work validation, references, and role requirements.";
+
+  return summary;
+};
+
+const generateManufacturingOverallSummary = (
+  strongAreas,
+  moderateAreas,
+  concernAreas
+) => {
+  const strongNames = strongAreas.map((area) => area.category);
+  const concernNames = concernAreas.map((area) => area.category);
+
+  let summary = "";
+
+  if (
+    concernNames.includes("Safety & Work Ethic") ||
+    concernNames.includes("Safety &amp; Work Ethic")
+  ) {
+    summary +=
+      "Safety and work ethic are key concerns. Safety training, SOP reinforcement, and close supervision are recommended before production exposure.";
+  } else if (
+    strongNames.includes("Safety & Work Ethic") ||
+    strongNames.includes("Safety &amp; Work Ethic")
+  ) {
+    summary +=
+      "Safety and work ethic appear to be a relative strength based on assessment evidence. Practical observation during onboarding is still recommended.";
+  } else {
+    summary +=
+      "Safety and work ethic should be reinforced during onboarding and validated through practical observation.";
+  }
+
+  if (concernNames.includes("Technical Fundamentals")) {
+    summary +=
+      " Technical fundamentals require structured development before independent equipment-related work.";
+  }
+
+  if (concernNames.includes("Troubleshooting")) {
+    summary +=
+      " Troubleshooting should be developed through guided diagnostic practice and root-cause analysis.";
+  }
+
+  if (concernNames.includes("Numerical Aptitude")) {
+    summary +=
+      " Numerical aptitude should be strengthened through production math and metric interpretation practice.";
   }
 
   if (concernAreas.length === 0 && strongAreas.length > 0) {
@@ -103,7 +352,7 @@ const formatConcernArea = (area, config, assessmentType) => {
 // ======================================================
 
 const getCategoryStrengthInterpretation = (category, assessmentType) => {
-  const normalized = normalizeText(category);
+  const normalized = normalizeText(category, "");
 
   const manufacturing = {
     "Technical Fundamentals":
@@ -118,7 +367,7 @@ const getCategoryStrengthInterpretation = (category, assessmentType) => {
       "Assessment evidence suggests reliable safety awareness, SOP discipline, and workplace conduct indicators. Practical validation during onboarding is still required."
   };
 
-  if (assessmentType === "manufacturing_baseline" && manufacturing[normalized]) {
+  if ((assessmentType === "manufacturing_baseline" || assessmentType === "baseline") && manufacturing[normalized]) {
     return manufacturing[normalized];
   }
 
@@ -162,7 +411,7 @@ const getCategoryStrengthInterpretation = (category, assessmentType) => {
 };
 
 const getCategoryModerateInterpretation = (category, assessmentType) => {
-  const normalized = normalizeText(category);
+  const normalized = normalizeText(category, "");
 
   const manufacturing = {
     "Technical Fundamentals":
@@ -177,7 +426,7 @@ const getCategoryModerateInterpretation = (category, assessmentType) => {
       "Assessment evidence suggests functional safety awareness. PPE, SOP, and workplace conduct reinforcement should continue during onboarding."
   };
 
-  if (assessmentType === "manufacturing_baseline" && manufacturing[normalized]) {
+  if ((assessmentType === "manufacturing_baseline" || assessmentType === "baseline") && manufacturing[normalized]) {
     return manufacturing[normalized];
   }
 
@@ -215,7 +464,7 @@ const getCategoryConcernInterpretation = (
   percentage,
   assessmentType
 ) => {
-  const normalized = normalizeText(category);
+  const normalized = normalizeText(category, "");
 
   const prefix = isCriticalGap(percentage)
     ? "Critical development evidence was identified."
@@ -234,7 +483,7 @@ const getCategoryConcernInterpretation = (
       `${prefix} Safety and work ethic should be addressed before independent production exposure. Safety training and close supervision are recommended.`
   };
 
-  if (assessmentType === "manufacturing_baseline" && manufacturing[normalized]) {
+  if ((assessmentType === "manufacturing_baseline" || assessmentType === "baseline") && manufacturing[normalized]) {
     return manufacturing[normalized];
   }
 
@@ -283,7 +532,7 @@ const generateHiringInterpretation = (
 
   let interpretation = `🎯 Hiring Recommendations for ${config.name}\n\n`;
 
-  if (assessmentType === "manufacturing_baseline") {
+  if (assessmentType === "manufacturing_baseline" || assessmentType === "baseline") {
     return generateManufacturingHiringInterpretation(
       strongAreas,
       moderateAreas,
@@ -473,7 +722,7 @@ const generateStrategicObservation = (
   observation += `• ${moderateAreas.length} functional/reinforcement area(s)\n`;
   observation += `• ${concernAreas.length} development concern area(s)\n`;
 
-  if (assessmentType === "manufacturing_baseline") {
+  if (assessmentType === "manufacturing_baseline" || assessmentType === "baseline") {
     observation += generateManufacturingStrategicObservation(
       strongAreas,
       moderateAreas,
@@ -583,7 +832,7 @@ const generateFinalAssessment = (
 ) => {
   let assessment = `📌 Final Assessment for ${config.name}\n\n`;
 
-  if (assessmentType === "manufacturing_baseline") {
+  if (assessmentType === "manufacturing_baseline" || assessmentType === "baseline") {
     return generateManufacturingFinalAssessment(
       strongAreas,
       moderateAreas,
@@ -663,7 +912,7 @@ const generateRoleFitAnalysis = (
   config,
   assessmentType
 ) => {
-  if (assessmentType === "manufacturing_baseline") {
+  if (assessmentType === "manufacturing_baseline" || assessmentType === "baseline") {
     return generateManufacturingRoleFitAnalysis(
       strongAreas,
       moderateAreas,
@@ -793,7 +1042,7 @@ const generateManufacturingRoleFitAnalysis = (
 };
 
 const getRoleFitRiskText = (category) => {
-  const normalized = normalizeText(category);
+  const normalized = normalizeText(category, "");
 
   const risks = {
     Ownership: "high-autonomy roles may require close follow-up",
@@ -816,7 +1065,7 @@ const getRoleFitRiskText = (category) => {
 // ======================================================
 
 const getDevelopmentRecommendation = (category, percentage, assessmentType) => {
-  const normalized = normalizeText(category);
+  const normalized = normalizeText(category, "");
   const value = safeNumber(percentage, 0);
 
   const manufacturingRecommendations = {
@@ -833,7 +1082,7 @@ const getDevelopmentRecommendation = (category, percentage, assessmentType) => {
   };
 
   if (
-    assessmentType === "manufacturing_baseline" &&
+    (assessmentType === "manufacturing_baseline" || assessmentType === "baseline") &&
     manufacturingRecommendations[normalized]
   ) {
     return manufacturingRecommendations[normalized];
@@ -877,258 +1126,3 @@ const formatList = (list) => {
 export default {
   generateDetailedInterpretation
 };
-
-import {
-  getGrade,
-  getGradeDescription,
-  getScoreLevel,
-  getScoreComment,
-  getSupervisorImplication,
-  isStrength,
-  isDevelopmentArea,
-  isCriticalGap,
-  isPriorityDevelopment,
-  calculateGapToTarget,
-  REPORT_THRESHOLDS
-} from "./scoring";
-
-/**
- * Detailed Professional Interpreter
- *
- * Generates comprehensive narrative analysis based on actual assessment scores.
- *
- * Corrected version:
- * - Uses central scoring standard from utils/scoring.js
- * - Keeps existing export: generateDetailedInterpretation
- * - Keeps existing output structure
- * - Supports all assessment types
- * - Improves Manufacturing Baseline interpretation
- * - Uses evidence-based supervisor-friendly wording
- */
-
-const safeNumber = (value, fallback = 0) => {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-};
-
-const normalizeText = (value) => {
-  if (value === null || value === undefined) return "";
-
-  return String(value)
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'");
-};
-
-const formatPercentage = (value) => {
-  const number = safeNumber(value, 0);
-  return `${Math.round(number * 100) / 100}%`;
-};
-
-const normalizeCategoryScore = (category, data = {}, responseInsights = {}) => {
-  const normalizedCategory = normalizeText(category);
-  const percentage = safeNumber(data.percentage, 0);
-
-  return {
-    category: normalizedCategory,
-    percentage,
-    score: safeNumber(data.score ?? data.total ?? data.rawScore, 0),
-    maxPossible: safeNumber(data.maxPossible ?? data.max_score, 0),
-    grade: getGrade(percentage),
-    gradeDesc: getGradeDescription(percentage),
-    scoreLevel: getScoreLevel(percentage),
-    performanceComment: getScoreComment(percentage),
-    supervisorImplication: getSupervisorImplication(percentage),
-    gapToTarget: calculateGapToTarget(percentage),
-    insights:
-      responseInsights?.[category] ||
-      responseInsights?.[normalizedCategory] ||
-      []
-  };
-};
-
-export const generateDetailedInterpretation = (
-  candidateName,
-  categoryScores,
-  assessmentType = "general",
-  responseInsights = {}
-) => {
-  const config = assessmentTypes[assessmentType] || assessmentTypes.general;
-
-  const strongAreas = [];
-  const moderateAreas = [];
-  const concernAreas = [];
-
-  Object.entries(categoryScores || {}).forEach(([category, data]) => {
-    const area = normalizeCategoryScore(category, data, responseInsights);
-
-    if (isStrength(area.percentage)) {
-      strongAreas.push(area);
-    } else if (isDevelopmentArea(area.percentage)) {
-      concernAreas.push(area);
-    } else {
-      moderateAreas.push(area);
-    }
-  });
-
-  strongAreas.sort((a, b) => b.percentage - a.percentage);
-  moderateAreas.sort((a, b) => b.percentage - a.percentage);
-  concernAreas.sort((a, b) => a.percentage - b.percentage);
-
-  return {
-    overallProfileSummary: generateOverallProfileSummary(
-      candidateName,
-      strongAreas,
-      moderateAreas,
-      concernAreas,
-      config,
-      assessmentType
-    ),
-
-    categoryBreakdown: {
-      strong: strongAreas.map((area) =>
-        formatStrongArea(area, config, assessmentType)
-      ),
-      moderate: moderateAreas.map((area) =>
-        formatModerateArea(area, config, assessmentType)
-      ),
-      concerns: concernAreas.map((area) =>
-        formatConcernArea(area, config, assessmentType)
-      )
-    },
-
-    hiringInterpretation: generateHiringInterpretation(
-      strongAreas,
-      moderateAreas,
-      concernAreas,
-      config,
-      assessmentType
-    ),
-
-    developmentPotential: generateDevelopmentPotential(
-      strongAreas,
-      moderateAreas,
-      concernAreas,
-      config,
-      assessmentType
-    ),
-
-    strategicObservation: generateStrategicObservation(
-      strongAreas,
-      moderateAreas,
-      concernAreas,
-      config,
-      assessmentType
-    ),
-
-    finalAssessment: generateFinalAssessment(
-      strongAreas,
-      moderateAreas,
-      concernAreas,
-      config,
-      assessmentType
-    ),
-
-    roleFit: generateRoleFitAnalysis(
-      strongAreas,
-      moderateAreas,
-      concernAreas,
-      config,
-      assessmentType
-    )
-  };
-};
-
-// ======================================================
-// OVERALL PROFILE SUMMARY
-// ======================================================
-
-const generateOverallProfileSummary = (
-  candidateName,
-  strongAreas,
-  moderateAreas,
-  concernAreas,
-  config,
-  assessmentType
-) => {
-  const strongCount = strongAreas.length;
-  const moderateCount = moderateAreas.length;
-  const concernCount = concernAreas.length;
-
-  let summary = `Overall Profile Summary\n\n`;
-
-  summary += `${candidateName} completed the ${config.name}. `;
-
-  if (assessmentType === "manufacturing_baseline") {
-    summary += generateManufacturingOverallSummary(
-      strongAreas,
-      moderateAreas,
-      concernAreas
-    );
-
-    return summary;
-  }
-
-  if (strongCount >= 3 && concernCount <= 1) {
-    summary +=
-      "The assessment evidence suggests a strong profile with multiple capability areas and limited development concern.";
-  } else if (strongCount >= 1 && concernCount <= 3) {
-    summary +=
-      "The assessment evidence suggests a balanced profile with usable strengths and manageable development areas.";
-  } else if (concernCount >= 4) {
-    summary += `The assessment evidence suggests significant development needs across several ${config.id} competencies.`;
-  } else if (moderateCount > 0 && concernCount <= 2) {
-    summary +=
-      "The assessment evidence suggests functional capability with role-specific reinforcement needs.";
-  } else {
-    summary +=
-      "The assessment evidence suggests a mixed profile requiring careful placement, structured support, and practical validation.";
-  }
-
-  summary +=
-    " Supervisor interpretation should consider interview evidence, practical work validation, references, and role requirements.";
-
-  return summary;
-};
-
-const generateManufacturingOverallSummary = (
-  strongAreas,
-  moderateAreas,
-  concernAreas
-) => {
-  const strongNames = strongAreas.map((area) => area.category);
-  const concernNames = concernAreas.map((area) => area.category);
-
-  let summary = "";
-
-  if (
-    concernNames.includes("Safety & Work Ethic") ||
-    concernNames.includes("Safety &amp; Work Ethic")
-  ) {
-    summary +=
-      "Safety and work ethic are key concerns. Safety training, SOP reinforcement, and close supervision are recommended before production exposure.";
-  } else if (
-    strongNames.includes("Safety & Work Ethic") ||
-    strongNames.includes("Safety &amp; Work Ethic")
-  ) {
-    summary +=
-      "Safety and work ethic appear to be a relative strength based on assessment evidence. Practical observation during onboarding is still recommended.";
-  } else {
-    summary +=
-      "Safety and work ethic should be reinforced during onboarding and validated through practical observation.";
-  }
-
-  if (concernNames.includes("Technical Fundamentals")) {
-    summary +=
-      " Technical fundamentals require structured development before independent equipment-related work.";
-  }
-
-  if (concernNames.includes("Troubleshooting")) {
-    summary +=
-      " Troubleshooting should be developed through guided diagnostic practice and root-cause analysis.";
-  }
-
-  if (concernNames.includes("Numerical Aptitude")) {
-    summary +=
