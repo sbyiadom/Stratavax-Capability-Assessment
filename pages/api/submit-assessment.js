@@ -1,5 +1,3 @@
-// pages/api/submit-assessment.js
-
 import { createClient } from "@supabase/supabase-js";
 import {
   toNumber,
@@ -309,6 +307,9 @@ function buildBehavioralInsights(responses) {
   };
 }
 
+// ============================================================
+// FIXED: buildDetailedCategoryScores with correct maxScore calculation
+// ============================================================
 function buildDetailedCategoryScores(responses, isBaseline) {
   const grouped = {};
 
@@ -362,7 +363,10 @@ function buildDetailedCategoryScores(responses, isBaseline) {
 
   return Object.keys(grouped).map(function (key) {
     const item = grouped[key];
-    const percentage = item.maxScore > 0 ? roundNumber((item.totalScore / item.maxScore) * 100, 2) : 0;
+    let percentage = item.maxScore > 0 ? (item.totalScore / item.maxScore) * 100 : 0;
+    percentage = Math.min(100, Math.max(0, percentage));
+    percentage = roundNumber(percentage, 2);
+    
     return {
       category: item.category,
       name: item.name,
@@ -392,7 +396,7 @@ function buildDetailedRecommendations(categoryScores) {
   const recommendations = [];
 
   const developmentAreas = safeArray(categoryScores)
-    .filter(function (item) { return toNumber(item.percentage, 0) < 65; })
+    .filter(function (item) { return toNumber(item.percentage, 0) < 65 && toNumber(item.percentage, 0) >= 0; })
     .sort(function (a, b) { return toNumber(a.percentage, 0) - toNumber(b.percentage, 0); });
 
   developmentAreas.forEach(function (area) {
@@ -412,7 +416,7 @@ function buildDetailedRecommendations(categoryScores) {
   });
 
   const strengths = safeArray(categoryScores)
-    .filter(function (item) { return toNumber(item.percentage, 0) >= 75; })
+    .filter(function (item) { return toNumber(item.percentage, 0) >= 75 && toNumber(item.percentage, 0) <= 100; })
     .sort(function (a, b) { return toNumber(b.percentage, 0) - toNumber(a.percentage, 0); });
 
   strengths.forEach(function (area) {
@@ -435,12 +439,12 @@ function buildDetailedRecommendations(categoryScores) {
 
 function buildExecutiveSummary(candidateName, assessmentName, percentage, classification, categoryScores) {
   const lowestAreas = safeArray(categoryScores)
-    .filter(function (item) { return toNumber(item.percentage, 0) < 65; })
+    .filter(function (item) { return toNumber(item.percentage, 0) < 65 && toNumber(item.percentage, 0) >= 0; })
     .sort(function (a, b) { return toNumber(a.percentage, 0) - toNumber(b.percentage, 0); })
     .slice(0, 3);
 
   const topAreas = safeArray(categoryScores)
-    .filter(function (item) { return toNumber(item.percentage, 0) >= 75; })
+    .filter(function (item) { return toNumber(item.percentage, 0) >= 75 && toNumber(item.percentage, 0) <= 100; })
     .sort(function (a, b) { return toNumber(b.percentage, 0) - toNumber(a.percentage, 0); })
     .slice(0, 3);
 
@@ -459,7 +463,7 @@ function buildExecutiveSummary(candidateName, assessmentName, percentage, classi
 }
 
 function buildRoleReadiness(percentage, categoryScores) {
-  const weakAreas = safeArray(categoryScores).filter(function (item) { return toNumber(item.percentage, 0) < 65; });
+  const weakAreas = safeArray(categoryScores).filter(function (item) { return toNumber(item.percentage, 0) < 65 && toNumber(item.percentage, 0) >= 0; });
   const value = toNumber(percentage, 0);
 
   if (value >= 85 && weakAreas.length === 0) return "The candidate appears highly ready for role responsibilities with normal supervision. The supervisor can consider stretch assignments, broader accountability, and opportunities to leverage demonstrated strengths.";
@@ -471,12 +475,18 @@ function buildRoleReadiness(percentage, categoryScores) {
 
 function buildFollowUpQuestions(categoryScores) {
   let selected = safeArray(categoryScores)
-    .filter(function (item) { return toNumber(item.percentage, 0) < 75; })
+    .filter(function (item) { 
+      const percentage = toNumber(item.percentage, 0);
+      return percentage < 75 && percentage >= 0; 
+    })
     .sort(function (a, b) { return toNumber(a.percentage, 0) - toNumber(b.percentage, 0); });
 
   if (selected.length === 0) {
     selected = safeArray(categoryScores)
-      .filter(function (item) { return toNumber(item.percentage, 0) >= 75; })
+      .filter(function (item) { 
+        const percentage = toNumber(item.percentage, 0);
+        return percentage >= 75 && percentage <= 100; 
+      })
       .sort(function (a, b) { return toNumber(b.percentage, 0) - toNumber(a.percentage, 0); })
       .slice(0, 3);
   }
@@ -504,12 +514,22 @@ function buildDetailedReportPayload(candidateProfile, assessment, responses, use
 
   const categoryScores = buildDetailedCategoryScores(responses, isBaseline);
   const behavioralInsights = buildBehavioralInsights(responses);
+  
+  // FIXED: Filter strengths (>=75%) and development areas (<65%) with valid range checks
   const strengths = safeArray(categoryScores)
-    .filter(function (item) { return toNumber(item.percentage, 0) >= 75; })
+    .filter(function (item) { 
+      const percentage = toNumber(item.percentage, 0);
+      return percentage >= 75 && percentage <= 100;
+    })
     .sort(function (a, b) { return toNumber(b.percentage, 0) - toNumber(a.percentage, 0); });
+    
   const developmentAreas = safeArray(categoryScores)
-    .filter(function (item) { return toNumber(item.percentage, 0) < 65; })
+    .filter(function (item) { 
+      const percentage = toNumber(item.percentage, 0);
+      return percentage < 65 && percentage >= 0;
+    })
     .sort(function (a, b) { return toNumber(a.percentage, 0) - toNumber(b.percentage, 0); });
+    
   const recommendations = buildDetailedRecommendations(categoryScores);
   const followUpQuestions = buildFollowUpQuestions(categoryScores);
 
