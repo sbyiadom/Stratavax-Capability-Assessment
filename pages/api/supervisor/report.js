@@ -1,5 +1,3 @@
-// pages/api/supervisor/report.js
-
 import { createClient } from "@supabase/supabase-js";
 
 /**
@@ -74,51 +72,6 @@ function buildLibraryMap(libraryRows) {
   });
 
   return map;
-}
-
-function normalizeInsightItems(rawItems, categoryScoreMap, libraryMap, type) {
-  return safeArray(rawItems).map((item) => {
-    const name =
-      typeof item === "string"
-        ? item
-        : safeText(item?.name || item?.category, "Area");
-
-    const lookupKey = safeText(name, "").trim().toLowerCase();
-    const scoreRow = categoryScoreMap.get(lookupKey) || null;
-    const libraryRow = libraryMap.get(lookupKey) || null;
-
-    const percentage = toNumber(scoreRow?.percentage ?? scoreRow?.score, 0);
-
-    const description =
-      safeText(
-        libraryRow?.[LIBRARY_DESCRIPTION_COLUMN],
-        safeText(
-          item?.description || item?.narrative,
-          `${name} is an area of ${type === "strength" ? "strength" : "development"} for this candidate.`
-        )
-      );
-
-    const recommendation = safeText(
-      libraryRow?.[LIBRARY_RECOMMENDATION_COLUMN],
-      safeText(item?.recommendation, "")
-    );
-
-    const followUpQuestion = safeText(
-      libraryRow?.[LIBRARY_FOLLOWUP_COLUMN],
-      ""
-    );
-
-    return {
-      name,
-      percentage,
-      narrative: description,
-      description,
-      recommendation,
-      followUpQuestion,
-      classification:
-        safeText(scoreRow?.classification, percentage > 0 ? getClassification(percentage) : "Not available")
-    };
-  });
 }
 
 function buildFollowUpQuestionsFromLibrary(developmentAreas) {
@@ -287,7 +240,7 @@ export default async function handler(req, res) {
 
     /**
      * ------------------------------------------------------------
-     * 4) Load library rows for relevant categories
+     * 4) Load library rows for relevant categories (for recommendations and follow-ups only)
      * ------------------------------------------------------------
      */
     const categoryScores = safeArray(record.category_scores);
@@ -322,7 +275,7 @@ export default async function handler(req, res) {
 
     /**
      * ------------------------------------------------------------
-     * 5) Build report payload
+     * 5) Build report payload - DIRECTLY use stored strengths/weaknesses
      * ------------------------------------------------------------
      */
     const percentage = toNumber(record.percentage_score, 0);
@@ -341,26 +294,90 @@ export default async function handler(req, res) {
     const assessmentName =
       safeText(assessment?.title, "") || "Assessment";
 
-    const strengths = normalizeInsightItems(
-      record.strengths,
-      categoryScoreMap,
-      libraryMap,
-      "strength"
-    );
+    // DIRECTLY use stored strengths - no re-processing
+    const strengths = safeArray(record.strengths).map((item) => {
+      // Handle string format (legacy)
+      if (typeof item === "string") {
+        return {
+          name: item,
+          percentage: 0,
+          narrative: `${item} is an area of strength for this candidate.`,
+          description: `${item} is an area of strength for this candidate.`,
+          classification: "Not classified"
+        };
+      }
+      
+      // Return the stored object as-is, ensuring all expected fields exist
+      return {
+        name: item.name || item.category || "Strength",
+        percentage: item.percentage !== undefined ? item.percentage : (item.score || 0),
+        narrative: item.narrative || item.description || `${item.name || item.category || "This area"} is a strength.`,
+        description: item.narrative || item.description || `${item.name || item.category || "This area"} is a strength.`,
+        classification: item.classification || getClassification(item.percentage || item.score || 0),
+        // Preserve any additional fields from the stored data
+        ...(item.action && { action: item.action }),
+        ...(item.followUpQuestion && { followUpQuestion: item.followUpQuestion })
+      };
+    });
 
-    const developmentAreas = normalizeInsightItems(
-      record.weaknesses,
-      categoryScoreMap,
-      libraryMap,
-      "development"
-    );
+    // DIRECTLY use stored weaknesses - no re-processing
+    const developmentAreas = safeArray(record.weaknesses).map((item) => {
+      // Handle string format (legacy)
+      if (typeof item === "string") {
+        return {
+          name: item,
+          percentage: 0,
+          narrative: `${item} is an area for development.`,
+          description: `${item} is an area for development.`,
+          classification: "Not classified"
+        };
+      }
+      
+      // Return the stored object as-is, ensuring all expected fields exist
+      return {
+        name: item.name || item.category || "Development Area",
+        percentage: item.percentage !== undefined ? item.percentage : (item.score || 0),
+        narrative: item.narrative || item.description || `${item.name || item.category || "This area"} needs development.`,
+        description: item.narrative || item.description || `${item.name || item.category || "This area"} needs development.`,
+        classification: item.classification || getClassification(item.percentage || item.score || 0),
+        // Preserve any additional fields from the stored data
+        ...(item.action && { action: item.action }),
+        ...(item.followUpQuestion && { followUpQuestion: item.followUpQuestion })
+      };
+    });
 
-    const followUpQuestions = buildFollowUpQuestionsFromLibrary(developmentAreas);
+    // Build follow-up questions from development areas (using stored data if available)
+    let followUpQuestions = [];
+    
+    // First try to use stored follow-up questions from interpretations
+    if (record.interpretations && record.interpretations.followUpQuestions) {
+      followUpQuestions = safeArray(record.interpretations.followUpQuestions);
+    } 
+    // Otherwise build from development areas
+    else if (developmentAreas.length > 0) {
+      followUpQuestions = buildFollowUpQuestionsFromLibrary(developmentAreas);
+    }
+    // Fallback: use category scores
+    else if (categoryScores.length > 0) {
+      followUpQuestions = categoryScores
+        .filter(item => toNumber(item.percentage, 0) < 75)
+        .slice(0, 3)
+        .map(item => ({
+          category: item.name || item.category,
+          question: `Tell me more about your experience with ${item.name || item.category}.`,
+          priority: "Medium"
+        }));
+    }
 
-    const recommendationsFromLibrary =
-      buildRecommendationsFromLibrary(developmentAreas);
-
-    const dbRecommendations = safeArray(record.recommendations).map((item) => {
+    // Build recommendations from stored data or library
+    let recommendations = safeArray(record.recommendations);
+    
+    if (recommendations.length === 0 && developmentAreas.length > 0) {
+      recommendations = buildRecommendationsFromLibrary(developmentAreas);
+    }
+    
+    // Ensure recommendations have proper structure
+    recommendations = recommendations.map((item) => {
       if (typeof item === "string") {
         return {
           title: "Recommendation",
@@ -369,7 +386,6 @@ export default async function handler(req, res) {
           priority: "Medium"
         };
       }
-
       return {
         title: safeText(item?.title, safeText(item?.category, "Recommendation")),
         category: safeText(item?.category, ""),
@@ -381,12 +397,21 @@ export default async function handler(req, res) {
       };
     });
 
-    const recommendations =
-      recommendationsFromLibrary.length > 0
-        ? recommendationsFromLibrary
-        : dbRecommendations;
+    // Build executive summary
+    const executiveSummary = record.interpretations?.executiveSummary || 
+      `${candidateName} completed the ${assessmentName} assessment with an overall score of ${percentage}%. ${getClassification(percentage)} performance.`;
 
-    const executiveSummary = `${candidateName} completed the ${assessmentName} assessment with an overall score of ${percentage}%.`;
+    // Build supervisor implication
+    const supervisorImplication = record.interpretations?.supervisorImplication ||
+      (percentage >= 75
+        ? "The candidate shows readiness for role responsibilities. Provide normal supervision with targeted feedback to reinforce strengths."
+        : "The candidate requires structured development and close supervision before assuming critical responsibilities.");
+
+    // Build role readiness
+    const roleReadiness = record.readiness || record.interpretations?.roleReadiness ||
+      (percentage >= 75
+        ? "Candidate appears ready for role responsibilities."
+        : "Candidate requires additional development before assuming critical responsibilities.");
 
     const generatedReport = {
       candidateName,
@@ -411,18 +436,16 @@ export default async function handler(req, res) {
       executiveSummary,
       overallAssessment: executiveSummary,
 
-      supervisorImplication:
-        "Review the assessment results and provide targeted feedback based on the candidate's performance.",
+      supervisorImplication,
+      roleReadiness,
+      readinessStatement: percentage >= 75 ? "Ready for role" : "Development needed",
 
-      roleReadiness:
-        percentage >= 75
-          ? "Candidate appears ready for role responsibilities."
-          : "Candidate requires additional development before assuming critical responsibilities.",
-
-      readinessStatement:
-        percentage >= 75 ? "Ready for role" : "Development needed",
-
-      categoryScores,
+      categoryScores: categoryScores.map(item => ({
+        ...item,
+        percentage: item.percentage !== undefined ? item.percentage : (item.score || 0),
+        narrative: item.narrative || getDefaultNarrative(item.name || item.category, item.percentage || item.score || 0)
+      })),
+      
       strengths,
       developmentAreas,
       recommendations,
@@ -437,8 +460,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       candidate: candidate || { id: record.user_id },
-      assessment:
-        assessment || { id: record.assessment_id, title: "Assessment" },
+      assessment: assessment || { id: record.assessment_id, title: "Assessment" },
       generatedReport,
       result: record,
       assessment_id: record.assessment_id
@@ -451,4 +473,17 @@ export default async function handler(req, res) {
       error: error?.message || "Failed to generate report"
     });
   }
+}
+
+// Helper function for default narratives
+function getDefaultNarrative(category, percentage) {
+  const value = toNumber(percentage, 0);
+  const categoryName = safeText(category, "This area");
+  
+  if (value >= 85) return `${categoryName} scored ${value}%, indicating exceptional capability. This is a clear strength that can be leveraged.`;
+  if (value >= 75) return `${categoryName} scored ${value}%, indicating strong capability. The candidate performs reliably in this area.`;
+  if (value >= 65) return `${categoryName} scored ${value}%, indicating capable performance. Some reinforcement may be beneficial.`;
+  if (value >= 55) return `${categoryName} scored ${value}%, indicating developing capability. Structured coaching is recommended.`;
+  if (value >= 40) return `${categoryName} scored ${value}%, indicating a priority development area. Targeted support is needed.`;
+  return `${categoryName} scored ${value}%, indicating a critical development area. Close supervision and structured practice are required.`;
 }
