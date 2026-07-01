@@ -147,30 +147,52 @@ async function getCandidateAssessmentAccess(userId, assessmentId) {
 // ASSESSMENT TYPES
 // ======================================================
 
-export async function getAssessmentTypes() {
+export async function getUniqueQuestions(assessmentId) {
   try {
-    const { data, error } = await supabase
-      .from("assessment_types")
-      .select("*")
+    if (!assessmentId) return [];
+
+    const { data: questions, error } = await supabase
+      .from("questions")
+      .select(`
+        id,
+        section,
+        subsection,
+        question_text,
+        question_order,
+        answers(
+          id,
+          answer_text,
+          score,
+          display_order
+        )
+      `)
+      .eq("assessment_id", assessmentId)
       .eq("is_active", true)
-      .order("display_order", { ascending: true });
+      .order("question_order", { ascending: true });
 
-    if (error) throw error;
-    return data || [];
+    if (error) {
+      console.error("Error fetching questions:", error);
+      return [];
+    }
+
+    return (questions || []).map((question) => ({
+      id: question.id,
+      question_text: question.question_text,
+      section: question.section,
+      subsection: question.subsection,
+      display_order: question.question_order,
+      answers: shuffleArray(
+        (question.answers || []).map((answer) => ({
+          id: answer.id,
+          answer_text: answer.answer_text,
+          score: answer.score,
+          display_order: answer.display_order
+        }))
+      )
+    }));
   } catch (error) {
-    console.error("Error in getAssessmentTypes:", error);
+    console.error("Error in getUniqueQuestions:", error);
     return [];
-  }
-}
-
-export async function getAssessmentTypeByCode(code) {
-  try {
-    const { data, error } = await supabase.from("assessment_types").select("*").eq("code", code).single();
-    if (error) throw error;
-    return data;
-  } catch (error) {
-    console.error("Error in getAssessmentTypeByCode:", error);
-    throw error;
   }
 }
 
