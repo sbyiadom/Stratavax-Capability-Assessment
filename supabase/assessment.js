@@ -5,16 +5,6 @@ import { supabase } from "./client";
 // ======================================================
 // PLATFORM-WIDE ASSESSMENT HELPERS
 // ======================================================
-// Key platform fixes implemented in this file:
-// 1) Never reuse stale sessions after a supervisor reset.
-//    - After reset, candidate_assessments.status becomes 'unblocked' and session_id is cleared.
-//    - createAssessmentSession will always create a fresh session in that state.
-// 2) Completion detection is based on authoritative sources only:
-//    - candidate_assessments.status === 'completed' OR assessment_results exists
-//    - We do NOT treat historical completed sessions as completion, to avoid phantom completion counts.
-// 3) All comparisons/logic are based on session_id, so stale response rows cannot leak into a new attempt.
-//
-// NOTE: This file is a FULL replacement (not a patch).
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -147,52 +137,30 @@ async function getCandidateAssessmentAccess(userId, assessmentId) {
 // ASSESSMENT TYPES
 // ======================================================
 
-export async function getUniqueQuestions(assessmentId) {
+export async function getAssessmentTypes() {
   try {
-    if (!assessmentId) return [];
-
-    const { data: questions, error } = await supabase
-      .from("questions")
-      .select(`
-        id,
-        section,
-        subsection,
-        question_text,
-        question_order,
-        answers(
-          id,
-          answer_text,
-          score,
-          display_order
-        )
-      `)
-      .eq("assessment_id", assessmentId)
+    const { data, error } = await supabase
+      .from("assessment_types")
+      .select("*")
       .eq("is_active", true)
-      .order("question_order", { ascending: true });
+      .order("display_order", { ascending: true });
 
-    if (error) {
-      console.error("Error fetching questions:", error);
-      return [];
-    }
-
-    return (questions || []).map((question) => ({
-      id: question.id,
-      question_text: question.question_text,
-      section: question.section,
-      subsection: question.subsection,
-      display_order: question.question_order,
-      answers: shuffleArray(
-        (question.answers || []).map((answer) => ({
-          id: answer.id,
-          answer_text: answer.answer_text,
-          score: answer.score,
-          display_order: answer.display_order
-        }))
-      )
-    }));
+    if (error) throw error;
+    return data || [];
   } catch (error) {
-    console.error("Error in getUniqueQuestions:", error);
+    console.error("Error in getAssessmentTypes:", error);
     return [];
+  }
+}
+
+export async function getAssessmentTypeByCode(code) {
+  try {
+    const { data, error } = await supabase.from("assessment_types").select("*").eq("code", code).single();
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error("Error in getAssessmentTypeByCode:", error);
+    throw error;
   }
 }
 
@@ -238,7 +206,6 @@ export async function getAssessmentById(id) {
 
 export async function isAssessmentCompleted(userId, assessmentId) {
   try {
-    // Authoritative: candidate_assessments completed
     const candidateAssessment = await safeSelectSingle(
       "candidate_assessments",
       (query) => query.eq("user_id", userId).eq("assessment_id", assessmentId).eq("status", "completed"),
@@ -246,7 +213,6 @@ export async function isAssessmentCompleted(userId, assessmentId) {
     );
     if (candidateAssessment.data) return true;
 
-    // Authoritative: assessment_results exists
     const resultRecord = await safeSelectSingle(
       "assessment_results",
       (query) => query.eq("user_id", userId).eq("assessment_id", assessmentId),
@@ -254,8 +220,6 @@ export async function isAssessmentCompleted(userId, assessmentId) {
     );
     if (resultRecord.data) return true;
 
-    // IMPORTANT: Do NOT use historical completed sessions as completion.
-    // This prevents phantom completion when old sessions exist for audit/history.
     return false;
   } catch (error) {
     console.error("Error in isAssessmentCompleted:", error);
@@ -271,17 +235,11 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
   try {
     if (!userId || !assessmentId) throw new Error("Missing userId or assessmentId");
 
-    // If completed by authoritative sources, block new session creation.
     const completed = await isAssessmentCompleted(userId, assessmentId);
     if (completed) throw new Error("Assessment already completed");
 
-    // Read candidate assignment state.
     const access = await getCandidateAssessmentAccess(userId, assessmentId);
 
-    // If the supervisor has reset the assessment correctly:
-    // - candidate_assessments.status should be 'unblocked'
-    // - session_id should be null
-    // In this case we MUST create a fresh session and must NOT reuse anything.
     const forceNewSession =
       access &&
       access.status === "unblocked" &&
@@ -289,14 +247,11 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
       !access.result_id &&
       !access.completed_at;
 
-    // If candidate is in progress and session_id exists, prefer that session.
     if (!forceNewSession && access && access.status === "in_progress" && access.session_id) {
       const existingSession = await getSessionById(access.session_id);
       if (existingSession && existingSession.status === "in_progress") return existingSession;
     }
 
-    // As a fallback, only reuse an in_progress session if candidate_assessments is also in_progress.
-    // This prevents resurrection of old sessions after reset.
     if (!forceNewSession && access && access.status === "in_progress") {
       const existing = await safeSelectSingle(
         "assessment_sessions",
@@ -311,12 +266,10 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
       if (existing.data) return existing.data;
     }
 
-    // Create a new session.
     const assessment = await getAssessmentById(assessmentId);
     const resolvedAssessmentTypeId = assessmentTypeId || assessment?.assessment_type_id || null;
     const totalQuestions = await getAssessmentQuestionCount(resolvedAssessmentTypeId);
 
-    // Duration: assessment duration if present, else fall back to 180 minutes.
     const durationMinutes = Math.max(
       1,
       toNumber(assessment?.duration_minutes || assessment?.duration || assessment?.time_limit_minutes, 180)
@@ -350,8 +303,6 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
 
     if (error) throw error;
 
-    // Sync candidate_assessments to in_progress and attach session_id.
-    // If the assignment row does not exist (rare), this update will no-op.
     await updateCandidateAssessmentStatus(userId, assessmentId, "in_progress", undefined, {
       session_id: data.id,
       session_status: "in_progress",
@@ -475,7 +426,6 @@ export async function submitAssessment(sessionId, options = {}) {
 
     const result = await response.json().catch(() => ({}));
 
-    // Idempotent: treat already_submitted as success.
     if (!response.ok) {
       if (result && result.error === "already_submitted") {
         const resultId = result.id || result.result_id || (result.result && result.result.id) || (result.data && result.data.id) || null;
@@ -624,36 +574,72 @@ export async function getProgress(userId, assessmentId) {
 }
 
 // ======================================================
-// QUESTIONS
+// QUESTIONS - SINGLE DEFINITION (FIXED)
 // ======================================================
 
 export async function getUniqueQuestions(assessmentId) {
   try {
-    if (!assessmentId) return [];
+    console.log(`[getUniqueQuestions] Fetching questions for assessment ID: ${assessmentId}`);
+    
+    if (!assessmentId) {
+      console.warn("[getUniqueQuestions] No assessment ID provided");
+      return [];
+    }
 
+    // Step 1: Get the assessment to find its assessment_type_id
     const assessmentResult = await safeSelectSingle(
       "assessments",
       (query) => query.eq("id", assessmentId),
       "assessment_type_id, title"
     );
 
-    if (!assessmentResult.data) return [];
-
-    const questionsResult = await safeSelectRows(
-      "unique_questions",
-      (query) =>
-        query
-          .eq("assessment_type_id", assessmentResult.data.assessment_type_id)
-          .order("display_order", { ascending: true }),
-      "id, section, subsection, question_text, display_order, unique_answers(id, answer_text, score, display_order)"
-    );
-
-    if (questionsResult.error) {
-      console.error("Error fetching unique questions:", questionsResult.error);
+    if (!assessmentResult.data) {
+      console.warn(`[getUniqueQuestions] Assessment not found for ID: ${assessmentId}`);
       return [];
     }
 
-    return shuffleArray(questionsResult.data).map((question, index) => {
+    const assessmentTypeId = assessmentResult.data.assessment_type_id;
+    console.log(`[getUniqueQuestions] Assessment type ID: ${assessmentTypeId}`);
+
+    if (!assessmentTypeId) {
+      console.warn(`[getUniqueQuestions] No assessment_type_id found for assessment ${assessmentId}`);
+      return [];
+    }
+
+    // Step 2: Get questions for this assessment type with their answers
+    const { data: questionsData, error: questionsError } = await supabase
+      .from("unique_questions")
+      .select(`
+        id,
+        section,
+        subsection,
+        question_text,
+        display_order,
+        assessment_type_id,
+        unique_answers (
+          id,
+          answer_text,
+          score,
+          display_order
+        )
+      `)
+      .eq("assessment_type_id", assessmentTypeId)
+      .order("display_order", { ascending: true });
+
+    if (questionsError) {
+      console.error("[getUniqueQuestions] Error fetching questions:", questionsError);
+      return [];
+    }
+
+    console.log(`[getUniqueQuestions] Found ${questionsData?.length || 0} questions`);
+
+    if (!questionsData || questionsData.length === 0) {
+      console.warn(`[getUniqueQuestions] No questions found for assessment_type_id: ${assessmentTypeId}`);
+      return [];
+    }
+
+    // Step 3: Format the questions
+    const formattedQuestions = questionsData.map((question, index) => {
       const answers = safeArray(question.unique_answers).map((answer) => ({
         id: answer.id,
         answer_text: answer.answer_text,
@@ -661,17 +647,30 @@ export async function getUniqueQuestions(assessmentId) {
         display_order: answer.display_order
       }));
 
+      // Filter out questions with no answers
+      if (answers.length === 0) {
+        console.warn(`[getUniqueQuestions] Question ${question.id} has no answers, skipping`);
+        return null;
+      }
+
       return {
         id: question.id,
         question_text: question.question_text,
-        section: question.section,
-        subsection: question.subsection,
+        section: question.section || "General",
+        subsection: question.subsection || "",
         display_order: index + 1,
         answers: shuffleArray(answers)
       };
     });
+
+    // Filter out null values (questions with no answers)
+    const validQuestions = formattedQuestions.filter(q => q !== null);
+    console.log(`[getUniqueQuestions] Returning ${validQuestions.length} valid questions`);
+
+    return shuffleArray(validQuestions);
+
   } catch (error) {
-    console.error("Error in getUniqueQuestions:", error);
+    console.error("[getUniqueQuestions] Error:", error);
     return [];
   }
 }
