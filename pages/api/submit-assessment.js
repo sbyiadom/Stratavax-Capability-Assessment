@@ -1,3 +1,5 @@
+// pages/api/submit-assessment.js
+
 import { createClient } from "@supabase/supabase-js";
 import {
   toNumber,
@@ -41,6 +43,17 @@ function getServiceClient() {
       autoRefreshToken: false
     }
   });
+}
+
+function getAnonClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !anonKey) {
+    throw new Error("Missing Supabase environment variables");
+  }
+
+  return createClient(supabaseUrl, anonKey);
 }
 
 function groupResponsesByQuestion(responses) {
@@ -307,9 +320,6 @@ function buildBehavioralInsights(responses) {
   };
 }
 
-// ============================================================
-// FIXED: buildDetailedCategoryScores with correct maxScore calculation
-// ============================================================
 function buildDetailedCategoryScores(responses, isBaseline) {
   const grouped = {};
 
@@ -515,7 +525,6 @@ function buildDetailedReportPayload(candidateProfile, assessment, responses, use
   const categoryScores = buildDetailedCategoryScores(responses, isBaseline);
   const behavioralInsights = buildBehavioralInsights(responses);
   
-  // FIXED: Filter strengths (>=75%) and development areas (<65%) with valid range checks
   const strengths = safeArray(categoryScores)
     .filter(function (item) { 
       const percentage = toNumber(item.percentage, 0);
@@ -756,13 +765,17 @@ export default async function handler(req, res) {
     const allowIncomplete = body.allow_incomplete === true || body.allowIncomplete === true || requestAutoSubmit;
     const isAutoSubmit = violationCount >= maxViolations || requestAutoSubmit || allowIncomplete;
 
+    // ============================================================
+    // FIXED: Simplified assessment query without nested relation
+    // ============================================================
     const assessmentResponse = await serviceClient
       .from("assessments")
-      .select("id, assessment_type_id, title, assessment_type:assessment_types(code)")
+      .select("id, assessment_type_id, title")
       .eq("id", session.assessment_id)
       .single();
 
     if (assessmentResponse.error || !assessmentResponse.data) {
+      console.error("Assessment fetch error:", assessmentResponse.error);
       return res.status(500).json({
         success: false,
         error: "failed_to_fetch_assessment",
@@ -771,20 +784,51 @@ export default async function handler(req, res) {
     }
 
     const assessment = assessmentResponse.data;
-    const assessmentTypeCode = assessment.assessment_type && assessment.assessment_type.code ? assessment.assessment_type.code : null;
+
+    // Get assessment type code separately if needed
+    let assessmentTypeCode = null;
+    if (assessment.assessment_type_id) {
+      const typeResponse = await serviceClient
+        .from("assessment_types")
+        .select("code")
+        .eq("id", assessment.assessment_type_id)
+        .maybeSingle();
+      
+      if (!typeResponse.error && typeResponse.data) {
+        assessmentTypeCode = typeResponse.data.code;
+      }
+    }
+
     const isBaseline = isBaselineAssessmentType(assessment.assessment_type_id) || isBaselineAssessmentType(assessmentTypeCode);
 
+    // ============================================================
+    // FIXED: Use 'questions' table instead of 'unique_questions'
+    // ============================================================
     const questionsResponse = await serviceClient
-      .from("unique_questions")
-      .select("id, unique_answers(id, score, answer_text, display_order)")
-      .eq("assessment_type_id", assessment.assessment_type_id);
+      .from("questions")
+      .select(`
+        id,
+        question_text,
+        section,
+        subsection,
+        display_order,
+        answers (
+          id,
+          answer_text,
+          score,
+          is_correct,
+          display_order
+        )
+      `)
+      .eq("assessment_id", session.assessment_id)
+      .eq("is_active", true);
 
     if (questionsResponse.error) {
+      console.error("Questions fetch error:", questionsResponse.error);
       return res.status(500).json({
         success: false,
         error: "failed_to_fetch_questions",
-        message: questionsResponse.error.message
-      });
+        message: questionsResponse.error.message      });
     }
 
     const questions = safeArray(questionsResponse.data);
@@ -798,22 +842,28 @@ export default async function handler(req, res) {
       });
     }
 
+    // ============================================================
+    // FIXED: Get responses with proper joins
+    // ============================================================
     const responsesResponse = await serviceClient
       .from("responses")
       .select(`
-        *,
-        unique_questions(
-          id,
-          section,
-          subsection,
-          question_text,
-          unique_answers(id, score, answer_text, display_order)
-        ),
-        unique_answers(id, score, answer_text, display_order)
+        id,
+        question_id,
+        answer_id,
+        user_id,
+        assessment_id,
+        session_id,
+        time_spent_seconds,
+        times_changed,
+        initial_answer_id,
+        created_at,
+        updated_at
       `)
       .eq("session_id", sessionId);
 
     if (responsesResponse.error) {
+      console.error("Responses fetch error:", responsesResponse.error);
       return res.status(500).json({
         success: false,
         error: "failed_to_fetch_responses",
@@ -822,8 +872,7 @@ export default async function handler(req, res) {
     }
 
     const responses = safeArray(responsesResponse.data);
-    const responsesByQuestion = groupResponsesByQuestion(responses);
-    const answeredCount = Object.keys(responsesByQuestion).length;
+    const answeredCount = responses.filter(r => r.answer_id && r.answer_id !== "").length;
 
     if (!allowIncomplete && answeredCount < totalQuestions) {
       const unansweredCount = totalQuestions - answeredCount;
@@ -837,12 +886,30 @@ export default async function handler(req, res) {
       });
     }
 
+    // ============================================================
+    // FIXED: Calculate score properly
+    // ============================================================
     let earnedScore = 0;
-    safeArray(responses).forEach(function (response) {
-      earnedScore += toNumber(scoreQuestionResponse(response, isBaseline).score, 0);
-    });
+    let maxScore = 0;
 
-    const maxScore = calculateMaxScore(questions, isBaseline ? 1 : 0, isBaseline);
+    for (const question of questions) {
+      // Get max score for this question
+      const maxAnswer = safeArray(question.answers)
+        .reduce((max, a) => Math.max(max, toNumber(a.score, 0)), 0);
+      
+      const questionMax = maxAnswer > 0 ? maxAnswer : 1;
+      maxScore += questionMax;
+
+      // Find the response for this question
+      const response = responses.find(r => r.question_id === question.id);
+      
+      if (response && response.answer_id) {
+        const answer = safeArray(question.answers).find(a => String(a.id) === String(response.answer_id));
+        if (answer) {
+          earnedScore += toNumber(answer.score, 0);
+        }
+      }
+    }
 
     let percentage = maxScore > 0 ? (earnedScore / maxScore) * 100 : 0;
     if (Number.isNaN(percentage) || !Number.isFinite(percentage)) percentage = 0;
@@ -870,6 +937,9 @@ export default async function handler(req, res) {
 
     const candidateProfile = profileResponse.data || { id: session.user_id, full_name: null, email: null };
 
+    // Build category scores from responses and questions
+    const categoryScores = buildDetailedCategoryScores(responses, isBaseline);
+    
     const detailedReport = buildDetailedReportPayload(
       candidateProfile,
       assessment,
@@ -924,6 +994,7 @@ export default async function handler(req, res) {
     const resultResponse = await upsertAssessmentResult(serviceClient, resultData);
 
     if (resultResponse.error || !resultResponse.data) {
+      console.error("Result save error:", resultResponse.error);
       return res.status(500).json({
         success: false,
         error: "failed_to_save_results",
@@ -933,7 +1004,7 @@ export default async function handler(req, res) {
 
     const result = resultResponse.data;
 
-    const sessionUpdateResponse = await serviceClient
+    await serviceClient
       .from("assessment_sessions")
       .update({
         status: "completed",
@@ -945,15 +1016,6 @@ export default async function handler(req, res) {
         updated_at: nowIso()
       })
       .eq("id", sessionId);
-
-    if (sessionUpdateResponse.error) {
-      return res.status(500).json({
-        success: false,
-        error: "failed_to_update_session",
-        message: sessionUpdateResponse.error.message,
-        result_id: result.id
-      });
-    }
 
     await updateCandidateAssessment(serviceClient, session, result, earnedScore);
 
