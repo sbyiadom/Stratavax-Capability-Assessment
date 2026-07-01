@@ -327,6 +327,7 @@ function AssessmentContent() {
         const currentUser = authSession.user;
         setUser(currentUser);
 
+        // Check if assessment is already completed
         const completed = await isAssessmentCompleted(currentUser.id, assessmentId);
         if (completed) {
           setAlreadySubmitted(true);
@@ -334,6 +335,7 @@ function AssessmentContent() {
           return;
         }
 
+        // Check candidate access
         const accessData = await fetchCandidateAccess(currentUser.id, assessmentId);
         if (!accessData || !["unblocked", "in_progress"].includes(accessData.status)) {
           setAccessDenied(true);
@@ -341,6 +343,7 @@ function AssessmentContent() {
           return;
         }
 
+        // Get assessment data
         const assessmentData = await getAssessmentById(assessmentId);
         setAssessment(assessmentData);
         setAssessmentType(assessmentData ? assessmentData.assessment_type : null);
@@ -350,6 +353,7 @@ function AssessmentContent() {
           assessmentData ? assessmentData.assessment_type : null
         );
 
+        // Create session
         const sessionData = await createAssessmentSession(
           currentUser.id,
           assessmentId,
@@ -360,18 +364,32 @@ function AssessmentContent() {
         setSession(sessionData);
         sessionIdRef.current = sessionData.id;
 
+        // Get progress
         const progress = await getProgress(currentUser.id, assessmentId);
         const progressElapsed = progress && progress.elapsed_seconds ? safeNumber(progress.elapsed_seconds, 0) : 0;
         setElapsedSeconds(progressElapsed);
         setTimeLimitSeconds(progressElapsed + getRemainingFromSession(sessionData, 10800));
 
-        const uniqueQuestions = safeArray(await getUniqueQuestions(assessmentId));
+        // FIXED: Get questions with better error handling
+        let uniqueQuestions = [];
+        try {
+          uniqueQuestions = safeArray(await getUniqueQuestions(assessmentId));
+          console.log(`[Assessment] Retrieved ${uniqueQuestions.length} questions for assessment ${assessmentId}`);
+        } catch (questionsError) {
+          console.error("[Assessment] Error fetching questions:", questionsError);
+          // Continue with empty array - will show "No Questions Available" message
+          uniqueQuestions = [];
+        }
+        
         setQuestions(uniqueQuestions);
+        
+        // If no questions, still allow user to see the "No Questions Available" message
         if (uniqueQuestions.length === 0) {
           setLoading(false);
           return;
         }
 
+        // Get session responses
         const responses = await getSessionResponses(sessionData.id);
         const restoredAnswers = {};
         const restoredInitialAnswers = {};
@@ -409,11 +427,13 @@ function AssessmentContent() {
         setInitialAnswers(restoredInitialAnswers);
         setAnswerChangeCount(restoredChangeCount);
 
+        // Set last question index from progress
         if (progress && progress.last_question_id) {
           const lastIndex = uniqueQuestions.findIndex((question) => String(question.id) === String(progress.last_question_id));
           if (lastIndex >= 0) setCurrentIndex(lastIndex);
         }
 
+        // Get violation count
         const violationResponse = await supabase
           .from("assessment_sessions")
           .select("violation_count")
@@ -436,7 +456,7 @@ function AssessmentContent() {
   }, [assessmentId, router]);
 
   useEffect(() => {
-    if (loading || alreadySubmitted || accessDenied || !session || isAutoSubmitting) return;
+    if (loading || alreadySubmitted || accessDenied || !session || isAutoSubmitting || questions.length === 0) return;
     const timer = setInterval(() => {
       setElapsedSeconds((previous) => {
         const next = previous + 1;
@@ -577,7 +597,27 @@ function AssessmentContent() {
   if (accessDenied) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.errorIcon}>🔒</div><h2>Access Denied</h2><p>This assessment is not currently available for your account.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
   if (alreadySubmitted && !showSuccessModal) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.successIcon}>✅</div><h2>Assessment Completed</h2><p>This assessment has already been submitted.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
   if (pageError) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.errorIcon}>⚠️</div><h2>Error Loading Assessment</h2><p>{pageError}</p><button onClick={() => window.location.reload()} style={styles.primaryButton}>Try Again</button></div></div>;
-  if (!questions.length) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.errorIcon}>📭</div><h2>No Questions Available</h2><p>This assessment does not have any questions yet.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
+  
+  // FIXED: Better "No Questions" message with more helpful information
+  if (!questions.length) {
+    return (
+      <div style={styles.messageContainer}>
+        <div style={styles.messageCard}>
+          <div style={styles.errorIcon}>📭</div>
+          <h2>No Questions Available</h2>
+          <p>This assessment does not have any questions configured yet.</p>
+          <div style={styles.debugInfo}>
+            <p><strong>Assessment ID:</strong> {assessmentId}</p>
+            <p><strong>Assessment Name:</strong> {assessment?.title || "N/A"}</p>
+            <p style={{ fontSize: "13px", color: "#64748b", marginTop: "10px" }}>
+              Please contact your supervisor or the system administrator to add questions to this assessment.
+            </p>
+          </div>
+          <button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -685,7 +725,8 @@ const styles = {
   errorIcon: { fontSize: "64px", marginBottom: "20px" },
   successIcon: { fontSize: "64px", marginBottom: "20px" },
   successIconLarge: { width: "80px", height: "80px", background: "#4caf50", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", fontSize: "40px", color: "white" },
-  primaryButton: { padding: "12px 30px", background: "linear-gradient(135deg, #0097a7, #006064)", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" },
+  primaryButton: { padding: "12px 30px", background: "linear-gradient(135deg, #0097a7, #006064)", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px" },
+  debugInfo: { background: "#f8fafc", padding: "15px", borderRadius: "8px", margin: "15px 0", fontSize: "14px", textAlign: "left" },
   violationBanner: { position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)", background: "#f44336", color: "white", padding: "12px 24px", borderRadius: "8px", fontWeight: "bold", zIndex: 10001, fontSize: "14px", boxShadow: "0 4px 12px rgba(0,0,0,0.2)", display: "flex", alignItems: "center", gap: "10px" },
   autoSubmitOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10002 },
   autoSubmitCard: { background: "white", padding: "30px", borderRadius: "16px", textAlign: "center", maxWidth: "400px" },
