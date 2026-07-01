@@ -28,8 +28,7 @@ function decodeHtmlEntities(value) {
     previousText = text;
     text = text.replace(/&amp;amp;/gi, "&");
     text = text.replace(/&amp;lt;/gi, "<");
-    text = text.replace(/&amp;gt;/gi, ">"
-    );
+    text = text.replace(/&amp;gt;/gi, ">");
     text = text.replace(/&amp;quot;/gi, '"');
     text = text.replace(/&amp;#039;/gi, "'");
     text = text.replace(/&amp;#39;/gi, "'");
@@ -38,8 +37,7 @@ function decodeHtmlEntities(value) {
     // Common single-encoding patterns
     text = text.replace(/&amp;/gi, "&");
     text = text.replace(/&lt;/gi, "<");
-    text = text.replace(/&gt;/gi, ">"
-    );
+    text = text.replace(/&gt;/gi, ">");
     text = text.replace(/&quot;/gi, '"');
     text = text.replace(/&#039;/gi, "'");
     text = text.replace(/&#39;/gi, "'");
@@ -353,7 +351,11 @@ export default function CandidateDashboard() {
           unblockedAt: access && access.unblocked_at ? access.unblocked_at : null,
           session: latestSession,
           result,
-          access
+          access,
+          // ADDED: Dynamic assessment details from database
+          questionCount: assessment.question_count || assessment.assessment_type?.question_count || 100,
+          timeLimitMinutes: assessment.time_limit_minutes || assessment.assessment_type?.time_limit_minutes || 180,
+          attemptsAllowed: assessment.attempts_allowed || assessment.assessment_type?.attempts_allowed || 1
         };
       });
 
@@ -517,9 +519,19 @@ export default function CandidateDashboard() {
                     <h3 style={styles.cardTitle}>{activeAssessment.title}</h3>
                     <p style={styles.cardDescription}>{activeAssessment.description}</p>
                     <div style={styles.cardMeta}>
-                      <span style={styles.metaItem}><span style={styles.metaIcon}>⏱️</span> 180 minutes</span>
-                      <span style={styles.metaItem}><span style={styles.metaIcon}>📋</span> 100 questions</span>
-                      <span style={styles.metaItem}><span style={styles.metaIcon}>🎯</span> One attempt</span>
+                      {/* FIXED: Dynamic values from database instead of hardcoded */}
+                      <span style={styles.metaItem}>
+                        <span style={styles.metaIcon}>⏱️</span> 
+                        {activeAssessment.timeLimitMinutes} minutes
+                      </span>
+                      <span style={styles.metaItem}>
+                        <span style={styles.metaIcon}>📋</span> 
+                        {activeAssessment.questionCount} questions
+                      </span>
+                      <span style={styles.metaItem}>
+                        <span style={styles.metaIcon}>🎯</span> 
+                        {activeAssessment.attemptsAllowed === 1 ? 'One attempt' : `${activeAssessment.attemptsAllowed} attempts`}
+                      </span>
                     </div>
                     {activeAssessment.completedAt && <p style={styles.completedText}>Completed: {formatDate(activeAssessment.completedAt)}</p>}
                   </div>
