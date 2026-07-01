@@ -137,7 +137,7 @@ async function getCandidateAssessmentAccess(userId, assessmentId) {
 // ASSESSMENT TYPES
 // ======================================================
 
-export async function getAssessmentTypes() {
+async function getAssessmentTypes() {
   try {
     const { data, error } = await supabase
       .from("assessment_types")
@@ -153,7 +153,7 @@ export async function getAssessmentTypes() {
   }
 }
 
-export async function getAssessmentTypeByCode(code) {
+async function getAssessmentTypeByCode(code) {
   try {
     const { data, error } = await supabase.from("assessment_types").select("*").eq("code", code).single();
     if (error) throw error;
@@ -168,7 +168,7 @@ export async function getAssessmentTypeByCode(code) {
 // ASSESSMENTS
 // ======================================================
 
-export async function getAssessments() {
+async function getAssessments() {
   try {
     const { data, error } = await supabase
       .from("assessments")
@@ -184,7 +184,7 @@ export async function getAssessments() {
   }
 }
 
-export async function getAssessmentById(id) {
+async function getAssessmentById(id) {
   try {
     const { data, error } = await supabase
       .from("assessments")
@@ -204,7 +204,7 @@ export async function getAssessmentById(id) {
 // COMPLETION CHECK
 // ======================================================
 
-export async function isAssessmentCompleted(userId, assessmentId) {
+async function isAssessmentCompleted(userId, assessmentId) {
   try {
     // Authoritative: candidate_assessments completed
     const candidateAssessment = await safeSelectSingle(
@@ -233,7 +233,7 @@ export async function isAssessmentCompleted(userId, assessmentId) {
 // ASSESSMENT SESSIONS
 // ======================================================
 
-export async function createAssessmentSession(userId, assessmentId, assessmentTypeId) {
+async function createAssessmentSession(userId, assessmentId, assessmentTypeId) {
   try {
     if (!userId || !assessmentId) throw new Error("Missing userId or assessmentId");
 
@@ -331,7 +331,7 @@ export async function createAssessmentSession(userId, assessmentId, assessmentTy
   }
 }
 
-export async function getAssessmentSession(sessionId) {
+async function getAssessmentSession(sessionId) {
   try {
     const data = await getSessionById(sessionId);
     if (!data) throw new Error("Session not found");
@@ -342,7 +342,7 @@ export async function getAssessmentSession(sessionId) {
   }
 }
 
-export async function updateSessionTimer(sessionId, elapsedSeconds) {
+async function updateSessionTimer(sessionId, elapsedSeconds) {
   try {
     if (!sessionId) return false;
 
@@ -366,7 +366,7 @@ export async function updateSessionTimer(sessionId, elapsedSeconds) {
   }
 }
 
-export async function getSessionResponses(sessionId) {
+async function getSessionResponses(sessionId) {
   try {
     const answerMap = {};
     const initialAnswerMap = {};
@@ -405,7 +405,7 @@ export async function getSessionResponses(sessionId) {
 // SUBMISSION
 // ======================================================
 
-export async function submitAssessment(sessionId, options = {}) {
+async function submitAssessment(sessionId, options = {}) {
   try {
     if (!sessionId) throw new Error("Missing sessionId");
 
@@ -473,7 +473,7 @@ export async function submitAssessment(sessionId, options = {}) {
 // RESULTS
 // ======================================================
 
-export async function getAssessmentResult(resultId) {
+async function getAssessmentResult(resultId) {
   try {
     const { data, error } = await supabase
       .from("assessment_results")
@@ -489,7 +489,7 @@ export async function getAssessmentResult(resultId) {
   }
 }
 
-export async function getUserAssessmentResults(userId) {
+async function getUserAssessmentResults(userId) {
   try {
     const { data, error } = await supabase
       .from("assessment_results")
@@ -509,7 +509,7 @@ export async function getUserAssessmentResults(userId) {
 // CANDIDATE PROFILE
 // ======================================================
 
-export async function getOrCreateCandidateProfile(userId, email, fullName) {
+async function getOrCreateCandidateProfile(userId, email, fullName) {
   try {
     const { data: existing } = await supabase
       .from("candidate_profiles")
@@ -537,7 +537,7 @@ export async function getOrCreateCandidateProfile(userId, email, fullName) {
 // PROGRESS
 // ======================================================
 
-export async function saveProgress(sessionId, userId, assessmentId, elapsedSeconds, lastQuestionId) {
+async function saveProgress(sessionId, userId, assessmentId, elapsedSeconds, lastQuestionId) {
   try {
     if (!userId || !assessmentId) return false;
 
@@ -568,7 +568,7 @@ export async function saveProgress(sessionId, userId, assessmentId, elapsedSecon
   }
 }
 
-export async function getProgress(userId, assessmentId) {
+async function getProgress(userId, assessmentId) {
   try {
     const { data, error } = await supabase
       .from("assessment_progress")
@@ -593,7 +593,7 @@ export async function getProgress(userId, assessmentId) {
 // QUESTIONS - FIXED: Uses 'questions' table with assessment_id
 // ======================================================
 
-export async function getUniqueQuestions(assessmentId) {
+async function getUniqueQuestions(assessmentId) {
   try {
     console.log(`[getUniqueQuestions] Fetching questions for assessment ID: ${assessmentId}`);
     
@@ -747,7 +747,7 @@ export async function getUniqueQuestions(assessmentId) {
 // QUESTION TIMING AND RESPONSES
 // ======================================================
 
-export async function trackQuestionView(session_id, question_id, question_number) {
+async function trackQuestionView(session_id, question_id, question_number) {
   try {
     if (!session_id || !question_id) return;
 
@@ -836,7 +836,7 @@ async function updateSessionAnsweredCount(sessionId) {
   }
 }
 
-export async function saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id, metadata = {}) {
+async function saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id, metadata = {}) {
   try {
     if (!session_id || !user_id || !assessment_id || !question_id || answer_id === null || answer_id === undefined || answer_id === "") {
       return { success: false, error: "Missing required fields" };
@@ -932,20 +932,20 @@ export async function saveUniqueResponse(session_id, user_id, assessment_id, que
 // LEGACY COMPATIBILITY
 // ======================================================
 
-export async function getRandomizedQuestions(candidateId, assessmentId) {
+async function getRandomizedQuestions(candidateId, assessmentId) {
   return getUniqueQuestions(assessmentId);
 }
 
-export async function saveRandomizedResponse(session_id, user_id, assessment_id, question_id, answer_id) {
+async function saveRandomizedResponse(session_id, user_id, assessment_id, question_id, answer_id) {
   return saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id);
 }
 
-export async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
+async function saveResponse(sessionId, userId, assessmentId, questionId, answerId) {
   return saveUniqueResponse(sessionId, userId, assessmentId, questionId, answerId);
 }
 
 // ======================================================
-// EXPORTS - ALL FUNCTIONS EXPORTED HERE
+// EXPORTS - ALL FUNCTIONS EXPORTED HERE (SINGLE EXPORT)
 // ======================================================
 
 export {
