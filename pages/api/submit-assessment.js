@@ -1,4 +1,4 @@
-// pages/api/submit-assessment.js (Updated for National Service)
+// pages/api/submit-assessment.js
 
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -83,17 +83,41 @@ function isIntellectualCategory(category) {
 }
 
 function classifyWorkplaceReadiness(score) {
-  if (score >= 85) return { band: 'Excellent', description: 'Candidate demonstrates strong workplace readiness and can perform effectively with minimal supervision.' };
-  if (score >= 75) return { band: 'Ready', description: 'Candidate is ready for workplace responsibilities with standard supervision and guidance.' };
-  if (score >= 65) return { band: 'Developing', description: 'Candidate is developing workplace readiness and requires structured support and coaching.' };
-  return { band: 'Needs Improvement', description: 'Candidate requires significant development and close supervision in workplace competencies.' };
+  if (score >= 85) return { 
+    band: 'Excellent', 
+    description: 'Candidate demonstrates strong workplace readiness and can perform effectively with minimal supervision.' 
+  };
+  if (score >= 75) return { 
+    band: 'Ready', 
+    description: 'Candidate is ready for workplace responsibilities with standard supervision and guidance.' 
+  };
+  if (score >= 65) return { 
+    band: 'Developing', 
+    description: 'Candidate is developing workplace readiness and requires structured support and coaching.' 
+  };
+  return { 
+    band: 'Needs Improvement', 
+    description: 'Candidate requires significant development and close supervision in workplace competencies.' 
+  };
 }
 
 function classifyIntellectualCapability(score) {
-  if (score >= 85) return { band: 'Exceptional', description: 'Candidate demonstrates exceptional analytical ability and strong learning potential.' };
-  if (score >= 75) return { band: 'High Potential', description: 'Candidate shows strong analytical ability and good learning potential.' };
-  if (score >= 65) return { band: 'Moderate Potential', description: 'Candidate demonstrates moderate analytical ability with room for development.' };
-  return { band: 'Development Required', description: 'Candidate requires structured development in analytical and reasoning skills.' };
+  if (score >= 85) return { 
+    band: 'Exceptional', 
+    description: 'Candidate demonstrates exceptional analytical ability and strong learning potential.' 
+  };
+  if (score >= 75) return { 
+    band: 'High Potential', 
+    description: 'Candidate shows strong analytical ability and good learning potential.' 
+  };
+  if (score >= 65) return { 
+    band: 'Moderate Potential', 
+    description: 'Candidate demonstrates moderate analytical ability with room for development.' 
+  };
+  return { 
+    band: 'Development Required', 
+    description: 'Candidate requires structured development in analytical and reasoning skills.' 
+  };
 }
 
 function getRecommendation(workplaceReadiness, intellectualCapability) {
@@ -123,6 +147,33 @@ function getRecommendation(workplaceReadiness, intellectualCapability) {
     description: 'This candidate does not currently meet the required thresholds for National Service roles. Additional development is recommended.',
     priority: 4
   };
+}
+
+function getSuggestedDepartments(workplaceScore, intellectualScore) {
+  const suggestions = [];
+  
+  if (workplaceScore >= 80 && intellectualScore >= 80) {
+    suggestions.push('Operations & Production Management');
+    suggestions.push('Quality Assurance & Control');
+    suggestions.push('Supply Chain & Logistics');
+    suggestions.push('Technical Services');
+  } else if (workplaceScore >= 70 && intellectualScore >= 70) {
+    suggestions.push('Production Support');
+    suggestions.push('Maintenance & Engineering');
+    suggestions.push('Quality Control');
+    suggestions.push('Warehouse & Distribution');
+  } else if (workplaceScore >= 60 && intellectualScore >= 60) {
+    suggestions.push('General Operations');
+    suggestions.push('Administrative Support');
+    suggestions.push('Entry-Level Technical Roles');
+    suggestions.push('Customer Service');
+  } else {
+    suggestions.push('Structured Training Programs');
+    suggestions.push('Supervised Development Roles');
+    suggestions.push('Support & Administrative Functions');
+  }
+  
+  return suggestions;
 }
 
 // ============================================================
@@ -204,16 +255,21 @@ function calculateExecutiveDimensions(categoryScores, categoryMaxScores) {
   };
 }
 
-function buildNationalServiceReport(candidateProfile, assessment, results, responses, questions) {
+function buildNationalServiceReport(candidateProfile, assessment, responses, questions, session) {
   const candidateName = cleanText(
     candidateProfile?.full_name || candidateProfile?.name || candidateProfile?.email,
     'Candidate'
   );
 
-  const assessmentName = cleanText(
-    assessment?.title || assessment?.name || 'National Service Recruitment Assessment',
-    'National Service Recruitment Assessment'
-  );
+  // Get candidate info from profile
+  const candidateInfo = {
+    fullName: candidateProfile?.full_name || candidateName,
+    university: candidateProfile?.university || 'Not Specified',
+    programme: candidateProfile?.programme || 'Not Specified',
+    graduationYear: candidateProfile?.graduation_year || 'Not Specified',
+    preferredDepartment: candidateProfile?.preferred_department || 'Not Specified',
+    assessmentDate: new Date().toLocaleDateString()
+  };
 
   // Calculate category scores
   const { scores, maxScores, questionCounts } = calculateCategoryScores(questions, responses);
@@ -221,13 +277,8 @@ function buildNationalServiceReport(candidateProfile, assessment, results, respo
   // Calculate executive dimensions
   const dimensions = calculateExecutiveDimensions(scores, maxScores);
 
-  // Get classifications
-  const workplaceClassification = classifyWorkplaceReadiness(dimensions.workplaceReadiness);
-  const intellectualClassification = classifyIntellectualCapability(dimensions.intellectualCapability);
-  const recommendation = getRecommendation(dimensions.workplaceReadiness, dimensions.intellectualCapability);
-
-  // Build category details
-  const categoryDetails = Object.keys(scores).map(category => {
+  // Build category breakdown with dimension labels
+  const categoryBreakdown = Object.keys(scores).map(category => {
     const earned = scores[category];
     const max = maxScores[category];
     const percentage = max > 0 ? (earned / max) * 100 : 0;
@@ -236,38 +287,44 @@ function buildNationalServiceReport(candidateProfile, assessment, results, respo
 
     return {
       category,
-      earned,
-      max,
+      earned: roundNumber(earned, 2),
+      max: roundNumber(max, 2),
       percentage: roundNumber(percentage, 2),
       dimension,
       questionCount: questionCounts[category] || 0
     };
   });
 
-  // Build detailed response data
-  const responseDetails = responses.map(response => {
-    const question = questions.find(q => String(q.id) === String(response.question_id));
-    const answer = question ? safeArray(question.answers).find(a => String(a.id) === String(response.answer_id)) : null;
-    
-    return {
-      questionId: response.question_id,
-      questionText: question?.question_text || 'N/A',
-      category: question?.section || 'General',
-      answerId: response.answer_id,
-      answerText: answer?.answer_text || 'N/A',
-      score: answer?.score || 0,
-      maxScore: safeArray(question?.answers).reduce((max, a) => Math.max(max, toNumber(a.score, 0)), 0) || 1,
-      timeSpent: response.time_spent_seconds || 0,
-      timesChanged: response.times_changed || 0
-    };
-  });
+  // Get classifications
+  const workplaceClassification = classifyWorkplaceReadiness(dimensions.workplaceReadiness);
+  const intellectualClassification = classifyIntellectualCapability(dimensions.intellectualCapability);
+  const recommendation = getRecommendation(dimensions.workplaceReadiness, dimensions.intellectualCapability);
+
+  // Get suggested placement based on scores
+  const suggestedPlacement = getSuggestedDepartments(
+    dimensions.workplaceReadiness, 
+    dimensions.intellectualCapability
+  );
+
+  // Calculate top strengths (top 3 scoring categories)
+  const topStrengths = [...categoryBreakdown]
+    .sort((a, b) => b.percentage - a.percentage)
+    .slice(0, 3);
+
+  // Calculate development areas (bottom 3 scoring categories)
+  const developmentAreas = [...categoryBreakdown]
+    .sort((a, b) => a.percentage - b.percentage)
+    .slice(0, 3);
 
   return {
     candidateName,
-    assessmentName,
+    assessmentName: assessment?.title || 'National Service Recruitment Assessment',
     assessmentId: assessment?.id || null,
     userId: candidateProfile?.id || null,
-    completedAt: nowIso(),
+    completedAt: new Date().toISOString(),
+    
+    // Candidate Information
+    candidateInfo,
     
     // Executive Summary
     executiveSummary: {
@@ -282,7 +339,7 @@ function buildNationalServiceReport(candidateProfile, assessment, results, respo
       recommendationDescription: recommendation.description
     },
     
-    // Detailed Scores
+    // Dimensions
     dimensions: {
       workplaceReadiness: dimensions.workplaceReadiness,
       intellectualCapability: dimensions.intellectualCapability,
@@ -291,25 +348,49 @@ function buildNationalServiceReport(candidateProfile, assessment, results, respo
     },
     
     // Category Breakdown
-    categoryBreakdown: categoryDetails,
+    categoryBreakdown,
     
-    // Response Details
-    responses: responseDetails,
+    // Top Strengths (Top 3)
+    topStrengths,
     
-    // Statistics
-    statistics: {
-      totalQuestions: questions.length,
-      totalAnswered: responses.filter(r => r.answer_id).length,
-      totalEarned: dimensions.breakdown.workplaceEarned + dimensions.breakdown.intellectualEarned,
-      totalMax: dimensions.breakdown.workplaceMax + dimensions.breakdown.intellectualMax
-    },
+    // Development Areas (Bottom 3)
+    developmentAreas,
     
-    // Final Recommendation
+    // Recommendation
     recommendation: {
       level: recommendation.recommendation,
       description: recommendation.description,
       priority: recommendation.priority
-    }
+    },
+    
+    // Suggested Placement
+    suggestedPlacement,
+    
+    // Statistics
+    statistics: {
+      totalQuestions: questions.length,
+      totalAnswered: responses.filter(r => r.answer_id && r.answer_id !== "").length,
+      totalEarned: dimensions.breakdown.workplaceEarned + dimensions.breakdown.intellectualEarned,
+      totalMax: dimensions.breakdown.workplaceMax + dimensions.breakdown.intellectualMax
+    },
+    
+    // Response Details
+    responses: responses.map(response => {
+      const question = questions.find(q => String(q.id) === String(response.question_id));
+      const answer = question ? safeArray(question.answers).find(a => String(a.id) === String(response.answer_id)) : null;
+      
+      return {
+        questionId: response.question_id,
+        questionText: question?.question_text || 'N/A',
+        category: question?.section || 'General',
+        answerId: response.answer_id,
+        answerText: answer?.answer_text || 'N/A',
+        score: answer?.score || 0,
+        maxScore: safeArray(question?.answers).reduce((max, a) => Math.max(max, toNumber(a.score, 0)), 0) || 1,
+        timeSpent: response.time_spent_seconds || 0,
+        timesChanged: response.times_changed || 0
+      };
+    })
   };
 }
 
@@ -475,7 +556,7 @@ export default async function handler(req, res) {
     // Get candidate profile
     const profileResponse = await serviceClient
       .from("candidate_profiles")
-      .select("id, full_name, email, created_by, supervisor_id")
+      .select("id, full_name, email, created_by, supervisor_id, university, programme, graduation_year, preferred_department")
       .eq("id", session.user_id)
       .maybeSingle();
 
@@ -485,9 +566,9 @@ export default async function handler(req, res) {
     const report = buildNationalServiceReport(
       candidateProfile,
       assessment,
-      null,
       responses,
-      questions
+      questions,
+      session
     );
 
     // Prepare result data
