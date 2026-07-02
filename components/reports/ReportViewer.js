@@ -1,11 +1,8 @@
 // components/reports/ReportViewer.js
 
 import React, { useState, useEffect } from 'react';
-import NationalServiceReport from './NationalServiceReport';
-
-// If you have an existing Stratavax report component, import it here
-// Otherwise, we'll create a placeholder
 import StratavaxReport from './StratavaxReport';
+import NationalServiceReport from './NationalServiceReport';
 
 export default function ReportViewer({ resultId, onBack }) {
   const [loading, setLoading] = useState(true);
@@ -129,15 +126,3 @@ const styles = {
     marginTop: '16px'
   }
 };
-
-// Add keyframe animation
-if (typeof document !== 'undefined') {
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-  `;
-  document.head.appendChild(style);
-}
