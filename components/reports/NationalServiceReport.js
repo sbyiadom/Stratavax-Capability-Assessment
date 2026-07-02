@@ -43,18 +43,21 @@ export default function NationalServiceReport({ report, onBack }) {
 
   return (
     <div style={styles.container}>
+      {/* Back button */}
       {onBack && (
         <button onClick={onBack} style={styles.backButton}>
           ← Back to Dashboard
         </button>
       )}
 
+      {/* Header */}
       <div style={styles.header}>
         <h1 style={styles.title}>National Service Recruitment Assessment</h1>
         <p style={styles.subtitle}>Report for {candidateName}</p>
         <p style={styles.date}>Completed: {new Date().toLocaleDateString()}</p>
       </div>
 
+      {/* Executive Score Cards */}
       <div style={styles.scoreGrid}>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Workplace Readiness</div>
@@ -85,10 +88,12 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       </div>
 
+      {/* Recommendation Description */}
       <div style={styles.recommendationBox}>
         <p style={styles.recommendationText}>{recommendation.description}</p>
       </div>
 
+      {/* Category Breakdown */}
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>Category Breakdown</h2>
         <div style={styles.categoryGrid}>
@@ -107,6 +112,7 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       </div>
 
+      {/* Statistics */}
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>Assessment Statistics</h2>
         <div style={styles.statsGrid}>
@@ -125,6 +131,7 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       </div>
 
+      {/* Printable version button */}
       <div style={styles.actions}>
         <button onClick={() => window.print()} style={styles.printButton}>
           🖨️ Print Report
