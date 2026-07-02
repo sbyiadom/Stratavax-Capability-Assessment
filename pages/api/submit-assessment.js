@@ -5,9 +5,7 @@ import {
   toNumber,
   roundNumber,
   safeArray,
-  normalizeText,
-  parseSelectedAnswerIds,
-  isBaselineAssessmentType
+  normalizeText
 } from "../../utils/scoring";
 
 export const config = {
@@ -27,49 +25,19 @@ function cleanText(value, fallback = "") {
   return normalizeText(value, fallback);
 }
 
-function getServiceClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
-
-  if (!supabaseUrl || !serviceKey) {
-    throw new Error("Missing Supabase environment variables");
-  }
-
-  return createClient(supabaseUrl, serviceKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false
-    }
-  });
-}
-
 // ============================================================
 // NATIONAL SERVICE ASSESSMENT - CATEGORY MAPPING
 // ============================================================
 
 const WORKPLACE_CATEGORIES = [
-  'safety_risk_awareness',
-  'safety',
-  'risk_awareness',
-  'problem_solving',
-  'troubleshooting',
-  'technical_fundamentals',
-  'learning_agility',
-  'communication',
-  'teamwork',
-  'ownership',
-  'integrity',
-  'professional_conduct',
-  'work_ethic'
+  'safety', 'risk_awareness', 'problem_solving', 'troubleshooting',
+  'technical_fundamentals', 'learning_agility', 'communication',
+  'teamwork', 'ownership', 'integrity', 'professional_conduct', 'work_ethic'
 ];
 
 const INTELLECTUAL_CATEGORIES = [
-  'numerical_reasoning',
-  'numerical_aptitude',
-  'logical_reasoning',
-  'measurement',
-  'engineering_units',
-  'spatial_reasoning'
+  'numerical_reasoning', 'numerical_aptitude', 'logical_reasoning',
+  'measurement', 'engineering_units', 'spatial_reasoning'
 ];
 
 function isWorkplaceCategory(category) {
@@ -83,322 +51,52 @@ function isIntellectualCategory(category) {
 }
 
 function classifyWorkplaceReadiness(score) {
-  if (score >= 85) return { 
-    band: 'Excellent', 
-    description: 'Candidate demonstrates strong workplace readiness and can perform effectively with minimal supervision.' 
-  };
-  if (score >= 75) return { 
-    band: 'Ready', 
-    description: 'Candidate is ready for workplace responsibilities with standard supervision and guidance.' 
-  };
-  if (score >= 65) return { 
-    band: 'Developing', 
-    description: 'Candidate is developing workplace readiness and requires structured support and coaching.' 
-  };
-  return { 
-    band: 'Needs Improvement', 
-    description: 'Candidate requires significant development and close supervision in workplace competencies.' 
-  };
+  if (score >= 85) return { band: 'Excellent', description: 'Candidate demonstrates strong workplace readiness.' };
+  if (score >= 75) return { band: 'Ready', description: 'Candidate is ready for workplace responsibilities.' };
+  if (score >= 65) return { band: 'Developing', description: 'Candidate requires structured support.' };
+  return { band: 'Needs Improvement', description: 'Candidate requires significant development.' };
 }
 
 function classifyIntellectualCapability(score) {
-  if (score >= 85) return { 
-    band: 'Exceptional', 
-    description: 'Candidate demonstrates exceptional analytical ability and strong learning potential.' 
-  };
-  if (score >= 75) return { 
-    band: 'High Potential', 
-    description: 'Candidate shows strong analytical ability and good learning potential.' 
-  };
-  if (score >= 65) return { 
-    band: 'Moderate Potential', 
-    description: 'Candidate demonstrates moderate analytical ability with room for development.' 
-  };
-  return { 
-    band: 'Development Required', 
-    description: 'Candidate requires structured development in analytical and reasoning skills.' 
-  };
+  if (score >= 85) return { band: 'Exceptional', description: 'Exceptional analytical ability.' };
+  if (score >= 75) return { band: 'High Potential', description: 'Strong analytical ability.' };
+  if (score >= 65) return { band: 'Moderate Potential', description: 'Moderate analytical ability.' };
+  return { band: 'Development Required', description: 'Requires structured development.' };
 }
 
 function getRecommendation(workplaceReadiness, intellectualCapability) {
   if (workplaceReadiness >= 85 && intellectualCapability >= 85) {
-    return {
-      recommendation: 'Highly Recommended',
-      description: 'This candidate demonstrates exceptional workplace readiness and intellectual capability. They are strongly recommended for National Service roles.',
-      priority: 1
-    };
+    return { recommendation: 'Highly Recommended', priority: 1 };
   }
   if (workplaceReadiness >= 75 && intellectualCapability >= 75) {
-    return {
-      recommendation: 'Recommended',
-      description: 'This candidate demonstrates strong workplace readiness and intellectual capability. They are recommended for National Service roles.',
-      priority: 2
-    };
+    return { recommendation: 'Recommended', priority: 2 };
   }
   if (workplaceReadiness >= 65 && intellectualCapability >= 65) {
-    return {
-      recommendation: 'Reserve Pool',
-      description: 'This candidate demonstrates adequate workplace readiness and intellectual capability. They may be considered for the reserve pool.',
-      priority: 3
-    };
+    return { recommendation: 'Reserve Pool', priority: 3 };
   }
-  return {
-    recommendation: 'Not Recommended',
-    description: 'This candidate does not currently meet the required thresholds for National Service roles. Additional development is recommended.',
-    priority: 4
-  };
+  return { recommendation: 'Not Recommended', priority: 4 };
 }
 
 function getSuggestedDepartments(workplaceScore, intellectualScore) {
-  const suggestions = [];
-  
   if (workplaceScore >= 80 && intellectualScore >= 80) {
-    suggestions.push('Operations & Production Management');
-    suggestions.push('Quality Assurance & Control');
-    suggestions.push('Supply Chain & Logistics');
-    suggestions.push('Technical Services');
-  } else if (workplaceScore >= 70 && intellectualScore >= 70) {
-    suggestions.push('Production Support');
-    suggestions.push('Maintenance & Engineering');
-    suggestions.push('Quality Control');
-    suggestions.push('Warehouse & Distribution');
-  } else if (workplaceScore >= 60 && intellectualScore >= 60) {
-    suggestions.push('General Operations');
-    suggestions.push('Administrative Support');
-    suggestions.push('Entry-Level Technical Roles');
-    suggestions.push('Customer Service');
-  } else {
-    suggestions.push('Structured Training Programs');
-    suggestions.push('Supervised Development Roles');
-    suggestions.push('Support & Administrative Functions');
+    return ['Operations & Production Management', 'Quality Assurance & Control', 'Supply Chain & Logistics', 'Technical Services'];
   }
-  
-  return suggestions;
+  if (workplaceScore >= 70 && intellectualScore >= 70) {
+    return ['Production Support', 'Maintenance & Engineering', 'Quality Control', 'Warehouse & Distribution'];
+  }
+  if (workplaceScore >= 60 && intellectualScore >= 60) {
+    return ['General Operations', 'Administrative Support', 'Entry-Level Technical Roles', 'Customer Service'];
+  }
+  return ['Structured Training Programs', 'Supervised Development Roles', 'Support & Administrative Functions'];
 }
 
 // ============================================================
-// SCORE CALCULATION FUNCTIONS
-// ============================================================
-
-function calculateCategoryScores(questions, responses) {
-  const categoryScores = {};
-  const categoryMaxScores = {};
-  const categoryQuestionCounts = {};
-
-  questions.forEach(question => {
-    const category = cleanText(question.section || 'General', 'General');
-    const maxScore = safeArray(question.answers).reduce((max, a) => Math.max(max, toNumber(a.score, 0)), 0) || 1;
-
-    if (!categoryScores[category]) {
-      categoryScores[category] = 0;
-      categoryMaxScores[category] = 0;
-      categoryQuestionCounts[category] = 0;
-    }
-
-    categoryMaxScores[category] += maxScore;
-    categoryQuestionCounts[category] += 1;
-
-    const response = responses.find(r => String(r.question_id) === String(question.id));
-    if (response && response.answer_id) {
-      const answer = safeArray(question.answers).find(a => String(a.id) === String(response.answer_id));
-      if (answer) {
-        categoryScores[category] += toNumber(answer.score, 0);
-      }
-    }
-  });
-
-  return {
-    scores: categoryScores,
-    maxScores: categoryMaxScores,
-    questionCounts: categoryQuestionCounts
-  };
-}
-
-function calculateExecutiveDimensions(categoryScores, categoryMaxScores) {
-  let workplaceEarned = 0;
-  let workplaceMax = 0;
-  let intellectualEarned = 0;
-  let intellectualMax = 0;
-  let totalEarned = 0;
-  let totalMax = 0;
-
-  Object.keys(categoryScores).forEach(category => {
-    const earned = categoryScores[category];
-    const max = categoryMaxScores[category];
-    
-    totalEarned += earned;
-    totalMax += max;
-
-    if (isWorkplaceCategory(category)) {
-      workplaceEarned += earned;
-      workplaceMax += max;
-    } else if (isIntellectualCategory(category)) {
-      intellectualEarned += earned;
-      intellectualMax += max;
-    }
-  });
-
-  const workplaceReadiness = workplaceMax > 0 ? (workplaceEarned / workplaceMax) * 100 : 0;
-  const intellectualCapability = intellectualMax > 0 ? (intellectualEarned / intellectualMax) * 100 : 0;
-  const overallScore = totalMax > 0 ? (totalEarned / totalMax) * 100 : 0;
-
-  return {
-    workplaceReadiness: roundNumber(workplaceReadiness, 2),
-    intellectualCapability: roundNumber(intellectualCapability, 2),
-    overallScore: roundNumber(overallScore, 2),
-    breakdown: {
-      workplaceEarned: roundNumber(workplaceEarned, 2),
-      workplaceMax: roundNumber(workplaceMax, 2),
-      intellectualEarned: roundNumber(intellectualEarned, 2),
-      intellectualMax: roundNumber(intellectualMax, 2)
-    }
-  };
-}
-
-function buildNationalServiceReport(candidateProfile, assessment, responses, questions, session) {
-  const candidateName = cleanText(
-    candidateProfile?.full_name || candidateProfile?.name || candidateProfile?.email,
-    'Candidate'
-  );
-
-  // Get candidate info from profile
-  const candidateInfo = {
-    fullName: candidateProfile?.full_name || candidateName,
-    university: candidateProfile?.university || 'Not Specified',
-    programme: candidateProfile?.programme || 'Not Specified',
-    graduationYear: candidateProfile?.graduation_year || 'Not Specified',
-    preferredDepartment: candidateProfile?.preferred_department || 'Not Specified',
-    assessmentDate: new Date().toLocaleDateString()
-  };
-
-  // Calculate category scores
-  const { scores, maxScores, questionCounts } = calculateCategoryScores(questions, responses);
-  
-  // Calculate executive dimensions
-  const dimensions = calculateExecutiveDimensions(scores, maxScores);
-
-  // Build category breakdown with dimension labels
-  const categoryBreakdown = Object.keys(scores).map(category => {
-    const earned = scores[category];
-    const max = maxScores[category];
-    const percentage = max > 0 ? (earned / max) * 100 : 0;
-    const dimension = isWorkplaceCategory(category) ? 'workplace' : 
-                     isIntellectualCategory(category) ? 'intellectual' : 'other';
-
-    return {
-      category,
-      earned: roundNumber(earned, 2),
-      max: roundNumber(max, 2),
-      percentage: roundNumber(percentage, 2),
-      dimension,
-      questionCount: questionCounts[category] || 0
-    };
-  });
-
-  // Get classifications
-  const workplaceClassification = classifyWorkplaceReadiness(dimensions.workplaceReadiness);
-  const intellectualClassification = classifyIntellectualCapability(dimensions.intellectualCapability);
-  const recommendation = getRecommendation(dimensions.workplaceReadiness, dimensions.intellectualCapability);
-
-  // Get suggested placement based on scores
-  const suggestedPlacement = getSuggestedDepartments(
-    dimensions.workplaceReadiness, 
-    dimensions.intellectualCapability
-  );
-
-  // Calculate top strengths (top 3 scoring categories)
-  const topStrengths = [...categoryBreakdown]
-    .sort((a, b) => b.percentage - a.percentage)
-    .slice(0, 3);
-
-  // Calculate development areas (bottom 3 scoring categories)
-  const developmentAreas = [...categoryBreakdown]
-    .sort((a, b) => a.percentage - b.percentage)
-    .slice(0, 3);
-
-  return {
-    candidateName,
-    assessmentName: assessment?.title || 'National Service Recruitment Assessment',
-    assessmentId: assessment?.id || null,
-    userId: candidateProfile?.id || null,
-    completedAt: new Date().toISOString(),
-    
-    // Candidate Information
-    candidateInfo,
-    
-    // Executive Summary
-    executiveSummary: {
-      workplaceReadiness: dimensions.workplaceReadiness,
-      workplaceBand: workplaceClassification.band,
-      workplaceDescription: workplaceClassification.description,
-      intellectualCapability: dimensions.intellectualCapability,
-      intellectualBand: intellectualClassification.band,
-      intellectualDescription: intellectualClassification.description,
-      overallScore: dimensions.overallScore,
-      recommendation: recommendation.recommendation,
-      recommendationDescription: recommendation.description
-    },
-    
-    // Dimensions
-    dimensions: {
-      workplaceReadiness: dimensions.workplaceReadiness,
-      intellectualCapability: dimensions.intellectualCapability,
-      overallScore: dimensions.overallScore,
-      breakdown: dimensions.breakdown
-    },
-    
-    // Category Breakdown
-    categoryBreakdown,
-    
-    // Top Strengths (Top 3)
-    topStrengths,
-    
-    // Development Areas (Bottom 3)
-    developmentAreas,
-    
-    // Recommendation
-    recommendation: {
-      level: recommendation.recommendation,
-      description: recommendation.description,
-      priority: recommendation.priority
-    },
-    
-    // Suggested Placement
-    suggestedPlacement,
-    
-    // Statistics
-    statistics: {
-      totalQuestions: questions.length,
-      totalAnswered: responses.filter(r => r.answer_id && r.answer_id !== "").length,
-      totalEarned: dimensions.breakdown.workplaceEarned + dimensions.breakdown.intellectualEarned,
-      totalMax: dimensions.breakdown.workplaceMax + dimensions.breakdown.intellectualMax
-    },
-    
-    // Response Details
-    responses: responses.map(response => {
-      const question = questions.find(q => String(q.id) === String(response.question_id));
-      const answer = question ? safeArray(question.answers).find(a => String(a.id) === String(response.answer_id)) : null;
-      
-      return {
-        questionId: response.question_id,
-        questionText: question?.question_text || 'N/A',
-        category: question?.section || 'General',
-        answerId: response.answer_id,
-        answerText: answer?.answer_text || 'N/A',
-        score: answer?.score || 0,
-        maxScore: safeArray(question?.answers).reduce((max, a) => Math.max(max, toNumber(a.score, 0)), 0) || 1,
-        timeSpent: response.time_spent_seconds || 0,
-        timesChanged: response.times_changed || 0
-      };
-    })
-  };
-}
-
-// ============================================================
-// MAIN HANDLER
+// SIMPLIFIED MAIN HANDLER
 // ============================================================
 
 export default async function handler(req, res) {
+  console.log(`[Submit Assessment] Request received at ${new Date().toISOString()}`);
+  
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
   }
@@ -406,6 +104,8 @@ export default async function handler(req, res) {
   try {
     const body = req.body || {};
     const sessionId = body.sessionId || body.session_id;
+
+    console.log(`[Submit Assessment] Session ID: ${sessionId}`);
 
     if (!sessionId) {
       return res.status(400).json({ success: false, error: "Missing sessionId" });
@@ -417,269 +117,289 @@ export default async function handler(req, res) {
     }
 
     const accessToken = authHeader.replace("Bearer ", "").trim();
-    const serviceClient = getServiceClient();
 
-    const authResponse = await serviceClient.auth.getUser(accessToken);
-    const authenticatedUser = authResponse?.data?.user || null;
+    // Initialize Supabase client
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-    if (authResponse.error || !authenticatedUser) {
-      return res.status(401).json({
-        success: false,
-        error: "invalid_token",
-        message: "Could not validate user session"
-      });
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('[Submit Assessment] Missing environment variables');
+      return res.status(500).json({ success: false, error: "Configuration error" });
     }
 
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Verify user
+    const { data: userData, error: authError } = await supabase.auth.getUser(accessToken);
+    
+    if (authError || !userData?.user) {
+      console.error('[Submit Assessment] Auth error:', authError);
+      return res.status(401).json({ success: false, error: "Invalid token" });
+    }
+
+    const user = userData.user;
+    console.log(`[Submit Assessment] User: ${user.id}`);
+
     // Get session
-    const sessionResponse = await serviceClient
+    const { data: session, error: sessionError } = await supabase
       .from("assessment_sessions")
-      .select("id, user_id, assessment_id, assessment_type_id, violation_count, status, copy_paste_count, right_click_count, devtools_count, screenshot_count, time_spent_seconds, started_at, created_at")
+      .select("id, user_id, assessment_id, status, violation_count")
       .eq("id", sessionId)
       .single();
 
-    if (sessionResponse.error || !sessionResponse.data) {
+    if (sessionError || !session) {
+      console.error('[Submit Assessment] Session error:', sessionError);
       return res.status(404).json({ success: false, error: "Session not found" });
     }
 
-    const session = sessionResponse.data;
+    if (session.user_id !== user.id) {
+      return res.status(403).json({ success: false, error: "Forbidden" });
+    }
 
-    if (session.user_id !== authenticatedUser.id) {
-      return res.status(403).json({
-        success: false,
-        error: "forbidden",
-        message: "You cannot submit another user's assessment session"
-      });
+    if (session.status === "completed") {
+      return res.status(200).json({ success: true, already_submitted: true });
     }
 
     // Get assessment
-    const assessmentResponse = await serviceClient
+    const { data: assessment, error: assessmentError } = await supabase
       .from("assessments")
-      .select("id, assessment_type_id, title, description")
+      .select("id, title")
       .eq("id", session.assessment_id)
       .single();
 
-    if (assessmentResponse.error || !assessmentResponse.data) {
-      return res.status(500).json({
-        success: false,
-        error: "failed_to_fetch_assessment",
-        message: "Assessment not found"
-      });
+    if (assessmentError || !assessment) {
+      console.error('[Submit Assessment] Assessment error:', assessmentError);
+      return res.status(500).json({ success: false, error: "Assessment not found" });
     }
 
-    const assessment = assessmentResponse.data;
-
-    // Get questions with answers
-    const questionsResponse = await serviceClient
+    // Get questions
+    const { data: questions, error: questionsError } = await supabase
       .from("questions")
       .select(`
         id,
         question_text,
         section,
-        subsection,
-        display_order,
         answers (
           id,
           answer_text,
-          score,
-          display_order
+          score
         )
       `)
       .eq("assessment_id", session.assessment_id)
-      .eq("is_active", true)
-      .order("display_order", { ascending: true });
+      .eq("is_active", true);
 
-    if (questionsResponse.error) {
-      return res.status(500).json({
-        success: false,
-        error: "failed_to_fetch_questions",
-        message: questionsResponse.error.message
-      });
+    if (questionsError) {
+      console.error('[Submit Assessment] Questions error:', questionsError);
+      return res.status(500).json({ success: false, error: "Failed to fetch questions" });
     }
 
-    const questions = safeArray(questionsResponse.data);
-    const totalQuestions = questions.length;
-
-    if (totalQuestions <= 0) {
-      return res.status(400).json({
-        success: false,
-        error: "no_questions_found",
-        message: "No questions found for this assessment"
-      });
+    if (!questions || questions.length === 0) {
+      return res.status(400).json({ success: false, error: "No questions found" });
     }
 
     // Get responses
-    const responsesResponse = await serviceClient
+    const { data: responses, error: responsesError } = await supabase
       .from("responses")
-      .select(`
-        id,
-        question_id,
-        answer_id,
-        user_id,
-        assessment_id,
-        session_id,
-        time_spent_seconds,
-        times_changed,
-        initial_answer_id,
-        created_at,
-        updated_at
-      `)
+      .select("*")
       .eq("session_id", sessionId);
 
-    if (responsesResponse.error) {
-      return res.status(500).json({
-        success: false,
-        error: "failed_to_fetch_responses",
-        message: responsesResponse.error.message
-      });
+    if (responsesError) {
+      console.error('[Submit Assessment] Responses error:', responsesError);
+      return res.status(500).json({ success: false, error: "Failed to fetch responses" });
     }
 
-    const responses = safeArray(responsesResponse.data);
-    const answeredCount = responses.filter(r => r.answer_id && r.answer_id !== "").length;
-
-    // Check if all questions are answered
+    const answeredCount = responses?.filter(r => r.answer_id).length || 0;
+    const totalQuestions = questions.length;
     const isComplete = answeredCount === totalQuestions;
-    const isAutoSubmit = body.auto_submit === true || body.auto_submitted === true || body.is_auto_submitted === true;
-    const allowIncomplete = body.allow_incomplete === true || body.allowIncomplete === true || isAutoSubmit;
 
-    if (!allowIncomplete && !isComplete) {
-      const unansweredCount = totalQuestions - answeredCount;
+    console.log(`[Submit Assessment] Answered: ${answeredCount}/${totalQuestions}`);
+
+    const isAutoSubmit = body.auto_submit === true;
+    const forceAutoSubmit = isAutoSubmit || !isComplete;
+
+    if (!forceAutoSubmit && !isComplete) {
       return res.status(400).json({
         success: false,
         error: "incomplete_assessment",
-        message: "Please answer all questions before submitting. " + unansweredCount + " question(s) remaining.",
-        unanswered_count: unansweredCount,
-        total_questions: totalQuestions,
-        answered_count: answeredCount
+        message: `Please answer all questions. ${totalQuestions - answeredCount} remaining.`
       });
     }
 
+    // Calculate scores
+    let totalEarned = 0;
+    let totalMax = 0;
+    let workplaceEarned = 0;
+    let workplaceMax = 0;
+    let intellectualEarned = 0;
+    let intellectualMax = 0;
+
+    // Create a map of responses by question_id
+    const responseMap = {};
+    responses?.forEach(r => {
+      responseMap[r.question_id] = r;
+    });
+
+    questions.forEach(question => {
+      const answers = safeArray(question.answers);
+      const maxScore = answers.reduce((max, a) => Math.max(max, toNumber(a.score, 0)), 0) || 1;
+      totalMax += maxScore;
+
+      const response = responseMap[question.id];
+      let earned = 0;
+      if (response?.answer_id) {
+        const answer = answers.find(a => String(a.id) === String(response.answer_id));
+        earned = answer ? toNumber(answer.score, 0) : 0;
+      }
+      totalEarned += earned;
+
+      const category = cleanText(question.section || 'General', 'General');
+      if (isWorkplaceCategory(category)) {
+        workplaceEarned += earned;
+        workplaceMax += maxScore;
+      } else if (isIntellectualCategory(category)) {
+        intellectualEarned += earned;
+        intellectualMax += maxScore;
+      }
+    });
+
+    const workplaceReadiness = workplaceMax > 0 ? roundNumber((workplaceEarned / workplaceMax) * 100, 2) : 0;
+    const intellectualCapability = intellectualMax > 0 ? roundNumber((intellectualEarned / intellectualMax) * 100, 2) : 0;
+    const overallScore = totalMax > 0 ? roundNumber((totalEarned / totalMax) * 100, 2) : 0;
+
+    // Get recommendations
+    const workplaceClass = classifyWorkplaceReadiness(workplaceReadiness);
+    const intellectualClass = classifyIntellectualCapability(intellectualCapability);
+    const recommendation = getRecommendation(workplaceReadiness, intellectualCapability);
+    const suggestedDepartments = getSuggestedDepartments(workplaceReadiness, intellectualCapability);
+
     // Get candidate profile
-    const profileResponse = await serviceClient
+    const { data: profile, error: profileError } = await supabase
       .from("candidate_profiles")
-      .select("id, full_name, email, created_by, supervisor_id, university, programme, graduation_year, preferred_department")
-      .eq("id", session.user_id)
+      .select("full_name, email, university, programme, graduation_year, preferred_department")
+      .eq("id", user.id)
       .maybeSingle();
 
-    const candidateProfile = profileResponse.data || { id: session.user_id, full_name: null, email: null };
+    if (profileError) {
+      console.error('[Submit Assessment] Profile error:', profileError);
+    }
 
-    // Build the National Service report
-    const report = buildNationalServiceReport(
-      candidateProfile,
-      assessment,
-      responses,
-      questions,
-      session
-    );
+    // Build report
+    const report = {
+      candidateName: profile?.full_name || 'Candidate',
+      assessmentName: assessment.title || 'National Service Assessment',
+      candidateInfo: {
+        fullName: profile?.full_name || 'Candidate',
+        university: profile?.university || 'Not Specified',
+        programme: profile?.programme || 'Not Specified',
+        graduationYear: profile?.graduation_year || 'Not Specified',
+        preferredDepartment: profile?.preferred_department || 'Not Specified',
+        assessmentDate: new Date().toLocaleDateString()
+      },
+      dimensions: {
+        workplaceReadiness,
+        intellectualCapability,
+        overallScore
+      },
+      executiveSummary: {
+        workplaceBand: workplaceClass.band,
+        intellectualBand: intellectualClass.band,
+        recommendation: recommendation.recommendation
+      },
+      recommendation: {
+        level: recommendation.recommendation,
+        priority: recommendation.priority
+      },
+      suggestedPlacement: suggestedDepartments,
+      statistics: {
+        totalQuestions,
+        totalAnswered: answeredCount
+      }
+    };
 
-    // Prepare result data
+    // Save result
     const resultData = {
-      user_id: session.user_id,
+      user_id: user.id,
       assessment_id: session.assessment_id,
       session_id: sessionId,
-      total_score: report.statistics.totalEarned,
-      max_score: report.statistics.totalMax,
-      percentage_score: report.dimensions.overallScore,
+      total_score: totalEarned,
+      max_score: totalMax,
+      percentage_score: overallScore,
       answered_questions: answeredCount,
       total_questions: totalQuestions,
       is_valid: isComplete && !isAutoSubmit,
       is_auto_submitted: Boolean(isAutoSubmit),
-      auto_submit_reason: body.auto_submit_reason || null,
-      violation_count: toNumber(session.violation_count, 0),
       completed_at: nowIso(),
-      
-      // National Service specific fields
-      workplace_readiness: report.dimensions.workplaceReadiness,
-      intellectual_capability: report.dimensions.intellectualCapability,
-      recommendation: report.recommendation.level,
+      workplace_readiness: workplaceReadiness,
+      intellectual_capability: intellectualCapability,
+      recommendation: recommendation.recommendation,
       report_data: report
     };
 
-    // Save results
-    const resultResponse = await serviceClient
+    const { data: result, error: resultError } = await supabase
       .from("assessment_results")
       .insert(resultData)
       .select()
       .single();
 
-    if (resultResponse.error || !resultResponse.data) {
-      console.error("Result save error:", resultResponse.error);
-      return res.status(500).json({
-        success: false,
-        error: "failed_to_save_results",
-        message: resultResponse.error ? resultResponse.error.message : "Could not save result"
-      });
+    if (resultError) {
+      console.error('[Submit Assessment] Result save error:', resultError);
+      return res.status(500).json({ success: false, error: "Failed to save results" });
     }
 
-    const result = resultResponse.data;
-
     // Update session
-    await serviceClient
+    await supabase
       .from("assessment_sessions")
       .update({
         status: "completed",
         completed_at: nowIso(),
-        auto_submitted: Boolean(isAutoSubmit),
         answered_questions: answeredCount,
-        total_questions: totalQuestions,
-        updated_at: nowIso()
+        total_questions: totalQuestions
       })
       .eq("id", sessionId);
 
     // Update candidate assessment
-    await serviceClient
+    await supabase
       .from("candidate_assessments")
       .update({
         status: "completed",
         result_id: result.id,
-        score: report.dimensions.overallScore,
-        completed_at: nowIso(),
-        updated_at: nowIso()
+        score: overallScore,
+        completed_at: nowIso()
       })
-      .eq("user_id", session.user_id)
+      .eq("user_id", user.id)
       .eq("assessment_id", session.assessment_id);
 
-    // Return response
+    console.log('[Submit Assessment] Success!');
+
     return res.status(200).json({
       success: true,
       result_id: result.id,
       id: result.id,
       result: result,
-      
-      // Executive Summary
-      executiveSummary: {
-        workplaceReadiness: report.dimensions.workplaceReadiness,
-        intellectualCapability: report.dimensions.intellectualCapability,
-        overallScore: report.dimensions.overallScore,
-        recommendation: report.recommendation.level,
-        recommendationDescription: report.recommendation.description
-      },
-      
-      // Full Report
       report: report,
-      
-      // Legacy fields for compatibility
-      score: report.dimensions.overallScore,
-      total_score: report.statistics.totalEarned,
-      max_score: report.statistics.totalMax,
-      percentage: Math.round(report.dimensions.overallScore),
-      percentage_score: report.dimensions.overallScore,
+      executiveSummary: {
+        workplaceReadiness,
+        intellectualCapability,
+        overallScore,
+        recommendation: recommendation.recommendation
+      },
+      score: overallScore,
+      percentage_score: overallScore,
       answered_questions: answeredCount,
       total_questions: totalQuestions,
       is_valid: isComplete && !isAutoSubmit,
-      isAutoSubmitted: Boolean(isAutoSubmit),
       is_auto_submitted: Boolean(isAutoSubmit),
-      
       message: isAutoSubmit
         ? `Assessment auto-submitted. ${answeredCount} of ${totalQuestions} questions answered.`
         : "Assessment submitted successfully!"
     });
 
   } catch (error) {
-    console.error("Fatal submit-assessment error:", error);
+    console.error('[Submit Assessment] Unhandled error:', error);
     return res.status(500).json({
       success: false,
       error: "server_error",
-      message: error?.message || "Submission failed"
+      message: error?.message || "An unexpected error occurred"
     });
   }
 }
