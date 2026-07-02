@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { supabase } from "../supabase/client";
-import AppLayout from "../components/AppLayout";
 
 function cleanEmail(value) {
   return String(value || "").trim().toLowerCase();
@@ -41,7 +40,7 @@ export default function Register() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   
-  // NEW: Additional fields for National Service Report
+  // Additional fields for National Service Report
   const [university, setUniversity] = useState("");
   const [programme, setProgramme] = useState("");
   const [graduationYear, setGraduationYear] = useState("");
@@ -102,7 +101,7 @@ export default function Register() {
       return;
     }
 
-    // NEW: Validate additional fields
+    // Validate additional fields
     if (!university) {
       setMessage({ type: "error", text: "Please enter your university/institution." });
       return;
@@ -139,7 +138,6 @@ export default function Register() {
             role: "candidate",
             is_supervisor: false,
             user_type: "candidate",
-            // Include additional fields in user metadata
             university: university,
             programme: programme,
             graduation_year: graduationYear,
@@ -181,7 +179,9 @@ export default function Register() {
   }
 
   return (
-    <AppLayout background="/images/register-bg.jpg" showNavigation={false}>
+    <div style={styles.pageContainer}>
+      <div style={styles.background} />
+      
       <div style={styles.centerOverlay}>
         <form onSubmit={handleRegister} style={styles.card}>
           <div style={styles.brandSection}>
@@ -193,9 +193,9 @@ export default function Register() {
           {message.text && (
             <div style={{
               ...styles.message,
-              background: message.type === "success" ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)",
+              background: message.type === "success" ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
               color: message.type === "success" ? "#bbf7d0" : "#fecaca",
-              border: "1px solid " + (message.type === "success" ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)")
+              border: "1px solid " + (message.type === "success" ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)")
             }}>
               {message.text}
             </div>
@@ -336,43 +336,60 @@ export default function Register() {
           </div>
         </form>
       </div>
-
-      <style jsx>{`
-        input::placeholder, select::placeholder {
-          color: rgba(255,255,255,0.55);
-        }
-        select option {
-          color: #1a1a2e;
-        }
-      `}</style>
-    </AppLayout>
+    </div>
   );
 }
 
 const styles = {
+  pageContainer: {
+    position: "relative",
+    minHeight: "100vh",
+    width: "100%",
+    overflow: "hidden",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  background: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundImage: "url(/images/register-bg.jpg)",
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+    zIndex: 0
+  },
   centerOverlay: {
+    position: "relative",
+    zIndex: 1,
     minHeight: "100vh",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: "20px",
-    background: "rgba(0,0,0,0.35)"
+    padding: "40px 20px",
+    width: "100%",
+    background: "rgba(0, 0, 0, 0.35)"
   },
   card: {
     width: "480px",
     maxWidth: "100%",
-    backgroundColor: "rgba(255,255,255,0.15)",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     backdropFilter: "blur(20px)",
-    padding: "44px 38px",
+    WebkitBackdropFilter: "blur(20px)",
+    padding: "40px 36px",
     borderRadius: "24px",
-    boxShadow: "0 25px 50px -12px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.2)",
-    border: "1px solid rgba(255,255,255,0.2)",
+    boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.15)",
+    border: "1px solid rgba(255,255,255,0.12)",
     display: "flex",
     flexDirection: "column",
-    gap: "14px"
+    gap: "14px",
+    maxHeight: "90vh",
+    overflowY: "auto"
   },
   brandSection: {
-    marginBottom: "4px",
+    marginBottom: "2px",
     textAlign: "center"
   },
   brandIcon: {
@@ -385,36 +402,40 @@ const styles = {
     justifyContent: "center",
     margin: "0 auto 12px",
     fontSize: "32px",
-    boxShadow: "0 8px 16px rgba(0,0,0,0.1)"
+    boxShadow: "0 8px 16px rgba(0,0,0,0.15)"
   },
   brandTitle: {
     margin: "0 0 6px",
     color: "white",
     fontSize: "28px",
     fontWeight: "700",
-    letterSpacing: "-0.5px"
+    letterSpacing: "-0.5px",
+    textShadow: "0 2px 4px rgba(0,0,0,0.2)"
   },
   brandSubtitle: {
-    color: "rgba(255,255,255,0.75)",
+    color: "rgba(255,255,255,0.8)",
     fontSize: "13px",
     margin: 0,
-    lineHeight: 1.5
+    lineHeight: 1.5,
+    textShadow: "0 1px 2px rgba(0,0,0,0.2)"
   },
   sectionTitle: {
-    color: "rgba(255,255,255,0.9)",
+    color: "rgba(255,255,255,0.85)",
     fontSize: "14px",
     fontWeight: "600",
     marginTop: "4px",
     marginBottom: "2px",
-    borderBottom: "1px solid rgba(255,255,255,0.1)",
-    paddingBottom: "6px"
+    borderBottom: "1px solid rgba(255,255,255,0.08)",
+    paddingBottom: "6px",
+    letterSpacing: "0.3px"
   },
   message: {
     padding: "12px 14px",
     borderRadius: "12px",
     fontSize: "13px",
     textAlign: "center",
-    lineHeight: 1.5
+    lineHeight: 1.5,
+    backdropFilter: "blur(10px)"
   },
   formGroup: {
     textAlign: "left"
@@ -423,38 +444,42 @@ const styles = {
     display: "block",
     marginBottom: "6px",
     fontWeight: "500",
-    color: "rgba(255,255,255,0.9)",
-    fontSize: "13px"
+    color: "rgba(255,255,255,0.85)",
+    fontSize: "13px",
+    letterSpacing: "0.2px"
   },
   input: {
     width: "100%",
     padding: "12px 16px",
     borderRadius: "12px",
-    border: "1px solid rgba(255,255,255,0.2)",
-    background: "rgba(255,255,255,0.1)",
+    border: "1px solid rgba(255,255,255,0.15)",
+    background: "rgba(255,255,255,0.07)",
     fontSize: "14px",
     color: "white",
     boxSizing: "border-box",
     outline: "none",
-    transition: "border-color 0.2s"
+    transition: "all 0.3s ease",
+    fontFamily: "inherit"
   },
   select: {
     width: "100%",
     padding: "12px 16px",
     borderRadius: "12px",
-    border: "1px solid rgba(255,255,255,0.2)",
-    background: "rgba(255,255,255,0.1)",
+    border: "1px solid rgba(255,255,255,0.15)",
+    background: "rgba(255,255,255,0.07)",
     fontSize: "14px",
     color: "white",
     boxSizing: "border-box",
     outline: "none",
     appearance: "none",
-    cursor: "pointer"
+    cursor: "pointer",
+    transition: "all 0.3s ease",
+    fontFamily: "inherit"
   },
   hint: {
     margin: "4px 0 0",
     fontSize: "12px",
-    color: "rgba(255,255,255,0.65)"
+    color: "rgba(255,255,255,0.55)"
   },
   submitButton: {
     width: "100%",
@@ -466,17 +491,18 @@ const styles = {
     cursor: "pointer",
     fontWeight: "700",
     fontSize: "15px",
-    marginTop: "4px"
+    marginTop: "4px",
+    transition: "all 0.3s ease"
   },
   footer: {
     textAlign: "center",
-    borderTop: "1px solid rgba(255,255,255,0.1)",
+    borderTop: "1px solid rgba(255,255,255,0.08)",
     paddingTop: "16px",
     marginTop: "2px"
   },
   footerText: {
     margin: 0,
-    color: "rgba(255,255,255,0.65)",
+    color: "rgba(255,255,255,0.6)",
     fontSize: "13px"
   },
   link: {
