@@ -40,6 +40,13 @@ export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  
+  // NEW: Additional fields for National Service Report
+  const [university, setUniversity] = useState("");
+  const [programme, setProgramme] = useState("");
+  const [graduationYear, setGraduationYear] = useState("");
+  const [preferredDepartment, setPreferredDepartment] = useState("");
+  
   const [message, setMessage] = useState({ type: "", text: "" });
   const [loading, setLoading] = useState(false);
 
@@ -51,14 +58,20 @@ export default function Register() {
           id: user.id,
           email: emailAddress,
           full_name: fullName,
+          university: university,
+          programme: programme,
+          graduation_year: graduationYear,
+          preferred_department: preferredDepartment,
           updated_at: new Date().toISOString()
         }, { onConflict: "id" });
 
       if (error) {
         console.error("Candidate profile creation warning:", error);
+        throw error;
       }
     } catch (profileError) {
       console.error("Candidate profile creation exception:", profileError);
+      throw profileError;
     }
   }
 
@@ -89,6 +102,27 @@ export default function Register() {
       return;
     }
 
+    // NEW: Validate additional fields
+    if (!university) {
+      setMessage({ type: "error", text: "Please enter your university/institution." });
+      return;
+    }
+
+    if (!programme) {
+      setMessage({ type: "error", text: "Please enter your programme of study." });
+      return;
+    }
+
+    if (!graduationYear) {
+      setMessage({ type: "error", text: "Please select your graduation year." });
+      return;
+    }
+
+    if (!preferredDepartment) {
+      setMessage({ type: "error", text: "Please select your preferred department." });
+      return;
+    }
+
     try {
       setLoading(true);
 
@@ -104,7 +138,12 @@ export default function Register() {
             name: fullName,
             role: "candidate",
             is_supervisor: false,
-            user_type: "candidate"
+            user_type: "candidate",
+            // Include additional fields in user metadata
+            university: university,
+            programme: programme,
+            graduation_year: graduationYear,
+            preferred_department: preferredDepartment
           }
         }
       });
@@ -117,17 +156,22 @@ export default function Register() {
 
       setMessage({
         type: "success",
-        text: "Registration successful. Please check your email for confirmation, then log in."
+        text: "Registration successful! Your profile has been created. Please check your email for confirmation, then log in."
       });
 
+      // Reset form
       setName("");
       setEmail("");
       setPassword("");
       setConfirmPassword("");
+      setUniversity("");
+      setProgramme("");
+      setGraduationYear("");
+      setPreferredDepartment("");
 
       setTimeout(() => {
         router.push("/login");
-      }, 2200);
+      }, 2500);
     } catch (registerError) {
       console.error("Registration error:", registerError);
       setMessage({ type: "error", text: getReadableSignupError(registerError) });
@@ -157,8 +201,11 @@ export default function Register() {
             </div>
           )}
 
+          {/* Personal Information */}
+          <div style={styles.sectionTitle}>Personal Information</div>
+
           <div style={styles.formGroup}>
-            <label style={styles.label}>Full Name</label>
+            <label style={styles.label}>Full Name *</label>
             <input
               type="text"
               placeholder="Enter your full name"
@@ -170,7 +217,7 @@ export default function Register() {
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>Email Address</label>
+            <label style={styles.label}>Email Address *</label>
             <input
               type="email"
               placeholder="you@example.com"
@@ -181,8 +228,75 @@ export default function Register() {
             />
           </div>
 
+          {/* Academic Information */}
+          <div style={styles.sectionTitle}>Academic Information</div>
+
           <div style={styles.formGroup}>
-            <label style={styles.label}>Password</label>
+            <label style={styles.label}>University / Institution *</label>
+            <input
+              type="text"
+              placeholder="Enter your university name"
+              value={university}
+              required
+              onChange={(event) => setUniversity(event.target.value)}
+              style={styles.input}
+            />
+          </div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Programme of Study *</label>
+            <input
+              type="text"
+              placeholder="e.g., BSc Computer Science"
+              value={programme}
+              required
+              onChange={(event) => setProgramme(event.target.value)}
+              style={styles.input}
+            />
+          </div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Graduation Year *</label>
+            <select
+              value={graduationYear}
+              required
+              onChange={(event) => setGraduationYear(event.target.value)}
+              style={styles.select}
+            >
+              <option value="">Select graduation year</option>
+              {[2024, 2025, 2026, 2027, 2028, 2029, 2030].map(year => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Preferred Department *</label>
+            <select
+              value={preferredDepartment}
+              required
+              onChange={(event) => setPreferredDepartment(event.target.value)}
+              style={styles.select}
+            >
+              <option value="">Select preferred department</option>
+              <option value="Operations & Production">Operations & Production</option>
+              <option value="Quality Assurance & Control">Quality Assurance & Control</option>
+              <option value="Supply Chain & Logistics">Supply Chain & Logistics</option>
+              <option value="Technical Services">Technical Services</option>
+              <option value="Maintenance & Engineering">Maintenance & Engineering</option>
+              <option value="Administration">Administration</option>
+              <option value="Information Technology">Information Technology</option>
+              <option value="Human Resources">Human Resources</option>
+              <option value="Finance">Finance</option>
+              <option value="Sales & Marketing">Sales & Marketing</option>
+            </select>
+          </div>
+
+          {/* Account Security */}
+          <div style={styles.sectionTitle}>Account Security</div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Password *</label>
             <input
               type="password"
               placeholder="Create a secure password"
@@ -196,7 +310,7 @@ export default function Register() {
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>Confirm Password</label>
+            <label style={styles.label}>Confirm Password *</label>
             <input
               type="password"
               placeholder="Confirm your password"
@@ -224,8 +338,11 @@ export default function Register() {
       </div>
 
       <style jsx>{`
-        input::placeholder {
+        input::placeholder, select::placeholder {
           color: rgba(255,255,255,0.55);
+        }
+        select option {
+          color: #1a1a2e;
         }
       `}</style>
     </AppLayout>
@@ -242,7 +359,7 @@ const styles = {
     background: "rgba(0,0,0,0.35)"
   },
   card: {
-    width: "430px",
+    width: "480px",
     maxWidth: "100%",
     backgroundColor: "rgba(255,255,255,0.15)",
     backdropFilter: "blur(20px)",
@@ -252,10 +369,10 @@ const styles = {
     border: "1px solid rgba(255,255,255,0.2)",
     display: "flex",
     flexDirection: "column",
-    gap: "18px"
+    gap: "14px"
   },
   brandSection: {
-    marginBottom: "6px",
+    marginBottom: "4px",
     textAlign: "center"
   },
   brandIcon: {
@@ -266,12 +383,12 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    margin: "0 auto 16px",
+    margin: "0 auto 12px",
     fontSize: "32px",
     boxShadow: "0 8px 16px rgba(0,0,0,0.1)"
   },
   brandTitle: {
-    margin: "0 0 8px",
+    margin: "0 0 6px",
     color: "white",
     fontSize: "28px",
     fontWeight: "700",
@@ -282,6 +399,15 @@ const styles = {
     fontSize: "13px",
     margin: 0,
     lineHeight: 1.5
+  },
+  sectionTitle: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: "14px",
+    fontWeight: "600",
+    marginTop: "4px",
+    marginBottom: "2px",
+    borderBottom: "1px solid rgba(255,255,255,0.1)",
+    paddingBottom: "6px"
   },
   message: {
     padding: "12px 14px",
@@ -295,24 +421,38 @@ const styles = {
   },
   label: {
     display: "block",
-    marginBottom: "8px",
+    marginBottom: "6px",
     fontWeight: "500",
     color: "rgba(255,255,255,0.9)",
     fontSize: "13px"
   },
   input: {
     width: "100%",
-    padding: "14px 16px",
-    borderRadius: "14px",
+    padding: "12px 16px",
+    borderRadius: "12px",
     border: "1px solid rgba(255,255,255,0.2)",
     background: "rgba(255,255,255,0.1)",
     fontSize: "14px",
     color: "white",
     boxSizing: "border-box",
-    outline: "none"
+    outline: "none",
+    transition: "border-color 0.2s"
+  },
+  select: {
+    width: "100%",
+    padding: "12px 16px",
+    borderRadius: "12px",
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "rgba(255,255,255,0.1)",
+    fontSize: "14px",
+    color: "white",
+    boxSizing: "border-box",
+    outline: "none",
+    appearance: "none",
+    cursor: "pointer"
   },
   hint: {
-    margin: "6px 0 0",
+    margin: "4px 0 0",
     fontSize: "12px",
     color: "rgba(255,255,255,0.65)"
   },
@@ -331,8 +471,8 @@ const styles = {
   footer: {
     textAlign: "center",
     borderTop: "1px solid rgba(255,255,255,0.1)",
-    paddingTop: "18px",
-    marginTop: "4px"
+    paddingTop: "16px",
+    marginTop: "2px"
   },
   footerText: {
     margin: 0,
