@@ -33,7 +33,7 @@ export default async function handler(req, res) {
       }
     );
 
-    // Get the result
+    // Get the result with full data
     const resultResponse = await serviceClient
       .from("assessment_results")
       .select("*")
@@ -41,6 +41,7 @@ export default async function handler(req, res) {
       .single();
 
     if (resultResponse.error || !resultResponse.data) {
+      console.error("Result fetch error:", resultResponse.error);
       return res.status(404).json({
         success: false,
         error: "Result not found"
@@ -48,9 +49,14 @@ export default async function handler(req, res) {
     }
 
     const result = resultResponse.data;
+    console.log("[API] Result found:", result.id);
+    console.log("[API] report_data exists:", !!result.report_data);
+    console.log("[API] workplace_readiness:", result.workplace_readiness);
+    console.log("[API] intellectual_capability:", result.intellectual_capability);
+    console.log("[API] recommendation:", result.recommendation);
 
     // Get assessment details to determine report type
-    let report = null;
+    let assessmentTypeCode = null;
     let isNationalService = false;
 
     if (result.assessment_id) {
@@ -62,20 +68,37 @@ export default async function handler(req, res) {
 
       if (!assessmentResponse.error && assessmentResponse.data) {
         const assessment = assessmentResponse.data;
-        isNationalService = assessment.assessment_type?.code === 'national_service';
+        assessmentTypeCode = assessment.assessment_type?.code;
+        console.log("[API] Assessment type code:", assessmentTypeCode);
         
-        // If it's National Service and we have report_data
-        if (isNationalService && result.report_data) {
-          report = result.report_data;
+        // Check if it's National Service
+        if (assessmentTypeCode === 'national_service') {
+          isNationalService = true;
         }
       }
     }
 
+    // Also check if the result itself has National Service fields
+    if (result.workplace_readiness !== undefined && result.workplace_readiness !== null) {
+      isNationalService = true;
+      console.log("[API] Detected National Service from result fields");
+    }
+
+    // Check if report_data has National Service structure
+    if (result.report_data && result.report_data.dimensions && 
+        result.report_data.dimensions.workplaceReadiness !== undefined) {
+      isNationalService = true;
+      console.log("[API] Detected National Service from report_data structure");
+    }
+
+    console.log("[API] isNationalService:", isNationalService);
+
     return res.status(200).json({
       success: true,
       result: result,
-      report: report,
+      report: result.report_data || null,
       isNationalService: isNationalService,
+      assessmentTypeCode: assessmentTypeCode,
       executiveSummary: isNationalService ? {
         workplaceReadiness: result.workplace_readiness,
         intellectualCapability: result.intellectual_capability,
@@ -88,7 +111,8 @@ export default async function handler(req, res) {
     console.error("Error fetching report:", error);
     return res.status(500).json({
       success: false,
-      error: "Failed to fetch report"
+      error: "Failed to fetch report",
+      message: error?.message || "Internal server error"
     });
   }
 }
