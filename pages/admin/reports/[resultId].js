@@ -5,6 +5,7 @@ import { useRouter } from 'next/router';
 import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
 import NationalServiceReport from '../../../components/reports/NationalServiceReport';
+import AppLayout from '../../../components/AppLayout';
 
 export default function AdminReportView() {
   const router = useRouter();
@@ -39,7 +40,6 @@ export default function AdminReportView() {
           throw new Error(data.error || 'Failed to load report');
         }
 
-        console.log('[Admin Report] Data received:', data);
         setReportData(data);
         
         // Check if it's a National Service assessment
@@ -61,74 +61,72 @@ export default function AdminReportView() {
   }, [resultId, session]);
 
   const handleBack = () => {
-    router.push('/admin');
+    router.push('/admin/reports');
   };
 
   if (authLoading || loading) {
     return (
-      <div style={styles.loadingContainer}>
-        <div style={styles.loadingSpinner}></div>
-        <p>Loading report...</p>
-      </div>
+      <AppLayout background="/images/admin-bg.jpg">
+        <div style={styles.loadingContainer}>
+          <div style={styles.loadingSpinner}></div>
+          <p>Loading report...</p>
+        </div>
+      </AppLayout>
     );
   }
 
   if (error) {
     return (
-      <div style={styles.errorContainer}>
-        <div style={styles.errorIcon}>🔒</div>
-        <h2>Access Denied</h2>
-        <p>{error}</p>
-        <button onClick={handleBack} style={styles.errorButton}>Go Back</button>
-      </div>
+      <AppLayout background="/images/admin-bg.jpg">
+        <div style={styles.errorContainer}>
+          <div style={styles.errorIcon}>🔒</div>
+          <h2>Access Denied</h2>
+          <p>{error}</p>
+          <button onClick={handleBack} style={styles.errorButton}>Go Back</button>
+        </div>
+      </AppLayout>
     );
   }
 
-  // Render National Service Report (Admin only)
+  // Render National Service Report
   if (isNationalService && reportData?.report) {
     return (
-      <div>
+      <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.breadcrumb}>
           <button onClick={handleBack} style={styles.breadcrumbButton}>
-            ← Back to Admin Dashboard
+            ← Back to Reports List
           </button>
           <span style={styles.breadcrumbSeparator}>|</span>
           <span style={styles.breadcrumbText}>Admin Report View</span>
         </div>
         <NationalServiceReport report={reportData.report} onBack={handleBack} />
-      </div>
+      </AppLayout>
     );
   }
 
-  // Fallback for non-National Service reports
   return (
-    <div style={styles.fallbackContainer}>
-      <button onClick={handleBack} style={styles.backButton}>
-        ← Back to Admin Dashboard
-      </button>
-      <div style={styles.fallbackContent}>
-        <h2>Standard Report</h2>
-        <p>This assessment uses the standard report format.</p>
-        <div style={styles.scoreDisplay}>
-          <div style={styles.scoreItem}>
-            <span style={styles.scoreLabel}>Overall Score</span>
-            <span style={styles.scoreValue}>{reportData?.result?.percentage_score || 0}%</span>
-          </div>
+    <AppLayout background="/images/admin-bg.jpg">
+      <div style={styles.fallbackContainer}>
+        <button onClick={handleBack} style={styles.backButton}>
+          ← Back to Reports List
+        </button>
+        <div style={styles.fallbackContent}>
+          <h2>Standard Report</h2>
+          <p>This assessment uses the standard report format.</p>
         </div>
       </div>
-    </div>
+    </AppLayout>
   );
 }
 
 const styles = {
   loadingContainer: {
-    minHeight: '100vh',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '16px',
-    background: '#f8fafc'
+    minHeight: '400px',
+    gap: '16px'
   },
   loadingSpinner: {
     width: '40px',
@@ -206,29 +204,6 @@ const styles = {
     padding: '24px',
     borderRadius: '12px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-  },
-  scoreDisplay: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '20px',
-    marginTop: '16px'
-  },
-  scoreItem: {
-    padding: '16px',
-    background: '#f8fafc',
-    borderRadius: '8px',
-    textAlign: 'center'
-  },
-  scoreLabel: {
-    display: 'block',
-    fontSize: '14px',
-    color: '#64748b',
-    marginBottom: '4px'
-  },
-  scoreValue: {
-    fontSize: '24px',
-    fontWeight: '700',
-    color: '#1a237e'
   }
 };
 
