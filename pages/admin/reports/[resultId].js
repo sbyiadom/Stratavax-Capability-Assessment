@@ -32,7 +32,7 @@ export default function AdminReportView() {
           return;
         }
 
-        // Fetch the report
+        // Fetch the report directly from the API
         const response = await fetch(`/api/assessment-report/${resultId}`);
         const data = await response.json();
 
@@ -40,14 +40,32 @@ export default function AdminReportView() {
           throw new Error(data.error || 'Failed to load report');
         }
 
-        setReportData(data);
-        
+        console.log('[Admin Report] Full data received:', data);
+
         // Check if it's a National Service assessment
-        if (data.isNationalService === true || 
-            (data.report && data.report.dimensions && 
-             data.report.dimensions.workplaceReadiness !== undefined)) {
-          setIsNationalService(true);
+        // Check multiple sources for National Service detection
+        const isNS = 
+          data.isNationalService === true ||
+          (data.result?.report_data && data.result.report_data.dimensions && 
+           data.result.report_data.dimensions.workplaceReadiness !== undefined) ||
+          (data.report && data.report.dimensions && 
+           data.report.dimensions.workplaceReadiness !== undefined) ||
+          (data.result?.workplace_readiness !== undefined && data.result?.workplace_readiness !== null);
+
+        console.log('[Admin Report] Is National Service:', isNS);
+
+        // If we have report_data in the result, use it directly
+        let report = data.report;
+        if (!report && data.result?.report_data) {
+          report = data.result.report_data;
+          console.log('[Admin Report] Using report_data from result:', report);
         }
+
+        setReportData({
+          ...data,
+          report: report
+        });
+        setIsNationalService(isNS);
 
         setLoading(false);
       } catch (err) {
@@ -88,8 +106,9 @@ export default function AdminReportView() {
     );
   }
 
-  // Render National Service Report
+  // Render National Service Report if detected
   if (isNationalService && reportData?.report) {
+    console.log('[Admin Report] Rendering National Service Report with:', reportData.report);
     return (
       <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.breadcrumb}>
@@ -97,13 +116,31 @@ export default function AdminReportView() {
             ← Back to Reports List
           </button>
           <span style={styles.breadcrumbSeparator}>|</span>
-          <span style={styles.breadcrumbText}>Admin Report View</span>
+          <span style={styles.breadcrumbText}>National Service Report</span>
         </div>
         <NationalServiceReport report={reportData.report} onBack={handleBack} />
       </AppLayout>
     );
   }
 
+  // If we have report_data but it's not being detected, try to render it anyway
+  if (reportData?.result?.report_data) {
+    console.log('[Admin Report] Rendering report_data directly');
+    return (
+      <AppLayout background="/images/admin-bg.jpg">
+        <div style={styles.breadcrumb}>
+          <button onClick={handleBack} style={styles.breadcrumbButton}>
+            ← Back to Reports List
+          </button>
+          <span style={styles.breadcrumbSeparator}>|</span>
+          <span style={styles.breadcrumbText}>National Service Report</span>
+        </div>
+        <NationalServiceReport report={reportData.result.report_data} onBack={handleBack} />
+      </AppLayout>
+    );
+  }
+
+  // Fallback
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.fallbackContainer}>
@@ -113,6 +150,17 @@ export default function AdminReportView() {
         <div style={styles.fallbackContent}>
           <h2>Standard Report</h2>
           <p>This assessment uses the standard report format.</p>
+          {reportData?.result && (
+            <div style={styles.debugInfo}>
+              <h4>Debug Info:</h4>
+              <pre>{JSON.stringify({
+                hasReportData: !!reportData.result.report_data,
+                hasWorkplaceReadiness: reportData.result.workplace_readiness,
+                hasIntellectualCapability: reportData.result.intellectual_capability,
+                recommendation: reportData.result.recommendation
+              }, null, 2)}</pre>
+            </div>
+          )}
         </div>
       </div>
     </AppLayout>
@@ -204,6 +252,14 @@ const styles = {
     padding: '24px',
     borderRadius: '12px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+  },
+  debugInfo: {
+    marginTop: '16px',
+    padding: '12px',
+    background: '#f8fafc',
+    borderRadius: '8px',
+    fontSize: '12px',
+    overflow: 'auto'
   }
 };
 
