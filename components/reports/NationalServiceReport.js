@@ -180,19 +180,23 @@ export default function NationalServiceReport({ report, onBack }) {
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>🛠️ Workplace Readiness - Topic Breakdown</h2>
           <div style={styles.categoryGrid}>
-            {workplaceCategories.map((cat, index) => (
-              <div key={index} style={styles.categoryCard}>
-                <div style={styles.categoryName}>{cat.category}</div>
-                <div style={styles.categoryScore}>{cat.percentage}%</div>
-                <div style={styles.categoryBar}>
-                  <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%' }} />
+            {workplaceCategories.map((cat, index) => {
+              const earned = cat.earnedDisplay !== undefined ? cat.earnedDisplay : Math.round(cat.earned || 0);
+              const max = cat.maxDisplay !== undefined ? cat.maxDisplay : Math.round(cat.max || 0);
+              return (
+                <div key={index} style={styles.categoryCard}>
+                  <div style={styles.categoryName}>{cat.category}</div>
+                  <div style={styles.categoryScore}>{cat.percentage}%</div>
+                  <div style={styles.categoryBar}>
+                    <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%' }} />
+                  </div>
+                  <div style={styles.categoryDetail}>
+                    {earned} / {max} points
+                  </div>
+                  <div style={styles.categoryComment}>{getCategoryComment(cat.percentage)}</div>
                 </div>
-                <div style={styles.categoryDetail}>
-                  {Math.round(cat.earned || 0)} / {Math.round(cat.max || 10)} points
-                </div>
-                <div style={styles.categoryComment}>{getCategoryComment(cat.percentage)}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -202,19 +206,23 @@ export default function NationalServiceReport({ report, onBack }) {
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>🧠 Intellectual Capability - Topic Breakdown</h2>
           <div style={styles.categoryGrid}>
-            {intellectualCategories.map((cat, index) => (
-              <div key={index} style={styles.categoryCard}>
-                <div style={styles.categoryName}>{cat.category}</div>
-                <div style={styles.categoryScore}>{cat.percentage}%</div>
-                <div style={styles.categoryBar}>
-                  <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%' }} />
+            {intellectualCategories.map((cat, index) => {
+              const earned = cat.earnedDisplay !== undefined ? cat.earnedDisplay : Math.round(cat.earned || 0);
+              const max = cat.maxDisplay !== undefined ? cat.maxDisplay : Math.round(cat.max || 0);
+              return (
+                <div key={index} style={styles.categoryCard}>
+                  <div style={styles.categoryName}>{cat.category}</div>
+                  <div style={styles.categoryScore}>{cat.percentage}%</div>
+                  <div style={styles.categoryBar}>
+                    <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%' }} />
+                  </div>
+                  <div style={styles.categoryDetail}>
+                    {earned} / {max} points
+                  </div>
+                  <div style={styles.categoryComment}>{getCategoryComment(cat.percentage)}</div>
                 </div>
-                <div style={styles.categoryDetail}>
-                  {Math.round(cat.earned || 0)} / {Math.round(cat.max || 10)} points
-                </div>
-                <div style={styles.categoryComment}>{getCategoryComment(cat.percentage)}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
