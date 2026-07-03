@@ -40,7 +40,6 @@ export default function Register() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   
-  // Additional fields for National Service Report
   const [university, setUniversity] = useState("");
   const [programme, setProgramme] = useState("");
   const [graduationYear, setGraduationYear] = useState("");
@@ -101,7 +100,6 @@ export default function Register() {
       return;
     }
 
-    // Validate additional fields
     if (!university) {
       setMessage({ type: "error", text: "Please enter your university/institution." });
       return;
@@ -157,7 +155,6 @@ export default function Register() {
         text: "Registration successful! Your profile has been created. Please check your email for confirmation, then log in."
       });
 
-      // Reset form
       setName("");
       setEmail("");
       setPassword("");
@@ -180,7 +177,9 @@ export default function Register() {
 
   return (
     <div style={styles.pageContainer}>
-      <div style={styles.background} />
+      <div style={styles.background}>
+        <div style={styles.backgroundOverlay} />
+      </div>
       
       <div style={styles.centerOverlay}>
         <form onSubmit={handleRegister} style={styles.card}>
@@ -193,9 +192,9 @@ export default function Register() {
           {message.text && (
             <div style={{
               ...styles.message,
-              background: message.type === "success" ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
+              background: message.type === "success" ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)",
               color: message.type === "success" ? "#bbf7d0" : "#fecaca",
-              border: "1px solid " + (message.type === "success" ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)")
+              border: "1px solid " + (message.type === "success" ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)")
             }}>
               {message.text}
             </div>
@@ -265,7 +264,7 @@ export default function Register() {
             >
               <option value="">Select graduation year</option>
               {[2024, 2025, 2026, 2027, 2028, 2029, 2030].map(year => (
-                <option key={year} value={year}>{year}</option>
+                <option key={year} value={year} style={styles.option}>{year}</option>
               ))}
             </select>
           </div>
@@ -278,17 +277,17 @@ export default function Register() {
               onChange={(event) => setPreferredDepartment(event.target.value)}
               style={styles.select}
             >
-              <option value="">Select preferred department</option>
-              <option value="Operations & Production">Operations & Production</option>
-              <option value="Quality Assurance & Control">Quality Assurance & Control</option>
-              <option value="Supply Chain & Logistics">Supply Chain & Logistics</option>
-              <option value="Technical Services">Technical Services</option>
-              <option value="Maintenance & Engineering">Maintenance & Engineering</option>
-              <option value="Administration">Administration</option>
-              <option value="Information Technology">Information Technology</option>
-              <option value="Human Resources">Human Resources</option>
-              <option value="Finance">Finance</option>
-              <option value="Sales & Marketing">Sales & Marketing</option>
+              <option value="" style={styles.option}>Select preferred department</option>
+              <option value="Operations & Production" style={styles.option}>Operations & Production</option>
+              <option value="Quality Assurance & Control" style={styles.option}>Quality Assurance & Control</option>
+              <option value="Supply Chain & Logistics" style={styles.option}>Supply Chain & Logistics</option>
+              <option value="Technical Services" style={styles.option}>Technical Services</option>
+              <option value="Maintenance & Engineering" style={styles.option}>Maintenance & Engineering</option>
+              <option value="Administration" style={styles.option}>Administration</option>
+              <option value="Information Technology" style={styles.option}>Information Technology</option>
+              <option value="Human Resources" style={styles.option}>Human Resources</option>
+              <option value="Finance" style={styles.option}>Finance</option>
+              <option value="Sales & Marketing" style={styles.option}>Sales & Marketing</option>
             </select>
           </div>
 
@@ -361,27 +360,35 @@ const styles = {
     backgroundPosition: "center",
     zIndex: 0
   },
+  backgroundOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: "linear-gradient(135deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.3) 100%)",
+    zIndex: 1
+  },
   centerOverlay: {
     position: "relative",
-    zIndex: 1,
+    zIndex: 2,
     minHeight: "100vh",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     padding: "40px 20px",
-    width: "100%",
-    background: "rgba(0, 0, 0, 0.35)"
+    width: "100%"
   },
   card: {
     width: "480px",
     maxWidth: "100%",
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    backdropFilter: "blur(20px)",
-    WebkitBackdropFilter: "blur(20px)",
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    backdropFilter: "blur(24px)",
+    WebkitBackdropFilter: "blur(24px)",
     padding: "40px 36px",
     borderRadius: "24px",
-    boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.15)",
-    border: "1px solid rgba(255,255,255,0.12)",
+    boxShadow: "0 25px 50px -12px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.2)",
+    border: "1px solid rgba(255,255,255,0.15)",
     display: "flex",
     flexDirection: "column",
     gap: "14px",
@@ -402,7 +409,7 @@ const styles = {
     justifyContent: "center",
     margin: "0 auto 12px",
     fontSize: "32px",
-    boxShadow: "0 8px 16px rgba(0,0,0,0.15)"
+    boxShadow: "0 8px 16px rgba(0,0,0,0.2)"
   },
   brandTitle: {
     margin: "0 0 6px",
@@ -410,24 +417,25 @@ const styles = {
     fontSize: "28px",
     fontWeight: "700",
     letterSpacing: "-0.5px",
-    textShadow: "0 2px 4px rgba(0,0,0,0.2)"
+    textShadow: "0 2px 8px rgba(0,0,0,0.3)"
   },
   brandSubtitle: {
-    color: "rgba(255,255,255,0.8)",
+    color: "rgba(255,255,255,0.9)",
     fontSize: "13px",
     margin: 0,
     lineHeight: 1.5,
-    textShadow: "0 1px 2px rgba(0,0,0,0.2)"
+    textShadow: "0 1px 4px rgba(0,0,0,0.3)"
   },
   sectionTitle: {
-    color: "rgba(255,255,255,0.85)",
+    color: "rgba(255,255,255,0.9)",
     fontSize: "14px",
     fontWeight: "600",
     marginTop: "4px",
     marginBottom: "2px",
-    borderBottom: "1px solid rgba(255,255,255,0.08)",
+    borderBottom: "1px solid rgba(255,255,255,0.1)",
     paddingBottom: "6px",
-    letterSpacing: "0.3px"
+    letterSpacing: "0.3px",
+    textShadow: "0 1px 4px rgba(0,0,0,0.2)"
   },
   message: {
     padding: "12px 14px",
@@ -444,29 +452,31 @@ const styles = {
     display: "block",
     marginBottom: "6px",
     fontWeight: "500",
-    color: "rgba(255,255,255,0.85)",
+    color: "rgba(255,255,255,0.9)",
     fontSize: "13px",
-    letterSpacing: "0.2px"
+    letterSpacing: "0.2px",
+    textShadow: "0 1px 4px rgba(0,0,0,0.2)"
   },
   input: {
     width: "100%",
     padding: "12px 16px",
     borderRadius: "12px",
-    border: "1px solid rgba(255,255,255,0.15)",
-    background: "rgba(255,255,255,0.07)",
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "rgba(255,255,255,0.1)",
     fontSize: "14px",
     color: "white",
     boxSizing: "border-box",
     outline: "none",
     transition: "all 0.3s ease",
-    fontFamily: "inherit"
+    fontFamily: "inherit",
+    backdropFilter: "blur(4px)"
   },
   select: {
     width: "100%",
     padding: "12px 16px",
     borderRadius: "12px",
-    border: "1px solid rgba(255,255,255,0.15)",
-    background: "rgba(255,255,255,0.07)",
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "rgba(255,255,255,0.1)",
     fontSize: "14px",
     color: "white",
     boxSizing: "border-box",
@@ -474,12 +484,20 @@ const styles = {
     appearance: "none",
     cursor: "pointer",
     transition: "all 0.3s ease",
-    fontFamily: "inherit"
+    fontFamily: "inherit",
+    backdropFilter: "blur(4px)"
+  },
+  // FIX: Dark text for dropdown options so they're visible
+  option: {
+    color: "#1a1a2e",
+    background: "white",
+    padding: "8px"
   },
   hint: {
     margin: "4px 0 0",
     fontSize: "12px",
-    color: "rgba(255,255,255,0.55)"
+    color: "rgba(255,255,255,0.6)",
+    textShadow: "0 1px 4px rgba(0,0,0,0.2)"
   },
   submitButton: {
     width: "100%",
@@ -492,7 +510,8 @@ const styles = {
     fontWeight: "700",
     fontSize: "15px",
     marginTop: "4px",
-    transition: "all 0.3s ease"
+    transition: "all 0.3s ease",
+    boxShadow: "0 4px 16px rgba(0,0,0,0.2)"
   },
   footer: {
     textAlign: "center",
@@ -502,12 +521,14 @@ const styles = {
   },
   footerText: {
     margin: 0,
-    color: "rgba(255,255,255,0.6)",
-    fontSize: "13px"
+    color: "rgba(255,255,255,0.7)",
+    fontSize: "13px",
+    textShadow: "0 1px 4px rgba(0,0,0,0.2)"
   },
   link: {
     color: "white",
     textDecoration: "none",
-    fontWeight: "600"
+    fontWeight: "600",
+    textShadow: "0 1px 4px rgba(0,0,0,0.2)"
   }
 };
