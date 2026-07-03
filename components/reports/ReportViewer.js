@@ -1,14 +1,13 @@
 // components/reports/ReportViewer.js
 
 import React, { useState, useEffect } from 'react';
-import StratavaxReport from './StratavaxReport';
 import NationalServiceReport from './NationalServiceReport';
 
 export default function ReportViewer({ resultId, onBack }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reportData, setReportData] = useState(null);
-  const [reportType, setReportType] = useState(null);
+  const [isNationalService, setIsNationalService] = useState(false);
 
   useEffect(() => {
     if (!resultId) return;
@@ -16,6 +15,8 @@ export default function ReportViewer({ resultId, onBack }) {
     const fetchReport = async () => {
       try {
         setLoading(true);
+        
+        // Fetch the result
         const response = await fetch(`/api/assessment-report/${resultId}`);
         const data = await response.json();
 
@@ -23,18 +24,23 @@ export default function ReportViewer({ resultId, onBack }) {
           throw new Error(data.error || 'Failed to load report');
         }
 
+        console.log('[ReportViewer] Data received:', data);
+        
         setReportData(data);
         
-        // Determine report type from assessment
-        if (data.result?.assessment_id) {
-          const assessmentResponse = await fetch(`/api/assessment/${data.result.assessment_id}`);
-          const assessmentData = await assessmentResponse.json();
-          
-          // Check if it's a National Service assessment
-          if (assessmentData?.assessment_type?.code === 'national_service') {
-            setReportType('national_service');
+        // Check if it's a National Service assessment
+        // Look for the flag from the API
+        if (data.isNationalService === true) {
+          setIsNationalService(true);
+          console.log('[ReportViewer] National Service report detected');
+        } else {
+          // Also check if we have report_data with National Service structure
+          if (data.report && data.report.dimensions && 
+              data.report.dimensions.workplaceReadiness !== undefined) {
+            setIsNationalService(true);
+            console.log('[ReportViewer] National Service report detected from data structure');
           } else {
-            setReportType('stratavax');
+            console.log('[ReportViewer] Using default report');
           }
         }
 
@@ -69,22 +75,40 @@ export default function ReportViewer({ resultId, onBack }) {
     );
   }
 
-  // Render the appropriate report based on type
-  if (reportType === 'national_service') {
-    return (
-      <NationalServiceReport 
-        report={reportData.report} 
-        onBack={onBack} 
-      />
-    );
+  // Render National Service Report
+  if (isNationalService && reportData?.report) {
+    return <NationalServiceReport report={reportData.report} onBack={onBack} />;
   }
 
-  // Default: Stratavax report (your existing report)
+  // Fallback: Use the old report format
   return (
-    <StratavaxReport 
-      result={reportData.result}
-      onBack={onBack}
-    />
+    <div style={styles.container}>
+      {onBack && (
+        <button onClick={onBack} style={styles.backButton}>
+          ← Back to Dashboard
+        </button>
+      )}
+      
+      <div style={styles.header}>
+        <h1 style={styles.title}>Assessment Results</h1>
+        <p style={styles.subtitle}>Report</p>
+      </div>
+
+      <div style={styles.content}>
+        <div style={styles.scoreDisplay}>
+          <div style={styles.scoreItem}>
+            <span style={styles.scoreLabel}>Overall Score</span>
+            <span style={styles.scoreValue}>{reportData?.result?.percentage_score || 0}%</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={styles.actions}>
+        <button onClick={() => window.print()} style={styles.printButton}>
+          🖨️ Print Report
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -124,5 +148,95 @@ const styles = {
     borderRadius: '8px',
     cursor: 'pointer',
     marginTop: '16px'
+  },
+  container: {
+    maxWidth: '1200px',
+    margin: '0 auto',
+    padding: '20px',
+    fontFamily: 'system-ui, -apple-system, sans-serif'
+  },
+  backButton: {
+    padding: '8px 16px',
+    background: 'transparent',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    color: '#475569',
+    marginBottom: '20px'
+  },
+  header: {
+    textAlign: 'center',
+    padding: '30px 20px',
+    background: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)',
+    borderRadius: '12px',
+    color: 'white',
+    marginBottom: '30px'
+  },
+  title: {
+    fontSize: '28px',
+    fontWeight: '700',
+    margin: '0 0 8px 0'
+  },
+  subtitle: {
+    fontSize: '18px',
+    margin: '0',
+    opacity: 0.9
+  },
+  content: {
+    background: 'white',
+    padding: '24px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    marginBottom: '20px'
+  },
+  scoreDisplay: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '20px',
+    marginTop: '16px'
+  },
+  scoreItem: {
+    padding: '16px',
+    background: '#f8fafc',
+    borderRadius: '8px',
+    textAlign: 'center'
+  },
+  scoreLabel: {
+    display: 'block',
+    fontSize: '14px',
+    color: '#64748b',
+    marginBottom: '4px'
+  },
+  scoreValue: {
+    fontSize: '24px',
+    fontWeight: '700',
+    color: '#1a237e'
+  },
+  actions: {
+    textAlign: 'center',
+    marginTop: '20px'
+  },
+  printButton: {
+    padding: '12px 24px',
+    background: '#1a237e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '16px',
+    fontWeight: '600',
+    cursor: 'pointer'
   }
 };
+
+// Add keyframe animation for spinner
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  `;
+  document.head.appendChild(style);
+}
