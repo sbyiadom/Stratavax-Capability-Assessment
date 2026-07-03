@@ -91,7 +91,7 @@ function getSuggestedDepartments(workplaceScore, intellectualScore) {
 }
 
 // ============================================================
-// SIMPLIFIED MAIN HANDLER
+// MAIN HANDLER - FIXED
 // ============================================================
 
 export default async function handler(req, res) {
@@ -172,58 +172,121 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: "Assessment not found" });
     }
 
-    // Get questions
-    const { data: questions, error: questionsError } = await supabase
-      .from("questions")
-      .select(`
-        id,
-        question_text,
-        section,
-        answers (
+    // ============================================================
+    // FIX: Get questions using direct query
+    // ============================================================
+    let questions = [];
+    let questionsError = null;
+    
+    try {
+      // First, try to get questions with answers
+      const { data, error } = await supabase
+        .from("questions")
+        .select(`
           id,
-          answer_text,
-          score
-        )
-      `)
-      .eq("assessment_id", session.assessment_id)
-      .eq("is_active", true);
+          question_text,
+          section,
+          answers (
+            id,
+            answer_text,
+            score
+          )
+        `)
+        .eq("assessment_id", session.assessment_id)
+        .eq("is_active", true);
 
-    if (questionsError) {
-      console.error('[Submit Assessment] Questions error:', questionsError);
-      return res.status(500).json({ success: false, error: "Failed to fetch questions" });
+      if (error) {
+        questionsError = error;
+        console.error('[Submit Assessment] Questions query error:', error);
+      } else {
+        questions = safeArray(data);
+        console.log(`[Submit Assessment] Found ${questions.length} questions with answers`);
+      }
+    } catch (err) {
+      questionsError = err;
+      console.error('[Submit Assessment] Questions exception:', err);
     }
 
+    // If no questions found, try fallback without answers
+    if (questions.length === 0) {
+      console.log('[Submit Assessment] Trying fallback - fetching questions without answers...');
+      
+      try {
+        const { data, error } = await supabase
+          .from("questions")
+          .select("*")
+          .eq("assessment_id", session.assessment_id)
+          .eq("is_active", true);
+
+        if (error) {
+          console.error('[Submit Assessment] Fallback error:', error);
+        } else if (data && data.length > 0) {
+          questions = data;
+          console.log(`[Submit Assessment] Fallback found ${questions.length} questions`);
+          
+          // Fetch answers separately
+          const questionIds = questions.map(q => q.id);
+          const { data: answers, error: answersError } = await supabase
+            .from("answers")
+            .select("*")
+            .in("question_id", questionIds);
+
+          if (!answersError && answers) {
+            // Attach answers to questions
+            const answersMap = {};
+            answers.forEach(a => {
+              if (!answersMap[a.question_id]) answersMap[a.question_id] = [];
+              answersMap[a.question_id].push(a);
+            });
+            
+            questions = questions.map(q => ({
+              ...q,
+              answers: answersMap[q.id] || []
+            }));
+          }
+        }
+      } catch (fallbackError) {
+        console.error('[Submit Assessment] Fallback exception:', fallbackError);
+      }
+    }
+
+    console.log(`[Submit Assessment] Final questions count: ${questions.length}`);
+
     if (!questions || questions.length === 0) {
-      return res.status(400).json({ success: false, error: "No questions found" });
+      return res.status(400).json({ 
+        success: false, 
+        error: "no_questions", 
+        message: "No questions found for this assessment" 
+      });
     }
 
     // Get responses
-    const { data: responses, error: responsesError } = await supabase
-      .from("responses")
-      .select("*")
-      .eq("session_id", sessionId);
+    let responses = [];
+    try {
+      const { data, error } = await supabase
+        .from("responses")
+        .select("*")
+        .eq("session_id", sessionId);
 
-    if (responsesError) {
-      console.error('[Submit Assessment] Responses error:', responsesError);
-      return res.status(500).json({ success: false, error: "Failed to fetch responses" });
+      if (error) {
+        console.error('[Submit Assessment] Responses error:', error);
+      } else {
+        responses = safeArray(data);
+      }
+    } catch (err) {
+      console.error('[Submit Assessment] Responses exception:', err);
     }
 
-    const answeredCount = responses?.filter(r => r.answer_id).length || 0;
+    console.log(`[Submit Assessment] Responses count: ${responses.length}`);
+
+    const answeredCount = responses.filter(r => r.answer_id && r.answer_id !== "").length || 0;
     const totalQuestions = questions.length;
     const isComplete = answeredCount === totalQuestions;
 
     console.log(`[Submit Assessment] Answered: ${answeredCount}/${totalQuestions}`);
 
-    const isAutoSubmit = body.auto_submit === true;
+    const isAutoSubmit = body.auto_submit === true || body.is_auto_submitted === true;
     const forceAutoSubmit = isAutoSubmit || !isComplete;
-
-    if (!forceAutoSubmit && !isComplete) {
-      return res.status(400).json({
-        success: false,
-        error: "incomplete_assessment",
-        message: `Please answer all questions. ${totalQuestions - answeredCount} remaining.`
-      });
-    }
 
     // Calculate scores
     let totalEarned = 0;
@@ -235,7 +298,7 @@ export default async function handler(req, res) {
 
     // Create a map of responses by question_id
     const responseMap = {};
-    responses?.forEach(r => {
+    responses.forEach(r => {
       responseMap[r.question_id] = r;
     });
 
@@ -327,7 +390,7 @@ export default async function handler(req, res) {
       answered_questions: answeredCount,
       total_questions: totalQuestions,
       is_valid: isComplete && !isAutoSubmit,
-      is_auto_submitted: Boolean(isAutoSubmit),
+      is_auto_submitted: Boolean(isAutoSubmit || !isComplete),
       completed_at: nowIso(),
       workplace_readiness: workplaceReadiness,
       intellectual_capability: intellectualCapability,
@@ -353,7 +416,8 @@ export default async function handler(req, res) {
         status: "completed",
         completed_at: nowIso(),
         answered_questions: answeredCount,
-        total_questions: totalQuestions
+        total_questions: totalQuestions,
+        auto_submitted: Boolean(!isComplete || isAutoSubmit)
       })
       .eq("id", sessionId);
 
@@ -388,8 +452,8 @@ export default async function handler(req, res) {
       answered_questions: answeredCount,
       total_questions: totalQuestions,
       is_valid: isComplete && !isAutoSubmit,
-      is_auto_submitted: Boolean(isAutoSubmit),
-      message: isAutoSubmit
+      is_auto_submitted: Boolean(!isComplete || isAutoSubmit),
+      message: (!isComplete || isAutoSubmit)
         ? `Assessment auto-submitted. ${answeredCount} of ${totalQuestions} questions answered.`
         : "Assessment submitted successfully!"
     });
