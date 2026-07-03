@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { supabase } from '../../supabase/client';
-import { useRequireAuth } from '../../utils/requireAuth';
-import NationalServiceReport from '../../components/reports/NationalServiceReport';
-import ReportViewer from '../../components/reports/ReportViewer';
+import { supabase } from '../../../supabase/client';  // ← FIXED: 3 levels
+import { useRequireAuth } from '../../../utils/requireAuth';  // ← FIXED: 3 levels
+import NationalServiceReport from '../../../components/reports/NationalServiceReport';  // ← FIXED: 3 levels
+import ReportViewer from '../../../components/reports/ReportViewer';  // ← FIXED: 3 levels
 
 export default function SupervisorReportView() {
   const router = useRouter();
