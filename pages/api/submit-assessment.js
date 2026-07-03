@@ -172,7 +172,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // FIX: Get questions from unique_questions table
+    // Get questions from unique_questions
     // ============================================================
     let questions = [];
     let assessmentTypeId = assessment.assessment_type_id;
@@ -181,7 +181,6 @@ export default async function handler(req, res) {
       console.log(`[Submit Assessment] Assessment type ID: ${assessmentTypeId}`);
       
       try {
-        // Get questions from unique_questions
         const { data, error } = await supabase
           .from("unique_questions")
           .select(`
@@ -194,8 +193,7 @@ export default async function handler(req, res) {
               score
             )
           `)
-          .eq("assessment_type_id", assessmentTypeId)
-          .eq("is_active", true);
+          .eq("assessment_type_id", assessmentTypeId);
 
         if (error) {
           console.error('[Submit Assessment] Unique questions error:', error);
@@ -211,29 +209,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // Fallback: Try the questions table
-    if (questions.length === 0) {
-      console.log('[Submit Assessment] Trying questions table as fallback...');
-      try {
-        const { data, error } = await supabase
-          .from("questions")
-          .select("*")
-          .eq("assessment_id", session.assessment_id)
-          .eq("is_active", true);
-
-        if (!error && data && data.length > 0) {
-          questions = data.map(q => ({
-            ...q,
-            answers: []
-          }));
-          console.log(`[Submit Assessment] Fallback found ${questions.length} questions`);
-        }
-      } catch (err) {
-        console.error('[Submit Assessment] Fallback exception:', err);
-      }
-    }
-
-    // Last resort: Use session total_questions
+    // Fallback: Use session total_questions
     if (questions.length === 0 && session.total_questions > 0) {
       console.log(`[Submit Assessment] Creating ${session.total_questions} placeholder questions`);
       questions = Array.from({ length: session.total_questions }, (_, i) => ({
@@ -371,7 +347,9 @@ export default async function handler(req, res) {
       }
     };
 
-    // Save result
+    // ============================================================
+    // FIX: Save result with proper error handling
+    // ============================================================
     const resultData = {
       user_id: user.id,
       assessment_id: session.assessment_id,
@@ -390,15 +368,49 @@ export default async function handler(req, res) {
       report_data: report
     };
 
-    const { data: result, error: resultError } = await supabase
-      .from("assessment_results")
-      .insert(resultData)
-      .select()
-      .single();
+    console.log('[Submit Assessment] Result data:', JSON.stringify(resultData, null, 2));
 
-    if (resultError) {
-      console.error('[Submit Assessment] Result save error:', resultError);
-      return res.status(500).json({ success: false, error: "Failed to save results" });
+    // First check if a result already exists for this session
+    const { data: existingResult, error: checkError } = await supabase
+      .from("assessment_results")
+      .select("id")
+      .eq("session_id", sessionId)
+      .maybeSingle();
+
+    if (checkError) {
+      console.error('[Submit Assessment] Check existing result error:', checkError);
+    }
+
+    let result;
+    if (existingResult) {
+      // Update existing result
+      const { data, error } = await supabase
+        .from("assessment_results")
+        .update(resultData)
+        .eq("id", existingResult.id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[Submit Assessment] Update result error:', error);
+        return res.status(500).json({ success: false, error: "Failed to update results: " + error.message });
+      }
+      result = data;
+      console.log('[Submit Assessment] Updated existing result:', result.id);
+    } else {
+      // Insert new result
+      const { data, error } = await supabase
+        .from("assessment_results")
+        .insert(resultData)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[Submit Assessment] Insert result error:', error);
+        return res.status(500).json({ success: false, error: "Failed to save results: " + error.message });
+      }
+      result = data;
+      console.log('[Submit Assessment] Inserted new result:', result.id);
     }
 
     // Update session
