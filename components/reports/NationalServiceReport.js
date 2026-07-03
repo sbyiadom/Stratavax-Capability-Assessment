@@ -7,21 +7,18 @@ export default function NationalServiceReport({ report, onBack }) {
     return <div style={styles.loading}>Loading report...</div>;
   }
 
+  console.log('[Report] categoryBreakdown:', report.categoryBreakdown);
+
   const {
     candidateName = 'Candidate',
-    assessmentName = 'National Service Recruitment Assessment',
     dimensions = {},
     recommendation = {},
     categoryBreakdown = [],
     statistics = {},
     executiveSummary = {},
     candidateInfo = {},
-    suggestedPlacement = []
   } = report;
 
-  console.log('[Report] categoryBreakdown:', categoryBreakdown);
-
-  // Get recommendation color and background
   const getRecommendationColor = (level) => {
     switch (level) {
       case 'Highly Recommended': return '#2e7d32';
@@ -59,19 +56,18 @@ export default function NationalServiceReport({ report, onBack }) {
   const getRecommendationNarrative = (level) => {
     switch (level) {
       case 'Highly Recommended':
-        return 'This candidate demonstrates exceptional workplace readiness and intellectual capability. They are strongly recommended for immediate placement in National Service roles.';
+        return 'This candidate demonstrates exceptional workplace readiness and intellectual capability. They are strongly recommended for immediate placement.';
       case 'Recommended':
-        return 'This candidate demonstrates strong workplace readiness and intellectual capability. They are recommended for National Service roles with standard supervision.';
+        return 'This candidate demonstrates strong workplace readiness and intellectual capability. They are recommended for placement with standard supervision.';
       case 'Reserve Pool':
         return 'This candidate demonstrates adequate workplace readiness and intellectual capability. They may be considered for the reserve pool.';
       case 'Not Recommended':
-        return 'This candidate does not currently meet the required thresholds for National Service roles. Targeted development in key areas is recommended.';
+        return 'This candidate does not currently meet the required thresholds. Targeted development in key areas is recommended.';
       default:
         return 'Assessment results indicate that the candidate\'s profile should be reviewed by the hiring team.';
     }
   };
 
-  // Get category comment based on score
   const getCategoryComment = (percentage) => {
     if (percentage >= 75) return '✅ Strong capability';
     if (percentage >= 65) return '⚡ Adequate performance';
@@ -79,7 +75,7 @@ export default function NationalServiceReport({ report, onBack }) {
     return '🔴 Critical development area';
   };
 
-  // Separate categories by dimension
+  // Filter categories by dimension
   const workplaceCategories = categoryBreakdown.filter(cat => cat.dimension === 'workplace');
   const intellectualCategories = categoryBreakdown.filter(cat => cat.dimension === 'intellectual');
 
@@ -97,6 +93,11 @@ export default function NationalServiceReport({ report, onBack }) {
   const intellectualScore = dimensions.intellectualCapability || 0;
   const overallScore = dimensions.overallScore || 0;
 
+  const recommendationLevel = recommendation.level || 'Not Recommended';
+  const recommendationColor = getRecommendationColor(recommendationLevel);
+  const recommendationBg = getRecommendationBg(recommendationLevel);
+  const recommendationNarrative = getRecommendationNarrative(recommendationLevel);
+
   // Company departments
   const companyDepartments = [
     { name: 'Manufacturing', icon: '🏭', subDepts: ['Production', 'Engineering/Maintenance', 'SHEQ', 'Quality Operations', 'Raw Materials & Warehouse', 'Utilities', 'Planning'] },
@@ -110,54 +111,29 @@ export default function NationalServiceReport({ report, onBack }) {
     { name: 'Corporate Affairs / Public Affairs', icon: '📢', subDepts: [] }
   ];
 
-  // Only recommend departments if scores are above threshold
   const threshold = 60;
   const recommendedDepartments = companyDepartments.filter(
     d => workplaceScore >= threshold || intellectualScore >= threshold
   );
 
-  const recommendationColor = getRecommendationColor(recommendation.level);
-  const recommendationBg = getRecommendationBg(recommendation.level);
-  const recommendationNarrative = getRecommendationNarrative(recommendation.level);
-
   return (
     <div style={styles.container}>
-      {/* Back Button */}
       {onBack && (
         <button onClick={onBack} style={styles.backButton}>
           ← Back to Dashboard
         </button>
       )}
 
-      {/* Header */}
       <div style={styles.header}>
         <h1 style={styles.title}>National Service Recruitment Assessment</h1>
         <div style={styles.candidateInfo}>
           <div style={styles.candidateInfoGrid}>
-            <div>
-              <span style={styles.infoLabel}>Candidate:</span>
-              <span style={styles.infoValue}>{candidateInfo.fullName || candidateName}</span>
-            </div>
-            <div>
-              <span style={styles.infoLabel}>University:</span>
-              <span style={styles.infoValue}>{candidateInfo.university || 'N/A'}</span>
-            </div>
-            <div>
-              <span style={styles.infoLabel}>Programme:</span>
-              <span style={styles.infoValue}>{candidateInfo.programme || 'N/A'}</span>
-            </div>
-            <div>
-              <span style={styles.infoLabel}>Graduation Year:</span>
-              <span style={styles.infoValue}>{candidateInfo.graduationYear || 'N/A'}</span>
-            </div>
-            <div>
-              <span style={styles.infoLabel}>Preferred Department:</span>
-              <span style={styles.infoValue}>{candidateInfo.preferredDepartment || 'Not Specified'}</span>
-            </div>
-            <div>
-              <span style={styles.infoLabel}>Assessment Date:</span>
-              <span style={styles.infoValue}>{candidateInfo.assessmentDate || new Date().toLocaleDateString()}</span>
-            </div>
+            <div><span style={styles.infoLabel}>Candidate:</span><span style={styles.infoValue}>{candidateInfo.fullName || candidateName}</span></div>
+            <div><span style={styles.infoLabel}>University:</span><span style={styles.infoValue}>{candidateInfo.university || 'N/A'}</span></div>
+            <div><span style={styles.infoLabel}>Programme:</span><span style={styles.infoValue}>{candidateInfo.programme || 'N/A'}</span></div>
+            <div><span style={styles.infoLabel}>Graduation Year:</span><span style={styles.infoValue}>{candidateInfo.graduationYear || 'N/A'}</span></div>
+            <div><span style={styles.infoLabel}>Preferred Department:</span><span style={styles.infoValue}>{candidateInfo.preferredDepartment || 'Not Specified'}</span></div>
+            <div><span style={styles.infoLabel}>Assessment Date:</span><span style={styles.infoValue}>{candidateInfo.assessmentDate || new Date().toLocaleDateString()}</span></div>
           </div>
         </div>
       </div>
@@ -166,17 +142,13 @@ export default function NationalServiceReport({ report, onBack }) {
       <div style={{ ...styles.banner, background: recommendationBg, border: `3px solid ${recommendationColor}` }}>
         <div style={styles.bannerContent}>
           <div style={{ ...styles.bannerIcon, color: recommendationColor }}>
-            {recommendation.level === 'Highly Recommended' ? '⭐' :
-             recommendation.level === 'Recommended' ? '✅' :
-             recommendation.level === 'Reserve Pool' ? '📋' : '⚠️'}
+            {recommendationLevel === 'Highly Recommended' ? '⭐' :
+             recommendationLevel === 'Recommended' ? '✅' :
+             recommendationLevel === 'Reserve Pool' ? '📋' : '⚠️'}
           </div>
           <div>
-            <div style={{ ...styles.bannerTitle, color: recommendationColor }}>
-              {recommendation.level}
-            </div>
-            <div style={styles.bannerNarrative}>
-              {recommendationNarrative}
-            </div>
+            <div style={{ ...styles.bannerTitle, color: recommendationColor }}>{recommendationLevel}</div>
+            <div style={styles.bannerNarrative}>{recommendationNarrative}</div>
           </div>
         </div>
       </div>
@@ -216,11 +188,9 @@ export default function NationalServiceReport({ report, onBack }) {
                   <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%' }} />
                 </div>
                 <div style={styles.categoryDetail}>
-                  {Math.round(cat.earned)} / {Math.round(cat.max)} points
+                  {Math.round(cat.earned || 0)} / {Math.round(cat.max || 10)} points
                 </div>
-                <div style={styles.categoryComment}>
-                  {getCategoryComment(cat.percentage)}
-                </div>
+                <div style={styles.categoryComment}>{getCategoryComment(cat.percentage)}</div>
               </div>
             ))}
           </div>
@@ -240,11 +210,9 @@ export default function NationalServiceReport({ report, onBack }) {
                   <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%' }} />
                 </div>
                 <div style={styles.categoryDetail}>
-                  {Math.round(cat.earned)} / {Math.round(cat.max)} points
+                  {Math.round(cat.earned || 0)} / {Math.round(cat.max || 10)} points
                 </div>
-                <div style={styles.categoryComment}>
-                  {getCategoryComment(cat.percentage)}
-                </div>
+                <div style={styles.categoryComment}>{getCategoryComment(cat.percentage)}</div>
               </div>
             ))}
           </div>
@@ -301,21 +269,27 @@ export default function NationalServiceReport({ report, onBack }) {
             Based on the candidate's performance profile, the following departments are recommended:
           </p>
           <div style={styles.placementGrid}>
-            {recommendedDepartments.map((dept, index) => (
-              <div key={index} style={styles.placementCard}>
-                <div style={styles.placementHeader}>
-                  <span style={styles.placementIcon}>{dept.icon}</span>
-                  <span style={styles.placementName}>{dept.name}</span>
-                </div>
-                {dept.subDepts && dept.subDepts.length > 0 && (
-                  <div style={styles.placementSubDepts}>
-                    {dept.subDepts.map((sub, idx) => (
-                      <span key={idx} style={styles.placementSubDeptTag}>{sub}</span>
-                    ))}
+            {recommendedDepartments.length > 0 ? (
+              recommendedDepartments.map((dept, index) => (
+                <div key={index} style={styles.placementCard}>
+                  <div style={styles.placementHeader}>
+                    <span style={styles.placementIcon}>{dept.icon}</span>
+                    <span style={styles.placementName}>{dept.name}</span>
                   </div>
-                )}
+                  {dept.subDepts && dept.subDepts.length > 0 && (
+                    <div style={styles.placementSubDepts}>
+                      {dept.subDepts.map((sub, idx) => (
+                        <span key={idx} style={styles.placementSubDeptTag}>{sub}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div style={styles.placementEmpty}>
+                <p>Based on the current scores, the candidate would benefit from structured training and development before departmental placement.</p>
               </div>
-            ))}
+            )}
           </div>
         </div>
       </div>
@@ -343,7 +317,6 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       </div>
 
-      {/* Print Button */}
       <div style={styles.actions}>
         <button onClick={() => window.print()} style={styles.printButton}>
           🖨️ Print Report
@@ -354,47 +327,12 @@ export default function NationalServiceReport({ report, onBack }) {
 }
 
 const styles = {
-  container: {
-    maxWidth: '1200px',
-    margin: '0 auto',
-    padding: '20px',
-    fontFamily: 'system-ui, -apple-system, sans-serif'
-  },
-  backButton: {
-    padding: '8px 16px',
-    background: 'transparent',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    color: '#475569',
-    marginBottom: '20px'
-  },
-  header: {
-    textAlign: 'center',
-    padding: '30px 20px 20px',
-    background: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)',
-    borderRadius: '12px',
-    color: 'white',
-    marginBottom: '30px'
-  },
-  title: {
-    fontSize: '28px',
-    fontWeight: '700',
-    margin: '0 0 16px 0'
-  },
-  candidateInfo: {
-    background: 'rgba(255,255,255,0.1)',
-    borderRadius: '8px',
-    padding: '16px 20px',
-    marginTop: '8px'
-  },
-  candidateInfoGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '12px',
-    textAlign: 'left'
-  },
+  container: { maxWidth: '1200px', margin: '0 auto', padding: '20px', fontFamily: 'system-ui, -apple-system, sans-serif' },
+  backButton: { padding: '8px 16px', background: 'transparent', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', color: '#475569', marginBottom: '20px' },
+  header: { textAlign: 'center', padding: '30px 20px 20px', background: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)', borderRadius: '12px', color: 'white', marginBottom: '30px' },
+  title: { fontSize: '28px', fontWeight: '700', margin: '0 0 16px 0' },
+  candidateInfo: { background: 'rgba(255,255,255,0.1)', borderRadius: '8px', padding: '16px 20px', marginTop: '8px' },
+  candidateInfoGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', textAlign: 'left' },
   infoLabel: { fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '2px' },
   infoValue: { fontSize: '15px', fontWeight: '500', display: 'block' },
   banner: { borderRadius: '12px', padding: '20px 24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' },
@@ -409,101 +347,31 @@ const styles = {
   scoreBand: { fontSize: '14px', fontWeight: '600', marginTop: '8px' },
   section: { marginBottom: '30px' },
   sectionTitle: { fontSize: '20px', fontWeight: '600', color: '#1a237e', marginBottom: '16px' },
-
-  categoryGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '16px'
-  },
-  categoryCard: {
-    background: 'white',
-    padding: '16px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    border: '1px solid #e2e8f0'
-  },
+  categoryGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' },
+  categoryCard: { background: 'white', padding: '16px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' },
   categoryName: { fontSize: '14px', fontWeight: '500', color: '#475569', marginBottom: '6px' },
   categoryScore: { fontSize: '20px', fontWeight: '700', color: '#1a237e', marginBottom: '8px' },
   categoryBar: { height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden', marginBottom: '6px' },
   categoryBarFill: { height: '100%', background: 'linear-gradient(90deg, #1a237e, #0d47a1)', borderRadius: '3px' },
   categoryDetail: { fontSize: '12px', color: '#94a3b8' },
   categoryComment: { fontSize: '13px', color: '#64748b', marginTop: '4px', fontWeight: '500' },
-
-  strengthGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-    gap: '16px'
-  },
-  strengthCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    background: 'white',
-    padding: '16px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    border: '1px solid #e2e8f0'
-  },
-  strengthRank: {
-    width: '32px',
-    height: '32px',
-    background: '#2e7d32',
-    color: 'white',
-    borderRadius: '50%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '14px',
-    fontWeight: '700',
-    flexShrink: 0
-  },
+  strengthGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' },
+  strengthCard: { display: 'flex', alignItems: 'center', gap: '16px', background: 'white', padding: '16px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' },
+  strengthRank: { width: '32px', height: '32px', background: '#2e7d32', color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', flexShrink: 0 },
   strengthContent: { flex: 1 },
   strengthName: { fontSize: '14px', fontWeight: '500', color: '#1a202c', marginBottom: '4px' },
   strengthScore: { fontSize: '16px', fontWeight: '700', color: '#2e7d32', marginBottom: '4px' },
   strengthBar: { height: '4px', background: '#e8f5e9', borderRadius: '2px', overflow: 'hidden' },
   strengthBarFill: { height: '100%', background: 'linear-gradient(90deg, #43a047, #2e7d32)', borderRadius: '2px' },
-
-  developmentGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-    gap: '16px'
-  },
-  developmentCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    background: 'white',
-    padding: '16px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    border: '1px solid #e2e8f0'
-  },
-  developmentRank: {
-    width: '32px',
-    height: '32px',
-    background: '#c62828',
-    color: 'white',
-    borderRadius: '50%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '14px',
-    fontWeight: '700',
-    flexShrink: 0
-  },
+  developmentGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' },
+  developmentCard: { display: 'flex', alignItems: 'center', gap: '16px', background: 'white', padding: '16px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' },
+  developmentRank: { width: '32px', height: '32px', background: '#c62828', color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', flexShrink: 0 },
   developmentContent: { flex: 1 },
   developmentName: { fontSize: '14px', fontWeight: '500', color: '#1a202c', marginBottom: '4px' },
   developmentScore: { fontSize: '16px', fontWeight: '700', color: '#c62828', marginBottom: '4px' },
   developmentBar: { height: '4px', background: '#ffebee', borderRadius: '2px', overflow: 'hidden', marginBottom: '4px' },
   developmentBarFill: { height: '100%', background: 'linear-gradient(90deg, #ef5350, #c62828)', borderRadius: '2px' },
-
-  placementContainer: {
-    background: 'white',
-    padding: '20px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    border: '1px solid #e2e8f0'
-  },
+  placementContainer: { background: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' },
   placementDescription: { fontSize: '14px', color: '#475569', marginBottom: '16px' },
   placementGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' },
   placementCard: { padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' },
@@ -512,33 +380,12 @@ const styles = {
   placementName: { fontSize: '15px', fontWeight: '600', color: '#1a202c' },
   placementSubDepts: { display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' },
   placementSubDeptTag: { fontSize: '12px', padding: '2px 10px', background: '#e2e8f0', borderRadius: '12px', color: '#475569' },
-
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-    gap: '16px'
-  },
-  statCard: {
-    background: 'white',
-    padding: '16px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    textAlign: 'center',
-    border: '1px solid #e2e8f0'
-  },
+  placementEmpty: { padding: '16px', background: '#fef3c7', borderRadius: '8px', color: '#92400e' },
+  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px' },
+  statCard: { background: 'white', padding: '16px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', textAlign: 'center', border: '1px solid #e2e8f0' },
   statValue: { fontSize: '24px', fontWeight: '700', color: '#1a237e' },
   statLabel: { fontSize: '12px', color: '#94a3b8', marginTop: '4px' },
-
   actions: { textAlign: 'center', marginTop: '20px' },
-  printButton: {
-    padding: '12px 24px',
-    background: '#1a237e',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '16px',
-    fontWeight: '600',
-    cursor: 'pointer'
-  },
+  printButton: { padding: '12px 24px', background: '#1a237e', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' },
   loading: { textAlign: 'center', padding: '40px', fontSize: '18px', color: '#64748b' }
 };
