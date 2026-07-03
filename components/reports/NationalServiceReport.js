@@ -56,15 +56,15 @@ export default function NationalServiceReport({ report, onBack }) {
   const getRecommendationNarrative = (level) => {
     switch (level) {
       case 'Highly Recommended':
-        return 'This candidate demonstrates exceptional workplace readiness and intellectual capability. They are strongly recommended for immediate placement in National Service roles. The candidate exhibits the qualities and competencies required to perform effectively with minimal supervision and is well-positioned to contribute meaningfully to the organization.';
+        return 'This candidate demonstrates exceptional workplace readiness and intellectual capability. They are strongly recommended for immediate placement in National Service roles.';
       case 'Recommended':
-        return 'This candidate demonstrates strong workplace readiness and intellectual capability. They are recommended for National Service roles with standard supervision. The candidate shows solid potential and can be expected to perform reliably with appropriate guidance and support.';
+        return 'This candidate demonstrates strong workplace readiness and intellectual capability. They are recommended for National Service roles with standard supervision.';
       case 'Reserve Pool':
-        return 'This candidate demonstrates adequate workplace readiness and intellectual capability. They may be considered for the reserve pool and could be placed in roles that offer structured development and coaching. Additional support will help the candidate build the competencies required for independent performance.';
+        return 'This candidate demonstrates adequate workplace readiness and intellectual capability. They may be considered for the reserve pool.';
       case 'Not Recommended':
-        return 'This candidate does not currently meet the required thresholds for National Service roles. Targeted development in key areas is recommended before reconsideration. The candidate would benefit from structured training, mentorship, and practical experience in a supervised environment.';
+        return 'This candidate does not currently meet the required thresholds for National Service roles. Targeted development in key areas is recommended.';
       default:
-        return 'Assessment results indicate that the candidate\'s profile should be reviewed by the hiring team for appropriate placement considerations.';
+        return 'Assessment results indicate that the candidate\'s profile should be reviewed by the hiring team.';
     }
   };
 
@@ -72,43 +72,66 @@ export default function NationalServiceReport({ report, onBack }) {
   // COMPANY-SPECIFIC DEPARTMENT MAPPING
   // ============================================================
   const getCompanyDepartments = (workplaceScore, intellectualScore) => {
-    if (workplaceScore >= 80 && intellectualScore >= 80) {
-      return [
-        'Bottling Operations',
-        'Quality Assurance',
-        'Supply Chain & Logistics',
-        'Engineering & Maintenance'
-      ];
-    }
-    if (workplaceScore >= 70 && intellectualScore >= 70) {
-      return [
-        'Production Support',
-        'Quality Control Laboratory',
-        'Warehouse & Distribution',
-        'Fleet Management'
-      ];
-    }
-    if (workplaceScore >= 60 && intellectualScore >= 60) {
-      return [
-        'General Operations',
-        'Administrative Support',
-        'Customer Service',
-        'Sales Support'
-      ];
-    }
-    return [
-      'Structured Training Program',
-      'Supervised Development Roles',
-      'Entry-Level Operations Support'
-    ];
+    const departments = [];
+
+    // Manufacturing Departments
+    departments.push(
+      { name: 'Manufacturing', icon: '🏭', subDepts: ['Production', 'Engineering/Maintenance', 'SHEQ (Safety, Health, Environment & Quality)', 'Quality Operations / QOESH', 'Raw Materials & Warehouse', 'Utilities', 'Planning / Production Planning'] }
+    );
+
+    // Supply Chain / Logistics
+    departments.push(
+      { name: 'Supply Chain / Logistics', icon: '🚚', subDepts: ['Warehousing', 'Distribution', 'Fleet', 'Transport'] }
+    );
+
+    // Procurement
+    departments.push(
+      { name: 'Procurement', icon: '📋', subDepts: [] }
+    );
+
+    // Finance
+    departments.push(
+      { name: 'Finance', icon: '💰', subDepts: [] }
+    );
+
+    // Human Resources
+    departments.push(
+      { name: 'Human Resources', icon: '👥', subDepts: [] }
+    );
+
+    // Commercial
+    departments.push(
+      { name: 'Commercial', icon: '📊', subDepts: ['Sales', 'Trade Marketing', 'Customer Service'] }
+    );
+
+    // Information Technology (IT)
+    departments.push(
+      { name: 'Information Technology (IT)', icon: '💻', subDepts: [] }
+    );
+
+    // Legal & Compliance
+    departments.push(
+      { name: 'Legal & Compliance', icon: '⚖️', subDepts: [] }
+    );
+
+    // Corporate Affairs / Public Affairs
+    departments.push(
+      { name: 'Corporate Affairs / Public Affairs', icon: '📢', subDepts: [] }
+    );
+
+    // Return all departments with scores to determine suitability
+    return departments.map(dept => ({
+      ...dept,
+      recommended: workplaceScore >= 65 && intellectualScore >= 65
+    }));
   };
 
-  // Use company departments instead of generic ones
   const workplaceScore = dimensions.workplaceReadiness || 0;
   const intellectualScore = dimensions.intellectualCapability || 0;
-  const companyDepartments = suggestedPlacement.length > 0 
-    ? suggestedPlacement 
-    : getCompanyDepartments(workplaceScore, intellectualScore);
+  const companyDepartments = getCompanyDepartments(workplaceScore, intellectualScore);
+
+  // Filter recommended departments
+  const recommendedDepartments = companyDepartments.filter(d => d.recommended);
 
   // Calculate top strengths (top 3 scoring categories)
   const topStrengths = [...categoryBreakdown]
@@ -128,6 +151,14 @@ export default function NationalServiceReport({ report, onBack }) {
   const recommendationColor = getRecommendationColor(recommendation.level);
   const recommendationBg = getRecommendationBg(recommendation.level);
   const recommendationNarrative = getRecommendationNarrative(recommendation.level);
+
+  // Helper to get category comment
+  const getCategoryComment = (percentage, category) => {
+    if (percentage >= 75) return '✅ Strong capability. Can be leveraged in role.';
+    if (percentage >= 65) return '⚡ Adequate performance. Room for growth.';
+    if (percentage >= 50) return '🔸 Development area. Needs focused coaching.';
+    return '🔴 Critical development area. Requires structured support.';
+  };
 
   return (
     <div style={styles.container}>
@@ -214,7 +245,61 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       </div>
 
-      {/* Top Strengths */}
+      {/* ============================================================
+          WORKPLACE READINESS BREAKDOWN - Individual Topics
+      ============================================================ */}
+      {workplaceCategories.length > 0 && (
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>🛠️ Workplace Readiness - Topic Breakdown</h2>
+          <div style={styles.categoryGrid}>
+            {workplaceCategories.map((cat, index) => (
+              <div key={index} style={styles.categoryCard}>
+                <div style={styles.categoryName}>{cat.category}</div>
+                <div style={styles.categoryScore}>{cat.percentage}%</div>
+                <div style={styles.categoryBar}>
+                  <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%' }} />
+                </div>
+                <div style={styles.categoryDetail}>
+                  {Math.round(cat.earned)} / {Math.round(cat.max)} points
+                </div>
+                <div style={styles.categoryComment}>
+                  {getCategoryComment(cat.percentage, cat.category)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================
+          INTELLECTUAL CAPABILITY BREAKDOWN - Individual Topics
+      ============================================================ */}
+      {intellectualCategories.length > 0 && (
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>🧠 Intellectual Capability - Topic Breakdown</h2>
+          <div style={styles.categoryGrid}>
+            {intellectualCategories.map((cat, index) => (
+              <div key={index} style={styles.categoryCard}>
+                <div style={styles.categoryName}>{cat.category}</div>
+                <div style={styles.categoryScore}>{cat.percentage}%</div>
+                <div style={styles.categoryBar}>
+                  <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%' }} />
+                </div>
+                <div style={styles.categoryDetail}>
+                  {Math.round(cat.earned)} / {Math.round(cat.max)} points
+                </div>
+                <div style={styles.categoryComment}>
+                  {getCategoryComment(cat.percentage, cat.category)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================
+          TOP STRENGTHS
+      ============================================================ */}
       {topStrengths.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>🌟 Top Strengths</h2>
@@ -230,8 +315,8 @@ export default function NationalServiceReport({ report, onBack }) {
                   </div>
                   <div style={styles.strengthComment}>
                     {strength.percentage >= 75 
-                      ? 'Strong capability in this area. Can be leveraged for role responsibilities.' 
-                      : 'Adequate performance. Good foundation to build upon.'}
+                      ? 'Strong capability. Can be leveraged for role responsibilities.' 
+                      : 'Good foundation to build upon.'}
                   </div>
                 </div>
               </div>
@@ -240,7 +325,9 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       )}
 
-      {/* Development Areas */}
+      {/* ============================================================
+          DEVELOPMENT AREAS
+      ============================================================ */}
       {developmentAreas.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>📈 Development Areas</h2>
@@ -256,10 +343,10 @@ export default function NationalServiceReport({ report, onBack }) {
                   </div>
                   <div style={styles.developmentComment}>
                     {area.percentage < 50 
-                      ? 'Critical development area requiring immediate attention and structured support.' 
+                      ? '🔴 Critical: Immediate structured support required.' 
                       : area.percentage < 65 
-                      ? 'Priority development area. Focused coaching and guided practice recommended.' 
-                      : 'Maintain with regular supervision and feedback.'}
+                      ? '🟡 Priority: Focused coaching and guided practice recommended.' 
+                      : '🟢 Maintain with regular supervision and feedback.'}
                   </div>
                 </div>
               </div>
@@ -268,77 +355,57 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       )}
 
-      {/* Suggested Placement */}
+      {/* ============================================================
+          SUGGESTED PLACEMENT - Company Departments
+      ============================================================ */}
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>🎯 Suggested Placement</h2>
         <div style={styles.placementContainer}>
           <p style={styles.placementDescription}>
             Based on the candidate's performance profile, the following departments are recommended:
           </p>
+          
           <div style={styles.placementGrid}>
-            {companyDepartments.map((dept, index) => (
-              <div key={index} style={styles.placementCard}>
-                <span style={styles.placementIcon}>🏢</span>
-                <span style={styles.placementName}>{dept}</span>
+            {recommendedDepartments.length > 0 ? (
+              recommendedDepartments.map((dept, index) => (
+                <div key={index} style={styles.placementCard}>
+                  <div style={styles.placementHeader}>
+                    <span style={styles.placementIcon}>{dept.icon}</span>
+                    <span style={styles.placementName}>{dept.name}</span>
+                  </div>
+                  {dept.subDepts && dept.subDepts.length > 0 && (
+                    <div style={styles.placementSubDepts}>
+                      {dept.subDepts.map((sub, idx) => (
+                        <span key={idx} style={styles.placementSubDeptTag}>{sub}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div style={styles.placementEmpty}>
+                <p>Based on the current scores, the candidate would benefit from structured training and development before departmental placement.</p>
+                <div style={styles.placementCard}>
+                  <div style={styles.placementHeader}>
+                    <span style={styles.placementIcon}>📚</span>
+                    <span style={styles.placementName}>Structured Training Program</span>
+                  </div>
+                </div>
+                <div style={styles.placementCard}>
+                  <div style={styles.placementHeader}>
+                    <span style={styles.placementIcon}>👥</span>
+                    <span style={styles.placementName}>Supervised Development Roles</span>
+                  </div>
+                </div>
               </div>
-            ))}
+            )}
           </div>
         </div>
       </div>
 
-      {/* Workplace Readiness Breakdown */}
-      {workplaceCategories.length > 0 && (
-        <div style={styles.section}>
-          <h2 style={styles.sectionTitle}>🛠️ Workplace Readiness Breakdown</h2>
-          <div style={styles.categoryGrid}>
-            {workplaceCategories.map((cat, index) => (
-              <div key={index} style={styles.categoryCard}>
-                <div style={styles.categoryName}>{cat.category}</div>
-                <div style={styles.categoryScore}>{cat.percentage}%</div>
-                <div style={styles.categoryBar}>
-                  <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%' }} />
-                </div>
-                <div style={styles.categoryDetail}>
-                  {Math.round(cat.earned)} / {Math.round(cat.max)} points
-                </div>
-                <div style={styles.categoryComment}>
-                  {cat.percentage >= 75 ? '✅ Strong performance' :
-                   cat.percentage >= 65 ? '⚡ Adequate, with room for growth' :
-                   '🔴 Requires focused development'}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Intellectual Capability Breakdown */}
-      {intellectualCategories.length > 0 && (
-        <div style={styles.section}>
-          <h2 style={styles.sectionTitle}>🧠 Intellectual Capability Breakdown</h2>
-          <div style={styles.categoryGrid}>
-            {intellectualCategories.map((cat, index) => (
-              <div key={index} style={styles.categoryCard}>
-                <div style={styles.categoryName}>{cat.category}</div>
-                <div style={styles.categoryScore}>{cat.percentage}%</div>
-                <div style={styles.categoryBar}>
-                  <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%' }} />
-                </div>
-                <div style={styles.categoryDetail}>
-                  {Math.round(cat.earned)} / {Math.round(cat.max)} points
-                </div>
-                <div style={styles.categoryComment}>
-                  {cat.percentage >= 75 ? '✅ Strong analytical ability' :
-                   cat.percentage >= 65 ? '⚡ Moderate potential, coachable' :
-                   '🔴 Development required'}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Assessment Statistics */}
+      {/* ============================================================
+          ASSESSMENT STATISTICS
+      ============================================================ */}
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>📊 Assessment Statistics</h2>
         <div style={styles.statsGrid}>
@@ -487,6 +554,53 @@ const styles = {
     color: '#1a237e',
     marginBottom: '16px'
   },
+  // Category styles
+  categoryGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+    gap: '16px'
+  },
+  categoryCard: {
+    background: 'white',
+    padding: '16px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    border: '1px solid #e2e8f0'
+  },
+  categoryName: {
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#475569',
+    marginBottom: '6px'
+  },
+  categoryScore: {
+    fontSize: '20px',
+    fontWeight: '700',
+    color: '#1a237e',
+    marginBottom: '8px'
+  },
+  categoryBar: {
+    height: '6px',
+    background: '#e2e8f0',
+    borderRadius: '3px',
+    overflow: 'hidden',
+    marginBottom: '6px'
+  },
+  categoryBarFill: {
+    height: '100%',
+    background: 'linear-gradient(90deg, #1a237e, #0d47a1)',
+    borderRadius: '3px'
+  },
+  categoryDetail: {
+    fontSize: '12px',
+    color: '#94a3b8'
+  },
+  categoryComment: {
+    fontSize: '13px',
+    color: '#64748b',
+    marginTop: '4px',
+    fontWeight: '500'
+  },
   // Strength styles
   strengthGrid: {
     display: 'grid',
@@ -624,72 +738,46 @@ const styles = {
   },
   placementGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '12px'
+    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+    gap: '16px'
   },
   placementCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    padding: '12px 16px',
+    padding: '16px',
     background: '#f8fafc',
     borderRadius: '8px',
     border: '1px solid #e2e8f0'
   },
-  placementIcon: {
-    fontSize: '18px'
-  },
-  placementName: {
-    fontSize: '14px',
-    fontWeight: '500',
-    color: '#1a202c'
-  },
-  // Category styles
-  categoryGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '16px'
-  },
-  categoryCard: {
-    background: 'white',
-    padding: '16px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    border: '1px solid #e2e8f0'
-  },
-  categoryName: {
-    fontSize: '14px',
-    fontWeight: '500',
-    color: '#475569',
-    marginBottom: '6px'
-  },
-  categoryScore: {
-    fontSize: '20px',
-    fontWeight: '700',
-    color: '#1a237e',
+  placementHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
     marginBottom: '8px'
   },
-  categoryBar: {
-    height: '6px',
-    background: '#e2e8f0',
-    borderRadius: '3px',
-    overflow: 'hidden',
-    marginBottom: '6px'
+  placementIcon: {
+    fontSize: '20px'
   },
-  categoryBarFill: {
-    height: '100%',
-    background: 'linear-gradient(90deg, #1a237e, #0d47a1)',
-    borderRadius: '3px'
+  placementName: {
+    fontSize: '15px',
+    fontWeight: '600',
+    color: '#1a202c'
   },
-  categoryDetail: {
+  placementSubDepts: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+    marginTop: '8px'
+  },
+  placementSubDeptTag: {
     fontSize: '12px',
-    color: '#94a3b8'
+    padding: '2px 10px',
+    background: '#e2e8f0',
+    borderRadius: '12px',
+    color: '#475569'
   },
-  categoryComment: {
-    fontSize: '13px',
-    color: '#64748b',
-    marginTop: '4px',
-    fontWeight: '500'
+  placementEmpty: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px'
   },
   // Stats styles
   statsGrid: {
