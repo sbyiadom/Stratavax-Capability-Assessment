@@ -14,9 +14,17 @@ export default async function handler(req, res) {
   }
 
   try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      console.error("Missing Supabase environment variables");
+      return res.status(500).json({ success: false, error: "Server configuration error" });
+    }
+
     const serviceClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      supabaseUrl,
+      supabaseKey,
       {
         auth: {
           persistSession: false,
@@ -41,7 +49,7 @@ export default async function handler(req, res) {
 
     const result = resultResponse.data;
 
-    // Check if it's a National Service assessment
+    // Get assessment details to determine report type
     let report = null;
     let isNationalService = false;
 
@@ -56,7 +64,7 @@ export default async function handler(req, res) {
         const assessment = assessmentResponse.data;
         isNationalService = assessment.assessment_type?.code === 'national_service';
         
-        // If it's National Service and we have report_data in the result
+        // If it's National Service and we have report_data
         if (isNationalService && result.report_data) {
           report = result.report_data;
         }
