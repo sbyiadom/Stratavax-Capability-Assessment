@@ -68,62 +68,66 @@ export default function NationalServiceReport({ report, onBack }) {
     }
   };
 
-  const getSuggestedDepartments = (workplaceScore, intellectualScore) => {
-    const suggestions = [];
-    
+  // ============================================================
+  // COMPANY-SPECIFIC DEPARTMENT MAPPING
+  // ============================================================
+  const getCompanyDepartments = (workplaceScore, intellectualScore) => {
     if (workplaceScore >= 80 && intellectualScore >= 80) {
-      suggestions.push(
-        'Operations & Production Management',
-        'Quality Assurance & Control',
+      return [
+        'Bottling Operations',
+        'Quality Assurance',
         'Supply Chain & Logistics',
-        'Technical Services'
-      );
-    } else if (workplaceScore >= 70 && intellectualScore >= 70) {
-      suggestions.push(
+        'Engineering & Maintenance'
+      ];
+    }
+    if (workplaceScore >= 70 && intellectualScore >= 70) {
+      return [
         'Production Support',
-        'Maintenance & Engineering',
-        'Quality Control',
-        'Warehouse & Distribution'
-      );
-    } else if (workplaceScore >= 60 && intellectualScore >= 60) {
-      suggestions.push(
+        'Quality Control Laboratory',
+        'Warehouse & Distribution',
+        'Fleet Management'
+      ];
+    }
+    if (workplaceScore >= 60 && intellectualScore >= 60) {
+      return [
         'General Operations',
         'Administrative Support',
-        'Entry-Level Technical Roles',
-        'Customer Service'
-      );
-    } else {
-      suggestions.push(
-        'Structured Training Programs',
-        'Supervised Development Roles',
-        'Support & Administrative Functions'
-      );
+        'Customer Service',
+        'Sales Support'
+      ];
     }
-    
-    return suggestions;
+    return [
+      'Structured Training Program',
+      'Supervised Development Roles',
+      'Entry-Level Operations Support'
+    ];
   };
+
+  // Use company departments instead of generic ones
+  const workplaceScore = dimensions.workplaceReadiness || 0;
+  const intellectualScore = dimensions.intellectualCapability || 0;
+  const companyDepartments = suggestedPlacement.length > 0 
+    ? suggestedPlacement 
+    : getCompanyDepartments(workplaceScore, intellectualScore);
 
   // Calculate top strengths (top 3 scoring categories)
   const topStrengths = [...categoryBreakdown]
     .sort((a, b) => b.percentage - a.percentage)
-    .slice(0, 3);
+    .slice(0, 3)
+    .filter(item => item.percentage >= 60);
 
-  // Calculate development areas (bottom 3 scoring categories)
+  // Calculate development areas (categories below 65%)
   const developmentAreas = [...categoryBreakdown]
-    .sort((a, b) => a.percentage - b.percentage)
-    .slice(0, 3);
+    .filter(item => item.percentage < 65)
+    .sort((a, b) => a.percentage - b.percentage);
 
   // Separate categories by dimension
   const workplaceCategories = categoryBreakdown.filter(cat => cat.dimension === 'workplace');
   const intellectualCategories = categoryBreakdown.filter(cat => cat.dimension === 'intellectual');
 
-  // Get suggested departments
-  const workplaceScore = dimensions.workplaceReadiness || 0;
-  const intellectualScore = dimensions.intellectualCapability || 0;
-  const suggestedDepartments = suggestedPlacement.length > 0 ? suggestedPlacement : getSuggestedDepartments(workplaceScore, intellectualScore);
-
   const recommendationColor = getRecommendationColor(recommendation.level);
   const recommendationBg = getRecommendationBg(recommendation.level);
+  const recommendationNarrative = getRecommendationNarrative(recommendation.level);
 
   return (
     <div style={styles.container}>
@@ -180,7 +184,7 @@ export default function NationalServiceReport({ report, onBack }) {
               {recommendation.level}
             </div>
             <div style={styles.bannerNarrative}>
-              {getRecommendationNarrative(recommendation.level)}
+              {recommendationNarrative}
             </div>
           </div>
         </div>
@@ -211,47 +215,58 @@ export default function NationalServiceReport({ report, onBack }) {
       </div>
 
       {/* Top Strengths */}
-      <div style={styles.section}>
-        <h2 style={styles.sectionTitle}>🌟 Top Strengths</h2>
-        <div style={styles.strengthGrid}>
-          {topStrengths.map((strength, index) => (
-            <div key={index} style={styles.strengthCard}>
-              <div style={styles.strengthRank}>{index + 1}</div>
-              <div style={styles.strengthContent}>
-                <div style={styles.strengthName}>{strength.category}</div>
-                <div style={styles.strengthScore}>{strength.percentage}%</div>
-                <div style={styles.strengthBar}>
-                  <div style={{ ...styles.strengthBarFill, width: Math.min(strength.percentage, 100) + '%' }} />
+      {topStrengths.length > 0 && (
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>🌟 Top Strengths</h2>
+          <div style={styles.strengthGrid}>
+            {topStrengths.map((strength, index) => (
+              <div key={index} style={styles.strengthCard}>
+                <div style={styles.strengthRank}>{index + 1}</div>
+                <div style={styles.strengthContent}>
+                  <div style={styles.strengthName}>{strength.category}</div>
+                  <div style={styles.strengthScore}>{strength.percentage}%</div>
+                  <div style={styles.strengthBar}>
+                    <div style={{ ...styles.strengthBarFill, width: Math.min(strength.percentage, 100) + '%' }} />
+                  </div>
+                  <div style={styles.strengthComment}>
+                    {strength.percentage >= 75 
+                      ? 'Strong capability in this area. Can be leveraged for role responsibilities.' 
+                      : 'Adequate performance. Good foundation to build upon.'}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Development Areas */}
-      <div style={styles.section}>
-        <h2 style={styles.sectionTitle}>📈 Development Areas</h2>
-        <div style={styles.developmentGrid}>
-          {developmentAreas.map((area, index) => (
-            <div key={index} style={styles.developmentCard}>
-              <div style={styles.developmentRank}>{index + 1}</div>
-              <div style={styles.developmentContent}>
-                <div style={styles.developmentName}>{area.category}</div>
-                <div style={styles.developmentScore}>{area.percentage}%</div>
-                <div style={styles.developmentBar}>
-                  <div style={{ ...styles.developmentBarFill, width: Math.min(area.percentage, 100) + '%' }} />
-                </div>
-                <div style={styles.developmentAction}>
-                  {area.percentage < 65 ? '🔴 Requires focused development' :
-                   area.percentage < 75 ? '🟡 Coaching recommended' :
-                   '🟢 Maintain with supervision'}
+      {developmentAreas.length > 0 && (
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>📈 Development Areas</h2>
+          <div style={styles.developmentGrid}>
+            {developmentAreas.map((area, index) => (
+              <div key={index} style={styles.developmentCard}>
+                <div style={styles.developmentRank}>{index + 1}</div>
+                <div style={styles.developmentContent}>
+                  <div style={styles.developmentName}>{area.category}</div>
+                  <div style={styles.developmentScore}>{area.percentage}%</div>
+                  <div style={styles.developmentBar}>
+                    <div style={{ ...styles.developmentBarFill, width: Math.min(area.percentage, 100) + '%' }} />
+                  </div>
+                  <div style={styles.developmentComment}>
+                    {area.percentage < 50 
+                      ? 'Critical development area requiring immediate attention and structured support.' 
+                      : area.percentage < 65 
+                      ? 'Priority development area. Focused coaching and guided practice recommended.' 
+                      : 'Maintain with regular supervision and feedback.'}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Suggested Placement */}
       <div style={styles.section}>
@@ -261,7 +276,7 @@ export default function NationalServiceReport({ report, onBack }) {
             Based on the candidate's performance profile, the following departments are recommended:
           </p>
           <div style={styles.placementGrid}>
-            {suggestedDepartments.map((dept, index) => (
+            {companyDepartments.map((dept, index) => (
               <div key={index} style={styles.placementCard}>
                 <span style={styles.placementIcon}>🏢</span>
                 <span style={styles.placementName}>{dept}</span>
@@ -272,44 +287,58 @@ export default function NationalServiceReport({ report, onBack }) {
       </div>
 
       {/* Workplace Readiness Breakdown */}
-      <div style={styles.section}>
-        <h2 style={styles.sectionTitle}>🛠️ Workplace Readiness Breakdown</h2>
-        <div style={styles.categoryGrid}>
-          {workplaceCategories.map((cat, index) => (
-            <div key={index} style={styles.categoryCard}>
-              <div style={styles.categoryName}>{cat.category}</div>
-              <div style={styles.categoryScore}>{cat.percentage}%</div>
-              <div style={styles.categoryBar}>
-                <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%' }} />
+      {workplaceCategories.length > 0 && (
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>🛠️ Workplace Readiness Breakdown</h2>
+          <div style={styles.categoryGrid}>
+            {workplaceCategories.map((cat, index) => (
+              <div key={index} style={styles.categoryCard}>
+                <div style={styles.categoryName}>{cat.category}</div>
+                <div style={styles.categoryScore}>{cat.percentage}%</div>
+                <div style={styles.categoryBar}>
+                  <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%' }} />
+                </div>
+                <div style={styles.categoryDetail}>
+                  {Math.round(cat.earned)} / {Math.round(cat.max)} points
+                </div>
+                <div style={styles.categoryComment}>
+                  {cat.percentage >= 75 ? '✅ Strong performance' :
+                   cat.percentage >= 65 ? '⚡ Adequate, with room for growth' :
+                   '🔴 Requires focused development'}
+                </div>
               </div>
-              <div style={styles.categoryDetail}>
-                {Math.round(cat.earned)} / {Math.round(cat.max)} points
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Intellectual Capability Breakdown */}
-      <div style={styles.section}>
-        <h2 style={styles.sectionTitle}>🧠 Intellectual Capability Breakdown</h2>
-        <div style={styles.categoryGrid}>
-          {intellectualCategories.map((cat, index) => (
-            <div key={index} style={styles.categoryCard}>
-              <div style={styles.categoryName}>{cat.category}</div>
-              <div style={styles.categoryScore}>{cat.percentage}%</div>
-              <div style={styles.categoryBar}>
-                <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%' }} />
+      {intellectualCategories.length > 0 && (
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>🧠 Intellectual Capability Breakdown</h2>
+          <div style={styles.categoryGrid}>
+            {intellectualCategories.map((cat, index) => (
+              <div key={index} style={styles.categoryCard}>
+                <div style={styles.categoryName}>{cat.category}</div>
+                <div style={styles.categoryScore}>{cat.percentage}%</div>
+                <div style={styles.categoryBar}>
+                  <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%' }} />
+                </div>
+                <div style={styles.categoryDetail}>
+                  {Math.round(cat.earned)} / {Math.round(cat.max)} points
+                </div>
+                <div style={styles.categoryComment}>
+                  {cat.percentage >= 75 ? '✅ Strong analytical ability' :
+                   cat.percentage >= 65 ? '⚡ Moderate potential, coachable' :
+                   '🔴 Development required'}
+                </div>
               </div>
-              <div style={styles.categoryDetail}>
-                {Math.round(cat.earned)} / {Math.round(cat.max)} points
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Statistics Section */}
+      {/* Assessment Statistics */}
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>📊 Assessment Statistics</h2>
         <div style={styles.statsGrid}>
@@ -513,6 +542,12 @@ const styles = {
     background: 'linear-gradient(90deg, #43a047, #2e7d32)',
     borderRadius: '2px'
   },
+  strengthComment: {
+    fontSize: '12px',
+    color: '#64748b',
+    marginTop: '4px',
+    fontStyle: 'italic'
+  },
   // Development styles
   developmentGrid: {
     display: 'grid',
@@ -562,16 +597,17 @@ const styles = {
     background: '#ffebee',
     borderRadius: '2px',
     overflow: 'hidden',
-    marginBottom: '6px'
+    marginBottom: '4px'
   },
   developmentBarFill: {
     height: '100%',
     background: 'linear-gradient(90deg, #ef5350, #c62828)',
     borderRadius: '2px'
   },
-  developmentAction: {
+  developmentComment: {
     fontSize: '12px',
-    color: '#64748b'
+    color: '#64748b',
+    fontStyle: 'italic'
   },
   // Placement styles
   placementContainer: {
@@ -648,6 +684,12 @@ const styles = {
   categoryDetail: {
     fontSize: '12px',
     color: '#94a3b8'
+  },
+  categoryComment: {
+    fontSize: '13px',
+    color: '#64748b',
+    marginTop: '4px',
+    fontWeight: '500'
   },
   // Stats styles
   statsGrid: {
