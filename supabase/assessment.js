@@ -590,7 +590,7 @@ async function getProgress(userId, assessmentId) {
 }
 
 // ======================================================
-// QUESTIONS - FIXED: Uses 'questions' table with assessment_id
+// QUESTIONS - FIXED: Uses 'unique_questions' table
 // ======================================================
 
 async function getUniqueQuestions(assessmentId) {
@@ -602,118 +602,67 @@ async function getUniqueQuestions(assessmentId) {
       return [];
     }
 
-    // Step 1: Get questions directly from the questions table
+    // Step 1: Get the assessment to find its assessment_type_id
+    const { data: assessment, error: assessmentError } = await supabase
+      .from("assessments")
+      .select("assessment_type_id, title")
+      .eq("id", assessmentId)
+      .maybeSingle();
+
+    if (assessmentError) {
+      console.error("[getUniqueQuestions] Assessment error:", assessmentError);
+      return [];
+    }
+
+    if (!assessment) {
+      console.warn(`[getUniqueQuestions] Assessment not found for ID: ${assessmentId}`);
+      return [];
+    }
+
+    const assessmentTypeId = assessment.assessment_type_id;
+    console.log(`[getUniqueQuestions] Assessment type ID: ${assessmentTypeId}`);
+
+    if (!assessmentTypeId) {
+      console.warn(`[getUniqueQuestions] No assessment_type_id found`);
+      return [];
+    }
+
+    // Step 2: Get questions from unique_questions table
     const { data: questionsData, error: questionsError } = await supabase
-      .from("questions")
+      .from("unique_questions")
       .select(`
         id,
         question_text,
         section,
         subsection,
         display_order,
-        question_type,
-        answers (
+        unique_answers (
           id,
           answer_text,
-          is_correct,
           score,
           display_order
         )
       `)
-      .eq("assessment_id", assessmentId)
+      .eq("assessment_type_id", assessmentTypeId)
       .eq("is_active", true)
       .order("display_order", { ascending: true });
 
     if (questionsError) {
       console.error("[getUniqueQuestions] Error fetching questions:", questionsError);
-      
-      // Fallback: Try without the nested answers relation
-      const { data: fallbackQuestions, error: fallbackError } = await supabase
-        .from("questions")
-        .select("*")
-        .eq("assessment_id", assessmentId)
-        .eq("is_active", true)
-        .order("display_order", { ascending: true });
-
-      if (fallbackError) {
-        console.error("[getUniqueQuestions] Fallback query error:", fallbackError);
-        return [];
-      }
-
-      if (!fallbackQuestions || fallbackQuestions.length === 0) {
-        console.warn(`[getUniqueQuestions] No questions found for assessment ${assessmentId}`);
-        return [];
-      }
-
-      // Get answers separately
-      const questionIds = fallbackQuestions.map(q => q.id);
-      const { data: answersData, error: answersError } = await supabase
-        .from("answers")
-        .select("*")
-        .in("question_id", questionIds)
-        .eq("is_active", true);
-
-      if (answersError) {
-        console.error("[getUniqueQuestions] Error fetching answers:", answersError);
-        return [];
-      }
-
-      // Build questions with answers
-      const formattedQuestions = fallbackQuestions.map((question) => {
-        const answers = safeArray(answersData)
-          .filter(a => a.question_id === question.id)
-          .map((answer) => ({
-            id: answer.id,
-            answer_text: answer.answer_text,
-            score: answer.score || (answer.is_correct ? 1 : 0),
-            display_order: answer.display_order || 1
-          }));
-
-        if (answers.length === 0) {
-          console.warn(`[getUniqueQuestions] Question ${question.id} has no answers, skipping`);
-          return null;
-        }
-
-        return {
-          id: question.id,
-          question_text: question.question_text,
-          section: question.section || "General",
-          subsection: question.subsection || "",
-          display_order: question.display_order || 1,
-          answers: shuffleArray(answers)
-        };
-      });
-
-      const validQuestions = formattedQuestions.filter(q => q !== null);
-      console.log(`[getUniqueQuestions] Returning ${validQuestions.length} valid questions from fallback`);
-      return shuffleArray(validQuestions);
-    }
-
-    if (!questionsData || questionsData.length === 0) {
-      console.warn(`[getUniqueQuestions] No questions found for assessment ${assessmentId}`);
-      
-      // Try the fallback anyway
-      const { data: fallbackQuestions } = await supabase
-        .from("questions")
-        .select("*")
-        .eq("assessment_id", assessmentId)
-        .eq("is_active", true);
-
-      if (fallbackQuestions && fallbackQuestions.length > 0) {
-        console.log(`[getUniqueQuestions] Fallback found ${fallbackQuestions.length} questions`);
-        // Recursively call with fallback
-        return getUniqueQuestions(assessmentId);
-      }
-      
       return [];
     }
 
-    // Step 2: Format the questions (normal path)
+    if (!questionsData || questionsData.length === 0) {
+      console.warn(`[getUniqueQuestions] No questions found for assessment_type_id: ${assessmentTypeId}`);
+      return [];
+    }
+
+    // Step 3: Format the questions
     const formattedQuestions = questionsData.map((question, index) => {
-      const answers = safeArray(question.answers).map((answer) => ({
+      const answers = safeArray(question.unique_answers).map((answer) => ({
         id: answer.id,
         answer_text: answer.answer_text,
-        score: answer.score || (answer.is_correct ? 1 : 0),
+        score: answer.score || 0,
         display_order: answer.display_order || 1
       }));
 
@@ -870,7 +819,7 @@ async function saveUniqueResponse(session_id, user_id, assessment_id, question_i
 
     const answerToStore = normalizeAnswerForStorage(answer_id);
 
-    // Get current session status - using direct query
+    // Get current session status
     const { data: sessionData, error: sessionError } = await supabase
       .from("assessment_sessions")
       .select("id, status")
@@ -893,7 +842,7 @@ async function saveUniqueResponse(session_id, user_id, assessment_id, question_i
       return { success: false, error: "Session is " + sessionData.status + ", cannot save responses" };
     }
 
-    // Check if response already exists - using direct query
+    // Check if response already exists
     const { data: existingResponse, error: existingError } = await supabase
       .from("responses")
       .select("id, answer_id, times_changed, initial_answer_id")
@@ -932,7 +881,7 @@ async function saveUniqueResponse(session_id, user_id, assessment_id, question_i
       responseData.initial_answer_id = existingResponse.initial_answer_id || answerToStore;
     }
 
-    // Insert or update the response - using direct query
+    // Insert or update the response
     let result;
     if (isNewResponse) {
       result = await supabase
@@ -1006,7 +955,7 @@ async function saveResponse(sessionId, userId, assessmentId, questionId, answerI
 }
 
 // ======================================================
-// EXPORTS - ALL FUNCTIONS EXPORTED HERE (SINGLE EXPORT)
+// EXPORTS
 // ======================================================
 
 export {
