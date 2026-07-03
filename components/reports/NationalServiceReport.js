@@ -19,6 +19,9 @@ export default function NationalServiceReport({ report, onBack }) {
     suggestedPlacement = []
   } = report;
 
+  console.log('[Report] categoryBreakdown:', categoryBreakdown);
+
+  // Get recommendation color and background
   const getRecommendationColor = (level) => {
     switch (level) {
       case 'Highly Recommended': return '#2e7d32';
@@ -68,97 +71,54 @@ export default function NationalServiceReport({ report, onBack }) {
     }
   };
 
-  // ============================================================
-  // COMPANY-SPECIFIC DEPARTMENT MAPPING
-  // ============================================================
-  const getCompanyDepartments = (workplaceScore, intellectualScore) => {
-    const departments = [];
-
-    // Manufacturing Departments
-    departments.push(
-      { name: 'Manufacturing', icon: '🏭', subDepts: ['Production', 'Engineering/Maintenance', 'SHEQ (Safety, Health, Environment & Quality)', 'Quality Operations / QOESH', 'Raw Materials & Warehouse', 'Utilities', 'Planning / Production Planning'] }
-    );
-
-    // Supply Chain / Logistics
-    departments.push(
-      { name: 'Supply Chain / Logistics', icon: '🚚', subDepts: ['Warehousing', 'Distribution', 'Fleet', 'Transport'] }
-    );
-
-    // Procurement
-    departments.push(
-      { name: 'Procurement', icon: '📋', subDepts: [] }
-    );
-
-    // Finance
-    departments.push(
-      { name: 'Finance', icon: '💰', subDepts: [] }
-    );
-
-    // Human Resources
-    departments.push(
-      { name: 'Human Resources', icon: '👥', subDepts: [] }
-    );
-
-    // Commercial
-    departments.push(
-      { name: 'Commercial', icon: '📊', subDepts: ['Sales', 'Trade Marketing', 'Customer Service'] }
-    );
-
-    // Information Technology (IT)
-    departments.push(
-      { name: 'Information Technology (IT)', icon: '💻', subDepts: [] }
-    );
-
-    // Legal & Compliance
-    departments.push(
-      { name: 'Legal & Compliance', icon: '⚖️', subDepts: [] }
-    );
-
-    // Corporate Affairs / Public Affairs
-    departments.push(
-      { name: 'Corporate Affairs / Public Affairs', icon: '📢', subDepts: [] }
-    );
-
-    // Return all departments with scores to determine suitability
-    return departments.map(dept => ({
-      ...dept,
-      recommended: workplaceScore >= 65 && intellectualScore >= 65
-    }));
+  // Get category comment based on score
+  const getCategoryComment = (percentage) => {
+    if (percentage >= 75) return '✅ Strong capability';
+    if (percentage >= 65) return '⚡ Adequate performance';
+    if (percentage >= 50) return '🔸 Development area';
+    return '🔴 Critical development area';
   };
-
-  const workplaceScore = dimensions.workplaceReadiness || 0;
-  const intellectualScore = dimensions.intellectualCapability || 0;
-  const companyDepartments = getCompanyDepartments(workplaceScore, intellectualScore);
-
-  // Filter recommended departments
-  const recommendedDepartments = companyDepartments.filter(d => d.recommended);
-
-  // Calculate top strengths (top 3 scoring categories)
-  const topStrengths = [...categoryBreakdown]
-    .sort((a, b) => b.percentage - a.percentage)
-    .slice(0, 3)
-    .filter(item => item.percentage >= 60);
-
-  // Calculate development areas (categories below 65%)
-  const developmentAreas = [...categoryBreakdown]
-    .filter(item => item.percentage < 65)
-    .sort((a, b) => a.percentage - b.percentage);
 
   // Separate categories by dimension
   const workplaceCategories = categoryBreakdown.filter(cat => cat.dimension === 'workplace');
   const intellectualCategories = categoryBreakdown.filter(cat => cat.dimension === 'intellectual');
 
+  // Top strengths (top 3)
+  const topStrengths = [...categoryBreakdown]
+    .sort((a, b) => b.percentage - a.percentage)
+    .slice(0, 3);
+
+  // Development areas (below 65%)
+  const developmentAreas = [...categoryBreakdown]
+    .filter(item => item.percentage < 65)
+    .sort((a, b) => a.percentage - b.percentage);
+
+  const workplaceScore = dimensions.workplaceReadiness || 0;
+  const intellectualScore = dimensions.intellectualCapability || 0;
+  const overallScore = dimensions.overallScore || 0;
+
+  // Company departments
+  const companyDepartments = [
+    { name: 'Manufacturing', icon: '🏭', subDepts: ['Production', 'Engineering/Maintenance', 'SHEQ', 'Quality Operations', 'Raw Materials & Warehouse', 'Utilities', 'Planning'] },
+    { name: 'Supply Chain / Logistics', icon: '🚚', subDepts: ['Warehousing', 'Distribution', 'Fleet', 'Transport'] },
+    { name: 'Procurement', icon: '📋', subDepts: [] },
+    { name: 'Finance', icon: '💰', subDepts: [] },
+    { name: 'Human Resources', icon: '👥', subDepts: [] },
+    { name: 'Commercial', icon: '📊', subDepts: ['Sales', 'Trade Marketing', 'Customer Service'] },
+    { name: 'Information Technology (IT)', icon: '💻', subDepts: [] },
+    { name: 'Legal & Compliance', icon: '⚖️', subDepts: [] },
+    { name: 'Corporate Affairs / Public Affairs', icon: '📢', subDepts: [] }
+  ];
+
+  // Only recommend departments if scores are above threshold
+  const threshold = 60;
+  const recommendedDepartments = companyDepartments.filter(
+    d => workplaceScore >= threshold || intellectualScore >= threshold
+  );
+
   const recommendationColor = getRecommendationColor(recommendation.level);
   const recommendationBg = getRecommendationBg(recommendation.level);
   const recommendationNarrative = getRecommendationNarrative(recommendation.level);
-
-  // Helper to get category comment
-  const getCategoryComment = (percentage, category) => {
-    if (percentage >= 75) return '✅ Strong capability. Can be leveraged in role.';
-    if (percentage >= 65) return '⚡ Adequate performance. Room for growth.';
-    if (percentage >= 50) return '🔸 Development area. Needs focused coaching.';
-    return '🔴 Critical development area. Requires structured support.';
-  };
 
   return (
     <div style={styles.container}>
@@ -202,7 +162,7 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       </div>
 
-      {/* Hiring Decision Banner */}
+      {/* Banner */}
       <div style={{ ...styles.banner, background: recommendationBg, border: `3px solid ${recommendationColor}` }}>
         <div style={styles.bannerContent}>
           <div style={{ ...styles.bannerIcon, color: recommendationColor }}>
@@ -225,29 +185,25 @@ export default function NationalServiceReport({ report, onBack }) {
       <div style={styles.scoreGrid}>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Workplace Readiness</div>
-          <div style={styles.scoreValue}>{dimensions.workplaceReadiness || 0}%</div>
+          <div style={styles.scoreValue}>{workplaceScore}%</div>
           <div style={{ ...styles.scoreBand, color: getBandColor(executiveSummary.workplaceBand) }}>
             {executiveSummary.workplaceBand || 'N/A'}
           </div>
         </div>
-
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Intellectual Capability</div>
-          <div style={styles.scoreValue}>{dimensions.intellectualCapability || 0}%</div>
+          <div style={styles.scoreValue}>{intellectualScore}%</div>
           <div style={{ ...styles.scoreBand, color: getBandColor(executiveSummary.intellectualBand) }}>
             {executiveSummary.intellectualBand || 'N/A'}
           </div>
         </div>
-
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Overall Score</div>
-          <div style={styles.scoreValue}>{dimensions.overallScore || 0}%</div>
+          <div style={styles.scoreValue}>{overallScore}%</div>
         </div>
       </div>
 
-      {/* ============================================================
-          WORKPLACE READINESS BREAKDOWN - Individual Topics
-      ============================================================ */}
+      {/* Workplace Readiness Breakdown */}
       {workplaceCategories.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>🛠️ Workplace Readiness - Topic Breakdown</h2>
@@ -263,7 +219,7 @@ export default function NationalServiceReport({ report, onBack }) {
                   {Math.round(cat.earned)} / {Math.round(cat.max)} points
                 </div>
                 <div style={styles.categoryComment}>
-                  {getCategoryComment(cat.percentage, cat.category)}
+                  {getCategoryComment(cat.percentage)}
                 </div>
               </div>
             ))}
@@ -271,9 +227,7 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       )}
 
-      {/* ============================================================
-          INTELLECTUAL CAPABILITY BREAKDOWN - Individual Topics
-      ============================================================ */}
+      {/* Intellectual Capability Breakdown */}
       {intellectualCategories.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>🧠 Intellectual Capability - Topic Breakdown</h2>
@@ -289,7 +243,7 @@ export default function NationalServiceReport({ report, onBack }) {
                   {Math.round(cat.earned)} / {Math.round(cat.max)} points
                 </div>
                 <div style={styles.categoryComment}>
-                  {getCategoryComment(cat.percentage, cat.category)}
+                  {getCategoryComment(cat.percentage)}
                 </div>
               </div>
             ))}
@@ -297,9 +251,7 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       )}
 
-      {/* ============================================================
-          TOP STRENGTHS
-      ============================================================ */}
+      {/* Top Strengths */}
       {topStrengths.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>🌟 Top Strengths</h2>
@@ -313,11 +265,6 @@ export default function NationalServiceReport({ report, onBack }) {
                   <div style={styles.strengthBar}>
                     <div style={{ ...styles.strengthBarFill, width: Math.min(strength.percentage, 100) + '%' }} />
                   </div>
-                  <div style={styles.strengthComment}>
-                    {strength.percentage >= 75 
-                      ? 'Strong capability. Can be leveraged for role responsibilities.' 
-                      : 'Good foundation to build upon.'}
-                  </div>
                 </div>
               </div>
             ))}
@@ -325,9 +272,7 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       )}
 
-      {/* ============================================================
-          DEVELOPMENT AREAS
-      ============================================================ */}
+      {/* Development Areas */}
       {developmentAreas.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>📈 Development Areas</h2>
@@ -341,13 +286,6 @@ export default function NationalServiceReport({ report, onBack }) {
                   <div style={styles.developmentBar}>
                     <div style={{ ...styles.developmentBarFill, width: Math.min(area.percentage, 100) + '%' }} />
                   </div>
-                  <div style={styles.developmentComment}>
-                    {area.percentage < 50 
-                      ? '🔴 Critical: Immediate structured support required.' 
-                      : area.percentage < 65 
-                      ? '🟡 Priority: Focused coaching and guided practice recommended.' 
-                      : '🟢 Maintain with regular supervision and feedback.'}
-                  </div>
                 </div>
               </div>
             ))}
@@ -355,70 +293,47 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       )}
 
-      {/* ============================================================
-          SUGGESTED PLACEMENT - Company Departments
-      ============================================================ */}
+      {/* Suggested Placement */}
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>🎯 Suggested Placement</h2>
         <div style={styles.placementContainer}>
           <p style={styles.placementDescription}>
             Based on the candidate's performance profile, the following departments are recommended:
           </p>
-          
           <div style={styles.placementGrid}>
-            {recommendedDepartments.length > 0 ? (
-              recommendedDepartments.map((dept, index) => (
-                <div key={index} style={styles.placementCard}>
-                  <div style={styles.placementHeader}>
-                    <span style={styles.placementIcon}>{dept.icon}</span>
-                    <span style={styles.placementName}>{dept.name}</span>
-                  </div>
-                  {dept.subDepts && dept.subDepts.length > 0 && (
-                    <div style={styles.placementSubDepts}>
-                      {dept.subDepts.map((sub, idx) => (
-                        <span key={idx} style={styles.placementSubDeptTag}>{sub}</span>
-                      ))}
-                    </div>
-                  )}
+            {recommendedDepartments.map((dept, index) => (
+              <div key={index} style={styles.placementCard}>
+                <div style={styles.placementHeader}>
+                  <span style={styles.placementIcon}>{dept.icon}</span>
+                  <span style={styles.placementName}>{dept.name}</span>
                 </div>
-              ))
-            ) : (
-              <div style={styles.placementEmpty}>
-                <p>Based on the current scores, the candidate would benefit from structured training and development before departmental placement.</p>
-                <div style={styles.placementCard}>
-                  <div style={styles.placementHeader}>
-                    <span style={styles.placementIcon}>📚</span>
-                    <span style={styles.placementName}>Structured Training Program</span>
+                {dept.subDepts && dept.subDepts.length > 0 && (
+                  <div style={styles.placementSubDepts}>
+                    {dept.subDepts.map((sub, idx) => (
+                      <span key={idx} style={styles.placementSubDeptTag}>{sub}</span>
+                    ))}
                   </div>
-                </div>
-                <div style={styles.placementCard}>
-                  <div style={styles.placementHeader}>
-                    <span style={styles.placementIcon}>👥</span>
-                    <span style={styles.placementName}>Supervised Development Roles</span>
-                  </div>
-                </div>
+                )}
               </div>
-            )}
+            ))}
           </div>
         </div>
       </div>
 
-      {/* ============================================================
-          ASSESSMENT STATISTICS
-      ============================================================ */}
+      {/* Assessment Statistics */}
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>📊 Assessment Statistics</h2>
         <div style={styles.statsGrid}>
           <div style={styles.statCard}>
-            <div style={styles.statValue}>{dimensions.workplaceReadiness || 0}%</div>
+            <div style={styles.statValue}>{workplaceScore}%</div>
             <div style={styles.statLabel}>Workplace Readiness</div>
           </div>
           <div style={styles.statCard}>
-            <div style={styles.statValue}>{dimensions.intellectualCapability || 0}%</div>
+            <div style={styles.statValue}>{intellectualScore}%</div>
             <div style={styles.statLabel}>Intellectual Capability</div>
           </div>
           <div style={styles.statCard}>
-            <div style={styles.statValue}>{dimensions.overallScore || 0}%</div>
+            <div style={styles.statValue}>{overallScore}%</div>
             <div style={styles.statLabel}>Overall Score</div>
           </div>
           <div style={styles.statCard}>
@@ -428,7 +343,7 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       </div>
 
-      {/* Actions */}
+      {/* Print Button */}
       <div style={styles.actions}>
         <button onClick={() => window.print()} style={styles.printButton}>
           🖨️ Print Report
@@ -480,81 +395,21 @@ const styles = {
     gap: '12px',
     textAlign: 'left'
   },
-  infoLabel: {
-    fontSize: '12px',
-    opacity: 0.7,
-    display: 'block',
-    marginBottom: '2px'
-  },
-  infoValue: {
-    fontSize: '15px',
-    fontWeight: '500',
-    display: 'block'
-  },
-  banner: {
-    borderRadius: '12px',
-    padding: '20px 24px',
-    marginBottom: '24px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
-  },
-  bannerContent: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '16px'
-  },
-  bannerIcon: {
-    fontSize: '32px',
-    lineHeight: '1'
-  },
-  bannerTitle: {
-    fontSize: '20px',
-    fontWeight: '700',
-    marginBottom: '4px'
-  },
-  bannerNarrative: {
-    fontSize: '14px',
-    color: '#1a202c',
-    lineHeight: '1.6'
-  },
-  scoreGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '20px',
-    marginBottom: '30px'
-  },
-  scoreCard: {
-    background: 'white',
-    padding: '24px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    textAlign: 'center'
-  },
-  scoreLabel: {
-    fontSize: '14px',
-    color: '#64748b',
-    fontWeight: '500',
-    marginBottom: '8px'
-  },
-  scoreValue: {
-    fontSize: '32px',
-    fontWeight: '700',
-    color: '#1a237e'
-  },
-  scoreBand: {
-    fontSize: '14px',
-    fontWeight: '600',
-    marginTop: '8px'
-  },
-  section: {
-    marginBottom: '30px'
-  },
-  sectionTitle: {
-    fontSize: '20px',
-    fontWeight: '600',
-    color: '#1a237e',
-    marginBottom: '16px'
-  },
-  // Category styles
+  infoLabel: { fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '2px' },
+  infoValue: { fontSize: '15px', fontWeight: '500', display: 'block' },
+  banner: { borderRadius: '12px', padding: '20px 24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' },
+  bannerContent: { display: 'flex', alignItems: 'flex-start', gap: '16px' },
+  bannerIcon: { fontSize: '32px', lineHeight: '1' },
+  bannerTitle: { fontSize: '20px', fontWeight: '700', marginBottom: '4px' },
+  bannerNarrative: { fontSize: '14px', color: '#1a202c', lineHeight: '1.6' },
+  scoreGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '30px' },
+  scoreCard: { background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', textAlign: 'center' },
+  scoreLabel: { fontSize: '14px', color: '#64748b', fontWeight: '500', marginBottom: '8px' },
+  scoreValue: { fontSize: '32px', fontWeight: '700', color: '#1a237e' },
+  scoreBand: { fontSize: '14px', fontWeight: '600', marginTop: '8px' },
+  section: { marginBottom: '30px' },
+  sectionTitle: { fontSize: '20px', fontWeight: '600', color: '#1a237e', marginBottom: '16px' },
+
   categoryGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
@@ -567,41 +422,13 @@ const styles = {
     boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
     border: '1px solid #e2e8f0'
   },
-  categoryName: {
-    fontSize: '14px',
-    fontWeight: '500',
-    color: '#475569',
-    marginBottom: '6px'
-  },
-  categoryScore: {
-    fontSize: '20px',
-    fontWeight: '700',
-    color: '#1a237e',
-    marginBottom: '8px'
-  },
-  categoryBar: {
-    height: '6px',
-    background: '#e2e8f0',
-    borderRadius: '3px',
-    overflow: 'hidden',
-    marginBottom: '6px'
-  },
-  categoryBarFill: {
-    height: '100%',
-    background: 'linear-gradient(90deg, #1a237e, #0d47a1)',
-    borderRadius: '3px'
-  },
-  categoryDetail: {
-    fontSize: '12px',
-    color: '#94a3b8'
-  },
-  categoryComment: {
-    fontSize: '13px',
-    color: '#64748b',
-    marginTop: '4px',
-    fontWeight: '500'
-  },
-  // Strength styles
+  categoryName: { fontSize: '14px', fontWeight: '500', color: '#475569', marginBottom: '6px' },
+  categoryScore: { fontSize: '20px', fontWeight: '700', color: '#1a237e', marginBottom: '8px' },
+  categoryBar: { height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden', marginBottom: '6px' },
+  categoryBarFill: { height: '100%', background: 'linear-gradient(90deg, #1a237e, #0d47a1)', borderRadius: '3px' },
+  categoryDetail: { fontSize: '12px', color: '#94a3b8' },
+  categoryComment: { fontSize: '13px', color: '#64748b', marginTop: '4px', fontWeight: '500' },
+
   strengthGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
@@ -630,39 +457,12 @@ const styles = {
     fontWeight: '700',
     flexShrink: 0
   },
-  strengthContent: {
-    flex: 1
-  },
-  strengthName: {
-    fontSize: '14px',
-    fontWeight: '500',
-    color: '#1a202c',
-    marginBottom: '4px'
-  },
-  strengthScore: {
-    fontSize: '16px',
-    fontWeight: '700',
-    color: '#2e7d32',
-    marginBottom: '4px'
-  },
-  strengthBar: {
-    height: '4px',
-    background: '#e8f5e9',
-    borderRadius: '2px',
-    overflow: 'hidden'
-  },
-  strengthBarFill: {
-    height: '100%',
-    background: 'linear-gradient(90deg, #43a047, #2e7d32)',
-    borderRadius: '2px'
-  },
-  strengthComment: {
-    fontSize: '12px',
-    color: '#64748b',
-    marginTop: '4px',
-    fontStyle: 'italic'
-  },
-  // Development styles
+  strengthContent: { flex: 1 },
+  strengthName: { fontSize: '14px', fontWeight: '500', color: '#1a202c', marginBottom: '4px' },
+  strengthScore: { fontSize: '16px', fontWeight: '700', color: '#2e7d32', marginBottom: '4px' },
+  strengthBar: { height: '4px', background: '#e8f5e9', borderRadius: '2px', overflow: 'hidden' },
+  strengthBarFill: { height: '100%', background: 'linear-gradient(90deg, #43a047, #2e7d32)', borderRadius: '2px' },
+
   developmentGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
@@ -691,39 +491,12 @@ const styles = {
     fontWeight: '700',
     flexShrink: 0
   },
-  developmentContent: {
-    flex: 1
-  },
-  developmentName: {
-    fontSize: '14px',
-    fontWeight: '500',
-    color: '#1a202c',
-    marginBottom: '4px'
-  },
-  developmentScore: {
-    fontSize: '16px',
-    fontWeight: '700',
-    color: '#c62828',
-    marginBottom: '4px'
-  },
-  developmentBar: {
-    height: '4px',
-    background: '#ffebee',
-    borderRadius: '2px',
-    overflow: 'hidden',
-    marginBottom: '4px'
-  },
-  developmentBarFill: {
-    height: '100%',
-    background: 'linear-gradient(90deg, #ef5350, #c62828)',
-    borderRadius: '2px'
-  },
-  developmentComment: {
-    fontSize: '12px',
-    color: '#64748b',
-    fontStyle: 'italic'
-  },
-  // Placement styles
+  developmentContent: { flex: 1 },
+  developmentName: { fontSize: '14px', fontWeight: '500', color: '#1a202c', marginBottom: '4px' },
+  developmentScore: { fontSize: '16px', fontWeight: '700', color: '#c62828', marginBottom: '4px' },
+  developmentBar: { height: '4px', background: '#ffebee', borderRadius: '2px', overflow: 'hidden', marginBottom: '4px' },
+  developmentBarFill: { height: '100%', background: 'linear-gradient(90deg, #ef5350, #c62828)', borderRadius: '2px' },
+
   placementContainer: {
     background: 'white',
     padding: '20px',
@@ -731,55 +504,15 @@ const styles = {
     boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
     border: '1px solid #e2e8f0'
   },
-  placementDescription: {
-    fontSize: '14px',
-    color: '#475569',
-    marginBottom: '16px'
-  },
-  placementGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-    gap: '16px'
-  },
-  placementCard: {
-    padding: '16px',
-    background: '#f8fafc',
-    borderRadius: '8px',
-    border: '1px solid #e2e8f0'
-  },
-  placementHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    marginBottom: '8px'
-  },
-  placementIcon: {
-    fontSize: '20px'
-  },
-  placementName: {
-    fontSize: '15px',
-    fontWeight: '600',
-    color: '#1a202c'
-  },
-  placementSubDepts: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '6px',
-    marginTop: '8px'
-  },
-  placementSubDeptTag: {
-    fontSize: '12px',
-    padding: '2px 10px',
-    background: '#e2e8f0',
-    borderRadius: '12px',
-    color: '#475569'
-  },
-  placementEmpty: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px'
-  },
-  // Stats styles
+  placementDescription: { fontSize: '14px', color: '#475569', marginBottom: '16px' },
+  placementGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' },
+  placementCard: { padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' },
+  placementHeader: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' },
+  placementIcon: { fontSize: '20px' },
+  placementName: { fontSize: '15px', fontWeight: '600', color: '#1a202c' },
+  placementSubDepts: { display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' },
+  placementSubDeptTag: { fontSize: '12px', padding: '2px 10px', background: '#e2e8f0', borderRadius: '12px', color: '#475569' },
+
   statsGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
@@ -793,20 +526,10 @@ const styles = {
     textAlign: 'center',
     border: '1px solid #e2e8f0'
   },
-  statValue: {
-    fontSize: '24px',
-    fontWeight: '700',
-    color: '#1a237e'
-  },
-  statLabel: {
-    fontSize: '12px',
-    color: '#94a3b8',
-    marginTop: '4px'
-  },
-  actions: {
-    textAlign: 'center',
-    marginTop: '20px'
-  },
+  statValue: { fontSize: '24px', fontWeight: '700', color: '#1a237e' },
+  statLabel: { fontSize: '12px', color: '#94a3b8', marginTop: '4px' },
+
+  actions: { textAlign: 'center', marginTop: '20px' },
   printButton: {
     padding: '12px 24px',
     background: '#1a237e',
@@ -817,10 +540,5 @@ const styles = {
     fontWeight: '600',
     cursor: 'pointer'
   },
-  loading: {
-    textAlign: 'center',
-    padding: '40px',
-    fontSize: '18px',
-    color: '#64748b'
-  }
+  loading: { textAlign: 'center', padding: '40px', fontSize: '18px', color: '#64748b' }
 };
