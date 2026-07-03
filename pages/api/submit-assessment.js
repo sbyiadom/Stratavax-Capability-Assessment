@@ -91,7 +91,7 @@ function getSuggestedDepartments(workplaceScore, intellectualScore) {
 }
 
 // ============================================================
-// MAIN HANDLER - COMPLETE FIX
+// MAIN HANDLER
 // ============================================================
 
 export default async function handler(req, res) {
@@ -142,7 +142,7 @@ export default async function handler(req, res) {
     // Get session
     const { data: session, error: sessionError } = await supabase
       .from("assessment_sessions")
-      .select("id, user_id, assessment_id, status, violation_count")
+      .select("id, user_id, assessment_id, status, violation_count, total_questions")
       .eq("id", sessionId)
       .single();
 
@@ -162,7 +162,7 @@ export default async function handler(req, res) {
     // Get assessment
     const { data: assessment, error: assessmentError } = await supabase
       .from("assessments")
-      .select("id, title")
+      .select("id, title, assessment_type_id")
       .eq("id", session.assessment_id)
       .single();
 
@@ -172,41 +172,48 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // FIX: Get questions from the correct table
+    // FIX: Get questions from unique_questions table
     // ============================================================
     let questions = [];
-    
-    try {
-      // Try getting questions from the 'questions' table
-      const { data, error } = await supabase
-        .from("questions")
-        .select(`
-          id,
-          question_text,
-          section,
-          answers (
-            id,
-            answer_text,
-            score
-          )
-        `)
-        .eq("assessment_id", session.assessment_id)
-        .eq("is_active", true);
+    let assessmentTypeId = assessment.assessment_type_id;
 
-      if (error) {
-        console.error('[Submit Assessment] Questions query error:', error);
-      } else {
-        questions = safeArray(data);
-        console.log(`[Submit Assessment] Found ${questions.length} questions from 'questions' table`);
+    if (assessmentTypeId) {
+      console.log(`[Submit Assessment] Assessment type ID: ${assessmentTypeId}`);
+      
+      try {
+        // Get questions from unique_questions
+        const { data, error } = await supabase
+          .from("unique_questions")
+          .select(`
+            id,
+            question_text,
+            section,
+            unique_answers (
+              id,
+              answer_text,
+              score
+            )
+          `)
+          .eq("assessment_type_id", assessmentTypeId)
+          .eq("is_active", true);
+
+        if (error) {
+          console.error('[Submit Assessment] Unique questions error:', error);
+        } else {
+          questions = safeArray(data).map(q => ({
+            ...q,
+            answers: safeArray(q.unique_answers)
+          }));
+          console.log(`[Submit Assessment] Found ${questions.length} questions from unique_questions`);
+        }
+      } catch (err) {
+        console.error('[Submit Assessment] Unique questions exception:', err);
       }
-    } catch (err) {
-      console.error('[Submit Assessment] Questions exception:', err);
     }
 
-    // Fallback: Try without answers relation
+    // Fallback: Try the questions table
     if (questions.length === 0) {
-      console.log('[Submit Assessment] Trying fallback - fetching questions without answers...');
-      
+      console.log('[Submit Assessment] Trying questions table as fallback...');
       try {
         const { data, error } = await supabase
           .from("questions")
@@ -214,84 +221,37 @@ export default async function handler(req, res) {
           .eq("assessment_id", session.assessment_id)
           .eq("is_active", true);
 
-        if (error) {
-          console.error('[Submit Assessment] Fallback error:', error);
-        } else if (data && data.length > 0) {
-          questions = data;
-          console.log(`[Submit Assessment] Fallback found ${questions.length} questions`);
-          
-          // Fetch answers separately
-          const questionIds = questions.map(q => q.id);
-          const { data: answers, error: answersError } = await supabase
-            .from("answers")
-            .select("*")
-            .in("question_id", questionIds);
-
-          if (!answersError && answers) {
-            const answersMap = {};
-            answers.forEach(a => {
-              if (!answersMap[a.question_id]) answersMap[a.question_id] = [];
-              answersMap[a.question_id].push(a);
-            });
-            
-            questions = questions.map(q => ({
-              ...q,
-              answers: answersMap[q.id] || []
-            }));
-          }
-        }
-      } catch (fallbackError) {
-        console.error('[Submit Assessment] Fallback exception:', fallbackError);
-      }
-    }
-
-    // If still no questions, check if there's a different table name
-    if (questions.length === 0) {
-      console.log('[Submit Assessment] Checking for questions in alternative tables...');
-      
-      try {
-        // Try 'unique_questions' table
-        const { data, error } = await supabase
-          .from("unique_questions")
-          .select("*")
-          .eq("assessment_type_id", session.assessment_type_id || 21)
-          .eq("is_active", true);
-
         if (!error && data && data.length > 0) {
           questions = data.map(q => ({
             ...q,
-            question_text: q.question_text || q.text,
             answers: []
           }));
-          console.log(`[Submit Assessment] Found ${questions.length} questions from 'unique_questions' table`);
+          console.log(`[Submit Assessment] Fallback found ${questions.length} questions`);
         }
       } catch (err) {
-        console.error('[Submit Assessment] Alternative table error:', err);
+        console.error('[Submit Assessment] Fallback exception:', err);
       }
+    }
+
+    // Last resort: Use session total_questions
+    if (questions.length === 0 && session.total_questions > 0) {
+      console.log(`[Submit Assessment] Creating ${session.total_questions} placeholder questions`);
+      questions = Array.from({ length: session.total_questions }, (_, i) => ({
+        id: `placeholder-${i + 1}`,
+        question_text: `Question ${i + 1}`,
+        section: "General",
+        answers: [{ id: `ans-${i + 1}`, answer_text: "Answered", score: 1 }]
+      }));
     }
 
     console.log(`[Submit Assessment] Final questions count: ${questions.length}`);
 
     if (!questions || questions.length === 0) {
-      // Try to get question count from the session
-      const sessionQuestionCount = session.total_questions || 0;
-      
-      if (sessionQuestionCount > 0) {
-        // Create placeholder questions based on session count
-        console.log(`[Submit Assessment] Creating ${sessionQuestionCount} placeholder questions from session count`);
-        questions = Array.from({ length: sessionQuestionCount }, (_, i) => ({
-          id: `placeholder-${i + 1}`,
-          question_text: `Question ${i + 1}`,
-          section: "General",
-          answers: [{ id: `ans-${i + 1}`, answer_text: "Answered", score: 1 }]
-        }));
-      } else {
-        return res.status(400).json({ 
-          success: false, 
-          error: "no_questions", 
-          message: "No questions found for this assessment" 
-        });
-      }
+      return res.status(400).json({ 
+        success: false, 
+        error: "no_questions", 
+        message: "No questions found for this assessment" 
+      });
     }
 
     // Get responses
