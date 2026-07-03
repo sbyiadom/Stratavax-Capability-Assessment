@@ -98,7 +98,7 @@ async function getSessionById(sessionId) {
 
 async function getAssessmentQuestionCount(assessmentTypeId) {
   if (!assessmentTypeId) return 0;
-  const result = await safeSelectRows("questions", (query) => query.eq("assessment_type_id", assessmentTypeId), "id");
+  const result = await safeSelectRows("unique_questions", (query) => query.eq("assessment_type_id", assessmentTypeId), "id");
   return result.data.length;
 }
 
@@ -590,7 +590,7 @@ async function getProgress(userId, assessmentId) {
 }
 
 // ======================================================
-// QUESTIONS - FIXED: Uses 'unique_questions' table
+// QUESTIONS - SIMPLIFIED FIXED VERSION
 // ======================================================
 
 async function getUniqueQuestions(assessmentId) {
@@ -602,7 +602,7 @@ async function getUniqueQuestions(assessmentId) {
       return [];
     }
 
-    // Step 1: Get the assessment to find its assessment_type_id
+    // Step 1: Get assessment_type_id from the assessment
     const { data: assessment, error: assessmentError } = await supabase
       .from("assessments")
       .select("assessment_type_id, title")
@@ -627,64 +627,65 @@ async function getUniqueQuestions(assessmentId) {
       return [];
     }
 
-    // Step 2: Get questions from unique_questions table
+    // Step 2: Get questions from unique_questions
     const { data: questionsData, error: questionsError } = await supabase
       .from("unique_questions")
-      .select(`
-        id,
-        question_text,
-        section,
-        subsection,
-        display_order,
-        unique_answers (
-          id,
-          answer_text,
-          score,
-          display_order
-        )
-      `)
-      .eq("assessment_type_id", assessmentTypeId)
-      .eq("is_active", true)
-      .order("display_order", { ascending: true });
+      .select("*")
+      .eq("assessment_type_id", assessmentTypeId);
 
     if (questionsError) {
-      console.error("[getUniqueQuestions] Error fetching questions:", questionsError);
+      console.error("[getUniqueQuestions] Questions error:", questionsError);
       return [];
     }
+
+    console.log(`[getUniqueQuestions] Found ${questionsData?.length || 0} questions in unique_questions`);
 
     if (!questionsData || questionsData.length === 0) {
       console.warn(`[getUniqueQuestions] No questions found for assessment_type_id: ${assessmentTypeId}`);
       return [];
     }
 
-    // Step 3: Format the questions
-    const formattedQuestions = questionsData.map((question, index) => {
-      const answers = safeArray(question.unique_answers).map((answer) => ({
+    // Step 3: Get answers for all questions
+    const questionIds = questionsData.map(q => q.id);
+    const { data: answersData, error: answersError } = await supabase
+      .from("unique_answers")
+      .select("*")
+      .in("question_id", questionIds);
+
+    if (answersError) {
+      console.error("[getUniqueQuestions] Answers error:", answersError);
+    }
+
+    // Step 4: Build answers map
+    const answersMap = {};
+    if (answersData) {
+      answersData.forEach(a => {
+        if (!answersMap[a.question_id]) answersMap[a.question_id] = [];
+        answersMap[a.question_id].push(a);
+      });
+    }
+
+    // Step 5: Format questions with their answers
+    const formattedQuestions = questionsData.map((question) => {
+      const answers = safeArray(answersMap[question.id] || []).map((answer) => ({
         id: answer.id,
         answer_text: answer.answer_text,
         score: answer.score || 0,
         display_order: answer.display_order || 1
       }));
 
-      if (answers.length === 0) {
-        console.warn(`[getUniqueQuestions] Question ${question.id} has no answers, skipping`);
-        return null;
-      }
-
       return {
         id: question.id,
         question_text: question.question_text,
         section: question.section || "General",
         subsection: question.subsection || "",
-        display_order: index + 1,
+        display_order: question.display_order || 1,
         answers: shuffleArray(answers)
       };
     });
 
-    const validQuestions = formattedQuestions.filter(q => q !== null);
-    console.log(`[getUniqueQuestions] Returning ${validQuestions.length} valid questions`);
-
-    return shuffleArray(validQuestions);
+    console.log(`[getUniqueQuestions] Returning ${formattedQuestions.length} formatted questions`);
+    return shuffleArray(formattedQuestions);
 
   } catch (error) {
     console.error("[getUniqueQuestions] Error:", error);
@@ -786,7 +787,7 @@ async function updateSessionAnsweredCount(sessionId) {
 }
 
 // ======================================================
-// FIXED: saveUniqueResponse - Improved with direct queries and logging
+// saveUniqueResponse - Improved with direct queries and logging
 // ======================================================
 
 async function saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id, metadata = {}) {
