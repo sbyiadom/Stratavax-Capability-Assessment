@@ -836,38 +836,75 @@ async function updateSessionAnsweredCount(sessionId) {
   }
 }
 
+// ======================================================
+// FIXED: saveUniqueResponse - Improved with direct queries and logging
+// ======================================================
+
 async function saveUniqueResponse(session_id, user_id, assessment_id, question_id, answer_id, metadata = {}) {
   try {
+    console.log('[saveUniqueResponse] Called with:', { 
+      session_id, 
+      user_id, 
+      assessment_id, 
+      question_id, 
+      answer_id,
+      metadata 
+    });
+
     if (!session_id || !user_id || !assessment_id || !question_id || answer_id === null || answer_id === undefined || answer_id === "") {
+      console.error('[saveUniqueResponse] Missing required fields');
       return { success: false, error: "Missing required fields" };
     }
 
     const questionIdNum = parseInt(question_id, 10);
-    if (Number.isNaN(questionIdNum)) return { success: false, error: "Invalid question ID format" };
+    if (Number.isNaN(questionIdNum)) {
+      console.error('[saveUniqueResponse] Invalid question ID');
+      return { success: false, error: "Invalid question ID format" };
+    }
 
     const answerIdsArray = getAnswerIdsArray(answer_id);
-    if (answerIdsArray.length === 0) return { success: false, error: "Invalid answer ID format" };
+    if (answerIdsArray.length === 0) {
+      console.error('[saveUniqueResponse] Invalid answer ID');
+      return { success: false, error: "Invalid answer ID format" };
+    }
 
     const answerToStore = normalizeAnswerForStorage(answer_id);
 
-    const sessionResult = await safeSelectSingle(
-      "assessment_sessions",
-      (query) => query.eq("id", session_id).eq("user_id", user_id),
-      "id, status"
-    );
+    // Get current session status - using direct query
+    const { data: sessionData, error: sessionError } = await supabase
+      .from("assessment_sessions")
+      .select("id, status")
+      .eq("id", session_id)
+      .eq("user_id", user_id)
+      .maybeSingle();
 
-    if (!sessionResult.data) return { success: false, error: "Session not found" };
-    if (sessionResult.data.status !== "in_progress") {
-      return { success: false, error: "Session is " + sessionResult.data.status + ", cannot save responses" };
+    if (sessionError) {
+      console.error('[saveUniqueResponse] Session error:', sessionError);
+      return { success: false, error: sessionError.message };
     }
 
-    const existingResult = await safeSelectSingle(
-      "responses",
-      (query) => query.eq("session_id", session_id).eq("question_id", questionIdNum),
-      "id, answer_id, times_changed, initial_answer_id"
-    );
+    if (!sessionData) {
+      console.error('[saveUniqueResponse] Session not found');
+      return { success: false, error: "Session not found" };
+    }
 
-    const existingResponse = existingResult.data;
+    if (sessionData.status !== "in_progress") {
+      console.error('[saveUniqueResponse] Session not in progress:', sessionData.status);
+      return { success: false, error: "Session is " + sessionData.status + ", cannot save responses" };
+    }
+
+    // Check if response already exists - using direct query
+    const { data: existingResponse, error: existingError } = await supabase
+      .from("responses")
+      .select("id, answer_id, times_changed, initial_answer_id")
+      .eq("session_id", session_id)
+      .eq("question_id", questionIdNum)
+      .maybeSingle();
+
+    if (existingError) {
+      console.error('[saveUniqueResponse] Existing response error:', existingError);
+    }
+
     const isNewResponse = !existingResponse;
     const isAnswerChange = existingResponse ? String(existingResponse.answer_id || "") !== String(answerToStore || "") : false;
     const newChangeCount = isNewResponse ? 0 : toNumber(existingResponse.times_changed, 0) + (isAnswerChange ? 1 : 0);
@@ -886,44 +923,68 @@ async function saveUniqueResponse(session_id, user_id, assessment_id, question_i
     if (isNewResponse) {
       responseData.first_saved_at = nowIso();
       responseData.times_changed = 0;
-      responseData.initial_answer_id = metadata.initial_answer_id !== undefined && metadata.initial_answer_id !== null ? String(metadata.initial_answer_id) : answerToStore;
+      responseData.initial_answer_id = metadata.initial_answer_id !== undefined && metadata.initial_answer_id !== null 
+        ? String(metadata.initial_answer_id) 
+        : answerToStore;
+      responseData.created_at = nowIso();
     } else {
       responseData.times_changed = newChangeCount;
       responseData.initial_answer_id = existingResponse.initial_answer_id || answerToStore;
     }
 
-    if (isAnswerChange) {
-      await supabase.from("answer_history").insert({
-        session_id,
-        question_id: questionIdNum,
-        old_answer_id: existingResponse.answer_id,
-        new_answer_id: answerToStore,
-        changed_at: nowIso()
-      });
+    // Insert or update the response - using direct query
+    let result;
+    if (isNewResponse) {
+      result = await supabase
+        .from("responses")
+        .insert(responseData)
+        .select();
+    } else {
+      result = await supabase
+        .from("responses")
+        .update(responseData)
+        .eq("id", existingResponse.id)
+        .select();
     }
 
-    const { data, error } = await supabase
+    if (result.error) {
+      console.error('[saveUniqueResponse] Save error:', result.error);
+      return { success: false, error: result.error.message };
+    }
+
+    // Update the session's answered_questions count
+    const { count, error: countError } = await supabase
       .from("responses")
-      .upsert(responseData, { onConflict: "session_id,question_id" })
-      .select();
+      .select("id", { count: "exact", head: true })
+      .eq("session_id", session_id)
+      .eq("assessment_id", assessment_id);
 
-    if (error) {
-      console.error("Error saving response:", error);
-      return { success: false, error: error.message };
+    if (!countError) {
+      await supabase
+        .from("assessment_sessions")
+        .update({
+          answered_questions: count || 0,
+          updated_at: nowIso()
+        })
+        .eq("id", session_id);
     }
 
-    await updateQuestionTiming(session_id, questionIdNum, metadata);
-    await updateSessionAnsweredCount(session_id);
+    console.log('[saveUniqueResponse] Success:', { 
+      isNewResponse, 
+      isAnswerChange, 
+      newChangeCount,
+      answerToStore 
+    });
 
     return {
       success: true,
-      data,
+      data: result.data,
       isNewResponse,
       isAnswerChange,
-      timesChanged: responseData.times_changed
+      timesChanged: newChangeCount
     };
   } catch (error) {
-    console.error("Error in saveUniqueResponse:", error);
+    console.error('[saveUniqueResponse] Error:', error);
     return { success: false, error: error && error.message ? error.message : "Failed to save response" };
   }
 }
