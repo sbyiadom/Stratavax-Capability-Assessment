@@ -129,6 +129,7 @@ function AssessmentContent() {
   const [isAutoSubmitting, setIsAutoSubmitting] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [isTimeExpired, setIsTimeExpired] = useState(false);
 
   const sessionIdRef = useRef(null);
   const submittingRef = useRef(false);
@@ -219,19 +220,100 @@ function AssessmentContent() {
   }
 
   async function handleAutoSubmit(reason) {
-    if (alreadySubmitted || submittingRef.current || autoSubmitRef.current) return;
+    // Prevent multiple auto-submits
+    if (alreadySubmitted || submittingRef.current || autoSubmitRef.current) {
+      console.log('[AutoSubmit] Already in progress or completed');
+      return;
+    }
+    
     try {
+      console.log('[AutoSubmit] Starting auto-submit with reason:', reason);
       autoSubmitRef.current = true;
       submittingRef.current = true;
       setIsSubmitting(true);
       setIsAutoSubmitting(true);
-      await completeAssessmentSafely(true, reason);
+      setIsTimeExpired(true);
+
+      // ============================================================
+      // CRITICAL FIX: Save ALL answers before submitting
+      // ============================================================
+      console.log('[AutoSubmit] Saving all answers before submission...');
+      
+      const currentQuestionId = questions[currentIndex]?.id || null;
+      
+      // Save all pending answers to the database
+      const answerPromises = Object.entries(answers).map(([qId, answer]) => {
+        if (answer === null || answer === undefined || answer === '') return null;
+        
+        const answerToStore = Array.isArray(answer) ? answer.join(",") : String(answer);
+        const changeCount = answerChangeCount[qId] || 0;
+        const initialAns = initialAnswers[qId] || answer;
+        
+        console.log(`[AutoSubmit] Saving answer for question ${qId}:`, answerToStore);
+        
+        return saveUniqueResponse(
+          session.id,
+          user.id,
+          assessmentId,
+          qId,
+          answerToStore,
+          {
+            time_spent_seconds: Math.floor((Date.now() - questionStartTime) / 1000),
+            times_changed: changeCount,
+            initial_answer_id: Array.isArray(initialAns) ? initialAns.join(",") : String(initialAns),
+            is_answer_change: false
+          }
+        );
+      });
+
+      // Wait for all answers to be saved
+      const saveResults = await Promise.all(answerPromises.filter(p => p !== null));
+      const savedCount = saveResults.filter(r => r && r.success).length;
+      console.log(`[AutoSubmit] Saved ${savedCount} answers successfully`);
+
+      // Save progress
+      await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, currentQuestionId);
+      await updateSessionTimer(session.id, elapsedSeconds);
+      await updateAnsweredQuestionsCount(answers);
+
+      console.log('[AutoSubmit] All answers saved, submitting assessment...');
+
+      // Now submit the assessment
+      const result = await submitAssessment(session.id, {
+        autoSubmitted: true,
+        autoSubmitReason: reason || 'Auto-submitted because the assessment timer expired.',
+        allowIncomplete: true
+      });
+
+      console.log('[AutoSubmit] Submit successful:', result);
+
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
-      setTimeout(() => router.push("/candidate/dashboard"), 1500);
+      
+      // Redirect to results
+      setTimeout(() => {
+        const resultId = result.result_id || result.id || result.result?.id;
+        if (resultId) {
+          router.push(`/candidate/results/${resultId}`);
+        } else {
+          router.push('/candidate/dashboard');
+        }
+      }, 2000);
+
     } catch (err) {
-      console.error("Auto-submit failed:", err);
-      alert("Auto-submit failed. Please contact support.");
+      console.error('[AutoSubmit] Failed:', err);
+      alert('Auto-submit failed. Please contact support with this error: ' + (err.message || 'Unknown error'));
+      
+      // Even if auto-submit fails, try to save progress
+      try {
+        await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id || null);
+      } catch (saveErr) {
+        console.error('[AutoSubmit] Failed to save progress:', saveErr);
+      }
+      
+      setTimeout(() => {
+        router.push('/candidate/dashboard');
+      }, 3000);
     } finally {
       submittingRef.current = false;
       setIsSubmitting(false);
@@ -240,7 +322,7 @@ function AssessmentContent() {
   }
 
   async function logViolation(violationType) {
-    if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting) return;
+    if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting || isTimeExpired) return;
     const newCount = violationCount + 1;
     setViolationCount(newCount);
 
@@ -268,7 +350,7 @@ function AssessmentContent() {
   }
 
   useEffect(() => {
-    if (loading || alreadySubmitted || accessDenied || !session) return;
+    if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
 
     const handleCopy = (event) => { event.preventDefault(); logViolation("Copy attempt"); return false; };
     const handlePaste = (event) => { event.preventDefault(); logViolation("Paste attempt"); return false; };
@@ -296,7 +378,7 @@ function AssessmentContent() {
       document.removeEventListener("contextmenu", handleContextMenu);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [loading, alreadySubmitted, accessDenied, session, violationCount, isAutoSubmitting]);
+  }, [loading, alreadySubmitted, accessDenied, session, violationCount, isAutoSubmitting, isTimeExpired]);
 
   useEffect(() => {
     const init = async () => {
@@ -312,6 +394,7 @@ function AssessmentContent() {
         setSaveStatus({});
         setElapsedSeconds(0);
         setViolationCount(0);
+        setIsTimeExpired(false);
         sessionIdRef.current = null;
         submittingRef.current = false;
         autoSubmitRef.current = false;
@@ -327,7 +410,6 @@ function AssessmentContent() {
         const currentUser = authSession.user;
         setUser(currentUser);
 
-        // Check if assessment is already completed
         const completed = await isAssessmentCompleted(currentUser.id, assessmentId);
         if (completed) {
           setAlreadySubmitted(true);
@@ -335,7 +417,6 @@ function AssessmentContent() {
           return;
         }
 
-        // Check candidate access
         const accessData = await fetchCandidateAccess(currentUser.id, assessmentId);
         if (!accessData || !["unblocked", "in_progress"].includes(accessData.status)) {
           setAccessDenied(true);
@@ -343,7 +424,6 @@ function AssessmentContent() {
           return;
         }
 
-        // Get assessment data
         const assessmentData = await getAssessmentById(assessmentId);
         setAssessment(assessmentData);
         setAssessmentType(assessmentData ? assessmentData.assessment_type : null);
@@ -353,7 +433,6 @@ function AssessmentContent() {
           assessmentData ? assessmentData.assessment_type : null
         );
 
-        // Create session
         const sessionData = await createAssessmentSession(
           currentUser.id,
           assessmentId,
@@ -364,32 +443,27 @@ function AssessmentContent() {
         setSession(sessionData);
         sessionIdRef.current = sessionData.id;
 
-        // Get progress
         const progress = await getProgress(currentUser.id, assessmentId);
         const progressElapsed = progress && progress.elapsed_seconds ? safeNumber(progress.elapsed_seconds, 0) : 0;
         setElapsedSeconds(progressElapsed);
         setTimeLimitSeconds(progressElapsed + getRemainingFromSession(sessionData, 10800));
 
-        // FIXED: Get questions with better error handling
         let uniqueQuestions = [];
         try {
           uniqueQuestions = safeArray(await getUniqueQuestions(assessmentId));
           console.log(`[Assessment] Retrieved ${uniqueQuestions.length} questions for assessment ${assessmentId}`);
         } catch (questionsError) {
           console.error("[Assessment] Error fetching questions:", questionsError);
-          // Continue with empty array - will show "No Questions Available" message
           uniqueQuestions = [];
         }
         
         setQuestions(uniqueQuestions);
         
-        // If no questions, still allow user to see the "No Questions Available" message
         if (uniqueQuestions.length === 0) {
           setLoading(false);
           return;
         }
 
-        // Get session responses
         const responses = await getSessionResponses(sessionData.id);
         const restoredAnswers = {};
         const restoredInitialAnswers = {};
@@ -427,13 +501,11 @@ function AssessmentContent() {
         setInitialAnswers(restoredInitialAnswers);
         setAnswerChangeCount(restoredChangeCount);
 
-        // Set last question index from progress
         if (progress && progress.last_question_id) {
           const lastIndex = uniqueQuestions.findIndex((question) => String(question.id) === String(progress.last_question_id));
           if (lastIndex >= 0) setCurrentIndex(lastIndex);
         }
 
-        // Get violation count
         const violationResponse = await supabase
           .from("assessment_sessions")
           .select("violation_count")
@@ -456,25 +528,43 @@ function AssessmentContent() {
   }, [assessmentId, router]);
 
   useEffect(() => {
-    if (loading || alreadySubmitted || accessDenied || !session || isAutoSubmitting || questions.length === 0) return;
+    if (loading || alreadySubmitted || accessDenied || !session || isAutoSubmitting || questions.length === 0 || isTimeExpired) return;
+    
     const timer = setInterval(() => {
       setElapsedSeconds((previous) => {
         const next = previous + 1;
+        
+        // Check if time has expired
         if (timeLimitSeconds > 0 && next >= timeLimitSeconds) {
-          handleAutoSubmit("Auto-submitted because the assessment timer expired.");
+          console.log('[Timer] Time expired!');
+          setIsTimeExpired(true);
+          if (!autoSubmitRef.current && !submittingRef.current) {
+            handleAutoSubmit("Auto-submitted because the assessment timer expired.");
+          }
+          return next;
         }
+        
+        // Save progress every 30 seconds
         if (next % 30 === 0 && session && user) {
           const currentQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
           saveProgress(session.id, user.id, assessmentId, next, currentQuestionId);
           updateSessionTimer(session.id, next);
         }
+        
         return next;
       });
     }, 1000);
+    
     return () => clearInterval(timer);
-  }, [loading, alreadySubmitted, accessDenied, session, isAutoSubmitting, timeLimitSeconds, user, assessmentId, currentIndex, questions]);
+  }, [loading, alreadySubmitted, accessDenied, session, isAutoSubmitting, timeLimitSeconds, user, assessmentId, currentIndex, questions, isTimeExpired]);
 
   async function handleAnswerSelect(questionId, answerId, multipleCorrect) {
+    // Check if time has expired
+    if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
+      alert("Time has expired! The assessment is being submitted automatically.");
+      return;
+    }
+    
     if (alreadySubmitted || !session || !user || !questionId || !answerId || accessDenied || isAutoSubmitting) return;
 
     const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
@@ -547,6 +637,11 @@ function AssessmentContent() {
   }
 
   async function moveToQuestion(nextIndex) {
+    if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
+      alert("Time has expired! The assessment is being submitted automatically.");
+      return;
+    }
+    
     if (isAutoSubmitting || nextIndex < 0 || nextIndex >= questions.length) return;
     const currentQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
     if (currentQuestionId) {
@@ -560,7 +655,7 @@ function AssessmentContent() {
   }
 
   async function handleSubmit() {
-    if (!session || alreadySubmitted || accessDenied || isAutoSubmitting || submittingRef.current) return;
+    if (!session || alreadySubmitted || accessDenied || isAutoSubmitting || submittingRef.current || isTimeExpired) return;
     const unansweredCount = questions.length - countAnswered(answers);
     if (unansweredCount > 0) {
       alert("Please answer all questions before submitting. " + unansweredCount + " question(s) remaining.");
@@ -585,7 +680,7 @@ function AssessmentContent() {
   }
 
   async function handleBackClick() {
-    if (session && user && !alreadySubmitted) {
+    if (session && user && !alreadySubmitted && !isTimeExpired) {
       const currentQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
       await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, currentQuestionId);
       await updateSessionTimer(session.id, elapsedSeconds);
@@ -593,12 +688,12 @@ function AssessmentContent() {
     router.push("/candidate/dashboard");
   }
 
+  const isDisabled = alreadySubmitted || isAutoSubmitting || isTimeExpired;
+
   if (loading) return <div style={styles.loadingContainer}><div style={styles.loadingSpinner} /><h2>Loading Assessment...</h2><p>Preparing your questions</p></div>;
   if (accessDenied) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.errorIcon}>🔒</div><h2>Access Denied</h2><p>This assessment is not currently available for your account.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
   if (alreadySubmitted && !showSuccessModal) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.successIcon}>✅</div><h2>Assessment Completed</h2><p>This assessment has already been submitted.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
   if (pageError) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.errorIcon}>⚠️</div><h2>Error Loading Assessment</h2><p>{pageError}</p><button onClick={() => window.location.reload()} style={styles.primaryButton}>Try Again</button></div></div>;
-  
-  // FIXED: Better "No Questions" message with more helpful information
   if (!questions.length) {
     return (
       <div style={styles.messageContainer}>
@@ -623,6 +718,17 @@ function AssessmentContent() {
     <>
       {showViolationWarning && <div style={styles.violationBanner}><span>⚠️</span><span>{violationMessage}</span></div>}
       {isAutoSubmitting && <div style={styles.autoSubmitOverlay}><div style={styles.autoSubmitCard}><div style={styles.autoSubmitSpinner} /><h3>Auto-submitting assessment...</h3><p>Please wait while your assessment is submitted.</p></div></div>}
+      
+      {isTimeExpired && !alreadySubmitted && (
+        <div style={styles.autoSubmitOverlay}>
+          <div style={styles.autoSubmitCard}>
+            <div style={styles.autoSubmitSpinner} />
+            <h3>⏰ Time Expired!</h3>
+            <p>Your assessment is being submitted automatically.</p>
+            <p style={{ fontSize: '13px', color: '#64748b', marginTop: '8px' }}>Please wait...</p>
+          </div>
+        </div>
+      )}
 
       {showSubmitModal && (
         <div style={styles.modalOverlay}>
@@ -638,7 +744,7 @@ function AssessmentContent() {
             <div style={styles.modalWarning}><span>⚠️</span><span><strong>One attempt only:</strong> After submission, the assessment cannot be retaken unless reset by your supervisor.</span></div>
             <div style={styles.modalActions}>
               <button onClick={() => setShowSubmitModal(false)} style={styles.modalSecondaryButton}>Continue Reviewing</button>
-              <button onClick={handleSubmit} disabled={isSubmitting} style={{ ...styles.modalPrimaryButton, background: isSubmitting ? "#ccc" : "#4caf50", cursor: isSubmitting ? "not-allowed" : "pointer" }}>{isSubmitting ? "Submitting..." : "Submit Assessment"}</button>
+              <button onClick={handleSubmit} disabled={isSubmitting || isTimeExpired} style={{ ...styles.modalPrimaryButton, background: isSubmitting || isTimeExpired ? "#ccc" : "#4caf50", cursor: isSubmitting || isTimeExpired ? "not-allowed" : "pointer" }}>{isSubmitting ? "Submitting..." : "Submit Assessment"}</button>
             </div>
           </div>
         </div>
@@ -653,14 +759,20 @@ function AssessmentContent() {
               <button onClick={handleBackClick} style={styles.backButton}>←</button>
               <div>
                 <div style={styles.headerTitle}>{assessment ? assessment.title : "Assessment"}</div>
-                <div style={styles.headerMeta}>Question {currentIndex + 1} of {questions.length} • {currentQuestion.section || "General"}{isMultipleCorrect && <span style={{ marginLeft: "10px", color: "#ffeb3b", fontSize: "12px" }}>(Select all that apply)</span>}</div>
+                <div style={styles.headerMeta}>
+                  Question {currentIndex + 1} of {questions.length} • {currentQuestion.section || "General"}
+                  {isMultipleCorrect && <span style={{ marginLeft: "10px", color: "#ffeb3b", fontSize: "12px" }}>(Select all that apply)</span>}
+                  {isTimeExpired && <span style={{ marginLeft: "10px", color: "#ffeb3b", fontSize: "12px" }}>⏰ TIME EXPIRED - Auto-submitting...</span>}
+                </div>
               </div>
             </div>
             <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
               {violationCount > 0 && <div style={{ background: violationCount >= 3 ? "#f44336" : "#ff9800", color: "white", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold" }}>⚠️ {violationCount}/3 Violations</div>}
-              <div style={{ ...styles.timer, background: isTimeCritical ? "rgba(211,47,47,0.2)" : isTimeWarning ? "rgba(255,152,0,0.2)" : "rgba(255,255,255,0.15)" }}>
+              <div style={{ ...styles.timer, background: isTimeCritical ? "rgba(211,47,47,0.2)" : isTimeWarning ? "rgba(255,152,0,0.2)" : "rgba(255,255,255,0.15)", border: isTimeExpired ? "2px solid #f44336" : "1px solid rgba(255,255,255,0.3)" }}>
                 <div style={styles.timerLabel}>TIME REMAINING</div>
-                <div style={{ ...styles.timerValue, color: isTimeCritical ? "#ffebee" : isTimeWarning ? "#fff3e0" : "white" }}>{timeRemainingFormatted}</div>
+                <div style={{ ...styles.timerValue, color: isTimeCritical ? "#ffebee" : isTimeWarning ? "#fff3e0" : "white" }}>
+                  {isTimeExpired ? "EXPIRED" : timeRemainingFormatted}
+                </div>
               </div>
             </div>
           </div>
@@ -675,13 +787,33 @@ function AssessmentContent() {
                 {safeArray(currentQuestion.answers).map((answer, index) => {
                   const selected = isAnswerSelected(currentQuestion.id, answer.id);
                   const optionLetter = String.fromCharCode(65 + index);
-                  return <button key={answer.id} onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)} disabled={alreadySubmitted || isAutoSubmitting} style={{ ...styles.answerCard, background: selected ? "linear-gradient(135deg, " + gradientStart + ", " + gradientEnd + ")" : "white", borderColor: selected ? gradientStart : "#e2e8f0", opacity: isAutoSubmitting ? 0.6 : 1 }}><div style={{ ...styles.answerLetter, background: selected ? "rgba(255,255,255,0.2)" : "#f1f5f9", color: selected ? "white" : "#475569" }}>{optionLetter}</div><span style={{ color: selected ? "white" : "#1e293b" }}>{answer.answer_text}{isMultipleCorrect && selected && <span style={{ marginLeft: "8px", fontSize: "12px" }}>✓</span>}</span></button>;
+                  return (
+                    <button 
+                      key={answer.id} 
+                      onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)} 
+                      disabled={isDisabled}
+                      style={{ 
+                        ...styles.answerCard, 
+                        background: selected ? "linear-gradient(135deg, " + gradientStart + ", " + gradientEnd + ")" : "white", 
+                        borderColor: selected ? gradientStart : "#e2e8f0", 
+                        opacity: isDisabled ? 0.6 : 1,
+                        cursor: isDisabled ? "not-allowed" : "pointer"
+                      }}
+                    >
+                      <div style={{ ...styles.answerLetter, background: selected ? "rgba(255,255,255,0.2)" : "#f1f5f9", color: selected ? "white" : "#475569" }}>{optionLetter}</div>
+                      <span style={{ color: selected ? "white" : "#1e293b" }}>{answer.answer_text}{isMultipleCorrect && selected && <span style={{ marginLeft: "8px", fontSize: "12px" }}>✓</span>}</span>
+                    </button>
+                  );
                 })}
               </div>
               {isMultipleCorrect && <div style={styles.multipleHint}>💡 This question has multiple correct answers. Select all that apply.</div>}
               <div style={styles.navigation}>
-                <button onClick={() => moveToQuestion(currentIndex - 1)} disabled={currentIndex === 0 || isAutoSubmitting} style={{ ...styles.navButton, opacity: currentIndex === 0 || isAutoSubmitting ? 0.5 : 1 }}>← Previous</button>
-                {isLastQuestion ? <button onClick={() => setShowSubmitModal(true)} disabled={isAutoSubmitting} style={styles.submitButton}>Submit</button> : <button onClick={() => moveToQuestion(currentIndex + 1)} disabled={isAutoSubmitting} style={styles.nextButton}>Next →</button>}
+                <button onClick={() => moveToQuestion(currentIndex - 1)} disabled={currentIndex === 0 || isDisabled} style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}>← Previous</button>
+                {isLastQuestion ? (
+                  <button onClick={() => setShowSubmitModal(true)} disabled={isDisabled} style={styles.submitButton}>Submit</button>
+                ) : (
+                  <button onClick={() => moveToQuestion(currentIndex + 1)} disabled={isDisabled} style={styles.nextButton}>Next →</button>
+                )}
               </div>
             </div>
           </div>
@@ -700,7 +832,23 @@ function AssessmentContent() {
                   const answered = questionAnswer !== undefined && (Array.isArray(questionAnswer) ? questionAnswer.length > 0 : questionAnswer !== null);
                   const current = index === currentIndex;
                   const changed = answerChangeCount[question.id] > 0;
-                  return <button key={question.id} onClick={() => moveToQuestion(index)} disabled={isAutoSubmitting} style={{ ...styles.gridItem, background: current ? gradientStart : answered ? changed ? "#ff9800" : "#4caf50" : "white", color: current || answered ? "white" : "#1e293b", borderColor: current ? gradientStart : "#e2e8f0", opacity: isAutoSubmitting ? 0.6 : 1 }}>{index + 1}</button>;
+                  return (
+                    <button 
+                      key={question.id} 
+                      onClick={() => moveToQuestion(index)} 
+                      disabled={isDisabled}
+                      style={{ 
+                        ...styles.gridItem, 
+                        background: current ? gradientStart : answered ? changed ? "#ff9800" : "#4caf50" : "white", 
+                        color: current || answered ? "white" : "#1e293b", 
+                        borderColor: current ? gradientStart : "#e2e8f0", 
+                        opacity: isDisabled ? 0.6 : 1,
+                        cursor: isDisabled ? "not-allowed" : "pointer"
+                      }}
+                    >
+                      {index + 1}
+                    </button>
+                  );
                 })}
               </div>
               <div style={styles.legend}>
