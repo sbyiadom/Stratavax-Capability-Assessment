@@ -53,7 +53,7 @@ export default async function handler(req, res) {
     console.log("[API] Session ID:", result.session_id);
 
     // ============================================================
-    // BUILD CATEGORY BREAKDOWN FROM QUESTIONS AND RESPONSES
+    // BUILD CATEGORY BREAKDOWN WITH CORRECT SCORING
     // ============================================================
     let categoryBreakdown = [];
 
@@ -71,10 +71,19 @@ export default async function handler(req, res) {
       if (!assessmentTypeId) {
         console.warn("[API] No assessment type ID found");
       } else {
-        // Get all questions for this assessment type
+        // Get all questions with their answers and scores
         const { data: questions, error: questionsError } = await serviceClient
           .from("unique_questions")
-          .select("id, section, question_text")
+          .select(`
+            id,
+            section,
+            question_text,
+            unique_answers (
+              id,
+              answer_text,
+              score
+            )
+          `)
           .eq("assessment_type_id", assessmentTypeId);
 
         if (questionsError) {
@@ -95,7 +104,7 @@ export default async function handler(req, res) {
 
         console.log("[API] Responses found:", responses?.length || 0);
 
-        // Build category breakdown if we have questions
+        // Build category breakdown with correct scoring
         if (questions && questions.length > 0) {
           // Map responses by question_id
           const responseMap = {};
@@ -103,27 +112,52 @@ export default async function handler(req, res) {
             responseMap[r.question_id] = r.answer_id;
           });
 
-          // Group by section/category
+          // Group by section/category with proper scoring
           const categoryMap = {};
 
           questions.forEach(q => {
             const section = q.section || "General";
+            const answers = q.unique_answers || [];
+            
+            // Calculate max score for this question (highest score among answers)
+            let maxScore = 0;
+            answers.forEach(a => {
+              if (a.score > maxScore) maxScore = a.score;
+            });
+            // If all scores are 0, default to 1
+            if (maxScore === 0) maxScore = 1;
+
             if (!categoryMap[section]) {
-              categoryMap[section] = { earned: 0, max: 0, count: 0 };
+              categoryMap[section] = { 
+                earned: 0, 
+                max: 0, 
+                count: 0,
+                questions: []
+              };
             }
-            categoryMap[section].max += 1;
-            if (responseMap[q.id]) {
-              categoryMap[section].earned += 1;
-            }
+
+            categoryMap[section].max += maxScore;
             categoryMap[section].count += 1;
+
+            // Check if this question was answered
+            const answerId = responseMap[q.id];
+            let earned = 0;
+            if (answerId) {
+              // Find the selected answer and its score
+              const selectedAnswer = answers.find(a => String(a.id) === String(answerId));
+              if (selectedAnswer) {
+                earned = selectedAnswer.score || 0;
+              }
+            }
+            categoryMap[section].earned += earned;
           });
 
-          // Convert to array with percentages and dimensions
+          // Convert to array with percentages
           categoryBreakdown = Object.keys(categoryMap).map(key => {
             const data = categoryMap[key];
             const percentage = data.max > 0 ? Math.round((data.earned / data.max) * 100) : 0;
             
-            // Determine dimension (workplace vs intellectual)
+            // Determine dimension
             let dimension = 'other';
             const workplaceKeywords = [
               'safety', 'risk', 'problem', 'troubleshoot', 'technical', 
@@ -144,16 +178,21 @@ export default async function handler(req, res) {
             
             return {
               category: key,
-              earned: data.earned,
-              max: data.max,
+              earned: Math.round(data.earned * 100) / 100,
+              max: Math.round(data.max * 100) / 100,
               percentage: percentage,
               dimension: dimension,
-              count: data.count
+              count: data.count,
+              // Store the raw earned/max for display
+              earnedDisplay: Math.round(data.earned),
+              maxDisplay: Math.round(data.max)
             };
           });
 
           console.log("[API] Category breakdown built:", categoryBreakdown.length);
-          console.log("[API] Categories:", categoryBreakdown.map(c => c.category).join(', '));
+          console.log("[API] Categories with scores:", categoryBreakdown.map(c => 
+            `${c.category}: ${c.earned}/${c.max} (${c.percentage}%)`
+          ).join(', '));
         }
       }
     } catch (err) {
