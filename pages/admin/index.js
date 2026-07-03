@@ -244,6 +244,9 @@ export default function AdminDashboard() {
           <ActionCard href="/admin/batch-manage" icon="📦" title="Batch Manage" description="Perform bulk administrative actions and candidate updates." />
           <ActionCard href="/admin/audit-logs" icon="📊" title="Audit Logs" description="View system activity, access events, and administrative actions." />
           <ActionCard href="/admin/system-settings" icon="⚙️" title="System Settings" description="Configure platform settings and assessment parameters." />
+          
+          {/* NEW: Reports Card */}
+          <ActionCard href="/admin/reports" icon="📄" title="Assessment Reports" description="View detailed assessment reports for all candidates." />
         </div>
 
         <div style={styles.lowerGrid}>
