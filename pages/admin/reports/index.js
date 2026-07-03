@@ -22,30 +22,78 @@ export default function AdminReportsList() {
     try {
       setLoading(true);
 
-      const { data, error } = await supabase
+      // Step 1: Get all assessment results
+      const { data: results, error: resultsError } = await supabase
         .from('assessment_results')
-        .select(`
-          id,
-          user_id,
-          assessment_id,
-          percentage_score,
-          workplace_readiness,
-          intellectual_capability,
-          recommendation,
-          completed_at,
-          is_auto_submitted,
-          candidate_profiles!inner(full_name, email),
-          assessments!inner(title, assessment_type:assessment_types(code))
-        `)
+        .select('*')
         .order('completed_at', { ascending: false });
 
-      if (error) throw error;
+      if (resultsError) {
+        console.error('Error fetching results:', resultsError);
+        setReports([]);
+        setLoading(false);
+        return;
+      }
 
-      // Filter for National Service assessments
-      const nationalServiceReports = data.filter(
-        item => item.assessments?.assessment_type?.code === 'national_service'
+      console.log('All results:', results);
+
+      // Step 2: Get assessment details for each result
+      const enrichedReports = await Promise.all(
+        results.map(async (result) => {
+          // Get assessment info
+          const { data: assessment, error: assessmentError } = await supabase
+            .from('assessments')
+            .select('id, title, assessment_type_id')
+            .eq('id', result.assessment_id)
+            .single();
+
+          if (assessmentError) {
+            console.error('Error fetching assessment:', assessmentError);
+            return null;
+          }
+
+          // Get assessment type
+          let assessmentTypeCode = null;
+          if (assessment?.assessment_type_id) {
+            const { data: type, error: typeError } = await supabase
+              .from('assessment_types')
+              .select('code')
+              .eq('id', assessment.assessment_type_id)
+              .single();
+
+            if (!typeError && type) {
+              assessmentTypeCode = type.code;
+            }
+          }
+
+          // Get candidate profile
+          const { data: profile, error: profileError } = await supabase
+            .from('candidate_profiles')
+            .select('full_name, email')
+            .eq('id', result.user_id)
+            .single();
+
+          if (profileError) {
+            console.error('Error fetching profile:', profileError);
+          }
+
+          return {
+            ...result,
+            assessment_title: assessment?.title || 'Unknown',
+            assessment_type_code: assessmentTypeCode,
+            candidate_name: profile?.full_name || 'Unknown',
+            candidate_email: profile?.email || ''
+          };
+        })
       );
 
+      // Filter out nulls and filter for National Service
+      const validReports = enrichedReports.filter(r => r !== null);
+      const nationalServiceReports = validReports.filter(
+        r => r.assessment_type_code === 'national_service'
+      );
+
+      console.log('National Service reports:', nationalServiceReports.length);
       setReports(nationalServiceReports);
       setLoading(false);
     } catch (error) {
@@ -114,14 +162,14 @@ export default function AdminReportsList() {
                   <tr key={report.id} style={styles.tr}>
                     <td style={styles.td}>
                       <div style={styles.candidateName}>
-                        {report.candidate_profiles?.full_name || 'Unknown'}
+                        {report.candidate_name || 'Unknown'}
                       </div>
                       <div style={styles.candidateEmail}>
-                        {report.candidate_profiles?.email || ''}
+                        {report.candidate_email || ''}
                       </div>
                     </td>
                     <td style={styles.td}>
-                      {report.assessments?.title || 'N/A'}
+                      {report.assessment_title || 'N/A'}
                     </td>
                     <td style={styles.td}>
                       <span style={{
