@@ -27,7 +27,7 @@ export default function SupervisorReportsList() {
       // Step 1: Get all candidates assigned to this supervisor
       const { data: assignedCandidates, error: candidatesError } = await supabase
         .from('candidate_profiles')
-        .select('id')
+        .select('id, full_name, email, university, programme')
         .eq('supervisor_id', supervisorId);
 
       if (candidatesError) {
@@ -53,7 +53,6 @@ export default function SupervisorReportsList() {
           assessment_id,
           status,
           result_id,
-          candidate_profiles!inner(full_name, email, university, programme),
           assessments!inner(title, assessment_type:assessment_types(code))
         `)
         .in('user_id', candidateIds)
@@ -70,7 +69,19 @@ export default function SupervisorReportsList() {
         item => item.assessments?.assessment_type?.code === 'national_service'
       );
 
-      setReports(nationalServiceReports);
+      // Enrich with candidate info
+      const enrichedReports = nationalServiceReports.map(report => {
+        const candidate = assignedCandidates.find(c => c.id === report.user_id);
+        return {
+          ...report,
+          candidate_name: candidate?.full_name || 'Unknown',
+          candidate_email: candidate?.email || '',
+          candidate_university: candidate?.university || '',
+          candidate_programme: candidate?.programme || ''
+        };
+      });
+
+      setReports(enrichedReports);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching reports:', error);
@@ -105,28 +116,30 @@ export default function SupervisorReportsList() {
         </button>
 
         <div style={styles.header}>
-          <h1 style={styles.title}>National Service Reports</h1>
+          <h1 style={styles.title}>📋 National Service Reports</h1>
           <p style={styles.subtitle}>Review completed National Service assessments for your candidates.</p>
           <div style={styles.stats}>
-            <span style={styles.statBadge}>Total Reports: {reports.length}</span>
+            <span style={styles.statBadge}>📊 Total Reports: {reports.length}</span>
           </div>
         </div>
 
         {reports.length === 0 ? (
           <div style={styles.emptyState}>
+            <div style={styles.emptyIcon}>📭</div>
             <p>No completed National Service assessments to review.</p>
+            <p style={styles.emptySubtext}>When candidates complete their National Service assessment, their reports will appear here.</p>
           </div>
         ) : (
           <div style={styles.tableContainer}>
             <table style={styles.table}>
               <thead>
                 <tr>
-                  <th style={styles.th}>Candidate</th>
-                  <th style={styles.th}>Assessment</th>
-                  <th style={styles.th}>University</th>
-                  <th style={styles.th}>Programme</th>
-                  <th style={styles.th}>Status</th>
-                  <th style={styles.th}>Action</th>
+                  <th style={styles.th}>👤 Candidate</th>
+                  <th style={styles.th}>📝 Assessment</th>
+                  <th style={styles.th}>🏫 University</th>
+                  <th style={styles.th}>📚 Programme</th>
+                  <th style={styles.th}>📊 Status</th>
+                  <th style={styles.th}>⚡ Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -134,20 +147,20 @@ export default function SupervisorReportsList() {
                   <tr key={report.id} style={styles.tr}>
                     <td style={styles.td}>
                       <div style={styles.candidateName}>
-                        {report.candidate_profiles?.full_name || 'Unknown'}
+                        {report.candidate_name || 'Unknown'}
                       </div>
                       <div style={styles.candidateEmail}>
-                        {report.candidate_profiles?.email || ''}
+                        {report.candidate_email || ''}
                       </div>
                     </td>
                     <td style={styles.td}>
                       {report.assessments?.title || 'N/A'}
                     </td>
                     <td style={styles.td}>
-                      {report.candidate_profiles?.university || 'N/A'}
+                      {report.candidate_university || 'N/A'}
                     </td>
                     <td style={styles.td}>
-                      {report.candidate_profiles?.programme || 'N/A'}
+                      {report.candidate_programme || 'N/A'}
                     </td>
                     <td style={styles.td}>
                       <span style={{
@@ -269,7 +282,7 @@ const styles = {
     transition: 'background 0.2s'
   },
   candidateName: {
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#1a202c'
   },
   candidateEmail: {
@@ -284,14 +297,14 @@ const styles = {
     display: 'inline-block'
   },
   viewButton: {
-    padding: '6px 16px',
+    padding: '8px 20px',
     background: '#1a237e',
     color: 'white',
     border: 'none',
-    borderRadius: '6px',
+    borderRadius: '8px',
     cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '500',
+    fontSize: '14px',
+    fontWeight: '600',
     transition: 'background 0.2s'
   },
   noReport: {
@@ -305,6 +318,15 @@ const styles = {
     background: 'white',
     borderRadius: '12px',
     border: '1px solid #e2e8f0'
+  },
+  emptyIcon: {
+    fontSize: '48px',
+    marginBottom: '16px'
+  },
+  emptySubtext: {
+    fontSize: '13px',
+    color: '#94a3b8',
+    marginTop: '8px'
   }
 };
 
