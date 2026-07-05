@@ -33,10 +33,14 @@ export default async function handler(req, res) {
       }
     );
 
-    // Get the result
+    // Get the result with full data
     const resultResponse = await serviceClient
       .from("assessment_results")
-      .select("*")
+      .select(`
+        *,
+        candidate_profiles!inner(full_name, email, university, programme, graduation_year, preferred_department),
+        assessments!inner(title, assessment_type:assessment_types(id, code, name))
+      `)
       .eq("id", resultId)
       .single();
 
@@ -50,235 +54,59 @@ export default async function handler(req, res) {
 
     const result = resultResponse.data;
     console.log("[API] Result found:", result.id);
-    console.log("[API] Session ID:", result.session_id);
+    console.log("[API] Assessment type code:", result.assessments?.assessment_type?.code);
 
-    // ============================================================
-    // BUILD CATEGORY BREAKDOWN WITH CORRECT SCORING
-    // ============================================================
-    let categoryBreakdown = [];
+    // Determine if this is a National Service assessment
+    const assessmentTypeCode = result.assessments?.assessment_type?.code || null;
+    const isNationalService = 
+      assessmentTypeCode === 'national_service' ||
+      (result.workplace_readiness !== null && result.workplace_readiness !== undefined) ||
+      (result.report_data && result.report_data.dimensions && 
+       result.report_data.dimensions.workplaceReadiness !== undefined);
 
-    try {
-      // Get the assessment type ID
-      const assessmentResponse = await serviceClient
-        .from("assessments")
-        .select("assessment_type_id")
-        .eq("id", result.assessment_id)
-        .single();
+    console.log("[API] isNationalService:", isNationalService);
 
-      const assessmentTypeId = assessmentResponse.data?.assessment_type_id;
-      console.log("[API] Assessment type ID:", assessmentTypeId);
+    // Build the report data
+    let report = result.report_data || null;
 
-      if (!assessmentTypeId) {
-        console.warn("[API] No assessment type ID found");
-      } else {
-        // Get all questions with their answers and scores
-        const { data: questions, error: questionsError } = await serviceClient
-          .from("unique_questions")
-          .select(`
-            id,
-            section,
-            question_text,
-            unique_answers (
-              id,
-              answer_text,
-              score
-            )
-          `)
-          .eq("assessment_type_id", assessmentTypeId);
-
-        if (questionsError) {
-          console.error("[API] Questions error:", questionsError);
-        }
-
-        console.log("[API] Questions found:", questions?.length || 0);
-
-        // Get all responses for this session
-        const { data: responses, error: responsesError } = await serviceClient
-          .from("responses")
-          .select("question_id, answer_id")
-          .eq("session_id", result.session_id);
-
-        if (responsesError) {
-          console.error("[API] Responses error:", responsesError);
-        }
-
-        console.log("[API] Responses found:", responses?.length || 0);
-
-        // Build category breakdown with correct scoring
-        if (questions && questions.length > 0) {
-          // Map responses by question_id
-          const responseMap = {};
-          responses?.forEach(r => {
-            responseMap[r.question_id] = r.answer_id;
-          });
-
-          // Group by section/category with proper scoring
-          const categoryMap = {};
-
-          questions.forEach(q => {
-            const section = q.section || "General";
-            const answers = q.unique_answers || [];
-            
-            // Calculate max score for this question (highest score among answers)
-            let maxScore = 0;
-            answers.forEach(a => {
-              if (a.score > maxScore) maxScore = a.score;
-            });
-            // If all scores are 0, default to 1
-            if (maxScore === 0) maxScore = 1;
-
-            if (!categoryMap[section]) {
-              categoryMap[section] = { 
-                earned: 0, 
-                max: 0, 
-                count: 0,
-                questions: []
-              };
-            }
-
-            categoryMap[section].max += maxScore;
-            categoryMap[section].count += 1;
-
-            // Check if this question was answered
-            const answerId = responseMap[q.id];
-            let earned = 0;
-            if (answerId) {
-              // Find the selected answer and its score
-              const selectedAnswer = answers.find(a => String(a.id) === String(answerId));
-              if (selectedAnswer) {
-                earned = selectedAnswer.score || 0;
-              }
-            }
-            categoryMap[section].earned += earned;
-          });
-
-          // Convert to array with percentages
-          categoryBreakdown = Object.keys(categoryMap).map(key => {
-            const data = categoryMap[key];
-            const percentage = data.max > 0 ? Math.round((data.earned / data.max) * 100) : 0;
-            
-            // Determine dimension
-            let dimension = 'other';
-            const workplaceKeywords = [
-              'safety', 'risk', 'problem', 'troubleshoot', 'technical', 
-              'learning', 'communication', 'teamwork', 'ownership', 
-              'integrity', 'professional', 'work ethic', 'adaptability'
-            ];
-            const intellectualKeywords = [
-              'numerical', 'logical', 'measurement', 'engineering', 
-              'spatial', 'reasoning', 'aptitude', 'analytical'
-            ];
-            
-            const lowerKey = key.toLowerCase();
-            if (workplaceKeywords.some(k => lowerKey.includes(k))) {
-              dimension = 'workplace';
-            } else if (intellectualKeywords.some(k => lowerKey.includes(k))) {
-              dimension = 'intellectual';
-            }
-            
-            return {
-              category: key,
-              earned: Math.round(data.earned * 100) / 100,
-              max: Math.round(data.max * 100) / 100,
-              percentage: percentage,
-              dimension: dimension,
-              count: data.count,
-              // Store the raw earned/max for display
-              earnedDisplay: Math.round(data.earned),
-              maxDisplay: Math.round(data.max)
-            };
-          });
-
-          console.log("[API] Category breakdown built:", categoryBreakdown.length);
-          console.log("[API] Categories with scores:", categoryBreakdown.map(c => 
-            `${c.category}: ${c.earned}/${c.max} (${c.percentage}%)`
-          ).join(', '));
-        }
-      }
-    } catch (err) {
-      console.error("[API] Error building category breakdown:", err);
-    }
-
-    // ============================================================
-    // BUILD THE COMPLETE REPORT
-    // ============================================================
-    let report = result.report_data || {};
-
-    // Add category breakdown
-    if (categoryBreakdown.length > 0) {
-      report.categoryBreakdown = categoryBreakdown;
-    }
-
-    // Ensure dimensions
-    if (!report.dimensions) {
-      report.dimensions = {
-        workplaceReadiness: result.workplace_readiness || 0,
-        intellectualCapability: result.intellectual_capability || 0,
-        overallScore: result.percentage_score || 0
-      };
-    }
-
-    // Ensure recommendation
-    if (!report.recommendation) {
-      report.recommendation = {
-        level: result.recommendation || 'Not Recommended'
-      };
-    }
-
-    // Ensure executiveSummary
-    if (!report.executiveSummary) {
-      const wr = report.dimensions.workplaceReadiness || 0;
-      const ic = report.dimensions.intellectualCapability || 0;
-      report.executiveSummary = {
-        workplaceBand: wr >= 75 ? 'Ready' : wr >= 65 ? 'Developing' : 'Needs Improvement',
-        intellectualBand: ic >= 75 ? 'High Potential' : ic >= 65 ? 'Moderate Potential' : 'Development Required'
-      };
-    }
-
-    // Ensure candidateInfo
-    if (!report.candidateInfo) {
-      const { data: profile, error: profileError } = await serviceClient
-        .from("candidate_profiles")
-        .select("full_name, email, university, programme, graduation_year, preferred_department")
-        .eq("id", result.user_id)
-        .single();
-
-      if (!profileError && profile) {
-        report.candidateInfo = {
-          fullName: profile.full_name || 'Candidate',
-          university: profile.university || 'Not Specified',
-          programme: profile.programme || 'Not Specified',
-          graduationYear: profile.graduation_year || 'Not Specified',
-          preferredDepartment: profile.preferred_department || 'Not Specified',
+    // If this is a National Service assessment but report_data is missing, build it
+    if (isNationalService && !report) {
+      report = {
+        dimensions: {
+          workplaceReadiness: result.workplace_readiness || 0,
+          intellectualCapability: result.intellectual_capability || 0,
+          overallScore: result.percentage_score || 0
+        },
+        recommendation: {
+          level: result.recommendation || 'Not Recommended'
+        },
+        statistics: {
+          totalQuestions: result.total_questions || 0,
+          totalAnswered: result.answered_questions || 0
+        },
+        candidateInfo: {
+          fullName: result.candidate_profiles?.full_name || 'Candidate',
+          university: result.candidate_profiles?.university || '',
+          programme: result.candidate_profiles?.programme || '',
+          graduationYear: result.candidate_profiles?.graduation_year || '',
+          preferredDepartment: result.candidate_profiles?.preferred_department || '',
           assessmentDate: new Date(result.completed_at).toLocaleDateString()
-        };
-      }
-    }
-
-    // Ensure statistics
-    if (!report.statistics) {
-      report.statistics = {
-        totalQuestions: result.total_questions || 0,
-        totalAnswered: result.answered_questions || 0
+        }
       };
     }
-
-    // Determine if National Service
-    const isNationalService = result.workplace_readiness !== null && result.workplace_readiness !== undefined;
-
-    console.log("[API] Final category breakdown count:", report.categoryBreakdown?.length || 0);
 
     return res.status(200).json({
       success: true,
       result: result,
       report: report,
       isNationalService: isNationalService,
-      executiveSummary: {
+      assessmentTypeCode: assessmentTypeCode,
+      executiveSummary: isNationalService ? {
         workplaceReadiness: result.workplace_readiness,
         intellectualCapability: result.intellectual_capability,
         overallScore: result.percentage_score,
         recommendation: result.recommendation
-      }
+      } : null
     });
 
   } catch (error) {
