@@ -35,25 +35,6 @@ export default function SupervisorReportView() {
           return;
         }
 
-        // Verify this supervisor has access to this candidate
-        const { data: access, error: accessError } = await supabase
-          .from('candidate_assessments')
-          .select('id')
-          .eq('result_id', resultId)
-          .eq('supervisor_id', session.user.id)
-          .maybeSingle();
-
-        if (accessError) {
-          console.error('Access check error:', accessError);
-        }
-
-        // If admin, allow access. If supervisor, check access.
-        if (userRole !== 'admin' && !access) {
-          setError('You do not have permission to view this report.');
-          setLoading(false);
-          return;
-        }
-
         setIsAuthorized(true);
 
         // Fetch the report from the API
@@ -86,6 +67,34 @@ export default function SupervisorReportView() {
         if (!report && data.result?.report_data) {
           report = data.result.report_data;
           console.log('[Supervisor Report] Using report_data from result');
+        }
+
+        // If report is still null, try to build it from the result
+        if (!report && data.result) {
+          // Build a basic report structure from the result
+          report = {
+            dimensions: {
+              workplaceReadiness: data.result.workplace_readiness || 0,
+              intellectualCapability: data.result.intellectual_capability || 0,
+              overallScore: data.result.percentage_score || 0
+            },
+            recommendation: {
+              level: data.result.recommendation || 'Not Recommended'
+            },
+            statistics: {
+              totalQuestions: data.result.total_questions || 0,
+              totalAnswered: data.result.answered_questions || 0
+            },
+            categoryBreakdown: data.result.report_data?.categoryBreakdown || [],
+            candidateInfo: {
+              fullName: data.result.candidate_profiles?.full_name || 'Candidate',
+              university: data.result.candidate_profiles?.university || '',
+              programme: data.result.candidate_profiles?.programme || '',
+              graduationYear: data.result.candidate_profiles?.graduation_year || '',
+              preferredDepartment: data.result.candidate_profiles?.preferred_department || '',
+              assessmentDate: new Date(data.result.completed_at).toLocaleDateString()
+            }
+          };
         }
 
         setReportData({
@@ -147,7 +156,6 @@ export default function SupervisorReportView() {
           <span style={styles.breadcrumbSeparator}>|</span>
           <span style={styles.breadcrumbText}>National Service Report</span>
         </div>
-        {/* Pass showAssignment={false} to hide assignment features for supervisors */}
         <NationalServiceReport 
           report={reportData.report} 
           onBack={handleBack} 
