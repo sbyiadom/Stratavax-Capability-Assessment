@@ -1,4 +1,4 @@
-// pages/supervisor/index.js
+// pages/supervisor/index.js - Complete updated file
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -97,6 +97,7 @@ export default function SupervisorDashboard() {
                 university: candidate?.university || '',
                 programme: candidate?.programme || '',
                 assessment_title: assessment.assessments?.title || 'Assessment',
+                assessment_id: assessment.assessment_id,
                 assessment_type: assessment.assessments?.assessment_type?.name || 'General',
                 assessment_code: assessment.assessments?.assessment_type?.code || 'general',
                 status: assessment.status,
@@ -141,17 +142,22 @@ export default function SupervisorDashboard() {
               const isNationalService = a.assessments?.assessment_type?.code === 'national_service';
               let score = 0;
               let reportData = null;
+              let resultId = a.result_id;
+              
+              // Find the result data
               if (a.result_id) {
                 const found = [...nsReports, ...otherAssessments].find(r => r.result_id === a.result_id);
                 if (found) {
                   score = found.score || found.scores?.overall || 0;
                   reportData = found;
+                  resultId = found.result_id;
                 }
               }
+              
               return {
                 assessment_id: a.assessment_id,
+                result_id: resultId,  // ← THIS IS THE IMPORTANT PART
                 title: a.assessments?.title || 'Assessment',
-                result_id: a.result_id,
                 score: score,
                 isNationalService: isNationalService,
                 assessment_code: a.assessments?.assessment_type?.code || 'general',
@@ -159,7 +165,7 @@ export default function SupervisorDashboard() {
                 reportData: reportData
               };
             })
-            .filter(a => a.result_id);
+            .filter(a => a.result_id); // Only keep assessments with result_id
 
           return {
             ...c,
@@ -194,6 +200,11 @@ export default function SupervisorDashboard() {
   };
 
   const handleViewReport = (resultId) => {
+    if (!resultId) {
+      alert('No result available for this assessment.');
+      return;
+    }
+    console.log('[Supervisor] Navigating to report with resultId:', resultId);
     router.push(`/supervisor/reports/${resultId}`);
   };
 
@@ -202,11 +213,42 @@ export default function SupervisorDashboard() {
   };
 
   const handleAssessmentSelect = (candidateId, assessmentId) => {
+    console.log('[Supervisor] Candidate ID:', candidateId);
+    console.log('[Supervisor] Selected Assessment ID:', assessmentId);
+    
+    if (!assessmentId) {
+      alert('Please select an assessment first.');
+      return;
+    }
+    
     const candidate = candidates.find(c => c.id === candidateId);
-    if (!candidate) return;
-    const assessment = candidate.completedAssessments.find(a => String(a.assessment_id) === String(assessmentId));
+    if (!candidate) {
+      console.warn('[Supervisor] Candidate not found');
+      return;
+    }
+    
+    console.log('[Supervisor] Candidate found:', candidate.full_name || candidate.name);
+    console.log('[Supervisor] Completed assessments:', candidate.completedAssessments);
+    
+    const assessment = candidate.completedAssessments.find(
+      a => String(a.assessment_id) === String(assessmentId)
+    );
+    
+    if (!assessment) {
+      console.warn('[Supervisor] Assessment not found in completed list');
+      alert('Assessment not found. Please try again.');
+      return;
+    }
+    
+    console.log('[Supervisor] Assessment found:', assessment);
+    console.log('[Supervisor] Result ID:', assessment.result_id);
+    console.log('[Supervisor] Score:', assessment.score);
+    
     if (assessment && assessment.result_id) {
       handleViewReport(assessment.result_id);
+    } else {
+      console.warn('[Supervisor] No result_id for this assessment');
+      alert('This assessment does not have a result available yet.');
     }
   };
 
@@ -336,7 +378,7 @@ export default function SupervisorDashboard() {
 
         {/* Tab Content */}
         <div style={styles.tabContent}>
-          {/* National Service Reports Tab - Shows ALL NS Reports */}
+          {/* National Service Reports Tab */}
           {activeTab === 'national_service' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
@@ -406,7 +448,7 @@ export default function SupervisorDashboard() {
             </div>
           )}
 
-          {/* Other Assessments Tab - Shows ALL Other Assessments */}
+          {/* Other Assessments Tab */}
           {activeTab === 'other' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
@@ -455,7 +497,7 @@ export default function SupervisorDashboard() {
             </div>
           )}
 
-          {/* All Candidates Tab - Horizontal Layout with Dropdown */}
+          {/* All Candidates Tab - Fixed with proper result_id */}
           {activeTab === 'candidates' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
@@ -506,14 +548,20 @@ export default function SupervisorDashboard() {
                           </td>
                           <td style={styles.ctd}>
                             <select
-                              onChange={(e) => handleAssessmentSelect(candidate.id, e.target.value)}
+                              onChange={(e) => {
+                                const selectedValue = e.target.value;
+                                console.log('[Supervisor] Dropdown selected:', selectedValue);
+                                if (selectedValue) {
+                                  handleAssessmentSelect(candidate.id, selectedValue);
+                                }
+                              }}
                               style={styles.assessmentDropdown}
                               defaultValue=""
                             >
                               <option value="">-- Select --</option>
                               {candidate.completedAssessments.map((assessment) => (
                                 <option key={assessment.assessment_id} value={assessment.assessment_id}>
-                                  {assessment.title} ({Math.round(assessment.score)}%)
+                                  {assessment.title} ({Math.round(assessment.score || 0)}%)
                                 </option>
                               ))}
                               {candidate.completedAssessments.length === 0 && (
@@ -527,6 +575,8 @@ export default function SupervisorDashboard() {
                                 const select = document.querySelector(`select[data-candidate="${candidate.id}"]`);
                                 if (select && select.value) {
                                   handleAssessmentSelect(candidate.id, select.value);
+                                } else {
+                                  alert('Please select an assessment first.');
                                 }
                               }}
                               style={styles.viewReportButtonSmall}
