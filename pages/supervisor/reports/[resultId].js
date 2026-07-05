@@ -5,6 +5,7 @@ import { useRouter } from 'next/router';
 import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
 import NationalServiceReport from '../../../components/reports/NationalServiceReport';
+import StratavaxReport from '../../../components/reports/StratavaxReport';
 import AppLayout from '../../../components/AppLayout';
 
 export default function SupervisorReportView() {
@@ -50,10 +51,12 @@ export default function SupervisorReportView() {
         // Store the full data
         setReportData(data);
         
-        // Check if it's a National Service assessment
-        // Check multiple sources for National Service detection
+        // ============================================================
+        // Determine if this is a National Service assessment
+        // ============================================================
         const isNS = 
           data.isNationalService === true ||
+          data.assessmentTypeCode === 'national_service' ||
           (data.result?.report_data && data.result.report_data.dimensions && 
            data.result.report_data.dimensions.workplaceReadiness !== undefined) ||
           (data.report && data.report.dimensions && 
@@ -61,6 +64,7 @@ export default function SupervisorReportView() {
           (data.result?.workplace_readiness !== undefined && data.result?.workplace_readiness !== null);
 
         console.log('[Supervisor Report] Is National Service:', isNS);
+        console.log('[Supervisor Report] Assessment type code:', data.assessmentTypeCode);
 
         // If we have report_data in the result, use it directly
         let report = data.report;
@@ -71,35 +75,41 @@ export default function SupervisorReportView() {
 
         // If report is still null, try to build it from the result
         if (!report && data.result) {
-          // Build a basic report structure from the result
-          report = {
-            dimensions: {
-              workplaceReadiness: data.result.workplace_readiness || 0,
-              intellectualCapability: data.result.intellectual_capability || 0,
-              overallScore: data.result.percentage_score || 0
-            },
-            recommendation: {
-              level: data.result.recommendation || 'Not Recommended'
-            },
-            statistics: {
-              totalQuestions: data.result.total_questions || 0,
-              totalAnswered: data.result.answered_questions || 0
-            },
-            categoryBreakdown: data.result.report_data?.categoryBreakdown || [],
-            candidateInfo: {
-              fullName: data.result.candidate_profiles?.full_name || 'Candidate',
-              university: data.result.candidate_profiles?.university || '',
-              programme: data.result.candidate_profiles?.programme || '',
-              graduationYear: data.result.candidate_profiles?.graduation_year || '',
-              preferredDepartment: data.result.candidate_profiles?.preferred_department || '',
-              assessmentDate: new Date(data.result.completed_at).toLocaleDateString()
-            }
-          };
+          // For National Service, build the report structure
+          if (isNS) {
+            report = {
+              dimensions: {
+                workplaceReadiness: data.result.workplace_readiness || 0,
+                intellectualCapability: data.result.intellectual_capability || 0,
+                overallScore: data.result.percentage_score || 0
+              },
+              recommendation: {
+                level: data.result.recommendation || 'Not Recommended'
+              },
+              statistics: {
+                totalQuestions: data.result.total_questions || 0,
+                totalAnswered: data.result.answered_questions || 0
+              },
+              categoryBreakdown: data.result.report_data?.categoryBreakdown || [],
+              candidateInfo: {
+                fullName: data.result.candidate_profiles?.full_name || 'Candidate',
+                university: data.result.candidate_profiles?.university || '',
+                programme: data.result.candidate_profiles?.programme || '',
+                graduationYear: data.result.candidate_profiles?.graduation_year || '',
+                preferredDepartment: data.result.candidate_profiles?.preferred_department || '',
+                assessmentDate: new Date(data.result.completed_at).toLocaleDateString()
+              }
+            };
+          } else {
+            // For Stratavax, use the result directly
+            report = data.result;
+          }
         }
 
         setReportData({
           ...data,
-          report: report
+          report: report,
+          isNationalService: isNS
         });
         setIsNationalService(isNS);
 
@@ -143,8 +153,10 @@ export default function SupervisorReportView() {
   }
 
   // ============================================================
-  // Render National Service Report for Supervisor
+  // Render the correct report format based on assessment type
   // ============================================================
+  
+  // If it's a National Service assessment, use the National Service Report
   if (isNationalService && reportData?.report && isAuthorized) {
     console.log('[Supervisor Report] Rendering National Service Report');
     return (
@@ -168,56 +180,59 @@ export default function SupervisorReportView() {
 
   // If we have report_data but it's not being detected, try to render it anyway
   if (reportData?.result?.report_data) {
-    console.log('[Supervisor Report] Rendering report_data directly');
-    return (
-      <AppLayout background="/images/supervisor-bg.jpg">
-        <div style={styles.breadcrumb}>
-          <button onClick={handleBack} style={styles.breadcrumbButton}>
-            ← Back to Supervisor Dashboard
-          </button>
-          <span style={styles.breadcrumbSeparator}>|</span>
-          <span style={styles.breadcrumbText}>National Service Report</span>
-        </div>
-        <NationalServiceReport 
-          report={reportData.result.report_data} 
-          onBack={handleBack}
-          showAssignment={false}
-          userRole="supervisor"
-        />
-      </AppLayout>
-    );
+    // Check if the report_data has National Service structure
+    const hasNSStructure = reportData.result.report_data.dimensions && 
+                          reportData.result.report_data.dimensions.workplaceReadiness !== undefined;
+    
+    if (hasNSStructure) {
+      console.log('[Supervisor Report] Rendering National Service Report from report_data');
+      return (
+        <AppLayout background="/images/supervisor-bg.jpg">
+          <div style={styles.breadcrumb}>
+            <button onClick={handleBack} style={styles.breadcrumbButton}>
+              ← Back to Supervisor Dashboard
+            </button>
+            <span style={styles.breadcrumbSeparator}>|</span>
+            <span style={styles.breadcrumbText}>National Service Report</span>
+          </div>
+          <NationalServiceReport 
+            report={reportData.result.report_data} 
+            onBack={handleBack}
+            showAssignment={false}
+            userRole="supervisor"
+          />
+        </AppLayout>
+      );
+    }
   }
 
-  // Fallback for non-National Service reports
+  // ============================================================
+  // DEFAULT: Use Stratavax Report for all non-National Service assessments
+  // ============================================================
+  console.log('[Supervisor Report] Rendering Stratavax Report');
+  
+  // Prepare data for Stratavax report
+  const stratavaxData = {
+    result: reportData?.result || null,
+    candidate: reportData?.result?.candidate_profiles || null,
+    assessment: reportData?.result?.assessments || null
+  };
+
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
-      <div style={styles.fallbackContainer}>
-        <button onClick={handleBack} style={styles.backButton}>
+      <div style={styles.breadcrumb}>
+        <button onClick={handleBack} style={styles.breadcrumbButton}>
           ← Back to Supervisor Dashboard
         </button>
-        <div style={styles.fallbackContent}>
-          <h2>Standard Report</h2>
-          <p>This assessment uses the standard report format.</p>
-          {reportData?.result && (
-            <div style={styles.debugInfo}>
-              <h4>Debug Info:</h4>
-              <pre>{JSON.stringify({
-                hasReportData: !!reportData.result.report_data,
-                hasWorkplaceReadiness: reportData.result.workplace_readiness,
-                hasIntellectualCapability: reportData.result.intellectual_capability,
-                recommendation: reportData.result.recommendation,
-                isNationalService: isNationalService
-              }, null, 2)}</pre>
-            </div>
-          )}
-          <div style={styles.scoreDisplay}>
-            <div style={styles.scoreItem}>
-              <span style={styles.scoreLabel}>Overall Score</span>
-              <span style={styles.scoreValue}>{reportData?.result?.percentage_score || 0}%</span>
-            </div>
-          </div>
-        </div>
+        <span style={styles.breadcrumbSeparator}>|</span>
+        <span style={styles.breadcrumbText}>Assessment Report</span>
       </div>
+      <StratavaxReport 
+        result={stratavaxData.result}
+        candidate={stratavaxData.candidate}
+        assessment={stratavaxData.assessment}
+        onBack={handleBack}
+      />
     </AppLayout>
   );
 }
@@ -286,58 +301,6 @@ const styles = {
   breadcrumbText: {
     fontSize: '14px',
     color: '#475569'
-  },
-  fallbackContainer: {
-    maxWidth: '1200px',
-    margin: '0 auto',
-    padding: '20px'
-  },
-  backButton: {
-    padding: '8px 16px',
-    background: 'transparent',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    color: '#475569',
-    marginBottom: '20px'
-  },
-  fallbackContent: {
-    background: 'white',
-    padding: '24px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-  },
-  debugInfo: {
-    marginTop: '16px',
-    padding: '12px',
-    background: '#f8fafc',
-    borderRadius: '8px',
-    fontSize: '12px',
-    overflow: 'auto'
-  },
-  scoreDisplay: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '20px',
-    marginTop: '16px'
-  },
-  scoreItem: {
-    padding: '16px',
-    background: '#f8fafc',
-    borderRadius: '8px',
-    textAlign: 'center'
-  },
-  scoreLabel: {
-    display: 'block',
-    fontSize: '14px',
-    color: '#64748b',
-    marginBottom: '4px'
-  },
-  scoreValue: {
-    fontSize: '24px',
-    fontWeight: '700',
-    color: '#1a237e'
   }
 };
 
