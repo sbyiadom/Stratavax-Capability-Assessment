@@ -5,6 +5,7 @@ import { useRouter } from 'next/router';
 import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
 import NationalServiceReport from '../../../components/reports/NationalServiceReport';
+import AppLayout from '../../../components/AppLayout';
 
 export default function SupervisorReportView() {
   const router = useRouter();
@@ -24,7 +25,7 @@ export default function SupervisorReportView() {
       try {
         setLoading(true);
 
-        // Check if user is a supervisor or admin
+        // Check if user is supervisor
         const userRole = session.user?.user_metadata?.role || session.user?.role;
         const isSupervisor = userRole === 'supervisor' || userRole === 'admin';
         
@@ -46,8 +47,8 @@ export default function SupervisorReportView() {
           console.error('Access check error:', accessError);
         }
 
-        // If not a supervisor or admin with access, deny
-        if (!access && userRole !== 'admin') {
+        // If admin, allow access. If supervisor, check access.
+        if (userRole !== 'admin' && !access) {
           setError('You do not have permission to view this report.');
           setLoading(false);
           return;
@@ -90,28 +91,32 @@ export default function SupervisorReportView() {
 
   if (authLoading || loading) {
     return (
-      <div style={styles.loadingContainer}>
-        <div style={styles.loadingSpinner}></div>
-        <p>Loading report...</p>
-      </div>
+      <AppLayout background="/images/supervisor-bg.jpg">
+        <div style={styles.loadingContainer}>
+          <div style={styles.loadingSpinner}></div>
+          <p>Loading report...</p>
+        </div>
+      </AppLayout>
     );
   }
 
   if (error) {
     return (
-      <div style={styles.errorContainer}>
-        <div style={styles.errorIcon}>🔒</div>
-        <h2>Access Denied</h2>
-        <p>{error}</p>
-        <button onClick={handleBack} style={styles.errorButton}>Go Back</button>
-      </div>
+      <AppLayout background="/images/supervisor-bg.jpg">
+        <div style={styles.errorContainer}>
+          <div style={styles.errorIcon}>🔒</div>
+          <h2>Access Denied</h2>
+          <p>{error}</p>
+          <button onClick={handleBack} style={styles.errorButton}>Go Back</button>
+        </div>
+      </AppLayout>
     );
   }
 
-  // Render National Service Report (Supervisor/Admin only)
+  // Render National Service Report (Supervisor view - NO assignment feature)
   if (isNationalService && reportData?.report && isAuthorized) {
     return (
-      <div>
+      <AppLayout background="/images/supervisor-bg.jpg">
         <div style={styles.breadcrumb}>
           <button onClick={handleBack} style={styles.breadcrumbButton}>
             ← Back to Supervisor Dashboard
@@ -119,40 +124,47 @@ export default function SupervisorReportView() {
           <span style={styles.breadcrumbSeparator}>|</span>
           <span style={styles.breadcrumbText}>Supervisor Report View</span>
         </div>
-        <NationalServiceReport report={reportData.report} onBack={handleBack} />
-      </div>
+        {/* Pass showAssignment={false} to hide assignment features */}
+        <NationalServiceReport 
+          report={reportData.report} 
+          onBack={handleBack} 
+          showAssignment={false}
+          userRole="supervisor"
+        />
+      </AppLayout>
     );
   }
 
   // Fallback for non-National Service reports
   return (
-    <div style={styles.fallbackContainer}>
-      <button onClick={handleBack} style={styles.backButton}>
-        ← Back to Supervisor Dashboard
-      </button>
-      <div style={styles.fallbackContent}>
-        <h2>Standard Report</h2>
-        <p>This assessment uses the standard report format.</p>
-        <div style={styles.scoreDisplay}>
-          <div style={styles.scoreItem}>
-            <span style={styles.scoreLabel}>Overall Score</span>
-            <span style={styles.scoreValue}>{reportData?.result?.percentage_score || 0}%</span>
+    <AppLayout background="/images/supervisor-bg.jpg">
+      <div style={styles.fallbackContainer}>
+        <button onClick={handleBack} style={styles.backButton}>
+          ← Back to Supervisor Dashboard
+        </button>
+        <div style={styles.fallbackContent}>
+          <h2>Standard Report</h2>
+          <p>This assessment uses the standard report format.</p>
+          <div style={styles.scoreDisplay}>
+            <div style={styles.scoreItem}>
+              <span style={styles.scoreLabel}>Overall Score</span>
+              <span style={styles.scoreValue}>{reportData?.result?.percentage_score || 0}%</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </AppLayout>
   );
 }
 
 const styles = {
   loadingContainer: {
-    minHeight: '100vh',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '16px',
-    background: '#f8fafc'
+    minHeight: '400px',
+    gap: '16px'
   },
   loadingSpinner: {
     width: '40px',
