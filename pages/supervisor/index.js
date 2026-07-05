@@ -27,8 +27,30 @@ export default function SupervisorDashboard() {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
+      
+      const supervisorId = session.user.id;
+      console.log('[Supervisor Dashboard] Supervisor ID:', supervisorId);
 
-      // Get all candidates assigned to this supervisor
+      // Step 1: Get all candidates assigned to this supervisor
+      // The relationship is: supervisor_profiles -> candidates_assigned (array) OR candidate_assessments has supervisor_id
+      // Let's try multiple approaches
+
+      // Approach 1: Check if supervisor_profiles has candidates_assigned field
+      let assignedCandidates = [];
+      
+      const { data: supervisorData, error: supervisorError } = await supabase
+        .from('supervisor_profiles')
+        .select('candidates_assigned, full_name')
+        .eq('id', supervisorId)
+        .maybeSingle();
+
+      if (supervisorError) {
+        console.error('Error fetching supervisor data:', supervisorError);
+      }
+
+      console.log('[Supervisor Dashboard] Supervisor data:', supervisorData);
+
+      // Approach 2: Get candidates from candidate_assessments via supervisor_id
       const { data: assignments, error: assignmentError } = await supabase
         .from('candidate_assessments')
         .select(`
@@ -37,74 +59,105 @@ export default function SupervisorDashboard() {
           assessment_id,
           status,
           result_id,
+          supervisor_id,
           candidate_profiles!inner(full_name, email, university, programme),
           assessments!inner(title, assessment_type:assessment_types(code))
         `)
-        .eq('supervisor_id', session.user.id);
+        .eq('supervisor_id', supervisorId);
 
       if (assignmentError) {
         console.error('Error fetching assignments:', assignmentError);
-        setLoading(false);
-        return;
       }
 
-      // Group by candidate
-      const candidateMap = {};
-      const reports = [];
+      console.log('[Supervisor Dashboard] Assignments found:', assignments?.length || 0);
 
-      assignments?.forEach(assignment => {
-        const userId = assignment.user_id;
-        if (!candidateMap[userId]) {
-          candidateMap[userId] = {
-            id: userId,
-            name: assignment.candidate_profiles?.full_name || 'Unknown',
-            email: assignment.candidate_profiles?.email || '',
-            university: assignment.candidate_profiles?.university || '',
-            programme: assignment.candidate_profiles?.programme || '',
-            assessments: []
-          };
+      // If no assignments found, try to get candidates from supervisor_profiles.candidates_assigned
+      if ((!assignments || assignments.length === 0) && supervisorData?.candidates_assigned) {
+        const candidateIds = supervisorData.candidates_assigned;
+        console.log('[Supervisor Dashboard] Candidates from supervisor profile:', candidateIds);
+        
+        if (candidateIds && candidateIds.length > 0) {
+          const { data: profiles, error: profilesError } = await supabase
+            .from('candidate_profiles')
+            .select('id, full_name, email, university, programme')
+            .in('id', candidateIds);
+
+          if (!profilesError && profiles) {
+            assignedCandidates = profiles.map(p => ({
+              ...p,
+              assessments: [] // Will be filled below
+            }));
+          }
         }
-        
-        // Check if this is a National Service assessment
-        const isNationalService = assignment.assessments?.assessment_type?.code === 'national_service';
-        
-        candidateMap[userId].assessments.push({
-          id: assignment.assessment_id,
-          title: assignment.assessments?.title || 'Assessment',
-          status: assignment.status,
-          result_id: assignment.result_id,
-          candidate_assessment_id: assignment.id,
-          isNationalService: isNationalService
+      }
+
+      // If we have assignments, use them to build candidate list
+      if (assignments && assignments.length > 0) {
+        const candidateMap = {};
+        const reports = [];
+
+        assignments.forEach(assignment => {
+          const userId = assignment.user_id;
+          if (!candidateMap[userId]) {
+            candidateMap[userId] = {
+              id: userId,
+              name: assignment.candidate_profiles?.full_name || 'Unknown',
+              email: assignment.candidate_profiles?.email || '',
+              university: assignment.candidate_profiles?.university || '',
+              programme: assignment.candidate_profiles?.programme || '',
+              assessments: []
+            };
+          }
+          
+          // Check if this is a National Service assessment
+          const isNationalService = assignment.assessments?.assessment_type?.code === 'national_service';
+          
+          candidateMap[userId].assessments.push({
+            id: assignment.assessment_id,
+            title: assignment.assessments?.title || 'Assessment',
+            status: assignment.status,
+            result_id: assignment.result_id,
+            candidate_assessment_id: assignment.id,
+            isNationalService: isNationalService
+          });
+
+          // Collect National Service reports
+          if (isNationalService && assignment.result_id && assignment.status === 'completed') {
+            reports.push({
+              result_id: assignment.result_id,
+              candidate_id: userId,
+              candidate_name: assignment.candidate_profiles?.full_name || 'Unknown',
+              candidate_email: assignment.candidate_profiles?.email || '',
+              university: assignment.candidate_profiles?.university || '',
+              programme: assignment.candidate_profiles?.programme || '',
+              assessment_title: assignment.assessments?.title || 'National Service Assessment',
+              status: assignment.status
+            });
+          }
         });
 
-        // Collect National Service reports
-        if (isNationalService && assignment.result_id && assignment.status === 'completed') {
-          reports.push({
-            result_id: assignment.result_id,
-            candidate_id: userId,
-            candidate_name: assignment.candidate_profiles?.full_name || 'Unknown',
-            candidate_email: assignment.candidate_profiles?.email || '',
-            university: assignment.candidate_profiles?.university || '',
-            programme: assignment.candidate_profiles?.programme || '',
-            assessment_title: assignment.assessments?.title || 'National Service Assessment',
-            status: assignment.status
-          });
-        }
-      });
-
-      setCandidates(Object.values(candidateMap));
-      setNationalServiceReports(reports);
-      
-      // Calculate stats
-      const totalCandidates = Object.keys(candidateMap).length;
-      const completed = assignments?.filter(a => a.status === 'completed').length || 0;
-      const pending = assignments?.filter(a => a.status === 'in_progress' || a.status === 'unblocked').length || 0;
-      
-      setStats({
-        totalCandidates: totalCandidates,
-        completedAssessments: completed,
-        pendingReviews: pending
-      });
+        setCandidates(Object.values(candidateMap));
+        setNationalServiceReports(reports);
+        
+        // Calculate stats
+        const totalCandidates = Object.keys(candidateMap).length;
+        const completed = assignments.filter(a => a.status === 'completed').length || 0;
+        const pending = assignments.filter(a => a.status === 'in_progress' || a.status === 'unblocked').length || 0;
+        
+        setStats({
+          totalCandidates: totalCandidates,
+          completedAssessments: completed,
+          pendingReviews: pending
+        });
+      } else if (assignedCandidates.length > 0) {
+        // Use candidates from supervisor_profiles
+        setCandidates(assignedCandidates);
+        setStats({
+          totalCandidates: assignedCandidates.length,
+          completedAssessments: 0,
+          pendingReviews: 0
+        });
+      }
 
       setLoading(false);
     } catch (error) {
@@ -242,12 +295,12 @@ export default function SupervisorDashboard() {
                       <div style={styles.candidateEmail}>{candidate.email}</div>
                     </div>
                     <span style={styles.candidateBadge}>
-                      {candidate.assessments.length} Assessment(s)
+                      {candidate.assessments?.length || 0} Assessment(s)
                     </span>
                   </div>
 
                   <div style={styles.assessmentList}>
-                    {candidate.assessments.map((assessment) => (
+                    {candidate.assessments?.map((assessment) => (
                       <div key={assessment.id} style={styles.assessmentItem}>
                         <div style={styles.assessmentInfo}>
                           <span style={styles.assessmentTitle}>{assessment.title}</span>
@@ -285,6 +338,11 @@ export default function SupervisorDashboard() {
                         )}
                       </div>
                     ))}
+                    {(!candidate.assessments || candidate.assessments.length === 0) && (
+                      <div style={styles.noAssessments}>
+                        No assessments assigned yet.
+                      </div>
+                    )}
                   </div>
                 </div>
               ))
@@ -565,6 +623,12 @@ const styles = {
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: '500'
+  },
+  noAssessments: {
+    padding: '8px 14px',
+    color: '#94a3b8',
+    fontSize: '13px',
+    fontStyle: 'italic'
   },
   emptyState: {
     textAlign: 'center',
