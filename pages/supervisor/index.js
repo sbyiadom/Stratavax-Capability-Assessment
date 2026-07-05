@@ -31,10 +31,7 @@ export default function SupervisorDashboard() {
       const supervisorId = session.user.id;
       console.log('[Supervisor Dashboard] Supervisor ID:', supervisorId);
 
-      // ============================================================
       // Step 1: Get all candidates assigned to this supervisor
-      // Relationship: candidate_profiles.supervisor_id = supervisor_profiles.id
-      // ============================================================
       const { data: assignedCandidates, error: candidatesError } = await supabase
         .from('candidate_profiles')
         .select('id, full_name, email, university, programme')
@@ -46,16 +43,13 @@ export default function SupervisorDashboard() {
 
       console.log('[Supervisor Dashboard] Assigned candidates:', assignedCandidates?.length || 0);
 
-      // ============================================================
-      // Step 2: If we have candidates, get their assessments
-      // ============================================================
       let allAssessments = [];
       let reports = [];
 
       if (assignedCandidates && assignedCandidates.length > 0) {
         const candidateIds = assignedCandidates.map(c => c.id);
         
-        // Get all assessments for these candidates
+        // Get all assessments for these candidates with complete info
         const { data: assessments, error: assessmentsError } = await supabase
           .from('candidate_assessments')
           .select(`
@@ -64,6 +58,7 @@ export default function SupervisorDashboard() {
             assessment_id,
             status,
             result_id,
+            completed_at,
             assessments!inner(title, assessment_type:assessment_types(code))
           `)
           .in('user_id', candidateIds);
@@ -75,9 +70,7 @@ export default function SupervisorDashboard() {
           console.log('[Supervisor Dashboard] Assessments found:', allAssessments.length);
         }
 
-        // ============================================================
-        // Step 3: Build candidate map with assessments
-        // ============================================================
+        // Build candidate map with assessments
         const candidateMap = {};
         
         assignedCandidates.forEach(c => {
@@ -102,12 +95,13 @@ export default function SupervisorDashboard() {
               title: assessment.assessments?.title || 'Assessment',
               status: assessment.status,
               result_id: assessment.result_id,
+              completed_at: assessment.completed_at,
               candidate_assessment_id: assessment.id,
               isNationalService: isNationalService
             });
 
             // Collect National Service reports
-            if (isNationalService && assessment.result_id && assessment.status === 'completed') {
+            if (isNationalService && assessment.status === 'completed') {
               reports.push({
                 result_id: assessment.result_id,
                 candidate_id: userId,
@@ -116,7 +110,8 @@ export default function SupervisorDashboard() {
                 university: candidateMap[userId].university,
                 programme: candidateMap[userId].programme,
                 assessment_title: assessment.assessments?.title || 'National Service Assessment',
-                status: assessment.status
+                status: assessment.status,
+                completed_at: assessment.completed_at
               });
             }
           }
@@ -136,7 +131,6 @@ export default function SupervisorDashboard() {
           pendingReviews: pending
         });
       } else {
-        // No candidates assigned
         setCandidates([]);
         setNationalServiceReports([]);
         setStats({
@@ -161,6 +155,16 @@ export default function SupervisorDashboard() {
     router.push('/supervisor/reports');
   };
 
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'completed': return { bg: '#dcfce7', color: '#166534', label: '✅ Completed' };
+      case 'in_progress': return { bg: '#dbeafe', color: '#1e40af', label: '⏳ In Progress' };
+      case 'unblocked': return { bg: '#e8f5e9', color: '#2e7d32', label: '🔓 Ready to Start' };
+      case 'blocked': return { bg: '#f5f5f5', color: '#667085', label: '🔒 Blocked' };
+      default: return { bg: '#f5f5f5', color: '#667085', label: '📋 Pending' };
+    }
+  };
+
   if (authLoading || loading) {
     return (
       <AppLayout background="/images/supervisor-bg.jpg">
@@ -177,7 +181,7 @@ export default function SupervisorDashboard() {
       <div style={styles.container}>
         <div style={styles.header}>
           <div>
-            <h1 style={styles.title}>Supervisor Dashboard</h1>
+            <h1 style={styles.title}>📊 Supervisor Dashboard</h1>
             <p style={styles.subtitle}>Manage your candidates and review assessment reports.</p>
           </div>
           <div style={styles.headerActions}>
@@ -197,7 +201,7 @@ export default function SupervisorDashboard() {
           <div style={styles.statCard}>
             <div style={styles.statIcon}>✅</div>
             <div>
-              <div style={styles.statLabel}>Completed Assessments</div>
+              <div style={styles.statLabel}>Completed</div>
               <div style={styles.statValue}>{stats.completedAssessments}</div>
             </div>
           </div>
@@ -208,11 +212,11 @@ export default function SupervisorDashboard() {
               <div style={styles.statValue}>{stats.pendingReviews}</div>
             </div>
           </div>
-          <div style={styles.statCard}>
-            <div style={styles.statIcon}>📊</div>
+          <div style={styles.statCard} style={{ ...styles.statCard, background: '#1a237e', color: 'white' }}>
+            <div style={styles.statIcon}>📋</div>
             <div>
-              <div style={styles.statLabel}>National Service Reports</div>
-              <div style={styles.statValue}>{nationalServiceReports.length}</div>
+              <div style={{ ...styles.statLabel, color: 'rgba(255,255,255,0.8)' }}>National Service Reports</div>
+              <div style={{ ...styles.statValue, color: 'white' }}>{nationalServiceReports.length}</div>
             </div>
           </div>
         </div>
@@ -234,6 +238,7 @@ export default function SupervisorDashboard() {
           {nationalServiceReports.length === 0 ? (
             <div style={styles.emptyState}>
               <p>No completed National Service assessments to review.</p>
+              <p style={styles.emptySubtext}>When candidates complete their National Service assessment, their reports will appear here.</p>
             </div>
           ) : (
             <div style={styles.reportsGrid}>
@@ -287,34 +292,35 @@ export default function SupervisorDashboard() {
                   </div>
 
                   <div style={styles.assessmentList}>
-                    {candidate.assessments?.map((assessment) => (
-                      <div key={assessment.id} style={styles.assessmentItem}>
-                        <div style={styles.assessmentInfo}>
-                          <span style={styles.assessmentTitle}>{assessment.title}</span>
-                          <span style={{ 
-                            ...styles.assessmentStatus,
-                            background: assessment.status === 'completed' ? '#dcfce7' : 
-                                       assessment.status === 'in_progress' ? '#dbeafe' : '#f5f5f5',
-                            color: assessment.status === 'completed' ? '#166534' : 
-                                   assessment.status === 'in_progress' ? '#1e40af' : '#667085'
-                          }}>
-                            {assessment.status || 'Pending'}
-                          </span>
-                          {assessment.isNationalService && (
-                            <span style={styles.nationalServiceBadge}>🇬🇭 NS</span>
+                    {candidate.assessments?.map((assessment) => {
+                      const statusStyle = getStatusColor(assessment.status);
+                      return (
+                        <div key={assessment.id} style={styles.assessmentItem}>
+                          <div style={styles.assessmentInfo}>
+                            <span style={styles.assessmentTitle}>{assessment.title}</span>
+                            <span style={{ 
+                              ...styles.assessmentStatus,
+                              background: statusStyle.bg,
+                              color: statusStyle.color
+                            }}>
+                              {statusStyle.label}
+                            </span>
+                            {assessment.isNationalService && (
+                              <span style={styles.nationalServiceBadge}>🇬🇭 National Service</span>
+                            )}
+                          </div>
+                          
+                          {assessment.isNationalService && assessment.result_id && (
+                            <button 
+                              onClick={() => handleViewReport(assessment.result_id)}
+                              style={styles.viewReportButtonSmall}
+                            >
+                              📄 View NS Report
+                            </button>
                           )}
                         </div>
-                        
-                        {assessment.isNationalService && assessment.result_id && (
-                          <button 
-                            onClick={() => handleViewReport(assessment.result_id)}
-                            style={styles.viewReportButtonSmall}
-                          >
-                            📄 View NS Report
-                          </button>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                     {(!candidate.assessments || candidate.assessments.length === 0) && (
                       <div style={styles.noAssessments}>
                         No assessments assigned yet.
@@ -359,7 +365,12 @@ const styles = {
     alignItems: 'center',
     marginBottom: '30px',
     flexWrap: 'wrap',
-    gap: '12px'
+    gap: '12px',
+    background: 'white',
+    padding: '20px 24px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    border: '1px solid #eef2f7'
   },
   title: {
     fontSize: '28px',
@@ -388,7 +399,7 @@ const styles = {
   },
   statsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
     gap: '16px',
     marginBottom: '30px'
   },
@@ -570,7 +581,8 @@ const styles = {
   assessmentInfo: {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px'
+    gap: '10px',
+    flexWrap: 'wrap'
   },
   assessmentTitle: {
     fontSize: '14px',
@@ -578,13 +590,13 @@ const styles = {
     color: '#1a202c'
   },
   assessmentStatus: {
-    padding: '2px 10px',
-    borderRadius: '12px',
+    padding: '4px 12px',
+    borderRadius: '20px',
     fontSize: '12px',
     fontWeight: '500'
   },
   nationalServiceBadge: {
-    padding: '2px 8px',
+    padding: '2px 10px',
     background: '#1a237e',
     color: 'white',
     borderRadius: '12px',
@@ -613,6 +625,11 @@ const styles = {
     color: '#64748b',
     background: '#f8fafc',
     borderRadius: '8px'
+  },
+  emptySubtext: {
+    fontSize: '13px',
+    color: '#94a3b8',
+    marginTop: '4px'
   }
 };
 
