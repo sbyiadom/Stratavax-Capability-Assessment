@@ -16,7 +16,8 @@ export default function SupervisorDashboard() {
   const [stats, setStats] = useState({
     totalCandidates: 0,
     completedAssessments: 0,
-    pendingReviews: 0
+    pendingReviews: 0,
+    nationalServiceReports: 0
   });
 
   useEffect(() => {
@@ -29,7 +30,6 @@ export default function SupervisorDashboard() {
       setLoading(true);
       
       const supervisorId = session.user.id;
-      console.log('[Supervisor Dashboard] Supervisor ID:', supervisorId);
 
       // Step 1: Get all candidates assigned to this supervisor
       const { data: assignedCandidates, error: candidatesError } = await supabase
@@ -47,7 +47,7 @@ export default function SupervisorDashboard() {
       if (assignedCandidates && assignedCandidates.length > 0) {
         const candidateIds = assignedCandidates.map(c => c.id);
         
-        // Get all assessments for these candidates with assessment type info
+        // Get all assessments for these candidates
         const { data: assessments, error: assessmentsError } = await supabase
           .from('candidate_assessments')
           .select(`
@@ -70,7 +70,7 @@ export default function SupervisorDashboard() {
           allAssessments = assessments || [];
         }
 
-        // For each completed National Service assessment, fetch the result data
+        // Fetch scores for completed National Service assessments
         const reportsWithScores = await Promise.all(
           allAssessments
             .filter(a => {
@@ -79,7 +79,6 @@ export default function SupervisorDashboard() {
               return isNationalService && isCompleted && a.result_id;
             })
             .map(async (assessment) => {
-              // Fetch the assessment result with scores
               const { data: resultData, error: resultError } = await supabase
                 .from('assessment_results')
                 .select('percentage_score, workplace_readiness, intellectual_capability, recommendation, completed_at')
@@ -91,7 +90,6 @@ export default function SupervisorDashboard() {
                 return null;
               }
 
-              // Find the candidate info
               const candidate = assignedCandidates.find(c => c.id === assessment.user_id);
               
               return {
@@ -114,7 +112,6 @@ export default function SupervisorDashboard() {
             })
         );
 
-        // Filter out null values and set reports
         const validReports = reportsWithScores.filter(r => r !== null);
         setNationalServiceReports(validReports);
 
@@ -132,7 +129,6 @@ export default function SupervisorDashboard() {
           };
         });
 
-        // Add assessments to candidates
         allAssessments.forEach(assessment => {
           const userId = assessment.user_id;
           if (candidateMap[userId]) {
@@ -162,7 +158,8 @@ export default function SupervisorDashboard() {
         setStats({
           totalCandidates: totalCandidates,
           completedAssessments: completed,
-          pendingReviews: pending
+          pendingReviews: pending,
+          nationalServiceReports: validReports.length
         });
       } else {
         setCandidates([]);
@@ -170,7 +167,8 @@ export default function SupervisorDashboard() {
         setStats({
           totalCandidates: 0,
           completedAssessments: 0,
-          pendingReviews: 0
+          pendingReviews: 0,
+          nationalServiceReports: 0
         });
       }
 
@@ -191,11 +189,11 @@ export default function SupervisorDashboard() {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'completed': return { bg: '#dcfce7', color: '#166534', label: '✅ Completed' };
-      case 'in_progress': return { bg: '#dbeafe', color: '#1e40af', label: '⏳ In Progress' };
-      case 'unblocked': return { bg: '#e8f5e9', color: '#2e7d32', label: '🔓 Ready to Start' };
-      case 'blocked': return { bg: '#f5f5f5', color: '#667085', label: '🔒 Blocked' };
-      default: return { bg: '#f5f5f5', color: '#667085', label: '📋 Pending' };
+      case 'completed': return { bg: '#dcfce7', color: '#166534', label: 'Completed' };
+      case 'in_progress': return { bg: '#dbeafe', color: '#1e40af', label: 'In Progress' };
+      case 'unblocked': return { bg: '#e8f5e9', color: '#2e7d32', label: 'Ready to Start' };
+      case 'blocked': return { bg: '#f5f5f5', color: '#667085', label: 'Blocked' };
+      default: return { bg: '#f5f5f5', color: '#667085', label: 'Pending' };
     }
   };
 
@@ -223,13 +221,15 @@ export default function SupervisorDashboard() {
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
       <div style={styles.container}>
+        {/* Header */}
         <div style={styles.header}>
           <div>
-            <h1 style={styles.title}>📊 Supervisor Dashboard</h1>
+            <h1 style={styles.title}>Supervisor Dashboard</h1>
             <p style={styles.subtitle}>Manage your candidates and review assessment reports.</p>
           </div>
           <div style={styles.headerActions}>
-            <button onClick={fetchDashboardData} style={styles.refreshButton}>🔄 Refresh</button>
+            <button onClick={fetchDashboardData} style={styles.refreshButton}>Refresh</button>
+            <button onClick={() => router.push('/supervisor/reports')} style={styles.reportsButton}>📋 Reports</button>
           </div>
         </div>
 
@@ -245,7 +245,7 @@ export default function SupervisorDashboard() {
           <div style={styles.statCard}>
             <div style={styles.statIcon}>✅</div>
             <div>
-              <div style={styles.statLabel}>Completed</div>
+              <div style={styles.statLabel}>Completed Assessments</div>
               <div style={styles.statValue}>{stats.completedAssessments}</div>
             </div>
           </div>
@@ -260,20 +260,17 @@ export default function SupervisorDashboard() {
             <div style={{ ...styles.statIcon, color: 'white' }}>📋</div>
             <div>
               <div style={{ ...styles.statLabel, color: 'rgba(255,255,255,0.8)' }}>National Service Reports</div>
-              <div style={{ ...styles.statValue, color: 'white' }}>{nationalServiceReports.length}</div>
+              <div style={{ ...styles.statValue, color: 'white' }}>{stats.nationalServiceReports}</div>
             </div>
           </div>
         </div>
 
-        {/* National Service Reports Section - Enhanced Card View */}
+        {/* National Service Reports Section */}
         <div style={styles.reportsSection}>
           <div style={styles.sectionHeader}>
             <h2 style={styles.sectionTitle}>📋 National Service Reports</h2>
             {nationalServiceReports.length > 0 && (
-              <button 
-                onClick={handleViewAllReports}
-                style={styles.viewAllButton}
-              >
+              <button onClick={handleViewAllReports} style={styles.viewAllButton}>
                 View All Reports →
               </button>
             )}
@@ -301,7 +298,7 @@ export default function SupervisorDashboard() {
                       <span style={styles.reportStatus}>✅ Completed</span>
                     </div>
 
-                    {/* Score Cards - Horizontal Layout */}
+                    {/* Score Row */}
                     <div style={styles.scoreRow}>
                       <div style={styles.scoreItem}>
                         <div style={styles.scoreLabel}>Workplace Readiness</div>
@@ -326,10 +323,7 @@ export default function SupervisorDashboard() {
                       </div>
                     </div>
 
-                    <button 
-                      onClick={() => handleViewReport(report.result_id)}
-                      style={styles.viewReportButton}
-                    >
+                    <button onClick={() => handleViewReport(report.result_id)} style={styles.viewReportButton}>
                       📄 View Full Report
                     </button>
                   </div>
@@ -339,7 +333,7 @@ export default function SupervisorDashboard() {
           )}
         </div>
 
-        {/* All Candidates - Enhanced */}
+        {/* All Candidates */}
         <div style={styles.candidatesSection}>
           <h2 style={styles.sectionTitle}>👥 All Candidates</h2>
           <div style={styles.candidatesGrid}>
@@ -393,9 +387,7 @@ export default function SupervisorDashboard() {
                       );
                     })}
                     {(!candidate.assessments || candidate.assessments.length === 0) && (
-                      <div style={styles.noAssessments}>
-                        No assessments assigned yet.
-                      </div>
+                      <div style={styles.noAssessments}>No assessments assigned yet.</div>
                     )}
                   </div>
                 </div>
@@ -434,7 +426,7 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '30px',
+    marginBottom: '24px',
     flexWrap: 'wrap',
     gap: '12px',
     background: 'white',
@@ -444,9 +436,9 @@ const styles = {
     border: '1px solid #eef2f7'
   },
   title: {
-    fontSize: '28px',
+    fontSize: '24px',
     fontWeight: '700',
-    color: '#1a237e',
+    color: '#0a1929',
     margin: 0
   },
   subtitle: {
@@ -456,27 +448,37 @@ const styles = {
   },
   headerActions: {
     display: 'flex',
-    gap: '12px'
+    gap: '10px'
   },
   refreshButton: {
-    padding: '10px 20px',
+    padding: '8px 16px',
     background: '#f1f5f9',
     border: '1px solid #e2e8f0',
     borderRadius: '8px',
     cursor: 'pointer',
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: '500',
     color: '#475569'
   },
+  reportsButton: {
+    padding: '8px 16px',
+    background: '#1a237e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '500'
+  },
   statsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
     gap: '16px',
-    marginBottom: '30px'
+    marginBottom: '24px'
   },
   statCard: {
     background: 'white',
-    padding: '20px',
+    padding: '16px 20px',
     borderRadius: '12px',
     display: 'flex',
     alignItems: 'center',
@@ -490,7 +492,6 @@ const styles = {
   statLabel: {
     fontSize: '12px',
     color: '#718096',
-    marginBottom: '4px',
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: '0.04em'
@@ -501,10 +502,10 @@ const styles = {
     color: '#0a1929'
   },
   reportsSection: {
-    marginBottom: '30px',
+    marginBottom: '24px',
     background: 'white',
     borderRadius: '12px',
-    padding: '24px',
+    padding: '20px 24px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
     border: '1px solid #eef2f7'
   },
@@ -519,7 +520,7 @@ const styles = {
   sectionTitle: {
     fontSize: '18px',
     fontWeight: '600',
-    color: '#1a237e',
+    color: '#0a1929',
     margin: 0
   },
   viewAllButton: {
@@ -539,16 +540,15 @@ const styles = {
   },
   reportCard: {
     background: '#f8fafc',
-    padding: '20px',
+    padding: '16px 20px',
     borderRadius: '12px',
-    border: '1px solid #e2e8f0',
-    transition: 'box-shadow 0.2s'
+    border: '1px solid #e2e8f0'
   },
   reportHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: '14px'
+    marginBottom: '12px'
   },
   reportTitle: {
     fontSize: '14px',
@@ -577,32 +577,32 @@ const styles = {
     alignItems: 'center',
     gap: '12px',
     background: 'white',
-    padding: '14px 16px',
+    padding: '12px 16px',
     borderRadius: '8px',
-    marginBottom: '14px',
+    marginBottom: '12px',
     flexWrap: 'wrap'
   },
   scoreItem: {
     flex: 1,
-    minWidth: '80px',
+    minWidth: '70px',
     textAlign: 'center'
   },
   scoreLabel: {
-    fontSize: '11px',
+    fontSize: '10px',
     color: '#94a3b8',
-    fontWeight: '500',
+    fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: '0.04em'
   },
   scoreValue: {
-    fontSize: '20px',
+    fontSize: '18px',
     fontWeight: '700',
     color: '#1a237e',
     marginTop: '2px'
   },
   scoreDivider: {
     width: '1px',
-    height: '30px',
+    height: '28px',
     background: '#e2e8f0'
   },
   viewReportButton: {
@@ -619,7 +619,7 @@ const styles = {
   candidatesSection: {
     background: 'white',
     borderRadius: '12px',
-    padding: '24px',
+    padding: '20px 24px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
     border: '1px solid #eef2f7'
   },
