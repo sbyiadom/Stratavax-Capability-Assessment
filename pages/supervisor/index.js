@@ -32,7 +32,6 @@ export default function SupervisorDashboard() {
       setLoading(true);
       
       const supervisorId = session.user.id;
-      console.log('[Supervisor] Supervisor ID:', supervisorId);
 
       // Get candidates
       const { data: assignedCandidates, error: candidatesError } = await supabase
@@ -51,7 +50,7 @@ export default function SupervisorDashboard() {
       if (assignedCandidates && assignedCandidates.length > 0) {
         const candidateIds = assignedCandidates.map(c => c.id);
         
-        // Get assessments
+        // Get assessments with assessment type info
         const { data: assessments, error: assessmentsError } = await supabase
           .from('candidate_assessments')
           .select(`
@@ -62,8 +61,9 @@ export default function SupervisorDashboard() {
             result_id,
             completed_at,
             assessments!inner(
+              id,
               title, 
-              assessment_type:assessment_types(code)
+              assessment_type:assessment_types(code, name)
             )
           `)
           .in('user_id', candidateIds);
@@ -96,7 +96,6 @@ export default function SupervisorDashboard() {
                 university: candidate?.university || '',
                 programme: candidate?.programme || '',
                 assessment_title: assessment.assessments?.title || 'National Service Assessment',
-                status: 'completed',
                 scores: {
                   overall: resultData?.percentage_score || 0,
                   workplace: resultData?.workplace_readiness || 0,
@@ -106,10 +105,9 @@ export default function SupervisorDashboard() {
               });
             }
           } else if (isCompleted && assessment.result_id) {
-            // Other completed assessments
             const { data: resultData, error: resultError } = await supabase
               .from('assessment_results')
-              .select('percentage_score, completed_at')
+              .select('percentage_score')
               .eq('id', assessment.result_id)
               .single();
 
@@ -121,8 +119,8 @@ export default function SupervisorDashboard() {
                 candidate_name: candidate?.full_name || 'Unknown',
                 candidate_email: candidate?.email || '',
                 assessment_title: assessment.assessments?.title || 'Assessment',
-                score: resultData?.percentage_score || 0,
-                completed_at: assessment.completed_at || resultData?.completed_at
+                assessment_type: assessment.assessments?.assessment_type?.name || 'General',
+                score: resultData?.percentage_score || 0
               });
             }
           }
@@ -131,19 +129,41 @@ export default function SupervisorDashboard() {
         setNationalServiceReports(nsReports);
         setOtherReports(otherAssessments);
 
-        // Build candidate list
-        const candidateList = assignedCandidates.map(c => ({
-          ...c,
-          assessments: allAssessments
+        // Build candidate list with all assessments
+        const candidateList = assignedCandidates.map(c => {
+          const candidateAssessments = allAssessments
             .filter(a => a.user_id === c.id)
-            .map(a => ({
-              id: a.assessment_id,
-              title: a.assessments?.title || 'Assessment',
-              status: a.status,
-              result_id: a.result_id,
-              isNationalService: a.assessments?.assessment_type?.code === 'national_service'
-            }))
-        }));
+            .map(a => {
+              const isCompleted = a.status === 'completed' || a.result_id !== null;
+              const isNationalService = a.assessments?.assessment_type?.code === 'national_service';
+              return {
+                id: a.assessment_id,
+                title: a.assessments?.title || 'Assessment',
+                status: a.status,
+                result_id: a.result_id,
+                isCompleted: isCompleted,
+                isNationalService: isNationalService,
+                assessment_type: a.assessments?.assessment_type?.name || 'General'
+              };
+            });
+
+          // Get completed assessments with scores
+          const completedWithScores = candidateAssessments
+            .filter(a => a.isCompleted && a.result_id)
+            .map(a => {
+              const report = [...nsReports, ...otherAssessments].find(r => r.result_id === a.result_id);
+              return {
+                ...a,
+                score: report?.score || report?.scores?.overall || 0
+              };
+            });
+
+          return {
+            ...c,
+            assessments: candidateAssessments,
+            completedAssessments: completedWithScores
+          };
+        });
 
         setCandidates(candidateList);
         
@@ -268,7 +288,7 @@ export default function SupervisorDashboard() {
               border: activeTab === 'national_service' ? 'none' : '1px solid #e2e8f0'
             }}
           >
-            📋 National Service Reports ({nationalServiceReports.length})
+            📋 National Service ({nationalServiceReports.length})
           </button>
           <button
             onClick={() => setActiveTab('other')}
@@ -409,7 +429,7 @@ export default function SupervisorDashboard() {
             </div>
           )}
 
-          {/* Candidates Tab */}
+          {/* All Candidates Tab - Enhanced with all assessments */}
           {activeTab === 'candidates' && (
             <div style={styles.tabPanel}>
               {candidates.length === 0 ? (
@@ -432,38 +452,76 @@ export default function SupervisorDashboard() {
                       </span>
                     </div>
 
-                    <div style={styles.assessmentList}>
-                      {candidate.assessments?.map((assessment) => {
-                        const statusColor = getStatusColor(assessment.status);
-                        return (
-                          <div key={assessment.id} style={styles.assessmentItem}>
-                            <div style={styles.assessmentInfo}>
-                              <span style={styles.assessmentTitle}>{assessment.title}</span>
-                              <span style={{ 
-                                ...styles.assessmentStatus,
-                                background: statusColor.bg,
-                                color: statusColor.color
-                              }}>
-                                {getStatusLabel(assessment.status)}
-                              </span>
-                              {assessment.isNationalService && (
-                                <span style={styles.nationalServiceBadge}>🇬🇭 NS</span>
-                              )}
-                            </div>
-                            {assessment.result_id && (
-                              <button 
-                                onClick={() => handleViewReport(assessment.result_id)}
-                                style={styles.viewReportButtonSmall}
-                              >
-                                📄 View Report
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                      {(!candidate.assessments || candidate.assessments.length === 0) && (
-                        <div style={styles.noAssessments}>No assessments assigned yet.</div>
-                      )}
+                    {/* Assessments Table */}
+                    <div style={styles.assessmentTableContainer}>
+                      <table style={styles.assessmentTable}>
+                        <thead>
+                          <tr>
+                            <th style={styles.ath}>Assessment</th>
+                            <th style={styles.ath}>Type</th>
+                            <th style={styles.ath}>Status</th>
+                            <th style={styles.ath}>Score</th>
+                            <th style={styles.ath}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {candidate.assessments?.map((assessment) => {
+                            const statusColor = getStatusColor(assessment.status);
+                            // Find score if completed
+                            let score = 0;
+                            if (assessment.isCompleted && assessment.result_id) {
+                              const found = [...nationalServiceReports, ...otherReports].find(r => r.result_id === assessment.result_id);
+                              score = found?.score || found?.scores?.overall || 0;
+                            }
+                            return (
+                              <tr key={assessment.id} style={styles.atr}>
+                                <td style={styles.atd}>
+                                  <span style={styles.assessmentTitle}>{assessment.title}</span>
+                                  {assessment.isNationalService && (
+                                    <span style={styles.nationalServiceBadge}>🇬🇭 NS</span>
+                                  )}
+                                </td>
+                                <td style={styles.atd}>{assessment.assessment_type}</td>
+                                <td style={styles.atd}>
+                                  <span style={{ 
+                                    ...styles.assessmentStatus,
+                                    background: statusColor.bg,
+                                    color: statusColor.color
+                                  }}>
+                                    {getStatusLabel(assessment.status)}
+                                  </span>
+                                </td>
+                                <td style={styles.atd}>
+                                  {assessment.isCompleted && assessment.result_id ? (
+                                    <span style={styles.scoreBadge}>{Math.round(score)}%</span>
+                                  ) : (
+                                    <span style={styles.noScore}>—</span>
+                                  )}
+                                </td>
+                                <td style={styles.atd}>
+                                  {assessment.result_id ? (
+                                    <button
+                                      onClick={() => handleViewReport(assessment.result_id)}
+                                      style={styles.viewButtonSmall}
+                                    >
+                                      📄 View Report
+                                    </button>
+                                  ) : (
+                                    <span style={styles.noAction}>—</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {(!candidate.assessments || candidate.assessments.length === 0) && (
+                            <tr>
+                              <td colSpan="5" style={styles.noAssessments}>
+                                No assessments assigned yet.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 ))
@@ -580,7 +638,7 @@ const styles = {
     borderBottom: '2px solid #e2e8f0'
   },
   td: { padding: '12px 16px', borderBottom: '1px solid #e2e8f0', verticalAlign: 'middle' },
-  tr: { transition: 'background 0.2s', '&:hover': { background: '#f8fafc' } },
+  tr: { transition: 'background 0.2s' },
   cellName: { fontWeight: '600', color: '#1a202c' },
   cellSub: { fontSize: '12px', color: '#94a3b8' },
   scoreBadge: {
@@ -612,6 +670,17 @@ const styles = {
     fontWeight: '500',
     transition: 'background 0.2s'
   },
+  viewButtonSmall: {
+    padding: '4px 12px',
+    background: '#1a237e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: '500',
+    transition: 'background 0.2s'
+  },
   candidateCard: {
     background: '#f8fafc',
     padding: '16px',
@@ -625,7 +694,7 @@ const styles = {
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: '8px',
-    marginBottom: '10px'
+    marginBottom: '12px'
   },
   candidateName: { fontSize: '16px', fontWeight: '600', color: '#1a202c' },
   candidateDetails: { fontSize: '13px', color: '#64748b' },
@@ -637,39 +706,33 @@ const styles = {
     fontSize: '12px',
     color: '#475569'
   },
-  assessmentList: { display: 'flex', flexDirection: 'column', gap: '8px' },
-  assessmentItem: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '8px 14px',
-    background: 'white',
-    borderRadius: '8px',
-    flexWrap: 'wrap',
-    gap: '8px'
+  assessmentTableContainer: { overflowX: 'auto' },
+  assessmentTable: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
+  ath: {
+    padding: '8px 12px',
+    textAlign: 'left',
+    background: '#f1f5f9',
+    fontWeight: '600',
+    color: '#475569',
+    borderBottom: '1px solid #e2e8f0',
+    fontSize: '12px'
   },
-  assessmentInfo: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' },
-  assessmentTitle: { fontSize: '14px', fontWeight: '500', color: '#1a202c' },
-  assessmentStatus: { padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '500' },
+  atd: { padding: '8px 12px', borderBottom: '1px solid #e2e8f0', verticalAlign: 'middle' },
+  atr: { transition: 'background 0.2s' },
+  assessmentTitle: { fontSize: '13px', fontWeight: '500', color: '#1a202c' },
+  assessmentStatus: { padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '500' },
   nationalServiceBadge: {
-    padding: '2px 10px',
+    padding: '2px 8px',
     background: '#1a237e',
     color: 'white',
     borderRadius: '12px',
-    fontSize: '10px',
-    fontWeight: '700'
+    fontSize: '9px',
+    fontWeight: '700',
+    marginLeft: '8px'
   },
-  viewReportButtonSmall: {
-    padding: '4px 12px',
-    background: '#1a237e',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '12px',
-    fontWeight: '500'
-  },
-  noAssessments: { padding: '8px 14px', color: '#94a3b8', fontSize: '13px', fontStyle: 'italic' },
+  noScore: { color: '#94a3b8', fontSize: '13px' },
+  noAction: { color: '#94a3b8', fontSize: '13px' },
+  noAssessments: { padding: '12px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontStyle: 'italic' },
   emptyState: { textAlign: 'center', padding: '40px', color: '#64748b', background: '#f8fafc', borderRadius: '8px' }
 };
 
