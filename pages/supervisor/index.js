@@ -31,7 +31,7 @@ export default function SupervisorDashboard() {
       
       const supervisorId = session.user.id;
 
-      // Step 1: Get all candidates assigned to this supervisor
+      // Get all candidates assigned to this supervisor
       const { data: assignedCandidates, error: candidatesError } = await supabase
         .from('candidate_profiles')
         .select('id, full_name, email, university, programme')
@@ -47,7 +47,6 @@ export default function SupervisorDashboard() {
       if (assignedCandidates && assignedCandidates.length > 0) {
         const candidateIds = assignedCandidates.map(c => c.id);
         
-        // Get all assessments for these candidates
         const { data: assessments, error: assessmentsError } = await supabase
           .from('candidate_assessments')
           .select(`
@@ -115,7 +114,7 @@ export default function SupervisorDashboard() {
         const validReports = reportsWithScores.filter(r => r !== null);
         setNationalServiceReports(validReports);
 
-        // Build candidate map with assessments
+        // Build candidate map
         const candidateMap = {};
         
         assignedCandidates.forEach(c => {
@@ -150,7 +149,6 @@ export default function SupervisorDashboard() {
 
         setCandidates(Object.values(candidateMap));
         
-        // Calculate stats
         const totalCandidates = assignedCandidates.length;
         const completed = allAssessments.filter(a => a.status === 'completed' || a.result_id !== null).length || 0;
         const pending = allAssessments.filter(a => a.status === 'in_progress' || a.status === 'unblocked').length || 0;
@@ -228,8 +226,8 @@ export default function SupervisorDashboard() {
             <p style={styles.subtitle}>Manage your candidates and review assessment reports.</p>
           </div>
           <div style={styles.headerActions}>
-            <button onClick={fetchDashboardData} style={styles.refreshButton}>Refresh</button>
-            <button onClick={() => router.push('/supervisor/reports')} style={styles.reportsButton}>📋 Reports</button>
+            <button onClick={fetchDashboardData} style={styles.refreshButton}>🔄 Refresh</button>
+            <button onClick={handleViewAllReports} style={styles.reportsButton}>📋 View All Reports</button>
           </div>
         </div>
 
@@ -245,7 +243,7 @@ export default function SupervisorDashboard() {
           <div style={styles.statCard}>
             <div style={styles.statIcon}>✅</div>
             <div>
-              <div style={styles.statLabel}>Completed Assessments</div>
+              <div style={styles.statLabel}>Completed</div>
               <div style={styles.statValue}>{stats.completedAssessments}</div>
             </div>
           </div>
@@ -265,7 +263,7 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        {/* National Service Reports Section */}
+        {/* National Service Reports - Admin Style Cards */}
         <div style={styles.reportsSection}>
           <div style={styles.sectionHeader}>
             <h2 style={styles.sectionTitle}>📋 National Service Reports</h2>
@@ -283,7 +281,7 @@ export default function SupervisorDashboard() {
             </div>
           ) : (
             <div style={styles.reportsGrid}>
-              {nationalServiceReports.slice(0, 4).map((report) => {
+              {nationalServiceReports.map((report) => {
                 const recColor = getRecommendationColor(report.scores?.recommendation);
                 return (
                   <div key={report.result_id} style={styles.reportCard}>
@@ -292,13 +290,13 @@ export default function SupervisorDashboard() {
                         <div style={styles.reportTitle}>{report.assessment_title}</div>
                         <div style={styles.reportCandidateName}>{report.candidate_name}</div>
                         <div style={styles.reportCandidateDetails}>
-                          {report.university} • {report.programme}
+                          {report.university} • {report.programme} • {report.candidate_email}
                         </div>
                       </div>
                       <span style={styles.reportStatus}>✅ Completed</span>
                     </div>
 
-                    {/* Score Row */}
+                    {/* Admin-Style Score Row */}
                     <div style={styles.scoreRow}>
                       <div style={styles.scoreItem}>
                         <div style={styles.scoreLabel}>Workplace Readiness</div>
@@ -323,9 +321,11 @@ export default function SupervisorDashboard() {
                       </div>
                     </div>
 
-                    <button onClick={() => handleViewReport(report.result_id)} style={styles.viewReportButton}>
-                      📄 View Full Report
-                    </button>
+                    <div style={styles.reportActions}>
+                      <button onClick={() => handleViewReport(report.result_id)} style={styles.viewReportButton}>
+                        📄 View Full Report
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -333,7 +333,7 @@ export default function SupervisorDashboard() {
           )}
         </div>
 
-        {/* All Candidates */}
+        {/* All Candidates - Admin Style */}
         <div style={styles.candidatesSection}>
           <h2 style={styles.sectionTitle}>👥 All Candidates</h2>
           <div style={styles.candidatesGrid}>
@@ -361,7 +361,7 @@ export default function SupervisorDashboard() {
                     {candidate.assessments?.map((assessment) => {
                       const statusStyle = getStatusColor(assessment.status);
                       return (
-                        <div key={assessment.id} style={styles.assessmentCard}>
+                        <div key={assessment.id} style={styles.assessmentItem}>
                           <div style={styles.assessmentInfo}>
                             <span style={styles.assessmentTitle}>{assessment.title}</span>
                             <span style={{ 
@@ -535,7 +535,7 @@ const styles = {
   },
   reportsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
     gap: '16px'
   },
   reportCard: {
@@ -605,8 +605,12 @@ const styles = {
     height: '28px',
     background: '#e2e8f0'
   },
+  reportActions: {
+    display: 'flex',
+    gap: '10px'
+  },
   viewReportButton: {
-    width: '100%',
+    flex: 1,
     padding: '10px',
     background: '#1a237e',
     color: 'white',
@@ -663,11 +667,11 @@ const styles = {
     color: '#475569'
   },
   assessmentGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+    display: 'flex',
+    flexDirection: 'column',
     gap: '8px'
   },
-  assessmentCard: {
+  assessmentItem: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
