@@ -12,14 +12,9 @@ export default function SupervisorDashboard() {
   
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('national_service');
-  const [selectedCandidate, setSelectedCandidate] = useState(null);
-  const [selectedAssessment, setSelectedAssessment] = useState(null);
   const [candidates, setCandidates] = useState([]);
   const [nationalServiceReports, setNationalServiceReports] = useState([]);
   const [otherReports, setOtherReports] = useState([]);
-  const [candidateAssessments, setCandidateAssessments] = useState([]);
-  const [filteredAssessments, setFilteredAssessments] = useState([]);
-  const [selectedAssessmentType, setSelectedAssessmentType] = useState('all');
   const [stats, setStats] = useState({
     totalCandidates: 0,
     completedAssessments: 0,
@@ -111,7 +106,6 @@ export default function SupervisorDashboard() {
               };
 
               if (isNationalService) {
-                // Add NS-specific fields
                 reportData.scores = {
                   overall: resultData?.percentage_score || 0,
                   workplace: resultData?.workplace_readiness || 0,
@@ -129,18 +123,25 @@ export default function SupervisorDashboard() {
         setNationalServiceReports(nsReports);
         setOtherReports(otherAssessments);
 
-        // Build candidate list with all assessments
-        const candidateList = assignedCandidates.map(c => ({
-          ...c,
-          assessments: allAssessments
-            .filter(a => a.user_id === c.id)
+        // Build candidate list with assessment stats and dropdown options
+        const candidateList = assignedCandidates.map(c => {
+          const candidateAssessments = allAssessments.filter(a => a.user_id === c.id);
+          
+          // Count assessment statuses
+          const completed = candidateAssessments.filter(a => a.status === 'completed' || a.result_id !== null).length;
+          const inProgress = candidateAssessments.filter(a => a.status === 'in_progress').length;
+          const unblocked = candidateAssessments.filter(a => a.status === 'unblocked').length;
+          const blocked = candidateAssessments.filter(a => a.status === 'blocked').length;
+          const notStarted = candidateAssessments.filter(a => a.status === 'pending' || !a.status).length;
+          
+          // Build dropdown options for completed assessments
+          const completedAssessments = candidateAssessments
+            .filter(a => a.status === 'completed' || a.result_id !== null)
             .map(a => {
-              const isCompleted = a.status === 'completed' || a.result_id !== null;
               const isNationalService = a.assessments?.assessment_type?.code === 'national_service';
-              // Find score from reports
               let score = 0;
               let reportData = null;
-              if (isCompleted && a.result_id) {
+              if (a.result_id) {
                 const found = [...nsReports, ...otherAssessments].find(r => r.result_id === a.result_id);
                 if (found) {
                   score = found.score || found.scores?.overall || 0;
@@ -148,20 +149,32 @@ export default function SupervisorDashboard() {
                 }
               }
               return {
-                id: a.assessment_id,
+                assessment_id: a.assessment_id,
                 title: a.assessments?.title || 'Assessment',
-                status: a.status,
                 result_id: a.result_id,
-                isCompleted: isCompleted,
-                isNationalService: isNationalService,
-                assessment_type: a.assessments?.assessment_type?.name || 'General',
-                assessment_code: a.assessments?.assessment_type?.code || 'general',
                 score: score,
-                reportData: reportData,
-                completed_at: a.completed_at
+                isNationalService: isNationalService,
+                assessment_code: a.assessments?.assessment_type?.code || 'general',
+                assessment_type: a.assessments?.assessment_type?.name || 'General',
+                reportData: reportData
               };
             })
-        }));
+            .filter(a => a.result_id);
+
+          return {
+            ...c,
+            assessments: candidateAssessments,
+            stats: {
+              completed: completed,
+              inProgress: inProgress,
+              unblocked: unblocked,
+              blocked: blocked,
+              notStarted: notStarted,
+              total: candidateAssessments.length
+            },
+            completedAssessments: completedAssessments
+          };
+        });
 
         setCandidates(candidateList);
         
@@ -180,7 +193,7 @@ export default function SupervisorDashboard() {
     }
   };
 
-  const handleViewReport = (resultId, isNationalService = false) => {
+  const handleViewReport = (resultId) => {
     router.push(`/supervisor/reports/${resultId}`);
   };
 
@@ -188,35 +201,12 @@ export default function SupervisorDashboard() {
     router.push('/supervisor/reports');
   };
 
-  const handleCandidateSelect = (candidateId) => {
+  const handleAssessmentSelect = (candidateId, assessmentId) => {
     const candidate = candidates.find(c => c.id === candidateId);
-    setSelectedCandidate(candidate);
-    setSelectedAssessment(null);
-    setSelectedAssessmentType('all');
-    if (candidate) {
-      setCandidateAssessments(candidate.assessments || []);
-      // Filter assessments to show only completed ones with results
-      const completedOnly = (candidate.assessments || []).filter(a => a.isCompleted && a.result_id);
-      setFilteredAssessments(completedOnly);
-    }
-  };
-
-  const handleAssessmentTypeFilter = (type) => {
-    setSelectedAssessmentType(type);
-    if (selectedCandidate) {
-      let filtered = (selectedCandidate.assessments || []).filter(a => a.isCompleted && a.result_id);
-      if (type !== 'all') {
-        filtered = filtered.filter(a => a.assessment_code === type);
-      }
-      setFilteredAssessments(filtered);
-    }
-  };
-
-  const handleAssessmentSelect = (assessmentId) => {
-    const assessment = filteredAssessments.find(a => a.id === assessmentId);
-    setSelectedAssessment(assessment);
-    if (assessment?.result_id) {
-      handleViewReport(assessment.result_id, assessment.isNationalService);
+    if (!candidate) return;
+    const assessment = candidate.completedAssessments.find(a => String(a.assessment_id) === String(assessmentId));
+    if (assessment && assessment.result_id) {
+      handleViewReport(assessment.result_id);
     }
   };
 
@@ -248,20 +238,6 @@ export default function SupervisorDashboard() {
       'Not Recommended': '#c62828'
     };
     return colors[rec] || '#64748b';
-  };
-
-  // Get unique assessment types for filter dropdown
-  const getAssessmentTypes = () => {
-    if (!selectedCandidate) return [];
-    const types = {};
-    (selectedCandidate.assessments || []).forEach(a => {
-      if (a.isCompleted && a.result_id) {
-        if (!types[a.assessment_code]) {
-          types[a.assessment_code] = { code: a.assessment_code, name: a.assessment_type };
-        }
-      }
-    });
-    return Object.values(types);
   };
 
   if (authLoading || loading) {
@@ -360,7 +336,7 @@ export default function SupervisorDashboard() {
 
         {/* Tab Content */}
         <div style={styles.tabContent}>
-          {/* National Service Reports Tab */}
+          {/* National Service Reports Tab - Shows ALL NS Reports */}
           {activeTab === 'national_service' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
@@ -414,7 +390,7 @@ export default function SupervisorDashboard() {
                             </td>
                             <td style={styles.td}>
                               <button
-                                onClick={() => handleViewReport(report.result_id, true)}
+                                onClick={() => handleViewReport(report.result_id)}
                                 style={styles.viewButton}
                               >
                                 📄 View NS Report
@@ -430,7 +406,7 @@ export default function SupervisorDashboard() {
             </div>
           )}
 
-          {/* Other Assessments Tab */}
+          {/* Other Assessments Tab - Shows ALL Other Assessments */}
           {activeTab === 'other' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
@@ -464,7 +440,7 @@ export default function SupervisorDashboard() {
                           </td>
                           <td style={styles.td}>
                             <button
-                              onClick={() => handleViewReport(report.result_id, false)}
+                              onClick={() => handleViewReport(report.result_id)}
                               style={styles.viewButton}
                             >
                               📄 View Report
@@ -479,120 +455,90 @@ export default function SupervisorDashboard() {
             </div>
           )}
 
-          {/* All Candidates Tab - With Dropdown */}
+          {/* All Candidates Tab - Horizontal Layout with Dropdown */}
           {activeTab === 'candidates' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
-                <p>👥 Select a candidate, then choose an assessment to view their report.</p>
+                <p>👥 All candidates with assessment status and ability to view individual reports.</p>
               </div>
+
               {candidates.length === 0 ? (
                 <div style={styles.emptyState}>
                   <p>No candidates assigned to you yet.</p>
                 </div>
               ) : (
-                <div style={styles.candidateSelector}>
-                  {/* Step 1: Candidate Selection */}
-                  <div style={styles.selectorSection}>
-                    <h3 style={styles.selectorTitle}>Step 1: Select a Candidate</h3>
-                    <div style={styles.candidateList}>
+                <div style={styles.candidatesTableContainer}>
+                  <table style={styles.candidatesTable}>
+                    <thead>
+                      <tr>
+                        <th style={styles.cth}>Candidate</th>
+                        <th style={styles.cth}>Completed</th>
+                        <th style={styles.cth}>In Progress</th>
+                        <th style={styles.cth}>Ready to Start</th>
+                        <th style={styles.cth}>Blocked</th>
+                        <th style={styles.cth}>Not Started</th>
+                        <th style={styles.cth}>Select Assessment</th>
+                        <th style={styles.cth}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
                       {candidates.map((candidate) => (
-                        <button
-                          key={candidate.id}
-                          onClick={() => handleCandidateSelect(candidate.id)}
-                          style={{
-                            ...styles.candidateSelectButton,
-                            background: selectedCandidate?.id === candidate.id ? '#1a237e' : 'white',
-                            color: selectedCandidate?.id === candidate.id ? 'white' : '#1a202c',
-                            border: selectedCandidate?.id === candidate.id ? 'none' : '1px solid #e2e8f0'
-                          }}
-                        >
-                          <div style={styles.candidateSelectName}>{candidate.name}</div>
-                          <div style={styles.candidateSelectEmail}>{candidate.email}</div>
-                          <div style={styles.candidateSelectBadge}>
-                            {candidate.assessments?.filter(a => a.isCompleted && a.result_id).length || 0} completed
-                          </div>
-                        </button>
+                        <tr key={candidate.id} style={styles.ctr}>
+                          <td style={styles.ctd}>
+                            <div style={styles.candidateNameCell}>{candidate.full_name || candidate.name}</div>
+                            <div style={styles.candidateEmailCell}>{candidate.email}</div>
+                            <div style={styles.candidateUniversityCell}>{candidate.university} • {candidate.programme}</div>
+                          </td>
+                          <td style={styles.ctd}>
+                            <span style={styles.statBadgeCompleted}>{candidate.stats.completed}</span>
+                          </td>
+                          <td style={styles.ctd}>
+                            <span style={styles.statBadgeProgress}>{candidate.stats.inProgress}</span>
+                          </td>
+                          <td style={styles.ctd}>
+                            <span style={styles.statBadgeUnblocked}>{candidate.stats.unblocked}</span>
+                          </td>
+                          <td style={styles.ctd}>
+                            <span style={styles.statBadgeBlocked}>{candidate.stats.blocked}</span>
+                          </td>
+                          <td style={styles.ctd}>
+                            <span style={styles.statBadgeNotStarted}>{candidate.stats.notStarted}</span>
+                          </td>
+                          <td style={styles.ctd}>
+                            <select
+                              onChange={(e) => handleAssessmentSelect(candidate.id, e.target.value)}
+                              style={styles.assessmentDropdown}
+                              defaultValue=""
+                            >
+                              <option value="">-- Select --</option>
+                              {candidate.completedAssessments.map((assessment) => (
+                                <option key={assessment.assessment_id} value={assessment.assessment_id}>
+                                  {assessment.title} ({Math.round(assessment.score)}%)
+                                </option>
+                              ))}
+                              {candidate.completedAssessments.length === 0 && (
+                                <option value="" disabled>No completed assessments</option>
+                              )}
+                            </select>
+                          </td>
+                          <td style={styles.ctd}>
+                            <button
+                              onClick={() => {
+                                const select = document.querySelector(`select[data-candidate="${candidate.id}"]`);
+                                if (select && select.value) {
+                                  handleAssessmentSelect(candidate.id, select.value);
+                                }
+                              }}
+                              style={styles.viewReportButtonSmall}
+                              disabled={candidate.completedAssessments.length === 0}
+                            >
+                              📄 View Report
+                            </button>
+                          </td>
+                        </tr>
                       ))}
-                    </div>
-                  </div>
-
-                  {/* Step 2: Assessment Selection with Dropdown */}
-                  {selectedCandidate && (
-                    <div style={styles.selectorSection}>
-                      <h3 style={styles.selectorTitle}>Step 2: Select an Assessment</h3>
-                      
-                      {/* Assessment Type Filter Dropdown */}
-                      <div style={styles.filterRow}>
-                        <label style={styles.filterLabel}>Filter by Assessment Type:</label>
-                        <select
-                          value={selectedAssessmentType}
-                          onChange={(e) => handleAssessmentTypeFilter(e.target.value)}
-                          style={styles.filterSelect}
-                        >
-                          <option value="all">📋 All Assessments</option>
-                          {getAssessmentTypes().map((type) => (
-                            <option key={type.code} value={type.code}>
-                              {type.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {filteredAssessments.length === 0 ? (
-                        <div style={styles.emptyState}>No completed assessments available for this candidate.</div>
-                      ) : (
-                        <div style={styles.assessmentDropdownContainer}>
-                          <label style={styles.filterLabel}>Choose an assessment to view:</label>
-                          <select
-                            value={selectedAssessment?.id || ''}
-                            onChange={(e) => {
-                              const assessment = filteredAssessments.find(a => String(a.id) === String(e.target.value));
-                              if (assessment) {
-                                setSelectedAssessment(assessment);
-                                handleViewReport(assessment.result_id, assessment.isNationalService);
-                              }
-                            }}
-                            style={styles.assessmentSelectDropdown}
-                          >
-                            <option value="">-- Select an assessment --</option>
-                            {filteredAssessments.map((assessment) => (
-                              <option key={assessment.id} value={assessment.id}>
-                                {assessment.title} {assessment.isNationalService ? '(NS)' : ''} - Score: {Math.round(assessment.score || 0)}%
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Selected Candidate Info */}
-                  {selectedCandidate && (
-                    <div style={styles.selectedInfo}>
-                      <div style={styles.selectedInfoHeader}>
-                        <span style={styles.selectedInfoIcon}>👤</span>
-                        <div>
-                          <div style={styles.selectedInfoName}>{selectedCandidate.name}</div>
-                          <div style={styles.selectedInfoDetails}>
-                            {selectedCandidate.university} • {selectedCandidate.programme}
-                          </div>
-                          <div style={styles.selectedInfoEmail}>{selectedCandidate.email}</div>
-                        </div>
-                      </div>
-                      {selectedAssessment && (
-                        <div style={styles.selectedAssessmentInfo}>
-                          <span style={styles.selectedAssessmentLabel}>Selected Assessment:</span>
-                          <span style={styles.selectedAssessmentName}>{selectedAssessment.title}</span>
-                          <span style={styles.selectedAssessmentScore}>Score: {Math.round(selectedAssessment.score || 0)}%</span>
-                          {selectedAssessment.isNationalService ? (
-                            <span style={styles.selectedAssessmentFormat}>📋 National Service Format</span>
-                          ) : (
-                            <span style={styles.selectedAssessmentFormat}>📊 Stratavax Format</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
@@ -747,148 +693,83 @@ const styles = {
     fontWeight: '500',
     transition: 'background 0.2s'
   },
-  candidateSelector: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px'
-  },
-  selectorSection: {
-    background: '#f8fafc',
-    padding: '16px 20px',
-    borderRadius: '8px',
-    border: '1px solid #e2e8f0'
-  },
-  selectorTitle: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#1a237e',
-    margin: '0 0 12px 0'
-  },
-  candidateList: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-    gap: '8px',
-    maxHeight: '200px',
-    overflowY: 'auto'
-  },
-  candidateSelectButton: {
-    padding: '10px 14px',
-    borderRadius: '8px',
-    cursor: 'pointer',
+  // Candidates Table Styles
+  candidatesTableContainer: { overflowX: 'auto' },
+  candidatesTable: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
+  cth: {
+    padding: '10px 12px',
     textAlign: 'left',
-    transition: 'all 0.2s',
-    fontFamily: 'inherit'
-  },
-  candidateSelectName: {
-    fontSize: '14px',
-    fontWeight: '500',
-    color: 'inherit'
-  },
-  candidateSelectEmail: {
-    fontSize: '11px',
-    color: '#94a3b8'
-  },
-  candidateSelectBadge: {
-    fontSize: '10px',
-    color: '#2e7d32',
-    background: '#e8f5e9',
-    padding: '2px 8px',
-    borderRadius: '10px',
-    marginTop: '4px',
-    display: 'inline-block'
-  },
-  filterRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '12px',
-    flexWrap: 'wrap'
-  },
-  filterLabel: {
-    fontSize: '13px',
-    fontWeight: '500',
-    color: '#475569'
-  },
-  filterSelect: {
-    padding: '6px 12px',
-    borderRadius: '6px',
-    border: '1px solid #e2e8f0',
-    fontSize: '13px',
-    background: 'white',
-    minWidth: '200px'
-  },
-  assessmentDropdownContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px'
-  },
-  assessmentSelectDropdown: {
-    padding: '10px 14px',
-    borderRadius: '6px',
-    border: '1px solid #e2e8f0',
-    fontSize: '14px',
-    background: 'white',
-    width: '100%',
-    maxWidth: '500px'
-  },
-  selectedInfo: {
-    background: '#e8f5e9',
-    padding: '16px 20px',
-    borderRadius: '8px',
-    border: '1px solid #4caf50'
-  },
-  selectedInfoHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px'
-  },
-  selectedInfoIcon: {
-    fontSize: '32px'
-  },
-  selectedInfoName: {
-    fontSize: '16px',
+    background: '#f8fafc',
     fontWeight: '600',
-    color: '#1a202c'
+    color: '#475569',
+    borderBottom: '2px solid #e2e8f0',
+    whiteSpace: 'nowrap'
   },
-  selectedInfoDetails: {
-    fontSize: '13px',
-    color: '#64748b'
-  },
-  selectedInfoEmail: {
-    fontSize: '12px',
-    color: '#94a3b8'
-  },
-  selectedAssessmentInfo: {
-    marginTop: '12px',
-    paddingTop: '12px',
-    borderTop: '1px solid #c8e6c9',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    flexWrap: 'wrap'
-  },
-  selectedAssessmentLabel: {
-    fontSize: '13px',
-    fontWeight: '500',
-    color: '#2e7d32'
-  },
-  selectedAssessmentName: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#1a202c'
-  },
-  selectedAssessmentScore: {
-    fontSize: '14px',
-    fontWeight: '700',
-    color: '#1a237e'
-  },
-  selectedAssessmentFormat: {
+  ctd: { padding: '10px 12px', borderBottom: '1px solid #e2e8f0', verticalAlign: 'middle' },
+  ctr: { transition: 'background 0.2s' },
+  candidateNameCell: { fontWeight: '600', color: '#1a202c' },
+  candidateEmailCell: { fontSize: '11px', color: '#94a3b8' },
+  candidateUniversityCell: { fontSize: '11px', color: '#64748b' },
+  statBadgeCompleted: {
     padding: '2px 10px',
     borderRadius: '12px',
-    fontSize: '11px',
+    fontSize: '12px',
+    fontWeight: '600',
+    background: '#dcfce7',
+    color: '#166534'
+  },
+  statBadgeProgress: {
+    padding: '2px 10px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '600',
+    background: '#dbeafe',
+    color: '#1e40af'
+  },
+  statBadgeUnblocked: {
+    padding: '2px 10px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '600',
+    background: '#e8f5e9',
+    color: '#2e7d32'
+  },
+  statBadgeBlocked: {
+    padding: '2px 10px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '600',
+    background: '#f5f5f5',
+    color: '#667085'
+  },
+  statBadgeNotStarted: {
+    padding: '2px 10px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '600',
+    background: '#fef3c7',
+    color: '#92400e'
+  },
+  assessmentDropdown: {
+    padding: '6px 10px',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
+    fontSize: '12px',
+    background: 'white',
+    minWidth: '140px',
+    maxWidth: '200px'
+  },
+  viewReportButtonSmall: {
+    padding: '4px 12px',
+    background: '#1a237e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '12px',
     fontWeight: '500',
-    background: '#e3f2fd',
-    color: '#1565c0'
+    transition: 'background 0.2s',
+    whiteSpace: 'nowrap'
   },
   emptyState: { textAlign: 'center', padding: '30px', color: '#64748b', background: '#f8fafc', borderRadius: '8px' }
 };
