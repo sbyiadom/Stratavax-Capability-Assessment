@@ -31,108 +31,94 @@ export default function SupervisorDashboard() {
       const supervisorId = session.user.id;
       console.log('[Supervisor Dashboard] Supervisor ID:', supervisorId);
 
+      // ============================================================
       // Step 1: Get all candidates assigned to this supervisor
-      // The relationship is: supervisor_profiles -> candidates_assigned (array) OR candidate_assessments has supervisor_id
-      // Let's try multiple approaches
-
-      // Approach 1: Check if supervisor_profiles has candidates_assigned field
-      let assignedCandidates = [];
-      
-      const { data: supervisorData, error: supervisorError } = await supabase
-        .from('supervisor_profiles')
-        .select('candidates_assigned, full_name')
-        .eq('id', supervisorId)
-        .maybeSingle();
-
-      if (supervisorError) {
-        console.error('Error fetching supervisor data:', supervisorError);
-      }
-
-      console.log('[Supervisor Dashboard] Supervisor data:', supervisorData);
-
-      // Approach 2: Get candidates from candidate_assessments via supervisor_id
-      const { data: assignments, error: assignmentError } = await supabase
-        .from('candidate_assessments')
-        .select(`
-          id,
-          user_id,
-          assessment_id,
-          status,
-          result_id,
-          supervisor_id,
-          candidate_profiles!inner(full_name, email, university, programme),
-          assessments!inner(title, assessment_type:assessment_types(code))
-        `)
+      // Relationship: candidate_profiles.supervisor_id = supervisor_profiles.id
+      // ============================================================
+      const { data: assignedCandidates, error: candidatesError } = await supabase
+        .from('candidate_profiles')
+        .select('id, full_name, email, university, programme')
         .eq('supervisor_id', supervisorId);
 
-      if (assignmentError) {
-        console.error('Error fetching assignments:', assignmentError);
+      if (candidatesError) {
+        console.error('Error fetching candidates:', candidatesError);
       }
 
-      console.log('[Supervisor Dashboard] Assignments found:', assignments?.length || 0);
+      console.log('[Supervisor Dashboard] Assigned candidates:', assignedCandidates?.length || 0);
 
-      // If no assignments found, try to get candidates from supervisor_profiles.candidates_assigned
-      if ((!assignments || assignments.length === 0) && supervisorData?.candidates_assigned) {
-        const candidateIds = supervisorData.candidates_assigned;
-        console.log('[Supervisor Dashboard] Candidates from supervisor profile:', candidateIds);
+      // ============================================================
+      // Step 2: If we have candidates, get their assessments
+      // ============================================================
+      let allAssessments = [];
+      let reports = [];
+
+      if (assignedCandidates && assignedCandidates.length > 0) {
+        const candidateIds = assignedCandidates.map(c => c.id);
         
-        if (candidateIds && candidateIds.length > 0) {
-          const { data: profiles, error: profilesError } = await supabase
-            .from('candidate_profiles')
-            .select('id, full_name, email, university, programme')
-            .in('id', candidateIds);
+        // Get all assessments for these candidates
+        const { data: assessments, error: assessmentsError } = await supabase
+          .from('candidate_assessments')
+          .select(`
+            id,
+            user_id,
+            assessment_id,
+            status,
+            result_id,
+            assessments!inner(title, assessment_type:assessment_types(code))
+          `)
+          .in('user_id', candidateIds);
 
-          if (!profilesError && profiles) {
-            assignedCandidates = profiles.map(p => ({
-              ...p,
-              assessments: [] // Will be filled below
-            }));
-          }
+        if (assessmentsError) {
+          console.error('Error fetching assessments:', assessmentsError);
+        } else {
+          allAssessments = assessments || [];
+          console.log('[Supervisor Dashboard] Assessments found:', allAssessments.length);
         }
-      }
 
-      // If we have assignments, use them to build candidate list
-      if (assignments && assignments.length > 0) {
+        // ============================================================
+        // Step 3: Build candidate map with assessments
+        // ============================================================
         const candidateMap = {};
-        const reports = [];
+        
+        assignedCandidates.forEach(c => {
+          candidateMap[c.id] = {
+            id: c.id,
+            name: c.full_name || 'Unknown',
+            email: c.email || '',
+            university: c.university || '',
+            programme: c.programme || '',
+            assessments: []
+          };
+        });
 
-        assignments.forEach(assignment => {
-          const userId = assignment.user_id;
-          if (!candidateMap[userId]) {
-            candidateMap[userId] = {
-              id: userId,
-              name: assignment.candidate_profiles?.full_name || 'Unknown',
-              email: assignment.candidate_profiles?.email || '',
-              university: assignment.candidate_profiles?.university || '',
-              programme: assignment.candidate_profiles?.programme || '',
-              assessments: []
-            };
-          }
-          
-          // Check if this is a National Service assessment
-          const isNationalService = assignment.assessments?.assessment_type?.code === 'national_service';
-          
-          candidateMap[userId].assessments.push({
-            id: assignment.assessment_id,
-            title: assignment.assessments?.title || 'Assessment',
-            status: assignment.status,
-            result_id: assignment.result_id,
-            candidate_assessment_id: assignment.id,
-            isNationalService: isNationalService
-          });
-
-          // Collect National Service reports
-          if (isNationalService && assignment.result_id && assignment.status === 'completed') {
-            reports.push({
-              result_id: assignment.result_id,
-              candidate_id: userId,
-              candidate_name: assignment.candidate_profiles?.full_name || 'Unknown',
-              candidate_email: assignment.candidate_profiles?.email || '',
-              university: assignment.candidate_profiles?.university || '',
-              programme: assignment.candidate_profiles?.programme || '',
-              assessment_title: assignment.assessments?.title || 'National Service Assessment',
-              status: assignment.status
+        // Add assessments to candidates
+        allAssessments.forEach(assessment => {
+          const userId = assessment.user_id;
+          if (candidateMap[userId]) {
+            const isNationalService = assessment.assessments?.assessment_type?.code === 'national_service';
+            
+            candidateMap[userId].assessments.push({
+              id: assessment.assessment_id,
+              title: assessment.assessments?.title || 'Assessment',
+              status: assessment.status,
+              result_id: assessment.result_id,
+              candidate_assessment_id: assessment.id,
+              isNationalService: isNationalService
             });
+
+            // Collect National Service reports
+            if (isNationalService && assessment.result_id && assessment.status === 'completed') {
+              reports.push({
+                result_id: assessment.result_id,
+                candidate_id: userId,
+                candidate_name: candidateMap[userId].name,
+                candidate_email: candidateMap[userId].email,
+                university: candidateMap[userId].university,
+                programme: candidateMap[userId].programme,
+                assessment_title: assessment.assessments?.title || 'National Service Assessment',
+                status: assessment.status
+              });
+            }
           }
         });
 
@@ -140,20 +126,21 @@ export default function SupervisorDashboard() {
         setNationalServiceReports(reports);
         
         // Calculate stats
-        const totalCandidates = Object.keys(candidateMap).length;
-        const completed = assignments.filter(a => a.status === 'completed').length || 0;
-        const pending = assignments.filter(a => a.status === 'in_progress' || a.status === 'unblocked').length || 0;
+        const totalCandidates = assignedCandidates.length;
+        const completed = allAssessments.filter(a => a.status === 'completed').length || 0;
+        const pending = allAssessments.filter(a => a.status === 'in_progress' || a.status === 'unblocked').length || 0;
         
         setStats({
           totalCandidates: totalCandidates,
           completedAssessments: completed,
           pendingReviews: pending
         });
-      } else if (assignedCandidates.length > 0) {
-        // Use candidates from supervisor_profiles
-        setCandidates(assignedCandidates);
+      } else {
+        // No candidates assigned
+        setCandidates([]);
+        setNationalServiceReports([]);
         setStats({
-          totalCandidates: assignedCandidates.length,
+          totalCandidates: 0,
           completedAssessments: 0,
           pendingReviews: 0
         });
@@ -230,7 +217,7 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        {/* National Service Reports Section - DEDICATED BUTTON */}
+        {/* National Service Reports Section */}
         <div style={styles.reportsSection}>
           <div style={styles.sectionHeader}>
             <h2 style={styles.sectionTitle}>📋 National Service Reports</h2>
@@ -275,7 +262,7 @@ export default function SupervisorDashboard() {
           )}
         </div>
 
-        {/* Candidates List */}
+        {/* All Candidates */}
         <div style={styles.candidatesSection}>
           <h2 style={styles.sectionTitle}>👥 All Candidates</h2>
           <div style={styles.candidatesGrid}>
@@ -318,22 +305,12 @@ export default function SupervisorDashboard() {
                           )}
                         </div>
                         
-                        {/* National Service Report Button */}
                         {assessment.isNationalService && assessment.result_id && (
                           <button 
                             onClick={() => handleViewReport(assessment.result_id)}
                             style={styles.viewReportButtonSmall}
                           >
                             📄 View NS Report
-                          </button>
-                        )}
-                        
-                        {!assessment.isNationalService && assessment.result_id && (
-                          <button 
-                            onClick={() => router.push(`/supervisor/reports/${assessment.result_id}`)}
-                            style={styles.viewReportButtonSmall}
-                          >
-                            📄 View Report
                           </button>
                         )}
                       </div>
