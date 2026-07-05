@@ -24,7 +24,27 @@ export default function SupervisorReportsList() {
 
       const supervisorId = session.user.id;
 
-      // Get all National Service reports for candidates assigned to this supervisor
+      // Step 1: Get all candidates assigned to this supervisor
+      const { data: assignedCandidates, error: candidatesError } = await supabase
+        .from('candidate_profiles')
+        .select('id')
+        .eq('supervisor_id', supervisorId);
+
+      if (candidatesError) {
+        console.error('Error fetching candidates:', candidatesError);
+        setLoading(false);
+        return;
+      }
+
+      if (!assignedCandidates || assignedCandidates.length === 0) {
+        setReports([]);
+        setLoading(false);
+        return;
+      }
+
+      const candidateIds = assignedCandidates.map(c => c.id);
+
+      // Step 2: Get completed National Service assessments for these candidates
       const { data, error } = await supabase
         .from('candidate_assessments')
         .select(`
@@ -36,7 +56,7 @@ export default function SupervisorReportsList() {
           candidate_profiles!inner(full_name, email, university, programme),
           assessments!inner(title, assessment_type:assessment_types(code))
         `)
-        .eq('supervisor_id', supervisorId)
+        .in('user_id', candidateIds)
         .eq('status', 'completed');
 
       if (error) {
