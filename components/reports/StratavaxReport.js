@@ -7,10 +7,34 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
     return <div style={styles.loading}>Loading report...</div>;
   }
 
-  const candidateName = candidate?.full_name || result.candidate_profiles?.full_name || 'Candidate';
-  const assessmentTitle = assessment?.title || result.assessments?.title || 'Assessment';
-  const score = result.percentage_score || 0;
-  const classification = result.classification || getClassification(score);
+  console.log('[StratavaxReport] Result data:', result);
+
+  // Extract data with proper fallbacks
+  const candidateName = candidate?.full_name || result?.candidate_profiles?.full_name || result?.candidate_profiles?.fullName || 'Candidate';
+  const candidateEmail = candidate?.email || result?.candidate_profiles?.email || result?.candidate_profiles?.emailAddress || '';
+  const assessmentTitle = assessment?.title || result?.assessments?.title || result?.assessment_title || 'Assessment';
+  
+  // Get score - handle various possible field names and types
+  const score = result?.percentage_score || result?.score || result?.percentage || 0;
+  const parsedScore = typeof score === 'string' ? parseFloat(score) : Number(score);
+  const finalScore = isNaN(parsedScore) ? 0 : parsedScore;
+  
+  const classification = result?.classification || getClassification(finalScore);
+  const riskLevel = result?.risk_level || result?.riskLevel || getRiskLevel(finalScore);
+  
+  // Get category scores
+  const categoryScores = result?.category_scores || result?.categoryScores || result?.categories || [];
+  const strengths = result?.strengths || [];
+  const weaknesses = result?.weaknesses || result?.developmentAreas || [];
+  const recommendations = result?.recommendations || [];
+  
+  // Get interpretations
+  const interpretations = result?.interpretations || {};
+  const executiveSummary = interpretations?.executiveSummary || result?.executive_summary || result?.executiveSummary || '';
+  const supervisorImplication = interpretations?.supervisorImplication || result?.supervisor_implication || result?.supervisorImplication || '';
+  
+  console.log('[StratavaxReport] Parsed score:', finalScore);
+  console.log('[StratavaxReport] Category scores:', categoryScores);
 
   function getClassification(score) {
     if (score >= 85) return 'Exceptional';
@@ -29,7 +53,6 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
     return 'Critical';
   }
 
-  const riskLevel = getRiskLevel(score);
   const riskColor = riskLevel === 'Low' ? '#2e7d32' :
                     riskLevel === 'Moderate' ? '#1565c0' :
                     riskLevel === 'Elevated' ? '#f57c00' :
@@ -56,11 +79,11 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
             </div>
             <div>
               <span style={styles.infoLabel}>Email:</span>
-              <span style={styles.infoValue}>{candidate?.email || result.candidate_profiles?.email || 'N/A'}</span>
+              <span style={styles.infoValue}>{candidateEmail || 'N/A'}</span>
             </div>
             <div>
               <span style={styles.infoLabel}>Completed:</span>
-              <span style={styles.infoValue}>{result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'}</span>
+              <span style={styles.infoValue}>{result?.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'}</span>
             </div>
           </div>
         </div>
@@ -70,7 +93,7 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
       <div style={styles.scoreGrid}>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Overall Score</div>
-          <div style={styles.scoreValue}>{Math.round(score)}%</div>
+          <div style={styles.scoreValue}>{Math.round(finalScore)}%</div>
           <div style={{ ...styles.scoreBand, color: riskColor }}>
             {classification}
           </div>
@@ -83,76 +106,85 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
         </div>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Questions Answered</div>
-          <div style={styles.scoreValue}>{result.answered_questions || 0} / {result.total_questions || 0}</div>
+          <div style={styles.scoreValue}>{result?.answered_questions || 0} / {result?.total_questions || 0}</div>
         </div>
       </div>
 
       {/* Category Scores */}
-      {result.category_scores && result.category_scores.length > 0 && (
+      {categoryScores && categoryScores.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Category Scores</h2>
           <div style={styles.categoryGrid}>
-            {result.category_scores.map((cat, index) => (
-              <div key={index} style={styles.categoryCard}>
-                <div style={styles.categoryName}>{cat.category || cat.name || 'Category'}</div>
-                <div style={styles.categoryScore}>{Math.round(cat.percentage || cat.score || 0)}%</div>
-                <div style={styles.categoryBar}>
-                  <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage || cat.score || 0, 100) + '%' }} />
+            {categoryScores.map((cat, index) => {
+              const catScore = cat.percentage || cat.score || 0;
+              return (
+                <div key={index} style={styles.categoryCard}>
+                  <div style={styles.categoryName}>{cat.category || cat.name || 'Category'}</div>
+                  <div style={styles.categoryScore}>{Math.round(catScore)}%</div>
+                  <div style={styles.categoryBar}>
+                    <div style={{ ...styles.categoryBarFill, width: Math.min(catScore, 100) + '%' }} />
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* Strengths */}
-      {result.strengths && result.strengths.length > 0 && (
+      {strengths && strengths.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>🌟 Strengths</h2>
           <div style={styles.strengthGrid}>
-            {result.strengths.map((strength, index) => (
-              <div key={index} style={styles.strengthCard}>
-                <div style={styles.strengthName}>{strength.category || strength.name || 'Area'}</div>
-                <div style={styles.strengthScore}>{Math.round(strength.percentage || 0)}%</div>
-              </div>
-            ))}
+            {strengths.map((strength, index) => {
+              const strengthScore = strength.percentage || strength.score || 0;
+              return (
+                <div key={index} style={styles.strengthCard}>
+                  <div style={styles.strengthName}>{strength.category || strength.name || 'Area'}</div>
+                  <div style={styles.strengthScore}>{Math.round(strengthScore)}%</div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* Development Areas */}
-      {result.weaknesses && result.weaknesses.length > 0 && (
+      {weaknesses && weaknesses.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>📈 Development Areas</h2>
           <div style={styles.developmentGrid}>
-            {result.weaknesses.map((area, index) => (
-              <div key={index} style={styles.developmentCard}>
-                <div style={styles.developmentName}>{area.category || area.name || 'Area'}</div>
-                <div style={styles.developmentScore}>{Math.round(area.percentage || 0)}%</div>
-              </div>
-            ))}
+            {weaknesses.map((area, index) => {
+              const areaScore = area.percentage || area.score || 0;
+              return (
+                <div key={index} style={styles.developmentCard}>
+                  <div style={styles.developmentName}>{area.category || area.name || 'Area'}</div>
+                  <div style={styles.developmentScore}>{Math.round(areaScore)}%</div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* Recommendations */}
-      {result.recommendations && result.recommendations.length > 0 && (
+      {recommendations && recommendations.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>📋 Recommendations</h2>
           <div style={styles.recommendationList}>
-            {result.recommendations.map((rec, index) => (
+            {recommendations.map((rec, index) => (
               <div key={index} style={styles.recommendationCard}>
                 <div style={styles.recommendationPriority}>
                   <span style={{ 
                     ...styles.priorityBadge,
-                    background: rec.priority === 'High' ? '#c62828' :
+                    background: rec.priority === 'High' || rec.priority === 'Critical' ? '#c62828' :
                                rec.priority === 'Medium' ? '#f57c00' : '#1565c0'
                   }}>
                     {rec.priority || 'Medium'}
                   </span>
-                  <span style={styles.recommendationCategory}>{rec.category || rec.competency}</span>
+                  <span style={styles.recommendationCategory}>{rec.category || rec.competency || 'Area'}</span>
                 </div>
-                <p style={styles.recommendationText}>{rec.recommendation || rec.action}</p>
+                <p style={styles.recommendationText}>{rec.recommendation || rec.action || rec.description}</p>
               </div>
             ))}
           </div>
@@ -160,18 +192,17 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
       )}
 
       {/* Supervisor Summary */}
-      {result.interpretations && (
+      {(executiveSummary || supervisorImplication) && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>📝 Supervisor Summary</h2>
           <div style={styles.summaryCard}>
-            <p style={styles.summaryText}>
-              {result.interpretations?.executiveSummary || result.executiveSummary || 
-               `${candidateName} completed the ${assessmentTitle} with a score of ${Math.round(score)}%.`}
-            </p>
-            {result.interpretations?.supervisorImplication && (
+            {executiveSummary && (
+              <p style={styles.summaryText}>{executiveSummary}</p>
+            )}
+            {supervisorImplication && (
               <div style={styles.supervisorNote}>
                 <strong>Supervisor Note:</strong>
-                <p>{result.interpretations.supervisorImplication}</p>
+                <p>{supervisorImplication}</p>
               </div>
             )}
           </div>
