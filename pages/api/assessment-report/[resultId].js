@@ -65,6 +65,7 @@ export default async function handler(req, res) {
     }
 
     console.log('[API] Result found:', result.id);
+    console.log('[API] report_data keys:', result.report_data ? Object.keys(result.report_data) : 'null');
 
     // ============================================================
     // Get candidate profile
@@ -99,6 +100,7 @@ export default async function handler(req, res) {
         assessment = assmt;
         assessmentTypeCode = assmt.assessment_type?.code || null;
         console.log('[API] Assessment found:', assessment.title);
+        console.log('[API] Assessment type code:', assessmentTypeCode);
       }
     }
 
@@ -112,270 +114,197 @@ export default async function handler(req, res) {
        result.report_data.dimensions.workplaceReadiness !== undefined);
 
     console.log('[API] isNationalService:', isNationalService);
-    console.log('[API] Assessment type code:', assessmentTypeCode);
 
     // ============================================================
-    // EXTRACT DATA FROM report_data (already generated at submission)
+    // Get overall score
+    // ============================================================
+    const overallScore = result.percentage_score || 0;
+    const classDetails = getClassificationDetailsFromPercentage(overallScore);
+    const classification = classDetails.classification;
+    const riskLevel = getRiskLevel(overallScore);
+
+    // ============================================================
+    // EXTRACT DATA FROM report_data
     // ============================================================
     const reportData = result.report_data || {};
     
-    console.log('[API] report_data keys:', Object.keys(reportData));
-    console.log('[API] report_data has categoryScores?', !!reportData.categoryScores);
-    console.log('[API] report_data has stratavaxReport?', !!reportData.stratavaxReport);
-
-    // ============================================================
-    // BUILD REPORT BASED ON ASSESSMENT TYPE
-    // ============================================================
-    let report = {};
+    // Initialize arrays
     let categoryScores = [];
     let strengths = [];
     let weaknesses = [];
     let recommendations = [];
     let executiveSummary = '';
     let supervisorImplication = '';
-    let classification = '';
-    let riskLevel = '';
-    let overallScore = result.percentage_score || 0;
+    let report = {};
 
-    if (isNationalService) {
-      // ============================================================
-      // NATIONAL SERVICE REPORT
-      // ============================================================
-      console.log('[API] Building National Service report');
-      
-      classification = result.recommendation || 'Not Recommended';
-      riskLevel = 'Moderate';
-      
-      // Get category breakdown if available
-      const categoryBreakdown = reportData.categoryBreakdown || [];
-      categoryScores = categoryBreakdown.map(cat => ({
-        category: cat.category,
-        name: cat.category,
+    // ============================================================
+    // TRY TO EXTRACT FROM MULTIPLE LOCATIONS
+    // ============================================================
+
+    // --- CATEGORY SCORES ---
+    // Try: report_data.categoryScores (array)
+    if (reportData.categoryScores && Array.isArray(reportData.categoryScores)) {
+      categoryScores = reportData.categoryScores.map(cat => ({
+        category: cat.category || cat.name || 'Category',
+        name: cat.category || cat.name || 'Category',
         percentage: cat.percentage || 0,
-        score: cat.earned || 0,
-        maxScore: cat.max || 0,
-        dimension: cat.dimension || 'other'
+        score: cat.score || cat.totalScore || 0,
+        maxScore: cat.maxScore || cat.maxPossible || 100,
+        grade: cat.grade || '',
+        comment: cat.comment || ''
       }));
-
-      report = {
-        dimensions: {
-          workplaceReadiness: result.workplace_readiness || reportData.dimensions?.workplaceReadiness || 0,
-          intellectualCapability: result.intellectual_capability || reportData.dimensions?.intellectualCapability || 0,
-          overallScore: overallScore
-        },
-        recommendation: {
-          level: result.recommendation || reportData.recommendation?.level || 'Not Recommended'
-        },
-        statistics: {
-          totalQuestions: result.total_questions || 0,
-          totalAnswered: result.answered_questions || 0
-        },
-        categoryBreakdown: categoryBreakdown,
-        candidateInfo: {
-          fullName: candidateProfile?.full_name || reportData.candidateName || 'Candidate',
-          university: candidateProfile?.university || reportData.candidateInfo?.university || '',
-          programme: candidateProfile?.programme || reportData.candidateInfo?.programme || '',
-          graduationYear: candidateProfile?.graduation_year || reportData.candidateInfo?.graduationYear || '',
-          preferredDepartment: candidateProfile?.preferred_department || reportData.candidateInfo?.preferredDepartment || '',
-          assessmentDate: new Date(result.completed_at).toLocaleDateString()
-        },
-        reportType: 'national_service'
-      };
-
-    } else {
-      // ============================================================
-      // STRATAVAX REPORT - Extract from report_data
-      // ============================================================
-      console.log('[API] Building Stratavax report from report_data');
-
-      // Extract category scores - check multiple possible locations
-      if (reportData.categoryScores) {
-        // Case 1: categoryScores is an object with category keys
-        if (typeof reportData.categoryScores === 'object' && !Array.isArray(reportData.categoryScores)) {
-          categoryScores = Object.keys(reportData.categoryScores).map(category => ({
-            category: category,
-            name: category,
-            percentage: reportData.categoryScores[category].percentage || 0,
-            score: reportData.categoryScores[category].score || reportData.categoryScores[category].total || 0,
-            maxScore: reportData.categoryScores[category].maxPossible || reportData.categoryScores[category].maxScore || 0,
-            grade: reportData.categoryScores[category].grade || '',
-            comment: reportData.categoryScores[category].comment || ''
-          }));
-        }
-        // Case 2: categoryScores is an array
-        else if (Array.isArray(reportData.categoryScores)) {
-          categoryScores = reportData.categoryScores.map(cat => ({
-            category: cat.category || cat.name || 'Category',
-            name: cat.category || cat.name || 'Category',
-            percentage: cat.percentage || 0,
-            score: cat.score || cat.totalScore || 0,
-            maxScore: cat.maxScore || cat.maxPossible || 0,
-            grade: cat.grade || '',
-            comment: cat.comment || ''
-          }));
-        }
+      console.log('[API] Found categoryScores in reportData (array):', categoryScores.length);
+    }
+    // Try: report_data.categoryScores (object)
+    else if (reportData.categoryScores && typeof reportData.categoryScores === 'object') {
+      categoryScores = Object.keys(reportData.categoryScores).map(category => ({
+        category: category,
+        name: category,
+        percentage: reportData.categoryScores[category].percentage || 0,
+        score: reportData.categoryScores[category].score || reportData.categoryScores[category].total || 0,
+        maxScore: reportData.categoryScores[category].maxPossible || reportData.categoryScores[category].maxScore || 100,
+        grade: reportData.categoryScores[category].grade || '',
+        comment: reportData.categoryScores[category].comment || ''
+      }));
+      console.log('[API] Found categoryScores in reportData (object):', categoryScores.length);
+    }
+    // Try: report_data.stratavaxReport.scoreBreakdown
+    else if (reportData.stratavaxReport?.scoreBreakdown) {
+      const scoreBreakdown = reportData.stratavaxReport.scoreBreakdown;
+      if (Array.isArray(scoreBreakdown)) {
+        categoryScores = scoreBreakdown.map(item => ({
+          category: item.category || 'Category',
+          name: item.category || 'Category',
+          percentage: item.percentage || 0,
+          score: parseFloat(item.score) || 0,
+          maxScore: parseFloat(item.score?.split('/')[1]) || 100,
+          grade: item.grade || '',
+          comment: item.comment || ''
+        }));
+        console.log('[API] Found categoryScores in stratavaxReport.scoreBreakdown:', categoryScores.length);
       }
-
-      // If categoryScores is empty, try nested location
-      if (categoryScores.length === 0 && reportData.stratavaxReport?.scoreBreakdown) {
-        const scoreBreakdown = reportData.stratavaxReport.scoreBreakdown;
-        if (Array.isArray(scoreBreakdown)) {
-          categoryScores = scoreBreakdown.map(item => ({
-            category: item.category || 'Category',
-            name: item.category || 'Category',
-            percentage: item.percentage || 0,
-            score: parseFloat(item.score) || 0,
-            maxScore: parseFloat(item.score?.split('/')[1]) || 100,
-            grade: item.grade || '',
-            comment: item.comment || ''
-          }));
-        }
-      }
-
-      // Extract strengths
-      if (reportData.strengths && Array.isArray(reportData.strengths)) {
-        strengths = reportData.strengths.map(s => ({
-          category: s.category || s.area || s.name || 'Strength',
-          name: s.category || s.area || s.name || 'Strength',
-          percentage: s.percentage || 0,
-          score: s.score || 0,
-          maxScore: s.maxScore || s.maxPossible || 100
-        }));
-      } else if (reportData.stratavaxReport?.strengths?.items) {
-        strengths = reportData.stratavaxReport.strengths.items.map(s => ({
-          category: s.area || s.category || 'Strength',
-          name: s.area || s.category || 'Strength',
-          percentage: s.percentage || 0,
-          score: s.score || 0,
-          maxScore: s.maxPossible || 100
-        }));
-      }
-
-      // Extract weaknesses
-      if (reportData.weaknesses && Array.isArray(reportData.weaknesses)) {
-        weaknesses = reportData.weaknesses.map(w => ({
-          category: w.category || w.area || w.name || 'Development Area',
-          name: w.category || w.area || w.name || 'Development Area',
-          percentage: w.percentage || 0,
-          score: w.score || 0,
-          maxScore: w.maxScore || w.maxPossible || 100
-        }));
-      } else if (reportData.stratavaxReport?.weaknesses?.items) {
-        weaknesses = reportData.stratavaxReport.weaknesses.items.map(w => ({
-          category: w.area || w.category || 'Development Area',
-          name: w.area || w.category || 'Development Area',
-          percentage: w.percentage || 0,
-          score: w.score || 0,
-          maxScore: w.maxPossible || 100
-        }));
-      }
-
-      // Extract recommendations
-      if (reportData.recommendations && Array.isArray(reportData.recommendations)) {
-        recommendations = reportData.recommendations.map(r => ({
-          priority: r.priority || 'Medium',
-          category: r.category || r.area || 'Area',
-          recommendation: r.recommendation || r.action || r.description || '',
-          action: r.action || '',
-          impact: r.impact || ''
-        }));
-      } else if (reportData.stratavaxReport?.recommendations) {
-        recommendations = reportData.stratavaxReport.recommendations.map(r => ({
-          priority: r.priority || 'Medium',
-          category: r.category || r.area || 'Area',
-          recommendation: r.recommendation || r.action || '',
-          action: r.action || '',
-          impact: r.impact || ''
-        }));
-      }
-
-      // Extract executive summary
-      executiveSummary = reportData.executiveSummary || 
-                         reportData.stratavaxReport?.executiveSummary?.narrative || 
-                         reportData.stratavaxReport?.executiveSummary?.summary ||
-                         '';
-
-      // Extract supervisor implication
-      supervisorImplication = reportData.supervisorImplication || 
-                              reportData.stratavaxReport?.scoreBreakdown?.[0]?.supervisorImplication ||
-                              getSupervisorImplication(overallScore);
-
-      // Get classification and risk level
-      const classDetails = getClassificationDetailsFromPercentage(overallScore);
-      classification = reportData.classification || classDetails.classification || getClassification(overallScore);
-      riskLevel = reportData.riskLevel || getRiskLevel(overallScore);
-
-      // Sort category scores by percentage descending
-      categoryScores.sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
-
-      // Build the report object
-      report = {
-        ...reportData,
-        categoryScores: categoryScores,
-        strengths: strengths,
-        weaknesses: weaknesses,
-        recommendations: recommendations,
-        executiveSummary: executiveSummary,
-        supervisorImplication: supervisorImplication,
-        classification: classification,
-        riskLevel: riskLevel,
-        overallScore: overallScore,
-        reportType: 'stratavax',
-        // Include full stratavaxReport if available
-        _fullReport: reportData.stratavaxReport || null
-      };
-
-      console.log('[API] Extracted from report_data:', {
-        categoryScores: categoryScores.length,
-        strengths: strengths.length,
-        weaknesses: weaknesses.length,
-        recommendations: recommendations.length,
-        hasExecutiveSummary: !!executiveSummary
-      });
+    }
+    // Try: report_data.categories (legacy)
+    else if (reportData.categories && Array.isArray(reportData.categories)) {
+      categoryScores = reportData.categories.map(cat => ({
+        category: cat.category || cat.name || 'Category',
+        name: cat.category || cat.name || 'Category',
+        percentage: cat.percentage || cat.score || 0,
+        score: cat.score || cat.totalScore || 0,
+        maxScore: cat.maxScore || cat.maxPossible || 100
+      }));
+      console.log('[API] Found categories in reportData (legacy):', categoryScores.length);
     }
 
-    // Helper function for classification (fallback)
-    function getClassification(score) {
-      if (score >= 85) return 'Exceptional';
-      if (score >= 75) return 'Strong Performer';
-      if (score >= 65) return 'Capable Contributor';
-      if (score >= 55) return 'Developing';
-      if (score >= 40) return 'At Risk';
-      return 'High Risk';
+    // --- STRENGTHS ---
+    if (reportData.strengths && Array.isArray(reportData.strengths)) {
+      strengths = reportData.strengths.map(s => ({
+        category: s.category || s.area || s.name || 'Strength',
+        name: s.category || s.area || s.name || 'Strength',
+        percentage: s.percentage || 0,
+        score: s.score || 0,
+        maxScore: s.maxScore || s.maxPossible || 100
+      }));
+      console.log('[API] Found strengths in reportData:', strengths.length);
+    } else if (reportData.stratavaxReport?.strengths?.items) {
+      strengths = reportData.stratavaxReport.strengths.items.map(s => ({
+        category: s.area || s.category || 'Strength',
+        name: s.area || s.category || 'Strength',
+        percentage: s.percentage || 0,
+        score: s.score || 0,
+        maxScore: s.maxPossible || 100
+      }));
+      console.log('[API] Found strengths in stratavaxReport:', strengths.length);
     }
 
-    // Helper function for risk level (fallback)
-    function getRiskLevel(score) {
-      if (score >= 75) return 'Low';
-      if (score >= 65) return 'Moderate';
-      if (score >= 55) return 'Elevated';
-      if (score >= 40) return 'High';
-      return 'Critical';
+    // --- WEAKNESSES ---
+    if (reportData.weaknesses && Array.isArray(reportData.weaknesses)) {
+      weaknesses = reportData.weaknesses.map(w => ({
+        category: w.category || w.area || w.name || 'Development Area',
+        name: w.category || w.area || w.name || 'Development Area',
+        percentage: w.percentage || 0,
+        score: w.score || 0,
+        maxScore: w.maxScore || w.maxPossible || 100
+      }));
+      console.log('[API] Found weaknesses in reportData:', weaknesses.length);
+    } else if (reportData.stratavaxReport?.weaknesses?.items) {
+      weaknesses = reportData.stratavaxReport.weaknesses.items.map(w => ({
+        category: w.area || w.category || 'Development Area',
+        name: w.area || w.category || 'Development Area',
+        percentage: w.percentage || 0,
+        score: w.score || 0,
+        maxScore: w.maxPossible || 100
+      }));
+      console.log('[API] Found weaknesses in stratavaxReport:', weaknesses.length);
+    } else if (reportData.developmentAreas && Array.isArray(reportData.developmentAreas)) {
+      weaknesses = reportData.developmentAreas.map(w => ({
+        category: w.category || w.area || w.name || 'Development Area',
+        name: w.category || w.area || w.name || 'Development Area',
+        percentage: w.percentage || 0,
+        score: w.score || 0,
+        maxScore: w.maxScore || w.maxPossible || 100
+      }));
+      console.log('[API] Found weaknesses in developmentAreas:', weaknesses.length);
     }
 
-    // Combine data for response
-    const combinedResult = {
-      ...result,
-      candidate_profiles: candidateProfile,
-      assessments: assessment
-    };
+    // --- RECOMMENDATIONS ---
+    if (reportData.recommendations && Array.isArray(reportData.recommendations)) {
+      recommendations = reportData.recommendations.map(r => ({
+        priority: r.priority || 'Medium',
+        category: r.category || r.area || 'Area',
+        recommendation: r.recommendation || r.action || r.description || '',
+        action: r.action || '',
+        impact: r.impact || ''
+      }));
+      console.log('[API] Found recommendations in reportData:', recommendations.length);
+    } else if (reportData.stratavaxReport?.recommendations) {
+      recommendations = reportData.stratavaxReport.recommendations.map(r => ({
+        priority: r.priority || 'Medium',
+        category: r.category || r.area || 'Area',
+        recommendation: r.recommendation || r.action || '',
+        action: r.action || '',
+        impact: r.impact || ''
+      }));
+      console.log('[API] Found recommendations in stratavaxReport:', recommendations.length);
+    }
 
-    console.log('[API] Final response:', {
-      success: true,
-      isNationalService: isNationalService,
-      categoryScores: categoryScores.length,
-      strengths: strengths.length,
-      weaknesses: weaknesses.length,
-      recommendations: recommendations.length
-    });
+    // --- EXECUTIVE SUMMARY ---
+    executiveSummary = reportData.executiveSummary || 
+                       reportData.stratavaxReport?.executiveSummary?.narrative || 
+                       reportData.stratavaxReport?.executiveSummary?.summary ||
+                       `${candidateProfile?.full_name || 'Candidate'} completed the ${assessment?.title || 'Assessment'} with an overall score of ${Math.round(overallScore)}%. ${classDetails.description}`;
 
-    return res.status(200).json({
-      success: true,
-      result: combinedResult,
-      report: report,
-      isNationalService: isNationalService,
-      assessmentTypeCode: assessmentTypeCode,
-      // Include calculated data at top level for easy access
+    // --- SUPERVISOR IMPLICATION ---
+    supervisorImplication = reportData.supervisorImplication || 
+                            reportData.stratavaxReport?.scoreBreakdown?.[0]?.supervisorImplication ||
+                            getSupervisorImplication(overallScore);
+
+    // --- FALLBACK: If still empty, try to generate from available data ---
+    if (categoryScores.length === 0 && reportData._fullReport?.categoryScores) {
+      // Try nested _fullReport
+      const fullReport = reportData._fullReport;
+      if (fullReport.categoryScores && typeof fullReport.categoryScores === 'object') {
+        categoryScores = Object.keys(fullReport.categoryScores).map(category => ({
+          category: category,
+          name: category,
+          percentage: fullReport.categoryScores[category].percentage || 0,
+          score: fullReport.categoryScores[category].score || fullReport.categoryScores[category].total || 0,
+          maxScore: fullReport.categoryScores[category].maxPossible || fullReport.categoryScores[category].maxScore || 100
+        }));
+        console.log('[API] Found categoryScores in _fullReport:', categoryScores.length);
+      }
+    }
+
+    // Sort category scores by percentage descending
+    categoryScores.sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
+
+    // ============================================================
+    // BUILD THE FINAL REPORT
+    // ============================================================
+    
+    // Build the report object
+    report = {
+      ...reportData,
       categoryScores: categoryScores,
       strengths: strengths,
       weaknesses: weaknesses,
@@ -384,6 +313,55 @@ export default async function handler(req, res) {
       supervisorImplication: supervisorImplication,
       classification: classification,
       riskLevel: riskLevel,
+      overallScore: overallScore,
+      reportType: isNationalService ? 'national_service' : 'stratavax'
+    };
+
+    // ============================================================
+    // BUILD THE RESPONSE - Data available at multiple levels
+    // ============================================================
+    
+    // Combine result with profile and assessment
+    const combinedResult = {
+      ...result,
+      candidate_profiles: candidateProfile,
+      assessments: assessment,
+      // Add calculated data directly to result for component access
+      categoryScores: categoryScores,
+      strengths: strengths,
+      weaknesses: weaknesses,
+      recommendations: recommendations,
+      executiveSummary: executiveSummary,
+      supervisorImplication: supervisorImplication,
+      classification: classification,
+      riskLevel: riskLevel,
+      overallScore: overallScore
+    };
+
+    console.log('[API] Final stats:', {
+      categoryScores: categoryScores.length,
+      strengths: strengths.length,
+      weaknesses: weaknesses.length,
+      recommendations: recommendations.length,
+      isNationalService: isNationalService
+    });
+
+    return res.status(200).json({
+      success: true,
+      result: combinedResult,
+      report: report,
+      isNationalService: isNationalService,
+      assessmentTypeCode: assessmentTypeCode,
+      // All data available at top level for easy access
+      categoryScores: categoryScores,
+      strengths: strengths,
+      weaknesses: weaknesses,
+      recommendations: recommendations,
+      executiveSummary: executiveSummary,
+      supervisorImplication: supervisorImplication,
+      classification: classification,
+      riskLevel: riskLevel,
+      overallScore: overallScore,
       summaryStats: {
         totalCategories: categoryScores.length,
         totalStrengths: strengths.length,
