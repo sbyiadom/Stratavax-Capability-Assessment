@@ -108,7 +108,8 @@ function getDefaultAssessmentAreas(typeCode) {
     personality: ["Ownership", "Collaboration", "Action", "Analysis", "Risk Tolerance", "Structure"],
     strategic_leadership: ["Vision / Strategy", "People Leadership", "Decision Making", "Accountability", "Emotional Intelligence", "Execution Drive", "Ethics"],
     behavioral: ["Adaptability", "Clinical", "Collaboration", "Communication Style", "Decision-Making", "FBA", "Leadership"],
-    manufacturing_baseline: ["Technical Fundamentals", "Troubleshooting", "Numerical Aptitude", "Safety & Work Ethic"]
+    manufacturing_baseline: ["Technical Fundamentals", "Troubleshooting", "Numerical Aptitude", "Safety & Work Ethic"],
+    national_service: ["Workplace Readiness", "Intellectual Capability", "Safety & Risk Awareness", "Problem Solving", "Technical Fundamentals", "Communication", "Teamwork", "Professional Conduct"]
   };
 
   return areas[typeCode] || ["General Assessment"];
@@ -318,17 +319,33 @@ export default function CandidateDashboard() {
 
       const uniqueAssessments = removeDuplicateAssessments(filteredAssessments, accessMap, resultMap, latestSessionMap);
 
-      const typeOptions = filteredTypes.map((type) => ({
-        id: type.code,
-        label: decodeHtmlEntities(type.name),
-        shortLabel: type.code === "manufacturing_baseline" ? "Mfg Baseline" : decodeHtmlEntities(type.name || type.code),
-        description: decodeHtmlEntities(type.description || type.name + " assessment"),
-        icon: type.icon || "📋",
-        gradientStart: type.gradient_start || getAssessmentColor(type.code).color,
-        gradientEnd: type.gradient_end || getAssessmentColor(type.code).color,
-        color: type.color || getAssessmentColor(type.code).color,
-        areas: Array.isArray(type.category_config) ? type.category_config.map(decodeHtmlEntities) : getDefaultAssessmentAreas(type.code)
-      }));
+      // ============================================================
+      // FIX: Build type options with proper area fallback
+      // ============================================================
+      const typeOptions = filteredTypes.map((type) => {
+        // Get areas from category_config or use default
+        let areas = [];
+        
+        // Check if category_config exists and is a non-empty array
+        if (Array.isArray(type.category_config) && type.category_config.length > 0) {
+          areas = type.category_config.map(decodeHtmlEntities);
+        } else {
+          // Use default areas based on type code
+          areas = getDefaultAssessmentAreas(type.code);
+        }
+        
+        return {
+          id: type.code,
+          label: decodeHtmlEntities(type.name),
+          shortLabel: type.code === "manufacturing_baseline" ? "Mfg Baseline" : decodeHtmlEntities(type.name || type.code),
+          description: decodeHtmlEntities(type.description || type.name + " assessment"),
+          icon: type.icon || "📋",
+          gradientStart: type.gradient_start || getAssessmentColor(type.code).color,
+          gradientEnd: type.gradient_end || getAssessmentColor(type.code).color,
+          color: type.color || getAssessmentColor(type.code).color,
+          areas: areas
+        };
+      });
 
       const cards = uniqueAssessments.map((assessment) => {
         const typeCode = assessment.assessment_type?.code || "general";
@@ -352,7 +369,6 @@ export default function CandidateDashboard() {
           session: latestSession,
           result,
           access,
-          // ADDED: Dynamic assessment details from database
           questionCount: assessment.question_count || assessment.assessment_type?.question_count || 100,
           timeLimitMinutes: assessment.time_limit_minutes || assessment.assessment_type?.time_limit_minutes || 180,
           attemptsAllowed: assessment.attempts_allowed || assessment.assessment_type?.attempts_allowed || 1
@@ -375,7 +391,8 @@ export default function CandidateDashboard() {
 
       if (firstAvailableType) {
         setActiveTab(firstAvailableType.id);
-        setSelectedAssessmentAreas(firstAvailableType.areas || []);
+        // Use the areas from the type config (which now has proper fallback)
+        setSelectedAssessmentAreas(firstAvailableType.areas || getDefaultAssessmentAreas(firstAvailableType.id));
       }
     } catch (error) {
       console.error("Error loading candidate dashboard:", error);
@@ -388,7 +405,11 @@ export default function CandidateDashboard() {
   function handleTabChange(typeId) {
     const typeConfig = assessmentTypes.find((type) => type.id === typeId);
     setActiveTab(typeId);
-    setSelectedAssessmentAreas(typeConfig?.areas || getDefaultAssessmentAreas(typeId));
+    // Use areas from typeConfig or fallback to default
+    const areas = typeConfig?.areas && typeConfig.areas.length > 0 
+      ? typeConfig.areas 
+      : getDefaultAssessmentAreas(typeId);
+    setSelectedAssessmentAreas(areas);
   }
 
   function getAssessmentByType(typeCode) {
@@ -519,7 +540,6 @@ export default function CandidateDashboard() {
                     <h3 style={styles.cardTitle}>{activeAssessment.title}</h3>
                     <p style={styles.cardDescription}>{activeAssessment.description}</p>
                     <div style={styles.cardMeta}>
-                      {/* FIXED: Dynamic values from database instead of hardcoded */}
                       <span style={styles.metaItem}>
                         <span style={styles.metaIcon}>⏱️</span> 
                         {activeAssessment.timeLimitMinutes} minutes
@@ -557,7 +577,10 @@ export default function CandidateDashboard() {
                 )}
               </div>
 
-              {selectedAssessmentAreas.length > 0 && (
+              {/* ============================================================
+                  FIX: Only show Key Assessment Areas if there are areas to show
+                  ============================================================ */}
+              {selectedAssessmentAreas && selectedAssessmentAreas.length > 0 && (
                 <div style={{ ...styles.areasSection, borderTop: "4px solid " + activeColors.color }}>
                   <h3 style={styles.areasTitle}>Key Assessment Areas</h3>
                   <div style={styles.areasGrid}>
