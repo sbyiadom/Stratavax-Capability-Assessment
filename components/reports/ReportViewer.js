@@ -2,12 +2,16 @@
 
 import React, { useState, useEffect } from 'react';
 import NationalServiceReport from './NationalServiceReport';
+import StratavaxReport from './StratavaxReport';
 
 export default function ReportViewer({ resultId, onBack }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reportData, setReportData] = useState(null);
-  const [isNationalService, setIsNationalService] = useState(false);
+  const [resultData, setResultData] = useState(null);
+  const [candidateData, setCandidateData] = useState(null);
+  const [assessmentData, setAssessmentData] = useState(null);
+  const [reportType, setReportType] = useState(null);
 
   useEffect(() => {
     if (!resultId) return;
@@ -26,23 +30,32 @@ export default function ReportViewer({ resultId, onBack }) {
 
         console.log('[ReportViewer] Data received:', data);
         
-        setReportData(data);
+        // Extract data from response
+        const result = data.result || data;
+        const report = result?.report_data || data.report || {};
         
-        // Check if it's a National Service assessment
-        // Look for the flag from the API
-        if (data.isNationalService === true) {
-          setIsNationalService(true);
-          console.log('[ReportViewer] National Service report detected');
-        } else {
-          // Also check if we have report_data with National Service structure
-          if (data.report && data.report.dimensions && 
-              data.report.dimensions.workplaceReadiness !== undefined) {
-            setIsNationalService(true);
-            console.log('[ReportViewer] National Service report detected from data structure');
-          } else {
-            console.log('[ReportViewer] Using default report');
-          }
+        setResultData(result);
+        setReportData(report);
+        
+        // Extract candidate and assessment info
+        if (result) {
+          const candidate = result.candidate_profiles || 
+                           result.candidateProfile || 
+                           result.candidate || 
+                           {};
+          setCandidateData(candidate);
+          
+          const assessment = result.assessments || 
+                            result.assessment || 
+                            result.assessment_data ||
+                            {};
+          setAssessmentData(assessment);
         }
+        
+        // Determine report type from report_data.reportType
+        const reportTypeFromData = report?.reportType || 'stratavax';
+        setReportType(reportTypeFromData);
+        console.log('[ReportViewer] Report type:', reportTypeFromData);
 
         setLoading(false);
       } catch (err) {
@@ -75,12 +88,35 @@ export default function ReportViewer({ resultId, onBack }) {
     );
   }
 
-  // Render National Service Report
-  if (isNationalService && reportData?.report) {
-    return <NationalServiceReport report={reportData.report} onBack={onBack} />;
+  // ============================================================
+  // CHANGE 4: Route to appropriate report component
+  // ============================================================
+  
+  // National Service Report
+  if (reportType === 'national_service' && reportData) {
+    console.log('[ReportViewer] Rendering National Service Report');
+    return (
+      <NationalServiceReport 
+        report={reportData} 
+        onBack={onBack} 
+      />
+    );
   }
 
-  // Fallback: Use the old report format
+  // Stratavax Report (default)
+  if (reportData && resultData) {
+    console.log('[ReportViewer] Rendering Stratavax Report');
+    return (
+      <StratavaxReport 
+        result={resultData}
+        candidate={candidateData}
+        assessment={assessmentData}
+        onBack={onBack}
+      />
+    );
+  }
+
+  // Fallback - should never reach here
   return (
     <div style={styles.container}>
       {onBack && (
@@ -98,7 +134,7 @@ export default function ReportViewer({ resultId, onBack }) {
         <div style={styles.scoreDisplay}>
           <div style={styles.scoreItem}>
             <span style={styles.scoreLabel}>Overall Score</span>
-            <span style={styles.scoreValue}>{reportData?.result?.percentage_score || 0}%</span>
+            <span style={styles.scoreValue}>{resultData?.percentage_score || 0}%</span>
           </div>
         </div>
       </div>
