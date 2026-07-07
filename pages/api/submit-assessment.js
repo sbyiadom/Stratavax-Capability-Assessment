@@ -7,16 +7,15 @@ import {
   safeArray,
   normalizeText
 } from "../../utils/scoring";
-// CRITICAL FIX 1: Import the original Stratavax report generator
 import { generateStratavaxReport } from "../../utils/stratavaxReportGenerator";
-// CRITICAL FIX 3: Import National Service generator
 import {
   calculateNationalServiceScores,
   classifyWorkplaceReadiness,
   classifyIntellectualCapability,
   getRecommendation,
   getSuggestedDepartments,
-  generateNationalServiceReport
+  generateNationalServiceReport,
+  calculateCategoryBreakdown
 } from "../../utils/nationalServiceReportGenerator";
 
 export const config = {
@@ -239,7 +238,10 @@ export default async function handler(req, res) {
       totalEarned += earned;
     });
 
+    // Calculate percentage score - CRITICAL FIX
     const overallScore = totalMax > 0 ? roundNumber((totalEarned / totalMax) * 100, 2) : 0;
+
+    console.log(`[Submit Assessment] Total Earned: ${totalEarned}, Total Max: ${totalMax}, Overall Score: ${overallScore}%`);
 
     // Get candidate profile
     const { data: profile, error: profileError } = await supabase
@@ -265,12 +267,10 @@ export default async function handler(req, res) {
     if (isNationalService) {
       // ============================================================
       // NATIONAL SERVICE REPORT
-      // CRITICAL FIX 3: Only calculate National Service scores when needed
       // ============================================================
       console.log('[Submit Assessment] Generating National Service report');
       reportType = 'national_service';
       
-      // Calculate National Service specific scores
       const nsScores = calculateNationalServiceScores(responses, questions);
       
       workplaceReadiness = nsScores.workplaceMax > 0 
@@ -285,6 +285,8 @@ export default async function handler(req, res) {
       const intellectualClass = classifyIntellectualCapability(intellectualCapability);
       recommendation = getRecommendation(workplaceReadiness, intellectualCapability);
       suggestedDepartments = getSuggestedDepartments(workplaceReadiness, intellectualCapability);
+      
+      const categoryBreakdown = calculateCategoryBreakdown(responses, questions);
 
       report = generateNationalServiceReport({
         profile,
@@ -297,16 +299,16 @@ export default async function handler(req, res) {
         recommendation,
         suggestedDepartments,
         workplaceClass,
-        intellectualClass
+        intellectualClass,
+        categoryBreakdown
       });
       
       console.log('[Submit Assessment] National Service report generated');
     } else {
       // ============================================================
       // STRATAVAX REPORT
-      // CRITICAL FIX: Call with correct signature matching the original generator
       // ============================================================
-      console.log('[Submit Assessment] Generating Stratavax report using original generator');
+      console.log('[Submit Assessment] Generating Stratavax report');
       reportType = 'stratavax';
       
       // Build the responses array with nested question data for the Stratavax generator
@@ -324,19 +326,17 @@ export default async function handler(req, res) {
         };
       });
       
-      // Get assessment type code for the generator (fallback to 'general')
       const generatorAssessmentType = assessmentTypeCode || 'general';
       
-      // Call with the correct signature: (userId, assessmentType, responses, candidateName, dateTaken)
       const stratavaxReport = generateStratavaxReport(
-        user.id,                                    // userId
-        generatorAssessmentType,                    // assessmentType
-        stratavaxResponses,                         // responses (with nested question data)
-        profile?.full_name || 'Candidate',         // candidateName
-        new Date().toISOString()                   // dateTaken
+        user.id,
+        generatorAssessmentType,
+        stratavaxResponses,
+        profile?.full_name || 'Candidate',
+        new Date().toISOString()
       );
       
-      // Transform the Stratavax report to match what ReportViewer expects
+      // Extract category scores from the report
       const categoryScoresArray = stratavaxReport.categoryScores ? 
         Object.keys(stratavaxReport.categoryScores).map(category => ({
           category: category,
@@ -345,20 +345,18 @@ export default async function handler(req, res) {
           maxScore: stratavaxReport.categoryScores[category].maxPossible || 0
         })) : [];
       
-      // Get strengths and weaknesses from the report
       const strengths = stratavaxReport.strengths || stratavaxReport.stratavaxReport?.strengths?.items || [];
       const weaknesses = stratavaxReport.weaknesses || stratavaxReport.stratavaxReport?.weaknesses?.items || [];
       const recommendations = stratavaxReport.recommendations || stratavaxReport.stratavaxReport?.recommendations || [];
       
-      // Get executive summary
       const executiveSummary = stratavaxReport.executiveSummary || 
                                stratavaxReport.stratavaxReport?.executiveSummary?.narrative || 
                                '';
       
-      // Get supervisor implication
       const supervisorImplication = stratavaxReport.stratavaxReport?.scoreBreakdown?.[0]?.supervisorImplication || 
                                     'Please review the full report for supervisor guidance.';
       
+      // Build the report with ALL data
       report = {
         candidateName: profile?.full_name || 'Candidate',
         assessmentName: assessment.title || 'Assessment',
@@ -378,16 +376,16 @@ export default async function handler(req, res) {
         supervisorImplication: supervisorImplication,
         overallScore: stratavaxReport.percentageScore || overallScore,
         classification: stratavaxReport.classification?.label || '',
-        // Keep the full original report for reference (available if needed)
+        // Keep the full original report for reference
         _fullReport: stratavaxReport
       };
       
       console.log('[Submit Assessment] Stratavax report generated successfully');
+      console.log(`[Submit Assessment] Categories: ${categoryScoresArray.length}, Strengths: ${strengths.length}, Weaknesses: ${weaknesses.length}`);
     }
 
     // ============================================================
-    // CRITICAL FIX 2: Store reportType ONLY inside report_data
-    // Do NOT add report_type at the table level until schema is verified
+    // Build the final report_data with type
     // ============================================================
     const reportDataWithType = {
       ...report,
@@ -396,7 +394,7 @@ export default async function handler(req, res) {
     };
 
     // ============================================================
-    // Save result with proper error handling
+    // CRITICAL FIX: Save result with ALL fields properly populated
     // ============================================================
     const resultData = {
       user_id: user.id,
@@ -404,23 +402,25 @@ export default async function handler(req, res) {
       session_id: sessionId,
       total_score: totalEarned,
       max_score: totalMax,
-      percentage_score: overallScore,
-      answered_questions: answeredCount,
-      total_questions: totalQuestions,
+      percentage_score: overallScore, // CRITICAL: Always calculate this
+      answered_questions: answeredCount, // CRITICAL: Should be a number, not an array
+      total_questions: totalQuestions, // CRITICAL: Should be a number
       is_valid: isComplete && !isAutoSubmit,
       is_auto_submitted: Boolean(isAutoSubmit || !isComplete),
       completed_at: nowIso(),
-      // Only set National Service fields if applicable
       workplace_readiness: isNationalService ? workplaceReadiness : null,
       intellectual_capability: isNationalService ? intellectualCapability : null,
       recommendation: isNationalService ? (recommendation?.recommendation || null) : null,
-      // CRITICAL FIX 2: report_type is NOT at top level - only in report_data
+      // CRITICAL: Save the full report data
       report_data: reportDataWithType
     };
 
-    console.log('[Submit Assessment] Result data:', JSON.stringify(resultData, null, 2));
+    console.log('[Submit Assessment] Result data:', JSON.stringify({
+      ...resultData,
+      report_data_keys: Object.keys(resultData.report_data || {})
+    }, null, 2));
 
-    // First check if a result already exists for this session
+    // Check if a result already exists for this session
     const { data: existingResult, error: checkError } = await supabase
       .from("assessment_results")
       .select("id")
@@ -489,7 +489,7 @@ export default async function handler(req, res) {
 
     console.log('[Submit Assessment] Success!');
 
-    // Build response based on assessment type
+    // Build response
     const responsePayload = {
       success: true,
       result_id: result.id,
@@ -509,7 +509,6 @@ export default async function handler(req, res) {
         : "Assessment submitted successfully!"
     };
 
-    // Add National Service specific fields if applicable
     if (isNationalService) {
       responsePayload.workplaceReadiness = workplaceReadiness;
       responsePayload.intellectualCapability = intellectualCapability;
