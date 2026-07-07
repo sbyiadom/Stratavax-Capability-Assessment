@@ -7,6 +7,17 @@ import {
   safeArray,
   normalizeText
 } from "../../utils/scoring";
+// CRITICAL FIX 1: Import the original Stratavax report generator
+import { generateStratavaxReport } from "../../utils/stratavaxReportGenerator";
+// CRITICAL FIX 3: Import National Service generator
+import {
+  calculateNationalServiceScores,
+  classifyWorkplaceReadiness,
+  classifyIntellectualCapability,
+  getRecommendation,
+  getSuggestedDepartments,
+  generateNationalServiceReport
+} from "../../utils/nationalServiceReportGenerator";
 
 export const config = {
   maxDuration: 60,
@@ -19,75 +30,6 @@ export const config = {
 
 function nowIso() {
   return new Date().toISOString();
-}
-
-function cleanText(value, fallback = "") {
-  return normalizeText(value, fallback);
-}
-
-// ============================================================
-// NATIONAL SERVICE ASSESSMENT - CATEGORY MAPPING
-// ============================================================
-
-const WORKPLACE_CATEGORIES = [
-  'safety', 'risk_awareness', 'problem_solving', 'troubleshooting',
-  'technical_fundamentals', 'learning_agility', 'communication',
-  'teamwork', 'ownership', 'integrity', 'professional_conduct', 'work_ethic'
-];
-
-const INTELLECTUAL_CATEGORIES = [
-  'numerical_reasoning', 'numerical_aptitude', 'logical_reasoning',
-  'measurement', 'engineering_units', 'spatial_reasoning'
-];
-
-function isWorkplaceCategory(category) {
-  const normalized = cleanText(category, '').toLowerCase().replace(/\s+/g, '_');
-  return WORKPLACE_CATEGORIES.some(key => normalized.includes(key));
-}
-
-function isIntellectualCategory(category) {
-  const normalized = cleanText(category, '').toLowerCase().replace(/\s+/g, '_');
-  return INTELLECTUAL_CATEGORIES.some(key => normalized.includes(key));
-}
-
-function classifyWorkplaceReadiness(score) {
-  if (score >= 85) return { band: 'Excellent', description: 'Candidate demonstrates strong workplace readiness.' };
-  if (score >= 75) return { band: 'Ready', description: 'Candidate is ready for workplace responsibilities.' };
-  if (score >= 65) return { band: 'Developing', description: 'Candidate requires structured support.' };
-  return { band: 'Needs Improvement', description: 'Candidate requires significant development.' };
-}
-
-function classifyIntellectualCapability(score) {
-  if (score >= 85) return { band: 'Exceptional', description: 'Exceptional analytical ability.' };
-  if (score >= 75) return { band: 'High Potential', description: 'Strong analytical ability.' };
-  if (score >= 65) return { band: 'Moderate Potential', description: 'Moderate analytical ability.' };
-  return { band: 'Development Required', description: 'Requires structured development.' };
-}
-
-function getRecommendation(workplaceReadiness, intellectualCapability) {
-  if (workplaceReadiness >= 85 && intellectualCapability >= 85) {
-    return { recommendation: 'Highly Recommended', priority: 1 };
-  }
-  if (workplaceReadiness >= 75 && intellectualCapability >= 75) {
-    return { recommendation: 'Recommended', priority: 2 };
-  }
-  if (workplaceReadiness >= 65 && intellectualCapability >= 65) {
-    return { recommendation: 'Reserve Pool', priority: 3 };
-  }
-  return { recommendation: 'Not Recommended', priority: 4 };
-}
-
-function getSuggestedDepartments(workplaceScore, intellectualScore) {
-  if (workplaceScore >= 80 && intellectualScore >= 80) {
-    return ['Operations & Production Management', 'Quality Assurance & Control', 'Supply Chain & Logistics', 'Technical Services'];
-  }
-  if (workplaceScore >= 70 && intellectualScore >= 70) {
-    return ['Production Support', 'Maintenance & Engineering', 'Quality Control', 'Warehouse & Distribution'];
-  }
-  if (workplaceScore >= 60 && intellectualScore >= 60) {
-    return ['General Operations', 'Administrative Support', 'Entry-Level Technical Roles', 'Customer Service'];
-  }
-  return ['Structured Training Programs', 'Supervised Development Roles', 'Support & Administrative Functions'];
 }
 
 // ============================================================
@@ -159,10 +101,17 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, already_submitted: true });
     }
 
-    // Get assessment
+    // ============================================================
+    // Get assessment with type info
+    // ============================================================
     const { data: assessment, error: assessmentError } = await supabase
       .from("assessments")
-      .select("id, title, assessment_type_id")
+      .select(`
+        id, 
+        title, 
+        assessment_type_id,
+        assessment_type:assessment_types(code, name)
+      `)
       .eq("id", session.assessment_id)
       .single();
 
@@ -170,6 +119,13 @@ export default async function handler(req, res) {
       console.error('[Submit Assessment] Assessment error:', assessmentError);
       return res.status(500).json({ success: false, error: "Assessment not found" });
     }
+
+    // Get assessment type code
+    const assessmentTypeCode = assessment.assessment_type?.code || null;
+    const isNationalService = assessmentTypeCode === 'national_service';
+    
+    console.log(`[Submit Assessment] Assessment type code: ${assessmentTypeCode}`);
+    console.log(`[Submit Assessment] Is National Service: ${isNationalService}`);
 
     // ============================================================
     // Get questions from unique_questions
@@ -258,13 +214,11 @@ export default async function handler(req, res) {
     const isAutoSubmit = body.auto_submit === true || body.is_auto_submitted === true;
     const forceAutoSubmit = isAutoSubmit || !isComplete;
 
+    // ============================================================
     // Calculate scores
+    // ============================================================
     let totalEarned = 0;
     let totalMax = 0;
-    let workplaceEarned = 0;
-    let workplaceMax = 0;
-    let intellectualEarned = 0;
-    let intellectualMax = 0;
 
     const responseMap = {};
     responses.forEach(r => {
@@ -283,25 +237,9 @@ export default async function handler(req, res) {
         earned = answer ? toNumber(answer.score, 0) : 0;
       }
       totalEarned += earned;
-
-      const category = cleanText(question.section || 'General', 'General');
-      if (isWorkplaceCategory(category)) {
-        workplaceEarned += earned;
-        workplaceMax += maxScore;
-      } else if (isIntellectualCategory(category)) {
-        intellectualEarned += earned;
-        intellectualMax += maxScore;
-      }
     });
 
-    const workplaceReadiness = workplaceMax > 0 ? roundNumber((workplaceEarned / workplaceMax) * 100, 2) : 0;
-    const intellectualCapability = intellectualMax > 0 ? roundNumber((intellectualEarned / intellectualMax) * 100, 2) : 0;
     const overallScore = totalMax > 0 ? roundNumber((totalEarned / totalMax) * 100, 2) : 0;
-
-    const workplaceClass = classifyWorkplaceReadiness(workplaceReadiness);
-    const intellectualClass = classifyIntellectualCapability(intellectualCapability);
-    const recommendation = getRecommendation(workplaceReadiness, intellectualCapability);
-    const suggestedDepartments = getSuggestedDepartments(workplaceReadiness, intellectualCapability);
 
     // Get candidate profile
     const { data: profile, error: profileError } = await supabase
@@ -314,41 +252,151 @@ export default async function handler(req, res) {
       console.error('[Submit Assessment] Profile error:', profileError);
     }
 
-    // Build report
-    const report = {
-      candidateName: profile?.full_name || 'Candidate',
-      assessmentName: assessment.title || 'National Service Assessment',
-      candidateInfo: {
-        fullName: profile?.full_name || 'Candidate',
-        university: profile?.university || 'Not Specified',
-        programme: profile?.programme || 'Not Specified',
-        graduationYear: profile?.graduation_year || 'Not Specified',
-        preferredDepartment: profile?.preferred_department || 'Not Specified',
-        assessmentDate: new Date().toLocaleDateString()
-      },
-      dimensions: {
+    // ============================================================
+    // Conditional report generation based on assessment type
+    // ============================================================
+    let report;
+    let reportType;
+    let workplaceReadiness = null;
+    let intellectualCapability = null;
+    let recommendation = null;
+    let suggestedDepartments = null;
+
+    if (isNationalService) {
+      // ============================================================
+      // NATIONAL SERVICE REPORT
+      // CRITICAL FIX 3: Only calculate National Service scores when needed
+      // ============================================================
+      console.log('[Submit Assessment] Generating National Service report');
+      reportType = 'national_service';
+      
+      // Calculate National Service specific scores
+      const nsScores = calculateNationalServiceScores(responses, questions);
+      
+      workplaceReadiness = nsScores.workplaceMax > 0 
+        ? roundNumber((nsScores.workplaceEarned / nsScores.workplaceMax) * 100, 2) 
+        : 0;
+        
+      intellectualCapability = nsScores.intellectualMax > 0 
+        ? roundNumber((nsScores.intellectualEarned / nsScores.intellectualMax) * 100, 2) 
+        : 0;
+      
+      const workplaceClass = classifyWorkplaceReadiness(workplaceReadiness);
+      const intellectualClass = classifyIntellectualCapability(intellectualCapability);
+      recommendation = getRecommendation(workplaceReadiness, intellectualCapability);
+      suggestedDepartments = getSuggestedDepartments(workplaceReadiness, intellectualCapability);
+
+      report = generateNationalServiceReport({
+        profile,
+        assessment,
         workplaceReadiness,
         intellectualCapability,
-        overallScore
-      },
-      executiveSummary: {
-        workplaceBand: workplaceClass.band,
-        intellectualBand: intellectualClass.band,
-        recommendation: recommendation.recommendation
-      },
-      recommendation: {
-        level: recommendation.recommendation,
-        priority: recommendation.priority
-      },
-      suggestedPlacement: suggestedDepartments,
-      statistics: {
+        overallScore,
         totalQuestions,
-        totalAnswered: answeredCount
-      }
+        answeredCount,
+        recommendation,
+        suggestedDepartments,
+        workplaceClass,
+        intellectualClass
+      });
+      
+      console.log('[Submit Assessment] National Service report generated');
+    } else {
+      // ============================================================
+      // STRATAVAX REPORT
+      // CRITICAL FIX: Call with correct signature matching the original generator
+      // ============================================================
+      console.log('[Submit Assessment] Generating Stratavax report using original generator');
+      reportType = 'stratavax';
+      
+      // Build the responses array with nested question data for the Stratavax generator
+      const stratavaxResponses = questions.map(question => {
+        const response = responses.find(r => String(r.question_id) === String(question.id));
+        return {
+          ...(response || {}),
+          unique_questions: {
+            id: question.id,
+            question_text: question.question_text,
+            section: question.section,
+            subsection: question.subsection,
+            unique_answers: question.answers || []
+          }
+        };
+      });
+      
+      // Get assessment type code for the generator (fallback to 'general')
+      const generatorAssessmentType = assessmentTypeCode || 'general';
+      
+      // Call with the correct signature: (userId, assessmentType, responses, candidateName, dateTaken)
+      const stratavaxReport = generateStratavaxReport(
+        user.id,                                    // userId
+        generatorAssessmentType,                    // assessmentType
+        stratavaxResponses,                         // responses (with nested question data)
+        profile?.full_name || 'Candidate',         // candidateName
+        new Date().toISOString()                   // dateTaken
+      );
+      
+      // Transform the Stratavax report to match what ReportViewer expects
+      const categoryScoresArray = stratavaxReport.categoryScores ? 
+        Object.keys(stratavaxReport.categoryScores).map(category => ({
+          category: category,
+          score: stratavaxReport.categoryScores[category].score || 0,
+          percentage: stratavaxReport.categoryScores[category].percentage || 0,
+          maxScore: stratavaxReport.categoryScores[category].maxPossible || 0
+        })) : [];
+      
+      // Get strengths and weaknesses from the report
+      const strengths = stratavaxReport.strengths || stratavaxReport.stratavaxReport?.strengths?.items || [];
+      const weaknesses = stratavaxReport.weaknesses || stratavaxReport.stratavaxReport?.weaknesses?.items || [];
+      const recommendations = stratavaxReport.recommendations || stratavaxReport.stratavaxReport?.recommendations || [];
+      
+      // Get executive summary
+      const executiveSummary = stratavaxReport.executiveSummary || 
+                               stratavaxReport.stratavaxReport?.executiveSummary?.narrative || 
+                               '';
+      
+      // Get supervisor implication
+      const supervisorImplication = stratavaxReport.stratavaxReport?.scoreBreakdown?.[0]?.supervisorImplication || 
+                                    'Please review the full report for supervisor guidance.';
+      
+      report = {
+        candidateName: profile?.full_name || 'Candidate',
+        assessmentName: assessment.title || 'Assessment',
+        candidateInfo: {
+          fullName: profile?.full_name || 'Candidate',
+          university: profile?.university || 'Not Specified',
+          programme: profile?.programme || 'Not Specified',
+          graduationYear: profile?.graduation_year || 'Not Specified',
+          preferredDepartment: profile?.preferred_department || 'Not Specified',
+          assessmentDate: new Date().toLocaleDateString()
+        },
+        executiveSummary: executiveSummary,
+        strengths: strengths,
+        weaknesses: weaknesses,
+        recommendations: recommendations,
+        categoryScores: categoryScoresArray,
+        supervisorImplication: supervisorImplication,
+        overallScore: stratavaxReport.percentageScore || overallScore,
+        classification: stratavaxReport.classification?.label || '',
+        // Keep the full original report for reference (available if needed)
+        _fullReport: stratavaxReport
+      };
+      
+      console.log('[Submit Assessment] Stratavax report generated successfully');
+    }
+
+    // ============================================================
+    // CRITICAL FIX 2: Store reportType ONLY inside report_data
+    // Do NOT add report_type at the table level until schema is verified
+    // ============================================================
+    const reportDataWithType = {
+      ...report,
+      reportType: reportType,
+      assessmentTypeCode: assessmentTypeCode
     };
 
     // ============================================================
-    // FIX: Save result with proper error handling
+    // Save result with proper error handling
     // ============================================================
     const resultData = {
       user_id: user.id,
@@ -362,10 +410,12 @@ export default async function handler(req, res) {
       is_valid: isComplete && !isAutoSubmit,
       is_auto_submitted: Boolean(isAutoSubmit || !isComplete),
       completed_at: nowIso(),
-      workplace_readiness: workplaceReadiness,
-      intellectual_capability: intellectualCapability,
-      recommendation: recommendation.recommendation,
-      report_data: report
+      // Only set National Service fields if applicable
+      workplace_readiness: isNationalService ? workplaceReadiness : null,
+      intellectual_capability: isNationalService ? intellectualCapability : null,
+      recommendation: isNationalService ? (recommendation?.recommendation || null) : null,
+      // CRITICAL FIX 2: report_type is NOT at top level - only in report_data
+      report_data: reportDataWithType
     };
 
     console.log('[Submit Assessment] Result data:', JSON.stringify(resultData, null, 2));
@@ -439,18 +489,15 @@ export default async function handler(req, res) {
 
     console.log('[Submit Assessment] Success!');
 
-    return res.status(200).json({
+    // Build response based on assessment type
+    const responsePayload = {
       success: true,
       result_id: result.id,
       id: result.id,
       result: result,
       report: report,
-      executiveSummary: {
-        workplaceReadiness,
-        intellectualCapability,
-        overallScore,
-        recommendation: recommendation.recommendation
-      },
+      reportType: reportType,
+      isNationalService: isNationalService,
       score: overallScore,
       percentage_score: overallScore,
       answered_questions: answeredCount,
@@ -460,7 +507,17 @@ export default async function handler(req, res) {
       message: (!isComplete || isAutoSubmit)
         ? `Assessment auto-submitted. ${answeredCount} of ${totalQuestions} questions answered.`
         : "Assessment submitted successfully!"
-    });
+    };
+
+    // Add National Service specific fields if applicable
+    if (isNationalService) {
+      responsePayload.workplaceReadiness = workplaceReadiness;
+      responsePayload.intellectualCapability = intellectualCapability;
+      responsePayload.recommendation = recommendation;
+      responsePayload.suggestedDepartments = suggestedDepartments;
+    }
+
+    return res.status(200).json(responsePayload);
 
   } catch (error) {
     console.error('[Submit Assessment] Unhandled error:', error);
