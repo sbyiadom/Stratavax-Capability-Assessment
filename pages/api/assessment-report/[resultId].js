@@ -18,7 +18,9 @@ import {
   REPORT_THRESHOLDS,
   toNumber,
   safeArray,
-  normalizeText
+  normalizeText,
+  calculatePercentage,
+  roundNumber
 } from "../../../utils/scoring";
 
 export default async function handler(req, res) {
@@ -123,9 +125,55 @@ export default async function handler(req, res) {
     console.log('[API] Assessment type code:', assessmentTypeCode);
 
     // ============================================================
-    // For Stratavax reports: Calculate category scores, strengths, etc.
+    // Fetch responses with question data for ALL assessments
     // ============================================================
-    let report = result.report_data || null;
+    let responses = [];
+    let questions = [];
+
+    if (result.session_id) {
+      console.log('[API] Fetching responses for session:', result.session_id);
+      
+      const { data: responseData, error: responseError } = await serviceClient
+        .from("responses")
+        .select(`
+          id,
+          question_id,
+          answer_id,
+          session_id,
+          user_id,
+          assessment_id,
+          unique_questions (
+            id,
+            question_text,
+            section,
+            subsection,
+            unique_answers (
+              id,
+              answer_text,
+              score
+            )
+          )
+        `)
+        .eq("session_id", result.session_id);
+
+      if (!responseError && responseData) {
+        responses = responseData;
+        console.log('[API] Found', responses.length, 'responses');
+        
+        // Extract questions from responses
+        questions = responses
+          .map(r => r.unique_questions)
+          .filter(q => q && q.id);
+        console.log('[API] Found', questions.length, 'questions');
+      } else {
+        console.log('[API] No responses found or error:', responseError);
+      }
+    }
+
+    // ============================================================
+    // Calculate data based on assessment type
+    // ============================================================
+    let report = result.report_data || {};
     let categoryScores = [];
     let strengths = [];
     let weaknesses = [];
@@ -134,162 +182,167 @@ export default async function handler(req, res) {
     let supervisorImplication = '';
     let classification = '';
     let riskLevel = '';
+    let overallScore = result.percentage_score || 0;
 
-    if (!isNationalService) {
+    if (!isNationalService && responses.length > 0) {
       // ============================================================
-      // STRATAVAX REPORT - Calculate from responses
+      // STRATAVAX REPORT - Calculate from responses using scoring engine
       // ============================================================
-      console.log('[API] Generating Stratavax report data');
+      console.log('[API] Generating Stratavax report data from', responses.length, 'responses');
 
-      // Fetch responses for this session
-      let responses = [];
-      if (result.session_id) {
-        const { data: responseData, error: responseError } = await serviceClient
-          .from("responses")
-          .select(`
-            id,
-            question_id,
-            answer_id,
-            session_id,
-            user_id,
-            assessment_id,
-            unique_questions (
-              id,
-              question_text,
-              section,
-              unique_answers (
-                id,
-                answer_text,
-                score
-              )
-            )
-          `)
-          .eq("session_id", result.session_id);
+      // Calculate category scores using the scoring engine
+      const isBaseline = false;
+      const calculatedCategories = calculateCategoryScores(responses, isBaseline);
+      
+      console.log('[API] Calculated', calculatedCategories.length, 'categories');
 
-        if (!responseError && responseData) {
-          responses = responseData;
-          console.log('[API] Found', responses.length, 'responses');
-        }
-      }
+      // Format category scores for the frontend
+      categoryScores = calculatedCategories.map(cat => ({
+        category: cat.category,
+        name: cat.category,
+        percentage: roundNumber(cat.percentage, 1),
+        score: roundNumber(cat.totalScore, 1),
+        maxScore: roundNumber(cat.maxPossible, 1),
+        grade: cat.grade,
+        classification: cat.classification,
+        comment: cat.comment,
+        supervisorImplication: cat.supervisorImplication,
+        riskLevel: cat.riskLevel,
+        gapToTarget: cat.gapToTarget,
+        count: cat.count || 0
+      }));
 
-      // If we have responses, calculate category scores
-      if (responses.length > 0) {
-        // Use the scoring engine to calculate category scores
-        const isBaseline = false; // Stratavax assessments use weighted scoring
-        const calculatedCategories = calculateCategoryScores(responses, isBaseline);
+      // Sort categories by percentage descending for display
+      categoryScores.sort((a, b) => b.percentage - a.percentage);
+
+      // Get strengths (categories above 75%)
+      const strengthItems = getStrengthAreas(calculatedCategories, 5);
+      strengths = strengthItems.map(s => ({
+        category: s.category,
+        name: s.category,
+        percentage: roundNumber(s.percentage, 1),
+        score: roundNumber(s.totalScore, 1),
+        maxScore: roundNumber(s.maxPossible, 1),
+        gapToTarget: s.gapToTarget || 0,
+        comment: s.comment || getScoreComment(s.percentage)
+      }));
+
+      // Get development areas (categories below 65%)
+      const developmentItems = getDevelopmentAreas(calculatedCategories, 5);
+      weaknesses = developmentItems.map(d => ({
+        category: d.category,
+        name: d.category,
+        percentage: roundNumber(d.percentage, 1),
+        score: roundNumber(d.totalScore, 1),
+        maxScore: roundNumber(d.maxPossible, 1),
+        gapToTarget: d.gapToTarget || calculateGapToTarget(d.percentage),
+        comment: d.comment || getScoreComment(d.percentage)
+      }));
+
+      // Generate professional recommendations based on weaknesses
+      recommendations = developmentItems.map((d, index) => {
+        let priority = 'Medium';
+        let urgency = 'Standard';
         
-        // Format category scores for the frontend
-        categoryScores = calculatedCategories.map(cat => ({
-          category: cat.category,
-          name: cat.category,
-          percentage: cat.percentage,
-          score: cat.totalScore,
-          maxScore: cat.maxPossible,
-          grade: cat.grade,
-          classification: cat.classification,
-          comment: cat.comment,
-          supervisorImplication: cat.supervisorImplication,
-          riskLevel: cat.riskLevel,
-          gapToTarget: cat.gapToTarget
-        }));
+        if (d.percentage < 40) {
+          priority = 'Critical';
+          urgency = 'Immediate';
+        } else if (d.percentage < 55) {
+          priority = 'High';
+          urgency = 'High';
+        } else if (d.percentage < 65) {
+          priority = 'Medium';
+          urgency = 'Moderate';
+        } else {
+          priority = 'Low';
+          urgency = 'Low';
+        }
 
-        // Get strengths (categories above 75%)
-        const strengthAreas = getStrengthAreas(calculatedCategories, 3);
-        strengths = strengthAreas.map(s => ({
-          category: s.category,
-          name: s.category,
-          percentage: s.percentage,
-          score: s.totalScore,
-          maxScore: s.maxPossible
-        }));
+        const gap = d.gapToTarget || calculateGapToTarget(d.percentage);
+        const targetScore = REPORT_THRESHOLDS.targetScore || 80;
 
-        // Get development areas (categories below 65%)
-        const developmentAreas = getDevelopmentAreas(calculatedCategories, 3);
-        weaknesses = developmentAreas.map(d => ({
+        return {
+          priority: priority,
+          urgency: urgency,
           category: d.category,
-          name: d.category,
-          percentage: d.percentage,
-          score: d.totalScore,
-          maxScore: d.maxPossible
-        }));
-
-        // Generate recommendations based on weaknesses
-        recommendations = developmentAreas.map((d, index) => {
-          let priority = 'Medium';
-          if (d.percentage < 40) priority = 'Critical';
-          else if (d.percentage < 55) priority = 'High';
-          else if (d.percentage < 65) priority = 'Medium';
-          else priority = 'Low';
-
-          return {
-            priority: priority,
-            category: d.category,
-            recommendation: `Focus on developing ${d.category} skills through targeted training and practical experience. Current score of ${Math.round(d.percentage)}% indicates room for improvement.`,
-            action: priority === 'Critical' || priority === 'High' 
-              ? `Provide structured training, supervised practice, and weekly check-ins for ${d.category}.`
-              : `Provide targeted practice and feedback in ${d.category}.`,
-            impact: `Improving ${d.category} will help move the candidate closer to the recommended 80% target.`
-          };
-        });
-
-        // Generate executive summary
-        const overallPercentage = result.percentage_score || 0;
-        const gradeInfo = getGradeInfo(overallPercentage);
-        const classDetails = getClassificationDetailsFromPercentage(overallPercentage);
-        classification = classDetails.classification;
-        riskLevel = getRiskLevel(overallPercentage);
-
-        const topStrengths = strengths.slice(0, 3).map(s => s.category).join(', ');
-        const topWeaknesses = weaknesses.slice(0, 3).map(w => w.category).join(', ');
-
-        executiveSummary = `${candidateProfile?.full_name || 'Candidate'} scored ${Math.round(overallPercentage)}% overall, demonstrating ${classification.toLowerCase()} performance. Key strengths include ${topStrengths || 'no specific strengths identified'}. Areas for development include ${topWeaknesses || 'no specific development areas identified'}.`;
-
-        supervisorImplication = getSupervisorImplication(overallPercentage);
-
-        console.log('[API] Category scores calculated:', categoryScores.length);
-        console.log('[API] Strengths:', strengths.length);
-        console.log('[API] Weaknesses:', weaknesses.length);
-        console.log('[API] Recommendations:', recommendations.length);
-      } else {
-        // Fallback: Use data from report_data if available
-        const reportData = result.report_data || {};
-        categoryScores = reportData.categoryScores || reportData.category_scores || [];
-        strengths = reportData.strengths || [];
-        weaknesses = reportData.weaknesses || reportData.developmentAreas || [];
-        recommendations = reportData.recommendations || [];
-        executiveSummary = reportData.executiveSummary || reportData.executive_summary || '';
-        supervisorImplication = reportData.supervisorImplication || reportData.supervisor_implication || '';
-        classification = reportData.classification || getClassification(result.percentage_score || 0);
-        riskLevel = reportData.riskLevel || getRiskLevel(result.percentage_score || 0);
-      }
-
-      // Build the report object with all calculated data
-      report = {
-        ...result.report_data,
-        categoryScores: categoryScores,
-        strengths: strengths,
-        weaknesses: weaknesses,
-        recommendations: recommendations,
-        executiveSummary: executiveSummary,
-        supervisorImplication: supervisorImplication,
-        classification: classification,
-        riskLevel: riskLevel,
-        overallScore: result.percentage_score || 0,
-        reportType: 'stratavax'
-      };
-
-      console.log('[API] Final report built with:', {
-        categoryScores: categoryScores.length,
-        strengths: strengths.length,
-        weaknesses: weaknesses.length,
-        recommendations: recommendations.length
+          currentScore: roundNumber(d.percentage, 1),
+          targetScore: targetScore,
+          gap: roundNumber(gap, 1),
+          recommendation: `Priority development needed in ${d.category}. Current score of ${roundNumber(d.percentage, 1)}% is ${gap > 0 ? gap : 0}% below the target of ${targetScore}%.`,
+          action: priority === 'Critical' || priority === 'High' 
+            ? `Immediate intervention required. Provide structured training, supervised practice, and weekly performance reviews for ${d.category}.`
+            : `Provide targeted coaching, practical assignments, and regular feedback in ${d.category}.`,
+          impact: `Closing the ${gap > 0 ? gap : 0}% gap in ${d.category} will significantly improve overall capability and role readiness.`,
+          timeframe: urgency === 'Immediate' ? '0-30 days' :
+                     urgency === 'High' ? '30-60 days' :
+                     urgency === 'Moderate' ? '60-90 days' : '90+ days'
+        };
       });
-    } else {
+
+      // Sort recommendations by priority (Critical > High > Medium > Low)
+      const priorityOrder = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+      recommendations.sort((a, b) => (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4));
+
+      // Generate professional executive summary
+      const overallPercentage = result.percentage_score || 0;
+      const gradeInfo = getGradeInfo(overallPercentage);
+      const classDetails = getClassificationDetailsFromPercentage(overallPercentage);
+      classification = classDetails.classification;
+      riskLevel = getRiskLevel(overallPercentage);
+
+      const topStrengths = strengths.slice(0, 3).map(s => `${s.category} (${s.percentage}%)`).join(', ');
+      const topWeaknesses = weaknesses.slice(0, 3).map(w => `${w.category} (${w.percentage}%)`).join(', ');
+
+      // Build comprehensive executive summary
+      const summaryParts = [];
+      summaryParts.push(`${candidateProfile?.full_name || 'Candidate'} completed the ${assessment?.title || 'Assessment'} with an overall score of ${Math.round(overallPercentage)}%.`);
+      summaryParts.push(`Performance classification: ${classification}.`);
+      
+      if (strengths.length > 0) {
+        summaryParts.push(`Key strengths (above 75%): ${topStrengths}.`);
+      } else {
+        summaryParts.push('No specific strengths identified above the 75% threshold.');
+      }
+      
+      if (weaknesses.length > 0) {
+        summaryParts.push(`Priority development areas (below 65%): ${topWeaknesses}.`);
+      } else {
+        summaryParts.push('No specific development areas identified below the 65% threshold.');
+      }
+      
+      summaryParts.push(`Overall assessment: ${classDetails.description}`);
+
+      executiveSummary = summaryParts.join(' ');
+      
+      // Get supervisor implication
+      supervisorImplication = getSupervisorImplication(overallPercentage);
+
+      console.log('[API] Category scores calculated:', categoryScores.length);
+      console.log('[API] Strengths:', strengths.length);
+      console.log('[API] Weaknesses:', weaknesses.length);
+      console.log('[API] Recommendations:', recommendations.length);
+
+    } else if (isNationalService) {
       // ============================================================
-      // NATIONAL SERVICE REPORT - Use existing report_data
+      // NATIONAL SERVICE REPORT - Use existing data
       // ============================================================
       console.log('[API] National Service report - using existing data');
       
+      classification = result.recommendation || 'Not Recommended';
+      riskLevel = 'Moderate';
+      
+      // Use category breakdown if available
+      if (report.categoryBreakdown && report.categoryBreakdown.length > 0) {
+        categoryScores = report.categoryBreakdown.map(cat => ({
+          category: cat.category,
+          name: cat.category,
+          percentage: cat.percentage || 0,
+          score: cat.earned || 0,
+          maxScore: cat.max || 0,
+          dimension: cat.dimension || 'other'
+        }));
+      }
+
       if (!report) {
         report = {
           dimensions: {
@@ -304,7 +357,7 @@ export default async function handler(req, res) {
             totalQuestions: result.total_questions || 0,
             totalAnswered: result.answered_questions || 0
           },
-          categoryBreakdown: result.report_data?.categoryBreakdown || [],
+          categoryBreakdown: categoryScores,
           candidateInfo: {
             fullName: candidateProfile?.full_name || 'Candidate',
             university: candidateProfile?.university || '',
@@ -316,6 +369,25 @@ export default async function handler(req, res) {
           reportType: 'national_service'
         };
       }
+    } else {
+      // ============================================================
+      // FALLBACK - No responses or data available
+      // ============================================================
+      console.log('[API] No responses available - using fallback data');
+      
+      const overallPercentage = result.percentage_score || 0;
+      const classDetails = getClassificationDetailsFromPercentage(overallPercentage);
+      classification = classDetails.classification;
+      riskLevel = getRiskLevel(overallPercentage);
+      
+      executiveSummary = `${candidateProfile?.full_name || 'Candidate'} completed the ${assessment?.title || 'Assessment'} with an overall score of ${Math.round(overallPercentage)}%. ${classDetails.description}`;
+      supervisorImplication = getSupervisorImplication(overallPercentage);
+
+      // Use existing report data if available
+      categoryScores = report.categoryScores || report.category_scores || [];
+      strengths = report.strengths || [];
+      weaknesses = report.weaknesses || report.developmentAreas || [];
+      recommendations = report.recommendations || [];
     }
 
     // Helper function for classification (fallback)
@@ -337,6 +409,36 @@ export default async function handler(req, res) {
       return 'Critical';
     }
 
+    // Build the final report object
+    const finalReport = {
+      ...report,
+      categoryScores: categoryScores,
+      strengths: strengths,
+      weaknesses: weaknesses,
+      recommendations: recommendations,
+      executiveSummary: executiveSummary || report.executiveSummary || '',
+      supervisorImplication: supervisorImplication || report.supervisorImplication || '',
+      classification: classification || report.classification || getClassification(overallScore),
+      riskLevel: riskLevel || report.riskLevel || getRiskLevel(overallScore),
+      overallScore: overallScore,
+      reportType: isNationalService ? 'national_service' : 'stratavax',
+      // Add summary statistics for the dashboard cards
+      summaryStats: {
+        totalCategories: categoryScores.length,
+        totalStrengths: strengths.length,
+        totalWeaknesses: weaknesses.length,
+        totalRecommendations: recommendations.length
+      }
+    };
+
+    console.log('[API] Final report summary:', {
+      categoryScores: categoryScores.length,
+      strengths: strengths.length,
+      weaknesses: weaknesses.length,
+      recommendations: recommendations.length,
+      isNationalService: isNationalService
+    });
+
     // Combine data for response
     const combinedResult = {
       ...result,
@@ -347,10 +449,10 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       result: combinedResult,
-      report: report,
+      report: finalReport,
       isNationalService: isNationalService,
       assessmentTypeCode: assessmentTypeCode,
-      // Include calculated data directly for easier access
+      // Include calculated data at top level for easy access
       categoryScores: categoryScores,
       strengths: strengths,
       weaknesses: weaknesses,
@@ -359,15 +461,11 @@ export default async function handler(req, res) {
       supervisorImplication: supervisorImplication,
       classification: classification,
       riskLevel: riskLevel,
-      executiveSummary: isNationalService ? {
-        workplaceReadiness: result.workplace_readiness,
-        intellectualCapability: result.intellectual_capability,
-        overallScore: result.percentage_score,
-        recommendation: result.recommendation
-      } : {
-        overallScore: result.percentage_score,
-        classification: classification,
-        riskLevel: riskLevel
+      summaryStats: {
+        totalCategories: categoryScores.length,
+        totalStrengths: strengths.length,
+        totalWeaknesses: weaknesses.length,
+        totalRecommendations: recommendations.length
       }
     });
 
