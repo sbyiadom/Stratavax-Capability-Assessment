@@ -13,9 +13,31 @@ import {
   roundNumber,
   calculateCategoryScores,
   getStrengthAreas,
-  getDevelopmentAreas
+  getDevelopmentAreas,
+  isStrength,
+  isDevelopmentArea,
+  calculateGapToTarget,
+  REPORT_THRESHOLDS
 } from "../../../utils/scoring";
 import { generateUniversalInterpretation } from "../../../utils/categoryMapper";
+import { generateDetailedInterpretation } from "../../../utils/detailedInterpreter";
+import { analyzeResponses } from "../../../utils/responseAnalyzer";
+import {
+  generateCommentary,
+  generateStrengthsSummary,
+  generateWeaknessesSummary,
+  generateProfileCommentary
+} from "../../../utils/commentaryEngine";
+import { getDevelopmentRecommendation } from "../../../utils/developmentRecommendations";
+import {
+  getScorePhrase,
+  getManufacturingPhrase,
+  getTraitPhrase,
+  getRoleReadinessPhrase,
+  getPhrase,
+  selectPhrase,
+  generalReportPhrases
+} from "../../../utils/phraseLibrary";
 
 export default async function handler(req, res) {
   const { resultId } = req.query;
@@ -69,7 +91,6 @@ export default async function handler(req, res) {
     }
 
     console.log('[API] Result found:', result.id);
-    console.log('[API] report_data keys:', result.report_data ? Object.keys(result.report_data) : 'null');
 
     // ============================================================
     // Get candidate profile
@@ -126,9 +147,8 @@ export default async function handler(req, res) {
     const riskLevel = getRiskLevel(overallScore);
 
     // ============================================================
-    // Fetch responses for category scoring
+    // Initialize data structures
     // ============================================================
-    let responses = [];
     let categoryScores = [];
     let strengths = [];
     let weaknesses = [];
@@ -139,7 +159,15 @@ export default async function handler(req, res) {
     let profileSummary = {};
     let suitabilityAndRisks = {};
     let developmentFocus = [];
+    let detailedInterpretation = {};
+    let responseInsights = {};
+    let commentaryData = {};
     let report = {};
+
+    // ============================================================
+    // Fetch responses for category scoring
+    // ============================================================
+    let responses = [];
 
     if (result.session_id) {
       const { data: responseData, error: responseError } = await serviceClient
@@ -151,6 +179,8 @@ export default async function handler(req, res) {
           session_id,
           user_id,
           assessment_id,
+          time_spent_seconds,
+          times_changed,
           unique_questions (
             id,
             question_text,
@@ -170,64 +200,128 @@ export default async function handler(req, res) {
       }
     }
 
+    // ============================================================
+    // Generate response insights using responseAnalyzer
+    // ============================================================
+    if (responses.length > 0 && !isNationalService) {
+      responseInsights = analyzeResponses(responses, [], [], assessmentTypeCode || 'general');
+      console.log('[API] Response insights generated for', Object.keys(responseInsights).length, 'categories');
+    }
+
+    // ============================================================
+    // STRATAVAX REPORT - Full detailed report
+    // ============================================================
     if (!isNationalService && responses.length > 0) {
-      // ============================================================
-      // STRATAVAX REPORT - Generate using categoryMapper
-      // ============================================================
-      console.log('[API] Generating Stratavax report with categoryMapper');
+      console.log('[API] Generating full Stratavax report with all utilities');
 
       // Calculate category scores from responses
       const isBaseline = false;
       const calculatedCategories = calculateCategoryScores(responses, isBaseline);
       
-      // Build scores object for categoryMapper
+      // Build scores object for utilities
       const scoresMap = {};
       calculatedCategories.forEach(cat => {
         scoresMap[cat.category] = cat.percentage;
       });
 
-      // Format category scores for frontend
-      categoryScores = calculatedCategories.map(cat => ({
-        category: cat.category,
-        name: cat.category,
-        percentage: cat.percentage,
-        score: cat.totalScore,
-        maxScore: cat.maxPossible,
-        grade: cat.grade,
-        classification: cat.classification,
-        comment: cat.comment,
-        supervisorImplication: cat.supervisorImplication,
-        riskLevel: cat.riskLevel,
-        gapToTarget: cat.gapToTarget
-      }));
+      // Format category scores for frontend with full details
+      categoryScores = calculatedCategories.map(cat => {
+        const percentage = cat.percentage || 0;
+        const gradeInfo = getGradeInfo(percentage);
+        const gap = calculateGapToTarget(percentage);
+        
+        // Get commentary for this category
+        const commentary = generateCommentary(
+          cat.category,
+          percentage,
+          isStrength(percentage) ? 'strength' : 'weakness',
+          assessmentTypeCode
+        );
+
+        // Get development recommendation
+        const devRecommendation = getDevelopmentRecommendation(cat.category, percentage);
+
+        // Get response insights for this category
+        const insights = responseInsights[cat.category]?.insights || [];
+
+        return {
+          category: cat.category,
+          name: cat.category,
+          percentage: percentage,
+          score: cat.totalScore || 0,
+          maxScore: cat.maxPossible || 0,
+          grade: gradeInfo.grade,
+          gradeDescription: gradeInfo.description,
+          classification: cat.classification || classDetails.classification,
+          comment: cat.comment || getScoreComment(percentage),
+          supervisorImplication: cat.supervisorImplication || getSupervisorImplication(percentage),
+          riskLevel: cat.riskLevel || getRiskLevel(percentage),
+          gapToTarget: gap,
+          // NEW: Detailed fields for the report
+          commentary: commentary,
+          developmentRecommendation: devRecommendation,
+          insights: insights.slice(0, 3), // Top 3 insights per category
+          questionCount: cat.count || 0,
+          isStrength: isStrength(percentage),
+          isDevelopmentArea: isDevelopmentArea(percentage),
+          isCriticalGap: percentage < REPORT_THRESHOLDS.criticalThreshold,
+          performanceLevel: getScoreLevelLabel(percentage)
+        };
+      });
 
       // Sort by percentage descending
       categoryScores.sort((a, b) => b.percentage - a.percentage);
 
-      // Get strengths and weaknesses
+      // Get strengths and weaknesses with full details
       const strengthItems = getStrengthAreas(calculatedCategories, 5);
-      strengths = strengthItems.map(s => ({
-        category: s.category,
-        name: s.category,
-        percentage: s.percentage,
-        score: s.totalScore,
-        maxScore: s.maxPossible,
-        comment: s.comment
-      }));
+      strengths = strengthItems.map(s => {
+        const percentage = s.percentage || 0;
+        return {
+          category: s.category,
+          name: s.category,
+          percentage: percentage,
+          score: s.totalScore || 0,
+          maxScore: s.maxPossible || 0,
+          gapToTarget: s.gapToTarget || 0,
+          comment: s.comment || getScoreComment(percentage),
+          supervisorImplication: s.supervisorImplication || getSupervisorImplication(percentage),
+          // NEW: Commentary and phrase
+          commentary: generateCommentary(s.category, percentage, 'strength', assessmentTypeCode),
+          phrase: getScorePhrase(s.category, percentage, 'summary', `${s.category}-${percentage}`)
+        };
+      });
 
       const weaknessItems = getDevelopmentAreas(calculatedCategories, 5);
-      weaknesses = weaknessItems.map(w => ({
-        category: w.category,
-        name: w.category,
-        percentage: w.percentage,
-        score: w.totalScore,
-        maxScore: w.maxPossible,
-        gapToTarget: w.gapToTarget,
-        comment: w.comment
-      }));
+      weaknesses = weaknessItems.map(w => {
+        const percentage = w.percentage || 0;
+        return {
+          category: w.category,
+          name: w.category,
+          percentage: percentage,
+          score: w.totalScore || 0,
+          maxScore: w.maxPossible || 0,
+          gapToTarget: w.gapToTarget || calculateGapToTarget(percentage),
+          comment: w.comment || getScoreComment(percentage),
+          supervisorImplication: w.supervisorImplication || getSupervisorImplication(percentage),
+          // NEW: Commentary and development recommendation
+          commentary: generateCommentary(w.category, percentage, 'weakness', assessmentTypeCode),
+          developmentRecommendation: getDevelopmentRecommendation(w.category, percentage),
+          phrase: getScorePhrase(w.category, percentage, 'summary', `${w.category}-${percentage}`)
+        };
+      });
 
       // ============================================================
-      // USE CATEGORY MAPPER FOR PROFESSIONAL INTERPRETATION
+      // Generate detailed interpretation using detailedInterpreter
+      // ============================================================
+      detailedInterpretation = generateDetailedInterpretation(
+        candidateProfile?.full_name || 'Candidate',
+        scoresMap,
+        assessmentTypeCode || 'general',
+        responseInsights
+      );
+
+      // ============================================================
+      // Generate universal interpretation using categoryMapper
       // ============================================================
       const interpretation = generateUniversalInterpretation(
         assessmentTypeCode || 'general',
@@ -238,7 +332,6 @@ export default async function handler(req, res) {
         overallScore
       );
 
-      // Extract interpretation data
       categoryInterpretation = interpretation.categoryInterpretation || {};
       profileSummary = {
         type: interpretation.profileType || 'Standard Profile',
@@ -249,9 +342,10 @@ export default async function handler(req, res) {
         risks: interpretation.risks || []
       };
       developmentFocus = interpretation.developmentFocus || [];
-      executiveSummary = interpretation.overallSummary || '';
 
-      // Generate recommendations from interpretation or from weaknesses
+      // ============================================================
+      // Generate recommendations from interpretation or weaknesses
+      // ============================================================
       if (interpretation.developmentFocus && interpretation.developmentFocus.length > 0) {
         recommendations = interpretation.developmentFocus.map((item, index) => {
           let priority = 'Medium';
@@ -260,25 +354,81 @@ export default async function handler(req, res) {
           else if (item.score < 65) priority = 'Medium';
           else priority = 'Low';
 
+          const devRec = getDevelopmentRecommendation(item.area, item.score);
+
           return {
             priority: priority,
             category: item.area,
-            recommendation: `Focus on developing ${item.area} skills. Current score of ${Math.round(item.score)}% indicates ${item.gapToTarget > 0 ? `a ${Math.round(item.gapToTarget)}% gap` : 'room for improvement'}.`,
-            action: priority === 'Critical' || priority === 'High' 
-              ? `Provide structured training, supervised practice, and weekly check-ins for ${item.area}.`
-              : `Provide targeted coaching and practical assignments in ${item.area}.`,
-            impact: `Improving ${item.area} will help move the candidate closer to the recommended 80% target.`
+            currentScore: item.score,
+            gapToTarget: item.gapToTarget || calculateGapToTarget(item.score),
+            recommendation: devRec,
+            action: getDevelopmentAction(item.area, item.score),
+            impact: `Improving ${item.area} will help move the candidate closer to the recommended ${REPORT_THRESHOLDS.targetScore}% target.`
+          };
+        });
+      } else if (weaknesses.length > 0) {
+        recommendations = weaknesses.map((w, index) => {
+          let priority = 'Medium';
+          if (w.percentage < 40) priority = 'Critical';
+          else if (w.percentage < 55) priority = 'High';
+          else if (w.percentage < 65) priority = 'Medium';
+          else priority = 'Low';
+
+          return {
+            priority: priority,
+            category: w.category,
+            currentScore: w.percentage,
+            gapToTarget: w.gapToTarget || calculateGapToTarget(w.percentage),
+            recommendation: getDevelopmentRecommendation(w.category, w.percentage),
+            action: getDevelopmentAction(w.category, w.percentage),
+            impact: `Improving ${w.category} will help move the candidate closer to the recommended ${REPORT_THRESHOLDS.targetScore}% target.`
           };
         });
       }
 
+      // Sort recommendations by priority
+      const priorityOrder = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+      recommendations.sort((a, b) => (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4));
+
+      // ============================================================
+      // Generate executive summary using commentaryEngine + phraseLibrary
+      // ============================================================
+      const strengthsSummary = generateStrengthsSummary(
+        strengths.map(s => ({ area: s.category, percentage: s.percentage })),
+        strengths.slice(0, 3).map(s => s.category)
+      );
+
+      const weaknessesSummary = generateWeaknessesSummary(
+        weaknesses.map(w => ({ area: w.category, percentage: w.percentage })),
+        weaknesses.slice(0, 3).map(w => w.category),
+        overallScore
+      );
+
+      const profileCommentary = generateProfileCommentary(
+        overallScore,
+        classification,
+        strengths.map(s => ({ area: s.category, percentage: s.percentage })),
+        weaknesses.map(w => ({ area: w.category, percentage: w.percentage }))
+      );
+
+      // Combine into full executive summary
+      const candidateName = candidateProfile?.full_name || 'Candidate';
+      const assessmentTitle = assessment?.title || 'Assessment';
+      
+      executiveSummary = `${candidateName} completed the ${assessmentTitle} with an overall score of ${Math.round(overallScore)}%. ${strengthsSummary} ${weaknessesSummary} ${profileCommentary}`;
+
+      // ============================================================
       // Supervisor implication
+      // ============================================================
       supervisorImplication = getSupervisorImplication(overallScore);
 
-      // Build report with all data
+      // ============================================================
+      // Build the complete report
+      // ============================================================
       report = {
         candidateName: candidateProfile?.full_name || 'Candidate',
         assessmentName: assessment?.title || 'Assessment',
+        assessmentType: assessmentTypeCode || 'general',
         candidateInfo: {
           fullName: candidateProfile?.full_name || 'Candidate',
           university: candidateProfile?.university || '',
@@ -287,6 +437,7 @@ export default async function handler(req, res) {
           preferredDepartment: candidateProfile?.preferred_department || '',
           assessmentDate: new Date(result.completed_at).toLocaleDateString()
         },
+        // Core data
         categoryScores: categoryScores,
         strengths: strengths,
         weaknesses: weaknesses,
@@ -297,24 +448,34 @@ export default async function handler(req, res) {
         riskLevel: riskLevel,
         overallScore: overallScore,
         reportType: 'stratavax',
-        // Add interpretation data
+        // Detailed analysis
         categoryInterpretation: categoryInterpretation,
         profileSummary: profileSummary,
         suitabilityAndRisks: suitabilityAndRisks,
-        developmentFocus: developmentFocus
+        developmentFocus: developmentFocus,
+        detailedInterpretation: detailedInterpretation,
+        // Stats
+        summaryStats: {
+          totalCategories: categoryScores.length,
+          totalStrengths: strengths.length,
+          totalWeaknesses: weaknesses.length,
+          totalRecommendations: recommendations.length,
+          totalQuestions: result.total_questions || 0,
+          answeredQuestions: result.answered_questions || 0
+        }
       };
 
-      console.log('[API] Report generated with categoryMapper:', {
+      console.log('[API] Full report generated:', {
         categoryScores: categoryScores.length,
         strengths: strengths.length,
         weaknesses: weaknesses.length,
         recommendations: recommendations.length,
-        hasInterpretation: Object.keys(categoryInterpretation).length > 0
+        hasDetailedInterpretation: !!detailedInterpretation.overallProfileSummary
       });
 
     } else if (isNationalService) {
       // ============================================================
-      // NATIONAL SERVICE REPORT - Use existing data
+      // NATIONAL SERVICE REPORT
       // ============================================================
       console.log('[API] National Service report');
 
@@ -331,13 +492,13 @@ export default async function handler(req, res) {
         dimension: cat.dimension || 'other'
       }));
 
-      // Build scores map for categoryMapper
+      // Build scores map for utilities
       const scoresMap = {};
       categoryScores.forEach(cat => {
         scoresMap[cat.category] = cat.percentage;
       });
 
-      // Use categoryMapper for interpretation
+      // Generate interpretation
       const interpretation = generateUniversalInterpretation(
         'national_service',
         candidateProfile?.full_name || 'Candidate',
@@ -360,7 +521,7 @@ export default async function handler(req, res) {
           totalQuestions: result.total_questions || 0,
           totalAnswered: result.answered_questions || 0
         },
-        categoryBreakdown: categoryBreakdown,
+        categoryBreakdown: categoryScores,
         candidateInfo: {
           fullName: candidateProfile?.full_name || 'Candidate',
           university: candidateProfile?.university || '',
@@ -387,13 +548,6 @@ export default async function handler(req, res) {
       console.log('[API] Using fallback - report_data only');
       
       const reportData = result.report_data || {};
-      report = {
-        ...reportData,
-        reportType: 'stratavax',
-        overallScore: overallScore,
-        classification: classification,
-        riskLevel: riskLevel
-      };
       
       // Try to extract data from report_data
       categoryScores = reportData.categoryScores || reportData.category_scores || [];
@@ -402,6 +556,52 @@ export default async function handler(req, res) {
       recommendations = reportData.recommendations || [];
       executiveSummary = reportData.executiveSummary || reportData.executive_summary || '';
       supervisorImplication = reportData.supervisorImplication || reportData.supervisor_implication || '';
+
+      report = {
+        ...reportData,
+        reportType: 'stratavax',
+        overallScore: overallScore,
+        classification: classification,
+        riskLevel: riskLevel,
+        categoryScores: categoryScores,
+        strengths: strengths,
+        weaknesses: weaknesses,
+        recommendations: recommendations,
+        executiveSummary: executiveSummary,
+        supervisorImplication: supervisorImplication
+      };
+    }
+
+    // ============================================================
+    // Helper function for score level label
+    // ============================================================
+    function getScoreLevelLabel(percentage) {
+      const value = toNumber(percentage, 0);
+      if (value >= 85) return 'Exceptional';
+      if (value >= 75) return 'Strong';
+      if (value >= 65) return 'Adequate';
+      if (value >= 55) return 'Developing';
+      if (value >= 40) return 'Priority Development';
+      return 'Critical Gap';
+    }
+
+    // ============================================================
+    // Helper function for development action
+    // ============================================================
+    function getDevelopmentAction(category, percentage) {
+      const value = toNumber(percentage, 0);
+      const rec = getDevelopmentRecommendation(category, value);
+      
+      if (value < 40) {
+        return `Immediate intervention required. ${rec}`;
+      }
+      if (value < 55) {
+        return `High priority action. ${rec}`;
+      }
+      if (value < 65) {
+        return `Structured development. ${rec}`;
+      }
+      return `Reinforcement and practice. ${rec}`;
     }
 
     // ============================================================
@@ -411,39 +611,7 @@ export default async function handler(req, res) {
       ...result,
       candidate_profiles: candidateProfile,
       assessments: assessment,
-      // Add all calculated data
-      categoryScores: categoryScores,
-      strengths: strengths,
-      weaknesses: weaknesses,
-      recommendations: recommendations,
-      executiveSummary: executiveSummary,
-      supervisorImplication: supervisorImplication,
-      classification: classification,
-      riskLevel: riskLevel,
-      overallScore: overallScore,
-      // Add interpretation data
-      categoryInterpretation: categoryInterpretation,
-      profileSummary: profileSummary,
-      suitabilityAndRisks: suitabilityAndRisks,
-      developmentFocus: developmentFocus
-    };
-
-    console.log('[API] Final response:', {
-      success: true,
-      isNationalService: isNationalService,
-      categoryScores: categoryScores.length,
-      strengths: strengths.length,
-      weaknesses: weaknesses.length,
-      recommendations: recommendations.length,
-      hasInterpretation: Object.keys(categoryInterpretation).length > 0
-    });
-
-    return res.status(200).json({
-      success: true,
-      result: combinedResult,
-      report: report,
-      isNationalService: isNationalService,
-      assessmentTypeCode: assessmentTypeCode,
+      // All calculated data at top level for easy access
       categoryScores: categoryScores,
       strengths: strengths,
       weaknesses: weaknesses,
@@ -457,6 +625,40 @@ export default async function handler(req, res) {
       profileSummary: profileSummary,
       suitabilityAndRisks: suitabilityAndRisks,
       developmentFocus: developmentFocus,
+      detailedInterpretation: detailedInterpretation
+    };
+
+    console.log('[API] Final response:', {
+      success: true,
+      isNationalService: isNationalService,
+      categoryScores: categoryScores.length,
+      strengths: strengths.length,
+      weaknesses: weaknesses.length,
+      recommendations: recommendations.length,
+      hasDetailedInterpretation: !!detailedInterpretation.overallProfileSummary
+    });
+
+    return res.status(200).json({
+      success: true,
+      result: combinedResult,
+      report: report,
+      isNationalService: isNationalService,
+      assessmentTypeCode: assessmentTypeCode,
+      // All data available at top level
+      categoryScores: categoryScores,
+      strengths: strengths,
+      weaknesses: weaknesses,
+      recommendations: recommendations,
+      executiveSummary: executiveSummary,
+      supervisorImplication: supervisorImplication,
+      classification: classification,
+      riskLevel: riskLevel,
+      overallScore: overallScore,
+      categoryInterpretation: categoryInterpretation,
+      profileSummary: profileSummary,
+      suitabilityAndRisks: suitabilityAndRisks,
+      developmentFocus: developmentFocus,
+      detailedInterpretation: detailedInterpretation,
       summaryStats: {
         totalCategories: categoryScores.length,
         totalStrengths: strengths.length,
