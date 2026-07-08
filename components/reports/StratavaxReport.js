@@ -119,7 +119,9 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
         </button>
       )}
 
-      {/* Header */}
+      {/* ============================================================
+          HEADER - Clean, solid background, no duplication
+          ============================================================ */}
       <div style={styles.header}>
         <h1 style={styles.title}>Assessment Report</h1>
         <p style={styles.subtitle}>{assessmentTitle}</p>
@@ -145,7 +147,9 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
         </div>
       </div>
 
-      {/* Score Cards */}
+      {/* ============================================================
+          SCORE CARDS - Clean, solid backgrounds with good contrast
+          ============================================================ */}
       <div style={styles.scoreGrid}>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Overall Score</div>
@@ -170,7 +174,9 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
         </div>
       </div>
 
-      {/* Executive Summary */}
+      {/* ============================================================
+          EXECUTIVE SUMMARY - Solid background, clear text
+          ============================================================ */}
       {executiveSummary && (
         <div style={styles.executiveSummarySection}>
           <h2 style={styles.sectionTitle}>📝 Executive Summary</h2>
@@ -180,7 +186,9 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
         </div>
       )}
 
-      {/* Quick Stats */}
+      {/* ============================================================
+          QUICK STATS - Clean, solid backgrounds
+          ============================================================ */}
       <div style={styles.quickStats}>
         <div style={styles.quickStat}>
           <span style={styles.quickStatValue}>{strengthCategories.length}</span>
@@ -200,7 +208,9 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* ============================================================
+          TABS
+          ============================================================ */}
       <div style={styles.tabsContainer}>
         {tabs.map((tab) => (
           <button
@@ -230,22 +240,16 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
         ))}
       </div>
 
-      {/* Tab Content */}
+      {/* ============================================================
+          TAB CONTENT
+          ============================================================ */}
       <div style={styles.tabContent}>
         {/* ============================================================
             OVERVIEW TAB
             ============================================================ */}
         {activeTab === 'overview' && (
           <div>
-            {/* Executive Summary (repeated for visibility) */}
-            {executiveSummary && (
-              <div style={styles.overviewSummary}>
-                <h3 style={styles.overviewSummaryTitle}>Executive Summary</h3>
-                <p>{executiveSummary}</p>
-              </div>
-            )}
-
-            {/* Top Strengths Preview */}
+            {/* Top Strengths */}
             {strengthCategories.length > 0 && (
               <div style={styles.overviewSection}>
                 <h3 style={styles.overviewSectionTitle}>🌟 Top Strengths</h3>
@@ -267,7 +271,7 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
               </div>
             )}
 
-            {/* Development Areas Preview */}
+            {/* Development Areas */}
             {developmentCategories.length > 0 && (
               <div style={styles.overviewSection}>
                 <h3 style={styles.overviewSectionTitle}>📈 Development Areas</h3>
@@ -322,7 +326,7 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
         )}
 
         {/* ============================================================
-            STRENGTHS TAB - DETAILED BREAKDOWN
+            STRENGTHS TAB - DETAILED
             ============================================================ */}
         {activeTab === 'strengths' && (
           <div>
@@ -330,7 +334,7 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
               <div>
                 <p style={styles.tabDescription}>
                   The following categories are identified as strengths (score ≥ 75%). 
-                  These areas represent the candidate's strongest capabilities and can be leveraged for role placement and development.
+                  These areas represent the candidate's strongest capabilities.
                 </p>
                 <div style={styles.detailGrid}>
                   {strengthCategories.map((cat, index) => {
@@ -388,7 +392,7 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
         )}
 
         {/* ============================================================
-            WEAKNESSES / DEVELOPMENT AREAS TAB - DETAILED BREAKDOWN
+            DEVELOPMENT AREAS TAB - DETAILED
             ============================================================ */}
         {activeTab === 'weaknesses' && (
           <div>
@@ -396,7 +400,7 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
               <div>
                 <p style={styles.tabDescription}>
                   The following categories are identified as development areas (score &lt; 65%). 
-                  These areas require targeted development and should be prioritized in the candidate's development plan.
+                  These areas should be prioritized in the candidate's development plan.
                 </p>
                 <div style={styles.detailGrid}>
                   {developmentCategories.map((cat, index) => {
@@ -481,8 +485,8 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
                   <div key={index} style={{ 
                     ...styles.allCategoryCard,
                     borderLeft: `4px solid ${levelColor}`,
-                    background: isStrength ? 'rgba(46, 125, 50, 0.05)' : 
-                                isDevelopment ? 'rgba(198, 40, 40, 0.05)' : 'white'
+                    background: isStrength ? '#f0f7f0' : 
+                                isDevelopment ? '#fdf0f0' : '#fafbfc'
                   }}>
                     <div style={styles.allCategoryHeader}>
                       <span style={styles.allCategoryName}>{cat.category || cat.name}</span>
@@ -495,8 +499,13 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
                     </div>
                     <div style={styles.allCategoryMeta}>
                       <span>Grade: {cat.grade || 'N/A'}</span>
-                      <span style={{ color: levelColor }}>{level}</span>
-                      <span>{isStrength ? '✅ Strength' : isDevelopment ? '🔴 Development' : '⚡ Moderate'}</span>
+                      <span style={{ color: levelColor, fontWeight: '600' }}>{level}</span>
+                      <span style={{ 
+                        color: isStrength ? '#2e7d32' : isDevelopment ? '#c62828' : '#f57c00',
+                        fontWeight: '500'
+                      }}>
+                        {isStrength ? '✅ Strength' : isDevelopment ? '🔴 Development' : '⚡ Moderate'}
+                      </span>
                     </div>
                     {cat.comment && (
                       <div style={styles.allCategoryComment}>{cat.comment}</div>
@@ -517,7 +526,6 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
               <div>
                 <p style={styles.tabDescription}>
                   Actionable development recommendations based on the candidate's performance profile.
-                  Priorities are assigned based on the severity of the gap.
                 </p>
                 <div style={styles.recommendationList}>
                   {recommendations.map((rec, index) => (
@@ -593,7 +601,7 @@ const styles = {
     marginBottom: '20px'
   },
   
-  // Header
+  // Header - Clean, solid, no glass
   header: {
     textAlign: 'center',
     padding: '30px 20px 20px',
@@ -604,7 +612,13 @@ const styles = {
   },
   title: { fontSize: '28px', fontWeight: '700', margin: '0 0 8px 0' },
   subtitle: { fontSize: '18px', margin: '0 0 16px 0', opacity: 0.9 },
-  candidateInfo: { background: 'rgba(255,255,255,0.1)', borderRadius: '8px', padding: '16px 20px', marginTop: '8px' },
+  candidateInfo: { 
+    background: 'rgba(255,255,255,0.12)', 
+    borderRadius: '8px', 
+    padding: '16px 20px', 
+    marginTop: '8px',
+    border: '1px solid rgba(255,255,255,0.1)'
+  },
   candidateInfoGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
@@ -614,7 +628,7 @@ const styles = {
   infoLabel: { fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '2px' },
   infoValue: { fontSize: '15px', fontWeight: '500', display: 'block' },
   
-  // Score Cards
+  // Score Cards - Solid backgrounds
   scoreGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
@@ -622,29 +636,29 @@ const styles = {
     marginBottom: '24px'
   },
   scoreCard: {
-    background: 'white',
+    background: '#ffffff',
     padding: '20px',
     borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    textAlign: 'center'
+    boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+    textAlign: 'center',
+    border: '1px solid #eef2f7'
   },
   scoreLabel: { fontSize: '14px', color: '#64748b', fontWeight: '500', marginBottom: '8px' },
   scoreValue: { fontSize: '28px', fontWeight: '700', color: '#1a237e' },
   scoreBand: { fontSize: '15px', fontWeight: '600', marginTop: '8px' },
   
-  // Executive Summary
+  // Executive Summary - Solid
   executiveSummarySection: { marginBottom: '24px' },
   sectionTitle: { fontSize: '20px', fontWeight: '600', color: '#1a237e', marginBottom: '12px' },
   summaryCard: {
-    background: 'white',
+    background: '#f8fafc',
     padding: '20px 24px',
     borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
     border: '1px solid #e2e8f0'
   },
   summaryText: { fontSize: '15px', color: '#1a202c', lineHeight: '1.8', margin: 0 },
   
-  // Quick Stats
+  // Quick Stats - Solid
   quickStats: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
@@ -652,7 +666,7 @@ const styles = {
     marginBottom: '24px'
   },
   quickStat: {
-    background: 'white',
+    background: '#ffffff',
     padding: '16px',
     borderRadius: '12px',
     textAlign: 'center',
@@ -701,17 +715,9 @@ const styles = {
     borderRadius: '8px'
   },
   
-  // Overview Tab
-  overviewSummary: {
-    background: '#f0f7ff',
-    padding: '16px 20px',
-    borderRadius: '12px',
-    marginBottom: '20px',
-    border: '1px solid #dbeafe'
-  },
-  overviewSummaryTitle: { fontSize: '16px', fontWeight: '600', color: '#1a237e', margin: '0 0 8px 0' },
+  // Overview Sections - Solid
   overviewSection: {
-    background: 'white',
+    background: '#ffffff',
     padding: '16px 20px',
     borderRadius: '12px',
     border: '1px solid #e2e8f0',
@@ -748,14 +754,14 @@ const styles = {
     marginTop: '16px'
   },
   
-  // Detail Cards (Strengths & Weaknesses)
+  // Detail Cards
   detailGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr',
     gap: '16px'
   },
   detailCard: {
-    background: 'white',
+    background: '#ffffff',
     padding: '20px',
     borderRadius: '12px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
@@ -836,7 +842,6 @@ const styles = {
     gap: '12px'
   },
   allCategoryCard: {
-    background: 'white',
     padding: '14px 16px',
     borderRadius: '10px',
     border: '1px solid #e2e8f0'
@@ -867,7 +872,7 @@ const styles = {
     gap: '14px'
   },
   recommendationCard: {
-    background: 'white',
+    background: '#ffffff',
     padding: '18px 20px',
     borderRadius: '12px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
@@ -898,7 +903,7 @@ const styles = {
   emptyState: {
     textAlign: 'center',
     padding: '40px',
-    background: 'white',
+    background: '#ffffff',
     borderRadius: '12px',
     border: '1px solid #e2e8f0',
     color: '#94a3b8'
