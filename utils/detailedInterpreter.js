@@ -1,5 +1,3 @@
-// utils/detailedInterpreter.js
-
 /**
  * Detailed Professional Interpreter
  *
@@ -7,15 +5,14 @@
  *
  * Corrected version:
  * - Uses central scoring standard from utils/scoring.js
+ * - Removes dependency on assessmentConfigs.js (uses fallback config)
  * - Keeps existing export: generateDetailedInterpretation
  * - Keeps existing output structure
  * - Supports all assessment types
  * - Improves Manufacturing Baseline interpretation
  * - Uses evidence-based supervisor-friendly wording
- * - Removes corrupted duplicated content and syntax issues
  */
 
-import { assessmentTypes } from "./assessmentConfigs";
 import {
   getGrade,
   getGradeDescription,
@@ -41,6 +38,65 @@ const formatPercentage = (value) => {
   return `${Math.round(number * 100) / 100}%`;
 };
 
+// ======================================================
+// FALLBACK CONFIG (replaces assessmentConfigs.js)
+// ======================================================
+
+const defaultAssessmentTypes = {
+  general: {
+    id: "general",
+    name: "General Assessment"
+  },
+  leadership: {
+    id: "leadership",
+    name: "Leadership Assessment"
+  },
+  cognitive: {
+    id: "cognitive",
+    name: "Cognitive Ability Assessment"
+  },
+  technical: {
+    id: "technical",
+    name: "Technical Competence Assessment"
+  },
+  personality: {
+    id: "personality",
+    name: "Personality Assessment"
+  },
+  strategic_leadership: {
+    id: "strategic_leadership",
+    name: "Strategic Leadership Assessment"
+  },
+  performance: {
+    id: "performance",
+    name: "Performance Assessment"
+  },
+  behavioral: {
+    id: "behavioral",
+    name: "Behavioral & Soft Skills Assessment"
+  },
+  cultural: {
+    id: "cultural",
+    name: "Cultural & Attitudinal Fit Assessment"
+  },
+  manufacturing_baseline: {
+    id: "manufacturing_baseline",
+    name: "Manufacturing Baseline Assessment"
+  },
+  baseline: {
+    id: "baseline",
+    name: "Baseline Assessment"
+  },
+  national_service: {
+    id: "national_service",
+    name: "National Service Assessment"
+  }
+};
+
+// ======================================================
+// NORMALIZE CATEGORY SCORE
+// ======================================================
+
 const normalizeCategoryScore = (category, data = {}, responseInsights = {}) => {
   const normalizedCategory = normalizeText(category, "General");
   const percentage = safeNumber(data.percentage, 0);
@@ -63,13 +119,17 @@ const normalizeCategoryScore = (category, data = {}, responseInsights = {}) => {
   };
 };
 
+// ======================================================
+// MAIN EXPORT FUNCTION
+// ======================================================
+
 export const generateDetailedInterpretation = (
   candidateName,
   categoryScores,
   assessmentType = "general",
   responseInsights = {}
 ) => {
-  const config = assessmentTypes?.[assessmentType] || assessmentTypes?.general || {
+  const config = defaultAssessmentTypes?.[assessmentType] || defaultAssessmentTypes?.general || {
     id: assessmentType,
     name: "Assessment"
   };
@@ -393,15 +453,7 @@ const getCategoryStrengthInterpretation = (category, assessmentType) => {
     "Problem-Solving":
       "Assessment evidence suggests structured problem-solving capability. This can support practical issue resolution and improvement tasks.",
     "Technical & Manufacturing":
-      "Assessment evidence suggests operational or technical capability that may support technical role exposure.",
-    "Technical Knowledge":
-      "Assessment evidence suggests technical understanding that may support role-specific technical tasks.",
-    "System Understanding":
-      "Assessment evidence suggests awareness of system relationships and operational dependencies.",
-    "Safety & Compliance":
-      "Assessment evidence suggests useful awareness of safety and compliance expectations.",
-    "Quality Control":
-      "Assessment evidence suggests quality awareness and attention to standards."
+      "Assessment evidence suggests operational or technical capability that may support technical role exposure."
   };
 
   return (
@@ -1041,6 +1093,10 @@ const generateManufacturingRoleFitAnalysis = (
   return analysis;
 };
 
+// ======================================================
+// HELPER FUNCTIONS
+// ======================================================
+
 const getRoleFitRiskText = (category) => {
   const normalized = normalizeText(category, "");
 
@@ -1059,10 +1115,6 @@ const getRoleFitRiskText = (category) => {
 
   return risks[normalized] || "requires structured development and supervisor support";
 };
-
-// ======================================================
-// DEVELOPMENT RECOMMENDATION HELPER
-// ======================================================
 
 const getDevelopmentRecommendation = (category, percentage, assessmentType) => {
   const normalized = normalizeText(category, "");
@@ -1106,10 +1158,6 @@ const getDevelopmentRecommendation = (category, percentage, assessmentType) => {
 
   return `Leverage ${normalized} through stretch assignments, mentoring, or advanced role exposure.`;
 };
-
-// ======================================================
-// HELPER
-// ======================================================
 
 const formatList = (list) => {
   const safeList = Array.isArray(list) ? list.filter(Boolean) : [];
