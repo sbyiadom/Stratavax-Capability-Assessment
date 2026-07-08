@@ -1,4 +1,4 @@
-// pages/supervisor/index.js - Complete updated file
+// pages/supervisor/index.js - Complete updated file with dropdown
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -50,7 +50,6 @@ export default function SupervisorDashboard() {
       if (assignedCandidates && assignedCandidates.length > 0) {
         const candidateIds = assignedCandidates.map(c => c.id);
         
-        // Get assessments with assessment type info
         const { data: assessments, error: assessmentsError } = await supabase
           .from('candidate_assessments')
           .select(`
@@ -74,9 +73,6 @@ export default function SupervisorDashboard() {
           allAssessments = assessments || [];
         }
 
-        // ============================================================
-        // STEP 1: Build all report data FIRST
-        // ============================================================
         const allReportData = [];
 
         for (const assessment of allAssessments) {
@@ -93,10 +89,8 @@ export default function SupervisorDashboard() {
               const candidate = assignedCandidates.find(c => c.id === assessment.user_id);
               const isNationalService = assessment.assessments?.assessment_type?.code === 'national_service';
               
-              // Get the actual score - use percentage_score or calculate from report_data
               let score = resultData?.percentage_score || 0;
               
-              // If percentage_score is null, try to get it from report_data
               if (!score && resultData?.report_data?.overallScore) {
                 score = resultData.report_data.overallScore;
               }
@@ -119,7 +113,7 @@ export default function SupervisorDashboard() {
                 completed_at: assessment.completed_at || resultData?.completed_at,
                 score: score,
                 is_national_service: isNationalService,
-                resultData: resultData // Keep the full result data
+                resultData: resultData
               };
 
               if (isNationalService) {
@@ -139,24 +133,18 @@ export default function SupervisorDashboard() {
           }
         }
 
-        // ============================================================
-        // STEP 2: Build candidate list with all assessment data
-        // ============================================================
         const candidateList = assignedCandidates.map(c => {
           const candidateAssessments = allAssessments.filter(a => a.user_id === c.id);
           
-          // Count assessment statuses
           const completed = candidateAssessments.filter(a => a.status === 'completed' || a.result_id !== null).length;
           const inProgress = candidateAssessments.filter(a => a.status === 'in_progress').length;
           const unblocked = candidateAssessments.filter(a => a.status === 'unblocked').length;
           const blocked = candidateAssessments.filter(a => a.status === 'blocked').length;
           const notStarted = candidateAssessments.filter(a => a.status === 'pending' || !a.status || a.status === '').length;
           
-          // Build dropdown options for completed assessments
           const completedAssessments = candidateAssessments
             .filter(a => a.status === 'completed' || a.result_id !== null)
             .map(a => {
-              // Find the report data from allReportData
               const reportEntry = allReportData.find(r => r.result_id === a.result_id && r.candidate_id === c.id);
               
               let score = 0;
@@ -169,9 +157,7 @@ export default function SupervisorDashboard() {
                 resultId = reportEntry.result_id;
               }
               
-              // If still no score, try to get from result_data
               if (!score && a.result_id) {
-                // We already have the resultData from the report entry
                 if (reportEntry?.resultData) {
                   score = reportEntry.resultData.percentage_score || 
                           reportEntry.resultData.report_data?.overallScore || 
@@ -193,7 +179,7 @@ export default function SupervisorDashboard() {
                 reportData: reportData
               };
             })
-            .filter(a => a.result_id); // Only keep assessments with result_id
+            .filter(a => a.result_id);
 
           return {
             ...c,
@@ -238,68 +224,29 @@ export default function SupervisorDashboard() {
     router.push(`/supervisor/reports/${resultId}`);
   };
 
-  const handleViewAllReports = () => {
-    router.push('/supervisor/reports');
-  };
-
   const handleAssessmentSelect = (candidateId, assessmentId) => {
-    console.log('[Supervisor] Candidate ID:', candidateId);
-    console.log('[Supervisor] Selected Assessment ID:', assessmentId);
-    
     if (!assessmentId) {
       alert('Please select an assessment first.');
       return;
     }
     
     const candidate = candidates.find(c => c.id === candidateId);
-    if (!candidate) {
-      console.warn('[Supervisor] Candidate not found');
-      return;
-    }
-    
-    console.log('[Supervisor] Candidate found:', candidate.full_name || candidate.name);
-    console.log('[Supervisor] Completed assessments:', candidate.completedAssessments);
+    if (!candidate) return;
     
     const assessment = candidate.completedAssessments.find(
       a => String(a.assessment_id) === String(assessmentId)
     );
     
     if (!assessment) {
-      console.warn('[Supervisor] Assessment not found in completed list');
       alert('Assessment not found. Please try again.');
       return;
     }
     
-    console.log('[Supervisor] Assessment found:', assessment);
-    console.log('[Supervisor] Result ID:', assessment.result_id);
-    console.log('[Supervisor] Score:', assessment.score);
-    
     if (assessment && assessment.result_id) {
       handleViewReport(assessment.result_id);
     } else {
-      console.warn('[Supervisor] No result_id for this assessment');
       alert('This assessment does not have a result available yet.');
     }
-  };
-
-  const getStatusLabel = (status) => {
-    const labels = {
-      'completed': '✅ Completed',
-      'in_progress': '⏳ In Progress',
-      'unblocked': '🔓 Ready to Start',
-      'blocked': '🔒 Blocked'
-    };
-    return labels[status] || '📋 Pending';
-  };
-
-  const getStatusColor = (status) => {
-    const colors = {
-      'completed': { bg: '#dcfce7', color: '#166534' },
-      'in_progress': { bg: '#dbeafe', color: '#1e40af' },
-      'unblocked': { bg: '#e8f5e9', color: '#2e7d32' },
-      'blocked': { bg: '#f5f5f5', color: '#667085' }
-    };
-    return colors[status] || { bg: '#f5f5f5', color: '#667085' };
   };
 
   const getRecommendationColor = (rec) => {
@@ -326,7 +273,6 @@ export default function SupervisorDashboard() {
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
       <div style={styles.container}>
-        {/* Header */}
         <div style={styles.header}>
           <div>
             <h1 style={styles.title}>Supervisor Dashboard</h1>
@@ -337,7 +283,6 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        {/* Stats Cards */}
         <div style={styles.statsGrid}>
           <div style={styles.statCard}>
             <div style={styles.statIcon}>👥</div>
@@ -369,7 +314,6 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        {/* Tabs */}
         <div style={styles.tabsContainer}>
           <button
             onClick={() => setActiveTab('national_service')}
@@ -406,7 +350,6 @@ export default function SupervisorDashboard() {
           </button>
         </div>
 
-        {/* Tab Content */}
         <div style={styles.tabContent}>
           {/* National Service Reports Tab */}
           {activeTab === 'national_service' && (
@@ -478,48 +421,86 @@ export default function SupervisorDashboard() {
             </div>
           )}
 
-          {/* Other Assessments Tab */}
+          {/* Other Assessments Tab - WITH DROPDOWN */}
           {activeTab === 'other' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
-                <p>📊 All other completed assessments for candidates under your supervision.</p>
+                <p>📊 All other completed assessments for candidates under your supervision. Select an assessment from the dropdown to view the detailed report.</p>
               </div>
-              {otherReports.length === 0 ? (
+              
+              {candidates.filter(c => c.completedAssessments && c.completedAssessments.some(a => !a.isNationalService)).length === 0 ? (
                 <div style={styles.emptyState}>
                   <p>No other completed assessments to review.</p>
                 </div>
               ) : (
-                <div style={styles.tableContainer}>
-                  <table style={styles.table}>
+                <div style={styles.candidatesTableContainer}>
+                  <table style={styles.candidatesTable}>
                     <thead>
                       <tr>
-                        <th style={styles.th}>Candidate</th>
-                        <th style={styles.th}>Assessment</th>
-                        <th style={styles.th}>Score</th>
-                        <th style={styles.th}>Action</th>
+                        <th style={styles.cth}>Candidate</th>
+                        <th style={styles.cth}>Select Assessment</th>
+                        <th style={styles.cth}>Score</th>
+                        <th style={styles.cth}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {otherReports.map((report) => (
-                        <tr key={report.result_id} style={styles.tr}>
-                          <td style={styles.td}>
-                            <div style={styles.cellName}>{report.candidate_name}</div>
-                            <div style={styles.cellSub}>{report.candidate_email}</div>
-                          </td>
-                          <td style={styles.td}>{report.assessment_title}</td>
-                          <td style={styles.td}>
-                            <span style={styles.scoreBadge}>{Math.round(report.score || 0)}%</span>
-                          </td>
-                          <td style={styles.td}>
-                            <button
-                              onClick={() => handleViewReport(report.result_id)}
-                              style={styles.viewButton}
-                            >
-                              📄 View Report
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {candidates
+                        .filter(c => c.completedAssessments && c.completedAssessments.some(a => !a.isNationalService))
+                        .map((candidate) => {
+                          const nonNsAssessments = candidate.completedAssessments.filter(a => !a.isNationalService);
+                          const defaultAssessment = nonNsAssessments.length > 0 ? nonNsAssessments[0] : null;
+                          
+                          return (
+                            <tr key={candidate.id} style={styles.ctr}>
+                              <td style={styles.ctd}>
+                                <div style={styles.candidateNameCell}>{candidate.full_name || candidate.name}</div>
+                                <div style={styles.candidateEmailCell}>{candidate.email}</div>
+                                <div style={styles.candidateUniversityCell}>{candidate.university || ''}</div>
+                              </td>
+                              <td style={styles.ctd}>
+                                <select
+                                  onChange={(e) => {
+                                    const selectedValue = e.target.value;
+                                    if (selectedValue) {
+                                      handleAssessmentSelect(candidate.id, selectedValue);
+                                    }
+                                  }}
+                                  style={styles.assessmentDropdown}
+                                  defaultValue=""
+                                  data-candidate={candidate.id}
+                                >
+                                  <option value="">-- Select Assessment --</option>
+                                  {nonNsAssessments.map((assessment) => (
+                                    <option key={assessment.assessment_id} value={assessment.assessment_id}>
+                                      {assessment.title} ({Math.round(assessment.score || 0)}%)
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td style={styles.ctd}>
+                                <span style={styles.scoreBadge}>
+                                  {defaultAssessment ? Math.round(defaultAssessment.score || 0) : 0}%
+                                </span>
+                              </td>
+                              <td style={styles.ctd}>
+                                <button
+                                  onClick={() => {
+                                    const select = document.querySelector(`select[data-candidate="${candidate.id}"]`);
+                                    if (select && select.value) {
+                                      handleAssessmentSelect(candidate.id, select.value);
+                                    } else {
+                                      alert('Please select an assessment first.');
+                                    }
+                                  }}
+                                  style={styles.viewReportButtonSmall}
+                                  disabled={nonNsAssessments.length === 0}
+                                >
+                                  📄 View Report
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                     </tbody>
                   </table>
                 </div>
@@ -773,7 +754,6 @@ const styles = {
     fontWeight: '500',
     transition: 'background 0.2s'
   },
-  // Candidates Table Styles
   candidatesTableContainer: { overflowX: 'auto' },
   candidatesTable: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
   cth: {
