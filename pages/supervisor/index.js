@@ -1,4 +1,4 @@
-// pages/supervisor/index.js - Complete updated file with dropdown
+// pages/supervisor/index.js - Complete file with fixed dropdown
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -21,6 +21,9 @@ export default function SupervisorDashboard() {
     pendingReviews: 0,
     nationalServiceReports: 0
   });
+
+  // Store selected assessment IDs for each candidate
+  const [selectedAssessments, setSelectedAssessments] = useState({});
 
   useEffect(() => {
     if (!session) return;
@@ -198,6 +201,16 @@ export default function SupervisorDashboard() {
 
         setCandidates(candidateList);
         
+        // Initialize selected assessments with default values
+        const initialSelected = {};
+        candidateList.forEach(c => {
+          const nonNs = c.completedAssessments.filter(a => !a.isNationalService);
+          if (nonNs.length > 0) {
+            initialSelected[c.id] = nonNs[0].assessment_id;
+          }
+        });
+        setSelectedAssessments(initialSelected);
+
         setStats({
           totalCandidates: assignedCandidates.length,
           completedAssessments: allAssessments.filter(a => a.status === 'completed' || a.result_id !== null).length,
@@ -231,22 +244,39 @@ export default function SupervisorDashboard() {
     }
     
     const candidate = candidates.find(c => c.id === candidateId);
-    if (!candidate) return;
+    if (!candidate) {
+      console.warn('[Supervisor] Candidate not found');
+      return;
+    }
     
     const assessment = candidate.completedAssessments.find(
       a => String(a.assessment_id) === String(assessmentId)
     );
     
     if (!assessment) {
+      console.warn('[Supervisor] Assessment not found in completed list');
       alert('Assessment not found. Please try again.');
       return;
     }
     
+    console.log('[Supervisor] Assessment found:', assessment);
+    console.log('[Supervisor] Result ID:', assessment.result_id);
+    console.log('[Supervisor] Score:', assessment.score);
+    
     if (assessment && assessment.result_id) {
       handleViewReport(assessment.result_id);
     } else {
+      console.warn('[Supervisor] No result_id for this assessment');
       alert('This assessment does not have a result available yet.');
     }
+  };
+
+  const handleAssessmentChange = (candidateId, assessmentId) => {
+    setSelectedAssessments(prev => ({
+      ...prev,
+      [candidateId]: assessmentId
+    }));
+    // Do NOT navigate - just update the selected value
   };
 
   const getRecommendationColor = (rec) => {
@@ -421,11 +451,11 @@ export default function SupervisorDashboard() {
             </div>
           )}
 
-          {/* Other Assessments Tab - WITH DROPDOWN */}
+          {/* Other Assessments Tab - WITH FIXED DROPDOWN */}
           {activeTab === 'other' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
-                <p>📊 All other completed assessments for candidates under your supervision. Select an assessment from the dropdown to view the detailed report.</p>
+                <p>📊 All other completed assessments for candidates under your supervision. Select an assessment from the dropdown, then click "View Report" to see the detailed report.</p>
               </div>
               
               {candidates.filter(c => c.completedAssessments && c.completedAssessments.some(a => !a.isNationalService)).length === 0 ? (
@@ -448,7 +478,11 @@ export default function SupervisorDashboard() {
                         .filter(c => c.completedAssessments && c.completedAssessments.some(a => !a.isNationalService))
                         .map((candidate) => {
                           const nonNsAssessments = candidate.completedAssessments.filter(a => !a.isNationalService);
-                          const defaultAssessment = nonNsAssessments.length > 0 ? nonNsAssessments[0] : null;
+                          const selectedId = selectedAssessments[candidate.id] || 
+                                            (nonNsAssessments.length > 0 ? nonNsAssessments[0].assessment_id : '');
+                          const selectedAssessment = nonNsAssessments.find(a => a.assessment_id === selectedId);
+                          const displayScore = selectedAssessment ? selectedAssessment.score : 
+                                              (nonNsAssessments.length > 0 ? nonNsAssessments[0].score : 0);
                           
                           return (
                             <tr key={candidate.id} style={styles.ctr}>
@@ -461,12 +495,12 @@ export default function SupervisorDashboard() {
                                 <select
                                   onChange={(e) => {
                                     const selectedValue = e.target.value;
-                                    if (selectedValue) {
-                                      handleAssessmentSelect(candidate.id, selectedValue);
-                                    }
+                                    console.log('[Supervisor] Dropdown selected:', selectedValue);
+                                    handleAssessmentChange(candidate.id, selectedValue);
+                                    // DO NOT navigate - just update state
                                   }}
                                   style={styles.assessmentDropdown}
-                                  defaultValue=""
+                                  value={selectedId}
                                   data-candidate={candidate.id}
                                 >
                                   <option value="">-- Select Assessment --</option>
@@ -479,7 +513,7 @@ export default function SupervisorDashboard() {
                               </td>
                               <td style={styles.ctd}>
                                 <span style={styles.scoreBadge}>
-                                  {defaultAssessment ? Math.round(defaultAssessment.score || 0) : 0}%
+                                  {Math.round(displayScore || 0)}%
                                 </span>
                               </td>
                               <td style={styles.ctd}>
@@ -535,69 +569,74 @@ export default function SupervisorDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {candidates.map((candidate) => (
-                        <tr key={candidate.id} style={styles.ctr}>
-                          <td style={styles.ctd}>
-                            <div style={styles.candidateNameCell}>{candidate.full_name || candidate.name}</div>
-                            <div style={styles.candidateEmailCell}>{candidate.email}</div>
-                            <div style={styles.candidateUniversityCell}>{candidate.university} • {candidate.programme}</div>
-                          </td>
-                          <td style={styles.ctd}>
-                            <span style={styles.statBadgeCompleted}>{candidate.stats.completed}</span>
-                          </td>
-                          <td style={styles.ctd}>
-                            <span style={styles.statBadgeProgress}>{candidate.stats.inProgress}</span>
-                          </td>
-                          <td style={styles.ctd}>
-                            <span style={styles.statBadgeUnblocked}>{candidate.stats.unblocked}</span>
-                          </td>
-                          <td style={styles.ctd}>
-                            <span style={styles.statBadgeBlocked}>{candidate.stats.blocked}</span>
-                          </td>
-                          <td style={styles.ctd}>
-                            <span style={styles.statBadgeNotStarted}>{candidate.stats.notStarted}</span>
-                          </td>
-                          <td style={styles.ctd}>
-                            <select
-                              onChange={(e) => {
-                                const selectedValue = e.target.value;
-                                if (selectedValue) {
-                                  handleAssessmentSelect(candidate.id, selectedValue);
-                                }
-                              }}
-                              style={styles.assessmentDropdown}
-                              defaultValue=""
-                              data-candidate={candidate.id}
-                            >
-                              <option value="">-- Select --</option>
-                              {candidate.completedAssessments.map((assessment) => (
-                                <option key={assessment.assessment_id} value={assessment.assessment_id}>
-                                  {assessment.title} ({Math.round(assessment.score || 0)}%)
-                                </option>
-                              ))}
-                              {candidate.completedAssessments.length === 0 && (
-                                <option value="" disabled>No completed assessments</option>
-                              )}
-                            </select>
-                          </td>
-                          <td style={styles.ctd}>
-                            <button
-                              onClick={() => {
-                                const select = document.querySelector(`select[data-candidate="${candidate.id}"]`);
-                                if (select && select.value) {
-                                  handleAssessmentSelect(candidate.id, select.value);
-                                } else {
-                                  alert('Please select an assessment first.');
-                                }
-                              }}
-                              style={styles.viewReportButtonSmall}
-                              disabled={candidate.completedAssessments.length === 0}
-                            >
-                              📄 View Report
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {candidates.map((candidate) => {
+                        const selectedId = selectedAssessments[candidate.id] || 
+                                          (candidate.completedAssessments.length > 0 ? candidate.completedAssessments[0].assessment_id : '');
+                        
+                        return (
+                          <tr key={candidate.id} style={styles.ctr}>
+                            <td style={styles.ctd}>
+                              <div style={styles.candidateNameCell}>{candidate.full_name || candidate.name}</div>
+                              <div style={styles.candidateEmailCell}>{candidate.email}</div>
+                              <div style={styles.candidateUniversityCell}>{candidate.university} • {candidate.programme}</div>
+                            </td>
+                            <td style={styles.ctd}>
+                              <span style={styles.statBadgeCompleted}>{candidate.stats.completed}</span>
+                            </td>
+                            <td style={styles.ctd}>
+                              <span style={styles.statBadgeProgress}>{candidate.stats.inProgress}</span>
+                            </td>
+                            <td style={styles.ctd}>
+                              <span style={styles.statBadgeUnblocked}>{candidate.stats.unblocked}</span>
+                            </td>
+                            <td style={styles.ctd}>
+                              <span style={styles.statBadgeBlocked}>{candidate.stats.blocked}</span>
+                            </td>
+                            <td style={styles.ctd}>
+                              <span style={styles.statBadgeNotStarted}>{candidate.stats.notStarted}</span>
+                            </td>
+                            <td style={styles.ctd}>
+                              <select
+                                onChange={(e) => {
+                                  const selectedValue = e.target.value;
+                                  console.log('[Supervisor] Dropdown selected:', selectedValue);
+                                  handleAssessmentChange(candidate.id, selectedValue);
+                                  // DO NOT navigate - just update state
+                                }}
+                                style={styles.assessmentDropdown}
+                                value={selectedId}
+                                data-candidate={candidate.id}
+                              >
+                                <option value="">-- Select --</option>
+                                {candidate.completedAssessments.map((assessment) => (
+                                  <option key={assessment.assessment_id} value={assessment.assessment_id}>
+                                    {assessment.title} ({Math.round(assessment.score || 0)}%)
+                                  </option>
+                                ))}
+                                {candidate.completedAssessments.length === 0 && (
+                                  <option value="" disabled>No completed assessments</option>
+                                )}
+                              </select>
+                            </td>
+                            <td style={styles.ctd}>
+                              <button
+                                onClick={() => {
+                                  const select = document.querySelector(`select[data-candidate="${candidate.id}"]`);
+                                  if (select && select.value) {
+                                    handleAssessmentSelect(candidate.id, select.value);
+                                  } else {
+                                    alert('Please select an assessment first.');
+                                  }
+                                }}
+                                style={styles.viewReportButtonSmall}
+                                disabled={candidate.completedAssessments.length === 0}
+                              >
+                                📄 View Report
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
