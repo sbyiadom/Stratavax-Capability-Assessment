@@ -1,7 +1,185 @@
 /**
  * Focused Category Mapper
  *
- * Provides professional "The candidate shows strong foundational manufacturing knowledge, including equipment basics, maintenance principles, and system understanding.", * Provides professional interpretations based on actual category scores.
+ * Provides professional interpretations based on actual category scores.
+ * Uses central scoring standards from utils/scoring.js
+ * Supports all assessment types
+ */
+
+import {
+  getScoreLevel,
+  getScoreComment,
+  getSupervisorImplication,
+  getStrengthAreas,
+  getDevelopmentAreas,
+  normalizeCategoryScores,
+  isStrength,
+  isDevelopmentArea,
+  isCriticalGap,
+  isPriorityDevelopment,
+  calculateGapToTarget
+} from "./scoring";
+
+// ======================================================
+// ASSESSMENT-SPECIFIC CATEGORY INTERPRETATIONS
+// ======================================================
+
+const categoryInterpretations = {
+  // General Assessment Categories
+  "Cognitive Ability": {
+    exceptional:
+      "The candidate shows strong analytical and strategic thinking capability. This suggests readiness for complex problem-solving and structured decision-making tasks.",
+    strong:
+      "The candidate shows reliable cognitive capability and can handle most analytical challenges with standard guidance.",
+    adequate:
+      "The candidate shows functional cognitive capability but may benefit from structure when working through complex problems.",
+    developing:
+      "The candidate shows developing cognitive capability and may require support with complex analysis or abstract reasoning.",
+    priority_development:
+      "The candidate shows significant gaps in cognitive capability. Structured problem-solving support is recommended.",
+    critical_gap:
+      "The candidate shows critical gaps in cognitive capability. Close guidance and foundational reasoning support are recommended."
+  },
+
+  Communication: {
+    exceptional:
+      "The candidate shows strong communication capability and can likely explain ideas clearly in role-relevant situations.",
+    strong:
+      "The candidate communicates effectively in most situations and can support collaboration through clear expression.",
+    adequate:
+      "The candidate shows functional communication ability but may benefit from practice with complex or formal communication.",
+    developing:
+      "The candidate shows developing communication capability and may require support in presenting ideas clearly.",
+    priority_development:
+      "Communication should be treated as a priority development area. Misunderstanding or unclear expression may affect performance.",
+    critical_gap:
+      "The candidate shows critical communication gaps. Structured communication training and close supervision are recommended."
+  },
+
+  "Cultural & Attitudinal Fit": {
+    exceptional:
+      "The candidate shows strong alignment with workplace values, professional conduct, and team expectations.",
+    strong:
+      "The candidate shows generally reliable cultural and attitudinal fit for structured work environments.",
+    adequate:
+      "The candidate shows functional alignment but may need reinforcement of organizational expectations.",
+    developing:
+      "The candidate shows developing cultural alignment and may benefit from onboarding, coaching, and expectation setting.",
+    priority_development:
+      "Cultural or attitudinal fit requires attention. Supervisor should clarify values, standards, and expected workplace behaviors.",
+    critical_gap:
+      "The candidate shows critical fit concerns. Further validation and close monitoring are recommended before placement."
+  },
+
+  "Emotional Intelligence": {
+    exceptional:
+      "The candidate shows strong self-awareness and interpersonal judgment based on assessment evidence.",
+    strong:
+      "The candidate shows reliable interpersonal awareness and can likely manage typical workplace interactions.",
+    adequate:
+      "The candidate shows functional emotional intelligence but may need support in complex interpersonal situations.",
+    developing:
+      "The candidate shows developing emotional intelligence and may benefit from feedback and coaching.",
+    priority_development:
+      "Emotional intelligence is a priority development area. Interpersonal effectiveness may require structured support.",
+    critical_gap:
+      "The candidate shows critical gaps in emotional intelligence. Close supervision and interpersonal coaching are recommended."
+  },
+
+  "Ethics & Integrity": {
+    exceptional:
+      "The candidate shows strong evidence of principled judgment and ethical decision-making.",
+    strong:
+      "The candidate shows reliable ethical awareness and generally sound judgment.",
+    adequate:
+      "The candidate shows functional ethical awareness but may need guidance in complex situations.",
+    developing:
+      "The candidate shows developing ethical judgment and should receive clear boundaries and guidance.",
+    priority_development:
+      "Ethics and integrity should be treated as a priority development area. Supervisor guidance is recommended.",
+    critical_gap:
+      "The candidate shows critical gaps in ethical judgment. Further validation is recommended before assigning independent responsibility."
+  },
+
+  "Leadership & Management": {
+    exceptional:
+      "The candidate shows strong evidence of leadership readiness, including direction setting, people awareness, and accountability.",
+    strong:
+      "The candidate shows reliable leadership potential and may be suitable for gradual leadership exposure.",
+    adequate:
+      "The candidate shows functional leadership capability but may need structured development before leading others independently.",
+    developing:
+      "The candidate shows developing leadership capability and should receive coaching before taking on management responsibility.",
+    priority_development:
+      "Leadership and management require priority development. The candidate may not yet be ready for people-management responsibility.",
+    critical_gap:
+      "The candidate shows critical leadership gaps. Management responsibility is not recommended without significant development."
+  },
+
+  "Performance Metrics": {
+    exceptional:
+      "The candidate shows strong results orientation, accountability, and performance awareness.",
+    strong:
+      "The candidate shows reliable performance orientation and can likely work toward targets with standard supervision.",
+    adequate:
+      "The candidate shows functional performance awareness but may benefit from structured goals and progress reviews.",
+    developing:
+      "The candidate shows developing performance orientation and should receive clear targets and regular feedback.",
+    priority_development:
+      "Performance orientation requires priority development. Structured tracking and supervisor follow-up are recommended.",
+    critical_gap:
+      "The candidate shows critical performance gaps. Close supervision and clear performance expectations are recommended."
+  },
+
+  "Personality & Behavioral": {
+    exceptional:
+      "The candidate shows strong evidence of stable work style, adaptability, and constructive behavioral patterns.",
+    strong:
+      "The candidate shows generally reliable behavioral patterns for work settings.",
+    adequate:
+      "The candidate shows functional behavioral consistency but may need role-specific support.",
+    developing:
+      "The candidate shows developing behavioral consistency and may benefit from regular feedback.",
+    priority_development:
+      "Behavioral patterns require attention. Supervisor should provide clear expectations and regular check-ins.",
+    critical_gap:
+      "The candidate shows critical behavioral concerns. Close supervision and further validation are recommended."
+  },
+
+  "Problem-Solving": {
+    exceptional:
+      "The candidate shows strong problem-solving capability, including structured thinking and practical judgment.",
+    strong:
+      "The candidate can likely handle common problems with reliable reasoning and standard support.",
+    adequate:
+      "The candidate shows functional problem-solving capability but may need frameworks for complex issues.",
+    developing:
+      "The candidate shows developing problem-solving capability and would benefit from structured methods such as 5 Whys or PDCA.",
+    priority_development:
+      "Problem-solving is a priority development area. The candidate may struggle with root-cause analysis without support.",
+    critical_gap:
+      "The candidate shows critical problem-solving gaps. Close guidance and foundational problem-solving training are recommended."
+  },
+
+  "Technical & Manufacturing": {
+    exceptional:
+      "The candidate shows strong technical and operational understanding that may support technical role readiness.",
+    strong:
+      "The candidate shows reliable technical capability and can likely handle standard operational tasks.",
+    adequate:
+      "The candidate shows functional technical understanding but may need practical exposure and reinforcement.",
+    developing:
+      "The candidate shows developing technical capability and should receive structured technical training.",
+    priority_development:
+      "Technical capability requires priority development. The candidate may struggle with technical tasks without support.",
+    critical_gap:
+      "The candidate shows critical technical gaps. Foundational technical training and close supervision are recommended."
+  },
+
+  // Manufacturing Baseline Assessment Categories
+  "Technical Fundamentals": {
+    exceptional:
+      "The candidate shows strong foundational manufacturing knowledge, including equipment basics, maintenance principles, and system understanding.",
     strong:
       "The candidate shows reliable technical fundamentals and may be ready for supervised production or maintenance exposure.",
     adequate:
@@ -278,8 +456,7 @@ const getSuitabilityAndRisks = (scores) => {
   const techFundamentals = get("Technical Fundamentals");
   const troubleshooting = get("Troubleshooting");
   const numericalAptitude = get("Numerical Aptitude");
-  const safetyWorkEthic =
-    get("Safety & Work Ethic") || get("Safety &amp; Work Ethic");
+  const safetyWorkEthic = get("Safety & Work Ethic");
 
   if (safetyWorkEthic >= 75 && techFundamentals >= 65) {
     suitability.push(
@@ -417,7 +594,7 @@ const getSuitabilityAndRisks = (scores) => {
 };
 
 // ======================================================
-// MAIN EXPORT
+// MAIN EXPORT FUNCTION
 // ======================================================
 
 export const generateUniversalInterpretation = (
@@ -525,189 +702,10 @@ export const generateUniversalInterpretation = (
   };
 };
 
+// ======================================================
+// DEFAULT EXPORT
+// ======================================================
+
 export default {
   generateUniversalInterpretation
 };
- *
- * Corrected version:
- * - Uses central scoring standards from utils/scoring.js
- * - Supports all assessment types
- * - Keeps generateUniversalInterpretation(...) export unchanged
- * - Reduces contradictory thresholds
- * - Adds cleaner supervisor-friendly suitability and risk logic
- */
-
-import {
-  getScoreLevel,
-  getScoreComment,
-  getSupervisorImplication,
-  getStrengthAreas,
-  getDevelopmentAreas,
-  normalizeCategoryScores,
-  isStrength,
-  isDevelopmentArea,
-  isCriticalGap,
-  isPriorityDevelopment,
-  calculateGapToTarget,
-  REPORT_THRESHOLDS
-} from "./scoring";
-
-// ======================================================
-// ASSESSMENT-SPECIFIC CATEGORY INTERPRETATIONS
-// ======================================================
-
-const categoryInterpretations = {
-  // General Assessment Categories
-  "Cognitive Ability": {
-    exceptional:
-      "The candidate shows strong analytical and strategic thinking capability. This suggests readiness for complex problem-solving and structured decision-making tasks.",
-    strong:
-      "The candidate shows reliable cognitive capability and can handle most analytical challenges with standard guidance.",
-    adequate:
-      "The candidate shows functional cognitive capability but may benefit from structure when working through complex problems.",
-    developing:
-      "The candidate shows developing cognitive capability and may require support with complex analysis or abstract reasoning.",
-    priority_development:
-      "The candidate shows significant gaps in cognitive capability. Structured problem-solving support is recommended.",
-    critical_gap:
-      "The candidate shows critical gaps in cognitive capability. Close guidance and foundational reasoning support are recommended."
-  },
-
-  Communication: {
-    exceptional:
-      "The candidate shows strong communication capability and can likely explain ideas clearly in role-relevant situations.",
-    strong:
-      "The candidate communicates effectively in most situations and can support collaboration through clear expression.",
-    adequate:
-      "The candidate shows functional communication ability but may benefit from practice with complex or formal communication.",
-    developing:
-      "The candidate shows developing communication capability and may require support in presenting ideas clearly.",
-    priority_development:
-      "Communication should be treated as a priority development area. Misunderstanding or unclear expression may affect performance.",
-    critical_gap:
-      "The candidate shows critical communication gaps. Structured communication training and close supervision are recommended."
-  },
-
-  "Cultural & Attitudinal Fit": {
-    exceptional:
-      "The candidate shows strong alignment with workplace values, professional conduct, and team expectations.",
-    strong:
-      "The candidate shows generally reliable cultural and attitudinal fit for structured work environments.",
-    adequate:
-      "The candidate shows functional alignment but may need reinforcement of organizational expectations.",
-    developing:
-      "The candidate shows developing cultural alignment and may benefit from onboarding, coaching, and expectation setting.",
-    priority_development:
-      "Cultural or attitudinal fit requires attention. Supervisor should clarify values, standards, and expected workplace behaviors.",
-    critical_gap:
-      "The candidate shows critical fit concerns. Further validation and close monitoring are recommended before placement."
-  },
-
-  "Emotional Intelligence": {
-    exceptional:
-      "The candidate shows strong self-awareness and interpersonal judgment based on assessment evidence.",
-    strong:
-      "The candidate shows reliable interpersonal awareness and can likely manage typical workplace interactions.",
-    adequate:
-      "The candidate shows functional emotional intelligence but may need support in complex interpersonal situations.",
-    developing:
-      "The candidate shows developing emotional intelligence and may benefit from feedback and coaching.",
-    priority_development:
-      "Emotional intelligence is a priority development area. Interpersonal effectiveness may require structured support.",
-    critical_gap:
-      "The candidate shows critical gaps in emotional intelligence. Close supervision and interpersonal coaching are recommended."
-  },
-
-  "Ethics & Integrity": {
-    exceptional:
-      "The candidate shows strong evidence of principled judgment and ethical decision-making.",
-    strong:
-      "The candidate shows reliable ethical awareness and generally sound judgment.",
-    adequate:
-      "The candidate shows functional ethical awareness but may need guidance in complex situations.",
-    developing:
-      "The candidate shows developing ethical judgment and should receive clear boundaries and guidance.",
-    priority_development:
-      "Ethics and integrity should be treated as a priority development area. Supervisor guidance is recommended.",
-    critical_gap:
-      "The candidate shows critical gaps in ethical judgment. Further validation is recommended before assigning independent responsibility."
-  },
-
-  "Leadership & Management": {
-    exceptional:
-      "The candidate shows strong evidence of leadership readiness, including direction setting, people awareness, and accountability.",
-    strong:
-      "The candidate shows reliable leadership potential and may be suitable for gradual leadership exposure.",
-    adequate:
-      "The candidate shows functional leadership capability but may need structured development before leading others independently.",
-    developing:
-      "The candidate shows developing leadership capability and should receive coaching before taking on management responsibility.",
-    priority_development:
-      "Leadership and management require priority development. The candidate may not yet be ready for people-management responsibility.",
-    critical_gap:
-      "The candidate shows critical leadership gaps. Management responsibility is not recommended without significant development."
-  },
-
-  "Performance Metrics": {
-    exceptional:
-      "The candidate shows strong results orientation, accountability, and performance awareness.",
-    strong:
-      "The candidate shows reliable performance orientation and can likely work toward targets with standard supervision.",
-    adequate:
-      "The candidate shows functional performance awareness but may benefit from structured goals and progress reviews.",
-    developing:
-      "The candidate shows developing performance orientation and should receive clear targets and regular feedback.",
-    priority_development:
-      "Performance orientation requires priority development. Structured tracking and supervisor follow-up are recommended.",
-    critical_gap:
-      "The candidate shows critical performance gaps. Close supervision and clear performance expectations are recommended."
-  },
-
-  "Personality & Behavioral": {
-    exceptional:
-      "The candidate shows strong evidence of stable work style, adaptability, and constructive behavioral patterns.",
-    strong:
-      "The candidate shows generally reliable behavioral patterns for work settings.",
-    adequate:
-      "The candidate shows functional behavioral consistency but may need role-specific support.",
-    developing:
-      "The candidate shows developing behavioral consistency and may benefit from regular feedback.",
-    priority_development:
-      "Behavioral patterns require attention. Supervisor should provide clear expectations and regular check-ins.",
-    critical_gap:
-      "The candidate shows critical behavioral concerns. Close supervision and further validation are recommended."
-  },
-
-  "Problem-Solving": {
-    exceptional:
-      "The candidate shows strong problem-solving capability, including structured thinking and practical judgment.",
-    strong:
-      "The candidate can likely handle common problems with reliable reasoning and standard support.",
-    adequate:
-      "The candidate shows functional problem-solving capability but may need frameworks for complex issues.",
-    developing:
-      "The candidate shows developing problem-solving capability and would benefit from structured methods such as 5 Whys or PDCA.",
-    priority_development:
-      "Problem-solving is a priority development area. The candidate may struggle with root-cause analysis without support.",
-    critical_gap:
-      "The candidate shows critical problem-solving gaps. Close guidance and foundational problem-solving training are recommended."
-  },
-
-  "Technical & Manufacturing": {
-    exceptional:
-      "The candidate shows strong technical and operational understanding that may support technical role readiness.",
-    strong:
-      "The candidate shows reliable technical capability and can likely handle standard operational tasks.",
-    adequate:
-      "The candidate shows functional technical understanding but may need practical exposure and reinforcement.",
-    developing:
-      "The candidate shows developing technical capability and should receive structured technical training.",
-    priority_development:
-      "Technical capability requires priority development. The candidate may struggle with technical tasks without support.",
-    critical_gap:
-      "The candidate shows critical technical gaps. Foundational technical training and close supervision are recommended."
-  },
-
-  // Manufacturing Baseline Assessment Categories
-  "Technical Fundamentals": {
-    exceptional:
