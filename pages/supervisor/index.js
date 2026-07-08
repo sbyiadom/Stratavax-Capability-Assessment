@@ -74,14 +74,18 @@ export default function SupervisorDashboard() {
           allAssessments = assessments || [];
         }
 
-        // Process ALL completed assessments with results
+        // ============================================================
+        // STEP 1: Build all report data FIRST
+        // ============================================================
+        const allReportData = [];
+
         for (const assessment of allAssessments) {
           const isCompleted = assessment.status === 'completed' || assessment.result_id !== null;
           
           if (isCompleted && assessment.result_id) {
             const { data: resultData, error: resultError } = await supabase
               .from('assessment_results')
-              .select('percentage_score, workplace_readiness, intellectual_capability, recommendation, completed_at')
+              .select('percentage_score, workplace_readiness, intellectual_capability, recommendation, completed_at, report_data')
               .eq('id', assessment.result_id)
               .single();
 
@@ -89,42 +93,55 @@ export default function SupervisorDashboard() {
               const candidate = assignedCandidates.find(c => c.id === assessment.user_id);
               const isNationalService = assessment.assessments?.assessment_type?.code === 'national_service';
               
-              const reportData = {
+              // Get the actual score - use percentage_score or calculate from report_data
+              let score = resultData?.percentage_score || 0;
+              
+              // If percentage_score is null, try to get it from report_data
+              if (!score && resultData?.report_data?.overallScore) {
+                score = resultData.report_data.overallScore;
+              }
+              if (!score && resultData?.report_data?.dimensions?.overallScore) {
+                score = resultData.report_data.dimensions.overallScore;
+              }
+              
+              const reportEntry = {
                 result_id: assessment.result_id,
                 candidate_id: assessment.user_id,
                 candidate_name: candidate?.full_name || 'Unknown',
                 candidate_email: candidate?.email || '',
                 university: candidate?.university || '',
                 programme: candidate?.programme || '',
-                assessment_title: assessment.assessments?.title || 'Assessment',
                 assessment_id: assessment.assessment_id,
+                assessment_title: assessment.assessments?.title || 'Assessment',
                 assessment_type: assessment.assessments?.assessment_type?.name || 'General',
                 assessment_code: assessment.assessments?.assessment_type?.code || 'general',
                 status: assessment.status,
                 completed_at: assessment.completed_at || resultData?.completed_at,
-                score: resultData?.percentage_score || 0,
-                is_national_service: isNationalService
+                score: score,
+                is_national_service: isNationalService,
+                resultData: resultData // Keep the full result data
               };
 
               if (isNationalService) {
-                reportData.scores = {
-                  overall: resultData?.percentage_score || 0,
+                reportEntry.scores = {
+                  overall: score,
                   workplace: resultData?.workplace_readiness || 0,
                   intellectual: resultData?.intellectual_capability || 0,
                   recommendation: resultData?.recommendation || 'Not Recommended'
                 };
-                nsReports.push(reportData);
+                nsReports.push(reportEntry);
               } else {
-                otherAssessments.push(reportData);
+                otherAssessments.push(reportEntry);
               }
+              
+              allReportData.push(reportEntry);
             }
           }
         }
 
-        setNationalServiceReports(nsReports);
-        setOtherReports(otherAssessments);
-
-        // Build candidate list with assessment stats and dropdown options
+        // ============================================================
+        // STEP 2: Build candidate list with all assessment data
+        // ============================================================
         const candidateList = assignedCandidates.map(c => {
           const candidateAssessments = allAssessments.filter(a => a.user_id === c.id);
           
@@ -133,30 +150,41 @@ export default function SupervisorDashboard() {
           const inProgress = candidateAssessments.filter(a => a.status === 'in_progress').length;
           const unblocked = candidateAssessments.filter(a => a.status === 'unblocked').length;
           const blocked = candidateAssessments.filter(a => a.status === 'blocked').length;
-          const notStarted = candidateAssessments.filter(a => a.status === 'pending' || !a.status).length;
+          const notStarted = candidateAssessments.filter(a => a.status === 'pending' || !a.status || a.status === '').length;
           
           // Build dropdown options for completed assessments
           const completedAssessments = candidateAssessments
             .filter(a => a.status === 'completed' || a.result_id !== null)
             .map(a => {
-              const isNationalService = a.assessments?.assessment_type?.code === 'national_service';
-              let score = 0;
-              let reportData = null;
-              let resultId = a.result_id;
+              // Find the report data from allReportData
+              const reportEntry = allReportData.find(r => r.result_id === a.result_id && r.candidate_id === c.id);
               
-              // Find the result data
-              if (a.result_id) {
-                const found = [...nsReports, ...otherAssessments].find(r => r.result_id === a.result_id);
-                if (found) {
-                  score = found.score || found.scores?.overall || 0;
-                  reportData = found;
-                  resultId = found.result_id;
+              let score = 0;
+              let resultId = a.result_id;
+              let reportData = null;
+              
+              if (reportEntry) {
+                score = reportEntry.score || 0;
+                reportData = reportEntry;
+                resultId = reportEntry.result_id;
+              }
+              
+              // If still no score, try to get from result_data
+              if (!score && a.result_id) {
+                // We already have the resultData from the report entry
+                if (reportEntry?.resultData) {
+                  score = reportEntry.resultData.percentage_score || 
+                          reportEntry.resultData.report_data?.overallScore || 
+                          reportEntry.resultData.report_data?.dimensions?.overallScore || 
+                          0;
                 }
               }
               
+              const isNationalService = a.assessments?.assessment_type?.code === 'national_service';
+              
               return {
                 assessment_id: a.assessment_id,
-                result_id: resultId,  // ← THIS IS THE IMPORTANT PART
+                result_id: resultId,
                 title: a.assessments?.title || 'Assessment',
                 score: score,
                 isNationalService: isNationalService,
@@ -192,6 +220,8 @@ export default function SupervisorDashboard() {
         });
       }
 
+      setNationalServiceReports(nsReports);
+      setOtherReports(otherAssessments);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
@@ -497,7 +527,7 @@ export default function SupervisorDashboard() {
             </div>
           )}
 
-          {/* All Candidates Tab - Fixed with proper result_id */}
+          {/* All Candidates Tab */}
           {activeTab === 'candidates' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
@@ -550,13 +580,13 @@ export default function SupervisorDashboard() {
                             <select
                               onChange={(e) => {
                                 const selectedValue = e.target.value;
-                                console.log('[Supervisor] Dropdown selected:', selectedValue);
                                 if (selectedValue) {
                                   handleAssessmentSelect(candidate.id, selectedValue);
                                 }
                               }}
                               style={styles.assessmentDropdown}
                               defaultValue=""
+                              data-candidate={candidate.id}
                             >
                               <option value="">-- Select --</option>
                               {candidate.completedAssessments.map((assessment) => (
