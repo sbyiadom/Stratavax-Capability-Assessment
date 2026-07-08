@@ -7,7 +7,7 @@ export default function NationalServiceReport({ report, onBack }) {
     return <div style={styles.loading}>Loading report...</div>;
   }
 
-  console.log('[Report] categoryBreakdown:', report.categoryBreakdown);
+  console.log('[NationalServiceReport] Report data:', report);
 
   const {
     candidateName = 'Candidate',
@@ -69,13 +69,22 @@ export default function NationalServiceReport({ report, onBack }) {
   };
 
   const getCategoryComment = (percentage) => {
-    if (percentage >= 75) return '✅ Strong capability';
-    if (percentage >= 65) return '⚡ Adequate performance';
-    if (percentage >= 50) return '🔸 Development area';
-    return '🔴 Critical development area';
+    if (percentage >= 75) return { text: 'Strong capability', color: '#2e7d32', emoji: '✅' };
+    if (percentage >= 65) return { text: 'Adequate performance', color: '#f57c00', emoji: '⚡' };
+    if (percentage >= 50) return { text: 'Development area', color: '#ea580c', emoji: '🔸' };
+    return { text: 'Critical development area', color: '#c62828', emoji: '🔴' };
   };
 
-  // Filter categories by dimension
+  const workplaceScore = dimensions.workplaceReadiness || 0;
+  const intellectualScore = dimensions.intellectualCapability || 0;
+  const overallScore = dimensions.overallScore || 0;
+
+  const recommendationLevel = recommendation.level || 'Not Recommended';
+  const recommendationColor = getRecommendationColor(recommendationLevel);
+  const recommendationBg = getRecommendationBg(recommendationLevel);
+  const recommendationNarrative = getRecommendationNarrative(recommendationLevel);
+
+  // Get workplace and intellectual categories from breakdown
   const workplaceCategories = categoryBreakdown.filter(cat => cat.dimension === 'workplace');
   const intellectualCategories = categoryBreakdown.filter(cat => cat.dimension === 'intellectual');
 
@@ -89,33 +98,6 @@ export default function NationalServiceReport({ report, onBack }) {
     .filter(item => item.percentage < 65)
     .sort((a, b) => a.percentage - b.percentage);
 
-  const workplaceScore = dimensions.workplaceReadiness || 0;
-  const intellectualScore = dimensions.intellectualCapability || 0;
-  const overallScore = dimensions.overallScore || 0;
-
-  const recommendationLevel = recommendation.level || 'Not Recommended';
-  const recommendationColor = getRecommendationColor(recommendationLevel);
-  const recommendationBg = getRecommendationBg(recommendationLevel);
-  const recommendationNarrative = getRecommendationNarrative(recommendationLevel);
-
-  // Company departments
-  const companyDepartments = [
-    { name: 'Manufacturing', icon: '🏭', subDepts: ['Production', 'Engineering/Maintenance', 'SHEQ', 'Quality Operations', 'Raw Materials & Warehouse', 'Utilities', 'Planning'] },
-    { name: 'Supply Chain / Logistics', icon: '🚚', subDepts: ['Warehousing', 'Distribution', 'Fleet', 'Transport'] },
-    { name: 'Procurement', icon: '📋', subDepts: [] },
-    { name: 'Finance', icon: '💰', subDepts: [] },
-    { name: 'Human Resources', icon: '👥', subDepts: [] },
-    { name: 'Commercial', icon: '📊', subDepts: ['Sales', 'Trade Marketing', 'Customer Service'] },
-    { name: 'Information Technology (IT)', icon: '💻', subDepts: [] },
-    { name: 'Legal & Compliance', icon: '⚖️', subDepts: [] },
-    { name: 'Corporate Affairs / Public Affairs', icon: '📢', subDepts: [] }
-  ];
-
-  const threshold = 60;
-  const recommendedDepartments = companyDepartments.filter(
-    d => workplaceScore >= threshold || intellectualScore >= threshold
-  );
-
   return (
     <div style={styles.container}>
       {onBack && (
@@ -124,6 +106,7 @@ export default function NationalServiceReport({ report, onBack }) {
         </button>
       )}
 
+      {/* Header */}
       <div style={styles.header}>
         <h1 style={styles.title}>National Service Recruitment Assessment</h1>
         <div style={styles.candidateInfo}>
@@ -138,7 +121,7 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       </div>
 
-      {/* Banner */}
+      {/* Recommendation Banner */}
       <div style={{ ...styles.banner, background: recommendationBg, border: `3px solid ${recommendationColor}` }}>
         <div style={styles.bannerContent}>
           <div style={{ ...styles.bannerIcon, color: recommendationColor }}>
@@ -157,43 +140,53 @@ export default function NationalServiceReport({ report, onBack }) {
       <div style={styles.scoreGrid}>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Workplace Readiness</div>
-          <div style={styles.scoreValue}>{workplaceScore}%</div>
+          <div style={styles.scoreValue}>{Math.round(workplaceScore)}%</div>
           <div style={{ ...styles.scoreBand, color: getBandColor(executiveSummary.workplaceBand) }}>
             {executiveSummary.workplaceBand || 'N/A'}
           </div>
         </div>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Intellectual Capability</div>
-          <div style={styles.scoreValue}>{intellectualScore}%</div>
+          <div style={styles.scoreValue}>{Math.round(intellectualScore)}%</div>
           <div style={{ ...styles.scoreBand, color: getBandColor(executiveSummary.intellectualBand) }}>
             {executiveSummary.intellectualBand || 'N/A'}
           </div>
         </div>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Overall Score</div>
-          <div style={styles.scoreValue}>{overallScore}%</div>
+          <div style={styles.scoreValue}>{Math.round(overallScore)}%</div>
         </div>
       </div>
 
-      {/* Workplace Readiness Breakdown */}
+      {/* ============================================================
+          WORKPLACE READINESS - FULL CATEGORY BREAKDOWN
+          ============================================================ */}
       {workplaceCategories.length > 0 && (
         <div style={styles.section}>
-          <h2 style={styles.sectionTitle}>🛠️ Workplace Readiness - Topic Breakdown</h2>
+          <div style={styles.sectionHeader}>
+            <h2 style={styles.sectionTitle}>🛠️ Workplace Readiness - Category Breakdown</h2>
+            <span style={styles.sectionScore}>{Math.round(workplaceScore)}%</span>
+          </div>
           <div style={styles.categoryGrid}>
             {workplaceCategories.map((cat, index) => {
-              const earned = cat.earnedDisplay !== undefined ? cat.earnedDisplay : Math.round(cat.earned || 0);
-              const max = cat.maxDisplay !== undefined ? cat.maxDisplay : Math.round(cat.max || 0);
+              const comment = getCategoryComment(cat.percentage);
               return (
                 <div key={index} style={styles.categoryCard}>
-                  <div style={styles.categoryName}>{cat.category}</div>
-                  <div style={styles.categoryScore}>{cat.percentage}%</div>
+                  <div style={styles.categoryHeader}>
+                    <span style={styles.categoryName}>{cat.category}</span>
+                    <span style={{ ...styles.categoryScore, color: comment.color }}>
+                      {Math.round(cat.percentage)}%
+                    </span>
+                  </div>
                   <div style={styles.categoryBar}>
                     <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%' }} />
                   </div>
                   <div style={styles.categoryDetail}>
-                    {earned} / {max} points
+                    {cat.earnedDisplay || Math.round(cat.earned || 0)} / {cat.maxDisplay || Math.round(cat.max || 0)} points
                   </div>
-                  <div style={styles.categoryComment}>{getCategoryComment(cat.percentage)}</div>
+                  <div style={{ ...styles.categoryComment, color: comment.color }}>
+                    {comment.emoji} {comment.text}
+                  </div>
                 </div>
               );
             })}
@@ -201,25 +194,35 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       )}
 
-      {/* Intellectual Capability Breakdown */}
+      {/* ============================================================
+          INTELLECTUAL CAPABILITY - FULL CATEGORY BREAKDOWN
+          ============================================================ */}
       {intellectualCategories.length > 0 && (
         <div style={styles.section}>
-          <h2 style={styles.sectionTitle}>🧠 Intellectual Capability - Topic Breakdown</h2>
+          <div style={styles.sectionHeader}>
+            <h2 style={styles.sectionTitle}>🧠 Intellectual Capability - Category Breakdown</h2>
+            <span style={styles.sectionScore}>{Math.round(intellectualScore)}%</span>
+          </div>
           <div style={styles.categoryGrid}>
             {intellectualCategories.map((cat, index) => {
-              const earned = cat.earnedDisplay !== undefined ? cat.earnedDisplay : Math.round(cat.earned || 0);
-              const max = cat.maxDisplay !== undefined ? cat.maxDisplay : Math.round(cat.max || 0);
+              const comment = getCategoryComment(cat.percentage);
               return (
                 <div key={index} style={styles.categoryCard}>
-                  <div style={styles.categoryName}>{cat.category}</div>
-                  <div style={styles.categoryScore}>{cat.percentage}%</div>
+                  <div style={styles.categoryHeader}>
+                    <span style={styles.categoryName}>{cat.category}</span>
+                    <span style={{ ...styles.categoryScore, color: comment.color }}>
+                      {Math.round(cat.percentage)}%
+                    </span>
+                  </div>
                   <div style={styles.categoryBar}>
                     <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%' }} />
                   </div>
                   <div style={styles.categoryDetail}>
-                    {earned} / {max} points
+                    {cat.earnedDisplay || Math.round(cat.earned || 0)} / {cat.maxDisplay || Math.round(cat.max || 0)} points
                   </div>
-                  <div style={styles.categoryComment}>{getCategoryComment(cat.percentage)}</div>
+                  <div style={{ ...styles.categoryComment, color: comment.color }}>
+                    {comment.emoji} {comment.text}
+                  </div>
                 </div>
               );
             })}
@@ -227,7 +230,9 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       )}
 
-      {/* Top Strengths */}
+      {/* ============================================================
+          TOP STRENGTHS
+          ============================================================ */}
       {topStrengths.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>🌟 Top Strengths</h2>
@@ -237,7 +242,7 @@ export default function NationalServiceReport({ report, onBack }) {
                 <div style={styles.strengthRank}>{index + 1}</div>
                 <div style={styles.strengthContent}>
                   <div style={styles.strengthName}>{strength.category}</div>
-                  <div style={styles.strengthScore}>{strength.percentage}%</div>
+                  <div style={styles.strengthScore}>{Math.round(strength.percentage)}%</div>
                   <div style={styles.strengthBar}>
                     <div style={{ ...styles.strengthBarFill, width: Math.min(strength.percentage, 100) + '%' }} />
                   </div>
@@ -248,7 +253,9 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       )}
 
-      {/* Development Areas */}
+      {/* ============================================================
+          DEVELOPMENT AREAS
+          ============================================================ */}
       {developmentAreas.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>📈 Development Areas</h2>
@@ -258,9 +265,12 @@ export default function NationalServiceReport({ report, onBack }) {
                 <div style={styles.developmentRank}>{index + 1}</div>
                 <div style={styles.developmentContent}>
                   <div style={styles.developmentName}>{area.category}</div>
-                  <div style={styles.developmentScore}>{area.percentage}%</div>
+                  <div style={styles.developmentScore}>{Math.round(area.percentage)}%</div>
                   <div style={styles.developmentBar}>
                     <div style={{ ...styles.developmentBarFill, width: Math.min(area.percentage, 100) + '%' }} />
+                  </div>
+                  <div style={styles.developmentGap}>
+                    Gap to target: {Math.round(80 - area.percentage)}%
                   </div>
                 </div>
               </div>
@@ -269,7 +279,9 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       )}
 
-      {/* Suggested Placement */}
+      {/* ============================================================
+          SUGGESTED PLACEMENT
+          ============================================================ */}
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>🎯 Suggested Placement</h2>
         <div style={styles.placementContainer}>
@@ -277,20 +289,11 @@ export default function NationalServiceReport({ report, onBack }) {
             Based on the candidate's performance profile, the following departments are recommended:
           </p>
           <div style={styles.placementGrid}>
-            {recommendedDepartments.length > 0 ? (
-              recommendedDepartments.map((dept, index) => (
+            {report.suggestedPlacement && report.suggestedPlacement.length > 0 ? (
+              report.suggestedPlacement.map((dept, index) => (
                 <div key={index} style={styles.placementCard}>
-                  <div style={styles.placementHeader}>
-                    <span style={styles.placementIcon}>{dept.icon}</span>
-                    <span style={styles.placementName}>{dept.name}</span>
-                  </div>
-                  {dept.subDepts && dept.subDepts.length > 0 && (
-                    <div style={styles.placementSubDepts}>
-                      {dept.subDepts.map((sub, idx) => (
-                        <span key={idx} style={styles.placementSubDeptTag}>{sub}</span>
-                      ))}
-                    </div>
-                  )}
+                  <span style={styles.placementIcon}>📌</span>
+                  <span style={styles.placementName}>{dept}</span>
                 </div>
               ))
             ) : (
@@ -302,20 +305,22 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       </div>
 
-      {/* Assessment Statistics */}
+      {/* ============================================================
+          ASSESSMENT STATISTICS
+          ============================================================ */}
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>📊 Assessment Statistics</h2>
         <div style={styles.statsGrid}>
           <div style={styles.statCard}>
-            <div style={styles.statValue}>{workplaceScore}%</div>
+            <div style={styles.statValue}>{Math.round(workplaceScore)}%</div>
             <div style={styles.statLabel}>Workplace Readiness</div>
           </div>
           <div style={styles.statCard}>
-            <div style={styles.statValue}>{intellectualScore}%</div>
+            <div style={styles.statValue}>{Math.round(intellectualScore)}%</div>
             <div style={styles.statLabel}>Intellectual Capability</div>
           </div>
           <div style={styles.statCard}>
-            <div style={styles.statValue}>{overallScore}%</div>
+            <div style={styles.statValue}>{Math.round(overallScore)}%</div>
             <div style={styles.statLabel}>Overall Score</div>
           </div>
           <div style={styles.statCard}>
@@ -354,15 +359,18 @@ const styles = {
   scoreValue: { fontSize: '32px', fontWeight: '700', color: '#1a237e' },
   scoreBand: { fontSize: '14px', fontWeight: '600', marginTop: '8px' },
   section: { marginBottom: '30px' },
-  sectionTitle: { fontSize: '20px', fontWeight: '600', color: '#1a237e', marginBottom: '16px' },
-  categoryGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' },
+  sectionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
+  sectionTitle: { fontSize: '20px', fontWeight: '600', color: '#1a237e', margin: 0 },
+  sectionScore: { fontSize: '18px', fontWeight: '700', color: '#1a237e', background: '#e8eaf6', padding: '4px 16px', borderRadius: '20px' },
+  categoryGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' },
   categoryCard: { background: 'white', padding: '16px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' },
-  categoryName: { fontSize: '14px', fontWeight: '500', color: '#475569', marginBottom: '6px' },
-  categoryScore: { fontSize: '20px', fontWeight: '700', color: '#1a237e', marginBottom: '8px' },
-  categoryBar: { height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden', marginBottom: '6px' },
-  categoryBarFill: { height: '100%', background: 'linear-gradient(90deg, #1a237e, #0d47a1)', borderRadius: '3px' },
+  categoryHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' },
+  categoryName: { fontSize: '14px', fontWeight: '500', color: '#475569' },
+  categoryScore: { fontSize: '20px', fontWeight: '700' },
+  categoryBar: { height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden', marginBottom: '6px' },
+  categoryBarFill: { height: '100%', background: 'linear-gradient(90deg, #1a237e, #0d47a1)', borderRadius: '4px' },
   categoryDetail: { fontSize: '12px', color: '#94a3b8' },
-  categoryComment: { fontSize: '13px', color: '#64748b', marginTop: '4px', fontWeight: '500' },
+  categoryComment: { fontSize: '13px', fontWeight: '500', marginTop: '4px' },
   strengthGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' },
   strengthCard: { display: 'flex', alignItems: 'center', gap: '16px', background: 'white', padding: '16px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' },
   strengthRank: { width: '32px', height: '32px', background: '#2e7d32', color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', flexShrink: 0 },
@@ -379,15 +387,13 @@ const styles = {
   developmentScore: { fontSize: '16px', fontWeight: '700', color: '#c62828', marginBottom: '4px' },
   developmentBar: { height: '4px', background: '#ffebee', borderRadius: '2px', overflow: 'hidden', marginBottom: '4px' },
   developmentBarFill: { height: '100%', background: 'linear-gradient(90deg, #ef5350, #c62828)', borderRadius: '2px' },
+  developmentGap: { fontSize: '12px', color: '#94a3b8' },
   placementContainer: { background: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' },
   placementDescription: { fontSize: '14px', color: '#475569', marginBottom: '16px' },
-  placementGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' },
-  placementCard: { padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' },
-  placementHeader: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' },
-  placementIcon: { fontSize: '20px' },
-  placementName: { fontSize: '15px', fontWeight: '600', color: '#1a202c' },
-  placementSubDepts: { display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' },
-  placementSubDeptTag: { fontSize: '12px', padding: '2px 10px', background: '#e2e8f0', borderRadius: '12px', color: '#475569' },
+  placementGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '12px' },
+  placementCard: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' },
+  placementIcon: { fontSize: '18px' },
+  placementName: { fontSize: '14px', fontWeight: '500', color: '#1a202c' },
   placementEmpty: { padding: '16px', background: '#fef3c7', borderRadius: '8px', color: '#92400e' },
   statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px' },
   statCard: { background: 'white', padding: '16px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', textAlign: 'center', border: '1px solid #e2e8f0' },
