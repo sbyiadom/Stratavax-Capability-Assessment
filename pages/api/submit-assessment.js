@@ -31,10 +31,6 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-// ============================================================
-// MAIN HANDLER
-// ============================================================
-
 export default async function handler(req, res) {
   console.log(`[Submit Assessment] Request received at ${new Date().toISOString()}`);
   
@@ -126,11 +122,10 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // Get assessment - SIMPLIFIED QUERY
+    // Get assessment
     // ============================================================
     console.log(`[Submit Assessment] Fetching assessment with ID: ${session.assessment_id}`);
 
-    // First, get the assessment
     const { data: assessment, error: assessmentError } = await supabase
       .from("assessments")
       .select("id, title, assessment_type_id")
@@ -161,9 +156,8 @@ export default async function handler(req, res) {
       assessment_type_id: assessment.assessment_type_id
     });
 
-    // Get the assessment type separately
+    // Get the assessment type
     let assessmentTypeCode = null;
-    let assessmentTypeName = null;
     if (assessment.assessment_type_id) {
       const { data: typeData, error: typeError } = await supabase
         .from("assessment_types")
@@ -173,21 +167,15 @@ export default async function handler(req, res) {
       
       if (!typeError && typeData) {
         assessmentTypeCode = typeData.code;
-        assessmentTypeName = typeData.name;
-        console.log(`[Submit Assessment] Assessment type: ${assessmentTypeCode} - ${assessmentTypeName}`);
-      } else {
-        console.warn('[Submit Assessment] Could not fetch assessment type:', typeError);
+        console.log(`[Submit Assessment] Assessment type: ${assessmentTypeCode}`);
       }
     }
-
-    // Add the type info to the assessment object
-    assessment.assessment_type = assessmentTypeCode ? { code: assessmentTypeCode, name: assessmentTypeName } : null;
 
     const isNationalService = assessmentTypeCode === 'national_service';
     console.log(`[Submit Assessment] Is National Service: ${isNationalService}`);
 
     // ============================================================
-    // Get questions from unique_questions
+    // Get questions
     // ============================================================
     let questions = [];
     let assessmentTypeId = assessment.assessment_type_id;
@@ -217,14 +205,13 @@ export default async function handler(req, res) {
             ...q,
             answers: safeArray(q.unique_answers)
           }));
-          console.log(`[Submit Assessment] Found ${questions.length} questions from unique_questions`);
+          console.log(`[Submit Assessment] Found ${questions.length} questions`);
         }
       } catch (err) {
         console.error('[Submit Assessment] Unique questions exception:', err);
       }
     }
 
-    // Fallback: Use session total_questions
     if (questions.length === 0 && session.total_questions > 0) {
       console.log(`[Submit Assessment] Creating ${session.total_questions} placeholder questions`);
       questions = Array.from({ length: session.total_questions }, (_, i) => ({
@@ -271,7 +258,6 @@ export default async function handler(req, res) {
     console.log(`[Submit Assessment] Answered: ${answeredCount}/${totalQuestions}`);
 
     const isAutoSubmit = body.auto_submit === true || body.is_auto_submitted === true;
-    const forceAutoSubmit = isAutoSubmit || !isComplete;
 
     // ============================================================
     // Calculate scores
@@ -314,7 +300,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // Conditional report generation based on assessment type
+    // Generate report
     // ============================================================
     let report;
     let reportType;
@@ -322,11 +308,9 @@ export default async function handler(req, res) {
     let intellectualCapability = null;
     let recommendation = null;
     let suggestedDepartments = null;
+    let categoryBreakdown = [];
 
     if (isNationalService) {
-      // ============================================================
-      // NATIONAL SERVICE REPORT
-      // ============================================================
       console.log('[Submit Assessment] Generating National Service report');
       reportType = 'national_service';
       
@@ -345,7 +329,11 @@ export default async function handler(req, res) {
       recommendation = getRecommendation(workplaceReadiness, intellectualCapability);
       suggestedDepartments = getSuggestedDepartments(workplaceReadiness, intellectualCapability);
       
-      const categoryBreakdown = calculateCategoryBreakdown(responses, questions);
+      // ============================================================
+      // FIX: Calculate and store category breakdown
+      // ============================================================
+      categoryBreakdown = calculateCategoryBreakdown(responses, questions);
+      console.log(`[Submit Assessment] Category breakdown calculated: ${categoryBreakdown.length} categories`);
 
       report = generateNationalServiceReport({
         profile,
@@ -364,9 +352,8 @@ export default async function handler(req, res) {
       
       console.log('[Submit Assessment] National Service report generated');
     } else {
-      // ============================================================
-      // STRATAVAX REPORT
-      // ============================================================
+      // Stratavax report generation...
+      // (kept from previous version)
       console.log('[Submit Assessment] Generating Stratavax report');
       reportType = 'stratavax';
       
@@ -435,8 +422,7 @@ export default async function handler(req, res) {
         _fullReport: stratavaxReport
       };
       
-      console.log('[Submit Assessment] Stratavax report generated successfully');
-      console.log(`[Submit Assessment] Categories: ${categoryScoresArray.length}, Strengths: ${strengths.length}, Weaknesses: ${weaknesses.length}`);
+      console.log('[Submit Assessment] Stratavax report generated');
     }
 
     // ============================================================
@@ -445,7 +431,9 @@ export default async function handler(req, res) {
     const reportDataWithType = {
       ...report,
       reportType: reportType,
-      assessmentTypeCode: assessmentTypeCode
+      assessmentTypeCode: assessmentTypeCode,
+      // Ensure categoryBreakdown is included for National Service
+      ...(isNationalService && { categoryBreakdown })
     };
 
     // ============================================================
@@ -469,11 +457,9 @@ export default async function handler(req, res) {
       report_data: reportDataWithType
     };
 
-    console.log('[Submit Assessment] Result data:', JSON.stringify({
-      ...resultData,
-      report_data_keys: Object.keys(resultData.report_data || {})
-    }, null, 2));
+    console.log('[Submit Assessment] Result data saved');
 
+    // Check if a result already exists for this session
     const { data: existingResult, error: checkError } = await supabase
       .from("assessment_results")
       .select("id")
@@ -564,6 +550,7 @@ export default async function handler(req, res) {
       responsePayload.intellectualCapability = intellectualCapability;
       responsePayload.recommendation = recommendation;
       responsePayload.suggestedDepartments = suggestedDepartments;
+      responsePayload.categoryBreakdown = categoryBreakdown;
     }
 
     return res.status(200).json(responsePayload);
