@@ -87,6 +87,119 @@ async function writeAuditLog(adminClient, adminUserId, candidateId, payload) {
   }
 }
 
+// ============================================================
+// NEW: Auto-assign National Service assessment to candidate
+// ============================================================
+async function autoAssignNationalService(adminClient, candidateId) {
+  try {
+    console.log(`[Auto-Assign] Looking for National Service assessment for candidate: ${candidateId}`);
+
+    // Step 1: Get the National Service assessment type
+    const { data: nsType, error: nsTypeError } = await adminClient
+      .from("assessment_types")
+      .select("id, code, name")
+      .eq("code", "national_service")
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (nsTypeError) {
+      console.warn("[Auto-Assign] Error fetching National Service type:", nsTypeError.message);
+      return false;
+    }
+
+    if (!nsType) {
+      console.log("[Auto-Assign] No National Service assessment type found.");
+      return false;
+    }
+
+    console.log(`[Auto-Assign] Found National Service type: ${nsType.name} (${nsType.id})`);
+
+    // Step 2: Get the National Service assessment
+    const { data: nsAssessment, error: nsAssessmentError } = await adminClient
+      .from("assessments")
+      .select("id, title, assessment_type_id")
+      .eq("assessment_type_id", nsType.id)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (nsAssessmentError) {
+      console.warn("[Auto-Assign] Error fetching National Service assessment:", nsAssessmentError.message);
+      return false;
+    }
+
+    if (!nsAssessment) {
+      console.log("[Auto-Assign] No National Service assessment found for type:", nsType.id);
+      return false;
+    }
+
+    console.log(`[Auto-Assign] Found National Service assessment: ${nsAssessment.title} (${nsAssessment.id})`);
+
+    // Step 3: Check if candidate already has this assessment assigned
+    const { data: existingAssignment, error: checkError } = await adminClient
+      .from("candidate_assessments")
+      .select("id, status")
+      .eq("user_id", candidateId)
+      .eq("assessment_id", nsAssessment.id)
+      .maybeSingle();
+
+    if (checkError) {
+      console.warn("[Auto-Assign] Error checking existing assignment:", checkError.message);
+      return false;
+    }
+
+    if (existingAssignment) {
+      console.log(`[Auto-Assign] Candidate already has assessment assigned with status: ${existingAssignment.status}`);
+      
+      // If already assigned but blocked, unblock it
+      if (existingAssignment.status === "blocked") {
+        const { error: updateError } = await adminClient
+          .from("candidate_assessments")
+          .update({
+            status: "unblocked",
+            unblocked_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", existingAssignment.id);
+
+        if (updateError) {
+          console.warn("[Auto-Assign] Error unblocking existing assignment:", updateError.message);
+          return false;
+        }
+        
+        console.log("[Auto-Assign] Existing blocked assessment unblocked");
+        return true;
+      }
+      
+      return true;
+    }
+
+    // Step 4: Create the assignment with status 'unblocked'
+    const now = new Date().toISOString();
+    const { error: insertError } = await adminClient
+      .from("candidate_assessments")
+      .insert({
+        user_id: candidateId,
+        assessment_id: nsAssessment.id,
+        status: "unblocked", // ← Auto-unblocked!
+        unblocked_at: now,
+        created_at: now,
+        updated_at: now
+      });
+
+    if (insertError) {
+      console.warn("[Auto-Assign] Error inserting assessment assignment:", insertError.message);
+      return false;
+    }
+
+    console.log(`[Auto-Assign] ✅ National Service assessment assigned and unblocked for candidate ${candidateId}`);
+    return true;
+
+  } catch (error) {
+    console.error("[Auto-Assign] Unexpected error:", error);
+    return false;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -216,12 +329,26 @@ export default async function handler(req, res) {
 
     await writeAuditLog(adminClient, authCheck.adminUser.id, createdUser.id, candidateProfile || profilePayload);
 
+    // ============================================================
+    // NEW: Auto-assign National Service assessment
+    // ============================================================
+    const nsAssigned = await autoAssignNationalService(adminClient, createdUser.id);
+    
+    if (nsAssigned) {
+      console.log(`[Auto-Assign] ✅ National Service auto-assigned for ${email}`);
+    } else {
+      console.log(`[Auto-Assign] ℹ️ No National Service assessment assigned for ${email}`);
+    }
+
     return jsonResponse(res, 200, {
       success: true,
-      message: sendInvite ? "Candidate created and invite email sent." : "Candidate created successfully.",
+      message: sendInvite 
+        ? "Candidate created and invite email sent. National Service assessment auto-assigned." 
+        : "Candidate created successfully. National Service assessment auto-assigned.",
       candidate: candidateProfile,
       temporary_password: sendInvite ? null : password,
-      invite_sent: sendInvite
+      invite_sent: sendInvite,
+      national_service_auto_assigned: nsAssigned
     });
   } catch (error) {
     console.error("Add candidate API error:", error);
