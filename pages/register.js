@@ -44,38 +44,57 @@ async function autoAssignNationalService(candidateId) {
     const { data: nsType, error: nsTypeError } = await supabase
       .from("assessment_types")
       .select("id, code, name")
-      .eq("code", "national_service")
       .eq("is_active", true)
       .maybeSingle();
 
-    if (nsTypeError) {
-      console.warn("[Auto-Assign] Error fetching National Service type:", nsTypeError.message);
-      return false;
+    // Try to find by code (exact match)
+    let nsTypeData = nsType;
+    
+    // If no exact match, try case-insensitive
+    if (!nsTypeData) {
+      const { data: allTypes, error: allTypesError } = await supabase
+        .from("assessment_types")
+        .select("id, code, name")
+        .eq("is_active", true);
+
+      if (!allTypesError && allTypes) {
+        nsTypeData = allTypes.find(t => 
+          t.code && t.code.toLowerCase().replace(/_/g, '') === 'nationalservice'
+        );
+        
+        // Also try partial match
+        if (!nsTypeData) {
+          nsTypeData = allTypes.find(t => 
+            t.code && t.code.toLowerCase().includes('national') && 
+            t.code.toLowerCase().includes('service')
+          );
+        }
+      }
     }
 
-    if (!nsType) {
-      console.log("[Auto-Assign] No National Service assessment type found.");
-      return false;
+    if (!nsTypeData) {
+      console.log("[Auto-Assign] ❌ No National Service assessment type found.");
+      return { success: false, reason: 'No National Service assessment type found' };
     }
 
-    console.log(`[Auto-Assign] Found National Service type: ${nsType.name} (${nsType.id})`);
+    console.log(`[Auto-Assign] Found National Service type: ${nsTypeData.name} (${nsTypeData.id})`);
 
     // Step 2: Get the National Service assessment
     const { data: nsAssessment, error: nsAssessmentError } = await supabase
       .from("assessments")
       .select("id, title, assessment_type_id")
-      .eq("assessment_type_id", nsType.id)
+      .eq("assessment_type_id", nsTypeData.id)
       .eq("is_active", true)
       .maybeSingle();
 
     if (nsAssessmentError) {
       console.warn("[Auto-Assign] Error fetching National Service assessment:", nsAssessmentError.message);
-      return false;
+      return { success: false, reason: nsAssessmentError.message };
     }
 
     if (!nsAssessment) {
-      console.log("[Auto-Assign] No National Service assessment found for type:", nsType.id);
-      return false;
+      console.log("[Auto-Assign] ❌ No National Service assessment found for type:", nsTypeData.id);
+      return { success: false, reason: 'No National Service assessment found' };
     }
 
     console.log(`[Auto-Assign] Found National Service assessment: ${nsAssessment.title} (${nsAssessment.id})`);
@@ -90,7 +109,7 @@ async function autoAssignNationalService(candidateId) {
 
     if (checkError) {
       console.warn("[Auto-Assign] Error checking existing assignment:", checkError.message);
-      return false;
+      return { success: false, reason: checkError.message };
     }
 
     if (existingAssignment) {
@@ -109,19 +128,19 @@ async function autoAssignNationalService(candidateId) {
 
         if (updateError) {
           console.warn("[Auto-Assign] Error unblocking existing assignment:", updateError.message);
-          return false;
+          return { success: false, reason: updateError.message };
         }
         
-        console.log("[Auto-Assign] Existing blocked assessment unblocked");
-        return true;
+        console.log("[Auto-Assign] ✅ Existing blocked assessment unblocked");
+        return { success: true, action: 'unblocked' };
       }
       
-      return true;
+      return { success: true, action: 'already_unblocked', status: existingAssignment.status };
     }
 
     // Step 4: Create the assignment with status 'unblocked'
     const now = new Date().toISOString();
-    const { error: insertError } = await supabase
+    const { data: insertData, error: insertError } = await supabase
       .from("candidate_assessments")
       .insert({
         user_id: candidateId,
@@ -130,19 +149,20 @@ async function autoAssignNationalService(candidateId) {
         unblocked_at: now,
         created_at: now,
         updated_at: now
-      });
+      })
+      .select();
 
     if (insertError) {
       console.warn("[Auto-Assign] Error inserting assessment assignment:", insertError.message);
-      return false;
+      return { success: false, reason: insertError.message };
     }
 
     console.log(`[Auto-Assign] ✅ National Service assessment assigned and unblocked for candidate ${candidateId}`);
-    return true;
+    return { success: true, action: 'created', data: insertData };
 
   } catch (error) {
     console.error("[Auto-Assign] Unexpected error:", error);
-    return false;
+    return { success: false, reason: error.message };
   }
 }
 
@@ -265,19 +285,22 @@ export default function Register() {
         // ============================================================
         // NEW: Auto-assign National Service assessment
         // ============================================================
-        const nsAssigned = await autoAssignNationalService(data.user.id);
+        const result = await autoAssignNationalService(data.user.id);
         
-        if (nsAssigned) {
-          console.log(`[Auto-Assign] ✅ National Service auto-assigned for ${emailAddress}`);
+        if (result.success) {
+          console.log(`[Auto-Assign] ✅ National Service auto-assigned for ${emailAddress}`, result);
+          setMessage({
+            type: "success",
+            text: "Registration successful! Your National Service assessment is ready. Please check your email for confirmation, then log in."
+          });
         } else {
-          console.log(`[Auto-Assign] ℹ️ No National Service assessment assigned for ${emailAddress}`);
+          console.log(`[Auto-Assign] ℹ️ National Service not assigned: ${result.reason}`);
+          setMessage({
+            type: "success",
+            text: "Registration successful! Your profile has been created. Please check your email for confirmation, then log in."
+          });
         }
       }
-
-      setMessage({
-        type: "success",
-        text: "Registration successful! Your profile has been created. You can now log in and access your National Service assessment."
-      });
 
       setName("");
       setEmail("");
