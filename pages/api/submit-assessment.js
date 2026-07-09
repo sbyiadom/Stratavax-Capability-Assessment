@@ -80,19 +80,44 @@ export default async function handler(req, res) {
     const user = userData.user;
     console.log(`[Submit Assessment] User: ${user.id}`);
 
-    // Get session
+    // ============================================================
+    // FIX: Get session with better error handling
+    // ============================================================
+    console.log(`[Submit Assessment] Looking for session with ID: ${sessionId}`);
+    
     const { data: session, error: sessionError } = await supabase
       .from("assessment_sessions")
       .select("id, user_id, assessment_id, status, violation_count, total_questions")
       .eq("id", sessionId)
-      .single();
+      .maybeSingle();
 
-    if (sessionError || !session) {
+    if (sessionError) {
       console.error('[Submit Assessment] Session error:', sessionError);
-      return res.status(404).json({ success: false, error: "Session not found" });
+      return res.status(500).json({ 
+        success: false, 
+        error: "Database error fetching session",
+        details: sessionError.message
+      });
     }
 
+    if (!session) {
+      console.error('[Submit Assessment] Session not found for ID:', sessionId);
+      return res.status(404).json({ 
+        success: false, 
+        error: "Session not found",
+        details: `No session found with ID: ${sessionId}`
+      });
+    }
+
+    console.log(`[Submit Assessment] Session found:`, {
+      id: session.id,
+      user_id: session.user_id,
+      assessment_id: session.assessment_id,
+      status: session.status
+    });
+
     if (session.user_id !== user.id) {
+      console.error('[Submit Assessment] User mismatch:', { sessionUser: session.user_id, requestUser: user.id });
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
 
@@ -101,8 +126,10 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // Get assessment with type info
+    // FIX: Get assessment with better error handling
     // ============================================================
+    console.log(`[Submit Assessment] Fetching assessment with ID: ${session.assessment_id}`);
+    
     const { data: assessment, error: assessmentError } = await supabase
       .from("assessments")
       .select(`
@@ -112,12 +139,31 @@ export default async function handler(req, res) {
         assessment_type:assessment_types(code, name)
       `)
       .eq("id", session.assessment_id)
-      .single();
+      .maybeSingle();
 
-    if (assessmentError || !assessment) {
+    if (assessmentError) {
       console.error('[Submit Assessment] Assessment error:', assessmentError);
-      return res.status(500).json({ success: false, error: "Assessment not found" });
+      return res.status(500).json({ 
+        success: false, 
+        error: "Database error fetching assessment",
+        details: assessmentError.message
+      });
     }
+
+    if (!assessment) {
+      console.error('[Submit Assessment] Assessment not found for ID:', session.assessment_id);
+      return res.status(404).json({ 
+        success: false, 
+        error: "Assessment not found",
+        details: `No assessment found with ID: ${session.assessment_id}`
+      });
+    }
+
+    console.log(`[Submit Assessment] Assessment found:`, {
+      id: assessment.id,
+      title: assessment.title,
+      assessment_type_id: assessment.assessment_type_id
+    });
 
     // Get assessment type code
     const assessmentTypeCode = assessment.assessment_type?.code || null;
@@ -402,16 +448,15 @@ export default async function handler(req, res) {
       session_id: sessionId,
       total_score: totalEarned,
       max_score: totalMax,
-      percentage_score: overallScore, // CRITICAL: Always calculate this
-      answered_questions: answeredCount, // CRITICAL: Should be a number, not an array
-      total_questions: totalQuestions, // CRITICAL: Should be a number
+      percentage_score: overallScore,
+      answered_questions: answeredCount,
+      total_questions: totalQuestions,
       is_valid: isComplete && !isAutoSubmit,
       is_auto_submitted: Boolean(isAutoSubmit || !isComplete),
       completed_at: nowIso(),
       workplace_readiness: isNationalService ? workplaceReadiness : null,
       intellectual_capability: isNationalService ? intellectualCapability : null,
       recommendation: isNationalService ? (recommendation?.recommendation || null) : null,
-      // CRITICAL: Save the full report data
       report_data: reportDataWithType
     };
 
