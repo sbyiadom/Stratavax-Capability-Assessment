@@ -200,8 +200,25 @@ function AssessmentContent() {
     }
   }
 
+  // ============================================================
+  // FIX: Improved completeAssessmentSafely with better error handling
+  // ============================================================
   async function completeAssessmentSafely(autoSubmitted, reason) {
-    if (!session || !session.id || !user || !assessmentId) throw new Error("Assessment session is not ready.");
+    if (!session || !session.id) {
+      console.error('[completeAssessmentSafely] No session available');
+      throw new Error("No active session to submit.");
+    }
+    
+    if (!user || !assessmentId) {
+      console.error('[completeAssessmentSafely] Missing user or assessment');
+      throw new Error("Missing user or assessment information.");
+    }
+
+    console.log('[completeAssessmentSafely] Starting submission with session:', {
+      sessionId: session.id,
+      userId: user.id,
+      assessmentId: assessmentId
+    });
 
     const lastQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
     if (lastQuestionId) {
@@ -212,15 +229,18 @@ function AssessmentContent() {
     await updateSessionTimer(session.id, elapsedSeconds);
     await updateAnsweredQuestionsCount(answers);
 
-    return submitAssessment(session.id, {
+    console.log('[completeAssessmentSafely] Calling submitAssessment...');
+    const result = await submitAssessment(session.id, {
       autoSubmitted: autoSubmitted === true,
       autoSubmitReason: reason || null,
       allowIncomplete: autoSubmitted === true
     });
+    console.log('[completeAssessmentSafely] submitAssessment result:', result);
+    
+    return result;
   }
 
   async function handleAutoSubmit(reason) {
-    // Prevent multiple auto-submits
     if (alreadySubmitted || submittingRef.current || autoSubmitRef.current) {
       console.log('[AutoSubmit] Already in progress or completed');
       return;
@@ -234,22 +254,14 @@ function AssessmentContent() {
       setIsAutoSubmitting(true);
       setIsTimeExpired(true);
 
-      // ============================================================
-      // CRITICAL FIX: Save ALL answers before submitting
-      // ============================================================
-      console.log('[AutoSubmit] Saving all answers before submission...');
-      
       const currentQuestionId = questions[currentIndex]?.id || null;
       
-      // Save all pending answers to the database
       const answerPromises = Object.entries(answers).map(([qId, answer]) => {
         if (answer === null || answer === undefined || answer === '') return null;
         
         const answerToStore = Array.isArray(answer) ? answer.join(",") : String(answer);
         const changeCount = answerChangeCount[qId] || 0;
         const initialAns = initialAnswers[qId] || answer;
-        
-        console.log(`[AutoSubmit] Saving answer for question ${qId}:`, answerToStore);
         
         return saveUniqueResponse(
           session.id,
@@ -266,19 +278,14 @@ function AssessmentContent() {
         );
       });
 
-      // Wait for all answers to be saved
-      const saveResults = await Promise.all(answerPromises.filter(p => p !== null));
-      const savedCount = saveResults.filter(r => r && r.success).length;
-      console.log(`[AutoSubmit] Saved ${savedCount} answers successfully`);
+      await Promise.all(answerPromises.filter(p => p !== null));
 
-      // Save progress
       await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, currentQuestionId);
       await updateSessionTimer(session.id, elapsedSeconds);
       await updateAnsweredQuestionsCount(answers);
 
       console.log('[AutoSubmit] All answers saved, submitting assessment...');
 
-      // Now submit the assessment
       const result = await submitAssessment(session.id, {
         autoSubmitted: true,
         autoSubmitReason: reason || 'Auto-submitted because the assessment timer expired.',
@@ -290,7 +297,6 @@ function AssessmentContent() {
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
       
-      // Redirect to results
       setTimeout(() => {
         const resultId = result.result_id || result.id || result.result?.id;
         if (resultId) {
@@ -304,7 +310,6 @@ function AssessmentContent() {
       console.error('[AutoSubmit] Failed:', err);
       alert('Auto-submit failed. Please contact support with this error: ' + (err.message || 'Unknown error'));
       
-      // Even if auto-submit fails, try to save progress
       try {
         await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id || null);
       } catch (saveErr) {
@@ -442,6 +447,7 @@ function AssessmentContent() {
         if (!sessionData || !sessionData.id) throw new Error("Unable to create assessment session.");
         setSession(sessionData);
         sessionIdRef.current = sessionData.id;
+        console.log('[Assessment] Session created:', sessionData.id);
 
         const progress = await getProgress(currentUser.id, assessmentId);
         const progressElapsed = progress && progress.elapsed_seconds ? safeNumber(progress.elapsed_seconds, 0) : 0;
@@ -534,7 +540,6 @@ function AssessmentContent() {
       setElapsedSeconds((previous) => {
         const next = previous + 1;
         
-        // Check if time has expired
         if (timeLimitSeconds > 0 && next >= timeLimitSeconds) {
           console.log('[Timer] Time expired!');
           setIsTimeExpired(true);
@@ -544,7 +549,6 @@ function AssessmentContent() {
           return next;
         }
         
-        // Save progress every 30 seconds
         if (next % 30 === 0 && session && user) {
           const currentQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
           saveProgress(session.id, user.id, assessmentId, next, currentQuestionId);
@@ -559,7 +563,6 @@ function AssessmentContent() {
   }, [loading, alreadySubmitted, accessDenied, session, isAutoSubmitting, timeLimitSeconds, user, assessmentId, currentIndex, questions, isTimeExpired]);
 
   async function handleAnswerSelect(questionId, answerId, multipleCorrect) {
-    // Check if time has expired
     if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
       alert("Time has expired! The assessment is being submitted automatically.");
       return;
@@ -654,8 +657,37 @@ function AssessmentContent() {
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  // ============================================================
+  // FIX: Improved handleSubmit with validation
+  // ============================================================
   async function handleSubmit() {
-    if (!session || alreadySubmitted || accessDenied || isAutoSubmitting || submittingRef.current || isTimeExpired) return;
+    // Validate session
+    if (!session || !session.id) {
+      console.error('[Submit] No session available');
+      alert('Unable to submit: No active session found. Please refresh the page and try again.');
+      return;
+    }
+
+    if (alreadySubmitted) {
+      alert('This assessment has already been submitted.');
+      return;
+    }
+
+    if (accessDenied) {
+      alert('Access denied for this assessment.');
+      return;
+    }
+
+    if (isAutoSubmitting || submittingRef.current) {
+      console.log('[Submit] Already submitting...');
+      return;
+    }
+
+    if (isTimeExpired) {
+      alert('Time has expired! The assessment is being submitted automatically.');
+      return;
+    }
+
     const unansweredCount = questions.length - countAnswered(answers);
     if (unansweredCount > 0) {
       alert("Please answer all questions before submitting. " + unansweredCount + " question(s) remaining.");
@@ -663,16 +695,30 @@ function AssessmentContent() {
     }
 
     try {
+      console.log('[Submit] Starting submission with session:', session.id);
+      console.log('[Submit] Session data:', session);
+      
       submittingRef.current = true;
       setIsSubmitting(true);
       setShowSubmitModal(false);
-      await completeAssessmentSafely(false, null);
+      
+      const result = await completeAssessmentSafely(false, null);
+      console.log('[Submit] Submission successful:', result);
+      
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
-      setTimeout(() => router.push("/candidate/dashboard"), 2000);
+      setTimeout(() => {
+        const resultId = result.result_id || result.id || result.result?.id;
+        if (resultId) {
+          router.push(`/candidate/results/${resultId}`);
+        } else {
+          router.push('/candidate/dashboard');
+        }
+      }, 2000);
     } catch (err) {
       console.error("Submission error:", err);
-      alert("Failed to submit assessment: " + (err && err.message ? err.message : "Unknown error"));
+      const errorMessage = err && err.message ? err.message : "Unknown error";
+      alert("Failed to submit assessment: " + errorMessage + "\n\nPlease try again or contact support.");
     } finally {
       submittingRef.current = false;
       setIsSubmitting(false);
