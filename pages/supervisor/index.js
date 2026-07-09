@@ -1,4 +1,4 @@
-// pages/supervisor/index.js - Complete file with fixed dropdown
+// pages/supervisor/index.js - Complete updated file
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -36,7 +36,7 @@ export default function SupervisorDashboard() {
       
       const supervisorId = session.user.id;
 
-      // Get candidates
+      // Get candidates assigned to this supervisor
       const { data: assignedCandidates, error: candidatesError } = await supabase
         .from('candidate_profiles')
         .select('id, full_name, email, university, programme')
@@ -53,6 +53,7 @@ export default function SupervisorDashboard() {
       if (assignedCandidates && assignedCandidates.length > 0) {
         const candidateIds = assignedCandidates.map(c => c.id);
         
+        // Get assessments with assessment type info
         const { data: assessments, error: assessmentsError } = await supabase
           .from('candidate_assessments')
           .select(`
@@ -92,8 +93,10 @@ export default function SupervisorDashboard() {
               const candidate = assignedCandidates.find(c => c.id === assessment.user_id);
               const isNationalService = assessment.assessments?.assessment_type?.code === 'national_service';
               
+              // Get score from multiple possible sources
               let score = resultData?.percentage_score || 0;
               
+              // If percentage_score is null, try to get it from report_data
               if (!score && resultData?.report_data?.overallScore) {
                 score = resultData.report_data.overallScore;
               }
@@ -116,15 +119,31 @@ export default function SupervisorDashboard() {
                 completed_at: assessment.completed_at || resultData?.completed_at,
                 score: score,
                 is_national_service: isNationalService,
-                resultData: resultData
+                resultData: resultData,
+                // Store raw values for fallback
+                percentage_score: resultData?.percentage_score || 0,
+                workplace_readiness: resultData?.workplace_readiness || 0,
+                intellectual_capability: resultData?.intellectual_capability || 0,
+                recommendation: resultData?.recommendation || 'Not Available'
               };
 
               if (isNationalService) {
+                // Try to get scores from multiple sources with fallbacks
+                const workplaceScore = resultData?.workplace_readiness || 
+                                       resultData?.report_data?.dimensions?.workplaceReadiness || 
+                                       resultData?.report_data?.workplaceReadiness || 0;
+                const intellectualScore = resultData?.intellectual_capability || 
+                                          resultData?.report_data?.dimensions?.intellectualCapability || 
+                                          resultData?.report_data?.intellectualCapability || 0;
+                const recommendationValue = resultData?.recommendation || 
+                                            resultData?.report_data?.recommendation?.level || 
+                                            'Not Available';
+                
                 reportEntry.scores = {
                   overall: score,
-                  workplace: resultData?.workplace_readiness || 0,
-                  intellectual: resultData?.intellectual_capability || 0,
-                  recommendation: resultData?.recommendation || 'Not Recommended'
+                  workplace: workplaceScore,
+                  intellectual: intellectualScore,
+                  recommendation: recommendationValue
                 };
                 nsReports.push(reportEntry);
               } else {
@@ -136,18 +155,22 @@ export default function SupervisorDashboard() {
           }
         }
 
+        // Build candidate list with all assessment data
         const candidateList = assignedCandidates.map(c => {
           const candidateAssessments = allAssessments.filter(a => a.user_id === c.id);
           
+          // Count assessment statuses
           const completed = candidateAssessments.filter(a => a.status === 'completed' || a.result_id !== null).length;
           const inProgress = candidateAssessments.filter(a => a.status === 'in_progress').length;
           const unblocked = candidateAssessments.filter(a => a.status === 'unblocked').length;
           const blocked = candidateAssessments.filter(a => a.status === 'blocked').length;
           const notStarted = candidateAssessments.filter(a => a.status === 'pending' || !a.status || a.status === '').length;
           
+          // Build dropdown options for completed assessments
           const completedAssessments = candidateAssessments
             .filter(a => a.status === 'completed' || a.result_id !== null)
             .map(a => {
+              // Find the report data from allReportData
               const reportEntry = allReportData.find(r => r.result_id === a.result_id && r.candidate_id === c.id);
               
               let score = 0;
@@ -160,6 +183,7 @@ export default function SupervisorDashboard() {
                 resultId = reportEntry.result_id;
               }
               
+              // If still no score, try to get from result_data
               if (!score && a.result_id) {
                 if (reportEntry?.resultData) {
                   score = reportEntry.resultData.percentage_score || 
@@ -284,7 +308,8 @@ export default function SupervisorDashboard() {
       'Highly Recommended': '#2e7d32',
       'Recommended': '#1565c0',
       'Reserve Pool': '#f57c00',
-      'Not Recommended': '#c62828'
+      'Not Recommended': '#c62828',
+      'Not Available': '#64748b'
     };
     return colors[rec] || '#64748b';
   };
@@ -381,7 +406,7 @@ export default function SupervisorDashboard() {
         </div>
 
         <div style={styles.tabContent}>
-          {/* National Service Reports Tab */}
+          {/* National Service Reports Tab - Updated to show all reports */}
           {activeTab === 'national_service' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
@@ -406,31 +431,38 @@ export default function SupervisorDashboard() {
                     </thead>
                     <tbody>
                       {nationalServiceReports.map((report) => {
-                        const recColor = getRecommendationColor(report.scores?.recommendation);
+                        // Calculate scores with fallbacks
+                        const workplaceScore = report.scores?.workplace || report.workplace_readiness || 0;
+                        const intellectualScore = report.scores?.intellectual || report.intellectual_capability || 0;
+                        const overallScore = report.scores?.overall || report.percentage_score || 0;
+                        const recommendation = report.scores?.recommendation || report.recommendation || 'Not Available';
+                        
+                        const recColor = getRecommendationColor(recommendation);
+                        
                         return (
                           <tr key={report.result_id} style={styles.tr}>
                             <td style={styles.td}>
                               <div style={styles.cellName}>{report.candidate_name}</div>
-                              <div style={styles.cellSub}>{report.university} • {report.programme}</div>
+                              <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
                             </td>
                             <td style={styles.td}>
                               <span style={styles.scoreBadge}>
-                                {Math.round(report.scores?.workplace || 0)}%
+                                {Math.round(workplaceScore)}%
                               </span>
                             </td>
                             <td style={styles.td}>
                               <span style={styles.scoreBadge}>
-                                {Math.round(report.scores?.intellectual || 0)}%
+                                {Math.round(intellectualScore)}%
                               </span>
                             </td>
                             <td style={styles.td}>
                               <span style={styles.scoreBadge}>
-                                {Math.round(report.scores?.overall || 0)}%
+                                {Math.round(overallScore)}%
                               </span>
                             </td>
                             <td style={styles.td}>
                               <span style={{ ...styles.recommendationBadge, color: recColor }}>
-                                {report.scores?.recommendation || 'N/A'}
+                                {recommendation}
                               </span>
                             </td>
                             <td style={styles.td}>
