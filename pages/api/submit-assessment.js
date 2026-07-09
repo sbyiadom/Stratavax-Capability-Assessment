@@ -81,7 +81,7 @@ export default async function handler(req, res) {
     console.log(`[Submit Assessment] User: ${user.id}`);
 
     // ============================================================
-    // FIX: Get session with better error handling
+    // Get session
     // ============================================================
     console.log(`[Submit Assessment] Looking for session with ID: ${sessionId}`);
     
@@ -89,7 +89,7 @@ export default async function handler(req, res) {
       .from("assessment_sessions")
       .select("id, user_id, assessment_id, status, violation_count, total_questions")
       .eq("id", sessionId)
-      .maybeSingle();
+      .single();
 
     if (sessionError) {
       console.error('[Submit Assessment] Session error:', sessionError);
@@ -126,20 +126,16 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // FIX: Get assessment with better error handling
+    // Get assessment - SIMPLIFIED QUERY
     // ============================================================
     console.log(`[Submit Assessment] Fetching assessment with ID: ${session.assessment_id}`);
-    
+
+    // First, get the assessment
     const { data: assessment, error: assessmentError } = await supabase
       .from("assessments")
-      .select(`
-        id, 
-        title, 
-        assessment_type_id,
-        assessment_type:assessment_types(code, name)
-      `)
+      .select("id, title, assessment_type_id")
       .eq("id", session.assessment_id)
-      .maybeSingle();
+      .single();
 
     if (assessmentError) {
       console.error('[Submit Assessment] Assessment error:', assessmentError);
@@ -165,11 +161,29 @@ export default async function handler(req, res) {
       assessment_type_id: assessment.assessment_type_id
     });
 
-    // Get assessment type code
-    const assessmentTypeCode = assessment.assessment_type?.code || null;
+    // Get the assessment type separately
+    let assessmentTypeCode = null;
+    let assessmentTypeName = null;
+    if (assessment.assessment_type_id) {
+      const { data: typeData, error: typeError } = await supabase
+        .from("assessment_types")
+        .select("code, name")
+        .eq("id", assessment.assessment_type_id)
+        .single();
+      
+      if (!typeError && typeData) {
+        assessmentTypeCode = typeData.code;
+        assessmentTypeName = typeData.name;
+        console.log(`[Submit Assessment] Assessment type: ${assessmentTypeCode} - ${assessmentTypeName}`);
+      } else {
+        console.warn('[Submit Assessment] Could not fetch assessment type:', typeError);
+      }
+    }
+
+    // Add the type info to the assessment object
+    assessment.assessment_type = assessmentTypeCode ? { code: assessmentTypeCode, name: assessmentTypeName } : null;
+
     const isNationalService = assessmentTypeCode === 'national_service';
-    
-    console.log(`[Submit Assessment] Assessment type code: ${assessmentTypeCode}`);
     console.log(`[Submit Assessment] Is National Service: ${isNationalService}`);
 
     // ============================================================
@@ -284,7 +298,6 @@ export default async function handler(req, res) {
       totalEarned += earned;
     });
 
-    // Calculate percentage score - CRITICAL FIX
     const overallScore = totalMax > 0 ? roundNumber((totalEarned / totalMax) * 100, 2) : 0;
 
     console.log(`[Submit Assessment] Total Earned: ${totalEarned}, Total Max: ${totalMax}, Overall Score: ${overallScore}%`);
@@ -357,7 +370,6 @@ export default async function handler(req, res) {
       console.log('[Submit Assessment] Generating Stratavax report');
       reportType = 'stratavax';
       
-      // Build the responses array with nested question data for the Stratavax generator
       const stratavaxResponses = questions.map(question => {
         const response = responses.find(r => String(r.question_id) === String(question.id));
         return {
@@ -382,7 +394,6 @@ export default async function handler(req, res) {
         new Date().toISOString()
       );
       
-      // Extract category scores from the report
       const categoryScoresArray = stratavaxReport.categoryScores ? 
         Object.keys(stratavaxReport.categoryScores).map(category => ({
           category: category,
@@ -402,7 +413,6 @@ export default async function handler(req, res) {
       const supervisorImplication = stratavaxReport.stratavaxReport?.scoreBreakdown?.[0]?.supervisorImplication || 
                                     'Please review the full report for supervisor guidance.';
       
-      // Build the report with ALL data
       report = {
         candidateName: profile?.full_name || 'Candidate',
         assessmentName: assessment.title || 'Assessment',
@@ -422,7 +432,6 @@ export default async function handler(req, res) {
         supervisorImplication: supervisorImplication,
         overallScore: stratavaxReport.percentageScore || overallScore,
         classification: stratavaxReport.classification?.label || '',
-        // Keep the full original report for reference
         _fullReport: stratavaxReport
       };
       
@@ -440,7 +449,7 @@ export default async function handler(req, res) {
     };
 
     // ============================================================
-    // CRITICAL FIX: Save result with ALL fields properly populated
+    // Save result
     // ============================================================
     const resultData = {
       user_id: user.id,
@@ -465,7 +474,6 @@ export default async function handler(req, res) {
       report_data_keys: Object.keys(resultData.report_data || {})
     }, null, 2));
 
-    // Check if a result already exists for this session
     const { data: existingResult, error: checkError } = await supabase
       .from("assessment_results")
       .select("id")
@@ -478,7 +486,6 @@ export default async function handler(req, res) {
 
     let result;
     if (existingResult) {
-      // Update existing result
       const { data, error } = await supabase
         .from("assessment_results")
         .update(resultData)
@@ -493,7 +500,6 @@ export default async function handler(req, res) {
       result = data;
       console.log('[Submit Assessment] Updated existing result:', result.id);
     } else {
-      // Insert new result
       const { data, error } = await supabase
         .from("assessment_results")
         .insert(resultData)
@@ -534,7 +540,6 @@ export default async function handler(req, res) {
 
     console.log('[Submit Assessment] Success!');
 
-    // Build response
     const responsePayload = {
       success: true,
       result_id: result.id,
