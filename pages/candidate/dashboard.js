@@ -23,7 +23,6 @@ function decodeHtmlEntities(value) {
   if (value === null || value === undefined) return value;
   text = String(value);
 
-  // Decode repeatedly because some values are double-encoded.
   for (let i = 0; i < 10; i += 1) {
     previousText = text;
     text = text.replace(/&amp;amp;/gi, "&");
@@ -34,7 +33,6 @@ function decodeHtmlEntities(value) {
     text = text.replace(/&amp;#39;/gi, "'");
     text = text.replace(/&amp;nbsp;/gi, " ");
 
-    // Common single-encoding patterns
     text = text.replace(/&amp;/gi, "&");
     text = text.replace(/&lt;/gi, "<");
     text = text.replace(/&gt;/gi, ">");
@@ -98,9 +96,6 @@ function getAssessmentColor(typeCode) {
   return colors[typeCode] || colors.general;
 }
 
-// ============================================================
-// NEW: Get assessment icon by type code
-// ============================================================
 function getAssessmentIcon(typeCode) {
   const icons = {
     general: "/images/stratavax_general_assessment.png",
@@ -177,13 +172,11 @@ function getStatusConfig(status, scorePercentage) {
   };
 }
 
-// Platform-wide priority rules for duplicate assessments under the same type.
 function getAssessmentPriority(assessment, accessMap, resultMap, latestSessionMap) {
   const access = accessMap[assessment.id] || null;
   const result = resultMap[assessment.id] || null;
   const session = latestSessionMap[assessment.id] || null;
 
-  // If reset/unblocked with no results, prefer this one.
   if (access && access.status === "unblocked" && !access.result_id && !access.completed_at && !result) return 100;
   if (session && session.status === "in_progress" && (!access || access.status !== "blocked")) return 90;
   if (result || (access && (access.status === "completed" || access.result_id || access.completed_at))) return 80;
@@ -215,9 +208,6 @@ function removeDuplicateAssessments(assessments, accessMap, resultMap, latestSes
   return Array.from(map.values());
 }
 
-// PLATFORM-WIDE STATUS RULES
-// IMPORTANT: Do NOT treat historical completed sessions as completion.
-// Completion is authoritative only via candidate_assessments or assessment_results.
 function determineCardStatus(access, latestSession, result) {
   const isCompleted = Boolean(
     !!result ||
@@ -226,10 +216,8 @@ function determineCardStatus(access, latestSession, result) {
 
   if (isCompleted) return "completed";
 
-  // If assignment unblocked, candidate must see Ready to Start.
   if (access && access.status === "unblocked") return "unblocked";
 
-  // In progress should be driven by an active session, but never override explicit blocked.
   if (latestSession && latestSession.status === "in_progress" && (!access || access.status !== "blocked")) return "in_progress";
 
   return "blocked";
@@ -278,7 +266,6 @@ export default function CandidateDashboard() {
         .select("*, assessment_type:assessment_types(*)")
         .eq("is_active", true);
 
-      // Candidate assignment state
       const accessPromise = supabase
         .from("candidate_assessments")
         .select("id, assessment_id, status, result_id, completed_at, unblocked_at, created_at, session_id")
@@ -341,7 +328,6 @@ export default function CandidateDashboard() {
 
       const uniqueAssessments = removeDuplicateAssessments(filteredAssessments, accessMap, resultMap, latestSessionMap);
 
-      // Build type options with proper area fallback
       const typeOptions = filteredTypes.map((type) => {
         let areas = [];
         
@@ -519,6 +505,9 @@ export default function CandidateDashboard() {
         <div style={styles.mainContent}>
           {errorMessage && <div style={styles.errorBox}>{errorMessage}</div>}
 
+          {/* ============================================================
+              TABS - Clean design with logo images
+              ============================================================ */}
           <div style={styles.tabsContainer}>
             {assessmentTypes.map((tab) => {
               const isActive = activeTab === tab.id;
@@ -537,26 +526,41 @@ export default function CandidateDashboard() {
                     color: isActive ? "white" : colors.color,
                     border: isActive ? "none" : "1px solid " + colors.color + "40",
                     opacity: hasAssessment ? 1 : 0.45,
-                    boxShadow: isActive ? "0 4px 12px rgba(0,0,0,0.2)" : "none"
+                    boxShadow: isActive ? "0 4px 12px rgba(0,0,0,0.2)" : "none",
+                    transform: isActive ? "scale(1.02)" : "scale(1)"
                   }}
                 >
                   <img 
                     src={icon} 
                     alt={tab.shortLabel} 
                     style={{
-                      width: "20px",
-                      height: "20px",
+                      width: "24px",
+                      height: "24px",
                       objectFit: "contain",
                       filter: isActive ? "brightness(0) invert(1)" : "none",
-                      marginRight: "6px"
+                      marginRight: "8px",
+                      flexShrink: 0
                     }}
                   />
                   <span style={styles.tabLabel}>{tab.shortLabel}</span>
+                  {hasAssessment && (
+                    <span style={{
+                      ...styles.tabBadge,
+                      background: isActive ? "rgba(255,255,255,0.25)" : colors.color,
+                      color: isActive ? "white" : "white"
+                    }}>
+                      {getAssessmentByType(tab.id)?.status === "completed" ? "✓" : 
+                       getAssessmentByType(tab.id)?.status === "unblocked" ? "▶" : ""}
+                    </span>
+                  )}
                 </button>
               );
             })}
           </div>
 
+          {/* ============================================================
+              ASSESSMENT DETAIL CARD
+              ============================================================ */}
           {activeAssessment ? (
             <div style={styles.assessmentDetailsSection}>
               <div style={{ ...styles.card, border: "1px solid " + activeColors.color + "40" }}>
@@ -566,15 +570,24 @@ export default function CandidateDashboard() {
                       src={activeIcon} 
                       alt={activeAssessment.title} 
                       style={{
-                        width: "40px",
-                        height: "40px",
+                        width: "36px",
+                        height: "36px",
                         objectFit: "contain",
                         filter: "brightness(0) invert(1)"
                       }}
                     />
                   </div>
                   <div style={styles.cardInfo}>
-                    <h3 style={styles.cardTitle}>{activeAssessment.title}</h3>
+                    <div style={styles.cardTitleRow}>
+                      <h3 style={styles.cardTitle}>{activeAssessment.title}</h3>
+                      <span style={{ 
+                        ...styles.cardTypeBadge,
+                        background: activeColors.color + "20",
+                        color: activeColors.color
+                      }}>
+                        {activeTypeConfig?.shortLabel || activeAssessment.typeName}
+                      </span>
+                    </div>
                     <p style={styles.cardDescription}>{activeAssessment.description}</p>
                     <div style={styles.cardMeta}>
                       <span style={styles.metaItem}>
@@ -599,6 +612,7 @@ export default function CandidateDashboard() {
                   </div>
                 </div>
 
+                {/* Start Button */}
                 {activeAssessment.status === "completed" ? (
                   <button disabled style={{ ...styles.startButton, background: "#e0e0e0", color: "#667085", cursor: "not-allowed", boxShadow: "none" }}>
                     Assessment Completed
@@ -614,6 +628,7 @@ export default function CandidateDashboard() {
                 )}
               </div>
 
+              {/* Key Assessment Areas */}
               {selectedAssessmentAreas && selectedAssessmentAreas.length > 0 && (
                 <div style={{ ...styles.areasSection, borderTop: "4px solid " + activeColors.color }}>
                   <h3 style={styles.areasTitle}>Key Assessment Areas</h3>
@@ -632,6 +647,7 @@ export default function CandidateDashboard() {
             <div style={styles.emptyState}><p>No assessment available for this type.</p></div>
           )}
 
+          {/* Progress Section */}
           <div style={styles.progressSection}>
             <h3 style={styles.sectionTitle}>Your Progress</h3>
             <div style={styles.progressGrid}>
@@ -652,7 +668,7 @@ export default function CandidateDashboard() {
                           width: "20px",
                           height: "20px",
                           objectFit: "contain",
-                          marginRight: "6px"
+                          marginRight: "8px"
                         }}
                       />
                       <span style={{ ...styles.progressName, color: colors.color }}>{type.shortLabel}</span>
@@ -664,6 +680,7 @@ export default function CandidateDashboard() {
             </div>
           </div>
 
+          {/* Info Note */}
           <div style={styles.infoNote}>
             <span style={styles.infoIcon}>ℹ️</span>
             <span>
@@ -671,6 +688,7 @@ export default function CandidateDashboard() {
             </span>
           </div>
 
+          {/* Guidelines */}
           <div style={styles.guidelinesWrapper}>
             <div style={styles.guidelinesBackground} />
             <div style={styles.guidelinesContent}>
@@ -745,22 +763,63 @@ const styles = {
   progressLabel: { fontSize: "13px", color: "rgba(255,255,255,0.7)", marginLeft: "8px" },
   mainContent: { maxWidth: "1200px", margin: "0 auto", padding: "0 20px 40px" },
   errorBox: { marginBottom: "16px", padding: "12px 16px", borderRadius: "10px", background: "#fff5f5", border: "1px solid #fecaca", color: "#b42318" },
-  tabsContainer: { display: "flex", gap: "8px", marginBottom: "24px", flexWrap: "wrap" },
-  tabButton: { padding: "8px 20px", borderRadius: "30px", cursor: "pointer", fontSize: "14px", fontWeight: "500", transition: "all 0.2s", fontFamily: "inherit", backdropFilter: "blur(10px)" },
-  tabLabel: { textTransform: "capitalize" },
+  tabsContainer: { 
+    display: "flex", 
+    gap: "8px", 
+    marginBottom: "24px", 
+    flexWrap: "wrap",
+    padding: "4px",
+    background: "rgba(255,255,255,0.1)",
+    backdropFilter: "blur(10px)",
+    borderRadius: "14px",
+    border: "1px solid rgba(255,255,255,0.15)"
+  },
+  tabButton: { 
+    padding: "10px 18px", 
+    borderRadius: "30px", 
+    cursor: "pointer", 
+    fontSize: "13px", 
+    fontWeight: "600", 
+    transition: "all 0.2s", 
+    fontFamily: "inherit", 
+    backdropFilter: "blur(10px)",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    border: "none",
+    flex: "0 0 auto"
+  },
+  tabLabel: { textTransform: "capitalize", whiteSpace: "nowrap" },
+  tabBadge: {
+    fontSize: "10px",
+    padding: "0 6px",
+    borderRadius: "10px",
+    fontWeight: "700",
+    marginLeft: "4px",
+    minWidth: "16px",
+    textAlign: "center"
+  },
   assessmentDetailsSection: { marginBottom: "32px" },
   card: { background: "white", borderRadius: "16px", padding: "24px", marginBottom: "20px", display: "flex", flexDirection: "column", gap: "20px", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" },
-  cardHeader: { display: "flex", alignItems: "center", gap: "24px", flexWrap: "wrap" },
-  cardIconLarge: { width: "60px", height: "60px", borderRadius: "16px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "30px", color: "white", flexShrink: 0, boxShadow: "0 4px 12px rgba(0,0,0,0.2)" },
+  cardHeader: { display: "flex", alignItems: "flex-start", gap: "20px", flexWrap: "wrap" },
+  cardIconLarge: { width: "56px", height: "56px", borderRadius: "14px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 4px 12px rgba(0,0,0,0.2)" },
   cardInfo: { flex: 1, minWidth: "250px" },
-  cardTitle: { fontSize: "20px", fontWeight: "600", margin: "0 0 8px 0", color: "#0f172a" },
+  cardTitleRow: { display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", marginBottom: "6px" },
+  cardTitle: { fontSize: "20px", fontWeight: "600", margin: 0, color: "#0f172a" },
+  cardTypeBadge: { 
+    fontSize: "11px", 
+    fontWeight: "600", 
+    padding: "2px 10px", 
+    borderRadius: "12px",
+    textTransform: "capitalize"
+  },
   cardDescription: { margin: "0 0 10px", color: "#475569", fontSize: "14px", lineHeight: 1.5 },
-  cardMeta: { display: "flex", gap: "24px", fontSize: "14px", color: "#475569", flexWrap: "wrap" },
+  cardMeta: { display: "flex", gap: "20px", fontSize: "14px", color: "#475569", flexWrap: "wrap" },
   metaItem: { display: "flex", alignItems: "center", gap: "6px" },
   metaIcon: { fontSize: "16px" },
   completedText: { margin: "10px 0 0", color: "#667085", fontSize: "12px" },
-  cardStatus: { minWidth: "140px", textAlign: "right" },
-  statusBadge: { padding: "6px 16px", borderRadius: "30px", fontSize: "13px", fontWeight: "600", display: "inline-block" },
+  cardStatus: { minWidth: "120px", textAlign: "right" },
+  statusBadge: { padding: "6px 14px", borderRadius: "30px", fontSize: "13px", fontWeight: "600", display: "inline-block" },
   startButton: { padding: "12px 24px", color: "white", border: "none", borderRadius: "12px", fontSize: "15px", fontWeight: "600", cursor: "pointer", alignSelf: "flex-end", transition: "all 0.2s", minWidth: "200px", boxShadow: "0 4px 12px rgba(0,0,0,0.2)" },
   areasSection: { background: "white", borderRadius: "16px", padding: "24px", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", border: "1px solid #e2e8f0" },
   areasTitle: { fontSize: "16px", fontWeight: "600", color: "#0f172a", margin: "0 0 16px 0" },
