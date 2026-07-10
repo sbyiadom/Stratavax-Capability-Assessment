@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - COMPLETE MODERN REDESIGN
+// pages/assessment/[id].js - COMPLETE POLISHED VERSION
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -158,8 +158,9 @@ function AssessmentContent() {
   const isTimeWarning = timeUsedPercent > 80;
   const isTimeCritical = timeUsedPercent > 90;
   
-  // Calculate progress percentage
-  const progressPercent = questions.length > 0 ? Math.round((totalAnswered / questions.length) * 100) : 0;
+  // Progress calculations - SHOW BOTH position AND answered
+  const answeredPercent = questions.length > 0 ? Math.round((totalAnswered / questions.length) * 100) : 0;
+  const positionPercent = questions.length > 0 ? Math.round(((currentIndex + 1) / questions.length) * 100) : 0;
 
   function getSelectedAnswersForQuestion(questionId) {
     return getAnswerArray(answers[questionId]);
@@ -745,9 +746,6 @@ function AssessmentContent() {
     );
   }
 
-  // ============================================================
-  // MODERN REDESIGN RENDER
-  // ============================================================
   return (
     <>
       {showViolationWarning && <div style={styles.violationBanner}><span>⚠️</span><span>{violationMessage}</span></div>}
@@ -786,11 +784,7 @@ function AssessmentContent() {
 
       {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: "#2e7d32" }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to dashboard...</p></div></div>}
 
-      {/* ============================================================
-          MODERN LAYOUT
-          ============================================================ */}
       <div style={styles.container}>
-        {/* Header with branding and progress */}
         <div style={{ ...styles.header, background: "linear-gradient(135deg, " + gradientStart + ", " + gradientEnd + ")" }}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
@@ -818,28 +812,25 @@ function AssessmentContent() {
             </div>
           </div>
           
-          {/* Progress Bar */}
+          {/* Progress Bar - SHOWING POSITION PROGRESS */}
           <div style={styles.progressBarContainer}>
             <div style={styles.progressBarTrack}>
-              <div style={{ ...styles.progressBarFill, width: Math.min(progressPercent, 100) + '%' }} />
+              <div style={{ ...styles.progressBarFill, width: Math.min(positionPercent, 100) + '%' }} />
             </div>
-            <div style={styles.progressText}>{progressPercent}% Complete • {totalAnswered}/{questions.length} answered</div>
+            <div style={styles.progressText}>
+              Q{currentIndex + 1}/{questions.length} • {answeredPercent}% answered
+            </div>
           </div>
         </div>
 
-        {/* ============================================================
-            MAIN CONTENT - MODERN LAYOUT
-            ============================================================ */}
         <div style={styles.mainContent}>
-          {/* Question Column */}
           <div style={styles.questionColumn}>
             <div style={styles.questionCard}>
-              {/* Question with Q badge */}
               <div style={styles.questionArea}>
                 <div style={styles.questionBadge}>
                   <span style={styles.questionNumber}>Q{currentIndex + 1}</span>
                 </div>
-                <div style={styles.questionText}>
+                <div className="assessment-scroll" style={styles.questionText}>
                   {currentQuestion.question_text}
                 </div>
                 {answerChangeCount[currentQuestion.id] > 0 && (
@@ -849,15 +840,15 @@ function AssessmentContent() {
                 )}
               </div>
               
-              {/* Answers Area */}
               <div style={styles.answersArea}>
-                <div style={styles.answersContainer}>
+                <div className="assessment-scroll" style={styles.answersContainer}>
                   {safeArray(currentQuestion.answers).map((answer, index) => {
                     const selected = isAnswerSelected(currentQuestion.id, answer.id);
                     const optionLetter = String.fromCharCode(65 + index);
                     return (
                       <button 
                         key={answer.id} 
+                        className="answer-option"
                         onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)} 
                         disabled={isDisabled}
                         style={{ 
@@ -898,22 +889,41 @@ function AssessmentContent() {
                 )}
               </div>
               
-              {/* Navigation */}
               <div style={styles.navigation}>
-                <button onClick={() => moveToQuestion(currentIndex - 1)} disabled={currentIndex === 0 || isDisabled} style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}>← Previous</button>
+                <button 
+                  onClick={() => moveToQuestion(currentIndex - 1)} 
+                  disabled={currentIndex === 0 || isDisabled} 
+                  className="assessment-nav-btn"
+                  style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}
+                >
+                  ← Previous
+                </button>
                 <div style={styles.navCenter}>
                   <span style={styles.navProgress}>{currentIndex + 1} / {questions.length}</span>
                 </div>
                 {isLastQuestion ? (
-                  <button onClick={() => setShowSubmitModal(true)} disabled={isDisabled} style={styles.submitButton}>Submit</button>
+                  <button 
+                    onClick={() => setShowSubmitModal(true)} 
+                    disabled={isDisabled} 
+                    className="assessment-nav-btn"
+                    style={styles.submitButton}
+                  >
+                    Submit
+                  </button>
                 ) : (
-                  <button onClick={() => moveToQuestion(currentIndex + 1)} disabled={isDisabled} style={styles.nextButton}>Next →</button>
+                  <button 
+                    onClick={() => moveToQuestion(currentIndex + 1)} 
+                    disabled={isDisabled} 
+                    className="assessment-nav-btn"
+                    style={styles.nextButton}
+                  >
+                    Next →
+                  </button>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Navigator */}
           <div style={styles.navigatorColumn}>
             <div style={styles.navigatorCard}>
               <h3 style={styles.navigatorTitle}>Question Navigator</h3>
@@ -922,7 +932,7 @@ function AssessmentContent() {
                 <div style={styles.statCard}><div style={styles.statValue}>{questions.length - totalAnswered}</div><div style={styles.statLabel}>Remaining</div></div>
                 <div style={styles.statCard}><div style={styles.statValue}>{totalChanges}</div><div style={styles.statLabel}>Changes</div></div>
               </div>
-              <div style={styles.questionGrid}>
+              <div className="assessment-scroll" style={styles.questionGrid}>
                 {questions.map((question, index) => {
                   const questionAnswer = answers[question.id];
                   const answered = questionAnswer !== undefined && (Array.isArray(questionAnswer) ? questionAnswer.length > 0 : questionAnswer !== null);
@@ -931,6 +941,7 @@ function AssessmentContent() {
                   return (
                     <button 
                       key={question.id} 
+                      className="navigator-item"
                       onClick={() => moveToQuestion(index)} 
                       disabled={isDisabled}
                       style={{ 
@@ -939,9 +950,7 @@ function AssessmentContent() {
                         color: current || answered ? "white" : "#1e293b", 
                         borderColor: current ? gradientStart : "#e2e8f0", 
                         opacity: isDisabled ? 0.6 : 1,
-                        cursor: isDisabled ? "not-allowed" : "pointer",
-                        transform: current ? "scale(1.1)" : "scale(1)",
-                        boxShadow: current ? "0 2px 8px rgba(0,0,0,0.2)" : "none"
+                        cursor: isDisabled ? "not-allowed" : "pointer"
                       }}
                     >
                       {index + 1}
@@ -959,13 +968,72 @@ function AssessmentContent() {
           </div>
         </div>
       </div>
+
+      {/* ============================================================
+          CSS INJECTION - SUPPORTS :hover
+          ============================================================ */}
+      {typeof document !== "undefined" && !document.getElementById("assessment-modern-styles") && (
+        <style id="assessment-modern-styles">{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+
+          .answer-option {
+            transition: all 0.2s ease;
+          }
+          
+          .answer-option:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+            border-color: #0097a7 !important;
+          }
+          
+          .answer-option:active:not(:disabled) {
+            transform: scale(0.98);
+          }
+
+          .navigator-item {
+            transition: all 0.2s ease;
+          }
+          
+          .navigator-item:hover:not(:disabled) {
+            transform: scale(1.08);
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.16);
+            z-index: 2;
+          }
+
+          .assessment-nav-btn {
+            transition: all 0.2s ease;
+          }
+          
+          .assessment-nav-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+          }
+
+          .assessment-scroll::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+          }
+          
+          .assessment-scroll::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 999px;
+          }
+          
+          .assessment-scroll::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 999px;
+          }
+          
+          .assessment-scroll::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+          }
+        `}</style>
+      )}
     </>
   );
 }
-
-// ============================================================
-// STYLES - MODERN DESIGN
-// ============================================================
 
 const styles = {
   loadingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg, #f8fafc 0%, #eef3f8 100%)", gap: "20px" },
@@ -1054,9 +1122,6 @@ const styles = {
   timerLabel: { fontSize: "8px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "0px" },
   timerValue: { fontSize: "18px", fontWeight: 900, fontFamily: "monospace" },
   
-  // ============================================================
-  // PROGRESS BAR
-  // ============================================================
   progressBarContainer: {
     maxWidth: "1400px",
     margin: "0 auto",
@@ -1090,9 +1155,6 @@ const styles = {
     whiteSpace: "nowrap"
   },
   
-  // ============================================================
-  // MAIN CONTENT
-  // ============================================================
   mainContent: { 
     maxWidth: "1400px", 
     margin: "0 auto", 
@@ -1131,9 +1193,6 @@ const styles = {
     boxSizing: "border-box"
   },
   
-  // ============================================================
-  // QUESTION AREA
-  // ============================================================
   questionArea: {
     display: "flex",
     flexDirection: "column",
@@ -1186,9 +1245,6 @@ const styles = {
     alignSelf: "flex-start"
   },
   
-  // ============================================================
-  // ANSWERS AREA
-  // ============================================================
   answersArea: {
     display: "flex",
     flexDirection: "column",
@@ -1245,9 +1301,6 @@ const styles = {
     marginTop: "4px"
   },
   
-  // ============================================================
-  // NAVIGATION
-  // ============================================================
   navigation: { 
     display: "flex", 
     justifyContent: "space-between", 
@@ -1298,9 +1351,6 @@ const styles = {
     transition: "0.2s ease"
   },
   
-  // ============================================================
-  // NAVIGATOR
-  // ============================================================
   navigatorColumn: { 
     display: "flex", 
     flexDirection: "column",
@@ -1367,9 +1417,6 @@ const styles = {
   legendItem: { display: "flex", alignItems: "center", gap: "4px", fontSize: "9px", color: "#64748b" },
   legendDot: { width: "8px", height: "8px", borderRadius: "4px" },
   
-  // ============================================================
-  // MODAL
-  // ============================================================
   modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(4px)" },
   modalContent: { background: "white", padding: "30px", borderRadius: "20px", maxWidth: "450px", width: "90%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" },
   modalIcon: { fontSize: "48px", textAlign: "center", marginBottom: "15px" },
@@ -1381,12 +1428,5 @@ const styles = {
   modalSecondaryButton: { flex: 1, padding: "12px", background: "#f1f5f9", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 600 },
   modalPrimaryButton: { flex: 1, padding: "12px", background: "#4caf50", color: "white", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 600 }
 };
-
-if (typeof document !== "undefined" && !document.getElementById("assessment-spin-keyframes")) {
-  const style = document.createElement("style");
-  style.id = "assessment-spin-keyframes";
-  style.textContent = "@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }";
-  document.head.appendChild(style);
-}
 
 export default AssessmentPage;
