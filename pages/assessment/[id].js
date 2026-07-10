@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - CLEAN MINIMAL LAYOUT (SHL-style)
+// pages/assessment/[id].js - WITH COLOR
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -143,8 +143,13 @@ function AssessmentContent() {
   const submittingRef = useRef(false);
   const autoSubmitRef = useRef(false);
 
-  const gradientStart = assessmentType && assessmentType.gradient_start ? assessmentType.gradient_start : "#0097a7";
-  const gradientEnd = assessmentType && assessmentType.gradient_end ? assessmentType.gradient_end : "#006064";
+  // STRATAVAX BRAND COLORS
+  const primaryColor = "#1a237e"; // Dark blue
+  const primaryLight = "#e8eaf6"; // Light blue
+  const accentColor = "#0d47a1"; // Darker blue
+  const successColor = "#2e7d32"; // Green
+  const warningColor = "#f57c00"; // Orange
+  const dangerColor = "#c62828"; // Red
 
   const currentQuestion = questions[currentIndex] || {};
   const allowMultipleSelection = isManufacturingBaselineAssessment(assessment, assessmentType);
@@ -744,9 +749,6 @@ function AssessmentContent() {
     );
   }
 
-  // ============================================================
-  // CLEAN MINIMAL LAYOUT (SHL-style)
-  // ============================================================
   return (
     <>
       {showViolationWarning && <div style={styles.violationBanner}><span>⚠️</span><span>{violationMessage}</span></div>}
@@ -769,28 +771,28 @@ function AssessmentContent() {
             <div style={styles.modalIcon}>📋</div>
             <h2 style={styles.modalTitle}>Ready to Submit?</h2>
             <div style={styles.modalStats}>
-              <div style={styles.modalStat}><span>Questions Answered</span><strong style={{ color: "#4caf50" }}>{totalAnswered}/{questions.length}</strong></div>
+              <div style={styles.modalStat}><span>Questions Answered</span><strong style={{ color: successColor }}>{totalAnswered}/{questions.length}</strong></div>
               <div style={styles.modalStat}><span>Completion Rate</span><strong>{Math.round((totalAnswered / questions.length) * 100)}%</strong></div>
               <div style={styles.modalStat}><span>Answer Changes</span><strong>{totalChanges}</strong></div>
-              {violationCount > 0 && <div style={styles.modalStat}><span>Violations</span><strong style={{ color: violationCount >= 3 ? "#f44336" : "#ff9800" }}>{violationCount}/3</strong></div>}
+              {violationCount > 0 && <div style={styles.modalStat}><span>Violations</span><strong style={{ color: violationCount >= 3 ? dangerColor : warningColor }}>{violationCount}/3</strong></div>}
             </div>
             <div style={styles.modalWarning}><span>⚠️</span><span><strong>One attempt only:</strong> After submission, the assessment cannot be retaken unless reset by your supervisor.</span></div>
             <div style={styles.modalActions}>
               <button onClick={() => setShowSubmitModal(false)} style={styles.modalSecondaryButton}>Continue Reviewing</button>
-              <button onClick={handleSubmit} disabled={isSubmitting || isTimeExpired} style={{ ...styles.modalPrimaryButton, background: isSubmitting || isTimeExpired ? "#ccc" : "#4caf50", cursor: isSubmitting || isTimeExpired ? "not-allowed" : "pointer" }}>{isSubmitting ? "Submitting..." : "Submit Assessment"}</button>
+              <button onClick={handleSubmit} disabled={isSubmitting || isTimeExpired} style={{ ...styles.modalPrimaryButton, background: isSubmitting || isTimeExpired ? "#ccc" : successColor, cursor: isSubmitting || isTimeExpired ? "not-allowed" : "pointer" }}>{isSubmitting ? "Submitting..." : "Submit Assessment"}</button>
             </div>
           </div>
         </div>
       )}
 
-      {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: "#2e7d32" }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to dashboard...</p></div></div>}
+      {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: successColor }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to dashboard...</p></div></div>}
 
       {/* ============================================================
-          CLEAN MINIMAL LAYOUT
+          MAIN LAYOUT WITH COLOR
           ============================================================ */}
       <div style={styles.container}>
-        {/* Header - Clean & Minimal */}
-        <div style={styles.header}>
+        {/* Header - With Color */}
+        <div style={{ ...styles.header, background: primaryColor }}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
               <button onClick={handleBackClick} style={styles.backButton}>←</button>
@@ -806,7 +808,7 @@ function AssessmentContent() {
             <div style={styles.headerRight}>
               <div style={styles.timer}>
                 <div style={styles.timerLabel}>TIME REMAINING</div>
-                <div style={{ ...styles.timerValue, color: isTimeCritical ? "#ff6b6b" : "#333" }}>
+                <div style={{ ...styles.timerValue, color: isTimeCritical ? "#ff6b6b" : "white" }}>
                   {isTimeExpired ? "EXPIRED" : timeRemainingFormatted}
                 </div>
               </div>
@@ -815,9 +817,10 @@ function AssessmentContent() {
         </div>
 
         {/* ============================================================
-            MAIN CONTENT - SINGLE COLUMN WITH FLOATING NAVIGATOR            ============================================================ */}
+            MAIN CONTENT
+            ============================================================ */}
         <div style={styles.mainContent}>
-          {/* Question Area - Clean & Minimal */}
+          {/* Question Area */}
           <div style={styles.questionArea}>
             {/* Question Text */}
             <div style={styles.questionText}>
@@ -826,12 +829,12 @@ function AssessmentContent() {
 
             {/* Multiple Select Info Banner */}
             {isMultipleCorrect && (
-              <div style={styles.multipleHint}>
+              <div style={{ ...styles.multipleHint, background: primaryLight, color: primaryColor }}>
                 💡 This question has multiple correct answers. Select all that apply.
               </div>
             )}
 
-            {/* Answer Options - Clean checkable style */}
+            {/* Answer Options */}
             <div style={styles.answersContainer}>
               {safeArray(currentQuestion.answers).map((answer, index) => {
                 const selected = isAnswerSelected(currentQuestion.id, answer.id);
@@ -844,29 +847,29 @@ function AssessmentContent() {
                     disabled={isDisabled}
                     style={{ 
                       ...styles.answerCard, 
-                      background: selected ? "#e3f2fd" : "white", 
-                      borderColor: selected ? "#0097a7" : "#e2e8f0",
+                      background: selected ? primaryLight : "white", 
+                      borderColor: selected ? primaryColor : "#e2e8f0",
                       opacity: isDisabled ? 0.6 : 1,
                       cursor: isDisabled ? "not-allowed" : "pointer"
                     }}
                   >
                     <div style={{ 
                       ...styles.answerLetter, 
-                      background: selected ? "#0097a7" : "#f1f5f9", 
+                      background: selected ? primaryColor : "#f1f5f9", 
                       color: selected ? "white" : "#475569" 
                     }}>
                       {optionLetter}
                     </div>
                     <span style={{
                       flex: 1,
-                      color: selected ? "#0097a7" : "#1e293b",
+                      color: selected ? primaryColor : "#1e293b",
                       fontSize: "15px",
                       fontWeight: selected ? 600 : 400
                     }}>
                       {answer.answer_text}
                     </span>
                     {selected && (
-                      <span style={{ color: "#0097a7", fontSize: "18px" }}>✓</span>
+                      <span style={{ color: primaryColor, fontSize: "18px" }}>✓</span>
                     )}
                   </button>
                 );
@@ -891,7 +894,7 @@ function AssessmentContent() {
                   onClick={() => setShowSubmitModal(true)} 
                   disabled={isDisabled} 
                   className="assessment-nav-btn"
-                  style={styles.submitButton}
+                  style={{ ...styles.submitButton, background: successColor }}
                 >
                   Submit
                 </button>
@@ -900,7 +903,7 @@ function AssessmentContent() {
                   onClick={() => moveToQuestion(currentIndex + 1)} 
                   disabled={isDisabled} 
                   className="assessment-nav-btn"
-                  style={styles.nextButton}
+                  style={{ ...styles.nextButton, background: primaryColor }}
                 >
                   Next →
                 </button>
@@ -908,32 +911,28 @@ function AssessmentContent() {
             </div>
           </div>
 
-          {/* ============================================================
-              FLOATING NAVIGATOR - Compact Right Panel
-              ============================================================ */}
+          {/* Navigator */}
           <div style={styles.navigatorColumn}>
-            <div style={styles.navigatorCard}>
+            <div style={{ ...styles.navigatorCard, borderColor: primaryColor + "40" }}>
               <div style={styles.navigatorHeader}>
-                <span style={styles.navigatorTitle}>Question Navigator</span>
+                <span style={{ ...styles.navigatorTitle, color: primaryColor }}>Question Navigator</span>
               </div>
               
-              {/* Stats */}
               <div style={styles.statsGrid}>
-                <div style={styles.statCard}>
-                  <div style={styles.statValue}>{totalAnswered}</div>
+                <div style={{ ...styles.statCard, background: primaryLight }}>
+                  <div style={{ ...styles.statValue, color: primaryColor }}>{totalAnswered}</div>
                   <div style={styles.statLabel}>Answered</div>
                 </div>
-                <div style={styles.statCard}>
-                  <div style={styles.statValue}>{questions.length - totalAnswered}</div>
+                <div style={{ ...styles.statCard, background: primaryLight }}>
+                  <div style={{ ...styles.statValue, color: primaryColor }}>{questions.length - totalAnswered}</div>
                   <div style={styles.statLabel}>Remaining</div>
                 </div>
-                <div style={styles.statCard}>
-                  <div style={styles.statValue}>{totalChanges}</div>
+                <div style={{ ...styles.statCard, background: primaryLight }}>
+                  <div style={{ ...styles.statValue, color: primaryColor }}>{totalChanges}</div>
                   <div style={styles.statLabel}>Changed</div>
                 </div>
               </div>
 
-              {/* Question Grid */}
               <div className="assessment-scroll" style={styles.questionGrid}>
                 {questions.map((question, index) => {
                   const questionAnswer = answers[question.id];
@@ -948,9 +947,9 @@ function AssessmentContent() {
                       disabled={isDisabled}
                       style={{ 
                         ...styles.gridItem, 
-                        background: current ? "#0097a7" : answered ? changed ? "#ff9800" : "#4caf50" : "white", 
+                        background: current ? primaryColor : answered ? changed ? warningColor : successColor : "white", 
                         color: current || answered ? "white" : "#1e293b", 
-                        borderColor: current ? "#0097a7" : "#e2e8f0", 
+                        borderColor: current ? primaryColor : "#e2e8f0", 
                         opacity: isDisabled ? 0.6 : 1,
                         cursor: isDisabled ? "not-allowed" : "pointer"
                       }}
@@ -961,18 +960,17 @@ function AssessmentContent() {
                 })}
               </div>
 
-              {/* Legend */}
               <div style={styles.legend}>
                 <div style={styles.legendItem}>
-                  <div style={{ ...styles.legendDot, background: "#4caf50" }} />
+                  <div style={{ ...styles.legendDot, background: successColor }} />
                   <span>Answered</span>
                 </div>
                 <div style={styles.legendItem}>
-                  <div style={{ ...styles.legendDot, background: "#ff9800" }} />
+                  <div style={{ ...styles.legendDot, background: warningColor }} />
                   <span>Changed</span>
                 </div>
                 <div style={styles.legendItem}>
-                  <div style={{ ...styles.legendDot, background: "#0097a7" }} />
+                  <div style={{ ...styles.legendDot, background: primaryColor }} />
                   <span>Current</span>
                 </div>
                 <div style={styles.legendItem}>
@@ -985,7 +983,7 @@ function AssessmentContent() {
         </div>
       </div>
 
-      {/* CSS Injection for hover effects */}
+      {/* CSS Injection */}
       {typeof document !== "undefined" && !document.getElementById("assessment-modern-styles") && (
         <style id="assessment-modern-styles">{`
           .answer-option {
@@ -995,8 +993,8 @@ function AssessmentContent() {
           
           .answer-option:hover:not(:disabled) {
             transform: translateY(-1px);
-            box-shadow: 0 4px 16px rgba(0, 151, 167, 0.12);
-            border-color: #0097a7 !important;
+            box-shadow: 0 4px 16px rgba(26, 35, 126, 0.15);
+            border-color: #1a237e !important;
           }
           
           .answer-option:active:not(:disabled) {
@@ -1022,7 +1020,7 @@ function AssessmentContent() {
           
           .assessment-nav-btn:hover:not(:disabled) {
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(0, 151, 167, 0.2);
+            box-shadow: 0 4px 12px rgba(26, 35, 126, 0.25);
           }
 
           .assessment-scroll::-webkit-scrollbar {
@@ -1050,38 +1048,35 @@ function AssessmentContent() {
 }
 
 // ============================================================
-// STYLES - CLEAN MINIMAL
+// STYLES - WITH COLOR
 // ============================================================
 
 const styles = {
   loadingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#f8fafc", gap: "20px" },
-  loadingSpinner: { width: "50px", height: "50px", border: "4px solid #e2e8f0", borderTop: "4px solid #0097a7", borderRadius: "50%", animation: "spin 1s linear infinite" },
+  loadingSpinner: { width: "50px", height: "50px", border: "4px solid #e2e8f0", borderTop: "4px solid #1a237e", borderRadius: "50%", animation: "spin 1s linear infinite" },
   messageContainer: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc", padding: "20px" },
   messageCard: { background: "white", padding: "40px", borderRadius: "16px", maxWidth: "500px", textAlign: "center", boxShadow: "0 2px 12px rgba(0,0,0,0.08)" },
   errorIcon: { fontSize: "64px", marginBottom: "20px" },
   successIcon: { fontSize: "64px", marginBottom: "20px" },
-  successIconLarge: { width: "80px", height: "80px", background: "#4caf50", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", fontSize: "40px", color: "white" },
-  primaryButton: { padding: "12px 30px", background: "#0097a7", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px" },
+  successIconLarge: { width: "80px", height: "80px", background: "#2e7d32", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", fontSize: "40px", color: "white" },
+  primaryButton: { padding: "12px 30px", background: "#1a237e", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px" },
   debugInfo: { background: "#f8fafc", padding: "15px", borderRadius: "8px", margin: "15px 0", fontSize: "14px", textAlign: "left" },
   
-  violationBanner: { position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)", background: "#f44336", color: "white", padding: "12px 24px", borderRadius: "8px", fontWeight: "bold", zIndex: 10001, fontSize: "14px", boxShadow: "0 4px 12px rgba(0,0,0,0.2)", display: "flex", alignItems: "center", gap: "10px" },
+  violationBanner: { position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)", background: "#c62828", color: "white", padding: "12px 24px", borderRadius: "8px", fontWeight: "bold", zIndex: 10001, fontSize: "14px", boxShadow: "0 4px 12px rgba(0,0,0,0.2)", display: "flex", alignItems: "center", gap: "10px" },
   
   autoSubmitOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10002 },
   autoSubmitCard: { background: "white", padding: "30px", borderRadius: "16px", textAlign: "center", maxWidth: "400px" },
-  autoSubmitSpinner: { width: "40px", height: "40px", border: "4px solid #e2e8f0", borderTop: "4px solid #f44336", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 20px" },
+  autoSubmitSpinner: { width: "40px", height: "40px", border: "4px solid #e2e8f0", borderTop: "4px solid #c62828", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 20px" },
   
   container: { minHeight: "100vh", background: "#f8fafc", display: "flex", flexDirection: "column" },
   
-  // ============================================================
-  // HEADER - CLEAN
-  // ============================================================
   header: { 
     position: "sticky", 
     top: 0, 
     zIndex: 100, 
-    background: "white", 
-    borderBottom: "1px solid #e2e8f0", 
-    boxShadow: "0 1px 4px rgba(0,0,0,0.04)", 
+    background: "#1a237e", 
+    borderBottom: "none", 
+    boxShadow: "0 2px 8px rgba(0,0,0,0.15)", 
     flexShrink: 0 
   },
   
@@ -1102,10 +1097,10 @@ const styles = {
   backButton: { 
     width: "32px", 
     height: "32px", 
-    background: "transparent", 
-    border: "1px solid #e2e8f0", 
+    background: "rgba(255,255,255,0.15)", 
+    border: "1px solid rgba(255,255,255,0.2)", 
     borderRadius: "8px", 
-    color: "#475569", 
+    color: "white", 
     fontSize: "14px", 
     cursor: "pointer",
     transition: "0.2s",
@@ -1117,15 +1112,15 @@ const styles = {
   headerTitle: { 
     fontSize: "16px", 
     fontWeight: 600, 
-    color: "#0f172a" 
+    color: "white" 
   },
   
   headerAssessment: { 
     fontWeight: 500,
-    color: "#0f172a"
+    color: "white"
   },
   
-  headerMeta: { fontSize: "12px", color: "#64748b", marginTop: "2px" },
+  headerMeta: { fontSize: "12px", color: "rgba(255,255,255,0.7)", marginTop: "2px" },
   
   timer: { 
     textAlign: "right" 
@@ -1136,19 +1131,16 @@ const styles = {
     fontWeight: 600, 
     textTransform: "uppercase", 
     letterSpacing: "0.5px", 
-    color: "#94a3b8" 
+    color: "rgba(255,255,255,0.6)" 
   },
   
   timerValue: { 
     fontSize: "18px", 
     fontWeight: 700, 
     fontFamily: "monospace",
-    color: "#0f172a"
+    color: "white"
   },
   
-  // ============================================================
-  // MAIN CONTENT - SINGLE COLUMN WITH FLOATING NAVIGATOR
-  // ============================================================
   mainContent: { 
     maxWidth: "1200px", 
     margin: "0 auto", 
@@ -1164,9 +1156,6 @@ const styles = {
     boxSizing: "border-box"
   },
   
-  // ============================================================
-  // QUESTION AREA
-  // ============================================================
   questionArea: { 
     display: "flex", 
     flexDirection: "column", 
@@ -1189,16 +1178,13 @@ const styles = {
   
   multipleHint: { 
     padding: "10px 16px", 
-    background: "#eff6ff", 
+    background: "#e8eaf6", 
     borderRadius: "8px", 
     fontSize: "13px", 
-    color: "#1e40af",
+    color: "#1a237e",
     flexShrink: 0
   },
   
-  // ============================================================
-  // ANSWERS
-  // ============================================================
   answersContainer: { 
     display: "flex", 
     flexDirection: "column", 
@@ -1236,9 +1222,6 @@ const styles = {
     flexShrink: 0
   },
   
-  // ============================================================
-  // NAVIGATION
-  // ============================================================
   navigation: { 
     display: "flex", 
     justifyContent: "space-between", 
@@ -1270,7 +1253,7 @@ const styles = {
     fontSize: "14px", 
     fontWeight: 500, 
     border: "none", 
-    background: "#0097a7", 
+    background: "#1a237e", 
     color: "white", 
     cursor: "pointer",
     transition: "0.2s ease"
@@ -1282,15 +1265,12 @@ const styles = {
     fontSize: "14px", 
     fontWeight: 500, 
     border: "none", 
-    background: "#4caf50", 
+    background: "#2e7d32", 
     color: "white", 
     cursor: "pointer",
     transition: "0.2s ease"
   },
   
-  // ============================================================
-  // FLOATING NAVIGATOR
-  // ============================================================
   navigatorColumn: { 
     display: "flex", 
     flexDirection: "column",
@@ -1303,7 +1283,7 @@ const styles = {
     background: "white", 
     borderRadius: "16px", 
     padding: "16px", 
-    border: "1px solid #e2e8f0",
+    border: "1px solid #1a237e40",
     boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
     display: "flex",
     flexDirection: "column",
@@ -1323,7 +1303,7 @@ const styles = {
   navigatorTitle: { 
     fontSize: "13px", 
     fontWeight: 600, 
-    color: "#0f172a"
+    color: "#1a237e"
   },
   
   statsGrid: { 
@@ -1335,7 +1315,7 @@ const styles = {
   },
   
   statCard: { 
-    background: "#f8fafc", 
+    background: "#e8eaf6", 
     padding: "6px 4px", 
     borderRadius: "8px", 
     textAlign: "center" 
@@ -1344,7 +1324,7 @@ const styles = {
   statValue: { 
     fontSize: "16px", 
     fontWeight: 700, 
-    color: "#0f172a" 
+    color: "#1a237e" 
   },
   
   statLabel: { 
@@ -1403,9 +1383,6 @@ const styles = {
     borderRadius: "4px" 
   },
   
-  // ============================================================
-  // MODAL
-  // ============================================================
   modalOverlay: { 
     position: "fixed", 
     top: 0, 
@@ -1474,7 +1451,7 @@ const styles = {
   modalPrimaryButton: { 
     flex: 1, 
     padding: "12px", 
-    background: "#4caf50", 
+    background: "#2e7d32", 
     color: "white", 
     border: "none", 
     borderRadius: "10px", 
