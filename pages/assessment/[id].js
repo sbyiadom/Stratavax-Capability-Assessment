@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - COMPLETE POLISHED VERSION
+// pages/assessment/[id].js - CLEAN MINIMAL LAYOUT (SHL-style)
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -157,10 +157,8 @@ function AssessmentContent() {
   const timeUsedPercent = timeLimitSeconds > 0 ? (elapsedSeconds / timeLimitSeconds) * 100 : 0;
   const isTimeWarning = timeUsedPercent > 80;
   const isTimeCritical = timeUsedPercent > 90;
-  
-  // Progress calculations - SHOW BOTH position AND answered
+
   const answeredPercent = questions.length > 0 ? Math.round((totalAnswered / questions.length) * 100) : 0;
-  const positionPercent = questions.length > 0 ? Math.round(((currentIndex + 1) / questions.length) * 100) : 0;
 
   function getSelectedAnswersForQuestion(questionId) {
     return getAnswerArray(answers[questionId]);
@@ -746,6 +744,9 @@ function AssessmentContent() {
     );
   }
 
+  // ============================================================
+  // CLEAN MINIMAL LAYOUT (SHL-style)
+  // ============================================================
   return (
     <>
       {showViolationWarning && <div style={styles.violationBanner}><span>⚠️</span><span>{violationMessage}</span></div>}
@@ -784,154 +785,155 @@ function AssessmentContent() {
 
       {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: "#2e7d32" }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to dashboard...</p></div></div>}
 
+      {/* ============================================================
+          CLEAN MINIMAL LAYOUT
+          ============================================================ */}
       <div style={styles.container}>
-        <div style={{ ...styles.header, background: "linear-gradient(135deg, " + gradientStart + ", " + gradientEnd + ")" }}>
+        {/* Header - Clean & Minimal */}
+        <div style={styles.header}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
               <button onClick={handleBackClick} style={styles.backButton}>←</button>
               <div>
                 <div style={styles.headerTitle}>
-                  <span style={styles.headerBrand}>STRATAVAX</span>
-                  <span style={styles.headerDivider}>•</span>
                   <span style={styles.headerAssessment}>{assessment ? assessment.title : "Assessment"}</span>
                 </div>
                 <div style={styles.headerMeta}>
                   Question {currentIndex + 1} of {questions.length} • {currentQuestion.section || "General"}
-                  {isMultipleCorrect && <span style={{ marginLeft: "10px", color: "#ffeb3b", fontSize: "12px" }}>(Select all that apply)</span>}
                 </div>
               </div>
             </div>
             <div style={styles.headerRight}>
-              {violationCount > 0 && <div style={{ background: violationCount >= 3 ? "#f44336" : "#ff9800", color: "white", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold" }}>⚠️ {violationCount}/3 Violations</div>}
-              <div style={{ ...styles.timer, background: isTimeCritical ? "rgba(211,47,47,0.2)" : isTimeWarning ? "rgba(255,152,0,0.2)" : "rgba(255,255,255,0.15)", border: isTimeExpired ? "2px solid #f44336" : "1px solid rgba(255,255,255,0.3)" }}>
+              <div style={styles.timer}>
                 <div style={styles.timerLabel}>TIME REMAINING</div>
-                <div style={{ ...styles.timerValue, color: isTimeCritical ? "#ffebee" : isTimeWarning ? "#fff3e0" : "white" }}>
+                <div style={{ ...styles.timerValue, color: isTimeCritical ? "#ff6b6b" : "#333" }}>
                   {isTimeExpired ? "EXPIRED" : timeRemainingFormatted}
                 </div>
               </div>
             </div>
           </div>
-          
-          {/* Progress Bar - SHOWING POSITION PROGRESS */}
-          <div style={styles.progressBarContainer}>
-            <div style={styles.progressBarTrack}>
-              <div style={{ ...styles.progressBarFill, width: Math.min(positionPercent, 100) + '%' }} />
-            </div>
-            <div style={styles.progressText}>
-              Q{currentIndex + 1}/{questions.length} • {answeredPercent}% answered
-            </div>
-          </div>
         </div>
 
+        {/* ============================================================
+            MAIN CONTENT - SINGLE COLUMN WITH FLOATING NAVIGATOR            ============================================================ */}
         <div style={styles.mainContent}>
-          <div style={styles.questionColumn}>
-            <div style={styles.questionCard}>
-              <div style={styles.questionArea}>
-                <div style={styles.questionBadge}>
-                  <span style={styles.questionNumber}>Q{currentIndex + 1}</span>
-                </div>
-                <div className="assessment-scroll" style={styles.questionText}>
-                  {currentQuestion.question_text}
-                </div>
-                {answerChangeCount[currentQuestion.id] > 0 && (
-                  <div style={styles.changeIndicator}>
-                    ✏️ Changed answer {answerChangeCount[currentQuestion.id]} time{answerChangeCount[currentQuestion.id] !== 1 ? "s" : ""}
-                  </div>
-                )}
+          {/* Question Area - Clean & Minimal */}
+          <div style={styles.questionArea}>
+            {/* Question Text */}
+            <div style={styles.questionText}>
+              {currentQuestion.question_text}
+            </div>
+
+            {/* Multiple Select Info Banner */}
+            {isMultipleCorrect && (
+              <div style={styles.multipleHint}>
+                💡 This question has multiple correct answers. Select all that apply.
               </div>
-              
-              <div style={styles.answersArea}>
-                <div className="assessment-scroll" style={styles.answersContainer}>
-                  {safeArray(currentQuestion.answers).map((answer, index) => {
-                    const selected = isAnswerSelected(currentQuestion.id, answer.id);
-                    const optionLetter = String.fromCharCode(65 + index);
-                    return (
-                      <button 
-                        key={answer.id} 
-                        className="answer-option"
-                        onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)} 
-                        disabled={isDisabled}
-                        style={{ 
-                          ...styles.answerCard, 
-                          background: selected ? "linear-gradient(135deg, " + gradientStart + ", " + gradientEnd + ")" : "white", 
-                          borderColor: selected ? gradientStart : "#e2e8f0", 
-                          opacity: isDisabled ? 0.6 : 1,
-                          cursor: isDisabled ? "not-allowed" : "pointer"
-                        }}
-                      >
-                        <div style={{ 
-                          ...styles.answerLetter, 
-                          background: selected ? "rgba(255,255,255,0.2)" : "#f1f5f9", 
-                          color: selected ? "white" : "#475569" 
-                        }}>
-                          {optionLetter}
-                        </div>
-                        <span style={{
-                          flex: 1,
-                          overflowY: "auto",
-                          maxHeight: "60px",
-                          lineHeight: "1.4",
-                          color: selected ? "white" : "#1e293b",
-                          fontSize: "14px"
-                        }}>
-                          {answer.answer_text}
-                          {isMultipleCorrect && selected && <span style={{ marginLeft: "6px", fontSize: "11px" }}>✓</span>}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                
-                {isMultipleCorrect && (
-                  <div style={styles.multipleHint}>
-                    💡 This question has multiple correct answers. Select all that apply.
-                  </div>
-                )}
+            )}
+
+            {/* Answer Options - Clean checkable style */}
+            <div style={styles.answersContainer}>
+              {safeArray(currentQuestion.answers).map((answer, index) => {
+                const selected = isAnswerSelected(currentQuestion.id, answer.id);
+                const optionLetter = String.fromCharCode(65 + index);
+                return (
+                  <button 
+                    key={answer.id} 
+                    className="answer-option"
+                    onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)} 
+                    disabled={isDisabled}
+                    style={{ 
+                      ...styles.answerCard, 
+                      background: selected ? "#e3f2fd" : "white", 
+                      borderColor: selected ? "#0097a7" : "#e2e8f0",
+                      opacity: isDisabled ? 0.6 : 1,
+                      cursor: isDisabled ? "not-allowed" : "pointer"
+                    }}
+                  >
+                    <div style={{ 
+                      ...styles.answerLetter, 
+                      background: selected ? "#0097a7" : "#f1f5f9", 
+                      color: selected ? "white" : "#475569" 
+                    }}>
+                      {optionLetter}
+                    </div>
+                    <span style={{
+                      flex: 1,
+                      color: selected ? "#0097a7" : "#1e293b",
+                      fontSize: "15px",
+                      fontWeight: selected ? 600 : 400
+                    }}>
+                      {answer.answer_text}
+                    </span>
+                    {selected && (
+                      <span style={{ color: "#0097a7", fontSize: "18px" }}>✓</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Navigation */}
+            <div style={styles.navigation}>
+              <button 
+                onClick={() => moveToQuestion(currentIndex - 1)} 
+                disabled={currentIndex === 0 || isDisabled} 
+                className="assessment-nav-btn"
+                style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}
+              >
+                ← Previous
+              </button>
+              <div style={styles.navCenter}>
+                <span style={styles.navProgress}>{currentIndex + 1} / {questions.length}</span>
               </div>
-              
-              <div style={styles.navigation}>
+              {isLastQuestion ? (
                 <button 
-                  onClick={() => moveToQuestion(currentIndex - 1)} 
-                  disabled={currentIndex === 0 || isDisabled} 
+                  onClick={() => setShowSubmitModal(true)} 
+                  disabled={isDisabled} 
                   className="assessment-nav-btn"
-                  style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}
+                  style={styles.submitButton}
                 >
-                  ← Previous
+                  Submit
                 </button>
-                <div style={styles.navCenter}>
-                  <span style={styles.navProgress}>{currentIndex + 1} / {questions.length}</span>
-                </div>
-                {isLastQuestion ? (
-                  <button 
-                    onClick={() => setShowSubmitModal(true)} 
-                    disabled={isDisabled} 
-                    className="assessment-nav-btn"
-                    style={styles.submitButton}
-                  >
-                    Submit
-                  </button>
-                ) : (
-                  <button 
-                    onClick={() => moveToQuestion(currentIndex + 1)} 
-                    disabled={isDisabled} 
-                    className="assessment-nav-btn"
-                    style={styles.nextButton}
-                  >
-                    Next →
-                  </button>
-                )}
-              </div>
+              ) : (
+                <button 
+                  onClick={() => moveToQuestion(currentIndex + 1)} 
+                  disabled={isDisabled} 
+                  className="assessment-nav-btn"
+                  style={styles.nextButton}
+                >
+                  Next →
+                </button>
+              )}
             </div>
           </div>
 
+          {/* ============================================================
+              FLOATING NAVIGATOR - Compact Right Panel
+              ============================================================ */}
           <div style={styles.navigatorColumn}>
             <div style={styles.navigatorCard}>
-              <h3 style={styles.navigatorTitle}>Question Navigator</h3>
-              <div style={styles.statsGrid}>
-                <div style={styles.statCard}><div style={styles.statValue}>{totalAnswered}</div><div style={styles.statLabel}>Answered</div></div>
-                <div style={styles.statCard}><div style={styles.statValue}>{questions.length - totalAnswered}</div><div style={styles.statLabel}>Remaining</div></div>
-                <div style={styles.statCard}><div style={styles.statValue}>{totalChanges}</div><div style={styles.statLabel}>Changes</div></div>
+              <div style={styles.navigatorHeader}>
+                <span style={styles.navigatorTitle}>Question Navigator</span>
               </div>
+              
+              {/* Stats */}
+              <div style={styles.statsGrid}>
+                <div style={styles.statCard}>
+                  <div style={styles.statValue}>{totalAnswered}</div>
+                  <div style={styles.statLabel}>Answered</div>
+                </div>
+                <div style={styles.statCard}>
+                  <div style={styles.statValue}>{questions.length - totalAnswered}</div>
+                  <div style={styles.statLabel}>Remaining</div>
+                </div>
+                <div style={styles.statCard}>
+                  <div style={styles.statValue}>{totalChanges}</div>
+                  <div style={styles.statLabel}>Changed</div>
+                </div>
+              </div>
+
+              {/* Question Grid */}
               <div className="assessment-scroll" style={styles.questionGrid}>
                 {questions.map((question, index) => {
                   const questionAnswer = answers[question.id];
@@ -946,9 +948,9 @@ function AssessmentContent() {
                       disabled={isDisabled}
                       style={{ 
                         ...styles.gridItem, 
-                        background: current ? gradientStart : answered ? changed ? "#ff9800" : "#4caf50" : "white", 
+                        background: current ? "#0097a7" : answered ? changed ? "#ff9800" : "#4caf50" : "white", 
                         color: current || answered ? "white" : "#1e293b", 
-                        borderColor: current ? gradientStart : "#e2e8f0", 
+                        borderColor: current ? "#0097a7" : "#e2e8f0", 
                         opacity: isDisabled ? 0.6 : 1,
                         cursor: isDisabled ? "not-allowed" : "pointer"
                       }}
@@ -958,34 +960,42 @@ function AssessmentContent() {
                   );
                 })}
               </div>
+
+              {/* Legend */}
               <div style={styles.legend}>
-                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: "#4caf50" }} />Answered</div>
-                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: "#ff9800" }} />Changed</div>
-                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: gradientStart }} />Current</div>
-                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: "white", border: "2px solid #e2e8f0" }} />Pending</div>
+                <div style={styles.legendItem}>
+                  <div style={{ ...styles.legendDot, background: "#4caf50" }} />
+                  <span>Answered</span>
+                </div>
+                <div style={styles.legendItem}>
+                  <div style={{ ...styles.legendDot, background: "#ff9800" }} />
+                  <span>Changed</span>
+                </div>
+                <div style={styles.legendItem}>
+                  <div style={{ ...styles.legendDot, background: "#0097a7" }} />
+                  <span>Current</span>
+                </div>
+                <div style={styles.legendItem}>
+                  <div style={{ ...styles.legendDot, background: "white", border: "2px solid #e2e8f0" }} />
+                  <span>Pending</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ============================================================
-          CSS INJECTION - SUPPORTS :hover
-          ============================================================ */}
+      {/* CSS Injection for hover effects */}
       {typeof document !== "undefined" && !document.getElementById("assessment-modern-styles") && (
         <style id="assessment-modern-styles">{`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-
           .answer-option {
             transition: all 0.2s ease;
+            border-radius: 12px;
           }
           
           .answer-option:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 16px rgba(0, 151, 167, 0.12);
             border-color: #0097a7 !important;
           }
           
@@ -995,20 +1005,24 @@ function AssessmentContent() {
 
           .navigator-item {
             transition: all 0.2s ease;
+            border-radius: 6px;
+            font-size: 11px;
           }
           
           .navigator-item:hover:not(:disabled) {
-            transform: scale(1.08);
-            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.16);
+            transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
             z-index: 2;
           }
 
           .assessment-nav-btn {
             transition: all 0.2s ease;
+            border-radius: 8px;
           }
           
           .assessment-nav-btn:hover:not(:disabled) {
             transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 151, 167, 0.2);
           }
 
           .assessment-scroll::-webkit-scrollbar {
@@ -1035,15 +1049,19 @@ function AssessmentContent() {
   );
 }
 
+// ============================================================
+// STYLES - CLEAN MINIMAL
+// ============================================================
+
 const styles = {
-  loadingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg, #f8fafc 0%, #eef3f8 100%)", gap: "20px" },
+  loadingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#f8fafc", gap: "20px" },
   loadingSpinner: { width: "50px", height: "50px", border: "4px solid #e2e8f0", borderTop: "4px solid #0097a7", borderRadius: "50%", animation: "spin 1s linear infinite" },
-  messageContainer: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg, #f8fafc 0%, #eef3f8 100%)", padding: "20px" },
-  messageCard: { background: "white", padding: "40px", borderRadius: "16px", maxWidth: "500px", textAlign: "center", boxShadow: "0 20px 40px rgba(0,0,0,0.1)" },
+  messageContainer: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc", padding: "20px" },
+  messageCard: { background: "white", padding: "40px", borderRadius: "16px", maxWidth: "500px", textAlign: "center", boxShadow: "0 2px 12px rgba(0,0,0,0.08)" },
   errorIcon: { fontSize: "64px", marginBottom: "20px" },
   successIcon: { fontSize: "64px", marginBottom: "20px" },
   successIconLarge: { width: "80px", height: "80px", background: "#4caf50", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", fontSize: "40px", color: "white" },
-  primaryButton: { padding: "12px 30px", background: "linear-gradient(135deg, #0097a7, #006064)", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", transition: "0.2s" },
+  primaryButton: { padding: "12px 30px", background: "#0097a7", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px" },
   debugInfo: { background: "#f8fafc", padding: "15px", borderRadius: "8px", margin: "15px 0", fontSize: "14px", textAlign: "left" },
   
   violationBanner: { position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)", background: "#f44336", color: "white", padding: "12px 24px", borderRadius: "8px", fontWeight: "bold", zIndex: 10001, fontSize: "14px", boxShadow: "0 4px 12px rgba(0,0,0,0.2)", display: "flex", alignItems: "center", gap: "10px" },
@@ -1052,220 +1070,147 @@ const styles = {
   autoSubmitCard: { background: "white", padding: "30px", borderRadius: "16px", textAlign: "center", maxWidth: "400px" },
   autoSubmitSpinner: { width: "40px", height: "40px", border: "4px solid #e2e8f0", borderTop: "4px solid #f44336", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 20px" },
   
-  container: { minHeight: "100vh", background: "linear-gradient(180deg, #f8fafc 0%, #eef3f8 100%)", display: "flex", flexDirection: "column" },
+  container: { minHeight: "100vh", background: "#f8fafc", display: "flex", flexDirection: "column" },
   
+  // ============================================================
+  // HEADER - CLEAN
+  // ============================================================
   header: { 
     position: "sticky", 
     top: 0, 
     zIndex: 100, 
-    color: "white", 
-    boxShadow: "0 4px 12px rgba(0,0,0,0.15)", 
+    background: "white", 
+    borderBottom: "1px solid #e2e8f0", 
+    boxShadow: "0 1px 4px rgba(0,0,0,0.04)", 
     flexShrink: 0 
   },
   
   headerContent: { 
     maxWidth: "1400px", 
     margin: "0 auto", 
-    padding: "8px 20px", 
+    padding: "12px 24px", 
     display: "flex", 
     justifyContent: "space-between", 
     alignItems: "center", 
     flexWrap: "wrap", 
-    gap: "6px" 
+    gap: "8px" 
   },
   
-  headerLeft: { display: "flex", alignItems: "center", gap: "10px" },
-  headerRight: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" },
+  headerLeft: { display: "flex", alignItems: "center", gap: "12px" },
+  headerRight: { display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" },
   
   backButton: { 
-    width: "36px", 
-    height: "36px", 
-    background: "rgba(255,255,255,0.2)", 
-    border: "none", 
-    borderRadius: "10px", 
-    color: "white", 
-    fontSize: "16px", 
+    width: "32px", 
+    height: "32px", 
+    background: "transparent", 
+    border: "1px solid #e2e8f0", 
+    borderRadius: "8px", 
+    color: "#475569", 
+    fontSize: "14px", 
     cursor: "pointer",
-    transition: "0.2s"
+    transition: "0.2s",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center"
   },
   
   headerTitle: { 
-    fontSize: "15px", 
-    fontWeight: 700, 
-    marginBottom: "1px" 
-  },
-  
-  headerBrand: { 
-    fontWeight: 700,
-    letterSpacing: "0.5px"
-  },
-  
-  headerDivider: { 
-    margin: "0 8px",
-    opacity: 0.5
+    fontSize: "16px", 
+    fontWeight: 600, 
+    color: "#0f172a" 
   },
   
   headerAssessment: { 
-    fontWeight: 400,
-    opacity: 0.9
+    fontWeight: 500,
+    color: "#0f172a"
   },
   
-  headerMeta: { fontSize: "11px", opacity: 0.85 },
+  headerMeta: { fontSize: "12px", color: "#64748b", marginTop: "2px" },
   
   timer: { 
-    padding: "4px 14px", 
-    borderRadius: "8px", 
-    border: "1px solid rgba(255,255,255,0.3)", 
-    textAlign: "center", 
-    minWidth: "100px" 
-  },
-  timerLabel: { fontSize: "8px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "0px" },
-  timerValue: { fontSize: "18px", fontWeight: 900, fontFamily: "monospace" },
-  
-  progressBarContainer: {
-    maxWidth: "1400px",
-    margin: "0 auto",
-    padding: "4px 20px 8px",
-    display: "flex",
-    alignItems: "center",
-    gap: "14px",
-    flexWrap: "wrap"
+    textAlign: "right" 
   },
   
-  progressBarTrack: {
-    flex: 1,
-    minWidth: "120px",
-    height: "4px",
-    background: "rgba(255,255,255,0.3)",
-    borderRadius: "4px",
-    overflow: "hidden"
+  timerLabel: { 
+    fontSize: "10px", 
+    fontWeight: 600, 
+    textTransform: "uppercase", 
+    letterSpacing: "0.5px", 
+    color: "#94a3b8" 
   },
   
-  progressBarFill: {
-    height: "100%",
-    background: "white",
-    borderRadius: "4px",
-    transition: "width 0.3s ease"
+  timerValue: { 
+    fontSize: "18px", 
+    fontWeight: 700, 
+    fontFamily: "monospace",
+    color: "#0f172a"
   },
   
-  progressText: {
-    fontSize: "11px",
-    fontWeight: 500,
-    opacity: 0.85,
-    whiteSpace: "nowrap"
-  },
-  
+  // ============================================================
+  // MAIN CONTENT - SINGLE COLUMN WITH FLOATING NAVIGATOR
+  // ============================================================
   mainContent: { 
-    maxWidth: "1400px", 
+    maxWidth: "1200px", 
     margin: "0 auto", 
-    padding: "12px 20px 16px", 
+    padding: "24px", 
     display: "grid", 
     gridTemplateColumns: "1fr 220px", 
-    gap: "16px",
+    gap: "24px",
     flex: 1,
     minHeight: 0,
-    height: "calc(100vh - 120px)",
-    maxHeight: "calc(100vh - 120px)",
+    height: "calc(100vh - 80px)",
+    maxHeight: "calc(100vh - 80px)",
     overflow: "hidden",
     boxSizing: "border-box"
   },
   
-  questionColumn: { 
+  // ============================================================
+  // QUESTION AREA
+  // ============================================================
+  questionArea: { 
     display: "flex", 
     flexDirection: "column", 
-    gap: "4px", 
-    minHeight: 0, 
+    gap: "16px",
     height: "100%",
-    maxHeight: "100%",
     overflow: "hidden"
-  },
-  
-  questionCard: { 
-    background: "white", 
-    borderRadius: "16px", 
-    padding: "20px 24px", 
-    boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
-    display: "grid",
-    gridTemplateRows: "auto 1fr 55px",
-    height: "100%",
-    overflow: "hidden",
-    gap: "6px",
-    boxSizing: "border-box"
-  },
-  
-  questionArea: {
-    display: "flex",
-    flexDirection: "column",
-    minHeight: 0,
-    overflow: "hidden",
-    gap: "4px"
-  },
-  
-  questionBadge: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px"
-  },
-  
-  questionNumber: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "#f1f5f9",
-    color: "#1e293b",
-    fontSize: "12px",
-    fontWeight: 700,
-    padding: "2px 12px",
-    borderRadius: "20px",
-    letterSpacing: "0.5px",
-    flexShrink: 0
   },
   
   questionText: { 
-    fontSize: "17px", 
+    fontSize: "18px", 
     lineHeight: "1.6", 
     color: "#0f172a", 
     fontWeight: 500,
-    padding: "4px 0",
+    padding: "0 4px",
     minHeight: "50px",
-    maxHeight: "140px",
+    maxHeight: "100px",
     overflowY: "auto",
-    scrollbarWidth: "thin",
-    boxSizing: "border-box"
+    scrollbarWidth: "thin"
   },
   
-  changeIndicator: { 
-    padding: "2px 10px", 
-    background: "#FFF8E1", 
-    borderRadius: "12px", 
-    fontSize: "11px", 
-    color: "#F57C00", 
-    display: "inline-block",
-    flexShrink: 0,
-    alignSelf: "flex-start"
+  multipleHint: { 
+    padding: "10px 16px", 
+    background: "#eff6ff", 
+    borderRadius: "8px", 
+    fontSize: "13px", 
+    color: "#1e40af",
+    flexShrink: 0
   },
   
-  answersArea: {
-    display: "flex",
-    flexDirection: "column",
-    minHeight: 0,
-    overflow: "hidden"
-  },
-  
+  // ============================================================
+  // ANSWERS
+  // ============================================================
   answersContainer: { 
     display: "flex", 
     flexDirection: "column", 
-    gap: "6px",
+    gap: "8px",
+    flex: 1,
     overflowY: "auto",
-    minHeight: 0,
-    height: "100%",
     paddingRight: "4px",
     scrollbarWidth: "thin"
   },
   
   answerCard: { 
-    minHeight: "52px",
-    padding: "10px 16px",
+    padding: "12px 16px",
     border: "2px solid", 
     borderRadius: "12px", 
     cursor: "pointer", 
@@ -1274,9 +1219,9 @@ const styles = {
     alignItems: "center", 
     gap: "12px", 
     transition: "all 0.2s ease", 
-    fontSize: "14px",
+    fontSize: "15px",
     flexShrink: 0,
-    overflow: "hidden"
+    minHeight: "48px"
   },
   
   answerLetter: { 
@@ -1287,63 +1232,55 @@ const styles = {
     alignItems: "center", 
     justifyContent: "center", 
     fontSize: "13px", 
-    fontWeight: 700,
+    fontWeight: 600,
     flexShrink: 0
   },
   
-  multipleHint: { 
-    padding: "4px 12px", 
-    background: "#E3F2FD", 
-    borderRadius: "8px", 
-    fontSize: "11px", 
-    color: "#1565C0",
-    flexShrink: 0,
-    marginTop: "4px"
-  },
-  
+  // ============================================================
+  // NAVIGATION
+  // ============================================================
   navigation: { 
     display: "flex", 
     justifyContent: "space-between", 
     alignItems: "center",
-    gap: "8px", 
-    paddingTop: "8px",
+    gap: "12px", 
+    paddingTop: "12px",
     borderTop: "1px solid #e2e8f0",
-    flexShrink: 0,
-    height: "55px"
+    flexShrink: 0
   },
   
-  navCenter: { display: "flex", alignItems: "center", gap: "6px" },
-  navProgress: { fontSize: "13px", color: "#64748b", fontWeight: 500 },
+  navCenter: { display: "flex", alignItems: "center", gap: "8px" },
+  navProgress: { fontSize: "14px", color: "#64748b", fontWeight: 500 },
   
   navButton: { 
-    padding: "6px 18px", 
+    padding: "8px 20px", 
     borderRadius: "8px", 
-    fontSize: "13px", 
-    fontWeight: 600, 
-    border: "2px solid #0097a7", 
+    fontSize: "14px", 
+    fontWeight: 500, 
+    border: "2px solid #e2e8f0", 
     background: "white", 
-    color: "#0097a7", 
+    color: "#475569", 
     cursor: "pointer",
     transition: "0.2s ease"
   },
   
   nextButton: { 
-    padding: "6px 20px", 
+    padding: "8px 24px", 
     borderRadius: "8px", 
-    fontSize: "13px", 
-    fontWeight: 600, 
+    fontSize: "14px", 
+    fontWeight: 500, 
     border: "none", 
-    background: "linear-gradient(135deg, #0097a7, #006064)", 
+    background: "#0097a7", 
     color: "white", 
     cursor: "pointer",
     transition: "0.2s ease"
   },
   
   submitButton: { 
-    padding: "6px 20px", 
+    padding: "8px 24px", 
     borderRadius: "8px", 
-    fontSize: "13px", 
-    fontWeight: 600, 
+    fontSize: "14px", 
+    fontWeight: 500, 
     border: "none", 
     background: "#4caf50", 
     color: "white", 
@@ -1351,6 +1288,9 @@ const styles = {
     transition: "0.2s ease"
   },
   
+  // ============================================================
+  // FLOATING NAVIGATOR
+  // ============================================================
   navigatorColumn: { 
     display: "flex", 
     flexDirection: "column",
@@ -1362,8 +1302,9 @@ const styles = {
   navigatorCard: { 
     background: "white", 
     borderRadius: "16px", 
-    padding: "12px 14px", 
-    boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+    padding: "16px", 
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
     display: "flex",
     flexDirection: "column",
     height: "100%",
@@ -1371,18 +1312,52 @@ const styles = {
     overflow: "hidden"
   },
   
-  navigatorTitle: { fontSize: "13px", fontWeight: 600, color: "#0f172a", margin: "0 0 6px 0", flexShrink: 0 },
+  navigatorHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "8px",
+    flexShrink: 0
+  },
   
-  statsGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "4px", marginBottom: "6px", flexShrink: 0 },
-  statCard: { background: "#f8fafc", padding: "6px 4px", borderRadius: "8px", textAlign: "center" },
-  statValue: { fontSize: "14px", fontWeight: 900, color: "#0f172a" },
-  statLabel: { fontSize: "8px", color: "#94a3b8", marginTop: "0px" },
+  navigatorTitle: { 
+    fontSize: "13px", 
+    fontWeight: 600, 
+    color: "#0f172a"
+  },
+  
+  statsGrid: { 
+    display: "grid", 
+    gridTemplateColumns: "repeat(3, 1fr)", 
+    gap: "6px", 
+    marginBottom: "10px", 
+    flexShrink: 0 
+  },
+  
+  statCard: { 
+    background: "#f8fafc", 
+    padding: "6px 4px", 
+    borderRadius: "8px", 
+    textAlign: "center" 
+  },
+  
+  statValue: { 
+    fontSize: "16px", 
+    fontWeight: 700, 
+    color: "#0f172a" 
+  },
+  
+  statLabel: { 
+    fontSize: "9px", 
+    color: "#94a3b8", 
+    marginTop: "0px" 
+  },
   
   questionGrid: { 
     display: "grid", 
     gridTemplateColumns: "repeat(10, 1fr)", 
-    gap: "3px", 
-    marginBottom: "4px",
+    gap: "4px", 
+    marginBottom: "8px",
     flex: 1,
     overflowY: "auto",
     padding: "2px",
@@ -1392,9 +1367,9 @@ const styles = {
   gridItem: { 
     aspectRatio: "1", 
     border: "2px solid", 
-    borderRadius: "8px", 
-    fontSize: "10px", 
-    fontWeight: 700, 
+    borderRadius: "6px", 
+    fontSize: "11px", 
+    fontWeight: 600, 
     display: "flex", 
     alignItems: "center", 
     justifyContent: "center", 
@@ -1414,19 +1389,98 @@ const styles = {
     flexShrink: 0
   },
   
-  legendItem: { display: "flex", alignItems: "center", gap: "4px", fontSize: "9px", color: "#64748b" },
-  legendDot: { width: "8px", height: "8px", borderRadius: "4px" },
+  legendItem: { 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "4px", 
+    fontSize: "9px", 
+    color: "#64748b" 
+  },
   
-  modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(4px)" },
-  modalContent: { background: "white", padding: "30px", borderRadius: "20px", maxWidth: "450px", width: "90%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" },
-  modalIcon: { fontSize: "48px", textAlign: "center", marginBottom: "15px" },
-  modalTitle: { fontSize: "24px", fontWeight: 700, textAlign: "center", marginBottom: "20px", color: "#0f172a" },
-  modalStats: { background: "#f8fafc", padding: "15px", borderRadius: "12px", marginBottom: "20px" },
-  modalStat: { display: "flex", justifyContent: "space-between", marginBottom: "10px" },
-  modalWarning: { display: "flex", gap: "10px", padding: "12px", background: "#fff8e1", borderRadius: "10px", fontSize: "13px", marginBottom: "20px" },
-  modalActions: { display: "flex", gap: "12px" },
-  modalSecondaryButton: { flex: 1, padding: "12px", background: "#f1f5f9", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 600 },
-  modalPrimaryButton: { flex: 1, padding: "12px", background: "#4caf50", color: "white", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 600 }
+  legendDot: { 
+    width: "8px", 
+    height: "8px", 
+    borderRadius: "4px" 
+  },
+  
+  // ============================================================
+  // MODAL
+  // ============================================================
+  modalOverlay: { 
+    position: "fixed", 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    bottom: 0, 
+    background: "rgba(0,0,0,0.5)", 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    zIndex: 1000, 
+    backdropFilter: "blur(4px)" 
+  },
+  
+  modalContent: { 
+    background: "white", 
+    padding: "32px", 
+    borderRadius: "20px", 
+    maxWidth: "440px", 
+    width: "90%", 
+    boxShadow: "0 20px 60px rgba(0,0,0,0.2)" 
+  },
+  
+  modalIcon: { fontSize: "48px", textAlign: "center", marginBottom: "16px" },
+  modalTitle: { fontSize: "22px", fontWeight: 700, textAlign: "center", marginBottom: "20px", color: "#0f172a" },
+  
+  modalStats: { 
+    background: "#f8fafc", 
+    padding: "16px", 
+    borderRadius: "12px", 
+    marginBottom: "20px" 
+  },
+  
+  modalStat: { 
+    display: "flex", 
+    justifyContent: "space-between", 
+    marginBottom: "8px",
+    fontSize: "14px"
+  },
+  
+  modalWarning: { 
+    display: "flex", 
+    gap: "10px", 
+    padding: "12px", 
+    background: "#fff8e1", 
+    borderRadius: "10px", 
+    fontSize: "13px", 
+    marginBottom: "20px" 
+  },
+  
+  modalActions: { 
+    display: "flex", 
+    gap: "12px" 
+  },
+  
+  modalSecondaryButton: { 
+    flex: 1, 
+    padding: "12px", 
+    background: "#f1f5f9", 
+    border: "none", 
+    borderRadius: "10px", 
+    cursor: "pointer", 
+    fontWeight: 500 
+  },
+  
+  modalPrimaryButton: { 
+    flex: 1, 
+    padding: "12px", 
+    background: "#4caf50", 
+    color: "white", 
+    border: "none", 
+    borderRadius: "10px", 
+    cursor: "pointer", 
+    fontWeight: 500 
+  }
 };
 
 export default AssessmentPage;
