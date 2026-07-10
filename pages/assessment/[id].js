@@ -807,13 +807,13 @@ function AssessmentContent() {
         </div>
 
         {/* ============================================================
-            MAIN CONTENT - FIXED GRID LAYOUT (PEARSON VUE STANDARD)
+            MAIN CONTENT - FIXED GRID LAYOUT (Professional Assessment Standard)
             ============================================================ */}
         <div style={styles.mainContent}>
           {/* Question Column */}
           <div style={styles.questionColumn}>
             <div style={styles.questionCard}>
-              {/* Question Area - FIXED 120px */}
+              {/* Question Area - FIXED 130px with scroll */}
               <div style={styles.questionArea}>
                 <div style={styles.questionText}>
                   {currentQuestion.question_text}
@@ -866,10 +866,18 @@ function AssessmentContent() {
                     );
                   })}
                 </div>
+                
+                {/* ============================================================
+                    FIX 1: multipleHint moved INSIDE answersArea
+                    ============================================================ */}
+                {isMultipleCorrect && (
+                  <div style={styles.multipleHint}>
+                    💡 This question has multiple correct answers. Select all that apply.
+                  </div>
+                )}
               </div>
-              {isMultipleCorrect && <div style={styles.multipleHint}>💡 This question has multiple correct answers. Select all that apply.</div>}
               
-              {/* Navigation - FIXED 70px at bottom */}
+              {/* Navigation - FIXED 65px at bottom */}
               <div style={styles.navigation}>
                 <button onClick={() => moveToQuestion(currentIndex - 1)} disabled={currentIndex === 0 || isDisabled} style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}>← Previous</button>
                 <div style={styles.navCenter}>
@@ -935,7 +943,7 @@ function AssessmentContent() {
 }
 
 // ============================================================
-// STYLES - FIXED GRID LAYOUT (Professional Assessment Standard)
+// STYLES - FIXED GRID LAYOUT (All Issues Addressed)
 // ============================================================
 
 const styles = {
@@ -966,6 +974,7 @@ const styles = {
   
   // ============================================================
   // MAIN CONTENT - FIXED GRID (Never changes size)
+  // FIX 3: Use minmax(0, 1fr) for middle row
   // ============================================================
   mainContent: { 
     maxWidth: "1400px", 
@@ -978,7 +987,8 @@ const styles = {
     minHeight: 0,
     height: "calc(100vh - 78px)",
     maxHeight: "calc(100vh - 78px)",
-    overflow: "hidden"
+    overflow: "hidden",
+    boxSizing: "border-box"
   },
   
   questionColumn: { 
@@ -991,19 +1001,24 @@ const styles = {
     overflow: "hidden"
   },
   
+  // ============================================================
+  // FIX 2: questionCard with correct grid rows
+  // FIX 3: Use minmax(0, 1fr) for middle row
+  // ============================================================
   questionCard: { 
     background: "white", 
     borderRadius: "14px", 
     padding: "16px 20px", 
     boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
     display: "grid",
-    gridTemplateRows: "120px 1fr 65px",
+    gridTemplateRows: "130px minmax(0, 1fr) 65px",
     height: "100%",
     overflow: "hidden",
-    gap: "4px"
+    gap: "8px",
+    boxSizing: "border-box"
   },
   
-  // Question Area - FIXED 120px
+  // Question Area - FIXED 130px
   questionArea: {
     display: "flex",
     flexDirection: "column",
@@ -1011,6 +1026,7 @@ const styles = {
     overflow: "hidden"
   },
   
+  // FIX 2: questionText uses height: 100% with maxHeight
   questionText: { 
     fontSize: "17px", 
     lineHeight: "1.5", 
@@ -1019,10 +1035,12 @@ const styles = {
     padding: "10px 14px",
     background: "#f8fafc",
     borderRadius: "8px",
-    height: "120px",
+    height: "100%",
+    maxHeight: "105px",
     overflowY: "auto",
     scrollbarWidth: "thin",
-    flexShrink: 0
+    boxSizing: "border-box",
+    flexShrink: 1
   },
   
   changeIndicator: { 
@@ -1036,7 +1054,7 @@ const styles = {
     flexShrink: 0
   },
   
-  // Answers Area - Fills remainder
+  // Answers Area - Fills remainder with minmax(0, 1fr)
   answersArea: {
     display: "flex",
     flexDirection: "column",
@@ -1084,13 +1102,15 @@ const styles = {
     flexShrink: 0
   },
   
+  // FIX 1: multipleHint moved inside answersArea
   multipleHint: { 
     padding: "4px 10px", 
     background: "#E3F2FD", 
     borderRadius: "4px", 
     fontSize: "11px", 
-    color: "#1565C0", 
-    flexShrink: 0 
+    color: "#1565C0",
+    flexShrink: 0,
+    marginTop: "4px"
   },
   
   // Navigation - FIXED 65px at bottom
