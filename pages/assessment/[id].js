@@ -1,4 +1,4 @@
-// pages/assessment/[id].js
+// pages/assessment/[id].js - UPDATED with better layout
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -200,9 +200,6 @@ function AssessmentContent() {
     }
   }
 
-  // ============================================================
-  // FIX: Improved completeAssessmentSafely with better error handling
-  // ============================================================
   async function completeAssessmentSafely(autoSubmitted, reason) {
     if (!session || !session.id) {
       console.error('[completeAssessmentSafely] No session available');
@@ -657,11 +654,7 @@ function AssessmentContent() {
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  // ============================================================
-  // FIX: Improved handleSubmit with validation
-  // ============================================================
   async function handleSubmit() {
-    // Validate session
     if (!session || !session.id) {
       console.error('[Submit] No session available');
       alert('Unable to submit: No active session found. Please refresh the page and try again.');
@@ -798,7 +791,11 @@ function AssessmentContent() {
 
       {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: "#2e7d32" }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to dashboard...</p></div></div>}
 
+      {/* ============================================================
+          MAIN CONTENT - IMPROVED LAYOUT
+          ============================================================ */}
       <div style={styles.container}>
+        {/* Header */}
         <div style={{ ...styles.header, background: "linear-gradient(135deg, " + gradientStart + ", " + gradientEnd + ")" }}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
@@ -812,7 +809,7 @@ function AssessmentContent() {
                 </div>
               </div>
             </div>
-            <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+            <div style={styles.headerRight}>
               {violationCount > 0 && <div style={{ background: violationCount >= 3 ? "#f44336" : "#ff9800", color: "white", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold" }}>⚠️ {violationCount}/3 Violations</div>}
               <div style={{ ...styles.timer, background: isTimeCritical ? "rgba(211,47,47,0.2)" : isTimeWarning ? "rgba(255,152,0,0.2)" : "rgba(255,255,255,0.15)", border: isTimeExpired ? "2px solid #f44336" : "1px solid rgba(255,255,255,0.3)" }}>
                 <div style={styles.timerLabel}>TIME REMAINING</div>
@@ -824,11 +821,17 @@ function AssessmentContent() {
           </div>
         </div>
 
+        {/* Main Content - IMPROVED LAYOUT */}
         <div style={styles.mainContent}>
+          {/* Question Column - takes more space */}
           <div style={styles.questionColumn}>
             <div style={styles.questionCard}>
               <div style={styles.questionText}>{currentQuestion.question_text}</div>
               {answerChangeCount[currentQuestion.id] > 0 && <div style={styles.changeIndicator}>✏️ Changed answer {answerChangeCount[currentQuestion.id]} time{answerChangeCount[currentQuestion.id] !== 1 ? "s" : ""}</div>}
+              
+              {/* ============================================================
+                  ANSWERS - Display all options without scrolling
+                  ============================================================ */}
               <div style={styles.answersContainer}>
                 {safeArray(currentQuestion.answers).map((answer, index) => {
                   const selected = isAnswerSelected(currentQuestion.id, answer.id);
@@ -847,14 +850,19 @@ function AssessmentContent() {
                       }}
                     >
                       <div style={{ ...styles.answerLetter, background: selected ? "rgba(255,255,255,0.2)" : "#f1f5f9", color: selected ? "white" : "#475569" }}>{optionLetter}</div>
-                      <span style={{ color: selected ? "white" : "#1e293b" }}>{answer.answer_text}{isMultipleCorrect && selected && <span style={{ marginLeft: "8px", fontSize: "12px" }}>✓</span>}</span>
+                      <span style={{ color: selected ? "white" : "#1e293b", fontSize: "16px", lineHeight: "1.4" }}>{answer.answer_text}{isMultipleCorrect && selected && <span style={{ marginLeft: "8px", fontSize: "12px" }}>✓</span>}</span>
                     </button>
                   );
                 })}
               </div>
               {isMultipleCorrect && <div style={styles.multipleHint}>💡 This question has multiple correct answers. Select all that apply.</div>}
+              
+              {/* Navigation - Always visible at bottom */}
               <div style={styles.navigation}>
                 <button onClick={() => moveToQuestion(currentIndex - 1)} disabled={currentIndex === 0 || isDisabled} style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}>← Previous</button>
+                <div style={styles.navCenter}>
+                  <span style={styles.navProgress}>{currentIndex + 1} / {questions.length}</span>
+                </div>
                 {isLastQuestion ? (
                   <button onClick={() => setShowSubmitModal(true)} disabled={isDisabled} style={styles.submitButton}>Submit</button>
                 ) : (
@@ -864,9 +872,12 @@ function AssessmentContent() {
             </div>
           </div>
 
+          {/* ============================================================
+              NAVIGATOR - More compact, fits on screen
+              ============================================================ */}
           <div style={styles.navigatorColumn}>
             <div style={styles.navigatorCard}>
-              <h3>Question Navigator</h3>
+              <h3 style={styles.navigatorTitle}>Question Navigator</h3>
               <div style={styles.statsGrid}>
                 <div style={styles.statCard}><div style={styles.statValue}>{totalAnswered}</div><div style={styles.statLabel}>Answered</div></div>
                 <div style={styles.statCard}><div style={styles.statValue}>{questions.length - totalAnswered}</div><div style={styles.statLabel}>Remaining</div></div>
@@ -889,7 +900,9 @@ function AssessmentContent() {
                         color: current || answered ? "white" : "#1e293b", 
                         borderColor: current ? gradientStart : "#e2e8f0", 
                         opacity: isDisabled ? 0.6 : 1,
-                        cursor: isDisabled ? "not-allowed" : "pointer"
+                        cursor: isDisabled ? "not-allowed" : "pointer",
+                        transform: current ? "scale(1.1)" : "scale(1)",
+                        boxShadow: current ? "0 2px 8px rgba(0,0,0,0.2)" : "none"
                       }}
                     >
                       {index + 1}
@@ -911,6 +924,10 @@ function AssessmentContent() {
   );
 }
 
+// ============================================================
+// STYLES - Optimized for all screen sizes
+// ============================================================
+
 const styles = {
   loadingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#f8fafc", gap: "20px" },
   loadingSpinner: { width: "50px", height: "50px", border: "4px solid #e2e8f0", borderTop: "4px solid #0097a7", borderRadius: "50%", animation: "spin 1s linear infinite" },
@@ -925,40 +942,157 @@ const styles = {
   autoSubmitOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10002 },
   autoSubmitCard: { background: "white", padding: "30px", borderRadius: "16px", textAlign: "center", maxWidth: "400px" },
   autoSubmitSpinner: { width: "40px", height: "40px", border: "4px solid #e2e8f0", borderTop: "4px solid #f44336", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 20px" },
-  container: { minHeight: "100vh", background: "#f8fafc" },
-  header: { position: "sticky", top: 0, zIndex: 100, color: "white", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" },
-  headerContent: { maxWidth: "1400px", margin: "0 auto", padding: "16px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" },
-  headerLeft: { display: "flex", alignItems: "center", gap: "20px" },
-  backButton: { width: "48px", height: "48px", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: "12px", color: "white", fontSize: "24px", cursor: "pointer" },
-  headerTitle: { fontSize: "24px", fontWeight: 800, marginBottom: "4px" },
-  headerMeta: { fontSize: "15px", opacity: 0.95 },
-  timer: { padding: "10px 28px", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.3)", textAlign: "center", minWidth: "200px" },
-  timerLabel: { fontSize: "12px", fontWeight: 800, marginBottom: "4px" },
-  timerValue: { fontSize: "30px", fontWeight: 900, fontFamily: "monospace" },
-  mainContent: { maxWidth: "1500px", margin: "0 auto", padding: "30px", display: "grid", gridTemplateColumns: "1fr 390px", gap: "30px" },
-  questionColumn: { display: "flex", flexDirection: "column", gap: "20px" },
-  questionCard: { background: "white", borderRadius: "20px", padding: "30px", boxShadow: "0 4px 12px rgba(0,0,0,0.05)" },
-  questionText: { fontSize: "22px", lineHeight: "1.5", color: "#1e293b", marginBottom: "22px", fontWeight: 500, padding: "24px", background: "#f8fafc", borderRadius: "12px" },
-  changeIndicator: { padding: "8px 14px", background: "#FFF8E1", borderRadius: "20px", fontSize: "12px", color: "#F57C00", marginBottom: "16px", display: "inline-block" },
-  answersContainer: { display: "flex", flexDirection: "column", gap: "14px", marginBottom: "28px" },
-  answerCard: { padding: "18px 22px", border: "2px solid", borderRadius: "14px", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: "16px", transition: "all 0.2s", fontSize: "18px" },
-  answerLetter: { width: "36px", height: "36px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", fontWeight: 800 },
-  multipleHint: { padding: "12px 18px", background: "#E3F2FD", borderRadius: "8px", fontSize: "14px", color: "#1565C0", marginBottom: "18px" },
-  navigation: { display: "flex", justifyContent: "space-between", gap: "12px", marginTop: "8px" },
-  navButton: { padding: "12px 24px", borderRadius: "10px", fontSize: "15px", fontWeight: 700, border: "2px solid #0097a7", background: "white", color: "#0097a7", cursor: "pointer" },
-  nextButton: { padding: "12px 24px", borderRadius: "10px", fontSize: "15px", fontWeight: 700, border: "none", background: "linear-gradient(135deg, #0097a7, #006064)", color: "white", cursor: "pointer" },
-  submitButton: { padding: "12px 24px", borderRadius: "10px", fontSize: "15px", fontWeight: 700, border: "none", background: "#4caf50", color: "white", cursor: "pointer" },
-  navigatorColumn: { position: "sticky", top: "110px", height: "fit-content" },
-  navigatorCard: { background: "white", borderRadius: "20px", padding: "24px", boxShadow: "0 4px 12px rgba(0,0,0,0.05)" },
-  statsGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px", marginBottom: "22px" },
-  statCard: { background: "#f8fafc", padding: "14px", borderRadius: "10px", textAlign: "center" },
-  statValue: { fontSize: "22px", fontWeight: 900 },
-  statLabel: { fontSize: "11px", color: "#64748b" },
-  questionGrid: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "8px", marginBottom: "16px", maxHeight: "360px", overflowY: "auto", padding: "4px" },
-  gridItem: { aspectRatio: "1", border: "2px solid", borderRadius: "9px", fontSize: "14px", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" },
-  legend: { display: "flex", justifyContent: "space-between", padding: "12px 0", borderTop: "1px solid #e2e8f0", flexWrap: "wrap", gap: "8px" },
-  legendItem: { display: "flex", alignItems: "center", gap: "6px", fontSize: "11px" },
-  legendDot: { width: "10px", height: "10px", borderRadius: "2px" },
+  container: { minHeight: "100vh", background: "#f8fafc", display: "flex", flexDirection: "column" },
+  header: { position: "sticky", top: 0, zIndex: 100, color: "white", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", flexShrink: 0 },
+  headerContent: { maxWidth: "1400px", margin: "0 auto", padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" },
+  headerLeft: { display: "flex", alignItems: "center", gap: "14px" },
+  headerRight: { display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" },
+  backButton: { width: "40px", height: "40px", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: "10px", color: "white", fontSize: "20px", cursor: "pointer" },
+  headerTitle: { fontSize: "20px", fontWeight: 700, marginBottom: "2px" },
+  headerMeta: { fontSize: "13px", opacity: 0.9 },
+  timer: { padding: "6px 16px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.3)", textAlign: "center", minWidth: "140px" },
+  timerLabel: { fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "2px" },
+  timerValue: { fontSize: "24px", fontWeight: 900, fontFamily: "monospace" },
+  mainContent: { 
+    maxWidth: "1400px", 
+    margin: "0 auto", 
+    padding: "16px 20px", 
+    display: "grid", 
+    gridTemplateColumns: "1fr 280px", 
+    gap: "20px",
+    flex: 1,
+    minHeight: 0,
+    height: "calc(100vh - 90px)"
+  },
+  questionColumn: { display: "flex", flexDirection: "column", gap: "16px", minHeight: 0, height: "100%" },
+  questionCard: { 
+    background: "white", 
+    borderRadius: "16px", 
+    padding: "20px 24px", 
+    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+    display: "flex",
+    flexDirection: "column",
+    flex: 1,
+    minHeight: 0,
+    height: "100%",
+    overflow: "hidden"
+  },
+  questionText: { 
+    fontSize: "18px", 
+    lineHeight: "1.6", 
+    color: "#1e293b", 
+    marginBottom: "14px", 
+    fontWeight: 500,
+    padding: "14px 18px",
+    background: "#f8fafc",
+    borderRadius: "10px",
+    flexShrink: 0
+  },
+  changeIndicator: { padding: "6px 12px", background: "#FFF8E1", borderRadius: "16px", fontSize: "12px", color: "#F57C00", marginBottom: "10px", display: "inline-block", flexShrink: 0 },
+  answersContainer: { 
+    display: "flex", 
+    flexDirection: "column", 
+    gap: "10px", 
+    flex: 1,
+    overflow: "visible",
+    minHeight: "auto"
+  },
+  answerCard: { 
+    padding: "14px 18px", 
+    border: "2px solid", 
+    borderRadius: "12px", 
+    cursor: "pointer", 
+    textAlign: "left", 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "14px", 
+    transition: "all 0.2s", 
+    fontSize: "16px",
+    flexShrink: 0
+  },
+  answerLetter: { 
+    width: "32px", 
+    height: "32px", 
+    borderRadius: "8px", 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    fontSize: "14px", 
+    fontWeight: 700,
+    flexShrink: 0
+  },
+  multipleHint: { padding: "10px 16px", background: "#E3F2FD", borderRadius: "8px", fontSize: "13px", color: "#1565C0", marginBottom: "10px", flexShrink: 0 },
+  navigation: { 
+    display: "flex", 
+    justifyContent: "space-between", 
+    alignItems: "center",
+    gap: "12px", 
+    marginTop: "12px",
+    paddingTop: "12px",
+    borderTop: "1px solid #e2e8f0",
+    flexShrink: 0
+  },
+  navCenter: { display: "flex", alignItems: "center", gap: "12px" },
+  navProgress: { fontSize: "14px", color: "#64748b", fontWeight: 500 },
+  navButton: { padding: "10px 20px", borderRadius: "8px", fontSize: "14px", fontWeight: 600, border: "2px solid #0097a7", background: "white", color: "#0097a7", cursor: "pointer" },
+  nextButton: { padding: "10px 24px", borderRadius: "8px", fontSize: "14px", fontWeight: 600, border: "none", background: "linear-gradient(135deg, #0097a7, #006064)", color: "white", cursor: "pointer" },
+  submitButton: { padding: "10px 24px", borderRadius: "8px", fontSize: "14px", fontWeight: 600, border: "none", background: "#4caf50", color: "white", cursor: "pointer" },
+  navigatorColumn: { 
+    display: "flex", 
+    flexDirection: "column",
+    height: "100%",
+    minHeight: 0
+  },
+  navigatorCard: { 
+    background: "white", 
+    borderRadius: "16px", 
+    padding: "16px 18px", 
+    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+    display: "flex",
+    flexDirection: "column",
+    height: "100%",
+    overflow: "hidden"
+  },
+  navigatorTitle: { fontSize: "15px", fontWeight: 600, color: "#0a1929", margin: "0 0 12px 0", flexShrink: 0 },
+  statsGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", marginBottom: "12px", flexShrink: 0 },
+  statCard: { background: "#f8fafc", padding: "10px", borderRadius: "8px", textAlign: "center" },
+  statValue: { fontSize: "18px", fontWeight: 900 },
+  statLabel: { fontSize: "10px", color: "#64748b", marginTop: "2px" },
+  questionGrid: { 
+    display: "grid", 
+    gridTemplateColumns: "repeat(7, 1fr)", 
+    gap: "5px", 
+    marginBottom: "10px",
+    flex: 1,
+    overflowY: "auto",
+    padding: "2px",
+    alignContent: "start"
+  },
+  gridItem: { 
+    aspectRatio: "1", 
+    border: "2px solid", 
+    borderRadius: "6px", 
+    fontSize: "12px", 
+    fontWeight: 700, 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    cursor: "pointer",
+    transition: "all 0.2s",
+    minWidth: "0",
+    minHeight: "0"
+  },
+  legend: { 
+    display: "flex", 
+    justifyContent: "space-between", 
+    padding: "8px 0", 
+    borderTop: "1px solid #e2e8f0", 
+    flexWrap: "wrap", 
+    gap: "4px",
+    flexShrink: 0
+  },
+  legendItem: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10px" },
+  legendDot: { width: "8px", height: "8px", borderRadius: "2px" },
   modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
   modalContent: { background: "white", padding: "30px", borderRadius: "20px", maxWidth: "450px", width: "90%" },
   modalIcon: { fontSize: "48px", textAlign: "center", marginBottom: "15px" },
