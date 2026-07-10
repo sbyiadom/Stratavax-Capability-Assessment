@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - UPDATED with FIXED layout
+// pages/assessment/[id].js - COMPLETE FIXED FILE
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -807,19 +807,18 @@ function AssessmentContent() {
         </div>
 
         {/* ============================================================
-            MAIN CONTENT - FIXED HEIGHT LAYOUT (No shifting)
+            MAIN CONTENT - FIXED LAYOUT (NEVER CHANGES)
             ============================================================ */}
         <div style={styles.mainContent}>
-          {/* Question Column - Fixed height */}
           <div style={styles.questionColumn}>
             <div style={styles.questionCard}>
-              {/* Question - Fixed height with scroll if needed */}
+              {/* Question - Fixed 20% of card height */}
               <div style={styles.questionArea}>
                 <div style={styles.questionText}>{currentQuestion.question_text}</div>
                 {answerChangeCount[currentQuestion.id] > 0 && <div style={styles.changeIndicator}>✏️ Changed answer {answerChangeCount[currentQuestion.id]} time{answerChangeCount[currentQuestion.id] !== 1 ? "s" : ""}</div>}
               </div>
               
-              {/* Answers - Fixed height with scroll if needed */}
+              {/* Answers - Takes remaining space */}
               <div style={styles.answersArea}>
                 <div style={styles.answersContainer}>
                   {safeArray(currentQuestion.answers).map((answer, index) => {
@@ -847,7 +846,7 @@ function AssessmentContent() {
               </div>
               {isMultipleCorrect && <div style={styles.multipleHint}>💡 This question has multiple correct answers. Select all that apply.</div>}
               
-              {/* Navigation - Always visible at bottom */}
+              {/* Navigation - Always at bottom */}
               <div style={styles.navigation}>
                 <button onClick={() => moveToQuestion(currentIndex - 1)} disabled={currentIndex === 0 || isDisabled} style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}>← Previous</button>
                 <div style={styles.navCenter}>
@@ -913,7 +912,7 @@ function AssessmentContent() {
 }
 
 // ============================================================
-// STYLES - FIXED HEIGHT, NO SHIFTING
+// STYLES - FIXED SIZE (NEVER CHANGES)
 // ============================================================
 
 const styles = {
@@ -932,92 +931,95 @@ const styles = {
   autoSubmitSpinner: { width: "40px", height: "40px", border: "4px solid #e2e8f0", borderTop: "4px solid #f44336", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 20px" },
   container: { minHeight: "100vh", background: "#f8fafc", display: "flex", flexDirection: "column" },
   header: { position: "sticky", top: 0, zIndex: 100, color: "white", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", flexShrink: 0 },
-  headerContent: { maxWidth: "1400px", margin: "0 auto", padding: "8px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "4px" },
+  headerContent: { maxWidth: "1400px", margin: "0 auto", padding: "6px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "4px" },
   headerLeft: { display: "flex", alignItems: "center", gap: "8px" },
   headerRight: { display: "flex", alignItems: "center", gap: "4px", flexWrap: "wrap" },
-  backButton: { width: "32px", height: "32px", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: "6px", color: "white", fontSize: "14px", cursor: "pointer" },
-  headerTitle: { fontSize: "16px", fontWeight: 700, marginBottom: "0px" },
-  headerMeta: { fontSize: "11px", opacity: 0.9 },
-  timer: { padding: "3px 10px", borderRadius: "6px", border: "1px solid rgba(255,255,255,0.3)", textAlign: "center", minWidth: "100px" },
-  timerLabel: { fontSize: "8px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.3px", marginBottom: "0px" },
-  timerValue: { fontSize: "18px", fontWeight: 900, fontFamily: "monospace" },
+  backButton: { width: "30px", height: "30px", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: "6px", color: "white", fontSize: "14px", cursor: "pointer" },
+  headerTitle: { fontSize: "15px", fontWeight: 700, marginBottom: "0px" },
+  headerMeta: { fontSize: "10px", opacity: 0.9 },
+  timer: { padding: "2px 8px", borderRadius: "6px", border: "1px solid rgba(255,255,255,0.3)", textAlign: "center", minWidth: "90px" },
+  timerLabel: { fontSize: "7px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.3px", marginBottom: "0px" },
+  timerValue: { fontSize: "16px", fontWeight: 900, fontFamily: "monospace" },
   
   // ============================================================
-  // MAIN CONTENT - FIXED HEIGHT (No shifting)
+  // MAIN CONTENT - ABSOLUTELY FIXED (Never changes size)
   // ============================================================
   mainContent: { 
     maxWidth: "1400px", 
     margin: "0 auto", 
-    padding: "8px 14px", 
+    padding: "4px 12px", 
     display: "grid", 
-    gridTemplateColumns: "1fr 240px", 
-    gap: "12px",
+    gridTemplateColumns: "1fr 220px", 
+    gap: "10px",
     flex: 1,
     minHeight: 0,
-    height: "calc(100vh - 65px)" // Fixed height - no shifting
+    height: "calc(100vh - 54px)", // Fixed height - NEVER CHANGES
+    maxHeight: "calc(100vh - 54px)"
   },
   
   questionColumn: { 
     display: "flex", 
     flexDirection: "column", 
-    gap: "6px", 
+    gap: "4px", 
     minHeight: 0, 
     height: "100%",
+    maxHeight: "100%",
     overflow: "hidden"
   },
   
   questionCard: { 
     background: "white", 
-    borderRadius: "12px", 
-    padding: "12px 16px", 
-    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+    borderRadius: "10px", 
+    padding: "8px 12px", 
+    boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
     display: "flex",
     flexDirection: "column",
     flex: 1,
     minHeight: 0,
     height: "100%",
+    maxHeight: "100%",
     overflow: "hidden"
   },
   
-  // Question area - fixed 25% of card height
+  // Question area - FIXED 20% (Never changes)
   questionArea: {
-    flex: "0 0 25%",
+    flex: "0 0 20%",
     minHeight: "0",
-    maxHeight: "25%",
+    maxHeight: "20%",
     overflow: "hidden",
     display: "flex",
     flexDirection: "column"
   },
   
   questionText: { 
-    fontSize: "16px", 
-    lineHeight: "1.5", 
+    fontSize: "15px", 
+    lineHeight: "1.4", 
     color: "#1e293b", 
     fontWeight: 500,
-    padding: "6px 10px",
+    padding: "4px 8px",
     background: "#f8fafc",
     borderRadius: "6px",
     overflowY: "auto",
-    flex: 1
+    flex: 1,
+    marginBottom: "2px"
   },
   
   changeIndicator: { 
-    padding: "2px 8px", 
+    padding: "1px 6px", 
     background: "#FFF8E1", 
-    borderRadius: "8px", 
-    fontSize: "10px", 
+    borderRadius: "4px", 
+    fontSize: "9px", 
     color: "#F57C00", 
-    marginTop: "2px", 
     display: "inline-block",
     flexShrink: 0
   },
   
-  // Answers area - takes remaining space
+  // Answers area - Takes remaining space
   answersArea: {
     flex: 1,
     minHeight: 0,
     overflow: "hidden",
-    marginTop: "4px",
+    marginTop: "2px",
     display: "flex",
     flexDirection: "column"
   },
@@ -1025,46 +1027,47 @@ const styles = {
   answersContainer: { 
     display: "flex", 
     flexDirection: "column", 
-    gap: "4px",
+    gap: "3px",
     flex: 1,
     overflowY: "auto",
-    paddingRight: "4px"
+    paddingRight: "2px"
   },
   
   answerCard: { 
-    padding: "6px 10px", 
+    padding: "4px 8px", 
     border: "2px solid", 
-    borderRadius: "8px", 
+    borderRadius: "6px", 
     cursor: "pointer", 
     textAlign: "left", 
     display: "flex", 
     alignItems: "center", 
-    gap: "8px", 
+    gap: "6px", 
     transition: "all 0.15s", 
-    fontSize: "14px",
+    fontSize: "13px",
     flexShrink: 0,
-    minHeight: "32px"
+    minHeight: "28px",
+    maxHeight: "40px"
   },
   
   answerLetter: { 
-    width: "24px", 
-    height: "24px", 
-    borderRadius: "5px", 
+    width: "20px", 
+    height: "20px", 
+    borderRadius: "4px", 
     display: "flex", 
     alignItems: "center", 
     justifyContent: "center", 
-    fontSize: "11px", 
+    fontSize: "10px", 
     fontWeight: 700,
     flexShrink: 0
   },
   
   multipleHint: { 
-    padding: "3px 8px", 
+    padding: "2px 8px", 
     background: "#E3F2FD", 
     borderRadius: "4px", 
-    fontSize: "11px", 
+    fontSize: "10px", 
     color: "#1565C0", 
-    marginTop: "3px", 
+    marginTop: "2px", 
     flexShrink: 0 
   },
   
@@ -1080,44 +1083,46 @@ const styles = {
   },
   
   navCenter: { display: "flex", alignItems: "center", gap: "4px" },
-  navProgress: { fontSize: "12px", color: "#64748b", fontWeight: 500 },
-  navButton: { padding: "4px 12px", borderRadius: "4px", fontSize: "12px", fontWeight: 600, border: "2px solid #0097a7", background: "white", color: "#0097a7", cursor: "pointer" },
-  nextButton: { padding: "4px 14px", borderRadius: "4px", fontSize: "12px", fontWeight: 600, border: "none", background: "linear-gradient(135deg, #0097a7, #006064)", color: "white", cursor: "pointer" },
-  submitButton: { padding: "4px 14px", borderRadius: "4px", fontSize: "12px", fontWeight: 600, border: "none", background: "#4caf50", color: "white", cursor: "pointer" },
+  navProgress: { fontSize: "11px", color: "#64748b", fontWeight: 500 },
+  navButton: { padding: "4px 12px", borderRadius: "4px", fontSize: "11px", fontWeight: 600, border: "2px solid #0097a7", background: "white", color: "#0097a7", cursor: "pointer" },
+  nextButton: { padding: "4px 12px", borderRadius: "4px", fontSize: "11px", fontWeight: 600, border: "none", background: "linear-gradient(135deg, #0097a7, #006064)", color: "white", cursor: "pointer" },
+  submitButton: { padding: "4px 12px", borderRadius: "4px", fontSize: "11px", fontWeight: 600, border: "none", background: "#4caf50", color: "white", cursor: "pointer" },
   
-  // Navigator - fixed size
+  // Navigator - FIXED size
   navigatorColumn: { 
     display: "flex", 
     flexDirection: "column",
     height: "100%",
+    maxHeight: "100%",
     minHeight: 0
   },
   
   navigatorCard: { 
     background: "white", 
-    borderRadius: "12px", 
-    padding: "10px 10px", 
-    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+    borderRadius: "10px", 
+    padding: "6px 8px", 
+    boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
     display: "flex",
     flexDirection: "column",
     height: "100%",
+    maxHeight: "100%",
     overflow: "hidden"
   },
   
-  navigatorTitle: { fontSize: "13px", fontWeight: 600, color: "#0a1929", margin: "0 0 4px 0", flexShrink: 0 },
-  statsGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "3px", marginBottom: "4px", flexShrink: 0 },
-  statCard: { background: "#f8fafc", padding: "3px 2px", borderRadius: "4px", textAlign: "center" },
-  statValue: { fontSize: "14px", fontWeight: 900 },
-  statLabel: { fontSize: "8px", color: "#64748b", marginTop: "0px" },
+  navigatorTitle: { fontSize: "11px", fontWeight: 600, color: "#0a1929", margin: "0 0 3px 0", flexShrink: 0 },
+  statsGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "2px", marginBottom: "3px", flexShrink: 0 },
+  statCard: { background: "#f8fafc", padding: "2px 2px", borderRadius: "4px", textAlign: "center" },
+  statValue: { fontSize: "12px", fontWeight: 900 },
+  statLabel: { fontSize: "7px", color: "#64748b", marginTop: "0px" },
   
   questionGrid: { 
     display: "grid", 
     gridTemplateColumns: "repeat(10, 1fr)", 
-    gap: "3px", 
-    marginBottom: "3px",
+    gap: "2px", 
+    marginBottom: "2px",
     flex: 1,
     overflowY: "auto",
-    padding: "2px",
+    padding: "1px",
     alignContent: "start"
   },
   
@@ -1125,7 +1130,7 @@ const styles = {
     aspectRatio: "1", 
     border: "2px solid", 
     borderRadius: "4px", 
-    fontSize: "10px", 
+    fontSize: "9px", 
     fontWeight: 700, 
     display: "flex", 
     alignItems: "center", 
@@ -1139,15 +1144,15 @@ const styles = {
   legend: { 
     display: "flex", 
     justifyContent: "space-between", 
-    padding: "3px 0", 
+    padding: "2px 0", 
     borderTop: "1px solid #e2e8f0", 
     flexWrap: "wrap", 
     gap: "2px",
     flexShrink: 0
   },
   
-  legendItem: { display: "flex", alignItems: "center", gap: "2px", fontSize: "9px" },
-  legendDot: { width: "6px", height: "6px", borderRadius: "2px" },
+  legendItem: { display: "flex", alignItems: "center", gap: "2px", fontSize: "8px" },
+  legendDot: { width: "5px", height: "5px", borderRadius: "2px" },
   
   modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
   modalContent: { background: "white", padding: "30px", borderRadius: "20px", maxWidth: "450px", width: "90%" },
