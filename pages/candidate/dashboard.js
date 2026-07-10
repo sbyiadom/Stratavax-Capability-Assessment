@@ -91,10 +91,32 @@ function getAssessmentColor(typeCode) {
     performance: { gradient: "linear-gradient(135deg, #ea580c 0%, #c2410c 100%)", color: "#ea580c", light: "#ffedd5" },
     technical: { gradient: "linear-gradient(135deg, #dc2626 0%, #991b1b 100%)", color: "#dc2626", light: "#fee2e2" },
     behavioral: { gradient: "linear-gradient(135deg, #9333ea 0%, #6b21a5 100%)", color: "#9333ea", light: "#f3e8ff" },
-    manufacturing_baseline: { gradient: "linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%)", color: "#2e7d32", light: "#e8f5e9" }
+    manufacturing_baseline: { gradient: "linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%)", color: "#2e7d32", light: "#e8f5e9" },
+    national_service: { gradient: "linear-gradient(135deg, #0d47a1 0%, #1a237e 100%)", color: "#0d47a1", light: "#e8eaf6" }
   };
 
   return colors[typeCode] || colors.general;
+}
+
+// ============================================================
+// NEW: Get assessment icon by type code
+// ============================================================
+function getAssessmentIcon(typeCode) {
+  const icons = {
+    general: "/images/stratavax_general_assessment.png",
+    leadership: "/images/stratavax_leadership_assessment.png",
+    cognitive: "/images/stratavax_cognitive_assessment.png",
+    cultural: "/images/stratavax_cultural_attitudinal_fit_assessment.png",
+    personality: "/images/stratavax_personality_assessment.png",
+    strategic_leadership: "/images/stratavax_strategic_leadership_assessment.png",
+    performance: "/images/stratavax_performance_assessment.png",
+    technical: "/images/stratavax_technical_competency_assessment.png",
+    behavioral: "/images/stratavax_behavioral_soft_skill_assessment.png",
+    manufacturing_baseline: "/images/stratavax_mfg_baseline_assessment.png",
+    national_service: "/images/stratavax_national_service_assessment.png"
+  };
+
+  return icons[typeCode] || "/images/stratavax_general_assessment.png";
 }
 
 function getDefaultAssessmentAreas(typeCode) {
@@ -225,7 +247,7 @@ export default function CandidateDashboard() {
   const [selectedAssessmentAreas, setSelectedAssessmentAreas] = useState([]);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const excludedTypes = ["manufacturing"]; // keep your existing exclusion
+  const excludedTypes = ["manufacturing"];
 
   useEffect(() => {
     if (!session?.user) return;
@@ -319,18 +341,13 @@ export default function CandidateDashboard() {
 
       const uniqueAssessments = removeDuplicateAssessments(filteredAssessments, accessMap, resultMap, latestSessionMap);
 
-      // ============================================================
-      // FIX: Build type options with proper area fallback
-      // ============================================================
+      // Build type options with proper area fallback
       const typeOptions = filteredTypes.map((type) => {
-        // Get areas from category_config or use default
         let areas = [];
         
-        // Check if category_config exists and is a non-empty array
         if (Array.isArray(type.category_config) && type.category_config.length > 0) {
           areas = type.category_config.map(decodeHtmlEntities);
         } else {
-          // Use default areas based on type code
           areas = getDefaultAssessmentAreas(type.code);
         }
         
@@ -339,7 +356,7 @@ export default function CandidateDashboard() {
           label: decodeHtmlEntities(type.name),
           shortLabel: type.code === "manufacturing_baseline" ? "Mfg Baseline" : decodeHtmlEntities(type.name || type.code),
           description: decodeHtmlEntities(type.description || type.name + " assessment"),
-          icon: type.icon || "📋",
+          icon: getAssessmentIcon(type.code),
           gradientStart: type.gradient_start || getAssessmentColor(type.code).color,
           gradientEnd: type.gradient_end || getAssessmentColor(type.code).color,
           color: type.color || getAssessmentColor(type.code).color,
@@ -361,7 +378,7 @@ export default function CandidateDashboard() {
           description: decodeHtmlEntities(assessment.description || "Assessment assigned by your supervisor."),
           typeCode,
           typeName: decodeHtmlEntities(assessment.assessment_type?.name || typeCode),
-          icon: assessment.assessment_type?.icon || "📋",
+          icon: getAssessmentIcon(typeCode),
           status,
           scorePercentage: scorePercentage !== null ? scorePercentage : null,
           completedAt: (result && result.completed_at) || (access && access.completed_at) || null,
@@ -391,7 +408,6 @@ export default function CandidateDashboard() {
 
       if (firstAvailableType) {
         setActiveTab(firstAvailableType.id);
-        // Use the areas from the type config (which now has proper fallback)
         setSelectedAssessmentAreas(firstAvailableType.areas || getDefaultAssessmentAreas(firstAvailableType.id));
       }
     } catch (error) {
@@ -405,7 +421,6 @@ export default function CandidateDashboard() {
   function handleTabChange(typeId) {
     const typeConfig = assessmentTypes.find((type) => type.id === typeId);
     setActiveTab(typeId);
-    // Use areas from typeConfig or fallback to default
     const areas = typeConfig?.areas && typeConfig.areas.length > 0 
       ? typeConfig.areas 
       : getDefaultAssessmentAreas(typeId);
@@ -445,6 +460,7 @@ export default function CandidateDashboard() {
   const activeTypeConfig = assessmentTypes.find((type) => type.id === activeTab) || assessmentTypes[0] || null;
   const activeAssessment = activeTab ? getAssessmentByType(activeTab) : null;
   const activeColors = getAssessmentColor(activeTab || "general");
+  const activeIcon = activeTab ? getAssessmentIcon(activeTab) : "/images/stratavax_general_assessment.png";
   const activeStatus = activeAssessment ? getStatusConfig(activeAssessment.status, activeAssessment.scorePercentage) : null;
 
   if (authLoading || loading) {
@@ -508,6 +524,7 @@ export default function CandidateDashboard() {
               const isActive = activeTab === tab.id;
               const hasAssessment = !!getAssessmentByType(tab.id);
               const colors = getAssessmentColor(tab.id);
+              const icon = getAssessmentIcon(tab.id);
 
               return (
                 <button
@@ -523,6 +540,17 @@ export default function CandidateDashboard() {
                     boxShadow: isActive ? "0 4px 12px rgba(0,0,0,0.2)" : "none"
                   }}
                 >
+                  <img 
+                    src={icon} 
+                    alt={tab.shortLabel} 
+                    style={{
+                      width: "20px",
+                      height: "20px",
+                      objectFit: "contain",
+                      filter: isActive ? "brightness(0) invert(1)" : "none",
+                      marginRight: "6px"
+                    }}
+                  />
                   <span style={styles.tabLabel}>{tab.shortLabel}</span>
                 </button>
               );
@@ -534,7 +562,16 @@ export default function CandidateDashboard() {
               <div style={{ ...styles.card, border: "1px solid " + activeColors.color + "40" }}>
                 <div style={styles.cardHeader}>
                   <div style={{ ...styles.cardIconLarge, background: activeColors.gradient }}>
-                    {activeTypeConfig?.icon || activeAssessment.icon || "📋"}
+                    <img 
+                      src={activeIcon} 
+                      alt={activeAssessment.title} 
+                      style={{
+                        width: "40px",
+                        height: "40px",
+                        objectFit: "contain",
+                        filter: "brightness(0) invert(1)"
+                      }}
+                    />
                   </div>
                   <div style={styles.cardInfo}>
                     <h3 style={styles.cardTitle}>{activeAssessment.title}</h3>
@@ -577,9 +614,6 @@ export default function CandidateDashboard() {
                 )}
               </div>
 
-              {/* ============================================================
-                  FIX: Only show Key Assessment Areas if there are areas to show
-                  ============================================================ */}
               {selectedAssessmentAreas && selectedAssessmentAreas.length > 0 && (
                 <div style={{ ...styles.areasSection, borderTop: "4px solid " + activeColors.color }}>
                   <h3 style={styles.areasTitle}>Key Assessment Areas</h3>
@@ -604,13 +638,23 @@ export default function CandidateDashboard() {
               {assessmentTypes.map((type) => {
                 const card = getAssessmentByType(type.id);
                 const colors = getAssessmentColor(type.id);
+                const icon = getAssessmentIcon(type.id);
                 const score = card?.scorePercentage ?? null;
                 const status = card ? getStatusConfig(card.status, score) : getStatusConfig("blocked", null);
 
                 return (
                   <div key={type.id} style={{ ...styles.progressItem, border: "1px solid " + colors.color + "40", background: status.bg }}>
                     <div style={styles.progressItemLeft}>
-                      <div style={{ ...styles.progressColorDot, background: colors.gradient }} />
+                      <img 
+                        src={icon} 
+                        alt={type.shortLabel} 
+                        style={{
+                          width: "20px",
+                          height: "20px",
+                          objectFit: "contain",
+                          marginRight: "6px"
+                        }}
+                      />
                       <span style={{ ...styles.progressName, color: colors.color }}>{type.shortLabel}</span>
                     </div>
                     <span style={{ ...styles.progressStatus, color: status.color }}>{status.label}</span>
