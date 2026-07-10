@@ -279,7 +279,11 @@ export default function Login() {
       <div style={styles.centerOverlay}>
         <div style={styles.card}>
           <div style={styles.brandSection}>
-            <div style={styles.brandIcon}>🏢</div>
+            <img 
+              src="/images/stratavax-logo.png" 
+              alt="Stratavax" 
+              style={styles.brandLogo}
+            />
             <h1 style={styles.brandTitle}>Stratavax</h1>
             <p style={styles.brandSubtitle}>Talent Assessment Portal</p>
           </div>
@@ -442,6 +446,15 @@ const styles = {
     border: "1px solid rgba(255,255,255,0.2)"
   },
   brandSection: { marginBottom: "24px", textAlign: "center" },
+  brandLogo: {
+    width: "80px",
+    height: "80px",
+    objectFit: "contain",
+    marginBottom: "12px",
+    display: "block",
+    marginLeft: "auto",
+    marginRight: "auto"
+  },
   brandIcon: {
     width: "64px",
     height: "64px",
