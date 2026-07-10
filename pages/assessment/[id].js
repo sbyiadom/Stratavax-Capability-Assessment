@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - UPDATED with better layout
+// pages/assessment/[id].js - UPDATED with improvements
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -85,6 +85,18 @@ function getRemainingFromSession(sessionData, fallbackSeconds) {
   return Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
 }
 
+// ============================================================
+// FIX: Get assessment duration - National Service = 2 hours
+// ============================================================
+function getAssessmentDuration(assessmentTypeCode) {
+  // National Service is 2 hours (120 minutes)
+  if (assessmentTypeCode === 'national_service') {
+    return 120; // 2 hours
+  }
+  // Default is 3 hours (180 minutes)
+  return 180;
+}
+
 async function fetchCandidateAccess(userId, assessmentId) {
   const response = await supabase
     .from("candidate_assessments")
@@ -105,6 +117,7 @@ function AssessmentContent() {
   const [pageError, setPageError] = useState("");
   const [assessment, setAssessment] = useState(null);
   const [assessmentType, setAssessmentType] = useState(null);
+  const [assessmentTypeCode, setAssessmentTypeCode] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
@@ -211,12 +224,6 @@ function AssessmentContent() {
       throw new Error("Missing user or assessment information.");
     }
 
-    console.log('[completeAssessmentSafely] Starting submission with session:', {
-      sessionId: session.id,
-      userId: user.id,
-      assessmentId: assessmentId
-    });
-
     const lastQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
     if (lastQuestionId) {
       await saveQuestionTiming(lastQuestionId, Math.floor((Date.now() - questionStartTime) / 1000));
@@ -226,25 +233,21 @@ function AssessmentContent() {
     await updateSessionTimer(session.id, elapsedSeconds);
     await updateAnsweredQuestionsCount(answers);
 
-    console.log('[completeAssessmentSafely] Calling submitAssessment...');
     const result = await submitAssessment(session.id, {
       autoSubmitted: autoSubmitted === true,
       autoSubmitReason: reason || null,
       allowIncomplete: autoSubmitted === true
     });
-    console.log('[completeAssessmentSafely] submitAssessment result:', result);
     
     return result;
   }
 
   async function handleAutoSubmit(reason) {
     if (alreadySubmitted || submittingRef.current || autoSubmitRef.current) {
-      console.log('[AutoSubmit] Already in progress or completed');
       return;
     }
     
     try {
-      console.log('[AutoSubmit] Starting auto-submit with reason:', reason);
       autoSubmitRef.current = true;
       submittingRef.current = true;
       setIsSubmitting(true);
@@ -281,15 +284,11 @@ function AssessmentContent() {
       await updateSessionTimer(session.id, elapsedSeconds);
       await updateAnsweredQuestionsCount(answers);
 
-      console.log('[AutoSubmit] All answers saved, submitting assessment...');
-
       const result = await submitAssessment(session.id, {
         autoSubmitted: true,
         autoSubmitReason: reason || 'Auto-submitted because the assessment timer expired.',
         allowIncomplete: true
       });
-
-      console.log('[AutoSubmit] Submit successful:', result);
 
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
@@ -429,6 +428,12 @@ function AssessmentContent() {
         const assessmentData = await getAssessmentById(assessmentId);
         setAssessment(assessmentData);
         setAssessmentType(assessmentData ? assessmentData.assessment_type : null);
+        
+        // ============================================================
+        // FIX: Get assessment type code for duration
+        // ============================================================
+        const typeCode = assessmentData?.assessment_type?.code || null;
+        setAssessmentTypeCode(typeCode);
 
         const allowMultipleForThisAssessment = isManufacturingBaselineAssessment(
           assessmentData,
@@ -449,7 +454,14 @@ function AssessmentContent() {
         const progress = await getProgress(currentUser.id, assessmentId);
         const progressElapsed = progress && progress.elapsed_seconds ? safeNumber(progress.elapsed_seconds, 0) : 0;
         setElapsedSeconds(progressElapsed);
-        setTimeLimitSeconds(progressElapsed + getRemainingFromSession(sessionData, 10800));
+        
+        // ============================================================
+        // FIX: Set time limit based on assessment type
+        // ============================================================
+        const durationMinutes = getAssessmentDuration(typeCode);
+        const durationSeconds = durationMinutes * 60;
+        setTimeLimitSeconds(progressElapsed + getRemainingFromSession(sessionData, durationSeconds));
+        console.log(`[Assessment] Time limit: ${durationMinutes} minutes (${durationSeconds} seconds)`);
 
         let uniqueQuestions = [];
         try {
@@ -656,7 +668,6 @@ function AssessmentContent() {
 
   async function handleSubmit() {
     if (!session || !session.id) {
-      console.error('[Submit] No session available');
       alert('Unable to submit: No active session found. Please refresh the page and try again.');
       return;
     }
@@ -672,7 +683,6 @@ function AssessmentContent() {
     }
 
     if (isAutoSubmitting || submittingRef.current) {
-      console.log('[Submit] Already submitting...');
       return;
     }
 
@@ -688,15 +698,11 @@ function AssessmentContent() {
     }
 
     try {
-      console.log('[Submit] Starting submission with session:', session.id);
-      console.log('[Submit] Session data:', session);
-      
       submittingRef.current = true;
       setIsSubmitting(true);
       setShowSubmitModal(false);
       
       const result = await completeAssessmentSafely(false, null);
-      console.log('[Submit] Submission successful:', result);
       
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
@@ -823,14 +829,14 @@ function AssessmentContent() {
 
         {/* Main Content - IMPROVED LAYOUT */}
         <div style={styles.mainContent}>
-          {/* Question Column - takes more space */}
+          {/* Question Column */}
           <div style={styles.questionColumn}>
             <div style={styles.questionCard}>
               <div style={styles.questionText}>{currentQuestion.question_text}</div>
               {answerChangeCount[currentQuestion.id] > 0 && <div style={styles.changeIndicator}>✏️ Changed answer {answerChangeCount[currentQuestion.id]} time{answerChangeCount[currentQuestion.id] !== 1 ? "s" : ""}</div>}
               
               {/* ============================================================
-                  ANSWERS - Display all options without scrolling
+                  ANSWERS - Compact with minimal gap
                   ============================================================ */}
               <div style={styles.answersContainer}>
                 {safeArray(currentQuestion.answers).map((answer, index) => {
@@ -850,14 +856,16 @@ function AssessmentContent() {
                       }}
                     >
                       <div style={{ ...styles.answerLetter, background: selected ? "rgba(255,255,255,0.2)" : "#f1f5f9", color: selected ? "white" : "#475569" }}>{optionLetter}</div>
-                      <span style={{ color: selected ? "white" : "#1e293b", fontSize: "16px", lineHeight: "1.4" }}>{answer.answer_text}{isMultipleCorrect && selected && <span style={{ marginLeft: "8px", fontSize: "12px" }}>✓</span>}</span>
+                      <span style={{ color: selected ? "white" : "#1e293b", fontSize: "15px", lineHeight: "1.4" }}>{answer.answer_text}{isMultipleCorrect && selected && <span style={{ marginLeft: "8px", fontSize: "12px" }}>✓</span>}</span>
                     </button>
                   );
                 })}
               </div>
               {isMultipleCorrect && <div style={styles.multipleHint}>💡 This question has multiple correct answers. Select all that apply.</div>}
               
-              {/* Navigation - Always visible at bottom */}
+              {/* ============================================================
+                  NAVIGATION - Tighter gap, always visible
+                  ============================================================ */}
               <div style={styles.navigation}>
                 <button onClick={() => moveToQuestion(currentIndex - 1)} disabled={currentIndex === 0 || isDisabled} style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}>← Previous</button>
                 <div style={styles.navCenter}>
@@ -873,7 +881,7 @@ function AssessmentContent() {
           </div>
 
           {/* ============================================================
-              NAVIGATOR - More compact, fits on screen
+              NAVIGATOR - 10 columns, more compact
               ============================================================ */}
           <div style={styles.navigatorColumn}>
             <div style={styles.navigatorCard}>
@@ -925,7 +933,7 @@ function AssessmentContent() {
 }
 
 // ============================================================
-// STYLES - Optimized for all screen sizes
+// STYLES - Optimized with improvements
 // ============================================================
 
 const styles = {
@@ -944,31 +952,31 @@ const styles = {
   autoSubmitSpinner: { width: "40px", height: "40px", border: "4px solid #e2e8f0", borderTop: "4px solid #f44336", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 20px" },
   container: { minHeight: "100vh", background: "#f8fafc", display: "flex", flexDirection: "column" },
   header: { position: "sticky", top: 0, zIndex: 100, color: "white", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", flexShrink: 0 },
-  headerContent: { maxWidth: "1400px", margin: "0 auto", padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" },
-  headerLeft: { display: "flex", alignItems: "center", gap: "14px" },
-  headerRight: { display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" },
-  backButton: { width: "40px", height: "40px", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: "10px", color: "white", fontSize: "20px", cursor: "pointer" },
-  headerTitle: { fontSize: "20px", fontWeight: 700, marginBottom: "2px" },
-  headerMeta: { fontSize: "13px", opacity: 0.9 },
-  timer: { padding: "6px 16px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.3)", textAlign: "center", minWidth: "140px" },
-  timerLabel: { fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "2px" },
-  timerValue: { fontSize: "24px", fontWeight: 900, fontFamily: "monospace" },
+  headerContent: { maxWidth: "1400px", margin: "0 auto", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" },
+  headerLeft: { display: "flex", alignItems: "center", gap: "12px" },
+  headerRight: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" },
+  backButton: { width: "36px", height: "36px", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: "8px", color: "white", fontSize: "18px", cursor: "pointer" },
+  headerTitle: { fontSize: "18px", fontWeight: 700, marginBottom: "1px" },
+  headerMeta: { fontSize: "12px", opacity: 0.9 },
+  timer: { padding: "4px 14px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.3)", textAlign: "center", minWidth: "120px" },
+  timerLabel: { fontSize: "9px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "1px" },
+  timerValue: { fontSize: "20px", fontWeight: 900, fontFamily: "monospace" },
   mainContent: { 
     maxWidth: "1400px", 
     margin: "0 auto", 
-    padding: "16px 20px", 
+    padding: "12px 16px", 
     display: "grid", 
-    gridTemplateColumns: "1fr 280px", 
-    gap: "20px",
+    gridTemplateColumns: "1fr 260px", 
+    gap: "16px",
     flex: 1,
     minHeight: 0,
-    height: "calc(100vh - 90px)"
+    height: "calc(100vh - 80px)"
   },
-  questionColumn: { display: "flex", flexDirection: "column", gap: "16px", minHeight: 0, height: "100%" },
+  questionColumn: { display: "flex", flexDirection: "column", gap: "12px", minHeight: 0, height: "100%" },
   questionCard: { 
     background: "white", 
-    borderRadius: "16px", 
-    padding: "20px 24px", 
+    borderRadius: "14px", 
+    padding: "16px 20px", 
     boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
     display: "flex",
     flexDirection: "column",
@@ -978,65 +986,65 @@ const styles = {
     overflow: "hidden"
   },
   questionText: { 
-    fontSize: "18px", 
-    lineHeight: "1.6", 
+    fontSize: "17px", 
+    lineHeight: "1.5", 
     color: "#1e293b", 
-    marginBottom: "14px", 
+    marginBottom: "10px", 
     fontWeight: 500,
-    padding: "14px 18px",
+    padding: "10px 14px",
     background: "#f8fafc",
-    borderRadius: "10px",
+    borderRadius: "8px",
     flexShrink: 0
   },
-  changeIndicator: { padding: "6px 12px", background: "#FFF8E1", borderRadius: "16px", fontSize: "12px", color: "#F57C00", marginBottom: "10px", display: "inline-block", flexShrink: 0 },
+  changeIndicator: { padding: "4px 10px", background: "#FFF8E1", borderRadius: "12px", fontSize: "11px", color: "#F57C00", marginBottom: "6px", display: "inline-block", flexShrink: 0 },
   answersContainer: { 
     display: "flex", 
     flexDirection: "column", 
-    gap: "10px", 
+    gap: "8px", 
     flex: 1,
     overflow: "visible",
     minHeight: "auto"
   },
   answerCard: { 
-    padding: "14px 18px", 
+    padding: "10px 14px", 
     border: "2px solid", 
-    borderRadius: "12px", 
+    borderRadius: "10px", 
     cursor: "pointer", 
     textAlign: "left", 
     display: "flex", 
     alignItems: "center", 
-    gap: "14px", 
+    gap: "12px", 
     transition: "all 0.2s", 
-    fontSize: "16px",
+    fontSize: "15px",
     flexShrink: 0
   },
   answerLetter: { 
-    width: "32px", 
-    height: "32px", 
-    borderRadius: "8px", 
+    width: "28px", 
+    height: "28px", 
+    borderRadius: "6px", 
     display: "flex", 
     alignItems: "center", 
     justifyContent: "center", 
-    fontSize: "14px", 
+    fontSize: "13px", 
     fontWeight: 700,
     flexShrink: 0
   },
-  multipleHint: { padding: "10px 16px", background: "#E3F2FD", borderRadius: "8px", fontSize: "13px", color: "#1565C0", marginBottom: "10px", flexShrink: 0 },
+  multipleHint: { padding: "6px 12px", background: "#E3F2FD", borderRadius: "6px", fontSize: "12px", color: "#1565C0", marginBottom: "6px", flexShrink: 0 },
   navigation: { 
     display: "flex", 
     justifyContent: "space-between", 
     alignItems: "center",
-    gap: "12px", 
-    marginTop: "12px",
-    paddingTop: "12px",
+    gap: "8px", 
+    marginTop: "8px",
+    paddingTop: "8px",
     borderTop: "1px solid #e2e8f0",
     flexShrink: 0
   },
-  navCenter: { display: "flex", alignItems: "center", gap: "12px" },
-  navProgress: { fontSize: "14px", color: "#64748b", fontWeight: 500 },
-  navButton: { padding: "10px 20px", borderRadius: "8px", fontSize: "14px", fontWeight: 600, border: "2px solid #0097a7", background: "white", color: "#0097a7", cursor: "pointer" },
-  nextButton: { padding: "10px 24px", borderRadius: "8px", fontSize: "14px", fontWeight: 600, border: "none", background: "linear-gradient(135deg, #0097a7, #006064)", color: "white", cursor: "pointer" },
-  submitButton: { padding: "10px 24px", borderRadius: "8px", fontSize: "14px", fontWeight: 600, border: "none", background: "#4caf50", color: "white", cursor: "pointer" },
+  navCenter: { display: "flex", alignItems: "center", gap: "8px" },
+  navProgress: { fontSize: "13px", color: "#64748b", fontWeight: 500 },
+  navButton: { padding: "8px 16px", borderRadius: "6px", fontSize: "13px", fontWeight: 600, border: "2px solid #0097a7", background: "white", color: "#0097a7", cursor: "pointer" },
+  nextButton: { padding: "8px 18px", borderRadius: "6px", fontSize: "13px", fontWeight: 600, border: "none", background: "linear-gradient(135deg, #0097a7, #006064)", color: "white", cursor: "pointer" },
+  submitButton: { padding: "8px 18px", borderRadius: "6px", fontSize: "13px", fontWeight: 600, border: "none", background: "#4caf50", color: "white", cursor: "pointer" },
   navigatorColumn: { 
     display: "flex", 
     flexDirection: "column",
@@ -1045,24 +1053,24 @@ const styles = {
   },
   navigatorCard: { 
     background: "white", 
-    borderRadius: "16px", 
-    padding: "16px 18px", 
+    borderRadius: "14px", 
+    padding: "14px 14px", 
     boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
     display: "flex",
     flexDirection: "column",
     height: "100%",
     overflow: "hidden"
   },
-  navigatorTitle: { fontSize: "15px", fontWeight: 600, color: "#0a1929", margin: "0 0 12px 0", flexShrink: 0 },
-  statsGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", marginBottom: "12px", flexShrink: 0 },
-  statCard: { background: "#f8fafc", padding: "10px", borderRadius: "8px", textAlign: "center" },
-  statValue: { fontSize: "18px", fontWeight: 900 },
-  statLabel: { fontSize: "10px", color: "#64748b", marginTop: "2px" },
+  navigatorTitle: { fontSize: "14px", fontWeight: 600, color: "#0a1929", margin: "0 0 8px 0", flexShrink: 0 },
+  statsGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px", marginBottom: "8px", flexShrink: 0 },
+  statCard: { background: "#f8fafc", padding: "6px 4px", borderRadius: "6px", textAlign: "center" },
+  statValue: { fontSize: "16px", fontWeight: 900 },
+  statLabel: { fontSize: "9px", color: "#64748b", marginTop: "1px" },
   questionGrid: { 
     display: "grid", 
-    gridTemplateColumns: "repeat(7, 1fr)", 
-    gap: "5px", 
-    marginBottom: "10px",
+    gridTemplateColumns: "repeat(10, 1fr)", 
+    gap: "4px", 
+    marginBottom: "6px",
     flex: 1,
     overflowY: "auto",
     padding: "2px",
@@ -1071,28 +1079,28 @@ const styles = {
   gridItem: { 
     aspectRatio: "1", 
     border: "2px solid", 
-    borderRadius: "6px", 
-    fontSize: "12px", 
+    borderRadius: "5px", 
+    fontSize: "11px", 
     fontWeight: 700, 
     display: "flex", 
     alignItems: "center", 
     justifyContent: "center", 
     cursor: "pointer",
-    transition: "all 0.2s",
+    transition: "all 0.15s",
     minWidth: "0",
     minHeight: "0"
   },
   legend: { 
     display: "flex", 
     justifyContent: "space-between", 
-    padding: "8px 0", 
+    padding: "4px 0", 
     borderTop: "1px solid #e2e8f0", 
     flexWrap: "wrap", 
-    gap: "4px",
+    gap: "2px",
     flexShrink: 0
   },
-  legendItem: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10px" },
-  legendDot: { width: "8px", height: "8px", borderRadius: "2px" },
+  legendItem: { display: "flex", alignItems: "center", gap: "3px", fontSize: "9px" },
+  legendDot: { width: "6px", height: "6px", borderRadius: "2px" },
   modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
   modalContent: { background: "white", padding: "30px", borderRadius: "20px", maxWidth: "450px", width: "90%" },
   modalIcon: { fontSize: "48px", textAlign: "center", marginBottom: "15px" },
