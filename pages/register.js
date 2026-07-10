@@ -291,7 +291,11 @@ export default function Register() {
       <div style={styles.centerOverlay}>
         <form onSubmit={handleRegister} style={styles.card}>
           <div style={styles.brandSection}>
-            <div style={styles.brandIcon}>📝</div>
+            <img 
+              src="/images/stratavax-logo.png" 
+              alt="Stratavax" 
+              style={styles.brandLogo}
+            />
             <h1 style={styles.brandTitle}>Create Account</h1>
             <p style={styles.brandSubtitle}>Register as a candidate to access assigned assessments.</p>
           </div>
@@ -505,6 +509,15 @@ const styles = {
   brandSection: {
     marginBottom: "2px",
     textAlign: "center"
+  },
+  brandLogo: {
+    width: "70px",
+    height: "70px",
+    objectFit: "contain",
+    marginBottom: "10px",
+    display: "block",
+    marginLeft: "auto",
+    marginRight: "auto"
   },
   brandIcon: {
     width: "64px",
