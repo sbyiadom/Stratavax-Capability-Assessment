@@ -180,7 +180,14 @@ export default function AppLayout({ children, background, showNavigation = true 
         <div style={styles.navContainer}>
           <div style={styles.navLeft}>
             <Link href={homeHref} legacyBehavior>
-              <a style={styles.logo}>🏢 Stratavax</a>
+              <a style={styles.logoLink}>
+                <img 
+                  src="/images/stratavax-logo.png" 
+                  alt="Stratavax" 
+                  style={styles.logoImage}
+                />
+                <span style={styles.logoText}>Stratavax</span>
+              </a>
             </Link>
 
             {navLinks.length > 0 && (
@@ -243,6 +250,23 @@ const styles = {
     alignItems: "center",
     gap: "28px",
     flexWrap: "wrap"
+  },
+  logoLink: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    textDecoration: "none"
+  },
+  logoImage: {
+    height: "36px",
+    width: "36px",
+    objectFit: "contain"
+  },
+  logoText: {
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "#0a1929",
+    letterSpacing: "1px"
   },
   logo: {
     fontSize: "18px",
