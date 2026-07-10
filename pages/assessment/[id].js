@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - COMPLETE FIXED FILE
+// pages/assessment/[id].js - UPDATED with better layout
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -85,13 +85,6 @@ function getRemainingFromSession(sessionData, fallbackSeconds) {
   return Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
 }
 
-function getAssessmentDuration(assessmentTypeCode) {
-  if (assessmentTypeCode === 'national_service') {
-    return 120;
-  }
-  return 180;
-}
-
 async function fetchCandidateAccess(userId, assessmentId) {
   const response = await supabase
     .from("candidate_assessments")
@@ -112,7 +105,6 @@ function AssessmentContent() {
   const [pageError, setPageError] = useState("");
   const [assessment, setAssessment] = useState(null);
   const [assessmentType, setAssessmentType] = useState(null);
-  const [assessmentTypeCode, setAssessmentTypeCode] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
@@ -210,12 +202,20 @@ function AssessmentContent() {
 
   async function completeAssessmentSafely(autoSubmitted, reason) {
     if (!session || !session.id) {
+      console.error('[completeAssessmentSafely] No session available');
       throw new Error("No active session to submit.");
     }
     
     if (!user || !assessmentId) {
+      console.error('[completeAssessmentSafely] Missing user or assessment');
       throw new Error("Missing user or assessment information.");
     }
+
+    console.log('[completeAssessmentSafely] Starting submission with session:', {
+      sessionId: session.id,
+      userId: user.id,
+      assessmentId: assessmentId
+    });
 
     const lastQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
     if (lastQuestionId) {
@@ -226,21 +226,25 @@ function AssessmentContent() {
     await updateSessionTimer(session.id, elapsedSeconds);
     await updateAnsweredQuestionsCount(answers);
 
+    console.log('[completeAssessmentSafely] Calling submitAssessment...');
     const result = await submitAssessment(session.id, {
       autoSubmitted: autoSubmitted === true,
       autoSubmitReason: reason || null,
       allowIncomplete: autoSubmitted === true
     });
+    console.log('[completeAssessmentSafely] submitAssessment result:', result);
     
     return result;
   }
 
   async function handleAutoSubmit(reason) {
     if (alreadySubmitted || submittingRef.current || autoSubmitRef.current) {
+      console.log('[AutoSubmit] Already in progress or completed');
       return;
     }
     
     try {
+      console.log('[AutoSubmit] Starting auto-submit with reason:', reason);
       autoSubmitRef.current = true;
       submittingRef.current = true;
       setIsSubmitting(true);
@@ -277,11 +281,15 @@ function AssessmentContent() {
       await updateSessionTimer(session.id, elapsedSeconds);
       await updateAnsweredQuestionsCount(answers);
 
+      console.log('[AutoSubmit] All answers saved, submitting assessment...');
+
       const result = await submitAssessment(session.id, {
         autoSubmitted: true,
         autoSubmitReason: reason || 'Auto-submitted because the assessment timer expired.',
         allowIncomplete: true
       });
+
+      console.log('[AutoSubmit] Submit successful:', result);
 
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
@@ -421,9 +429,6 @@ function AssessmentContent() {
         const assessmentData = await getAssessmentById(assessmentId);
         setAssessment(assessmentData);
         setAssessmentType(assessmentData ? assessmentData.assessment_type : null);
-        
-        const typeCode = assessmentData?.assessment_type?.code || null;
-        setAssessmentTypeCode(typeCode);
 
         const allowMultipleForThisAssessment = isManufacturingBaselineAssessment(
           assessmentData,
@@ -439,18 +444,17 @@ function AssessmentContent() {
         if (!sessionData || !sessionData.id) throw new Error("Unable to create assessment session.");
         setSession(sessionData);
         sessionIdRef.current = sessionData.id;
+        console.log('[Assessment] Session created:', sessionData.id);
 
         const progress = await getProgress(currentUser.id, assessmentId);
         const progressElapsed = progress && progress.elapsed_seconds ? safeNumber(progress.elapsed_seconds, 0) : 0;
         setElapsedSeconds(progressElapsed);
-        
-        const durationMinutes = getAssessmentDuration(typeCode);
-        const durationSeconds = durationMinutes * 60;
-        setTimeLimitSeconds(progressElapsed + getRemainingFromSession(sessionData, durationSeconds));
+        setTimeLimitSeconds(progressElapsed + getRemainingFromSession(sessionData, 10800));
 
         let uniqueQuestions = [];
         try {
           uniqueQuestions = safeArray(await getUniqueQuestions(assessmentId));
+          console.log(`[Assessment] Retrieved ${uniqueQuestions.length} questions for assessment ${assessmentId}`);
         } catch (questionsError) {
           console.error("[Assessment] Error fetching questions:", questionsError);
           uniqueQuestions = [];
@@ -534,6 +538,7 @@ function AssessmentContent() {
         const next = previous + 1;
         
         if (timeLimitSeconds > 0 && next >= timeLimitSeconds) {
+          console.log('[Timer] Time expired!');
           setIsTimeExpired(true);
           if (!autoSubmitRef.current && !submittingRef.current) {
             handleAutoSubmit("Auto-submitted because the assessment timer expired.");
@@ -651,6 +656,7 @@ function AssessmentContent() {
 
   async function handleSubmit() {
     if (!session || !session.id) {
+      console.error('[Submit] No session available');
       alert('Unable to submit: No active session found. Please refresh the page and try again.');
       return;
     }
@@ -666,6 +672,7 @@ function AssessmentContent() {
     }
 
     if (isAutoSubmitting || submittingRef.current) {
+      console.log('[Submit] Already submitting...');
       return;
     }
 
@@ -681,11 +688,15 @@ function AssessmentContent() {
     }
 
     try {
+      console.log('[Submit] Starting submission with session:', session.id);
+      console.log('[Submit] Session data:', session);
+      
       submittingRef.current = true;
       setIsSubmitting(true);
       setShowSubmitModal(false);
       
       const result = await completeAssessmentSafely(false, null);
+      console.log('[Submit] Submission successful:', result);
       
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
@@ -780,7 +791,11 @@ function AssessmentContent() {
 
       {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: "#2e7d32" }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to dashboard...</p></div></div>}
 
+      {/* ============================================================
+          MAIN CONTENT - IMPROVED LAYOUT
+          ============================================================ */}
       <div style={styles.container}>
+        {/* Header */}
         <div style={{ ...styles.header, background: "linear-gradient(135deg, " + gradientStart + ", " + gradientEnd + ")" }}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
@@ -806,47 +821,43 @@ function AssessmentContent() {
           </div>
         </div>
 
-        {/* ============================================================
-            MAIN CONTENT - FIXED LAYOUT (NEVER CHANGES)
-            ============================================================ */}
+        {/* Main Content - IMPROVED LAYOUT */}
         <div style={styles.mainContent}>
+          {/* Question Column - takes more space */}
           <div style={styles.questionColumn}>
             <div style={styles.questionCard}>
-              {/* Question - Fixed 20% of card height */}
-              <div style={styles.questionArea}>
-                <div style={styles.questionText}>{currentQuestion.question_text}</div>
-                {answerChangeCount[currentQuestion.id] > 0 && <div style={styles.changeIndicator}>✏️ Changed answer {answerChangeCount[currentQuestion.id]} time{answerChangeCount[currentQuestion.id] !== 1 ? "s" : ""}</div>}
-              </div>
+              <div style={styles.questionText}>{currentQuestion.question_text}</div>
+              {answerChangeCount[currentQuestion.id] > 0 && <div style={styles.changeIndicator}>✏️ Changed answer {answerChangeCount[currentQuestion.id]} time{answerChangeCount[currentQuestion.id] !== 1 ? "s" : ""}</div>}
               
-              {/* Answers - Takes remaining space */}
-              <div style={styles.answersArea}>
-                <div style={styles.answersContainer}>
-                  {safeArray(currentQuestion.answers).map((answer, index) => {
-                    const selected = isAnswerSelected(currentQuestion.id, answer.id);
-                    const optionLetter = String.fromCharCode(65 + index);
-                    return (
-                      <button 
-                        key={answer.id} 
-                        onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)} 
-                        disabled={isDisabled}
-                        style={{ 
-                          ...styles.answerCard, 
-                          background: selected ? "linear-gradient(135deg, " + gradientStart + ", " + gradientEnd + ")" : "white", 
-                          borderColor: selected ? gradientStart : "#e2e8f0", 
-                          opacity: isDisabled ? 0.6 : 1,
-                          cursor: isDisabled ? "not-allowed" : "pointer"
-                        }}
-                      >
-                        <div style={{ ...styles.answerLetter, background: selected ? "rgba(255,255,255,0.2)" : "#f1f5f9", color: selected ? "white" : "#475569" }}>{optionLetter}</div>
-                        <span style={{ color: selected ? "white" : "#1e293b", fontSize: "14px", lineHeight: "1.3" }}>{answer.answer_text}{isMultipleCorrect && selected && <span style={{ marginLeft: "6px", fontSize: "11px" }}>✓</span>}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+              {/* ============================================================
+                  ANSWERS - Display all options without scrolling
+                  ============================================================ */}
+              <div style={styles.answersContainer}>
+                {safeArray(currentQuestion.answers).map((answer, index) => {
+                  const selected = isAnswerSelected(currentQuestion.id, answer.id);
+                  const optionLetter = String.fromCharCode(65 + index);
+                  return (
+                    <button 
+                      key={answer.id} 
+                      onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)} 
+                      disabled={isDisabled}
+                      style={{ 
+                        ...styles.answerCard, 
+                        background: selected ? "linear-gradient(135deg, " + gradientStart + ", " + gradientEnd + ")" : "white", 
+                        borderColor: selected ? gradientStart : "#e2e8f0", 
+                        opacity: isDisabled ? 0.6 : 1,
+                        cursor: isDisabled ? "not-allowed" : "pointer"
+                      }}
+                    >
+                      <div style={{ ...styles.answerLetter, background: selected ? "rgba(255,255,255,0.2)" : "#f1f5f9", color: selected ? "white" : "#475569" }}>{optionLetter}</div>
+                      <span style={{ color: selected ? "white" : "#1e293b", fontSize: "16px", lineHeight: "1.4" }}>{answer.answer_text}{isMultipleCorrect && selected && <span style={{ marginLeft: "8px", fontSize: "12px" }}>✓</span>}</span>
+                    </button>
+                  );
+                })}
               </div>
               {isMultipleCorrect && <div style={styles.multipleHint}>💡 This question has multiple correct answers. Select all that apply.</div>}
               
-              {/* Navigation - Always at bottom */}
+              {/* Navigation - Always visible at bottom */}
               <div style={styles.navigation}>
                 <button onClick={() => moveToQuestion(currentIndex - 1)} disabled={currentIndex === 0 || isDisabled} style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}>← Previous</button>
                 <div style={styles.navCenter}>
@@ -861,7 +872,9 @@ function AssessmentContent() {
             </div>
           </div>
 
-          {/* Navigator - Fixed size */}
+          {/* ============================================================
+              NAVIGATOR - More compact, fits on screen
+              ============================================================ */}
           <div style={styles.navigatorColumn}>
             <div style={styles.navigatorCard}>
               <h3 style={styles.navigatorTitle}>Question Navigator</h3>
@@ -912,7 +925,7 @@ function AssessmentContent() {
 }
 
 // ============================================================
-// STYLES - FIXED SIZE (NEVER CHANGES)
+// STYLES - Optimized for all screen sizes
 // ============================================================
 
 const styles = {
@@ -931,229 +944,155 @@ const styles = {
   autoSubmitSpinner: { width: "40px", height: "40px", border: "4px solid #e2e8f0", borderTop: "4px solid #f44336", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 20px" },
   container: { minHeight: "100vh", background: "#f8fafc", display: "flex", flexDirection: "column" },
   header: { position: "sticky", top: 0, zIndex: 100, color: "white", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", flexShrink: 0 },
-  headerContent: { maxWidth: "1400px", margin: "0 auto", padding: "6px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "4px" },
-  headerLeft: { display: "flex", alignItems: "center", gap: "8px" },
-  headerRight: { display: "flex", alignItems: "center", gap: "4px", flexWrap: "wrap" },
-  backButton: { width: "30px", height: "30px", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: "6px", color: "white", fontSize: "14px", cursor: "pointer" },
-  headerTitle: { fontSize: "15px", fontWeight: 700, marginBottom: "0px" },
-  headerMeta: { fontSize: "10px", opacity: 0.9 },
-  timer: { padding: "2px 8px", borderRadius: "6px", border: "1px solid rgba(255,255,255,0.3)", textAlign: "center", minWidth: "90px" },
-  timerLabel: { fontSize: "7px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.3px", marginBottom: "0px" },
-  timerValue: { fontSize: "16px", fontWeight: 900, fontFamily: "monospace" },
-  
-  // ============================================================
-  // MAIN CONTENT - ABSOLUTELY FIXED (Never changes size)
-  // ============================================================
+  headerContent: { maxWidth: "1400px", margin: "0 auto", padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" },
+  headerLeft: { display: "flex", alignItems: "center", gap: "14px" },
+  headerRight: { display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" },
+  backButton: { width: "40px", height: "40px", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: "10px", color: "white", fontSize: "20px", cursor: "pointer" },
+  headerTitle: { fontSize: "20px", fontWeight: 700, marginBottom: "2px" },
+  headerMeta: { fontSize: "13px", opacity: 0.9 },
+  timer: { padding: "6px 16px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.3)", textAlign: "center", minWidth: "140px" },
+  timerLabel: { fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "2px" },
+  timerValue: { fontSize: "24px", fontWeight: 900, fontFamily: "monospace" },
   mainContent: { 
     maxWidth: "1400px", 
     margin: "0 auto", 
-    padding: "4px 12px", 
+    padding: "16px 20px", 
     display: "grid", 
-    gridTemplateColumns: "1fr 220px", 
-    gap: "10px",
+    gridTemplateColumns: "1fr 280px", 
+    gap: "20px",
     flex: 1,
     minHeight: 0,
-    height: "calc(100vh - 54px)", // Fixed height - NEVER CHANGES
-    maxHeight: "calc(100vh - 54px)"
+    height: "calc(100vh - 90px)"
   },
-  
-  questionColumn: { 
-    display: "flex", 
-    flexDirection: "column", 
-    gap: "4px", 
-    minHeight: 0, 
-    height: "100%",
-    maxHeight: "100%",
-    overflow: "hidden"
-  },
-  
+  questionColumn: { display: "flex", flexDirection: "column", gap: "16px", minHeight: 0, height: "100%" },
   questionCard: { 
     background: "white", 
-    borderRadius: "10px", 
-    padding: "8px 12px", 
-    boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+    borderRadius: "16px", 
+    padding: "20px 24px", 
+    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
     display: "flex",
     flexDirection: "column",
     flex: 1,
     minHeight: 0,
     height: "100%",
-    maxHeight: "100%",
     overflow: "hidden"
   },
-  
-  // Question area - FIXED 20% (Never changes)
-  questionArea: {
-    flex: "0 0 20%",
-    minHeight: "0",
-    maxHeight: "20%",
-    overflow: "hidden",
-    display: "flex",
-    flexDirection: "column"
-  },
-  
   questionText: { 
-    fontSize: "15px", 
-    lineHeight: "1.4", 
+    fontSize: "18px", 
+    lineHeight: "1.6", 
     color: "#1e293b", 
+    marginBottom: "14px", 
     fontWeight: 500,
-    padding: "4px 8px",
+    padding: "14px 18px",
     background: "#f8fafc",
-    borderRadius: "6px",
-    overflowY: "auto",
-    flex: 1,
-    marginBottom: "2px"
-  },
-  
-  changeIndicator: { 
-    padding: "1px 6px", 
-    background: "#FFF8E1", 
-    borderRadius: "4px", 
-    fontSize: "9px", 
-    color: "#F57C00", 
-    display: "inline-block",
+    borderRadius: "10px",
     flexShrink: 0
   },
-  
-  // Answers area - Takes remaining space
-  answersArea: {
-    flex: 1,
-    minHeight: 0,
-    overflow: "hidden",
-    marginTop: "2px",
-    display: "flex",
-    flexDirection: "column"
-  },
-  
+  changeIndicator: { padding: "6px 12px", background: "#FFF8E1", borderRadius: "16px", fontSize: "12px", color: "#F57C00", marginBottom: "10px", display: "inline-block", flexShrink: 0 },
   answersContainer: { 
     display: "flex", 
     flexDirection: "column", 
-    gap: "3px",
+    gap: "10px", 
     flex: 1,
-    overflowY: "auto",
-    paddingRight: "2px"
+    overflow: "visible",
+    minHeight: "auto"
   },
-  
   answerCard: { 
-    padding: "4px 8px", 
+    padding: "14px 18px", 
     border: "2px solid", 
-    borderRadius: "6px", 
+    borderRadius: "12px", 
     cursor: "pointer", 
     textAlign: "left", 
     display: "flex", 
     alignItems: "center", 
-    gap: "6px", 
-    transition: "all 0.15s", 
-    fontSize: "13px",
-    flexShrink: 0,
-    minHeight: "28px",
-    maxHeight: "40px"
+    gap: "14px", 
+    transition: "all 0.2s", 
+    fontSize: "16px",
+    flexShrink: 0
   },
-  
   answerLetter: { 
-    width: "20px", 
-    height: "20px", 
-    borderRadius: "4px", 
+    width: "32px", 
+    height: "32px", 
+    borderRadius: "8px", 
     display: "flex", 
     alignItems: "center", 
     justifyContent: "center", 
-    fontSize: "10px", 
+    fontSize: "14px", 
     fontWeight: 700,
     flexShrink: 0
   },
-  
-  multipleHint: { 
-    padding: "2px 8px", 
-    background: "#E3F2FD", 
-    borderRadius: "4px", 
-    fontSize: "10px", 
-    color: "#1565C0", 
-    marginTop: "2px", 
-    flexShrink: 0 
-  },
-  
+  multipleHint: { padding: "10px 16px", background: "#E3F2FD", borderRadius: "8px", fontSize: "13px", color: "#1565C0", marginBottom: "10px", flexShrink: 0 },
   navigation: { 
     display: "flex", 
     justifyContent: "space-between", 
     alignItems: "center",
-    gap: "4px", 
-    marginTop: "4px",
-    paddingTop: "4px",
+    gap: "12px", 
+    marginTop: "12px",
+    paddingTop: "12px",
     borderTop: "1px solid #e2e8f0",
     flexShrink: 0
   },
-  
-  navCenter: { display: "flex", alignItems: "center", gap: "4px" },
-  navProgress: { fontSize: "11px", color: "#64748b", fontWeight: 500 },
-  navButton: { padding: "4px 12px", borderRadius: "4px", fontSize: "11px", fontWeight: 600, border: "2px solid #0097a7", background: "white", color: "#0097a7", cursor: "pointer" },
-  nextButton: { padding: "4px 12px", borderRadius: "4px", fontSize: "11px", fontWeight: 600, border: "none", background: "linear-gradient(135deg, #0097a7, #006064)", color: "white", cursor: "pointer" },
-  submitButton: { padding: "4px 12px", borderRadius: "4px", fontSize: "11px", fontWeight: 600, border: "none", background: "#4caf50", color: "white", cursor: "pointer" },
-  
-  // Navigator - FIXED size
+  navCenter: { display: "flex", alignItems: "center", gap: "12px" },
+  navProgress: { fontSize: "14px", color: "#64748b", fontWeight: 500 },
+  navButton: { padding: "10px 20px", borderRadius: "8px", fontSize: "14px", fontWeight: 600, border: "2px solid #0097a7", background: "white", color: "#0097a7", cursor: "pointer" },
+  nextButton: { padding: "10px 24px", borderRadius: "8px", fontSize: "14px", fontWeight: 600, border: "none", background: "linear-gradient(135deg, #0097a7, #006064)", color: "white", cursor: "pointer" },
+  submitButton: { padding: "10px 24px", borderRadius: "8px", fontSize: "14px", fontWeight: 600, border: "none", background: "#4caf50", color: "white", cursor: "pointer" },
   navigatorColumn: { 
     display: "flex", 
     flexDirection: "column",
     height: "100%",
-    maxHeight: "100%",
     minHeight: 0
   },
-  
   navigatorCard: { 
     background: "white", 
-    borderRadius: "10px", 
-    padding: "6px 8px", 
-    boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+    borderRadius: "16px", 
+    padding: "16px 18px", 
+    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
     display: "flex",
     flexDirection: "column",
     height: "100%",
-    maxHeight: "100%",
     overflow: "hidden"
   },
-  
-  navigatorTitle: { fontSize: "11px", fontWeight: 600, color: "#0a1929", margin: "0 0 3px 0", flexShrink: 0 },
-  statsGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "2px", marginBottom: "3px", flexShrink: 0 },
-  statCard: { background: "#f8fafc", padding: "2px 2px", borderRadius: "4px", textAlign: "center" },
-  statValue: { fontSize: "12px", fontWeight: 900 },
-  statLabel: { fontSize: "7px", color: "#64748b", marginTop: "0px" },
-  
+  navigatorTitle: { fontSize: "15px", fontWeight: 600, color: "#0a1929", margin: "0 0 12px 0", flexShrink: 0 },
+  statsGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", marginBottom: "12px", flexShrink: 0 },
+  statCard: { background: "#f8fafc", padding: "10px", borderRadius: "8px", textAlign: "center" },
+  statValue: { fontSize: "18px", fontWeight: 900 },
+  statLabel: { fontSize: "10px", color: "#64748b", marginTop: "2px" },
   questionGrid: { 
     display: "grid", 
-    gridTemplateColumns: "repeat(10, 1fr)", 
-    gap: "2px", 
-    marginBottom: "2px",
+    gridTemplateColumns: "repeat(7, 1fr)", 
+    gap: "5px", 
+    marginBottom: "10px",
     flex: 1,
     overflowY: "auto",
-    padding: "1px",
+    padding: "2px",
     alignContent: "start"
   },
-  
   gridItem: { 
     aspectRatio: "1", 
     border: "2px solid", 
-    borderRadius: "4px", 
-    fontSize: "9px", 
+    borderRadius: "6px", 
+    fontSize: "12px", 
     fontWeight: 700, 
     display: "flex", 
     alignItems: "center", 
     justifyContent: "center", 
     cursor: "pointer",
-    transition: "all 0.15s",
+    transition: "all 0.2s",
     minWidth: "0",
     minHeight: "0"
   },
-  
   legend: { 
     display: "flex", 
     justifyContent: "space-between", 
-    padding: "2px 0", 
+    padding: "8px 0", 
     borderTop: "1px solid #e2e8f0", 
     flexWrap: "wrap", 
-    gap: "2px",
+    gap: "4px",
     flexShrink: 0
   },
-  
-  legendItem: { display: "flex", alignItems: "center", gap: "2px", fontSize: "8px" },
-  legendDot: { width: "5px", height: "5px", borderRadius: "2px" },
-  
+  legendItem: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10px" },
+  legendDot: { width: "8px", height: "8px", borderRadius: "2px" },
   modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
   modalContent: { background: "white", padding: "30px", borderRadius: "20px", maxWidth: "450px", width: "90%" },
   modalIcon: { fontSize: "48px", textAlign: "center", marginBottom: "15px" },
