@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - WITH COLOR
+// pages/assessment/[id].js - LMS-Inspired Professional Layout
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -144,12 +144,12 @@ function AssessmentContent() {
   const autoSubmitRef = useRef(false);
 
   // STRATAVAX BRAND COLORS
-  const primaryColor = "#1a237e"; // Dark blue
-  const primaryLight = "#e8eaf6"; // Light blue
-  const accentColor = "#0d47a1"; // Darker blue
-  const successColor = "#2e7d32"; // Green
-  const warningColor = "#f57c00"; // Orange
-  const dangerColor = "#c62828"; // Red
+  const primaryColor = "#1a237e";
+  const primaryLight = "#e8eaf6";
+  const primaryDark = "#0d47a1";
+  const successColor = "#2e7d32";
+  const warningColor = "#f57c00";
+  const dangerColor = "#c62828";
 
   const currentQuestion = questions[currentIndex] || {};
   const allowMultipleSelection = isManufacturingBaselineAssessment(assessment, assessmentType);
@@ -788,27 +788,35 @@ function AssessmentContent() {
       {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: successColor }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to dashboard...</p></div></div>}
 
       {/* ============================================================
-          MAIN LAYOUT WITH COLOR
+          LMS-INSPIRED PROFESSIONAL LAYOUT
           ============================================================ */}
       <div style={styles.container}>
-        {/* Header - With Color */}
-        <div style={{ ...styles.header, background: primaryColor }}>
+        {/* Header - Clean with breadcrumb style */}
+        <div style={styles.header}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
               <button onClick={handleBackClick} style={styles.backButton}>←</button>
               <div>
                 <div style={styles.headerTitle}>
-                  <span style={styles.headerAssessment}>{assessment ? assessment.title : "Assessment"}</span>
+                  {assessment ? assessment.title : "Assessment"}
                 </div>
                 <div style={styles.headerMeta}>
-                  Question {currentIndex + 1} of {questions.length} • {currentQuestion.section || "General"}
+                  <span style={styles.headerMetaItem}>Question {currentIndex + 1}</span>
+                  <span style={styles.headerMetaDivider}>•</span>
+                  <span style={styles.headerMetaItem}>{currentQuestion.section || "General"}</span>
+                  {isMultipleCorrect && (
+                    <>
+                      <span style={styles.headerMetaDivider}>•</span>
+                      <span style={{ ...styles.headerMetaItem, color: primaryColor, fontWeight: 600 }}>Select all that apply</span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
             <div style={styles.headerRight}>
               <div style={styles.timer}>
                 <div style={styles.timerLabel}>TIME REMAINING</div>
-                <div style={{ ...styles.timerValue, color: isTimeCritical ? "#ff6b6b" : "white" }}>
+                <div style={{ ...styles.timerValue, color: isTimeCritical ? dangerColor : primaryColor }}>
                   {isTimeExpired ? "EXPIRED" : timeRemainingFormatted}
                 </div>
               </div>
@@ -817,128 +825,131 @@ function AssessmentContent() {
         </div>
 
         {/* ============================================================
-            MAIN CONTENT
+            MAIN CONTENT - LMS STYLE
             ============================================================ */}
         <div style={styles.mainContent}>
-          {/* Question Area */}
+          {/* Question Area - Takes more space */}
           <div style={styles.questionArea}>
-            {/* Question Text */}
-            <div style={styles.questionText}>
-              {currentQuestion.question_text}
-            </div>
-
-            {/* Multiple Select Info Banner */}
-            {isMultipleCorrect && (
-              <div style={{ ...styles.multipleHint, background: primaryLight, color: primaryColor }}>
-                💡 This question has multiple correct answers. Select all that apply.
+            <div style={styles.questionCard}>
+              {/* Question Meta */}
+              <div style={styles.questionMeta}>
+                <div style={styles.questionNumber}>Question {currentIndex + 1}</div>
+                <div style={styles.questionMetaInfo}>
+                  <span style={styles.questionMetaLabel}>Marked out of</span>
+                  <span style={styles.questionMetaValue}>1.00</span>
+                  <span style={styles.questionMetaFlag}>Flag question</span>
+                </div>
               </div>
-            )}
 
-            {/* Answer Options */}
-            <div style={styles.answersContainer}>
-              {safeArray(currentQuestion.answers).map((answer, index) => {
-                const selected = isAnswerSelected(currentQuestion.id, answer.id);
-                const optionLetter = String.fromCharCode(65 + index);
-                return (
-                  <button 
-                    key={answer.id} 
-                    className="answer-option"
-                    onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)} 
-                    disabled={isDisabled}
-                    style={{ 
-                      ...styles.answerCard, 
-                      background: selected ? primaryLight : "white", 
-                      borderColor: selected ? primaryColor : "#e2e8f0",
-                      opacity: isDisabled ? 0.6 : 1,
-                      cursor: isDisabled ? "not-allowed" : "pointer"
-                    }}
-                  >
-                    <div style={{ 
-                      ...styles.answerLetter, 
-                      background: selected ? primaryColor : "#f1f5f9", 
-                      color: selected ? "white" : "#475569" 
-                    }}>
-                      {optionLetter}
-                    </div>
-                    <span style={{
-                      flex: 1,
-                      color: selected ? primaryColor : "#1e293b",
-                      fontSize: "15px",
-                      fontWeight: selected ? 600 : 400
-                    }}>
-                      {answer.answer_text}
-                    </span>
-                    {selected && (
-                      <span style={{ color: primaryColor, fontSize: "18px" }}>✓</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Navigation */}
-            <div style={styles.navigation}>
-              <button 
-                onClick={() => moveToQuestion(currentIndex - 1)} 
-                disabled={currentIndex === 0 || isDisabled} 
-                className="assessment-nav-btn"
-                style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}
-              >
-                ← Previous
-              </button>
-              <div style={styles.navCenter}>
-                <span style={styles.navProgress}>{currentIndex + 1} / {questions.length}</span>
+              {/* Question Text */}
+              <div style={styles.questionText}>
+                {currentQuestion.question_text}
               </div>
-              {isLastQuestion ? (
-                <button 
-                  onClick={() => setShowSubmitModal(true)} 
-                  disabled={isDisabled} 
-                  className="assessment-nav-btn"
-                  style={{ ...styles.submitButton, background: successColor }}
-                >
-                  Submit
-                </button>
-              ) : (
-                <button 
-                  onClick={() => moveToQuestion(currentIndex + 1)} 
-                  disabled={isDisabled} 
-                  className="assessment-nav-btn"
-                  style={{ ...styles.nextButton, background: primaryColor }}
-                >
-                  Next →
-                </button>
+
+              {/* Multiple Select Hint */}
+              {isMultipleCorrect && (
+                <div style={styles.multipleHint}>
+                  💡 Select one or more
+                </div>
               )}
+
+              {/* Answer Options - Checkbox style */}
+              <div style={styles.answersContainer}>
+                {safeArray(currentQuestion.answers).map((answer, index) => {
+                  const selected = isAnswerSelected(currentQuestion.id, answer.id);
+                  const optionLetter = String.fromCharCode(65 + index);
+                  return (
+                    <button 
+                      key={answer.id} 
+                      className="answer-option"
+                      onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)} 
+                      disabled={isDisabled}
+                      style={{ 
+                        ...styles.answerCard, 
+                        background: selected ? "#e3f2fd" : "white", 
+                        borderColor: selected ? primaryColor : "#e2e8f0",
+                        opacity: isDisabled ? 0.6 : 1,
+                        cursor: isDisabled ? "not-allowed" : "pointer"
+                      }}
+                    >
+                      <div style={{ 
+                        ...styles.answerCheckbox, 
+                        background: selected ? primaryColor : "white", 
+                        borderColor: selected ? primaryColor : "#cbd5e1"
+                      }}>
+                        {selected && <span style={{ color: "white", fontSize: "14px" }}>✓</span>}
+                      </div>
+                      <span style={{
+                        flex: 1,
+                        color: selected ? primaryColor : "#1e293b",
+                        fontSize: "15px",
+                        fontWeight: selected ? 600 : 400
+                      }}>
+                        {optionLetter}. {answer.answer_text}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          {/* Navigator */}
-          <div style={styles.navigatorColumn}>
-            <div style={{ ...styles.navigatorCard, borderColor: primaryColor + "40" }}>
-              <div style={styles.navigatorHeader}>
-                <span style={{ ...styles.navigatorTitle, color: primaryColor }}>Question Navigator</span>
+          {/* Right Panel - Stats & Navigator */}
+          <div style={styles.sidePanel}>
+            {/* Stats */}
+            <div style={styles.statsCard}>
+              <div style={styles.statsRow}>
+                <span style={styles.statsLabel}>Answered</span>
+                <span style={styles.statsValue}>{totalAnswered}</span>
               </div>
-              
-              <div style={styles.statsGrid}>
-                <div style={{ ...styles.statCard, background: primaryLight }}>
-                  <div style={{ ...styles.statValue, color: primaryColor }}>{totalAnswered}</div>
-                  <div style={styles.statLabel}>Answered</div>
-                </div>
-                <div style={{ ...styles.statCard, background: primaryLight }}>
-                  <div style={{ ...styles.statValue, color: primaryColor }}>{questions.length - totalAnswered}</div>
-                  <div style={styles.statLabel}>Remaining</div>
-                </div>
-                <div style={{ ...styles.statCard, background: primaryLight }}>
-                  <div style={{ ...styles.statValue, color: primaryColor }}>{totalChanges}</div>
-                  <div style={styles.statLabel}>Changed</div>
-                </div>
+              <div style={styles.statsRow}>
+                <span style={styles.statsLabel}>Remaining</span>
+                <span style={styles.statsValue}>{questions.length - totalAnswered}</span>
               </div>
+              <div style={styles.statsRow}>
+                <span style={styles.statsLabel}>Changes</span>
+                <span style={styles.statsValue}>{totalChanges}</span>
+              </div>
+              <div style={styles.statsDivider} />
+              <div style={styles.statsRow}>
+                <span style={styles.statsLabel}>Progress</span>
+                <span style={styles.statsValue}>{Math.round((totalAnswered / questions.length) * 100)}%</span>
+              </div>
+              <div style={styles.progressBar}>
+                <div style={{ ...styles.progressFill, width: Math.min((totalAnswered / questions.length) * 100, 100) + '%' }} />
+              </div>
+            </div>
 
-              <div className="assessment-scroll" style={styles.questionGrid}>
+            {/* Navigator */}
+            <div style={styles.navigatorCard}>
+              <div style={styles.navigatorHeader}>
+                <span style={styles.navigatorTitle}>Question Navigator</span>
+              </div>
+              <div style={styles.questionGrid}>
                 {questions.map((question, index) => {
                   const questionAnswer = answers[question.id];
                   const answered = questionAnswer !== undefined && (Array.isArray(questionAnswer) ? questionAnswer.length > 0 : questionAnswer !== null);
                   const current = index === currentIndex;
                   const changed = answerChangeCount[question.id] > 0;
+                  
+                  let bgColor = "white";
+                  let textColor = "#1e293b";
+                  let borderColor = "#e2e8f0";
+                  
+                  if (current) {
+                    bgColor = primaryColor;
+                    textColor = "white";
+                    borderColor = primaryColor;
+                  } else if (answered && changed) {
+                    bgColor = warningColor;
+                    textColor = "white";
+                    borderColor = warningColor;
+                  } else if (answered) {
+                    bgColor = successColor;
+                    textColor = "white";
+                    borderColor = successColor;
+                  }
+                  
                   return (
                     <button 
                       key={question.id} 
@@ -947,9 +958,9 @@ function AssessmentContent() {
                       disabled={isDisabled}
                       style={{ 
                         ...styles.gridItem, 
-                        background: current ? primaryColor : answered ? changed ? warningColor : successColor : "white", 
-                        color: current || answered ? "white" : "#1e293b", 
-                        borderColor: current ? primaryColor : "#e2e8f0", 
+                        background: bgColor, 
+                        color: textColor, 
+                        borderColor: borderColor,
                         opacity: isDisabled ? 0.6 : 1,
                         cursor: isDisabled ? "not-allowed" : "pointer"
                       }}
@@ -959,7 +970,6 @@ function AssessmentContent() {
                   );
                 })}
               </div>
-
               <div style={styles.legend}>
                 <div style={styles.legendItem}>
                   <div style={{ ...styles.legendDot, background: successColor }} />
@@ -979,6 +989,34 @@ function AssessmentContent() {
                 </div>
               </div>
             </div>
+
+            {/* Navigation Buttons */}
+            <div style={styles.navButtons}>
+              <button 
+                onClick={() => moveToQuestion(currentIndex - 1)} 
+                disabled={currentIndex === 0 || isDisabled} 
+                style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}
+              >
+                ← Previous
+              </button>
+              {isLastQuestion ? (
+                <button 
+                  onClick={() => setShowSubmitModal(true)} 
+                  disabled={isDisabled} 
+                  style={styles.submitButton}
+                >
+                  Submit
+                </button>
+              ) : (
+                <button 
+                  onClick={() => moveToQuestion(currentIndex + 1)} 
+                  disabled={isDisabled} 
+                  style={styles.nextButton}
+                >
+                  Next →
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -988,12 +1026,12 @@ function AssessmentContent() {
         <style id="assessment-modern-styles">{`
           .answer-option {
             transition: all 0.2s ease;
-            border-radius: 12px;
+            border-radius: 8px;
           }
           
           .answer-option:hover:not(:disabled) {
             transform: translateY(-1px);
-            box-shadow: 0 4px 16px rgba(26, 35, 126, 0.15);
+            box-shadow: 0 4px 12px rgba(26, 35, 126, 0.12);
             border-color: #1a237e !important;
           }
           
@@ -1003,24 +1041,14 @@ function AssessmentContent() {
 
           .navigator-item {
             transition: all 0.2s ease;
-            border-radius: 6px;
-            font-size: 11px;
+            border-radius: 4px;
+            font-size: 12px;
           }
           
           .navigator-item:hover:not(:disabled) {
-            transform: scale(1.1);
+            transform: scale(1.08);
             box-shadow: 0 4px 12px rgba(0,0,0,0.12);
             z-index: 2;
-          }
-
-          .assessment-nav-btn {
-            transition: all 0.2s ease;
-            border-radius: 8px;
-          }
-          
-          .assessment-nav-btn:hover:not(:disabled) {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(26, 35, 126, 0.25);
           }
 
           .assessment-scroll::-webkit-scrollbar {
@@ -1048,7 +1076,7 @@ function AssessmentContent() {
 }
 
 // ============================================================
-// STYLES - WITH COLOR
+// STYLES - LMS INSPIRED
 // ============================================================
 
 const styles = {
@@ -1070,20 +1098,23 @@ const styles = {
   
   container: { minHeight: "100vh", background: "#f8fafc", display: "flex", flexDirection: "column" },
   
+  // ============================================================
+  // HEADER - Clean LMS style
+  // ============================================================
   header: { 
     position: "sticky", 
     top: 0, 
     zIndex: 100, 
-    background: "#1a237e", 
-    borderBottom: "none", 
-    boxShadow: "0 2px 8px rgba(0,0,0,0.15)", 
+    background: "white", 
+    borderBottom: "1px solid #e2e8f0", 
+    boxShadow: "0 1px 4px rgba(0,0,0,0.04)", 
     flexShrink: 0 
   },
   
   headerContent: { 
     maxWidth: "1400px", 
     margin: "0 auto", 
-    padding: "12px 24px", 
+    padding: "10px 24px", 
     display: "flex", 
     justifyContent: "space-between", 
     alignItems: "center", 
@@ -1097,10 +1128,10 @@ const styles = {
   backButton: { 
     width: "32px", 
     height: "32px", 
-    background: "rgba(255,255,255,0.15)", 
-    border: "1px solid rgba(255,255,255,0.2)", 
+    background: "transparent", 
+    border: "1px solid #e2e8f0", 
     borderRadius: "8px", 
-    color: "white", 
+    color: "#475569", 
     fontSize: "14px", 
     cursor: "pointer",
     transition: "0.2s",
@@ -1112,15 +1143,21 @@ const styles = {
   headerTitle: { 
     fontSize: "16px", 
     fontWeight: 600, 
-    color: "white" 
+    color: "#0f172a" 
   },
   
-  headerAssessment: { 
-    fontWeight: 500,
-    color: "white"
+  headerMeta: { 
+    fontSize: "13px", 
+    color: "#64748b", 
+    marginTop: "2px",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    flexWrap: "wrap"
   },
   
-  headerMeta: { fontSize: "12px", color: "rgba(255,255,255,0.7)", marginTop: "2px" },
+  headerMetaItem: { color: "#64748b" },
+  headerMetaDivider: { color: "#cbd5e1" },
   
   timer: { 
     textAlign: "right" 
@@ -1131,60 +1168,123 @@ const styles = {
     fontWeight: 600, 
     textTransform: "uppercase", 
     letterSpacing: "0.5px", 
-    color: "rgba(255,255,255,0.6)" 
+    color: "#94a3b8" 
   },
   
   timerValue: { 
-    fontSize: "18px", 
+    fontSize: "20px", 
     fontWeight: 700, 
     fontFamily: "monospace",
-    color: "white"
+    color: "#1a237e"
   },
   
+  // ============================================================
+  // MAIN CONTENT - LMS style
+  // ============================================================
   mainContent: { 
-    maxWidth: "1200px", 
+    maxWidth: "1400px", 
     margin: "0 auto", 
-    padding: "24px", 
+    padding: "20px 24px", 
     display: "grid", 
-    gridTemplateColumns: "1fr 220px", 
+    gridTemplateColumns: "1fr 280px", 
     gap: "24px",
     flex: 1,
     minHeight: 0,
-    height: "calc(100vh - 80px)",
-    maxHeight: "calc(100vh - 80px)",
+    height: "calc(100vh - 75px)",
+    maxHeight: "calc(100vh - 75px)",
     overflow: "hidden",
     boxSizing: "border-box"
   },
   
+  // ============================================================
+  // QUESTION AREA
+  // ============================================================
   questionArea: { 
     display: "flex", 
     flexDirection: "column", 
-    gap: "16px",
     height: "100%",
     overflow: "hidden"
   },
   
+  questionCard: {
+    background: "white",
+    borderRadius: "12px",
+    padding: "24px",
+    border: "1px solid #e2e8f0",
+    display: "flex",
+    flexDirection: "column",
+    flex: 1,
+    overflow: "hidden",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.04)"
+  },
+  
+  questionMeta: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "16px",
+    flexShrink: 0,
+    flexWrap: "wrap",
+    gap: "8px",
+    paddingBottom: "12px",
+    borderBottom: "1px solid #f1f5f9"
+  },
+  
+  questionNumber: {
+    fontSize: "16px",
+    fontWeight: 600,
+    color: "#0f172a"
+  },
+  
+  questionMetaInfo: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    fontSize: "13px",
+    color: "#64748b"
+  },
+  
+  questionMetaLabel: {
+    fontWeight: 400
+  },
+  
+  questionMetaValue: {
+    fontWeight: 600,
+    color: "#0f172a"
+  },
+  
+  questionMetaFlag: {
+    color: "#94a3b8",
+    fontSize: "12px",
+    fontStyle: "italic"
+  },
+  
   questionText: { 
-    fontSize: "18px", 
-    lineHeight: "1.6", 
+    fontSize: "17px", 
+    lineHeight: "1.7", 
     color: "#0f172a", 
     fontWeight: 500,
     padding: "0 4px",
-    minHeight: "50px",
-    maxHeight: "100px",
+    minHeight: "60px",
+    maxHeight: "140px",
     overflowY: "auto",
-    scrollbarWidth: "thin"
+    scrollbarWidth: "thin",
+    marginBottom: "12px"
   },
   
   multipleHint: { 
-    padding: "10px 16px", 
-    background: "#e8eaf6", 
+    padding: "8px 14px", 
+    background: "#eff6ff", 
     borderRadius: "8px", 
     fontSize: "13px", 
-    color: "#1a237e",
-    flexShrink: 0
+    color: "#1e40af",
+    flexShrink: 0,
+    marginBottom: "12px"
   },
   
+  // ============================================================
+  // ANSWERS - Checkbox style
+  // ============================================================
   answersContainer: { 
     display: "flex", 
     flexDirection: "column", 
@@ -1196,9 +1296,9 @@ const styles = {
   },
   
   answerCard: { 
-    padding: "12px 16px",
+    padding: "10px 14px",
     border: "2px solid", 
-    borderRadius: "12px", 
+    borderRadius: "8px", 
     cursor: "pointer", 
     textAlign: "left", 
     display: "flex", 
@@ -1207,88 +1307,91 @@ const styles = {
     transition: "all 0.2s ease", 
     fontSize: "15px",
     flexShrink: 0,
-    minHeight: "48px"
+    minHeight: "44px",
+    background: "white"
   },
   
-  answerLetter: { 
-    width: "28px", 
-    height: "28px", 
-    borderRadius: "8px", 
+  answerCheckbox: { 
+    width: "22px", 
+    height: "22px", 
+    borderRadius: "4px", 
+    border: "2px solid", 
     display: "flex", 
     alignItems: "center", 
     justifyContent: "center", 
-    fontSize: "13px", 
-    fontWeight: 600,
-    flexShrink: 0
+    flexShrink: 0,
+    transition: "all 0.2s ease"
   },
   
-  navigation: { 
-    display: "flex", 
-    justifyContent: "space-between", 
-    alignItems: "center",
-    gap: "12px", 
-    paddingTop: "12px",
-    borderTop: "1px solid #e2e8f0",
-    flexShrink: 0
-  },
-  
-  navCenter: { display: "flex", alignItems: "center", gap: "8px" },
-  navProgress: { fontSize: "14px", color: "#64748b", fontWeight: 500 },
-  
-  navButton: { 
-    padding: "8px 20px", 
-    borderRadius: "8px", 
-    fontSize: "14px", 
-    fontWeight: 500, 
-    border: "2px solid #e2e8f0", 
-    background: "white", 
-    color: "#475569", 
-    cursor: "pointer",
-    transition: "0.2s ease"
-  },
-  
-  nextButton: { 
-    padding: "8px 24px", 
-    borderRadius: "8px", 
-    fontSize: "14px", 
-    fontWeight: 500, 
-    border: "none", 
-    background: "#1a237e", 
-    color: "white", 
-    cursor: "pointer",
-    transition: "0.2s ease"
-  },
-  
-  submitButton: { 
-    padding: "8px 24px", 
-    borderRadius: "8px", 
-    fontSize: "14px", 
-    fontWeight: 500, 
-    border: "none", 
-    background: "#2e7d32", 
-    color: "white", 
-    cursor: "pointer",
-    transition: "0.2s ease"
-  },
-  
-  navigatorColumn: { 
+  // ============================================================
+  // SIDE PANEL
+  // ============================================================
+  sidePanel: { 
     display: "flex", 
     flexDirection: "column",
+    gap: "12px",
     height: "100%",
     maxHeight: "100%",
-    minHeight: 0
+    overflow: "hidden"
   },
   
+  // Stats Card
+  statsCard: {
+    background: "white",
+    borderRadius: "12px",
+    padding: "16px",
+    border: "1px solid #e2e8f0",
+    flexShrink: 0
+  },
+  
+  statsRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "4px 0"
+  },
+  
+  statsLabel: {
+    fontSize: "13px",
+    color: "#64748b"
+  },
+  
+  statsValue: {
+    fontSize: "14px",
+    fontWeight: 600,
+    color: "#0f172a"
+  },
+  
+  statsDivider: {
+    height: "1px",
+    background: "#e2e8f0",
+    margin: "8px 0"
+  },
+  
+  progressBar: {
+    height: "4px",
+    background: "#e2e8f0",
+    borderRadius: "4px",
+    overflow: "hidden",
+    marginTop: "4px"
+  },
+  
+  progressFill: {
+    height: "100%",
+    background: "#1a237e",
+    borderRadius: "4px",
+    transition: "width 0.3s ease"
+  },
+  
+  // Navigator
   navigatorCard: { 
     background: "white", 
-    borderRadius: "16px", 
-    padding: "16px", 
-    border: "1px solid #1a237e40",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+    borderRadius: "12px", 
+    padding: "14px", 
+    border: "1px solid #e2e8f0",
     display: "flex",
     flexDirection: "column",
-    height: "100%",
-    maxHeight: "100%",
+    flex: 1,
     overflow: "hidden"
   },
   
@@ -1296,48 +1399,20 @@ const styles = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: "8px",
+    marginBottom: "10px",
     flexShrink: 0
   },
   
   navigatorTitle: { 
     fontSize: "13px", 
     fontWeight: 600, 
-    color: "#1a237e"
-  },
-  
-  statsGrid: { 
-    display: "grid", 
-    gridTemplateColumns: "repeat(3, 1fr)", 
-    gap: "6px", 
-    marginBottom: "10px", 
-    flexShrink: 0 
-  },
-  
-  statCard: { 
-    background: "#e8eaf6", 
-    padding: "6px 4px", 
-    borderRadius: "8px", 
-    textAlign: "center" 
-  },
-  
-  statValue: { 
-    fontSize: "16px", 
-    fontWeight: 700, 
-    color: "#1a237e" 
-  },
-  
-  statLabel: { 
-    fontSize: "9px", 
-    color: "#94a3b8", 
-    marginTop: "0px" 
+    color: "#0f172a"
   },
   
   questionGrid: { 
     display: "grid", 
     gridTemplateColumns: "repeat(10, 1fr)", 
     gap: "4px", 
-    marginBottom: "8px",
     flex: 1,
     overflowY: "auto",
     padding: "2px",
@@ -1347,8 +1422,8 @@ const styles = {
   gridItem: { 
     aspectRatio: "1", 
     border: "2px solid", 
-    borderRadius: "6px", 
-    fontSize: "11px", 
+    borderRadius: "4px", 
+    fontSize: "12px", 
     fontWeight: 600, 
     display: "flex", 
     alignItems: "center", 
@@ -1362,18 +1437,19 @@ const styles = {
   legend: { 
     display: "flex", 
     justifyContent: "space-between", 
-    padding: "4px 0", 
+    padding: "6px 0 0", 
     borderTop: "1px solid #e2e8f0", 
     flexWrap: "wrap", 
-    gap: "4px",
-    flexShrink: 0
+    gap: "6px",
+    flexShrink: 0,
+    marginTop: "8px"
   },
   
   legendItem: { 
     display: "flex", 
     alignItems: "center", 
     gap: "4px", 
-    fontSize: "9px", 
+    fontSize: "10px", 
     color: "#64748b" 
   },
   
@@ -1383,6 +1459,55 @@ const styles = {
     borderRadius: "4px" 
   },
   
+  // Navigation Buttons
+  navButtons: {
+    display: "flex",
+    gap: "8px",
+    flexShrink: 0
+  },
+  
+  navButton: { 
+    flex: 1,
+    padding: "10px 16px", 
+    borderRadius: "8px", 
+    fontSize: "14px", 
+    fontWeight: 500, 
+    border: "2px solid #e2e8f0", 
+    background: "white", 
+    color: "#475569", 
+    cursor: "pointer",
+    transition: "0.2s ease"
+  },
+  
+  nextButton: { 
+    flex: 1,
+    padding: "10px 16px", 
+    borderRadius: "8px", 
+    fontSize: "14px", 
+    fontWeight: 500, 
+    border: "none", 
+    background: "#1a237e", 
+    color: "white", 
+    cursor: "pointer",
+    transition: "0.2s ease"
+  },
+  
+  submitButton: { 
+    flex: 1,
+    padding: "10px 16px", 
+    borderRadius: "8px", 
+    fontSize: "14px", 
+    fontWeight: 500, 
+    border: "none", 
+    background: "#2e7d32", 
+    color: "white", 
+    cursor: "pointer",
+    transition: "0.2s ease"
+  },
+  
+  // ============================================================
+  // MODAL
+  // ============================================================
   modalOverlay: { 
     position: "fixed", 
     top: 0, 
