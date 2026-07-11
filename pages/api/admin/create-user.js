@@ -113,17 +113,45 @@ export default async function handler(req, res) {
 
     // Step 3: Create user via admin API
     console.log("[Create User API] Creating user with email:", email);
-    const { data: userData, error: userError } = await adminClient.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: full_name,
-        name: full_name,
-        role: "candidate",
-        user_type: "candidate"
-      }
-    });
+    console.log("[Create User API] Testing admin createUser");
+
+let userData = null;
+let userError = null;
+
+try {
+  const result = await adminClient.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: {
+      full_name,
+      name: full_name,
+      role: "candidate",
+      user_type: "candidate"
+    }
+  });
+
+  userData = result.data;
+  userError = result.error;
+
+  console.log(
+    "[Create User API] createUser result:",
+    JSON.stringify(result, null, 2)
+  );
+} catch (err) {
+  console.error(
+    "[Create User API] createUser exception:",
+    err
+  );
+
+  return res.status(500).json({
+    success: false,
+    error: err.message,
+    name: err.name,
+    stack: err.stack
+  });
+}
+
 
     if (userError) {
   console.error(
