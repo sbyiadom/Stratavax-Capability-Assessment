@@ -1,4 +1,4 @@
-// pages/register.js - Fixed without redirect URL
+// pages/register.js - Fixed registration without redirect_to
 
 import { useState } from "react";
 import { useRouter } from "next/router";
@@ -18,7 +18,7 @@ function getReadableSignupError(error) {
 
   const message = String(error.message || error || "").toLowerCase();
 
-  if (message.includes("already registered") || message.includes("already exists")) {
+  if (message.includes("already registered") || message.includes("already exists") || message.includes("user already registered")) {
     return "An account already exists with this email. Please log in or use password reset.";
   }
 
@@ -42,6 +42,7 @@ async function autoAssignNationalService(candidateId) {
   try {
     console.log(`[Auto-Assign] Assigning National Service to candidate: ${candidateId}`);
 
+    // Check if already assigned
     const { data: existing, error: checkError } = await supabase
       .from("candidate_assessments")
       .select("id, status")
@@ -55,6 +56,8 @@ async function autoAssignNationalService(candidateId) {
 
     if (existing) {
       console.log(`[Auto-Assign] Already exists with status: ${existing.status}`);
+      
+      // If blocked, unblock it
       if (existing.status === "blocked") {
         const { error: updateError } = await supabase
           .from("candidate_assessments")
@@ -69,11 +72,13 @@ async function autoAssignNationalService(candidateId) {
           console.warn("[Auto-Assign] Unblock error:", updateError.message);
           return false;
         }
+        console.log("[Auto-Assign] ✅ Existing assessment unblocked");
         return true;
       }
       return true;
     }
 
+    // Create new assignment
     const now = new Date().toISOString();
     const { error: insertError } = await supabase
       .from("candidate_assessments")
@@ -102,6 +107,22 @@ async function autoAssignNationalService(candidateId) {
 
 async function createCandidateProfile(user, fullName, emailAddress, university, programme, graduationYear, preferredDepartment) {
   try {
+    // Check if profile already exists
+    const { data: existing, error: checkError } = await supabase
+      .from("candidate_profiles")
+      .select("id")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (checkError && checkError.code !== "PGRST116") {
+      console.error("Check profile error:", checkError);
+    }
+
+    if (existing) {
+      console.log("Profile already exists for user:", user.id);
+      return existing;
+    }
+
     const profileData = {
       id: user.id,
       email: emailAddress,
@@ -124,6 +145,7 @@ async function createCandidateProfile(user, fullName, emailAddress, university, 
       throw error;
     }
 
+    console.log("✅ Profile created successfully");
     return data;
   } catch (profileError) {
     console.error("Profile creation exception:", profileError);
@@ -197,7 +219,9 @@ export default function Register() {
       setLoading(true);
       setMessage({ type: "", text: "" });
 
-      // REMOVED: redirect_to parameter - this was causing the 500 error
+      // ============================================================
+      // FIX: Removed redirect_to parameter - was causing 500 error
+      // ============================================================
       const { data, error } = await supabase.auth.signUp({
         email: emailAddress,
         password,
@@ -223,6 +247,7 @@ export default function Register() {
 
       console.log("✅ User created:", data.user.id);
 
+      // Create profile
       await createCandidateProfile(
         data.user,
         fullName,
@@ -233,13 +258,24 @@ export default function Register() {
         preferredDepartment
       );
 
-      await autoAssignNationalService(data.user.id);
+      // Auto-assign National Service assessment
+      const nsAssigned = await autoAssignNationalService(data.user.id);
+      
+      if (nsAssigned) {
+        console.log(`[Auto-Assign] ✅ National Service assigned for ${emailAddress}`);
+        setMessage({
+          type: "success",
+          text: "Registration successful! Your National Service assessment is ready. Please check your email for confirmation, then log in."
+        });
+      } else {
+        console.log(`[Auto-Assign] ⚠️ National Service not assigned`);
+        setMessage({
+          type: "success",
+          text: "Registration successful! Your profile has been created. Please check your email for confirmation, then log in."
+        });
+      }
 
-      setMessage({
-        type: "success",
-        text: "Registration successful! Please check your email for confirmation, then log in."
-      });
-
+      // Clear form
       setName("");
       setEmail("");
       setPassword("");
