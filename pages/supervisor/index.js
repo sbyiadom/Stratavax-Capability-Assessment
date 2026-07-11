@@ -84,9 +84,7 @@ export default function SupervisorDashboard() {
         for (const assessment of allAssessments) {
           const isCompleted = assessment.status === 'completed' && assessment.result_id !== null;
           
-          // Check if there's a result even if status is not 'completed'
           let resultData = null;
-          let resultError = null;
           
           if (assessment.result_id) {
             const result = await supabase
@@ -97,20 +95,15 @@ export default function SupervisorDashboard() {
             
             if (!result.error) {
               resultData = result.data;
-            } else {
-              resultError = result.error;
             }
           }
 
-          // If the assessment has a result_id or is completed
           if (assessment.result_id || isCompleted) {
             const candidate = assignedCandidates.find(c => c.id === assessment.user_id);
             const isNationalService = assessment.assessments?.assessment_type?.code === 'national_service';
             
-            // Get score from multiple possible sources
+            // Get scores
             let score = resultData?.percentage_score || 0;
-            
-            // If percentage_score is null, try to get it from report_data
             if (!score && resultData?.report_data?.overallScore) {
               score = resultData.report_data.overallScore;
             }
@@ -118,31 +111,22 @@ export default function SupervisorDashboard() {
               score = resultData.report_data.dimensions.overallScore;
             }
             
-            // Get workplace_readiness from multiple sources
             let workplaceReadiness = resultData?.workplace_readiness || 0;
             if (!workplaceReadiness && resultData?.report_data?.workplaceReadiness) {
               workplaceReadiness = resultData.report_data.workplaceReadiness;
-            }
-            if (!workplaceReadiness && resultData?.report_data?.scores?.workplaceReadiness) {
-              workplaceReadiness = resultData.report_data.scores.workplaceReadiness;
             }
             if (!workplaceReadiness && resultData?.report_data?.dimensions?.workplaceReadiness) {
               workplaceReadiness = resultData.report_data.dimensions.workplaceReadiness;
             }
             
-            // Get intellectual_capability from multiple sources
             let intellectualCapability = resultData?.intellectual_capability || 0;
             if (!intellectualCapability && resultData?.report_data?.intellectualCapability) {
               intellectualCapability = resultData.report_data.intellectualCapability;
-            }
-            if (!intellectualCapability && resultData?.report_data?.scores?.intellectualCapability) {
-              intellectualCapability = resultData.report_data.scores.intellectualCapability;
             }
             if (!intellectualCapability && resultData?.report_data?.dimensions?.intellectualCapability) {
               intellectualCapability = resultData.report_data.dimensions.intellectualCapability;
             }
             
-            // Get recommendation from multiple sources
             let recommendation = resultData?.recommendation || 'Not Available';
             if (recommendation === 'Not Available' && resultData?.report_data?.recommendation) {
               if (typeof resultData.report_data.recommendation === 'string') {
@@ -152,16 +136,11 @@ export default function SupervisorDashboard() {
               }
             }
             
-            // Get risk level from multiple sources
             let riskLevel = resultData?.risk_level || 'Medium';
             if (riskLevel === 'Medium' && resultData?.report_data?.riskLevel) {
               riskLevel = resultData.report_data.riskLevel;
             }
-            if (riskLevel === 'Medium' && resultData?.report_data?.classification) {
-              riskLevel = resultData.report_data.classification;
-            }
             
-            // Calculate overall score if not present
             let overallScore = resultData?.percentage_score || 0;
             if (!overallScore && workplaceReadiness && intellectualCapability) {
               overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
@@ -170,33 +149,103 @@ export default function SupervisorDashboard() {
               overallScore = resultData.report_data.overallScore;
             }
             
-            // Extract category scores from report_data
+            // ================================================================
+            // EXTRACT CATEGORY SCORES - UPDATED TO HANDLE ALL FORMATS
+            // ================================================================
             let categoryScores = [];
-            if (resultData?.report_data?.categoryScores) {
-              categoryScores = resultData.report_data.categoryScores;
-            } else if (resultData?.report_data?._fullReport?.categoryScores) {
-              // Try nested location
-              const catScores = resultData.report_data._fullReport.categoryScores;
-              categoryScores = Object.keys(catScores).map(key => ({
-                category: key,
-                score: catScores[key].score || 0,
-                maxScore: catScores[key].maxScore || 100,
-                percentage: catScores[key].percentage || 0,
-                grade: catScores[key].grade || 'N/A',
-                comment: catScores[key].comment || ''
-              }));
-            } else if (resultData?.report_data?.scoreBreakdown) {
-              // Try scoreBreakdown
-              categoryScores = resultData.report_data.scoreBreakdown.map(item => ({
-                category: item.category,
-                score: parseInt(item.score) || 0,
-                maxScore: parseInt(item.maxScore) || 100,
-                percentage: item.percentage || 0,
-                grade: item.grade || 'N/A',
-                comment: item.comment || ''
-              }));
+            if (resultData?.report_data) {
+              const rd = resultData.report_data;
+              
+              // 1. Direct categoryScores array
+              if (rd.categoryScores && Array.isArray(rd.categoryScores)) {
+                categoryScores = rd.categoryScores.map(cat => ({
+                  category: cat.category || cat.name || 'Unknown',
+                  score: cat.score || cat.correct || 0,
+                  maxScore: cat.maxScore || cat.total || 100,
+                  percentage: cat.percentage || Math.round(((cat.score || 0) / (cat.maxScore || 100)) * 100) || 0,
+                  grade: cat.grade || 'N/A',
+                  comment: cat.comment || cat.description || ''
+                }));
+              }
+              // 2. scoreBreakdown array
+              else if (rd.scoreBreakdown && Array.isArray(rd.scoreBreakdown)) {
+                categoryScores = rd.scoreBreakdown.map(cat => ({
+                  category: cat.category || cat.area || 'Unknown',
+                  score: typeof cat.score === 'string' ? parseInt(cat.score.split('/')[0]) : (cat.score || 0),
+                  maxScore: typeof cat.score === 'string' ? parseInt(cat.score.split('/')[1]) : (cat.maxScore || 100),
+                  percentage: cat.percentage || 0,
+                  grade: cat.grade || cat.letter_grade || 'N/A',
+                  comment: cat.comment || cat.supervisorImplication || ''
+                }));
+              }
+              // 3. _fullReport.categoryScores object
+              else if (rd._fullReport?.categoryScores && typeof rd._fullReport.categoryScores === 'object') {
+                const catScores = rd._fullReport.categoryScores;
+                categoryScores = Object.keys(catScores).map(key => ({
+                  category: key,
+                  score: catScores[key].score || catScores[key].totalScore || 0,
+                  maxScore: catScores[key].maxScore || catScores[key].maxPossible || 100,
+                  percentage: catScores[key].percentage || 0,
+                  grade: catScores[key].grade || 'N/A',
+                  comment: catScores[key].comment || ''
+                }));
+              }
+              // 4. dimensions.categoryScores
+              else if (rd.dimensions?.categoryScores && Array.isArray(rd.dimensions.categoryScores)) {
+                categoryScores = rd.dimensions.categoryScores.map(cat => ({
+                  category: cat.name || cat.category || 'Unknown',
+                  score: cat.score || 0,
+                  maxScore: cat.maxScore || 100,
+                  percentage: cat.percentage || 0,
+                  grade: cat.grade || 'N/A',
+                  comment: cat.comment || ''
+                }));
+              }
+              // 5. Search recursively for category scores
+              else {
+                const findCategoryScores = (obj, path = '') => {
+                  if (!obj || typeof obj !== 'object') return null;
+                  
+                  // Check if this object looks like category scores
+                  if (obj.categoryScores && Array.isArray(obj.categoryScores)) {
+                    return obj.categoryScores;
+                  }
+                  if (obj.scoreBreakdown && Array.isArray(obj.scoreBreakdown)) {
+                    return obj.scoreBreakdown;
+                  }
+                  if (obj.scores && Array.isArray(obj.scores)) {
+                    return obj.scores;
+                  }
+                  
+                  // Recursively search
+                  for (const key of Object.keys(obj)) {
+                    if (typeof obj[key] === 'object' && obj[key] !== null) {
+                      const found = findCategoryScores(obj[key], `${path}.${key}`);
+                      if (found) return found;
+                    }
+                  }
+                  return null;
+                };
+                
+                const found = findCategoryScores(rd);
+                if (found && Array.isArray(found)) {
+                  categoryScores = found.map(cat => ({
+                    category: cat.category || cat.name || cat.area || 'Unknown',
+                    score: cat.score || cat.correct || 0,
+                    maxScore: cat.maxScore || cat.total || 100,
+                    percentage: cat.percentage || 0,
+                    grade: cat.grade || cat.letter_grade || 'N/A',
+                    comment: cat.comment || cat.supervisorImplication || ''
+                  }));
+                }
+              }
             }
             
+            // Debug log to see what was extracted
+            if (isNationalService && categoryScores.length > 0) {
+              console.log(`[Category Scores] ${candidate?.full_name}:`, categoryScores.length, 'categories found');
+            }
+
             const reportEntry = {
               result_id: assessment.result_id,
               candidate_id: assessment.user_id,
@@ -213,7 +262,6 @@ export default function SupervisorDashboard() {
               score: overallScore || score || 0,
               is_national_service: isNationalService,
               resultData: resultData,
-              // Store raw values
               percentage_score: overallScore || resultData?.percentage_score || 0,
               workplace_readiness: workplaceReadiness || 0,
               intellectual_capability: intellectualCapability || 0,
@@ -223,7 +271,6 @@ export default function SupervisorDashboard() {
             };
 
             if (isNationalService) {
-              // Build scores object for easy access
               reportEntry.scores = {
                 overall: overallScore || resultData?.percentage_score || 0,
                 workplace: workplaceReadiness || 0,
@@ -231,13 +278,6 @@ export default function SupervisorDashboard() {
                 recommendation: recommendation || 'Not Available',
                 riskLevel: riskLevel || 'Medium'
               };
-              
-              // Also store directly on the report for easy access
-              reportEntry.workplace_readiness = workplaceReadiness || 0;
-              reportEntry.intellectual_capability = intellectualCapability || 0;
-              reportEntry.percentage_score = overallScore || resultData?.percentage_score || 0;
-              reportEntry.recommendation = recommendation || 'Not Available';
-              reportEntry.risk_level = riskLevel || 'Medium';
               
               nsReports.push(reportEntry);
             } else {
@@ -248,22 +288,19 @@ export default function SupervisorDashboard() {
           }
         }
 
-        // Build candidate list with all assessment data
+        // Build candidate list
         const candidateList = assignedCandidates.map(c => {
           const candidateAssessments = allAssessments.filter(a => a.user_id === c.id);
           
-          // Count assessment statuses
           const completed = candidateAssessments.filter(a => a.status === 'completed' || a.result_id !== null).length;
           const inProgress = candidateAssessments.filter(a => a.status === 'in_progress').length;
           const unblocked = candidateAssessments.filter(a => a.status === 'unblocked').length;
           const blocked = candidateAssessments.filter(a => a.status === 'blocked').length;
           const notStarted = candidateAssessments.filter(a => a.status === 'pending' || !a.status || a.status === '').length;
           
-          // Build dropdown options for completed assessments
           const completedAssessments = candidateAssessments
             .filter(a => a.status === 'completed' || a.result_id !== null)
             .map(a => {
-              // Find the report data from allReportData
               const reportEntry = allReportData.find(r => r.result_id === a.result_id && r.candidate_id === c.id);
               
               let score = 0;
@@ -276,7 +313,6 @@ export default function SupervisorDashboard() {
                 resultId = reportEntry.result_id;
               }
               
-              // If still no score, try to get from result_data
               if (!score && a.result_id) {
                 if (reportEntry?.resultData) {
                   score = reportEntry.resultData.percentage_score || 
@@ -318,7 +354,6 @@ export default function SupervisorDashboard() {
 
         setCandidates(candidateList);
         
-        // Initialize selected assessments with default values
         const initialSelected = {};
         candidateList.forEach(c => {
           const nonNs = c.completedAssessments.filter(a => !a.isNationalService);
@@ -350,7 +385,6 @@ export default function SupervisorDashboard() {
       alert('No result available for this assessment.');
       return;
     }
-    console.log('[Supervisor] Navigating to report with resultId:', resultId);
     router.push(`/supervisor/reports/${resultId}`);
   };
 
@@ -376,19 +410,13 @@ export default function SupervisorDashboard() {
     );
     
     if (!assessment) {
-      console.warn('[Supervisor] Assessment not found in completed list');
       alert('Assessment not found. Please try again.');
       return;
     }
     
-    console.log('[Supervisor] Assessment found:', assessment);
-    console.log('[Supervisor] Result ID:', assessment.result_id);
-    console.log('[Supervisor] Score:', assessment.score);
-    
     if (assessment && assessment.result_id) {
       handleViewReport(assessment.result_id);
     } else {
-      console.warn('[Supervisor] No result_id for this assessment');
       alert('This assessment does not have a result available yet.');
     }
   };
@@ -398,7 +426,6 @@ export default function SupervisorDashboard() {
       ...prev,
       [candidateId]: assessmentId
     }));
-    // Do NOT navigate - just update the selected value
   };
 
   const getRecommendationColor = (rec) => {
@@ -536,11 +563,10 @@ export default function SupervisorDashboard() {
         </div>
 
         <div style={styles.tabContent}>
-          {/* National Service Reports Tab - Shows ALL National Service reports with category breakdown */}
           {activeTab === 'national_service' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
-                <p>📋 All National Service assessment reports for candidates under your supervision. Click <strong>"View Categories"</strong> to see the detailed category breakdown.</p>
+                <p>📋 All National Service assessment reports for candidates under your supervision. Click <strong>"📊 Categories"</strong> to see the detailed category breakdown.</p>
               </div>
               {nationalServiceReports.length === 0 ? (
                 <div style={styles.emptyState}>
@@ -570,7 +596,6 @@ export default function SupervisorDashboard() {
                         const hasCategoryScores = report.category_scores && report.category_scores.length > 0;
                         
                         const recColor = getRecommendationColor(recommendation);
-                        
                         const isCompleted = status === 'completed' || report.result_id !== null;
                         const hasScores = workplaceScore > 0 || intellectualScore > 0 || overallScore > 0;
                         
@@ -643,7 +668,6 @@ export default function SupervisorDashboard() {
             </div>
           )}
 
-          {/* Other Assessments Tab */}
           {activeTab === 'other' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
@@ -698,13 +722,11 @@ export default function SupervisorDashboard() {
             </div>
           )}
 
-          {/* All Candidates Tab */}
           {activeTab === 'candidates' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
                 <p>👥 All candidates with assessment status and ability to view individual reports.</p>
               </div>
-
               {candidates.length === 0 ? (
                 <div style={styles.emptyState}>
                   <p>No candidates assigned to you yet.</p>
@@ -830,6 +852,11 @@ export default function SupervisorDashboard() {
                     <strong>Intellectual Capability:</strong> {Math.round(selectedReport.intellectual_capability || 0)}%
                   </span>
                 </div>
+                <div style={styles.modalScoreSummary}>
+                  <span style={{ ...styles.modalScoreItem, fontSize: '12px', color: '#94a3b8' }}>
+                    <strong>Categories Found:</strong> {selectedReport.category_scores?.length || 0}
+                  </span>
+                </div>
               </div>
               
               {selectedReport.category_scores && selectedReport.category_scores.length > 0 ? (
@@ -866,6 +893,7 @@ export default function SupervisorDashboard() {
               ) : (
                 <div style={styles.emptyState}>
                   <p>No category scores available for this report.</p>
+                  <p style={{ fontSize: '12px', color: '#94a3b8' }}>The report data may be stored in a different format.</p>
                 </div>
               )}
             </div>
