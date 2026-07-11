@@ -136,6 +136,77 @@ export function calculateNationalServiceScores(responses, questions) {
 }
 
 // ============================================================
+// CATEGORY BREAKDOWN CALCULATION - NEW FUNCTION
+// ============================================================
+
+export function calculateCategoryBreakdown(responses, questions) {
+  const categoryMap = {};
+  const categoryMaxMap = {};
+  const categoryDimensionMap = {};
+
+  const responseMap = {};
+  responses.forEach(r => {
+    responseMap[r.question_id] = r;
+  });
+
+  function getAnswerScore(question, answerId) {
+    const answers = Array.isArray(question.answers) ? question.answers : [];
+    const answer = answers.find(a => String(a.id) === String(answerId));
+    return answer ? Number(answer.score) || 0 : 0;
+  }
+
+  questions.forEach(question => {
+    const category = cleanText(question.section || 'General', 'General');
+    const answers = Array.isArray(question.answers) ? question.answers : [];
+    const maxScore = answers.reduce((max, a) => Math.max(max, Number(a.score) || 0), 0) || 1;
+
+    if (!categoryMap[category]) {
+      categoryMap[category] = 0;
+      categoryMaxMap[category] = 0;
+      // Determine if this category is workplace or intellectual
+      if (isWorkplaceCategory(category)) {
+        categoryDimensionMap[category] = 'workplace';
+      } else if (isIntellectualCategory(category)) {
+        categoryDimensionMap[category] = 'intellectual';
+      } else {
+        categoryDimensionMap[category] = 'other';
+      }
+    }
+
+    const response = responseMap[question.id];
+    let earned = 0;
+    if (response?.answer_id) {
+      earned = getAnswerScore(question, response.answer_id);
+    }
+
+    categoryMap[category] += earned;
+    categoryMaxMap[category] += maxScore;
+  });
+
+  // Build category breakdown array
+  const breakdown = Object.keys(categoryMap).map(category => {
+    const earned = categoryMap[category];
+    const max = categoryMaxMap[category];
+    const percentage = max > 0 ? roundNumber((earned / max) * 100, 2) : 0;
+    
+    return {
+      category: category,
+      dimension: categoryDimensionMap[category] || 'other',
+      earned: earned,
+      max: max,
+      percentage: percentage,
+      earnedDisplay: earned,
+      maxDisplay: max
+    };
+  });
+
+  // Sort by percentage descending
+  breakdown.sort((a, b) => b.percentage - a.percentage);
+
+  return breakdown;
+}
+
+// ============================================================
 // REPORT BUILDING
 // ============================================================
 
@@ -150,7 +221,8 @@ export function generateNationalServiceReport({
   recommendation,
   suggestedDepartments,
   workplaceClass,
-  intellectualClass
+  intellectualClass,
+  categoryBreakdown = []  // NEW: Accept category breakdown
 }) {
   return {
     candidateName: profile?.full_name || 'Candidate',
@@ -185,6 +257,7 @@ export function generateNationalServiceReport({
     classifications: {
       workplace: workplaceClass,
       intellectual: intellectualClass
-    }
+    },
+    categoryBreakdown: categoryBreakdown  // NEW: Include in report
   };
 }
