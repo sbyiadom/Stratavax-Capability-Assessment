@@ -35,11 +35,11 @@ export default async function handler(req, res) {
       console.error("[Create User API] Missing Supabase configuration");
       return res.status(500).json({ 
         success: false, 
-        error: "Registration service is temporarily unavailable. Please try again later." 
+        error: "Registration service is temporarily unavailable." 
       });
     }
 
-    // Create admin client with service role
+    // Create admin client
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: {
         autoRefreshToken: false,
@@ -47,11 +47,33 @@ export default async function handler(req, res) {
       }
     });
 
+    console.log("[Create User API] Processing email:", email);
+
     // ============================================================
-    // STEP 1: Check if user exists in auth.users
+    // STEP 1: Check if email already exists in candidate_profiles
     // ============================================================
-    console.log("[Create User API] Checking if user exists in auth:", email);
-    
+    const { data: existingProfile, error: profileCheckError } = await adminClient
+      .from("candidate_profiles")
+      .select("id, email, full_name")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (profileCheckError) {
+      console.error("[Create User API] Profile check error:", profileCheckError);
+      // Continue anyway
+    }
+
+    if (existingProfile) {
+      console.log("[Create User API] Profile already exists for email:", email);
+      return res.status(409).json({ 
+        success: false, 
+        error: "An account with this email already exists. Please log in instead." 
+      });
+    }
+
+    // ============================================================
+    // STEP 2: Check if email already exists in auth.users
+    // ============================================================
     const { data: existingAuth, error: authCheckError } = await adminClient
       .from("auth.users")
       .select("id, email")
@@ -59,106 +81,84 @@ export default async function handler(req, res) {
       .maybeSingle();
 
     if (authCheckError) {
-      console.log("[Create User API] Auth check error:", authCheckError.message);
+      console.error("[Create User API] Auth check error:", authCheckError);
+      // Continue anyway
     }
+
+    // ============================================================
+    // STEP 3: Get or create user ID
+    // ============================================================
+    let userId = null;
 
     if (existingAuth) {
-      console.log("[Create User API] User already exists in auth:", existingAuth.id);
-      
-      // Check if profile exists for this user
-      const { data: existingProfile } = await adminClient
-        .from("candidate_profiles")
-        .select("id")
-        .eq("id", existingAuth.id)
-        .maybeSingle();
+      // Use existing auth user
+      userId = existingAuth.id;
+      console.log("[Create User API] Using existing auth user:", userId);
+    } else {
+      // Create new auth user
+      console.log("[Create User API] Creating new auth user...");
 
-      if (existingProfile) {
-        return res.status(409).json({ 
-          success: false, 
-          error: "An account with this email already exists. Please log in instead." 
+      try {
+        const createResult = await adminClient.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true,
+          user_metadata: {
+            full_name: full_name,
+            name: full_name,
+            role: "candidate",
+            user_type: "candidate"
+          }
         });
-      }
 
-      // If user exists in auth but not in profiles, create the profile
-      console.log("[Create User API] User exists in auth but not in profiles. Creating profile...");
-      
-      const profileData = {
-        id: existingAuth.id,
-        email: email,
-        full_name: full_name,
-        university: university || null,
-        programme: programme || null,
-        graduation_year: graduation_year || null,
-        preferred_department: preferred_department || null,
-        updated_at: new Date().toISOString()
-      };
+        if (createResult.error) {
+          console.error("[Create User API] Create user error:", createResult.error);
+          
+          // Check if user was actually created despite error
+          const { data: recheckAuth } = await adminClient
+            .from("auth.users")
+            .select("id")
+            .eq("email", email)
+            .maybeSingle();
 
-      const { data: profile, error: profileError } = await adminClient
-        .from("candidate_profiles")
-        .insert(profileData)
-        .select()
-        .single();
-
-      if (profileError) {
-        console.error("[Create User API] Profile creation error:", profileError);
-        return res.status(500).json({ 
-          success: false, 
-          error: "Failed to create profile: " + profileError.message 
-        });
-      }
-
-      console.log("[Create User API] ✅ Profile created for existing user");
-
-      return res.status(200).json({
-        success: true,
-        message: "Account found and profile created. Please log in.",
-        user: {
-          id: existingAuth.id,
-          email: email,
-          full_name: full_name
+          if (recheckAuth) {
+            userId = recheckAuth.id;
+            console.log("[Create User API] User was created despite error, using ID:", userId);
+          } else {
+            throw new Error(createResult.error.message || "Failed to create user");
+          }
+        } else if (createResult.data?.user) {
+          userId = createResult.data.user.id;
+          console.log("[Create User API] ✅ User created:", userId);
         }
-      });
-    }
+      } catch (createErr) {
+        console.error("[Create User API] Create exception:", createErr);
+        
+        // Check if user exists now
+        const { data: recheckAuth } = await adminClient
+          .from("auth.users")
+          .select("id")
+          .eq("email", email)
+          .maybeSingle();
 
-    // ============================================================
-    // STEP 2: Create new user (only if not exists)
-    // ============================================================
-    console.log("[Create User API] Creating new user:", email);
-
-    const { data: userData, error: userError } = await adminClient.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: full_name,
-        name: full_name,
-        role: "candidate",
-        user_type: "candidate"
+        if (recheckAuth) {
+          userId = recheckAuth.id;
+          console.log("[Create User API] User exists, using existing ID:", userId);
+        } else {
+          throw createErr;
+        }
       }
-    });
-
-    if (userError) {
-      console.error("[Create User API] Create user error:", userError);
-      return res.status(500).json({ 
-        success: false, 
-        error: userError.message || "Failed to create account. Please try again." 
-      });
     }
 
-    if (!userData?.user) {
-      return res.status(500).json({ 
-        success: false, 
-        error: "Account creation failed. Please try again." 
-      });
+    if (!userId) {
+      throw new Error("Could not create or find user. Please try again.");
     }
-
-    console.log("[Create User API] ✅ User created:", userData.user.id);
 
     // ============================================================
-    // STEP 3: Create candidate profile
+    // STEP 4: Create candidate profile (with the correct ID)
     // ============================================================
     const profileData = {
-      id: userData.user.id,
+      id: userId,
       email: email,
       full_name: full_name,
       university: university || null,
@@ -168,7 +168,7 @@ export default async function handler(req, res) {
       updated_at: new Date().toISOString()
     };
 
-    console.log("[Create User API] Creating profile...");
+    console.log("[Create User API] Creating profile with ID:", userId);
 
     const { data: profile, error: profileError } = await adminClient
       .from("candidate_profiles")
@@ -177,74 +177,75 @@ export default async function handler(req, res) {
       .single();
 
     if (profileError) {
-      console.error("[Create User API] Profile creation error:", profileError);
-      // Rollback: delete the user
-      await adminClient.auth.admin.deleteUser(userData.user.id);
-      return res.status(500).json({ 
-        success: false, 
-        error: "Failed to create profile: " + profileError.message 
-      });
+      console.error("[Create User API] Profile error:", profileError);
+      throw new Error("Failed to create profile: " + profileError.message);
     }
 
     console.log("[Create User API] ✅ Profile created:", profile.id);
 
     // ============================================================
-    // STEP 4: Auto-assign National Service assessment
+    // STEP 5: Auto-assign National Service assessment
     // ============================================================
-    const NATIONAL_SERVICE_ASSESSMENT_ID = "bdb9d46e-9fac-4d00-8478-1f649e7ac600";
+    try {
+      const NATIONAL_SERVICE_ASSESSMENT_ID = "bdb9d46e-9fac-4d00-8478-1f649e7ac600";
 
-    const { error: assignmentError } = await adminClient
-      .from("candidate_assessments")
-      .insert({
-        user_id: userData.user.id,
-        assessment_id: NATIONAL_SERVICE_ASSESSMENT_ID,
-        status: "unblocked",
-        unblocked_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
-
-    if (assignmentError) {
-      console.warn("[Create User API] Assignment error (non-fatal):", assignmentError.message);
-    } else {
-      console.log("[Create User API] ✅ National Service assessment assigned");
-    }
-
-    // ============================================================
-    // STEP 5: Add to supervisor_candidate_access
-    // ============================================================
-    const defaultSupervisors = [
-      "972a8a23-e0c4-4031-a553-191c9a31fbed", // Maabena Baah
-      "f4b541af-f765-46f0-8f1a-955ad1847930"  // Emmanuel Fofie
-    ];
-
-    let supervisorAccessCount = 0;
-    for (const supervisorId of defaultSupervisors) {
-      const { error: accessError } = await adminClient
-        .from("supervisor_candidate_access")
+      const { error: assignmentError } = await adminClient
+        .from("candidate_assessments")
         .insert({
-          supervisor_id: supervisorId,
-          candidate_id: userData.user.id
-        })
-        .select()
-        .maybeSingle();
+          user_id: userId,
+          assessment_id: NATIONAL_SERVICE_ASSESSMENT_ID,
+          status: "unblocked",
+          unblocked_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
 
-      if (!accessError) {
-        supervisorAccessCount++;
+      if (assignmentError) {
+        console.warn("[Create User API] Assignment error (non-fatal):", assignmentError.message);
+      } else {
+        console.log("[Create User API] ✅ National Service assessment assigned");
       }
+    } catch (assignErr) {
+      console.warn("[Create User API] Assignment exception:", assignErr.message);
     }
 
-    console.log(`[Create User API] ✅ Added to ${supervisorAccessCount} supervisor(s)`);
+    // ============================================================
+    // STEP 6: Add to supervisors
+    // ============================================================
+    try {
+      const defaultSupervisors = [
+        "972a8a23-e0c4-4031-a553-191c9a31fbed",
+        "f4b541af-f765-46f0-8f1a-955ad1847930"
+      ];
+
+      for (const supervisorId of defaultSupervisors) {
+        const { error: accessError } = await adminClient
+          .from("supervisor_candidate_access")
+          .insert({
+            supervisor_id: supervisorId,
+            candidate_id: userId
+          })
+          .select()
+          .maybeSingle();
+
+        if (accessError) {
+          console.warn("[Create User API] Supervisor access error:", accessError.message);
+        }
+      }
+      console.log("[Create User API] ✅ Added to supervisors");
+    } catch (superErr) {
+      console.warn("[Create User API] Supervisor exception:", superErr.message);
+    }
 
     // ============================================================
-    // STEP 6: Return success
+    // STEP 7: Return success
     // ============================================================
     return res.status(200).json({
       success: true,
       message: "Registration successful! Your account has been created. Please log in.",
       user: {
-        id: userData.user.id,
-        email: userData.user.email,
+        id: userId,
+        email: email,
         full_name: full_name
       }
     });
