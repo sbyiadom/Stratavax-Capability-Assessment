@@ -1,30 +1,9 @@
-// pages/register.js
+// pages/register.js - Fixed without redirect URL
 
 import { useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { supabase } from "../supabase/client";
-
-// ============================================================
-// CREATE SERVICE ROLE CLIENT TO BYPASS RLS
-// ============================================================
-function getServiceRoleClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  
-  // Only create if we have the service key (server-side only)
-  if (typeof window !== "undefined" || !supabaseUrl || !serviceKey) {
-    return null;
-  }
-  
-  const { createClient } = require("@supabase/supabase-js");
-  return createClient(supabaseUrl, serviceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  });
-}
 
 function cleanEmail(value) {
   return String(value || "").trim().toLowerCase();
@@ -39,7 +18,7 @@ function getReadableSignupError(error) {
 
   const message = String(error.message || error || "").toLowerCase();
 
-  if (message.includes("already registered") || message.includes("already exists") || message.includes("user already registered")) {
+  if (message.includes("already registered") || message.includes("already exists")) {
     return "An account already exists with this email. Please log in or use password reset.";
   }
 
@@ -63,7 +42,6 @@ async function autoAssignNationalService(candidateId) {
   try {
     console.log(`[Auto-Assign] Assigning National Service to candidate: ${candidateId}`);
 
-    // Check if already assigned
     const { data: existing, error: checkError } = await supabase
       .from("candidate_assessments")
       .select("id, status")
@@ -77,8 +55,6 @@ async function autoAssignNationalService(candidateId) {
 
     if (existing) {
       console.log(`[Auto-Assign] Already exists with status: ${existing.status}`);
-      
-      // If blocked, unblock it
       if (existing.status === "blocked") {
         const { error: updateError } = await supabase
           .from("candidate_assessments")
@@ -93,13 +69,11 @@ async function autoAssignNationalService(candidateId) {
           console.warn("[Auto-Assign] Unblock error:", updateError.message);
           return false;
         }
-        console.log("[Auto-Assign] ✅ Existing assessment unblocked");
         return true;
       }
       return true;
     }
 
-    // Create new assignment
     const now = new Date().toISOString();
     const { error: insertError } = await supabase
       .from("candidate_assessments")
@@ -126,6 +100,37 @@ async function autoAssignNationalService(candidateId) {
   }
 }
 
+async function createCandidateProfile(user, fullName, emailAddress, university, programme, graduationYear, preferredDepartment) {
+  try {
+    const profileData = {
+      id: user.id,
+      email: emailAddress,
+      full_name: fullName,
+      university: university || null,
+      programme: programme || null,
+      graduation_year: graduationYear || null,
+      preferred_department: preferredDepartment || null,
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from("candidate_profiles")
+      .insert(profileData)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Profile creation error:", error);
+      throw error;
+    }
+
+    return data;
+  } catch (profileError) {
+    console.error("Profile creation exception:", profileError);
+    throw profileError;
+  }
+}
+
 export default function Register() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -140,31 +145,6 @@ export default function Register() {
   
   const [message, setMessage] = useState({ type: "", text: "" });
   const [loading, setLoading] = useState(false);
-
-  async function createCandidateProfile(user, fullName, emailAddress) {
-    try {
-      const { error } = await supabase
-        .from("candidate_profiles")
-        .upsert({
-          id: user.id,
-          email: emailAddress,
-          full_name: fullName,
-          university: university,
-          programme: programme,
-          graduation_year: graduationYear,
-          preferred_department: preferredDepartment,
-          updated_at: new Date().toISOString()
-        }, { onConflict: "id" });
-
-      if (error) {
-        console.error("Profile creation error:", error);
-        throw error;
-      }
-    } catch (profileError) {
-      console.error("Profile creation exception:", profileError);
-      throw profileError;
-    }
-  }
 
   async function handleRegister(event) {
     event.preventDefault();
@@ -215,52 +195,50 @@ export default function Register() {
 
     try {
       setLoading(true);
+      setMessage({ type: "", text: "" });
 
-      const redirectTo = typeof window !== "undefined" ? window.location.origin + "/login" : undefined;
-
+      // REMOVED: redirect_to parameter - this was causing the 500 error
       const { data, error } = await supabase.auth.signUp({
         email: emailAddress,
         password,
         options: {
-          emailRedirectTo: redirectTo,
           data: {
             full_name: fullName,
             name: fullName,
             role: "candidate",
             is_supervisor: false,
-            user_type: "candidate",
-            university: university,
-            programme: programme,
-            graduation_year: graduationYear,
-            preferred_department: preferredDepartment
+            user_type: "candidate"
           }
         }
       });
 
-      if (error) throw error;
-
-      if (data?.user) {
-        await createCandidateProfile(data.user, fullName, emailAddress);
-
-        // ============================================================
-        // AUTO-ASSIGN NATIONAL SERVICE ASSESSMENT
-        // ============================================================
-        const nsAssigned = await autoAssignNationalService(data.user.id);
-        
-        if (nsAssigned) {
-          console.log(`[Auto-Assign] ✅ National Service assigned for ${emailAddress}`);
-          setMessage({
-            type: "success",
-            text: "Registration successful! Your National Service assessment is ready. Please check your email for confirmation, then log in."
-          });
-        } else {
-          console.log(`[Auto-Assign] ⚠️ National Service not assigned`);
-          setMessage({
-            type: "success",
-            text: "Registration successful! Your profile has been created. Please check your email for confirmation, then log in."
-          });
-        }
+      if (error) {
+        console.error("Sign up error:", error);
+        throw error;
       }
+
+      if (!data?.user) {
+        throw new Error("No user data returned from sign up.");
+      }
+
+      console.log("✅ User created:", data.user.id);
+
+      await createCandidateProfile(
+        data.user,
+        fullName,
+        emailAddress,
+        university,
+        programme,
+        graduationYear,
+        preferredDepartment
+      );
+
+      await autoAssignNationalService(data.user.id);
+
+      setMessage({
+        type: "success",
+        text: "Registration successful! Please check your email for confirmation, then log in."
+      });
 
       setName("");
       setEmail("");
@@ -274,9 +252,13 @@ export default function Register() {
       setTimeout(() => {
         router.push("/login");
       }, 3000);
+
     } catch (registerError) {
       console.error("Registration error:", registerError);
-      setMessage({ type: "error", text: getReadableSignupError(registerError) });
+      setMessage({ 
+        type: "error", 
+        text: getReadableSignupError(registerError) 
+      });
     } finally {
       setLoading(false);
     }
@@ -311,7 +293,6 @@ export default function Register() {
             </div>
           )}
 
-          {/* Personal Information */}
           <div style={styles.sectionTitle}>Personal Information</div>
 
           <div style={styles.formGroup}>
@@ -338,7 +319,6 @@ export default function Register() {
             />
           </div>
 
-          {/* Academic Information */}
           <div style={styles.sectionTitle}>Academic Information</div>
 
           <div style={styles.formGroup}>
@@ -388,21 +368,20 @@ export default function Register() {
               onChange={(event) => setPreferredDepartment(event.target.value)}
               style={styles.select}
             >
-              <option value="" style={styles.option}>Select preferred department</option>
-              <option value="Operations & Production" style={styles.option}>Operations & Production</option>
-              <option value="Quality Assurance & Control" style={styles.option}>Quality Assurance & Control</option>
-              <option value="Supply Chain & Logistics" style={styles.option}>Supply Chain & Logistics</option>
-              <option value="Technical Services" style={styles.option}>Technical Services</option>
-              <option value="Maintenance & Engineering" style={styles.option}>Maintenance & Engineering</option>
-              <option value="Administration" style={styles.option}>Administration</option>
-              <option value="Information Technology" style={styles.option}>Information Technology</option>
-              <option value="Human Resources" style={styles.option}>Human Resources</option>
-              <option value="Finance" style={styles.option}>Finance</option>
-              <option value="Sales & Marketing" style={styles.option}>Sales & Marketing</option>
+              <option value="">Select preferred department</option>
+              <option value="Operations & Production">Operations & Production</option>
+              <option value="Quality Assurance & Control">Quality Assurance & Control</option>
+              <option value="Supply Chain & Logistics">Supply Chain & Logistics</option>
+              <option value="Technical Services">Technical Services</option>
+              <option value="Maintenance & Engineering">Maintenance & Engineering</option>
+              <option value="Administration">Administration</option>
+              <option value="Information Technology">Information Technology</option>
+              <option value="Human Resources">Human Resources</option>
+              <option value="Finance">Finance</option>
+              <option value="Sales & Marketing">Sales & Marketing</option>
             </select>
           </div>
 
-          {/* Account Security */}
           <div style={styles.sectionTitle}>Account Security</div>
 
           <div style={styles.formGroup}>
@@ -506,10 +485,7 @@ const styles = {
     maxHeight: "90vh",
     overflowY: "auto"
   },
-  brandSection: {
-    marginBottom: "2px",
-    textAlign: "center"
-  },
+  brandSection: { marginBottom: "2px", textAlign: "center" },
   brandLogo: {
     width: "70px",
     height: "70px",
@@ -519,135 +495,18 @@ const styles = {
     marginLeft: "auto",
     marginRight: "auto"
   },
-  brandIcon: {
-    width: "64px",
-    height: "64px",
-    background: "linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.55) 100%)",
-    borderRadius: "18px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    margin: "0 auto 12px",
-    fontSize: "32px",
-    boxShadow: "0 8px 16px rgba(0,0,0,0.2)"
-  },
-  brandTitle: {
-    margin: "0 0 6px",
-    color: "white",
-    fontSize: "28px",
-    fontWeight: "700",
-    letterSpacing: "-0.5px",
-    textShadow: "0 2px 8px rgba(0,0,0,0.3)"
-  },
-  brandSubtitle: {
-    color: "rgba(255,255,255,0.9)",
-    fontSize: "13px",
-    margin: 0,
-    lineHeight: 1.5,
-    textShadow: "0 1px 4px rgba(0,0,0,0.3)"
-  },
-  sectionTitle: {
-    color: "rgba(255,255,255,0.9)",
-    fontSize: "14px",
-    fontWeight: "600",
-    marginTop: "4px",
-    marginBottom: "2px",
-    borderBottom: "1px solid rgba(255,255,255,0.1)",
-    paddingBottom: "6px",
-    letterSpacing: "0.3px",
-    textShadow: "0 1px 4px rgba(0,0,0,0.2)"
-  },
-  message: {
-    padding: "12px 14px",
-    borderRadius: "12px",
-    fontSize: "13px",
-    textAlign: "center",
-    lineHeight: 1.5,
-    backdropFilter: "blur(10px)"
-  },
-  formGroup: {
-    textAlign: "left"
-  },
-  label: {
-    display: "block",
-    marginBottom: "6px",
-    fontWeight: "500",
-    color: "rgba(255,255,255,0.9)",
-    fontSize: "13px",
-    letterSpacing: "0.2px",
-    textShadow: "0 1px 4px rgba(0,0,0,0.2)"
-  },
-  input: {
-    width: "100%",
-    padding: "12px 16px",
-    borderRadius: "12px",
-    border: "1px solid rgba(255,255,255,0.2)",
-    background: "rgba(255,255,255,0.1)",
-    fontSize: "14px",
-    color: "white",
-    boxSizing: "border-box",
-    outline: "none",
-    transition: "all 0.3s ease",
-    fontFamily: "inherit",
-    backdropFilter: "blur(4px)"
-  },
-  select: {
-    width: "100%",
-    padding: "12px 16px",
-    borderRadius: "12px",
-    border: "1px solid rgba(255,255,255,0.2)",
-    background: "rgba(255,255,255,0.1)",
-    fontSize: "14px",
-    color: "white",
-    boxSizing: "border-box",
-    outline: "none",
-    appearance: "none",
-    cursor: "pointer",
-    transition: "all 0.3s ease",
-    fontFamily: "inherit",
-    backdropFilter: "blur(4px)"
-  },
-  option: {
-    color: "#1a1a2e",
-    background: "white",
-    padding: "8px"
-  },
-  hint: {
-    margin: "4px 0 0",
-    fontSize: "12px",
-    color: "rgba(255,255,255,0.6)",
-    textShadow: "0 1px 4px rgba(0,0,0,0.2)"
-  },
-  submitButton: {
-    width: "100%",
-    padding: "14px",
-    background: "linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%)",
-    color: "#1a1a2e",
-    border: "none",
-    borderRadius: "14px",
-    cursor: "pointer",
-    fontWeight: "700",
-    fontSize: "15px",
-    marginTop: "4px",
-    transition: "all 0.3s ease",
-    boxShadow: "0 4px 16px rgba(0,0,0,0.2)"
-  },
-  footer: {
-    textAlign: "center",
-    borderTop: "1px solid rgba(255,255,255,0.08)",
-    paddingTop: "16px",
-    marginTop: "2px"
-  },
-  footerText: {
-    margin: 0,
-    color: "rgba(255,255,255,0.7)",
-    fontSize: "13px",
-    textShadow: "0 1px 4px rgba(0,0,0,0.2)"
-  },
-  link: {
-    color: "white",
-    textDecoration: "none",
-    fontWeight: "600",
-    textShadow: "0 1px 4px rgba(0,0,0,0.2)"
-  }
+  brandTitle: { margin: "0 0 6px", color: "white", fontSize: "28px", fontWeight: "700", letterSpacing: "-0.5px", textShadow: "0 2px 8px rgba(0,0,0,0.3)" },
+  brandSubtitle: { color: "rgba(255,255,255,0.9)", fontSize: "13px", margin: 0, lineHeight: 1.5, textShadow: "0 1px 4px rgba(0,0,0,0.3)" },
+  sectionTitle: { color: "rgba(255,255,255,0.9)", fontSize: "14px", fontWeight: "600", marginTop: "4px", marginBottom: "2px", borderBottom: "1px solid rgba(255,255,255,0.1)", paddingBottom: "6px", letterSpacing: "0.3px", textShadow: "0 1px 4px rgba(0,0,0,0.2)" },
+  message: { padding: "12px 14px", borderRadius: "12px", fontSize: "13px", textAlign: "center", lineHeight: 1.5, backdropFilter: "blur(10px)" },
+  formGroup: { textAlign: "left" },
+  label: { display: "block", marginBottom: "6px", fontWeight: "500", color: "rgba(255,255,255,0.9)", fontSize: "13px", letterSpacing: "0.2px", textShadow: "0 1px 4px rgba(0,0,0,0.2)" },
+  input: { width: "100%", padding: "12px 16px", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.1)", fontSize: "14px", color: "white", boxSizing: "border-box", outline: "none", transition: "all 0.3s ease", fontFamily: "inherit", backdropFilter: "blur(4px)" },
+  select: { width: "100%", padding: "12px 16px", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.1)", fontSize: "14px", color: "white", boxSizing: "border-box", outline: "none", appearance: "none", cursor: "pointer", transition: "all 0.3s ease", fontFamily: "inherit", backdropFilter: "blur(4px)" },
+  option: { color: "#1a1a2e", background: "white", padding: "8px" },
+  hint: { margin: "4px 0 0", fontSize: "12px", color: "rgba(255,255,255,0.6)", textShadow: "0 1px 4px rgba(0,0,0,0.2)" },
+  submitButton: { width: "100%", padding: "14px", background: "linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%)", color: "#1a1a2e", border: "none", borderRadius: "14px", cursor: "pointer", fontWeight: "700", fontSize: "15px", marginTop: "4px", transition: "all 0.3s ease", boxShadow: "0 4px 16px rgba(0,0,0,0.2)" },
+  footer: { textAlign: "center", borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "16px", marginTop: "2px" },
+  footerText: { margin: 0, color: "rgba(255,255,255,0.7)", fontSize: "13px", textShadow: "0 1px 4px rgba(0,0,0,0.2)" },
+  link: { color: "white", textDecoration: "none", fontWeight: "600", textShadow: "0 1px 4px rgba(0,0,0,0.2)" }
 };
