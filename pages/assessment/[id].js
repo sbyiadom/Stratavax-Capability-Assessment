@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - LMS-Inspired Professional Layout
+// pages/assessment/[id].js - Stratavax Capability Assessment with Branding
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -144,9 +144,10 @@ function AssessmentContent() {
   const autoSubmitRef = useRef(false);
 
   // STRATAVAX BRAND COLORS
-  const primaryColor = "#1a237e";
+  const primaryColor = "#0b2a4e";
   const primaryLight = "#e8eaf6";
-  const primaryDark = "#0d47a1";
+  const primaryDark = "#1b4a7a";
+  const accentColor = "#f9b83a";
   const successColor = "#2e7d32";
   const warningColor = "#f57c00";
   const dangerColor = "#c62828";
@@ -788,28 +789,34 @@ function AssessmentContent() {
       {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: successColor }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to dashboard...</p></div></div>}
 
       {/* ============================================================
-          LMS-INSPIRED PROFESSIONAL LAYOUT
+          STRATAVAX BRANDED LMS LAYOUT
           ============================================================ */}
       <div style={styles.container}>
-        {/* Header - Clean with breadcrumb style */}
+        {/* Header with Stratavax Branding */}
         <div style={styles.header}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
               <button onClick={handleBackClick} style={styles.backButton}>←</button>
-              <div>
-                <div style={styles.headerTitle}>
-                  {assessment ? assessment.title : "Assessment"}
+              <div style={styles.brandSection}>
+                <div style={styles.logoContainer}>
+                  <span style={styles.logoIcon}>🧪</span>
                 </div>
-                <div style={styles.headerMeta}>
-                  <span style={styles.headerMetaItem}>Question {currentIndex + 1}</span>
-                  <span style={styles.headerMetaDivider}>•</span>
-                  <span style={styles.headerMetaItem}>{currentQuestion.section || "General"}</span>
-                  {isMultipleCorrect && (
-                    <>
-                      <span style={styles.headerMetaDivider}>•</span>
-                      <span style={{ ...styles.headerMetaItem, color: primaryColor, fontWeight: 600 }}>Select all that apply</span>
-                    </>
-                  )}
+                <div>
+                  <div style={styles.headerTitle}>
+                    Stratavax Capability Assessment
+                    <span style={styles.headerSubtitle}>· NSRA</span>
+                  </div>
+                  <div style={styles.headerMeta}>
+                    <span style={styles.headerMetaItem}>Question {currentIndex + 1}</span>
+                    <span style={styles.headerMetaDivider}>•</span>
+                    <span style={styles.headerMetaItem}>{currentQuestion.section || "General"}</span>
+                    {isMultipleCorrect && (
+                      <>
+                        <span style={styles.headerMetaDivider}>•</span>
+                        <span style={{ ...styles.headerMetaItem, color: accentColor, fontWeight: 600 }}>Select all that apply</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -825,19 +832,24 @@ function AssessmentContent() {
         </div>
 
         {/* ============================================================
-            MAIN CONTENT - LMS STYLE
+            MAIN CONTENT
             ============================================================ */}
         <div style={styles.mainContent}>
-          {/* Question Area - Takes more space */}
+          {/* Question Area */}
           <div style={styles.questionArea}>
             <div style={styles.questionCard}>
               {/* Question Meta */}
               <div style={styles.questionMeta}>
-                <div style={styles.questionNumber}>Question {currentIndex + 1}</div>
+                <div style={styles.questionNumber}>
+                  <span style={{ color: accentColor, marginRight: '8px' }}>●</span>
+                  Question {currentIndex + 1}
+                </div>
                 <div style={styles.questionMetaInfo}>
                   <span style={styles.questionMetaLabel}>Marked out of</span>
                   <span style={styles.questionMetaValue}>1.00</span>
-                  <span style={styles.questionMetaFlag}>Flag question</span>
+                  <span style={styles.questionMetaFlag}>
+                    <span style={{ color: accentColor }}>⚑</span> Flag question
+                  </span>
                 </div>
               </div>
 
@@ -849,11 +861,11 @@ function AssessmentContent() {
               {/* Multiple Select Hint */}
               {isMultipleCorrect && (
                 <div style={styles.multipleHint}>
-                  💡 Select one or more
+                  💡 Select one or more answers
                 </div>
               )}
 
-              {/* Answer Options - Checkbox style */}
+              {/* Answer Options */}
               <div style={styles.answersContainer}>
                 {safeArray(currentQuestion.answers).map((answer, index) => {
                   const selected = isAnswerSelected(currentQuestion.id, answer.id);
@@ -894,9 +906,9 @@ function AssessmentContent() {
             </div>
           </div>
 
-          {/* Right Panel - Stats & Navigator */}
+          {/* Right Panel */}
           <div style={styles.sidePanel}>
-            {/* Stats */}
+            {/* Stats Card */}
             <div style={styles.statsCard}>
               <div style={styles.statsRow}>
                 <span style={styles.statsLabel}>Answered</span>
@@ -920,10 +932,11 @@ function AssessmentContent() {
               </div>
             </div>
 
-            {/* Navigator */}
+            {/* Navigator Card */}
             <div style={styles.navigatorCard}>
               <div style={styles.navigatorHeader}>
-                <span style={styles.navigatorTitle}>Question Navigator</span>
+                <span style={styles.navigatorTitle}>📊 Question Navigator</span>
+                <span style={styles.navigatorCurrent}>current: {currentIndex + 1}</span>
               </div>
               <div style={styles.questionGrid}>
                 {questions.map((question, index) => {
@@ -937,9 +950,9 @@ function AssessmentContent() {
                   let borderColor = "#e2e8f0";
                   
                   if (current) {
-                    bgColor = primaryColor;
-                    textColor = "white";
-                    borderColor = primaryColor;
+                    bgColor = accentColor;
+                    textColor = primaryColor;
+                    borderColor = accentColor;
                   } else if (answered && changed) {
                     bgColor = warningColor;
                     textColor = "white";
@@ -962,7 +975,8 @@ function AssessmentContent() {
                         color: textColor, 
                         borderColor: borderColor,
                         opacity: isDisabled ? 0.6 : 1,
-                        cursor: isDisabled ? "not-allowed" : "pointer"
+                        cursor: isDisabled ? "not-allowed" : "pointer",
+                        fontWeight: current ? 700 : 500
                       }}
                     >
                       {index + 1}
@@ -980,7 +994,7 @@ function AssessmentContent() {
                   <span>Changed</span>
                 </div>
                 <div style={styles.legendItem}>
-                  <div style={{ ...styles.legendDot, background: primaryColor }} />
+                  <div style={{ ...styles.legendDot, background: accentColor }} />
                   <span>Current</span>
                 </div>
                 <div style={styles.legendItem}>
@@ -1022,17 +1036,17 @@ function AssessmentContent() {
       </div>
 
       {/* CSS Injection */}
-      {typeof document !== "undefined" && !document.getElementById("assessment-modern-styles") && (
-        <style id="assessment-modern-styles">{`
+      {typeof document !== "undefined" && !document.getElementById("assessment-stratavax-styles") && (
+        <style id="assessment-stratavax-styles">{`
           .answer-option {
             transition: all 0.2s ease;
             border-radius: 8px;
           }
           
           .answer-option:hover:not(:disabled) {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(26, 35, 126, 0.12);
-            border-color: #1a237e !important;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(11, 42, 78, 0.15);
+            border-color: #0b2a4e !important;
           }
           
           .answer-option:active:not(:disabled) {
@@ -1041,13 +1055,13 @@ function AssessmentContent() {
 
           .navigator-item {
             transition: all 0.2s ease;
-            border-radius: 4px;
+            border-radius: 6px;
             font-size: 12px;
           }
           
           .navigator-item:hover:not(:disabled) {
-            transform: scale(1.08);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+            transform: scale(1.10);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
             z-index: 2;
           }
 
@@ -1069,6 +1083,11 @@ function AssessmentContent() {
           .assessment-scroll::-webkit-scrollbar-thumb:hover {
             background: #94a3b8;
           }
+
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
         `}</style>
       )}
     </>
@@ -1076,38 +1095,139 @@ function AssessmentContent() {
 }
 
 // ============================================================
-// STYLES - LMS INSPIRED
+// STYLES - STRATAVAX BRANDED
 // ============================================================
 
 const styles = {
-  loadingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#f8fafc", gap: "20px" },
-  loadingSpinner: { width: "50px", height: "50px", border: "4px solid #e2e8f0", borderTop: "4px solid #1a237e", borderRadius: "50%", animation: "spin 1s linear infinite" },
-  messageContainer: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc", padding: "20px" },
-  messageCard: { background: "white", padding: "40px", borderRadius: "16px", maxWidth: "500px", textAlign: "center", boxShadow: "0 2px 12px rgba(0,0,0,0.08)" },
+  loadingContainer: { 
+    minHeight: "100vh", 
+    display: "flex", 
+    flexDirection: "column", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    background: "linear-gradient(135deg, #f8fafc 0%, #e8eaf6 100%)", 
+    gap: "20px" 
+  },
+  loadingSpinner: { 
+    width: "50px", 
+    height: "50px", 
+    border: "4px solid #e2e8f0", 
+    borderTop: "4px solid #0b2a4e", 
+    borderRadius: "50%", 
+    animation: "spin 1s linear infinite" 
+  },
+  messageContainer: { 
+    minHeight: "100vh", 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    background: "#f8fafc", 
+    padding: "20px" 
+  },
+  messageCard: { 
+    background: "white", 
+    padding: "40px", 
+    borderRadius: "16px", 
+    maxWidth: "500px", 
+    textAlign: "center", 
+    boxShadow: "0 2px 12px rgba(0,0,0,0.08)" 
+  },
   errorIcon: { fontSize: "64px", marginBottom: "20px" },
   successIcon: { fontSize: "64px", marginBottom: "20px" },
-  successIconLarge: { width: "80px", height: "80px", background: "#2e7d32", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", fontSize: "40px", color: "white" },
-  primaryButton: { padding: "12px 30px", background: "#1a237e", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px" },
-  debugInfo: { background: "#f8fafc", padding: "15px", borderRadius: "8px", margin: "15px 0", fontSize: "14px", textAlign: "left" },
+  successIconLarge: { 
+    width: "80px", 
+    height: "80px", 
+    background: "#2e7d32", 
+    borderRadius: "50%", 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    margin: "0 auto 20px", 
+    fontSize: "40px", 
+    color: "white" 
+  },
+  primaryButton: { 
+    padding: "12px 30px", 
+    background: "#0b2a4e", 
+    color: "white", 
+    border: "none", 
+    borderRadius: "8px", 
+    cursor: "pointer", 
+    fontSize: "14px" 
+  },
+  debugInfo: { 
+    background: "#f8fafc", 
+    padding: "15px", 
+    borderRadius: "8px", 
+    margin: "15px 0", 
+    fontSize: "14px", 
+    textAlign: "left" 
+  },
   
-  violationBanner: { position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)", background: "#c62828", color: "white", padding: "12px 24px", borderRadius: "8px", fontWeight: "bold", zIndex: 10001, fontSize: "14px", boxShadow: "0 4px 12px rgba(0,0,0,0.2)", display: "flex", alignItems: "center", gap: "10px" },
+  violationBanner: { 
+    position: "fixed", 
+    top: "20px", 
+    left: "50%", 
+    transform: "translateX(-50%)", 
+    background: "#c62828", 
+    color: "white", 
+    padding: "12px 24px", 
+    borderRadius: "8px", 
+    fontWeight: "bold", 
+    zIndex: 10001, 
+    fontSize: "14px", 
+    boxShadow: "0 4px 12px rgba(0,0,0,0.2)", 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "10px" 
+  },
   
-  autoSubmitOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10002 },
-  autoSubmitCard: { background: "white", padding: "30px", borderRadius: "16px", textAlign: "center", maxWidth: "400px" },
-  autoSubmitSpinner: { width: "40px", height: "40px", border: "4px solid #e2e8f0", borderTop: "4px solid #c62828", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 20px" },
+  autoSubmitOverlay: { 
+    position: "fixed", 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    bottom: 0, 
+    background: "rgba(0,0,0,0.7)", 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    zIndex: 10002 
+  },
+  autoSubmitCard: { 
+    background: "white", 
+    padding: "30px", 
+    borderRadius: "16px", 
+    textAlign: "center", 
+    maxWidth: "400px" 
+  },
+  autoSubmitSpinner: { 
+    width: "40px", 
+    height: "40px", 
+    border: "4px solid #e2e8f0", 
+    borderTop: "4px solid #c62828", 
+    borderRadius: "50%", 
+    animation: "spin 1s linear infinite", 
+    margin: "0 auto 20px" 
+  },
   
-  container: { minHeight: "100vh", background: "#f8fafc", display: "flex", flexDirection: "column" },
+  container: { 
+    minHeight: "100vh", 
+    background: "#f4f7fc", 
+    display: "flex", 
+    flexDirection: "column" 
+  },
   
   // ============================================================
-  // HEADER - Clean LMS style
+  // HEADER - Stratavax Branded
   // ============================================================
   header: { 
     position: "sticky", 
     top: 0, 
     zIndex: 100, 
-    background: "white", 
-    borderBottom: "1px solid #e2e8f0", 
-    boxShadow: "0 1px 4px rgba(0,0,0,0.04)", 
+    background: "linear-gradient(135deg, #0b2a4e 0%, #1b4a7a 100%)", 
+    borderBottom: "3px solid #f9b83a", 
+    boxShadow: "0 4px 12px rgba(0,0,0,0.1)", 
     flexShrink: 0 
   },
   
@@ -1126,13 +1246,13 @@ const styles = {
   headerRight: { display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" },
   
   backButton: { 
-    width: "32px", 
-    height: "32px", 
-    background: "transparent", 
-    border: "1px solid #e2e8f0", 
+    width: "36px", 
+    height: "36px", 
+    background: "rgba(255,255,255,0.1)", 
+    border: "1px solid rgba(255,255,255,0.2)", 
     borderRadius: "8px", 
-    color: "#475569", 
-    fontSize: "14px", 
+    color: "white", 
+    fontSize: "16px", 
     cursor: "pointer",
     transition: "0.2s",
     display: "flex",
@@ -1140,15 +1260,43 @@ const styles = {
     justifyContent: "center"
   },
   
+  brandSection: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px"
+  },
+  
+  logoContainer: {
+    width: "40px",
+    height: "40px",
+    background: "rgba(255,255,255,0.12)",
+    borderRadius: "10px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    border: "1px solid rgba(255,255,255,0.15)"
+  },
+  
+  logoIcon: {
+    fontSize: "22px"
+  },
+  
   headerTitle: { 
     fontSize: "16px", 
     fontWeight: 600, 
-    color: "#0f172a" 
+    color: "white"
+  },
+  
+  headerSubtitle: {
+    fontWeight: 300,
+    opacity: 0.7,
+    fontSize: "0.9rem",
+    marginLeft: "6px"
   },
   
   headerMeta: { 
-    fontSize: "13px", 
-    color: "#64748b", 
+    fontSize: "12px", 
+    color: "rgba(255,255,255,0.7)", 
     marginTop: "2px",
     display: "flex",
     alignItems: "center",
@@ -1156,30 +1304,30 @@ const styles = {
     flexWrap: "wrap"
   },
   
-  headerMetaItem: { color: "#64748b" },
-  headerMetaDivider: { color: "#cbd5e1" },
+  headerMetaItem: { color: "rgba(255,255,255,0.7)" },
+  headerMetaDivider: { color: "rgba(255,255,255,0.3)" },
   
   timer: { 
     textAlign: "right" 
   },
   
   timerLabel: { 
-    fontSize: "10px", 
+    fontSize: "9px", 
     fontWeight: 600, 
     textTransform: "uppercase", 
     letterSpacing: "0.5px", 
-    color: "#94a3b8" 
+    color: "rgba(255,255,255,0.6)" 
   },
   
   timerValue: { 
     fontSize: "20px", 
     fontWeight: 700, 
     fontFamily: "monospace",
-    color: "#1a237e"
+    color: "#f9b83a"
   },
   
   // ============================================================
-  // MAIN CONTENT - LMS style
+  // MAIN CONTENT
   // ============================================================
   mainContent: { 
     maxWidth: "1400px", 
@@ -1190,8 +1338,8 @@ const styles = {
     gap: "24px",
     flex: 1,
     minHeight: 0,
-    height: "calc(100vh - 75px)",
-    maxHeight: "calc(100vh - 75px)",
+    height: "calc(100vh - 80px)",
+    maxHeight: "calc(100vh - 80px)",
     overflow: "hidden",
     boxSizing: "border-box"
   },
@@ -1215,7 +1363,7 @@ const styles = {
     flexDirection: "column",
     flex: 1,
     overflow: "hidden",
-    boxShadow: "0 1px 4px rgba(0,0,0,0.04)"
+    boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
   },
   
   questionMeta: {
@@ -1274,16 +1422,17 @@ const styles = {
   
   multipleHint: { 
     padding: "8px 14px", 
-    background: "#eff6ff", 
+    background: "#f0f4ff", 
     borderRadius: "8px", 
     fontSize: "13px", 
-    color: "#1e40af",
+    color: "#0b2a4e",
     flexShrink: 0,
-    marginBottom: "12px"
+    marginBottom: "12px",
+    borderLeft: "3px solid #f9b83a"
   },
   
   // ============================================================
-  // ANSWERS - Checkbox style
+  // ANSWERS
   // ============================================================
   answersContainer: { 
     display: "flex", 
@@ -1335,13 +1484,13 @@ const styles = {
     overflow: "hidden"
   },
   
-  // Stats Card
   statsCard: {
     background: "white",
     borderRadius: "12px",
     padding: "16px",
     border: "1px solid #e2e8f0",
-    flexShrink: 0
+    flexShrink: 0,
+    boxShadow: "0 1px 4px rgba(0,0,0,0.04)"
   },
   
   statsRow: {
@@ -1378,12 +1527,11 @@ const styles = {
   
   progressFill: {
     height: "100%",
-    background: "#1a237e",
+    background: "linear-gradient(90deg, #f9b83a, #f5a623)",
     borderRadius: "4px",
     transition: "width 0.3s ease"
   },
   
-  // Navigator
   navigatorCard: { 
     background: "white", 
     borderRadius: "12px", 
@@ -1392,7 +1540,8 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     flex: 1,
-    overflow: "hidden"
+    overflow: "hidden",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.04)"
   },
   
   navigatorHeader: {
@@ -1409,6 +1558,15 @@ const styles = {
     color: "#0f172a"
   },
   
+  navigatorCurrent: {
+    fontSize: "11px",
+    background: "#f0f4ff",
+    padding: "2px 10px",
+    borderRadius: "40px",
+    color: "#0b2a4e",
+    fontWeight: 600
+  },
+  
   questionGrid: { 
     display: "grid", 
     gridTemplateColumns: "repeat(10, 1fr)", 
@@ -1422,9 +1580,9 @@ const styles = {
   gridItem: { 
     aspectRatio: "1", 
     border: "2px solid", 
-    borderRadius: "4px", 
-    fontSize: "12px", 
-    fontWeight: 600, 
+    borderRadius: "6px", 
+    fontSize: "11px", 
+    fontWeight: 500, 
     display: "flex", 
     alignItems: "center", 
     justifyContent: "center", 
@@ -1440,7 +1598,7 @@ const styles = {
     padding: "6px 0 0", 
     borderTop: "1px solid #e2e8f0", 
     flexWrap: "wrap", 
-    gap: "6px",
+    gap: "4px",
     flexShrink: 0,
     marginTop: "8px"
   },
@@ -1449,7 +1607,7 @@ const styles = {
     display: "flex", 
     alignItems: "center", 
     gap: "4px", 
-    fontSize: "10px", 
+    fontSize: "9px", 
     color: "#64748b" 
   },
   
@@ -1459,7 +1617,6 @@ const styles = {
     borderRadius: "4px" 
   },
   
-  // Navigation Buttons
   navButtons: {
     display: "flex",
     gap: "8px",
@@ -1486,7 +1643,7 @@ const styles = {
     fontSize: "14px", 
     fontWeight: 500, 
     border: "none", 
-    background: "#1a237e", 
+    background: "#0b2a4e", 
     color: "white", 
     cursor: "pointer",
     transition: "0.2s ease"
@@ -1555,7 +1712,8 @@ const styles = {
     background: "#fff8e1", 
     borderRadius: "10px", 
     fontSize: "13px", 
-    marginBottom: "20px" 
+    marginBottom: "20px",
+    borderLeft: "3px solid #f9b83a"
   },
   
   modalActions: { 
