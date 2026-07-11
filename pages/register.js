@@ -1,9 +1,8 @@
-// pages/register.js - Fixed registration without redirect_to
+// pages/register.js - Using Admin API for registration
 
 import { useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { supabase } from "../supabase/client";
 
 function cleanEmail(value) {
   return String(value || "").trim().toLowerCase();
@@ -18,7 +17,7 @@ function getReadableSignupError(error) {
 
   const message = String(error.message || error || "").toLowerCase();
 
-  if (message.includes("already registered") || message.includes("already exists") || message.includes("user already registered")) {
+  if (message.includes("already registered") || message.includes("already exists")) {
     return "An account already exists with this email. Please log in or use password reset.";
   }
 
@@ -30,127 +29,11 @@ function getReadableSignupError(error) {
     return error.message || "Please enter a valid email address.";
   }
 
+  if (message.includes("service role") || message.includes("configuration")) {
+    return "Registration is temporarily unavailable. Please try again later.";
+  }
+
   return error.message || "Registration failed. Please try again.";
-}
-
-// ============================================================
-// NATIONAL SERVICE ASSESSMENT - HARDCODED ID
-// ============================================================
-const NATIONAL_SERVICE_ASSESSMENT_ID = "bdb9d46e-9fac-4d00-8478-1f649e7ac600";
-
-async function autoAssignNationalService(candidateId) {
-  try {
-    console.log(`[Auto-Assign] Assigning National Service to candidate: ${candidateId}`);
-
-    // Check if already assigned
-    const { data: existing, error: checkError } = await supabase
-      .from("candidate_assessments")
-      .select("id, status")
-      .eq("user_id", candidateId)
-      .eq("assessment_id", NATIONAL_SERVICE_ASSESSMENT_ID)
-      .maybeSingle();
-
-    if (checkError) {
-      console.warn("[Auto-Assign] Check error:", checkError.message);
-    }
-
-    if (existing) {
-      console.log(`[Auto-Assign] Already exists with status: ${existing.status}`);
-      
-      // If blocked, unblock it
-      if (existing.status === "blocked") {
-        const { error: updateError } = await supabase
-          .from("candidate_assessments")
-          .update({
-            status: "unblocked",
-            unblocked_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .eq("id", existing.id);
-
-        if (updateError) {
-          console.warn("[Auto-Assign] Unblock error:", updateError.message);
-          return false;
-        }
-        console.log("[Auto-Assign] ✅ Existing assessment unblocked");
-        return true;
-      }
-      return true;
-    }
-
-    // Create new assignment
-    const now = new Date().toISOString();
-    const { error: insertError } = await supabase
-      .from("candidate_assessments")
-      .insert({
-        user_id: candidateId,
-        assessment_id: NATIONAL_SERVICE_ASSESSMENT_ID,
-        status: "unblocked",
-        unblocked_at: now,
-        created_at: now,
-        updated_at: now
-      });
-
-    if (insertError) {
-      console.error("[Auto-Assign] Insert error:", insertError.message);
-      return false;
-    }
-
-    console.log(`[Auto-Assign] ✅ National Service assigned to candidate ${candidateId}`);
-    return true;
-
-  } catch (error) {
-    console.error("[Auto-Assign] Error:", error);
-    return false;
-  }
-}
-
-async function createCandidateProfile(user, fullName, emailAddress, university, programme, graduationYear, preferredDepartment) {
-  try {
-    // Check if profile already exists
-    const { data: existing, error: checkError } = await supabase
-      .from("candidate_profiles")
-      .select("id")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (checkError && checkError.code !== "PGRST116") {
-      console.error("Check profile error:", checkError);
-    }
-
-    if (existing) {
-      console.log("Profile already exists for user:", user.id);
-      return existing;
-    }
-
-    const profileData = {
-      id: user.id,
-      email: emailAddress,
-      full_name: fullName,
-      university: university || null,
-      programme: programme || null,
-      graduation_year: graduationYear || null,
-      preferred_department: preferredDepartment || null,
-      updated_at: new Date().toISOString()
-    };
-
-    const { data, error } = await supabase
-      .from("candidate_profiles")
-      .insert(profileData)
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Profile creation error:", error);
-      throw error;
-    }
-
-    console.log("✅ Profile created successfully");
-    return data;
-  } catch (profileError) {
-    console.error("Profile creation exception:", profileError);
-    throw profileError;
-  }
 }
 
 export default function Register() {
@@ -175,6 +58,7 @@ export default function Register() {
     const fullName = cleanName(name);
     const emailAddress = cleanEmail(email);
 
+    // Validation
     if (!fullName) {
       setMessage({ type: "error", text: "Please enter your full name." });
       return;
@@ -220,60 +104,34 @@ export default function Register() {
       setMessage({ type: "", text: "" });
 
       // ============================================================
-      // FIX: Removed redirect_to parameter - was causing 500 error
+      // NEW: Use Admin API instead of supabase.auth.signUp()
       // ============================================================
-      const { data, error } = await supabase.auth.signUp({
-        email: emailAddress,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-            name: fullName,
-            role: "candidate",
-            is_supervisor: false,
-            user_type: "candidate"
-          }
-        }
+      const response = await fetch("/api/admin/create-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          email: emailAddress,
+          password: password,
+          full_name: fullName,
+          university: university,
+          programme: programme,
+          graduation_year: graduationYear,
+          preferred_department: preferredDepartment
+        })
       });
 
-      if (error) {
-        console.error("Sign up error:", error);
-        throw error;
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Registration failed");
       }
 
-      if (!data?.user) {
-        throw new Error("No user data returned from sign up.");
-      }
-
-      console.log("✅ User created:", data.user.id);
-
-      // Create profile
-      await createCandidateProfile(
-        data.user,
-        fullName,
-        emailAddress,
-        university,
-        programme,
-        graduationYear,
-        preferredDepartment
-      );
-
-      // Auto-assign National Service assessment
-      const nsAssigned = await autoAssignNationalService(data.user.id);
-      
-      if (nsAssigned) {
-        console.log(`[Auto-Assign] ✅ National Service assigned for ${emailAddress}`);
-        setMessage({
-          type: "success",
-          text: "Registration successful! Your National Service assessment is ready. Please check your email for confirmation, then log in."
-        });
-      } else {
-        console.log(`[Auto-Assign] ⚠️ National Service not assigned`);
-        setMessage({
-          type: "success",
-          text: "Registration successful! Your profile has been created. Please check your email for confirmation, then log in."
-        });
-      }
+      setMessage({
+        type: "success",
+        text: "Registration successful! Your account has been created. Please log in."
+      });
 
       // Clear form
       setName("");
