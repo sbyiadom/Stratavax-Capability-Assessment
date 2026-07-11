@@ -1,9 +1,8 @@
-// pages/assessment/[id].js - Stratavax Capability Assessment with Logo
+// pages/assessment/[id].js - National Service Assessment with Stratavax Branding
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import dynamic from "next/dynamic";
-import Image from "next/image";
 import { supabase } from "../../supabase/client";
 import {
   getAssessmentById,
@@ -166,6 +165,10 @@ function AssessmentContent() {
   const isTimeCritical = timeUsedPercent > 90;
 
   const answeredPercent = questions.length > 0 ? Math.round((totalAnswered / questions.length) * 100) : 0;
+
+  // Check if this is a National Service assessment
+  const isNationalService = assessmentTypeCode === 'national_service' || 
+    (assessment && assessment.title && assessment.title.toLowerCase().includes('national service'));
 
   function getSelectedAnswersForQuestion(questionId) {
     return getAnswerArray(answers[questionId]);
@@ -790,10 +793,10 @@ function AssessmentContent() {
       {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: successColor }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to dashboard...</p></div></div>}
 
       {/* ============================================================
-          STRATAVAX BRANDED LAYOUT WITH LOGO
+          NATIONAL SERVICE ASSESSMENT WITH STRATAVAX BRANDING
           ============================================================ */}
       <div style={styles.container}>
-        {/* Header with Stratavax Logo and Branding */}
+        {/* Header with Stratavax Logo and National Service Badge */}
         <div style={styles.header}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
@@ -805,6 +808,12 @@ function AssessmentContent() {
                     <span style={styles.logoSub}>CAPABILITY ASSESSMENT</span>
                   </div>
                 </div>
+                {isNationalService && (
+                  <div style={styles.nationalBadge}>
+                    <span style={styles.nationalBadgeIcon}>🇿🇦</span>
+                    <span style={styles.nationalBadgeText}>National Service</span>
+                  </div>
+                )}
               </div>
             </div>
             <div style={styles.headerRight}>
@@ -830,7 +839,7 @@ function AssessmentContent() {
         </div>
 
         {/* ============================================================
-            MAIN CONTENT
+            MAIN CONTENT - CLEAN LAYOUT
             ============================================================ */}
         <div style={styles.mainContent}>
           {/* Question Area */}
@@ -904,7 +913,7 @@ function AssessmentContent() {
             </div>
           </div>
 
-          {/* Right Panel */}
+          {/* Right Panel - Clean Stats & Navigator */}
           <div style={styles.sidePanel}>
             {/* Stats Card */}
             <div style={styles.statsCard}>
@@ -930,7 +939,7 @@ function AssessmentContent() {
               </div>
             </div>
 
-            {/* Navigator Card */}
+            {/* Navigator Card - Clean Grid */}
             <div style={styles.navigatorCard}>
               <div style={styles.navigatorHeader}>
                 <span style={styles.navigatorTitle}>📊 Question Navigator</span>
@@ -974,7 +983,8 @@ function AssessmentContent() {
                         borderColor: borderColor,
                         opacity: isDisabled ? 0.6 : 1,
                         cursor: isDisabled ? "not-allowed" : "pointer",
-                        fontWeight: current ? 700 : 500
+                        fontWeight: current ? 700 : 500,
+                        boxShadow: current ? `0 0 0 2px ${accentColor}40` : 'none'
                       }}
                     >
                       {index + 1}
@@ -1052,14 +1062,14 @@ function AssessmentContent() {
           }
 
           .navigator-item {
-            transition: all 0.2s ease;
+            transition: all 0.15s ease;
             border-radius: 6px;
-            font-size: 12px;
+            font-size: 11px;
           }
           
           .navigator-item:hover:not(:disabled) {
-            transform: scale(1.10);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transform: scale(1.08);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
             z-index: 2;
           }
 
@@ -1093,7 +1103,7 @@ function AssessmentContent() {
 }
 
 // ============================================================
-// STYLES - STRATAVAX BRANDED WITH LOGO
+// STYLES - STRATAVAX NATIONAL SERVICE ASSESSMENT
 // ============================================================
 
 const styles = {
@@ -1217,7 +1227,7 @@ const styles = {
   },
   
   // ============================================================
-  // HEADER - Stratavax Branded with Logo
+  // HEADER
   // ============================================================
   header: { 
     position: "sticky", 
@@ -1272,7 +1282,8 @@ const styles = {
   brandSection: {
     display: "flex",
     alignItems: "center",
-    gap: "12px"
+    gap: "16px",
+    flexWrap: "wrap"
   },
   
   logoContainer: {
@@ -1299,6 +1310,28 @@ const styles = {
     color: "rgba(255,255,255,0.7)",
     letterSpacing: "2px",
     textTransform: "uppercase"
+  },
+  
+  nationalBadge: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    background: "rgba(255,255,255,0.12)",
+    padding: "4px 14px 4px 10px",
+    borderRadius: "40px",
+    border: "1px solid rgba(255,255,255,0.15)",
+    backdropFilter: "blur(4px)"
+  },
+  
+  nationalBadgeIcon: {
+    fontSize: "16px"
+  },
+  
+  nationalBadgeText: {
+    fontSize: "11px",
+    fontWeight: 500,
+    color: "white",
+    letterSpacing: "0.3px"
   },
   
   headerMetaItem: { 
@@ -1590,9 +1623,10 @@ const styles = {
     alignItems: "center", 
     justifyContent: "center", 
     cursor: "pointer",
-    transition: "all 0.2s ease",
+    transition: "all 0.15s ease",
     minWidth: "0",
-    minHeight: "0"
+    minHeight: "0",
+    position: "relative"
   },
   
   legend: { 
