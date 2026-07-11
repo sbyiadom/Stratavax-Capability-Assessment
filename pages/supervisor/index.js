@@ -38,14 +38,29 @@ export default function SupervisorDashboard() {
       
       const supervisorId = session.user.id;
 
-      // Get candidates assigned to this supervisor
-      const { data: assignedCandidates, error: candidatesError } = await supabase
-        .from('candidate_profiles')
-        .select('id, full_name, email, university, programme')
+      // Get candidates assigned to this supervisor via supervisor_candidate_access
+      const { data: accessData, error: accessError } = await supabase
+        .from('supervisor_candidate_access')
+        .select('candidate_id')
         .eq('supervisor_id', supervisorId);
 
-      if (candidatesError) {
-        console.error('Error fetching candidates:', candidatesError);
+      if (accessError) {
+        console.error('Error fetching access data:', accessError);
+      }
+
+      let assignedCandidates = [];
+      if (accessData && accessData.length > 0) {
+        const candidateIds = accessData.map(a => a.candidate_id);
+        const { data: candidatesData, error: candidatesError } = await supabase
+          .from('candidate_profiles')
+          .select('id, full_name, email, university, programme')
+          .in('id', candidateIds);
+
+        if (candidatesError) {
+          console.error('Error fetching candidates:', candidatesError);
+        } else {
+          assignedCandidates = candidatesData || [];
+        }
       }
 
       let allAssessments = [];
@@ -157,13 +172,25 @@ export default function SupervisorDashboard() {
             }
             
             // ================================================================
-            // EXTRACT CATEGORY SCORES - Primary source: report_data.categoryScores
+            // EXTRACT CATEGORY SCORES - Read from category_scores column first
             // ================================================================
             let categoryScores = [];
-            if (resultData?.report_data) {
+
+            // PRIMARY: Use the category_scores column directly
+            if (resultData?.category_scores && Array.isArray(resultData.category_scores) && resultData.category_scores.length > 0) {
+              categoryScores = resultData.category_scores.map(cat => ({
+                category: cat.category || cat.name || 'Unknown',
+                score: cat.score || cat.correct || 0,
+                maxScore: cat.maxScore || cat.total || 100,
+                percentage: cat.percentage || Math.round(((cat.score || 0) / (cat.maxScore || 100)) * 100) || 0,
+                grade: cat.grade || 'N/A',
+                comment: cat.comment || cat.description || ''
+              }));
+            } 
+            // SECONDARY: Fallback to report_data.categoryScores
+            else if (resultData?.report_data) {
               const rd = resultData.report_data;
               
-              // PRIMARY: Direct categoryScores array
               if (rd.categoryScores && Array.isArray(rd.categoryScores) && rd.categoryScores.length > 0) {
                 categoryScores = rd.categoryScores.map(cat => ({
                   category: cat.category || cat.name || 'Unknown',
@@ -174,7 +201,7 @@ export default function SupervisorDashboard() {
                   comment: cat.comment || cat.description || ''
                 }));
               }
-              // SECONDARY: scoreBreakdown array
+              // TERTIARY: scoreBreakdown array
               else if (rd.scoreBreakdown && Array.isArray(rd.scoreBreakdown) && rd.scoreBreakdown.length > 0) {
                 categoryScores = rd.scoreBreakdown.map(cat => ({
                   category: cat.category || cat.area || 'Unknown',
@@ -183,29 +210,6 @@ export default function SupervisorDashboard() {
                   percentage: cat.percentage || 0,
                   grade: cat.grade || cat.letter_grade || 'N/A',
                   comment: cat.comment || cat.supervisorImplication || ''
-                }));
-              }
-              // TERTIARY: _fullReport.categoryScores object
-              else if (rd._fullReport?.categoryScores && typeof rd._fullReport.categoryScores === 'object') {
-                const catScores = rd._fullReport.categoryScores;
-                categoryScores = Object.keys(catScores).map(key => ({
-                  category: key,
-                  score: catScores[key].score || catScores[key].totalScore || 0,
-                  maxScore: catScores[key].maxScore || catScores[key].maxPossible || 100,
-                  percentage: catScores[key].percentage || 0,
-                  grade: catScores[key].grade || 'N/A',
-                  comment: catScores[key].comment || ''
-                }));
-              }
-              // QUATERNARY: dimensions.categoryScores
-              else if (rd.dimensions?.categoryScores && Array.isArray(rd.dimensions.categoryScores)) {
-                categoryScores = rd.dimensions.categoryScores.map(cat => ({
-                  category: cat.name || cat.category || 'Unknown',
-                  score: cat.score || 0,
-                  maxScore: cat.maxScore || 100,
-                  percentage: cat.percentage || 0,
-                  grade: cat.grade || 'N/A',
-                  comment: cat.comment || ''
                 }));
               }
             }
