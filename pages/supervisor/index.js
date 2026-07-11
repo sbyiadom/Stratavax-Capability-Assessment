@@ -1,4 +1,4 @@
-// pages/supervisor/index.js - Complete updated file with fixed National Service reports
+// pages/supervisor/index.js - Complete Supervisor Dashboard with National Service Reports
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -80,126 +80,141 @@ export default function SupervisorDashboard() {
         const allReportData = [];
 
         for (const assessment of allAssessments) {
-          const isCompleted = assessment.status === 'completed' || assessment.result_id !== null;
+          const isCompleted = assessment.status === 'completed' && assessment.result_id !== null;
           
-          if (isCompleted && assessment.result_id) {
-            const { data: resultData, error: resultError } = await supabase
+          // Check if there's a result even if status is not 'completed'
+          let resultData = null;
+          let resultError = null;
+          
+          if (assessment.result_id) {
+            const result = await supabase
               .from('assessment_results')
               .select('*')
               .eq('id', assessment.result_id)
               .single();
+            
+            if (!result.error) {
+              resultData = result.data;
+            } else {
+              resultError = result.error;
+            }
+          }
 
-            if (!resultError && resultData) {
-              const candidate = assignedCandidates.find(c => c.id === assessment.user_id);
-              const isNationalService = assessment.assessments?.assessment_type?.code === 'national_service';
-              
-              // Get score from multiple possible sources
-              let score = resultData?.percentage_score || 0;
-              
-              // If percentage_score is null, try to get it from report_data
-              if (!score && resultData?.report_data?.overallScore) {
-                score = resultData.report_data.overallScore;
-              }
-              if (!score && resultData?.report_data?.dimensions?.overallScore) {
-                score = resultData.report_data.dimensions.overallScore;
-              }
-              
-              // Get workplace_readiness from multiple sources
-              let workplaceReadiness = resultData?.workplace_readiness || 0;
-              if (!workplaceReadiness && resultData?.report_data?.workplaceReadiness) {
-                workplaceReadiness = resultData.report_data.workplaceReadiness;
-              }
-              if (!workplaceReadiness && resultData?.report_data?.scores?.workplaceReadiness) {
-                workplaceReadiness = resultData.report_data.scores.workplaceReadiness;
-              }
-              if (!workplaceReadiness && resultData?.report_data?.dimensions?.workplaceReadiness) {
-                workplaceReadiness = resultData.report_data.dimensions.workplaceReadiness;
-              }
-              
-              // Get intellectual_capability from multiple sources
-              let intellectualCapability = resultData?.intellectual_capability || 0;
-              if (!intellectualCapability && resultData?.report_data?.intellectualCapability) {
-                intellectualCapability = resultData.report_data.intellectualCapability;
-              }
-              if (!intellectualCapability && resultData?.report_data?.scores?.intellectualCapability) {
-                intellectualCapability = resultData.report_data.scores.intellectualCapability;
-              }
-              if (!intellectualCapability && resultData?.report_data?.dimensions?.intellectualCapability) {
-                intellectualCapability = resultData.report_data.dimensions.intellectualCapability;
-              }
-              
-              // Get recommendation from multiple sources
-              let recommendation = resultData?.recommendation || 'Not Available';
-              if (recommendation === 'Not Available' && resultData?.report_data?.recommendation) {
+          // If the assessment has a result_id or is completed
+          if (assessment.result_id || isCompleted) {
+            const candidate = assignedCandidates.find(c => c.id === assessment.user_id);
+            const isNationalService = assessment.assessments?.assessment_type?.code === 'national_service';
+            
+            // Get score from multiple possible sources
+            let score = resultData?.percentage_score || 0;
+            
+            // If percentage_score is null, try to get it from report_data
+            if (!score && resultData?.report_data?.overallScore) {
+              score = resultData.report_data.overallScore;
+            }
+            if (!score && resultData?.report_data?.dimensions?.overallScore) {
+              score = resultData.report_data.dimensions.overallScore;
+            }
+            
+            // Get workplace_readiness from multiple sources
+            let workplaceReadiness = resultData?.workplace_readiness || 0;
+            if (!workplaceReadiness && resultData?.report_data?.workplaceReadiness) {
+              workplaceReadiness = resultData.report_data.workplaceReadiness;
+            }
+            if (!workplaceReadiness && resultData?.report_data?.scores?.workplaceReadiness) {
+              workplaceReadiness = resultData.report_data.scores.workplaceReadiness;
+            }
+            if (!workplaceReadiness && resultData?.report_data?.dimensions?.workplaceReadiness) {
+              workplaceReadiness = resultData.report_data.dimensions.workplaceReadiness;
+            }
+            
+            // Get intellectual_capability from multiple sources
+            let intellectualCapability = resultData?.intellectual_capability || 0;
+            if (!intellectualCapability && resultData?.report_data?.intellectualCapability) {
+              intellectualCapability = resultData.report_data.intellectualCapability;
+            }
+            if (!intellectualCapability && resultData?.report_data?.scores?.intellectualCapability) {
+              intellectualCapability = resultData.report_data.scores.intellectualCapability;
+            }
+            if (!intellectualCapability && resultData?.report_data?.dimensions?.intellectualCapability) {
+              intellectualCapability = resultData.report_data.dimensions.intellectualCapability;
+            }
+            
+            // Get recommendation from multiple sources
+            let recommendation = resultData?.recommendation || 'Not Available';
+            if (recommendation === 'Not Available' && resultData?.report_data?.recommendation) {
+              if (typeof resultData.report_data.recommendation === 'string') {
                 recommendation = resultData.report_data.recommendation;
-              }
-              if (recommendation === 'Not Available' && resultData?.report_data?.recommendation?.level) {
+              } else if (resultData.report_data.recommendation?.level) {
                 recommendation = resultData.report_data.recommendation.level;
               }
-              
-              // Get risk level from multiple sources
-              let riskLevel = resultData?.risk_level || 'Medium';
-              if (riskLevel === 'Medium' && resultData?.report_data?.riskLevel) {
-                riskLevel = resultData.report_data.riskLevel;
-              }
-              
-              // Calculate overall score if not present
-              let overallScore = resultData?.percentage_score || 0;
-              if (!overallScore && workplaceReadiness && intellectualCapability) {
-                overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
-              }
-              if (!overallScore && resultData?.report_data?.overallScore) {
-                overallScore = resultData.report_data.overallScore;
-              }
-              
-              const reportEntry = {
-                result_id: assessment.result_id,
-                candidate_id: assessment.user_id,
-                candidate_name: candidate?.full_name || 'Unknown',
-                candidate_email: candidate?.email || '',
-                university: candidate?.university || '',
-                programme: candidate?.programme || '',
-                assessment_id: assessment.assessment_id,
-                assessment_title: assessment.assessments?.title || 'Assessment',
-                assessment_type: assessment.assessments?.assessment_type?.name || 'General',
-                assessment_code: assessment.assessments?.assessment_type?.code || 'general',
-                status: assessment.status,
-                completed_at: assessment.completed_at || resultData?.completed_at,
-                score: overallScore || score,
-                is_national_service: isNationalService,
-                resultData: resultData,
-                // Store raw values
-                percentage_score: overallScore || resultData?.percentage_score || 0,
-                workplace_readiness: workplaceReadiness || 0,
-                intellectual_capability: intellectualCapability || 0,
-                recommendation: recommendation || 'Not Available',
-                risk_level: riskLevel || 'Medium'
-              };
-
-              if (isNationalService) {
-                // Build scores object for easy access
-                reportEntry.scores = {
-                  overall: overallScore || resultData?.percentage_score || 0,
-                  workplace: workplaceReadiness || 0,
-                  intellectual: intellectualCapability || 0,
-                  recommendation: recommendation || 'Not Available',
-                  riskLevel: riskLevel || 'Medium'
-                };
-                
-                // Also store directly on the report for easy access
-                reportEntry.workplace_readiness = workplaceReadiness || 0;
-                reportEntry.intellectual_capability = intellectualCapability || 0;
-                reportEntry.percentage_score = overallScore || resultData?.percentage_score || 0;
-                reportEntry.recommendation = recommendation || 'Not Available';
-                reportEntry.risk_level = riskLevel || 'Medium';
-                
-                nsReports.push(reportEntry);
-              } else {
-                otherAssessments.push(reportEntry);
-              }
-              
-              allReportData.push(reportEntry);
             }
+            
+            // Get risk level from multiple sources
+            let riskLevel = resultData?.risk_level || 'Medium';
+            if (riskLevel === 'Medium' && resultData?.report_data?.riskLevel) {
+              riskLevel = resultData.report_data.riskLevel;
+            }
+            if (riskLevel === 'Medium' && resultData?.report_data?.classification) {
+              riskLevel = resultData.report_data.classification;
+            }
+            
+            // Calculate overall score if not present
+            let overallScore = resultData?.percentage_score || 0;
+            if (!overallScore && workplaceReadiness && intellectualCapability) {
+              overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
+            }
+            if (!overallScore && resultData?.report_data?.overallScore) {
+              overallScore = resultData.report_data.overallScore;
+            }
+            
+            const reportEntry = {
+              result_id: assessment.result_id,
+              candidate_id: assessment.user_id,
+              candidate_name: candidate?.full_name || 'Unknown',
+              candidate_email: candidate?.email || '',
+              university: candidate?.university || '',
+              programme: candidate?.programme || '',
+              assessment_id: assessment.assessment_id,
+              assessment_title: assessment.assessments?.title || 'Assessment',
+              assessment_type: assessment.assessments?.assessment_type?.name || 'General',
+              assessment_code: assessment.assessments?.assessment_type?.code || 'general',
+              status: assessment.status,
+              completed_at: assessment.completed_at || resultData?.completed_at,
+              score: overallScore || score || 0,
+              is_national_service: isNationalService,
+              resultData: resultData,
+              // Store raw values
+              percentage_score: overallScore || resultData?.percentage_score || 0,
+              workplace_readiness: workplaceReadiness || 0,
+              intellectual_capability: intellectualCapability || 0,
+              recommendation: recommendation || 'Not Available',
+              risk_level: riskLevel || 'Medium'
+            };
+
+            if (isNationalService) {
+              // Build scores object for easy access
+              reportEntry.scores = {
+                overall: overallScore || resultData?.percentage_score || 0,
+                workplace: workplaceReadiness || 0,
+                intellectual: intellectualCapability || 0,
+                recommendation: recommendation || 'Not Available',
+                riskLevel: riskLevel || 'Medium'
+              };
+              
+              // Also store directly on the report for easy access
+              reportEntry.workplace_readiness = workplaceReadiness || 0;
+              reportEntry.intellectual_capability = intellectualCapability || 0;
+              reportEntry.percentage_score = overallScore || resultData?.percentage_score || 0;
+              reportEntry.recommendation = recommendation || 'Not Available';
+              reportEntry.risk_level = riskLevel || 'Medium';
+              
+              nsReports.push(reportEntry);
+            } else {
+              otherAssessments.push(reportEntry);
+            }
+            
+            allReportData.push(reportEntry);
           }
         }
 
@@ -363,6 +378,18 @@ export default function SupervisorDashboard() {
     return colors[rec] || '#64748b';
   };
 
+  const getScoreColor = (score) => {
+    if (score >= 70) return '#dcfce7';
+    if (score >= 50) return '#fef3c7';
+    return '#fee2e2';
+  };
+
+  const getScoreTextColor = (score) => {
+    if (score >= 70) return '#166534';
+    if (score >= 50) return '#92400e';
+    return '#991b1b';
+  };
+
   if (authLoading || loading) {
     return (
       <AppLayout background="/images/supervisor-bg.jpg">
@@ -455,7 +482,7 @@ export default function SupervisorDashboard() {
         </div>
 
         <div style={styles.tabContent}>
-          {/* National Service Reports Tab - FIXED to show workplace_readiness and intellectual_capability */}
+          {/* National Service Reports Tab - Shows ALL National Service reports */}
           {activeTab === 'national_service' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
@@ -463,7 +490,7 @@ export default function SupervisorDashboard() {
               </div>
               {nationalServiceReports.length === 0 ? (
                 <div style={styles.emptyState}>
-                  <p>No completed National Service assessments to review.</p>
+                  <p>No National Service assessments found.</p>
                 </div>
               ) : (
                 <div style={styles.tableContainer}>
@@ -471,6 +498,7 @@ export default function SupervisorDashboard() {
                     <thead>
                       <tr>
                         <th style={styles.th}>Candidate</th>
+                        <th style={styles.th}>Status</th>
                         <th style={styles.th}>Workplace Readiness</th>
                         <th style={styles.th}>Intellectual Capability</th>
                         <th style={styles.th}>Overall Score</th>
@@ -480,56 +508,63 @@ export default function SupervisorDashboard() {
                     </thead>
                     <tbody>
                       {nationalServiceReports.map((report) => {
-                        // Get scores from the report object with fallbacks
-                        const workplaceScore = report.scores?.workplace || report.workplace_readiness || 0;
-                        const intellectualScore = report.scores?.intellectual || report.intellectual_capability || 0;
-                        const overallScore = report.scores?.overall || report.percentage_score || 0;
-                        const recommendation = report.scores?.recommendation || report.recommendation || 'Not Available';
+                        const workplaceScore = report.workplace_readiness || 0;
+                        const intellectualScore = report.intellectual_capability || 0;
+                        const overallScore = report.percentage_score || 0;
+                        const recommendation = report.recommendation || 'Not Available';
+                        const status = report.status || 'unknown';
                         
                         const recColor = getRecommendationColor(recommendation);
                         
-                        // Debug logging to check values
-                        console.log('[Supervisor] Report data:', {
-                          name: report.candidate_name,
-                          workplace: workplaceScore,
-                          intellectual: intellectualScore,
-                          overall: overallScore,
-                          recommendation: recommendation
-                        });
+                        const isCompleted = status === 'completed' || report.result_id !== null;
+                        const hasScores = workplaceScore > 0 || intellectualScore > 0 || overallScore > 0;
                         
                         return (
-                          <tr key={report.result_id} style={styles.tr}>
+                          <tr key={report.result_id || report.candidate_id} style={styles.tr}>
                             <td style={styles.td}>
                               <div style={styles.cellName}>{report.candidate_name}</div>
                               <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
                             </td>
                             <td style={styles.td}>
-                              <span style={{ ...styles.scoreBadge, background: workplaceScore >= 70 ? '#dcfce7' : workplaceScore >= 50 ? '#fef3c7' : '#fee2e2', color: workplaceScore >= 70 ? '#166534' : workplaceScore >= 50 ? '#92400e' : '#991b1b' }}>
-                                {Math.round(workplaceScore)}%
+                              <span style={{ 
+                                ...styles.statusBadge, 
+                                background: isCompleted ? '#dcfce7' : '#fef3c7',
+                                color: isCompleted ? '#166534' : '#92400e'
+                              }}>
+                                {isCompleted ? '✅ Completed' : '⏳ In Progress'}
                               </span>
                             </td>
                             <td style={styles.td}>
-                              <span style={{ ...styles.scoreBadge, background: intellectualScore >= 70 ? '#dcfce7' : intellectualScore >= 50 ? '#fef3c7' : '#fee2e2', color: intellectualScore >= 70 ? '#166534' : intellectualScore >= 50 ? '#92400e' : '#991b1b' }}>
-                                {Math.round(intellectualScore)}%
+                              <span style={{ ...styles.scoreBadge, background: getScoreColor(workplaceScore), color: getScoreTextColor(workplaceScore) }}>
+                                {hasScores ? Math.round(workplaceScore) + '%' : '—'}
                               </span>
                             </td>
                             <td style={styles.td}>
-                              <span style={{ ...styles.scoreBadge, background: overallScore >= 70 ? '#dcfce7' : overallScore >= 50 ? '#fef3c7' : '#fee2e2', color: overallScore >= 70 ? '#166534' : overallScore >= 50 ? '#92400e' : '#991b1b' }}>
-                                {Math.round(overallScore)}%
+                              <span style={{ ...styles.scoreBadge, background: getScoreColor(intellectualScore), color: getScoreTextColor(intellectualScore) }}>
+                                {hasScores ? Math.round(intellectualScore) + '%' : '—'}
+                              </span>
+                            </td>
+                            <td style={styles.td}>
+                              <span style={{ ...styles.scoreBadge, background: getScoreColor(overallScore), color: getScoreTextColor(overallScore) }}>
+                                {hasScores ? Math.round(overallScore) + '%' : '—'}
                               </span>
                             </td>
                             <td style={styles.td}>
                               <span style={{ ...styles.recommendationBadge, color: recColor }}>
-                                {recommendation}
+                                {hasScores ? recommendation : 'Pending'}
                               </span>
                             </td>
                             <td style={styles.td}>
-                              <button
-                                onClick={() => handleViewReport(report.result_id)}
-                                style={styles.viewButton}
-                              >
-                                📄 View NS Report
-                              </button>
+                              {isCompleted && report.result_id ? (
+                                <button
+                                  onClick={() => handleViewReport(report.result_id)}
+                                  style={styles.viewButton}
+                                >
+                                  📄 View Report
+                                </button>
+                              ) : (
+                                <span style={styles.pendingText}>Awaiting completion</span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -545,85 +580,50 @@ export default function SupervisorDashboard() {
           {activeTab === 'other' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
-                <p>📊 All other completed assessments for candidates under your supervision. Select an assessment from the dropdown, then click "View Report" to see the detailed report.</p>
+                <p>📊 All other completed assessments for candidates under your supervision.</p>
               </div>
-              
-              {candidates.filter(c => c.completedAssessments && c.completedAssessments.some(a => !a.isNationalService)).length === 0 ? (
+              {otherReports.length === 0 ? (
                 <div style={styles.emptyState}>
-                  <p>No other completed assessments to review.</p>
+                  <p>No other assessments found.</p>
                 </div>
               ) : (
-                <div style={styles.candidatesTableContainer}>
-                  <table style={styles.candidatesTable}>
+                <div style={styles.tableContainer}>
+                  <table style={styles.table}>
                     <thead>
                       <tr>
-                        <th style={styles.cth}>Candidate</th>
-                        <th style={styles.cth}>Select Assessment</th>
-                        <th style={styles.cth}>Score</th>
-                        <th style={styles.cth}>Action</th>
+                        <th style={styles.th}>Candidate</th>
+                        <th style={styles.th}>Assessment</th>
+                        <th style={styles.th}>Score</th>
+                        <th style={styles.th}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {candidates
-                        .filter(c => c.completedAssessments && c.completedAssessments.some(a => !a.isNationalService))
-                        .map((candidate) => {
-                          const nonNsAssessments = candidate.completedAssessments.filter(a => !a.isNationalService);
-                          const selectedId = selectedAssessments[candidate.id] || 
-                                            (nonNsAssessments.length > 0 ? nonNsAssessments[0].assessment_id : '');
-                          const selectedAssessment = nonNsAssessments.find(a => a.assessment_id === selectedId);
-                          const displayScore = selectedAssessment ? selectedAssessment.score : 
-                                              (nonNsAssessments.length > 0 ? nonNsAssessments[0].score : 0);
-                          
-                          return (
-                            <tr key={candidate.id} style={styles.ctr}>
-                              <td style={styles.ctd}>
-                                <div style={styles.candidateNameCell}>{candidate.full_name || candidate.name}</div>
-                                <div style={styles.candidateEmailCell}>{candidate.email}</div>
-                                <div style={styles.candidateUniversityCell}>{candidate.university || ''}</div>
-                              </td>
-                              <td style={styles.ctd}>
-                                <select
-                                  onChange={(e) => {
-                                    const selectedValue = e.target.value;
-                                    console.log('[Supervisor] Dropdown selected:', selectedValue);
-                                    handleAssessmentChange(candidate.id, selectedValue);
-                                  }}
-                                  style={styles.assessmentDropdown}
-                                  value={selectedId}
-                                  data-candidate={candidate.id}
-                                >
-                                  <option value="">-- Select Assessment --</option>
-                                  {nonNsAssessments.map((assessment) => (
-                                    <option key={assessment.assessment_id} value={assessment.assessment_id}>
-                                      {assessment.title} ({Math.round(assessment.score || 0)}%)
-                                    </option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td style={styles.ctd}>
-                                <span style={styles.scoreBadge}>
-                                  {Math.round(displayScore || 0)}%
-                                </span>
-                              </td>
-                              <td style={styles.ctd}>
-                                <button
-                                  onClick={() => {
-                                    const select = document.querySelector(`select[data-candidate="${candidate.id}"]`);
-                                    if (select && select.value) {
-                                      handleAssessmentSelect(candidate.id, select.value);
-                                    } else {
-                                      alert('Please select an assessment first.');
-                                    }
-                                  }}
-                                  style={styles.viewReportButtonSmall}
-                                  disabled={nonNsAssessments.length === 0}
-                                >
-                                  📄 View Report
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
+                      {otherReports.map((report) => (
+                        <tr key={report.result_id} style={styles.tr}>
+                          <td style={styles.td}>
+                            <div style={styles.cellName}>{report.candidate_name}</div>
+                            <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
+                          </td>
+                          <td style={styles.td}>{report.assessment_title}</td>
+                          <td style={styles.td}>
+                            <span style={styles.scoreBadge}>
+                              {Math.round(report.score || 0)}%
+                            </span>
+                          </td>
+                          <td style={styles.td}>
+                            {report.result_id ? (
+                              <button
+                                onClick={() => handleViewReport(report.result_id)}
+                                style={styles.viewButton}
+                              >
+                                📄 View Report
+                              </button>
+                            ) : (
+                              <span style={styles.pendingText}>No result</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
@@ -643,18 +643,18 @@ export default function SupervisorDashboard() {
                   <p>No candidates assigned to you yet.</p>
                 </div>
               ) : (
-                <div style={styles.candidatesTableContainer}>
-                  <table style={styles.candidatesTable}>
+                <div style={styles.tableContainer}>
+                  <table style={styles.table}>
                     <thead>
                       <tr>
-                        <th style={styles.cth}>Candidate</th>
-                        <th style={styles.cth}>Completed</th>
-                        <th style={styles.cth}>In Progress</th>
-                        <th style={styles.cth}>Ready to Start</th>
-                        <th style={styles.cth}>Blocked</th>
-                        <th style={styles.cth}>Not Started</th>
-                        <th style={styles.cth}>Select Assessment</th>
-                        <th style={styles.cth}>Action</th>
+                        <th style={styles.th}>Candidate</th>
+                        <th style={styles.th}>Completed</th>
+                        <th style={styles.th}>In Progress</th>
+                        <th style={styles.th}>Ready to Start</th>
+                        <th style={styles.th}>Blocked</th>
+                        <th style={styles.th}>Not Started</th>
+                        <th style={styles.th}>Select Assessment</th>
+                        <th style={styles.th}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -663,32 +663,31 @@ export default function SupervisorDashboard() {
                                           (candidate.completedAssessments.length > 0 ? candidate.completedAssessments[0].assessment_id : '');
                         
                         return (
-                          <tr key={candidate.id} style={styles.ctr}>
-                            <td style={styles.ctd}>
-                              <div style={styles.candidateNameCell}>{candidate.full_name || candidate.name}</div>
-                              <div style={styles.candidateEmailCell}>{candidate.email}</div>
-                              <div style={styles.candidateUniversityCell}>{candidate.university} • {candidate.programme}</div>
+                          <tr key={candidate.id} style={styles.tr}>
+                            <td style={styles.td}>
+                              <div style={styles.cellName}>{candidate.full_name || candidate.name}</div>
+                              <div style={styles.cellSub}>{candidate.email}</div>
+                              <div style={styles.cellSub}>{candidate.university} • {candidate.programme}</div>
                             </td>
-                            <td style={styles.ctd}>
+                            <td style={styles.td}>
                               <span style={styles.statBadgeCompleted}>{candidate.stats.completed}</span>
                             </td>
-                            <td style={styles.ctd}>
+                            <td style={styles.td}>
                               <span style={styles.statBadgeProgress}>{candidate.stats.inProgress}</span>
                             </td>
-                            <td style={styles.ctd}>
+                            <td style={styles.td}>
                               <span style={styles.statBadgeUnblocked}>{candidate.stats.unblocked}</span>
                             </td>
-                            <td style={styles.ctd}>
+                            <td style={styles.td}>
                               <span style={styles.statBadgeBlocked}>{candidate.stats.blocked}</span>
                             </td>
-                            <td style={styles.ctd}>
+                            <td style={styles.td}>
                               <span style={styles.statBadgeNotStarted}>{candidate.stats.notStarted}</span>
                             </td>
-                            <td style={styles.ctd}>
+                            <td style={styles.td}>
                               <select
                                 onChange={(e) => {
                                   const selectedValue = e.target.value;
-                                  console.log('[Supervisor] Dropdown selected:', selectedValue);
                                   handleAssessmentChange(candidate.id, selectedValue);
                                 }}
                                 style={styles.assessmentDropdown}
@@ -706,7 +705,7 @@ export default function SupervisorDashboard() {
                                 )}
                               </select>
                             </td>
-                            <td style={styles.ctd}>
+                            <td style={styles.td}>
                               <button
                                 onClick={() => {
                                   const select = document.querySelector(`select[data-candidate="${candidate.id}"]`);
@@ -852,6 +851,13 @@ const styles = {
   tr: { transition: 'background 0.2s' },
   cellName: { fontWeight: '600', color: '#1a202c' },
   cellSub: { fontSize: '12px', color: '#94a3b8' },
+  statusBadge: {
+    padding: '4px 12px',
+    borderRadius: '20px',
+    fontSize: '12px',
+    fontWeight: '600',
+    display: 'inline-block'
+  },
   scoreBadge: {
     padding: '4px 12px',
     borderRadius: '20px',
@@ -879,22 +885,31 @@ const styles = {
     fontWeight: '500',
     transition: 'background 0.2s'
   },
-  candidatesTableContainer: { overflowX: 'auto' },
-  candidatesTable: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
-  cth: {
-    padding: '10px 12px',
-    textAlign: 'left',
-    background: '#f8fafc',
-    fontWeight: '600',
-    color: '#475569',
-    borderBottom: '2px solid #e2e8f0',
+  viewReportButtonSmall: {
+    padding: '4px 12px',
+    background: '#1a237e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: '500',
+    transition: 'background 0.2s',
     whiteSpace: 'nowrap'
   },
-  ctd: { padding: '10px 12px', borderBottom: '1px solid #e2e8f0', verticalAlign: 'middle' },
-  ctr: { transition: 'background 0.2s' },
-  candidateNameCell: { fontWeight: '600', color: '#1a202c' },
-  candidateEmailCell: { fontSize: '11px', color: '#94a3b8' },
-  candidateUniversityCell: { fontSize: '11px', color: '#64748b' },
+  pendingText: {
+    color: '#94a3b8',
+    fontSize: '13px'
+  },
+  assessmentDropdown: {
+    padding: '6px 10px',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
+    fontSize: '12px',
+    background: 'white',
+    minWidth: '140px',
+    maxWidth: '200px'
+  },
   statBadgeCompleted: {
     padding: '2px 10px',
     borderRadius: '12px',
@@ -934,27 +949,6 @@ const styles = {
     fontWeight: '600',
     background: '#fef3c7',
     color: '#92400e'
-  },
-  assessmentDropdown: {
-    padding: '6px 10px',
-    borderRadius: '6px',
-    border: '1px solid #e2e8f0',
-    fontSize: '12px',
-    background: 'white',
-    minWidth: '140px',
-    maxWidth: '200px'
-  },
-  viewReportButtonSmall: {
-    padding: '4px 12px',
-    background: '#1a237e',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '12px',
-    fontWeight: '500',
-    transition: 'background 0.2s',
-    whiteSpace: 'nowrap'
   },
   emptyState: { textAlign: 'center', padding: '30px', color: '#64748b', background: '#f8fafc', borderRadius: '8px' }
 };
