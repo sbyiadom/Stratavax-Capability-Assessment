@@ -126,12 +126,18 @@ export default async function handler(req, res) {
     });
 
     if (userError) {
-      console.error("[Create User API] Create user error:", JSON.stringify(userError, null, 2));
-      return res.status(500).json({ 
-        success: false, 
-        error: userError.message || "Failed to create account. Please try again." 
-      });
-    }
+  console.error(
+    "[Create User API] Create user error:",
+    JSON.stringify(userError, null, 2)
+  );
+
+  return res.status(500).json({
+    success: false,
+    error: userError.message,
+    details: userError
+  });
+}
+``
 
     if (!userData?.user) {
       console.error("[Create User API] No user data returned");
@@ -163,15 +169,20 @@ export default async function handler(req, res) {
       .select()
       .single();
 
-    if (profileError) {
-      console.error("[Create User API] Profile creation error:", JSON.stringify(profileError, null, 2));
-      // Rollback: delete the user
-      await adminClient.auth.admin.deleteUser(userData.user.id);
-      return res.status(500).json({ 
-        success: false, 
-        error: "Failed to create profile. Please try again." 
-      });
-    }
+   if (profileError) {
+  console.error(
+    "[Create User API] Profile creation error:",
+    JSON.stringify(profileError, null, 2)
+  );
+
+  await adminClient.auth.admin.deleteUser(userData.user.id);
+
+  return res.status(500).json({
+    success: false,
+    error: profileError.message,
+    details: profileError
+  });
+}
 
     console.log("[Create User API] ✅ Profile created:", profile.id);
 
