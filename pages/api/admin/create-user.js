@@ -6,6 +6,8 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export default async function handler(req, res) {
+  console.log("[Create User API] Request received");
+
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
   }
@@ -21,49 +23,34 @@ export default async function handler(req, res) {
       preferred_department 
     } = req.body;
 
+    // Validate required fields
     if (!email || !password || !full_name) {
       return res.status(400).json({ 
         success: false, 
-        error: "Missing required fields" 
+        error: "Missing required fields: email, password, and full_name are required." 
       });
     }
 
     if (!supabaseUrl || !serviceRoleKey) {
+      console.error("[Create User API] Missing Supabase configuration");
       return res.status(500).json({ 
         success: false, 
-        error: "Registration service unavailable" 
+        error: "Registration service is temporarily unavailable." 
       });
     }
 
+    // Create admin client
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false }
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
     });
 
-    // ============================================================
-    // STEP 1: Check if profile already exists by email
-    // ============================================================
-    const { data: existingProfile } = await adminClient
-      .from("candidate_profiles")
-      .select("id, email, full_name")
-      .eq("email", email)
-      .maybeSingle();
-
-    if (existingProfile) {
-      // Profile already exists - registration is complete!
-      console.log("[Create User API] Profile already exists for:", email);
-      return res.status(200).json({
-        success: true,
-        message: "Account already exists. Please log in.",
-        user: {
-          id: existingProfile.id,
-          email: email,
-          full_name: existingProfile.full_name
-        }
-      });
-    }
+    console.log("[Create User API] Processing email:", email);
 
     // ============================================================
-    // STEP 2: Check if user exists in auth
+    // STEP 1: Check if user already exists in auth
     // ============================================================
     const { data: existingAuth } = await adminClient
       .from("auth.users")
@@ -74,11 +61,14 @@ export default async function handler(req, res) {
     let userId;
 
     if (existingAuth) {
-      // User exists in auth but not in profile - create profile
       userId = existingAuth.id;
-      console.log("[Create User API] User exists in auth, creating profile:", userId);
+      console.log("[Create User API] User already exists in auth:", userId);
     } else {
-      // Create new user
+      // ============================================================
+      // STEP 2: Create new user
+      // ============================================================
+      console.log("[Create User API] Creating new user...");
+
       const { data: userData, error: userError } = await adminClient.auth.admin.createUser({
         email,
         password,
@@ -95,14 +85,14 @@ export default async function handler(req, res) {
         console.error("[Create User API] Create user error:", userError);
         return res.status(500).json({ 
           success: false, 
-          error: userError.message || "Failed to create account" 
+          error: userError.message || "Failed to create account. Please try again." 
         });
       }
 
       if (!userData?.user) {
         return res.status(500).json({ 
           success: false, 
-          error: "Account creation failed" 
+          error: "Account creation failed. Please try again." 
         });
       }
 
@@ -111,7 +101,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 3: Create profile (or update if exists)
+    // STEP 3: UPSERT profile (create OR update if exists)
     // ============================================================
     const profileData = {
       id: userId,
@@ -124,84 +114,66 @@ export default async function handler(req, res) {
       updated_at: new Date().toISOString()
     };
 
-    console.log("[Create User API] Creating profile with ID:", userId);
+    console.log("[Create User API] Upserting profile for user:", userId);
 
-    // Try to insert, but if it fails with duplicate key, fetch the existing profile
-    let profile;
-    try {
-      const { data, error } = await adminClient
-        .from("candidate_profiles")
-        .insert(profileData)
-        .select()
-        .single();
+    // Use upsert to avoid duplicate key errors
+    const { data: profile, error: profileError } = await adminClient
+      .from("candidate_profiles")
+      .upsert(profileData, { 
+        onConflict: 'id',
+        ignoreDuplicates: false 
+      })
+      .select()
+      .single();
 
-      if (error) {
-        // If duplicate key error, fetch existing profile
-        if (error.code === '23505') { // Postgres unique violation
-          console.log("[Create User API] Duplicate key, fetching existing profile");
-          
-          const { data: existing } = await adminClient
-            .from("candidate_profiles")
-            .select("id, email, full_name")
-            .eq("email", email)
-            .maybeSingle();
-
-          if (existing) {
-            profile = existing;
-            console.log("[Create User API] ✅ Using existing profile:", profile.id);
-          } else {
-            throw error;
-          }
-        } else {
-          throw error;
-        }
-      } else {
-        profile = data;
-        console.log("[Create User API] ✅ Profile created:", profile.id);
-      }
-    } catch (insertError) {
-      console.error("[Create User API] Profile error:", insertError);
+    if (profileError) {
+      console.error("[Create User API] Profile error:", profileError);
       
-      // Rollback: delete the user if we created it
+      // If we created a new user, clean up
       if (!existingAuth) {
         await adminClient.auth.admin.deleteUser(userId);
       }
       
       return res.status(500).json({ 
         success: false, 
-        error: insertError.message || "Failed to create profile" 
+        error: "Failed to create profile: " + profileError.message 
       });
     }
 
+    console.log("[Create User API] ✅ Profile saved:", profile.id);
+
     // ============================================================
-    // STEP 4: Assign National Service (only if new)
+    // STEP 4: Auto-assign National Service (only for new users)
     // ============================================================
-    if (!existingProfile) {
+    if (!existingAuth) {
       try {
         const NATIONAL_SERVICE_ASSESSMENT_ID = "bdb9d46e-9fac-4d00-8478-1f649e7ac600";
 
         const { error: assignmentError } = await adminClient
           .from("candidate_assessments")
-          .insert({
+          .upsert({
             user_id: userId,
             assessment_id: NATIONAL_SERVICE_ASSESSMENT_ID,
             status: "unblocked",
             unblocked_at: new Date().toISOString(),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
+          }, { 
+            onConflict: 'user_id,assessment_id',
+            ignoreDuplicates: true 
           });
 
         if (assignmentError) {
-          console.warn("[Create User API] Assignment warning:", assignmentError.message);
+          console.warn("[Create User API] Assignment error:", assignmentError.message);
         } else {
-          console.log("[Create User API] ✅ National Service assigned");
+          console.log("[Create User API] ✅ National Service assessment assigned");
         }
       } catch (e) {
         console.warn("[Create User API] Assignment exception:", e.message);
       }
 
       // ============================================================
-      // STEP 5: Add supervisor access
+      // STEP 5: Add to supervisors
       // ============================================================
       try {
         const defaultSupervisors = [
@@ -212,12 +184,13 @@ export default async function handler(req, res) {
         for (const supervisorId of defaultSupervisors) {
           await adminClient
             .from("supervisor_candidate_access")
-            .insert({
+            .upsert({
               supervisor_id: supervisorId,
               candidate_id: userId
-            })
-            .select()
-            .maybeSingle();
+            }, { 
+              onConflict: 'supervisor_id,candidate_id',
+              ignoreDuplicates: true 
+            });
         }
         console.log("[Create User API] ✅ Added to supervisors");
       } catch (e) {
@@ -230,7 +203,7 @@ export default async function handler(req, res) {
     // ============================================================
     return res.status(200).json({
       success: true,
-      message: existingProfile ? "Account already exists. Please log in." : "Registration successful! Please log in.",
+      message: existingAuth ? "Account already exists. Please log in." : "Registration successful! Your account has been created. Please log in.",
       user: {
         id: userId,
         email: email,
