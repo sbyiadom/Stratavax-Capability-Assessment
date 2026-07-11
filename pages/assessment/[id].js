@@ -839,27 +839,53 @@ function AssessmentContent() {
         </div>
 
         {/* ============================================================
-            MAIN CONTENT - CLEAN LAYOUT
+            MAIN CONTENT - LEFT SIDEBAR WITH STATS, QUESTION ON RIGHT, NAVIGATOR ON FAR RIGHT
             ============================================================ */}
         <div style={styles.mainContent}>
-          {/* Question Area */}
-          <div style={styles.questionArea}>
-            <div style={styles.questionCard}>
-              {/* Question Meta */}
-              <div style={styles.questionMeta}>
-                <div style={styles.questionNumber}>
-                  <span style={{ color: accentColor, marginRight: '8px' }}>●</span>
-                  Question {currentIndex + 1}
-                </div>
-                <div style={styles.questionMetaInfo}>
-                  <span style={styles.questionMetaLabel}>Marked out of</span>
-                  <span style={styles.questionMetaValue}>1.00</span>
-                  <span style={styles.questionMetaFlag}>
-                    <span style={{ color: accentColor }}>⚑</span> Flag question
-                  </span>
-                </div>
+          {/* Left Column - Stats Sidebar */}
+          <div style={styles.leftSidebar}>
+            {/* Question Status */}
+            <div style={styles.statusCard}>
+              <div style={styles.statusNumber}>Question {currentIndex + 1}</div>
+              <div style={styles.statusBadge}>
+                {totalAnswered > 0 ? 'Answered' : 'Not yet answered'}
               </div>
+            </div>
 
+            {/* Stats */}
+            <div style={styles.statsCard}>
+              <div style={styles.statsRow}>
+                <span style={styles.statsLabel}>Answered</span>
+                <span style={styles.statsValue}>{totalAnswered}</span>
+              </div>
+              <div style={styles.statsRow}>
+                <span style={styles.statsLabel}>Remaining</span>
+                <span style={styles.statsValue}>{questions.length - totalAnswered}</span>
+              </div>
+              <div style={styles.statsRow}>
+                <span style={styles.statsLabel}>Changes</span>
+                <span style={styles.statsValue}>{totalChanges}</span>
+              </div>
+              <div style={styles.statsDivider} />
+              <div style={styles.statsRow}>
+                <span style={styles.statsLabel}>Progress</span>
+                <span style={styles.statsValue}>{Math.round((totalAnswered / questions.length) * 100)}%</span>
+              </div>
+              <div style={styles.progressBar}>
+                <div style={{ ...styles.progressFill, width: Math.min((totalAnswered / questions.length) * 100, 100) + '%' }} />
+              </div>
+            </div>
+
+            {/* Marked out of / Flag */}
+            <div style={styles.metaCard}>
+              <div style={styles.metaItem}>Marked out of 1.00</div>
+              <div style={styles.metaItem}>Flag question</div>
+            </div>
+          </div>
+
+          {/* Middle Column - Question Area */}
+          <div style={styles.middleColumn}>
+            <div style={styles.questionCard}>
               {/* Question Text */}
               <div style={styles.questionText}>
                 {currentQuestion.question_text}
@@ -911,39 +937,41 @@ function AssessmentContent() {
                 })}
               </div>
             </div>
+
+            {/* Navigation Buttons */}
+            <div style={styles.navButtons}>
+              <button 
+                onClick={() => moveToQuestion(currentIndex - 1)} 
+                disabled={currentIndex === 0 || isDisabled} 
+                style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}
+              >
+                ← Previous page
+              </button>
+              {isLastQuestion ? (
+                <button 
+                  onClick={() => setShowSubmitModal(true)} 
+                  disabled={isDisabled} 
+                  style={styles.submitButton}
+                >
+                  Submit
+                </button>
+              ) : (
+                <button 
+                  onClick={() => moveToQuestion(currentIndex + 1)} 
+                  disabled={isDisabled} 
+                  style={styles.nextButton}
+                >
+                  Next page →
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Right Panel - Clean Stats & Navigator */}
-          <div style={styles.sidePanel}>
-            {/* Stats Card */}
-            <div style={styles.statsCard}>
-              <div style={styles.statsRow}>
-                <span style={styles.statsLabel}>Answered</span>
-                <span style={styles.statsValue}>{totalAnswered}</span>
-              </div>
-              <div style={styles.statsRow}>
-                <span style={styles.statsLabel}>Remaining</span>
-                <span style={styles.statsValue}>{questions.length - totalAnswered}</span>
-              </div>
-              <div style={styles.statsRow}>
-                <span style={styles.statsLabel}>Changes</span>
-                <span style={styles.statsValue}>{totalChanges}</span>
-              </div>
-              <div style={styles.statsDivider} />
-              <div style={styles.statsRow}>
-                <span style={styles.statsLabel}>Progress</span>
-                <span style={styles.statsValue}>{Math.round((totalAnswered / questions.length) * 100)}%</span>
-              </div>
-              <div style={styles.progressBar}>
-                <div style={{ ...styles.progressFill, width: Math.min((totalAnswered / questions.length) * 100, 100) + '%' }} />
-              </div>
-            </div>
-
-            {/* Navigator Card - Clean Grid */}
+          {/* Right Column - Question Navigator */}
+          <div style={styles.rightColumn}>
             <div style={styles.navigatorCard}>
               <div style={styles.navigatorHeader}>
-                <span style={styles.navigatorTitle}>📊 Question Navigator</span>
-                <span style={styles.navigatorCurrent}>current: {currentIndex + 1}</span>
+                <span style={styles.navigatorTitle}>Quiz navigation</span>
               </div>
               <div style={styles.questionGrid}>
                 {questions.map((question, index) => {
@@ -992,6 +1020,8 @@ function AssessmentContent() {
                   );
                 })}
               </div>
+              
+              {/* Legend */}
               <div style={styles.legend}>
                 <div style={styles.legendItem}>
                   <div style={{ ...styles.legendDot, background: successColor }} />
@@ -1010,34 +1040,12 @@ function AssessmentContent() {
                   <span>Pending</span>
                 </div>
               </div>
-            </div>
 
-            {/* Navigation Buttons */}
-            <div style={styles.navButtons}>
-              <button 
-                onClick={() => moveToQuestion(currentIndex - 1)} 
-                disabled={currentIndex === 0 || isDisabled} 
-                style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}
-              >
-                ← Previous
-              </button>
-              {isLastQuestion ? (
-                <button 
-                  onClick={() => setShowSubmitModal(true)} 
-                  disabled={isDisabled} 
-                  style={styles.submitButton}
-                >
-                  Submit
-                </button>
-              ) : (
-                <button 
-                  onClick={() => moveToQuestion(currentIndex + 1)} 
-                  disabled={isDisabled} 
-                  style={styles.nextButton}
-                >
-                  Next →
-                </button>
-              )}
+              {/* Timer in navigator */}
+              <div style={styles.navigatorTimer}>
+                <span style={styles.navigatorTimerLabel}>⏱</span>
+                <span style={styles.navigatorTimerValue}>{timeRemainingFormatted}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -1064,7 +1072,7 @@ function AssessmentContent() {
           .navigator-item {
             transition: all 0.15s ease;
             border-radius: 6px;
-            font-size: 11px;
+            font-size: 12px;
           }
           
           .navigator-item:hover:not(:disabled) {
@@ -1363,15 +1371,15 @@ const styles = {
   },
   
   // ============================================================
-  // MAIN CONTENT
+  // MAIN CONTENT - 3 COLUMN LAYOUT
   // ============================================================
   mainContent: { 
     maxWidth: "1400px", 
     margin: "0 auto", 
     padding: "20px 24px", 
     display: "grid", 
-    gridTemplateColumns: "1fr 280px", 
-    gap: "24px",
+    gridTemplateColumns: "180px 1fr 220px", 
+    gap: "20px",
     flex: 1,
     minHeight: 0,
     height: "calc(100vh - 100px)",
@@ -1381,19 +1389,115 @@ const styles = {
   },
   
   // ============================================================
-  // QUESTION AREA
+  // LEFT SIDEBAR - Stats
   // ============================================================
-  questionArea: { 
-    display: "flex", 
-    flexDirection: "column", 
+  leftSidebar: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
     height: "100%",
-    overflow: "hidden"
+    overflow: "hidden",
+    flexShrink: 0
+  },
+  
+  statusCard: {
+    background: "white",
+    borderRadius: "12px",
+    padding: "14px 16px",
+    border: "1px solid #e2e8f0",
+    flexShrink: 0
+  },
+  
+  statusNumber: {
+    fontSize: "16px",
+    fontWeight: 600,
+    color: "#0f172a"
+  },
+  
+  statusBadge: {
+    fontSize: "12px",
+    color: "#64748b",
+    fontStyle: "italic",
+    marginTop: "2px"
+  },
+  
+  statsCard: {
+    background: "white",
+    borderRadius: "12px",
+    padding: "14px 16px",
+    border: "1px solid #e2e8f0",
+    flexShrink: 0
+  },
+  
+  statsRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "3px 0"
+  },
+  
+  statsLabel: {
+    fontSize: "13px",
+    color: "#64748b"
+  },
+  
+  statsValue: {
+    fontSize: "14px",
+    fontWeight: 600,
+    color: "#0f172a"
+  },
+  
+  statsDivider: {
+    height: "1px",
+    background: "#e2e8f0",
+    margin: "6px 0"
+  },
+  
+  progressBar: {
+    height: "4px",
+    background: "#e2e8f0",
+    borderRadius: "4px",
+    overflow: "hidden",
+    marginTop: "4px"
+  },
+  
+  progressFill: {
+    height: "100%",
+    background: "linear-gradient(90deg, #f9b83a, #f5a623)",
+    borderRadius: "4px",
+    transition: "width 0.3s ease"
+  },
+  
+  metaCard: {
+    background: "white",
+    borderRadius: "12px",
+    padding: "12px 16px",
+    border: "1px solid #e2e8f0",
+    flexShrink: 0
+  },
+  
+  metaItem: {
+    fontSize: "13px",
+    color: "#64748b",
+    padding: "2px 0"
+  },
+  
+  // ============================================================
+  // MIDDLE COLUMN - Question
+  // ============================================================
+  middleColumn: {
+    display: "flex",
+    flexDirection: "column",
+    height: "100%",
+    overflow: "hidden",
+    gap: "12px",
+    minWidth: 0
   },
   
   questionCard: {
     background: "white",
     borderRadius: "12px",
-    padding: "24px",
+    padding: "20px 24px",
     border: "1px solid #e2e8f0",
     display: "flex",
     flexDirection: "column",
@@ -1402,58 +1506,13 @@ const styles = {
     boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
   },
   
-  questionMeta: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "16px",
-    flexShrink: 0,
-    flexWrap: "wrap",
-    gap: "8px",
-    paddingBottom: "12px",
-    borderBottom: "1px solid #f1f5f9"
-  },
-  
-  questionNumber: {
-    fontSize: "16px",
-    fontWeight: 600,
-    color: "#0f172a"
-  },
-  
-  questionMetaInfo: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    fontSize: "13px",
-    color: "#64748b"
-  },
-  
-  questionMetaLabel: {
-    fontWeight: 400
-  },
-  
-  questionMetaValue: {
-    fontWeight: 600,
-    color: "#0f172a"
-  },
-  
-  questionMetaFlag: {
-    color: "#94a3b8",
-    fontSize: "12px",
-    fontStyle: "italic"
-  },
-  
   questionText: { 
-    fontSize: "17px", 
+    fontSize: "16px", 
     lineHeight: "1.7", 
     color: "#0f172a", 
     fontWeight: 500,
-    padding: "0 4px",
-    minHeight: "60px",
-    maxHeight: "140px",
-    overflowY: "auto",
-    scrollbarWidth: "thin",
-    marginBottom: "12px"
+    padding: "0 4px 12px 4px",
+    flexShrink: 0
   },
   
   multipleHint: { 
@@ -1467,9 +1526,6 @@ const styles = {
     borderLeft: "3px solid #f9b83a"
   },
   
-  // ============================================================
-  // ANSWERS
-  // ============================================================
   answersContainer: { 
     display: "flex", 
     flexDirection: "column", 
@@ -1509,151 +1565,8 @@ const styles = {
   },
   
   // ============================================================
-  // SIDE PANEL
+  // NAVIGATION BUTTONS
   // ============================================================
-  sidePanel: { 
-    display: "flex", 
-    flexDirection: "column",
-    gap: "12px",
-    height: "100%",
-    maxHeight: "100%",
-    overflow: "hidden"
-  },
-  
-  statsCard: {
-    background: "white",
-    borderRadius: "12px",
-    padding: "16px",
-    border: "1px solid #e2e8f0",
-    flexShrink: 0,
-    boxShadow: "0 1px 4px rgba(0,0,0,0.04)"
-  },
-  
-  statsRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "4px 0"
-  },
-  
-  statsLabel: {
-    fontSize: "13px",
-    color: "#64748b"
-  },
-  
-  statsValue: {
-    fontSize: "14px",
-    fontWeight: 600,
-    color: "#0f172a"
-  },
-  
-  statsDivider: {
-    height: "1px",
-    background: "#e2e8f0",
-    margin: "8px 0"
-  },
-  
-  progressBar: {
-    height: "4px",
-    background: "#e2e8f0",
-    borderRadius: "4px",
-    overflow: "hidden",
-    marginTop: "4px"
-  },
-  
-  progressFill: {
-    height: "100%",
-    background: "linear-gradient(90deg, #f9b83a, #f5a623)",
-    borderRadius: "4px",
-    transition: "width 0.3s ease"
-  },
-  
-  navigatorCard: { 
-    background: "white", 
-    borderRadius: "12px", 
-    padding: "14px", 
-    border: "1px solid #e2e8f0",
-    display: "flex",
-    flexDirection: "column",
-    flex: 1,
-    overflow: "hidden",
-    boxShadow: "0 1px 4px rgba(0,0,0,0.04)"
-  },
-  
-  navigatorHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "10px",
-    flexShrink: 0
-  },
-  
-  navigatorTitle: { 
-    fontSize: "13px", 
-    fontWeight: 600, 
-    color: "#0f172a"
-  },
-  
-  navigatorCurrent: {
-    fontSize: "11px",
-    background: "#f0f4ff",
-    padding: "2px 10px",
-    borderRadius: "40px",
-    color: "#0b2a4e",
-    fontWeight: 600
-  },
-  
-  questionGrid: { 
-    display: "grid", 
-    gridTemplateColumns: "repeat(10, 1fr)", 
-    gap: "4px", 
-    flex: 1,
-    overflowY: "auto",
-    padding: "2px",
-    alignContent: "start"
-  },
-  
-  gridItem: { 
-    aspectRatio: "1", 
-    border: "2px solid", 
-    borderRadius: "6px", 
-    fontSize: "11px", 
-    fontWeight: 500, 
-    display: "flex", 
-    alignItems: "center", 
-    justifyContent: "center", 
-    cursor: "pointer",
-    transition: "all 0.15s ease",
-    minWidth: "0",
-    minHeight: "0",
-    position: "relative"
-  },
-  
-  legend: { 
-    display: "flex", 
-    justifyContent: "space-between", 
-    padding: "6px 0 0", 
-    borderTop: "1px solid #e2e8f0", 
-    flexWrap: "wrap", 
-    gap: "4px",
-    flexShrink: 0,
-    marginTop: "8px"
-  },
-  
-  legendItem: { 
-    display: "flex", 
-    alignItems: "center", 
-    gap: "4px", 
-    fontSize: "9px", 
-    color: "#64748b" 
-  },
-  
-  legendDot: { 
-    width: "8px", 
-    height: "8px", 
-    borderRadius: "4px" 
-  },
-  
   navButtons: {
     display: "flex",
     gap: "8px",
@@ -1697,6 +1610,116 @@ const styles = {
     color: "white", 
     cursor: "pointer",
     transition: "0.2s ease"
+  },
+  
+  // ============================================================
+  // RIGHT COLUMN - Navigator
+  // ============================================================
+  rightColumn: {
+    display: "flex",
+    flexDirection: "column",
+    height: "100%",
+    overflow: "hidden",
+    flexShrink: 0
+  },
+  
+  navigatorCard: { 
+    background: "white", 
+    borderRadius: "12px", 
+    padding: "16px", 
+    border: "1px solid #e2e8f0",
+    display: "flex",
+    flexDirection: "column",
+    flex: 1,
+    overflow: "hidden",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+  },
+  
+  navigatorHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "12px",
+    flexShrink: 0
+  },
+  
+  navigatorTitle: { 
+    fontSize: "14px", 
+    fontWeight: 600, 
+    color: "#0f172a"
+  },
+  
+  questionGrid: { 
+    display: "grid", 
+    gridTemplateColumns: "repeat(10, 1fr)", 
+    gap: "4px", 
+    flex: 1,
+    overflowY: "auto",
+    padding: "2px",
+    alignContent: "start"
+  },
+  
+  gridItem: { 
+    aspectRatio: "1", 
+    border: "2px solid", 
+    borderRadius: "6px", 
+    fontSize: "11px", 
+    fontWeight: 500, 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    cursor: "pointer",
+    transition: "all 0.15s ease",
+    minWidth: "0",
+    minHeight: "0",
+    position: "relative"
+  },
+  
+  legend: { 
+    display: "flex", 
+    justifyContent: "space-between", 
+    padding: "8px 0 0", 
+    borderTop: "1px solid #e2e8f0", 
+    flexWrap: "wrap", 
+    gap: "4px",
+    flexShrink: 0,
+    marginTop: "8px"
+  },
+  
+  legendItem: { 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "4px", 
+    fontSize: "9px", 
+    color: "#64748b" 
+  },
+  
+  legendDot: { 
+    width: "10px", 
+    height: "10px", 
+    borderRadius: "4px" 
+  },
+  
+  navigatorTimer: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    padding: "8px 0 0",
+    borderTop: "1px solid #e2e8f0",
+    marginTop: "8px",
+    flexShrink: 0
+  },
+  
+  navigatorTimerLabel: {
+    fontSize: "14px"
+  },
+  
+  navigatorTimerValue: {
+    fontSize: "16px",
+    fontWeight: 700,
+    color: "#0b2a4e",
+    fontFamily: "monospace"
   },
   
   // ============================================================
