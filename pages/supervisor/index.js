@@ -1,4 +1,4 @@
-// pages/supervisor/index.js - Complete Supervisor Dashboard with National Service Reports and Category Breakdown
+// pages/supervisor/index.js - Complete Supervisor Dashboard with Category Breakdown
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -112,19 +112,19 @@ export default function SupervisorDashboard() {
             }
             
             let workplaceReadiness = resultData?.workplace_readiness || 0;
-            if (!workplaceReadiness && resultData?.report_data?.workplaceReadiness) {
-              workplaceReadiness = resultData.report_data.workplaceReadiness;
-            }
             if (!workplaceReadiness && resultData?.report_data?.dimensions?.workplaceReadiness) {
               workplaceReadiness = resultData.report_data.dimensions.workplaceReadiness;
             }
+            if (!workplaceReadiness && resultData?.report_data?.workplaceReadiness) {
+              workplaceReadiness = resultData.report_data.workplaceReadiness;
+            }
             
             let intellectualCapability = resultData?.intellectual_capability || 0;
-            if (!intellectualCapability && resultData?.report_data?.intellectualCapability) {
-              intellectualCapability = resultData.report_data.intellectualCapability;
-            }
             if (!intellectualCapability && resultData?.report_data?.dimensions?.intellectualCapability) {
               intellectualCapability = resultData.report_data.dimensions.intellectualCapability;
+            }
+            if (!intellectualCapability && resultData?.report_data?.intellectualCapability) {
+              intellectualCapability = resultData.report_data.intellectualCapability;
             }
             
             let recommendation = resultData?.recommendation || 'Not Available';
@@ -137,8 +137,12 @@ export default function SupervisorDashboard() {
             }
             
             let riskLevel = resultData?.risk_level || 'Medium';
-            if (riskLevel === 'Medium' && resultData?.report_data?.riskLevel) {
-              riskLevel = resultData.report_data.riskLevel;
+            if (!riskLevel || riskLevel === 'Medium') {
+              if (resultData?.report_data?.riskLevel) {
+                riskLevel = resultData.report_data.riskLevel;
+              } else if (resultData?.report_data?.classification) {
+                riskLevel = resultData.report_data.classification;
+              }
             }
             
             let overallScore = resultData?.percentage_score || 0;
@@ -148,16 +152,19 @@ export default function SupervisorDashboard() {
             if (!overallScore && resultData?.report_data?.overallScore) {
               overallScore = resultData.report_data.overallScore;
             }
+            if (!overallScore && resultData?.report_data?.dimensions?.overallScore) {
+              overallScore = resultData.report_data.dimensions.overallScore;
+            }
             
             // ================================================================
-            // EXTRACT CATEGORY SCORES - UPDATED TO HANDLE ALL FORMATS
+            // EXTRACT CATEGORY SCORES - Primary source: report_data.categoryScores
             // ================================================================
             let categoryScores = [];
             if (resultData?.report_data) {
               const rd = resultData.report_data;
               
-              // 1. Direct categoryScores array
-              if (rd.categoryScores && Array.isArray(rd.categoryScores)) {
+              // PRIMARY: Direct categoryScores array
+              if (rd.categoryScores && Array.isArray(rd.categoryScores) && rd.categoryScores.length > 0) {
                 categoryScores = rd.categoryScores.map(cat => ({
                   category: cat.category || cat.name || 'Unknown',
                   score: cat.score || cat.correct || 0,
@@ -167,8 +174,8 @@ export default function SupervisorDashboard() {
                   comment: cat.comment || cat.description || ''
                 }));
               }
-              // 2. scoreBreakdown array
-              else if (rd.scoreBreakdown && Array.isArray(rd.scoreBreakdown)) {
+              // SECONDARY: scoreBreakdown array
+              else if (rd.scoreBreakdown && Array.isArray(rd.scoreBreakdown) && rd.scoreBreakdown.length > 0) {
                 categoryScores = rd.scoreBreakdown.map(cat => ({
                   category: cat.category || cat.area || 'Unknown',
                   score: typeof cat.score === 'string' ? parseInt(cat.score.split('/')[0]) : (cat.score || 0),
@@ -178,7 +185,7 @@ export default function SupervisorDashboard() {
                   comment: cat.comment || cat.supervisorImplication || ''
                 }));
               }
-              // 3. _fullReport.categoryScores object
+              // TERTIARY: _fullReport.categoryScores object
               else if (rd._fullReport?.categoryScores && typeof rd._fullReport.categoryScores === 'object') {
                 const catScores = rd._fullReport.categoryScores;
                 categoryScores = Object.keys(catScores).map(key => ({
@@ -190,7 +197,7 @@ export default function SupervisorDashboard() {
                   comment: catScores[key].comment || ''
                 }));
               }
-              // 4. dimensions.categoryScores
+              // QUATERNARY: dimensions.categoryScores
               else if (rd.dimensions?.categoryScores && Array.isArray(rd.dimensions.categoryScores)) {
                 categoryScores = rd.dimensions.categoryScores.map(cat => ({
                   category: cat.name || cat.category || 'Unknown',
@@ -201,47 +208,9 @@ export default function SupervisorDashboard() {
                   comment: cat.comment || ''
                 }));
               }
-              // 5. Search recursively for category scores
-              else {
-                const findCategoryScores = (obj, path = '') => {
-                  if (!obj || typeof obj !== 'object') return null;
-                  
-                  // Check if this object looks like category scores
-                  if (obj.categoryScores && Array.isArray(obj.categoryScores)) {
-                    return obj.categoryScores;
-                  }
-                  if (obj.scoreBreakdown && Array.isArray(obj.scoreBreakdown)) {
-                    return obj.scoreBreakdown;
-                  }
-                  if (obj.scores && Array.isArray(obj.scores)) {
-                    return obj.scores;
-                  }
-                  
-                  // Recursively search
-                  for (const key of Object.keys(obj)) {
-                    if (typeof obj[key] === 'object' && obj[key] !== null) {
-                      const found = findCategoryScores(obj[key], `${path}.${key}`);
-                      if (found) return found;
-                    }
-                  }
-                  return null;
-                };
-                
-                const found = findCategoryScores(rd);
-                if (found && Array.isArray(found)) {
-                  categoryScores = found.map(cat => ({
-                    category: cat.category || cat.name || cat.area || 'Unknown',
-                    score: cat.score || cat.correct || 0,
-                    maxScore: cat.maxScore || cat.total || 100,
-                    percentage: cat.percentage || 0,
-                    grade: cat.grade || cat.letter_grade || 'N/A',
-                    comment: cat.comment || cat.supervisorImplication || ''
-                  }));
-                }
-              }
             }
             
-            // Debug log to see what was extracted
+            // Debug log
             if (isNationalService && categoryScores.length > 0) {
               console.log(`[Category Scores] ${candidate?.full_name}:`, categoryScores.length, 'categories found');
             }
@@ -566,7 +535,7 @@ export default function SupervisorDashboard() {
           {activeTab === 'national_service' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
-                <p>📋 All National Service assessment reports for candidates under your supervision. Click <strong>"📊 Categories"</strong> to see the detailed category breakdown.</p>
+                <p>📋 All National Service assessment reports. Click <strong>"📊 Categories"</strong> to see the detailed category breakdown.</p>
               </div>
               {nationalServiceReports.length === 0 ? (
                 <div style={styles.emptyState}>
@@ -827,7 +796,7 @@ export default function SupervisorDashboard() {
         <div style={styles.modalOverlay} onClick={() => setShowCategoryModal(false)}>
           <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>Category Breakdown</h2>
+              <h2 style={styles.modalTitle}>📊 Category Breakdown</h2>
               <button 
                 onClick={() => setShowCategoryModal(false)} 
                 style={styles.modalCloseButton}
@@ -854,7 +823,7 @@ export default function SupervisorDashboard() {
                 </div>
                 <div style={styles.modalScoreSummary}>
                   <span style={{ ...styles.modalScoreItem, fontSize: '12px', color: '#94a3b8' }}>
-                    <strong>Categories Found:</strong> {selectedReport.category_scores?.length || 0}
+                    <strong>Categories:</strong> {selectedReport.category_scores?.length || 0} found
                   </span>
                 </div>
               </div>
@@ -881,7 +850,9 @@ export default function SupervisorDashboard() {
                         }} />
                       </div>
                       <div style={styles.categoryScoreDetails}>
-                        <span>{Math.round(cat.percentage || 0)}%</span>
+                        <span style={{ fontWeight: '600', color: getScoreTextColor(cat.percentage || 0) }}>
+                          {Math.round(cat.percentage || 0)}%
+                        </span>
                         <span>{cat.score || 0} / {cat.maxScore || 100}</span>
                       </div>
                       {cat.comment && (
@@ -893,7 +864,6 @@ export default function SupervisorDashboard() {
               ) : (
                 <div style={styles.emptyState}>
                   <p>No category scores available for this report.</p>
-                  <p style={{ fontSize: '12px', color: '#94a3b8' }}>The report data may be stored in a different format.</p>
                 </div>
               )}
             </div>
