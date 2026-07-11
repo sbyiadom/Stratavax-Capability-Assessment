@@ -101,7 +101,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 3: UPSERT profile (create OR update if exists)
+    // STEP 3: Create profile (using upsert)
     // ============================================================
     const profileData = {
       id: userId,
@@ -114,9 +114,8 @@ export default async function handler(req, res) {
       updated_at: new Date().toISOString()
     };
 
-    console.log("[Create User API] Upserting profile for user:", userId);
+    console.log("[Create User API] Creating profile for user:", userId);
 
-    // Use upsert to avoid duplicate key errors
     const { data: profile, error: profileError } = await adminClient
       .from("candidate_profiles")
       .upsert(profileData, { 
@@ -129,7 +128,6 @@ export default async function handler(req, res) {
     if (profileError) {
       console.error("[Create User API] Profile error:", profileError);
       
-      // If we created a new user, clean up
       if (!existingAuth) {
         await adminClient.auth.admin.deleteUser(userId);
       }
@@ -143,33 +141,47 @@ export default async function handler(req, res) {
     console.log("[Create User API] ✅ Profile saved:", profile.id);
 
     // ============================================================
-    // STEP 4: Auto-assign National Service (only for new users)
+    // STEP 4: Auto-assign National Service (with error handling)
     // ============================================================
+    // Only assign if it's a new user
     if (!existingAuth) {
       try {
         const NATIONAL_SERVICE_ASSESSMENT_ID = "bdb9d46e-9fac-4d00-8478-1f649e7ac600";
 
-        const { error: assignmentError } = await adminClient
-          .from("candidate_assessments")
-          .upsert({
-            user_id: userId,
-            assessment_id: NATIONAL_SERVICE_ASSESSMENT_ID,
-            status: "unblocked",
-            unblocked_at: new Date().toISOString(),
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }, { 
-            onConflict: 'user_id,assessment_id',
-            ignoreDuplicates: true 
-          });
+        // First check if the assessment exists
+        const { data: assessmentCheck } = await adminClient
+          .from("assessments")
+          .select("id, is_active")
+          .eq("id", NATIONAL_SERVICE_ASSESSMENT_ID)
+          .eq("is_active", true)
+          .maybeSingle();
 
-        if (assignmentError) {
-          console.warn("[Create User API] Assignment error:", assignmentError.message);
+        if (!assessmentCheck) {
+          console.warn("[Create User API] ⚠️ National Service assessment not found or inactive");
         } else {
-          console.log("[Create User API] ✅ National Service assessment assigned");
+          // Assign the assessment
+          const { error: assignmentError } = await adminClient
+            .from("candidate_assessments")
+            .upsert({
+              user_id: userId,
+              assessment_id: NATIONAL_SERVICE_ASSESSMENT_ID,
+              status: "unblocked",
+              unblocked_at: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }, { 
+              onConflict: 'user_id,assessment_id'
+            });
+
+          if (assignmentError) {
+            console.warn("[Create User API] ⚠️ Assessment assignment error:", assignmentError.message);
+            // Don't fail registration for this
+          } else {
+            console.log("[Create User API] ✅ National Service assessment assigned");
+          }
         }
       } catch (e) {
-        console.warn("[Create User API] Assignment exception:", e.message);
+        console.warn("[Create User API] ⚠️ Assignment exception:", e.message);
       }
 
       // ============================================================
@@ -188,18 +200,19 @@ export default async function handler(req, res) {
               supervisor_id: supervisorId,
               candidate_id: userId
             }, { 
-              onConflict: 'supervisor_id,candidate_id',
-              ignoreDuplicates: true 
-            });
+              onConflict: 'supervisor_id,candidate_id'
+            })
+            .select()
+            .maybeSingle();
         }
         console.log("[Create User API] ✅ Added to supervisors");
       } catch (e) {
-        console.warn("[Create User API] Supervisor exception:", e.message);
+        console.warn("[Create User API] ⚠️ Supervisor exception:", e.message);
       }
     }
 
     // ============================================================
-    // STEP 6: Return success
+    // STEP 6: Return success (always succeeds, even if assignment fails)
     // ============================================================
     return res.status(200).json({
       success: true,
