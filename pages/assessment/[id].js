@@ -1,8 +1,9 @@
-// pages/assessment/[id].js - Stratavax Capability Assessment with Branding
+// pages/assessment/[id].js - Stratavax Capability Assessment with Logo
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { supabase } from "../../supabase/client";
 import {
   getAssessmentById,
@@ -789,33 +790,19 @@ function AssessmentContent() {
       {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: successColor }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to dashboard...</p></div></div>}
 
       {/* ============================================================
-          STRATAVAX BRANDED LMS LAYOUT
+          STRATAVAX BRANDED LAYOUT WITH LOGO
           ============================================================ */}
       <div style={styles.container}>
-        {/* Header with Stratavax Branding */}
+        {/* Header with Stratavax Logo and Branding */}
         <div style={styles.header}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
               <button onClick={handleBackClick} style={styles.backButton}>←</button>
               <div style={styles.brandSection}>
                 <div style={styles.logoContainer}>
-                  <span style={styles.logoIcon}>🧪</span>
-                </div>
-                <div>
-                  <div style={styles.headerTitle}>
-                    Stratavax Capability Assessment
-                    <span style={styles.headerSubtitle}>· NSRA</span>
-                  </div>
-                  <div style={styles.headerMeta}>
-                    <span style={styles.headerMetaItem}>Question {currentIndex + 1}</span>
-                    <span style={styles.headerMetaDivider}>•</span>
-                    <span style={styles.headerMetaItem}>{currentQuestion.section || "General"}</span>
-                    {isMultipleCorrect && (
-                      <>
-                        <span style={styles.headerMetaDivider}>•</span>
-                        <span style={{ ...styles.headerMetaItem, color: accentColor, fontWeight: 600 }}>Select all that apply</span>
-                      </>
-                    )}
+                  <div style={styles.logoText}>
+                    <span style={styles.logoMain}>STRATAVAX</span>
+                    <span style={styles.logoSub}>CAPABILITY ASSESSMENT</span>
                   </div>
                 </div>
               </div>
@@ -823,11 +810,22 @@ function AssessmentContent() {
             <div style={styles.headerRight}>
               <div style={styles.timer}>
                 <div style={styles.timerLabel}>TIME REMAINING</div>
-                <div style={{ ...styles.timerValue, color: isTimeCritical ? dangerColor : primaryColor }}>
+                <div style={{ ...styles.timerValue, color: isTimeCritical ? dangerColor : accentColor }}>
                   {isTimeExpired ? "EXPIRED" : timeRemainingFormatted}
                 </div>
               </div>
             </div>
+          </div>
+          <div style={styles.headerMetaBar}>
+            <span style={styles.headerMetaItem}>Question {currentIndex + 1}</span>
+            <span style={styles.headerMetaDivider}>•</span>
+            <span style={styles.headerMetaItem}>{currentQuestion.section || "General"}</span>
+            {isMultipleCorrect && (
+              <>
+                <span style={styles.headerMetaDivider}>•</span>
+                <span style={{ ...styles.headerMetaItem, color: accentColor, fontWeight: 600 }}>Select all that apply</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -1095,7 +1093,7 @@ function AssessmentContent() {
 }
 
 // ============================================================
-// STYLES - STRATAVAX BRANDED
+// STYLES - STRATAVAX BRANDED WITH LOGO
 // ============================================================
 
 const styles = {
@@ -1219,7 +1217,7 @@ const styles = {
   },
   
   // ============================================================
-  // HEADER - Stratavax Branded
+  // HEADER - Stratavax Branded with Logo
   // ============================================================
   header: { 
     position: "sticky", 
@@ -1240,6 +1238,17 @@ const styles = {
     alignItems: "center", 
     flexWrap: "wrap", 
     gap: "8px" 
+  },
+  
+  headerMetaBar: {
+    maxWidth: "1400px",
+    margin: "0 auto",
+    padding: "4px 24px 8px 24px",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    flexWrap: "wrap",
+    borderTop: "1px solid rgba(255,255,255,0.08)"
   },
   
   headerLeft: { display: "flex", alignItems: "center", gap: "12px" },
@@ -1267,45 +1276,39 @@ const styles = {
   },
   
   logoContainer: {
-    width: "40px",
-    height: "40px",
-    background: "rgba(255,255,255,0.12)",
-    borderRadius: "10px",
     display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    border: "1px solid rgba(255,255,255,0.15)"
+    alignItems: "center"
   },
   
-  logoIcon: {
-    fontSize: "22px"
+  logoText: {
+    display: "flex",
+    flexDirection: "column",
+    lineHeight: 1.1
   },
   
-  headerTitle: { 
-    fontSize: "16px", 
-    fontWeight: 600, 
-    color: "white"
+  logoMain: {
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "white",
+    letterSpacing: "1px"
   },
   
-  headerSubtitle: {
+  logoSub: {
+    fontSize: "9px",
     fontWeight: 300,
-    opacity: 0.7,
-    fontSize: "0.9rem",
-    marginLeft: "6px"
+    color: "rgba(255,255,255,0.7)",
+    letterSpacing: "2px",
+    textTransform: "uppercase"
   },
   
-  headerMeta: { 
-    fontSize: "12px", 
-    color: "rgba(255,255,255,0.7)", 
-    marginTop: "2px",
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    flexWrap: "wrap"
+  headerMetaItem: { 
+    color: "rgba(255,255,255,0.7)",
+    fontSize: "12px"
   },
-  
-  headerMetaItem: { color: "rgba(255,255,255,0.7)" },
-  headerMetaDivider: { color: "rgba(255,255,255,0.3)" },
+  headerMetaDivider: { 
+    color: "rgba(255,255,255,0.3)",
+    fontSize: "12px"
+  },
   
   timer: { 
     textAlign: "right" 
@@ -1338,8 +1341,8 @@ const styles = {
     gap: "24px",
     flex: 1,
     minHeight: 0,
-    height: "calc(100vh - 80px)",
-    maxHeight: "calc(100vh - 80px)",
+    height: "calc(100vh - 100px)",
+    maxHeight: "calc(100vh - 100px)",
     overflow: "hidden",
     boxSizing: "border-box"
   },
