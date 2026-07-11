@@ -1,4 +1,4 @@
-// pages/supervisor/index.js - Complete Supervisor Dashboard with National Service Reports
+// pages/supervisor/index.js - Complete Supervisor Dashboard with National Service Reports and Category Breakdown
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -15,6 +15,8 @@ export default function SupervisorDashboard() {
   const [candidates, setCandidates] = useState([]);
   const [nationalServiceReports, setNationalServiceReports] = useState([]);
   const [otherReports, setOtherReports] = useState([]);
+  const [selectedReport, setSelectedReport] = useState(null);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [stats, setStats] = useState({
     totalCandidates: 0,
     completedAssessments: 0,
@@ -168,6 +170,33 @@ export default function SupervisorDashboard() {
               overallScore = resultData.report_data.overallScore;
             }
             
+            // Extract category scores from report_data
+            let categoryScores = [];
+            if (resultData?.report_data?.categoryScores) {
+              categoryScores = resultData.report_data.categoryScores;
+            } else if (resultData?.report_data?._fullReport?.categoryScores) {
+              // Try nested location
+              const catScores = resultData.report_data._fullReport.categoryScores;
+              categoryScores = Object.keys(catScores).map(key => ({
+                category: key,
+                score: catScores[key].score || 0,
+                maxScore: catScores[key].maxScore || 100,
+                percentage: catScores[key].percentage || 0,
+                grade: catScores[key].grade || 'N/A',
+                comment: catScores[key].comment || ''
+              }));
+            } else if (resultData?.report_data?.scoreBreakdown) {
+              // Try scoreBreakdown
+              categoryScores = resultData.report_data.scoreBreakdown.map(item => ({
+                category: item.category,
+                score: parseInt(item.score) || 0,
+                maxScore: parseInt(item.maxScore) || 100,
+                percentage: item.percentage || 0,
+                grade: item.grade || 'N/A',
+                comment: item.comment || ''
+              }));
+            }
+            
             const reportEntry = {
               result_id: assessment.result_id,
               candidate_id: assessment.user_id,
@@ -189,7 +218,8 @@ export default function SupervisorDashboard() {
               workplace_readiness: workplaceReadiness || 0,
               intellectual_capability: intellectualCapability || 0,
               recommendation: recommendation || 'Not Available',
-              risk_level: riskLevel || 'Medium'
+              risk_level: riskLevel || 'Medium',
+              category_scores: categoryScores
             };
 
             if (isNationalService) {
@@ -324,6 +354,11 @@ export default function SupervisorDashboard() {
     router.push(`/supervisor/reports/${resultId}`);
   };
 
+  const handleViewCategoryBreakdown = (report) => {
+    setSelectedReport(report);
+    setShowCategoryModal(true);
+  };
+
   const handleAssessmentSelect = (candidateId, assessmentId) => {
     if (!assessmentId) {
       alert('Please select an assessment first.');
@@ -388,6 +423,25 @@ export default function SupervisorDashboard() {
     if (score >= 70) return '#166534';
     if (score >= 50) return '#92400e';
     return '#991b1b';
+  };
+
+  const getGradeColor = (grade) => {
+    const colors = {
+      'A+': '#0f766e',
+      'A': '#0f766e',
+      'A-': '#0f766e',
+      'B+': '#2563eb',
+      'B': '#2563eb',
+      'B-': '#2563eb',
+      'C+': '#f59e0b',
+      'C': '#f59e0b',
+      'C-': '#f59e0b',
+      'D+': '#ea580c',
+      'D': '#ea580c',
+      'D-': '#ea580c',
+      'F': '#b42318'
+    };
+    return colors[grade] || '#64748b';
   };
 
   if (authLoading || loading) {
@@ -482,11 +536,11 @@ export default function SupervisorDashboard() {
         </div>
 
         <div style={styles.tabContent}>
-          {/* National Service Reports Tab - Shows ALL National Service reports */}
+          {/* National Service Reports Tab - Shows ALL National Service reports with category breakdown */}
           {activeTab === 'national_service' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
-                <p>📋 All National Service assessment reports for candidates under your supervision.</p>
+                <p>📋 All National Service assessment reports for candidates under your supervision. Click <strong>"View Categories"</strong> to see the detailed category breakdown.</p>
               </div>
               {nationalServiceReports.length === 0 ? (
                 <div style={styles.emptyState}>
@@ -503,7 +557,7 @@ export default function SupervisorDashboard() {
                         <th style={styles.th}>Intellectual Capability</th>
                         <th style={styles.th}>Overall Score</th>
                         <th style={styles.th}>Recommendation</th>
-                        <th style={styles.th}>Action</th>
+                        <th style={styles.th}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -513,6 +567,7 @@ export default function SupervisorDashboard() {
                         const overallScore = report.percentage_score || 0;
                         const recommendation = report.recommendation || 'Not Available';
                         const status = report.status || 'unknown';
+                        const hasCategoryScores = report.category_scores && report.category_scores.length > 0;
                         
                         const recColor = getRecommendationColor(recommendation);
                         
@@ -555,16 +610,28 @@ export default function SupervisorDashboard() {
                               </span>
                             </td>
                             <td style={styles.td}>
-                              {isCompleted && report.result_id ? (
-                                <button
-                                  onClick={() => handleViewReport(report.result_id)}
-                                  style={styles.viewButton}
-                                >
-                                  📄 View Report
-                                </button>
-                              ) : (
-                                <span style={styles.pendingText}>Awaiting completion</span>
-                              )}
+                              <div style={styles.actionButtons}>
+                                {isCompleted && report.result_id ? (
+                                  <>
+                                    <button
+                                      onClick={() => handleViewReport(report.result_id)}
+                                      style={styles.viewButton}
+                                    >
+                                      📄 View Report
+                                    </button>
+                                    {hasCategoryScores && (
+                                      <button
+                                        onClick={() => handleViewCategoryBreakdown(report)}
+                                        style={styles.categoryButton}
+                                      >
+                                        📊 Categories
+                                      </button>
+                                    )}
+                                  </>
+                                ) : (
+                                  <span style={styles.pendingText}>Awaiting completion</span>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -732,6 +799,79 @@ export default function SupervisorDashboard() {
           )}
         </div>
       </div>
+
+      {/* Category Breakdown Modal */}
+      {showCategoryModal && selectedReport && (
+        <div style={styles.modalOverlay} onClick={() => setShowCategoryModal(false)}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>Category Breakdown</h2>
+              <button 
+                onClick={() => setShowCategoryModal(false)} 
+                style={styles.modalCloseButton}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={styles.modalBody}>
+              <div style={styles.modalCandidateInfo}>
+                <h3 style={styles.modalCandidateName}>{selectedReport.candidate_name}</h3>
+                <p style={styles.modalCandidateDetails}>
+                  {selectedReport.university || ''} • {selectedReport.programme || ''}
+                </p>
+                <div style={styles.modalScoreSummary}>
+                  <span style={styles.modalScoreItem}>
+                    <strong>Overall:</strong> {Math.round(selectedReport.percentage_score || 0)}%
+                  </span>
+                  <span style={styles.modalScoreItem}>
+                    <strong>Workplace Readiness:</strong> {Math.round(selectedReport.workplace_readiness || 0)}%
+                  </span>
+                  <span style={styles.modalScoreItem}>
+                    <strong>Intellectual Capability:</strong> {Math.round(selectedReport.intellectual_capability || 0)}%
+                  </span>
+                </div>
+              </div>
+              
+              {selectedReport.category_scores && selectedReport.category_scores.length > 0 ? (
+                <div style={styles.categoryGrid}>
+                  {selectedReport.category_scores.map((cat, index) => (
+                    <div key={index} style={styles.categoryCard}>
+                      <div style={styles.categoryHeader}>
+                        <span style={styles.categoryName}>{cat.category}</span>
+                        <span style={{ 
+                          ...styles.categoryGrade, 
+                          color: getGradeColor(cat.grade),
+                          borderColor: getGradeColor(cat.grade)
+                        }}>
+                          {cat.grade || 'N/A'}
+                        </span>
+                      </div>
+                      <div style={styles.categoryScoreBar}>
+                        <div style={{ 
+                          ...styles.categoryScoreFill, 
+                          width: `${Math.min(cat.percentage || 0, 100)}%`,
+                          background: getScoreColor(cat.percentage || 0)
+                        }} />
+                      </div>
+                      <div style={styles.categoryScoreDetails}>
+                        <span>{Math.round(cat.percentage || 0)}%</span>
+                        <span>{cat.score || 0} / {cat.maxScore || 100}</span>
+                      </div>
+                      {cat.comment && (
+                        <div style={styles.categoryComment}>{cat.comment}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={styles.emptyState}>
+                  <p>No category scores available for this report.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }
@@ -874,16 +1014,34 @@ const styles = {
     background: 'white',
     border: '1px solid #e2e8f0'
   },
+  actionButtons: {
+    display: 'flex',
+    gap: '6px',
+    flexWrap: 'wrap'
+  },
   viewButton: {
-    padding: '6px 16px',
+    padding: '6px 12px',
     background: '#1a237e',
     color: 'white',
     border: 'none',
     borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '13px',
+    fontSize: '12px',
     fontWeight: '500',
-    transition: 'background 0.2s'
+    transition: 'background 0.2s',
+    whiteSpace: 'nowrap'
+  },
+  categoryButton: {
+    padding: '6px 12px',
+    background: '#f59e0b',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: '500',
+    transition: 'background 0.2s',
+    whiteSpace: 'nowrap'
   },
   viewReportButtonSmall: {
     padding: '4px 12px',
@@ -950,7 +1108,142 @@ const styles = {
     background: '#fef3c7',
     color: '#92400e'
   },
-  emptyState: { textAlign: 'center', padding: '30px', color: '#64748b', background: '#f8fafc', borderRadius: '8px' }
+  emptyState: { textAlign: 'center', padding: '30px', color: '#64748b', background: '#f8fafc', borderRadius: '8px' },
+  
+  // Modal Styles
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0,0,0,0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    backdropFilter: 'blur(4px)'
+  },
+  modalContent: {
+    background: 'white',
+    borderRadius: '16px',
+    maxWidth: '900px',
+    width: '95%',
+    maxHeight: '90vh',
+    overflow: 'hidden',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+    display: 'flex',
+    flexDirection: 'column'
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '20px 24px',
+    borderBottom: '1px solid #e2e8f0',
+    flexShrink: 0
+  },
+  modalTitle: {
+    fontSize: '20px',
+    fontWeight: '700',
+    color: '#0a1929',
+    margin: 0
+  },
+  modalCloseButton: {
+    background: 'none',
+    border: 'none',
+    fontSize: '24px',
+    cursor: 'pointer',
+    color: '#94a3b8',
+    padding: '4px 8px',
+    borderRadius: '6px',
+    transition: 'background 0.2s'
+  },
+  modalBody: {
+    padding: '24px',
+    overflowY: 'auto',
+    flex: 1
+  },
+  modalCandidateInfo: {
+    marginBottom: '20px',
+    paddingBottom: '16px',
+    borderBottom: '1px solid #e2e8f0'
+  },
+  modalCandidateName: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: 0
+  },
+  modalCandidateDetails: {
+    fontSize: '14px',
+    color: '#64748b',
+    margin: '4px 0 8px 0'
+  },
+  modalScoreSummary: {
+    display: 'flex',
+    gap: '20px',
+    flexWrap: 'wrap',
+    marginTop: '8px'
+  },
+  modalScoreItem: {
+    fontSize: '14px',
+    color: '#475569'
+  },
+  categoryGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '12px'
+  },
+  categoryCard: {
+    background: '#f8fafc',
+    padding: '14px 16px',
+    borderRadius: '10px',
+    border: '1px solid #eef2f7'
+  },
+  categoryHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '6px'
+  },
+  categoryName: {
+    fontSize: '13px',
+    fontWeight: '600',
+    color: '#1e293b'
+  },
+  categoryGrade: {
+    fontSize: '13px',
+    fontWeight: '700',
+    padding: '2px 10px',
+    borderRadius: '4px',
+    border: '2px solid'
+  },
+  categoryScoreBar: {
+    height: '6px',
+    background: '#e2e8f0',
+    borderRadius: '3px',
+    overflow: 'hidden',
+    marginTop: '4px'
+  },
+  categoryScoreFill: {
+    height: '100%',
+    borderRadius: '3px',
+    transition: 'width 0.5s ease'
+  },
+  categoryScoreDetails: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: '12px',
+    color: '#64748b',
+    marginTop: '4px'
+  },
+  categoryComment: {
+    fontSize: '11px',
+    color: '#94a3b8',
+    marginTop: '4px',
+    fontStyle: 'italic'
+  }
 };
 
 // Add keyframe animation
