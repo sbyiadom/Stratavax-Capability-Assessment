@@ -104,6 +104,54 @@ export default function SupervisorDashboard() {
                 score = resultData.report_data.dimensions.overallScore;
               }
               
+              // Get workplace_readiness from multiple sources
+              let workplaceReadiness = resultData?.workplace_readiness || 0;
+              if (!workplaceReadiness && resultData?.report_data?.workplaceReadiness) {
+                workplaceReadiness = resultData.report_data.workplaceReadiness;
+              }
+              if (!workplaceReadiness && resultData?.report_data?.scores?.workplaceReadiness) {
+                workplaceReadiness = resultData.report_data.scores.workplaceReadiness;
+              }
+              if (!workplaceReadiness && resultData?.report_data?.dimensions?.workplaceReadiness) {
+                workplaceReadiness = resultData.report_data.dimensions.workplaceReadiness;
+              }
+              
+              // Get intellectual_capability from multiple sources
+              let intellectualCapability = resultData?.intellectual_capability || 0;
+              if (!intellectualCapability && resultData?.report_data?.intellectualCapability) {
+                intellectualCapability = resultData.report_data.intellectualCapability;
+              }
+              if (!intellectualCapability && resultData?.report_data?.scores?.intellectualCapability) {
+                intellectualCapability = resultData.report_data.scores.intellectualCapability;
+              }
+              if (!intellectualCapability && resultData?.report_data?.dimensions?.intellectualCapability) {
+                intellectualCapability = resultData.report_data.dimensions.intellectualCapability;
+              }
+              
+              // Get recommendation from multiple sources
+              let recommendation = resultData?.recommendation || 'Not Available';
+              if (recommendation === 'Not Available' && resultData?.report_data?.recommendation) {
+                recommendation = resultData.report_data.recommendation;
+              }
+              if (recommendation === 'Not Available' && resultData?.report_data?.recommendation?.level) {
+                recommendation = resultData.report_data.recommendation.level;
+              }
+              
+              // Get risk level from multiple sources
+              let riskLevel = resultData?.risk_level || 'Medium';
+              if (riskLevel === 'Medium' && resultData?.report_data?.riskLevel) {
+                riskLevel = resultData.report_data.riskLevel;
+              }
+              
+              // Calculate overall score if not present
+              let overallScore = resultData?.percentage_score || 0;
+              if (!overallScore && workplaceReadiness && intellectualCapability) {
+                overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
+              }
+              if (!overallScore && resultData?.report_data?.overallScore) {
+                overallScore = resultData.report_data.overallScore;
+              }
+              
               const reportEntry = {
                 result_id: assessment.result_id,
                 candidate_id: assessment.user_id,
@@ -117,51 +165,33 @@ export default function SupervisorDashboard() {
                 assessment_code: assessment.assessments?.assessment_type?.code || 'general',
                 status: assessment.status,
                 completed_at: assessment.completed_at || resultData?.completed_at,
-                score: score,
+                score: overallScore || score,
                 is_national_service: isNationalService,
                 resultData: resultData,
-                // Store raw values for fallback
-                percentage_score: resultData?.percentage_score || 0,
-                workplace_readiness: resultData?.workplace_readiness || 0,
-                intellectual_capability: resultData?.intellectual_capability || 0,
-                recommendation: resultData?.recommendation || 'Not Available'
+                // Store raw values
+                percentage_score: overallScore || resultData?.percentage_score || 0,
+                workplace_readiness: workplaceReadiness || 0,
+                intellectual_capability: intellectualCapability || 0,
+                recommendation: recommendation || 'Not Available',
+                risk_level: riskLevel || 'Medium'
               };
 
               if (isNationalService) {
-                // Try to get scores from multiple sources with fallbacks
-                // IMPORTANT FIX: Use the direct columns from assessment_results
-                const workplaceScore = resultData?.workplace_readiness || 
-                                       resultData?.report_data?.dimensions?.workplaceReadiness || 
-                                       resultData?.report_data?.workplaceReadiness || 
-                                       resultData?.scores?.workplace || 0;
-                
-                const intellectualScore = resultData?.intellectual_capability || 
-                                          resultData?.report_data?.dimensions?.intellectualCapability || 
-                                          resultData?.report_data?.intellectualCapability || 
-                                          resultData?.scores?.intellectual || 0;
-                
-                const recommendationValue = resultData?.recommendation || 
-                                            resultData?.report_data?.recommendation?.level || 
-                                            'Not Available';
-                
-                // Calculate overall score if not present
-                const overallScore = resultData?.percentage_score || 
-                                     resultData?.report_data?.overallScore || 
-                                     resultData?.report_data?.dimensions?.overallScore ||
-                                     Math.round((workplaceScore + intellectualScore) / 2) || 0;
-                
+                // Build scores object for easy access
                 reportEntry.scores = {
-                  overall: overallScore,
-                  workplace: workplaceScore,
-                  intellectual: intellectualScore,
-                  recommendation: recommendationValue
+                  overall: overallScore || resultData?.percentage_score || 0,
+                  workplace: workplaceReadiness || 0,
+                  intellectual: intellectualCapability || 0,
+                  recommendation: recommendation || 'Not Available',
+                  riskLevel: riskLevel || 'Medium'
                 };
                 
                 // Also store directly on the report for easy access
-                reportEntry.workplace_readiness = workplaceScore;
-                reportEntry.intellectual_capability = intellectualScore;
-                reportEntry.percentage_score = overallScore;
-                reportEntry.recommendation = recommendationValue;
+                reportEntry.workplace_readiness = workplaceReadiness || 0;
+                reportEntry.intellectual_capability = intellectualCapability || 0;
+                reportEntry.percentage_score = overallScore || resultData?.percentage_score || 0;
+                reportEntry.recommendation = recommendation || 'Not Available';
+                reportEntry.risk_level = riskLevel || 'Medium';
                 
                 nsReports.push(reportEntry);
               } else {
@@ -325,6 +355,7 @@ export default function SupervisorDashboard() {
     const colors = {
       'Highly Recommended': '#2e7d32',
       'Recommended': '#1565c0',
+      'Conditional': '#f57c00',
       'Reserve Pool': '#f57c00',
       'Not Recommended': '#c62828',
       'Not Available': '#64748b'
@@ -449,14 +480,22 @@ export default function SupervisorDashboard() {
                     </thead>
                     <tbody>
                       {nationalServiceReports.map((report) => {
-                        // FIXED: Get scores directly from the report object
-                        // These should now be populated from the assessment_results table
-                        const workplaceScore = report.workplace_readiness || report.scores?.workplace || 0;
-                        const intellectualScore = report.intellectual_capability || report.scores?.intellectual || 0;
-                        const overallScore = report.percentage_score || report.scores?.overall || 0;
-                        const recommendation = report.recommendation || report.scores?.recommendation || 'Not Available';
+                        // Get scores from the report object with fallbacks
+                        const workplaceScore = report.scores?.workplace || report.workplace_readiness || 0;
+                        const intellectualScore = report.scores?.intellectual || report.intellectual_capability || 0;
+                        const overallScore = report.scores?.overall || report.percentage_score || 0;
+                        const recommendation = report.scores?.recommendation || report.recommendation || 'Not Available';
                         
                         const recColor = getRecommendationColor(recommendation);
+                        
+                        // Debug logging to check values
+                        console.log('[Supervisor] Report data:', {
+                          name: report.candidate_name,
+                          workplace: workplaceScore,
+                          intellectual: intellectualScore,
+                          overall: overallScore,
+                          recommendation: recommendation
+                        });
                         
                         return (
                           <tr key={report.result_id} style={styles.tr}>
@@ -465,17 +504,17 @@ export default function SupervisorDashboard() {
                               <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
                             </td>
                             <td style={styles.td}>
-                              <span style={{ ...styles.scoreBadge, background: workplaceScore >= 70 ? '#dcfce7' : workplaceScore >= 50 ? '#fef3c7' : '#fee2e2' }}>
+                              <span style={{ ...styles.scoreBadge, background: workplaceScore >= 70 ? '#dcfce7' : workplaceScore >= 50 ? '#fef3c7' : '#fee2e2', color: workplaceScore >= 70 ? '#166534' : workplaceScore >= 50 ? '#92400e' : '#991b1b' }}>
                                 {Math.round(workplaceScore)}%
                               </span>
                             </td>
                             <td style={styles.td}>
-                              <span style={{ ...styles.scoreBadge, background: intellectualScore >= 70 ? '#dcfce7' : intellectualScore >= 50 ? '#fef3c7' : '#fee2e2' }}>
+                              <span style={{ ...styles.scoreBadge, background: intellectualScore >= 70 ? '#dcfce7' : intellectualScore >= 50 ? '#fef3c7' : '#fee2e2', color: intellectualScore >= 70 ? '#166534' : intellectualScore >= 50 ? '#92400e' : '#991b1b' }}>
                                 {Math.round(intellectualScore)}%
                               </span>
                             </td>
                             <td style={styles.td}>
-                              <span style={{ ...styles.scoreBadge, background: overallScore >= 70 ? '#dcfce7' : overallScore >= 50 ? '#fef3c7' : '#fee2e2' }}>
+                              <span style={{ ...styles.scoreBadge, background: overallScore >= 70 ? '#dcfce7' : overallScore >= 50 ? '#fef3c7' : '#fee2e2', color: overallScore >= 70 ? '#166534' : overallScore >= 50 ? '#92400e' : '#991b1b' }}>
                                 {Math.round(overallScore)}%
                               </span>
                             </td>
@@ -818,8 +857,7 @@ const styles = {
     borderRadius: '20px',
     fontSize: '13px',
     fontWeight: '600',
-    display: 'inline-block',
-    color: '#1a237e'
+    display: 'inline-block'
   },
   recommendationBadge: {
     padding: '4px 12px',
