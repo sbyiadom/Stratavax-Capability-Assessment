@@ -1,4 +1,4 @@
-// pages/supervisor/index.js - Complete updated file
+// pages/supervisor/index.js - Complete updated file with fixed National Service reports
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -85,7 +85,7 @@ export default function SupervisorDashboard() {
           if (isCompleted && assessment.result_id) {
             const { data: resultData, error: resultError } = await supabase
               .from('assessment_results')
-              .select('percentage_score, workplace_readiness, intellectual_capability, recommendation, completed_at, report_data')
+              .select('*')
               .eq('id', assessment.result_id)
               .single();
 
@@ -129,22 +129,40 @@ export default function SupervisorDashboard() {
 
               if (isNationalService) {
                 // Try to get scores from multiple sources with fallbacks
+                // IMPORTANT FIX: Use the direct columns from assessment_results
                 const workplaceScore = resultData?.workplace_readiness || 
                                        resultData?.report_data?.dimensions?.workplaceReadiness || 
-                                       resultData?.report_data?.workplaceReadiness || 0;
+                                       resultData?.report_data?.workplaceReadiness || 
+                                       resultData?.scores?.workplace || 0;
+                
                 const intellectualScore = resultData?.intellectual_capability || 
                                           resultData?.report_data?.dimensions?.intellectualCapability || 
-                                          resultData?.report_data?.intellectualCapability || 0;
+                                          resultData?.report_data?.intellectualCapability || 
+                                          resultData?.scores?.intellectual || 0;
+                
                 const recommendationValue = resultData?.recommendation || 
                                             resultData?.report_data?.recommendation?.level || 
                                             'Not Available';
                 
+                // Calculate overall score if not present
+                const overallScore = resultData?.percentage_score || 
+                                     resultData?.report_data?.overallScore || 
+                                     resultData?.report_data?.dimensions?.overallScore ||
+                                     Math.round((workplaceScore + intellectualScore) / 2) || 0;
+                
                 reportEntry.scores = {
-                  overall: score,
+                  overall: overallScore,
                   workplace: workplaceScore,
                   intellectual: intellectualScore,
                   recommendation: recommendationValue
                 };
+                
+                // Also store directly on the report for easy access
+                reportEntry.workplace_readiness = workplaceScore;
+                reportEntry.intellectual_capability = intellectualScore;
+                reportEntry.percentage_score = overallScore;
+                reportEntry.recommendation = recommendationValue;
+                
                 nsReports.push(reportEntry);
               } else {
                 otherAssessments.push(reportEntry);
@@ -406,7 +424,7 @@ export default function SupervisorDashboard() {
         </div>
 
         <div style={styles.tabContent}>
-          {/* National Service Reports Tab - Updated to show all reports */}
+          {/* National Service Reports Tab - FIXED to show workplace_readiness and intellectual_capability */}
           {activeTab === 'national_service' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
@@ -431,11 +449,12 @@ export default function SupervisorDashboard() {
                     </thead>
                     <tbody>
                       {nationalServiceReports.map((report) => {
-                        // Calculate scores with fallbacks
-                        const workplaceScore = report.scores?.workplace || report.workplace_readiness || 0;
-                        const intellectualScore = report.scores?.intellectual || report.intellectual_capability || 0;
-                        const overallScore = report.scores?.overall || report.percentage_score || 0;
-                        const recommendation = report.scores?.recommendation || report.recommendation || 'Not Available';
+                        // FIXED: Get scores directly from the report object
+                        // These should now be populated from the assessment_results table
+                        const workplaceScore = report.workplace_readiness || report.scores?.workplace || 0;
+                        const intellectualScore = report.intellectual_capability || report.scores?.intellectual || 0;
+                        const overallScore = report.percentage_score || report.scores?.overall || 0;
+                        const recommendation = report.recommendation || report.scores?.recommendation || 'Not Available';
                         
                         const recColor = getRecommendationColor(recommendation);
                         
@@ -446,17 +465,17 @@ export default function SupervisorDashboard() {
                               <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
                             </td>
                             <td style={styles.td}>
-                              <span style={styles.scoreBadge}>
+                              <span style={{ ...styles.scoreBadge, background: workplaceScore >= 70 ? '#dcfce7' : workplaceScore >= 50 ? '#fef3c7' : '#fee2e2' }}>
                                 {Math.round(workplaceScore)}%
                               </span>
                             </td>
                             <td style={styles.td}>
-                              <span style={styles.scoreBadge}>
+                              <span style={{ ...styles.scoreBadge, background: intellectualScore >= 70 ? '#dcfce7' : intellectualScore >= 50 ? '#fef3c7' : '#fee2e2' }}>
                                 {Math.round(intellectualScore)}%
                               </span>
                             </td>
                             <td style={styles.td}>
-                              <span style={styles.scoreBadge}>
+                              <span style={{ ...styles.scoreBadge, background: overallScore >= 70 ? '#dcfce7' : overallScore >= 50 ? '#fef3c7' : '#fee2e2' }}>
                                 {Math.round(overallScore)}%
                               </span>
                             </td>
@@ -483,7 +502,7 @@ export default function SupervisorDashboard() {
             </div>
           )}
 
-          {/* Other Assessments Tab - WITH FIXED DROPDOWN */}
+          {/* Other Assessments Tab */}
           {activeTab === 'other' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
@@ -529,7 +548,6 @@ export default function SupervisorDashboard() {
                                     const selectedValue = e.target.value;
                                     console.log('[Supervisor] Dropdown selected:', selectedValue);
                                     handleAssessmentChange(candidate.id, selectedValue);
-                                    // DO NOT navigate - just update state
                                   }}
                                   style={styles.assessmentDropdown}
                                   value={selectedId}
@@ -633,7 +651,6 @@ export default function SupervisorDashboard() {
                                   const selectedValue = e.target.value;
                                   console.log('[Supervisor] Dropdown selected:', selectedValue);
                                   handleAssessmentChange(candidate.id, selectedValue);
-                                  // DO NOT navigate - just update state
                                 }}
                                 style={styles.assessmentDropdown}
                                 value={selectedId}
@@ -801,9 +818,8 @@ const styles = {
     borderRadius: '20px',
     fontSize: '13px',
     fontWeight: '600',
-    background: '#e8f5e9',
-    color: '#1a237e',
-    display: 'inline-block'
+    display: 'inline-block',
+    color: '#1a237e'
   },
   recommendationBadge: {
     padding: '4px 12px',
