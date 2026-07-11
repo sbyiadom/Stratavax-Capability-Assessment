@@ -1,15 +1,21 @@
 // components/reports/NationalServiceReport.js
 
-import React from 'react';
+import React, { useEffect } from 'react';
 
 export default function NationalServiceReport({ report, onBack }) {
+  // Log the report data on mount for debugging
+  useEffect(() => {
+    console.log('[NationalServiceReport] Full report data received:', report);
+    console.log('[NationalServiceReport] category_scores:', report?.category_scores);
+    console.log('[NationalServiceReport] report_data?.categoryScores:', report?.report_data?.categoryScores);
+    console.log('[NationalServiceReport] categoryBreakdown:', report?.categoryBreakdown);
+  }, [report]);
+
   if (!report) {
     return <div style={styles.loading}>Loading report...</div>;
   }
 
-  console.log('[NationalServiceReport] Report data:', report);
-
-  // Extract data from the report object
+  // Extract data from the report object with multiple fallbacks
   const {
     candidateName = 'Candidate',
     dimensions = {},
@@ -28,6 +34,7 @@ export default function NationalServiceReport({ report, onBack }) {
     assessment_title = 'National Service Assessment',
     university = '',
     programme = '',
+    report_data = {}
   } = report;
 
   // Calculate scores from various sources
@@ -42,160 +49,209 @@ export default function NationalServiceReport({ report, onBack }) {
     'Not Recommended';
 
   // ============================================================
-  // CATEGORY BREAKDOWN - Use category_scores from database
+  // CATEGORY BREAKDOWN - Extract from ALL possible sources
   // ============================================================
   let allCategories = [];
 
-  // PRIMARY: Use category_scores from the report
-  if (category_scores && category_scores.length > 0) {
-    allCategories = category_scores.map(cat => ({
-      category: cat.category || cat.name || 'Unknown',
+  // Helper function to normalize category data
+  const normalizeCategory = (cat) => ({
+    category: cat.category || cat.name || cat.area || 'Unknown',
+    percentage: typeof cat.percentage === 'number' ? cat.percentage : 0,
+    earned: cat.score || cat.earned || cat.correct || 0,
+    max: cat.maxScore || cat.max || cat.total || 100,
+    earnedDisplay: cat.score || cat.earned || cat.correct || 0,
+    maxDisplay: cat.maxScore || cat.max || cat.total || 100,
+    dimension: cat.dimension || 'general',
+    grade: cat.grade || 'N/A'
+  });
+
+  // 1. Use category_scores from the report (database column)
+  if (category_scores && Array.isArray(category_scores) && category_scores.length > 0) {
+    console.log('[Report] Using category_scores:', category_scores.length);
+    allCategories = category_scores.map(normalizeCategory);
+  }
+  // 2. Use categoryBreakdown from report_data
+  else if (categoryBreakdown && Array.isArray(categoryBreakdown) && categoryBreakdown.length > 0) {
+    console.log('[Report] Using categoryBreakdown:', categoryBreakdown.length);
+    allCategories = categoryBreakdown.map(normalizeCategory);
+  }
+  // 3. Extract from report_data.categoryScores
+  else if (report_data?.categoryScores && Array.isArray(report_data.categoryScores) && report_data.categoryScores.length > 0) {
+    console.log('[Report] Using report_data.categoryScores:', report_data.categoryScores.length);
+    allCategories = report_data.categoryScores.map(normalizeCategory);
+  }
+  // 4. Extract from report_data.scoreBreakdown
+  else if (report_data?.scoreBreakdown && Array.isArray(report_data.scoreBreakdown) && report_data.scoreBreakdown.length > 0) {
+    console.log('[Report] Using report_data.scoreBreakdown:', report_data.scoreBreakdown.length);
+    allCategories = report_data.scoreBreakdown.map(cat => ({
+      category: cat.category || cat.area || 'Unknown',
       percentage: cat.percentage || 0,
-      earned: cat.score || cat.earned || 0,
-      max: cat.maxScore || cat.max || 100,
-      earnedDisplay: cat.score || cat.earned || 0,
-      maxDisplay: cat.maxScore || cat.max || 100,
-      dimension: cat.dimension || 'general'
-    }));
-  } 
-  // SECONDARY: Use categoryBreakdown from report_data
-  else if (categoryBreakdown && categoryBreakdown.length > 0) {
-    allCategories = categoryBreakdown.map(cat => ({
-      category: cat.category || cat.name || 'Unknown',
-      percentage: cat.percentage || 0,
-      earned: cat.earned || cat.score || 0,
-      max: cat.max || cat.maxScore || 100,
-      earnedDisplay: cat.earnedDisplay || cat.score || 0,
-      maxDisplay: cat.maxDisplay || cat.maxScore || 100,
-      dimension: cat.dimension || 'general'
+      earned: typeof cat.score === 'string' ? parseInt(cat.score.split('/')[0]) : (cat.score || 0),
+      max: typeof cat.score === 'string' ? parseInt(cat.score.split('/')[1]) : (cat.maxScore || 100),
+      earnedDisplay: typeof cat.score === 'string' ? cat.score.split('/')[0] : (cat.score || 0),
+      maxDisplay: typeof cat.score === 'string' ? cat.score.split('/')[1] : (cat.maxScore || 100),
+      dimension: cat.dimension || 'general',
+      grade: cat.grade || 'N/A'
     }));
   }
-  // TERTIARY: Extract from report_data.categoryScores
-  else if (report.report_data?.categoryScores) {
-    const catScores = report.report_data.categoryScores;
-    if (Array.isArray(catScores) && catScores.length > 0) {
-      allCategories = catScores.map(cat => ({
-        category: cat.category || cat.name || 'Unknown',
-        percentage: cat.percentage || 0,
-        earned: cat.score || cat.earned || 0,
-        max: cat.maxScore || cat.max || 100,
-        earnedDisplay: cat.score || cat.earned || 0,
-        maxDisplay: cat.maxScore || cat.max || 100,
-        dimension: cat.dimension || 'general'
-      }));
+  // 5. Extract from report_data._fullReport.categoryScores
+  else if (report_data?._fullReport?.categoryScores && typeof report_data._fullReport.categoryScores === 'object') {
+    console.log('[Report] Using report_data._fullReport.categoryScores');
+    const catScores = report_data._fullReport.categoryScores;
+    allCategories = Object.keys(catScores).map(key => ({
+      category: key,
+      percentage: catScores[key].percentage || 0,
+      earned: catScores[key].score || catScores[key].totalScore || 0,
+      max: catScores[key].maxScore || catScores[key].maxPossible || 100,
+      earnedDisplay: catScores[key].score || catScores[key].totalScore || 0,
+      maxDisplay: catScores[key].maxScore || catScores[key].maxPossible || 100,
+      dimension: 'general',
+      grade: catScores[key].grade || 'N/A'
+    }));
+  }
+  // 6. Try to find categoryScores anywhere in report_data via recursive search
+  else if (report_data && typeof report_data === 'object') {
+    const findCategories = (obj, path = '') => {
+      if (!obj || typeof obj !== 'object') return null;
+      
+      // Check if this object has categoryScores array
+      if (obj.categoryScores && Array.isArray(obj.categoryScores) && obj.categoryScores.length > 0) {
+        return { source: 'categoryScores', data: obj.categoryScores };
+      }
+      if (obj.scoreBreakdown && Array.isArray(obj.scoreBreakdown) && obj.scoreBreakdown.length > 0) {
+        return { source: 'scoreBreakdown', data: obj.scoreBreakdown };
+      }
+      if (obj.scores && Array.isArray(obj.scores) && obj.scores.length > 0) {
+        return { source: 'scores', data: obj.scores };
+      }
+      
+      // Recursively search
+      for (const key of Object.keys(obj)) {
+        if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key])) {
+          const found = findCategories(obj[key], `${path}.${key}`);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    
+    const found = findCategories(report_data);
+    if (found && found.data && Array.isArray(found.data) && found.data.length > 0) {
+      console.log('[Report] Found categories via recursive search in', found.source, ':', found.data.length);
+      allCategories = found.data.map(normalizeCategory);
     }
   }
-  // QUATERNARY: Extract from report_data._fullReport.categoryScores
-  else if (report.report_data?._fullReport?.categoryScores) {
-    const catScores = report.report_data._fullReport.categoryScores;
-    if (typeof catScores === 'object') {
-      allCategories = Object.keys(catScores).map(key => ({
-        category: key,
-        percentage: catScores[key].percentage || 0,
-        earned: catScores[key].score || catScores[key].totalScore || 0,
-        max: catScores[key].maxScore || catScores[key].maxPossible || 100,
-        earnedDisplay: catScores[key].score || catScores[key].totalScore || 0,
-        maxDisplay: catScores[key].maxScore || catScores[key].maxPossible || 100,
-        dimension: 'general'
-      }));
+
+  console.log('[Report] Total categories found:', allCategories.length);
+
+  // If we found categories but they have no percentage, calculate it
+  allCategories = allCategories.map(cat => {
+    if (!cat.percentage || cat.percentage === 0) {
+      const earned = cat.earned || 0;
+      const max = cat.max || 100;
+      cat.percentage = max > 0 ? Math.round((earned / max) * 100) : 0;
     }
-  }
+    return cat;
+  });
 
   // ============================================================
   // SPLIT CATEGORIES INTO WORKPLACE AND INTELLECTUAL
   // ============================================================
   const workplaceCategories = [];
   const intellectualCategories = [];
-  const generalCategories = [];
 
   const workplaceCategoryNames = [
-    'Safety & Risk Awareness', 
-    'Safety', 
-    'Risk Awareness',
-    'Technical Fundamentals',
-    'Technical',
-    'Communication & Teamwork',
-    'Communication',
-    'Teamwork',
-    'Ownership & Integrity',
-    'Ownership',
-    'Integrity',
-    'Workplace Readiness',
-    'Workplace Ethics'
+    'Safety & Risk Awareness', 'Safety', 'Risk Awareness',
+    'Technical Fundamentals', 'Technical',
+    'Communication & Teamwork', 'Communication', 'Teamwork',
+    'Ownership & Integrity', 'Ownership', 'Integrity',
+    'Workplace Readiness', 'Workplace Ethics'
   ];
 
   const intellectualCategoryNames = [
-    'Problem Solving & Troubleshooting',
-    'Problem Solving',
-    'Troubleshooting',
-    'Logical Reasoning',
-    'Logic',
-    'Numerical Reasoning',
-    'Numerical',
-    'Measurement & Engineering Units',
-    'Measurement',
-    'Engineering Units',
-    'Learning Agility',
-    'Agility',
-    'Critical Thinking',
-    'Analytical',
-    'Decision Making',
+    'Problem Solving & Troubleshooting', 'Problem Solving', 'Troubleshooting',
+    'Logical Reasoning', 'Logic',
+    'Numerical Reasoning', 'Numerical',
+    'Measurement & Engineering Units', 'Measurement', 'Engineering Units',
+    'Learning Agility', 'Agility',
+    'Critical Thinking', 'Analytical', 'Decision Making',
     'Intellectual Capability'
   ];
 
-  allCategories.forEach(cat => {
-    const catName = cat.category || '';
-    const isWorkplace = workplaceCategoryNames.some(name => 
-      catName.toLowerCase().includes(name.toLowerCase())
-    );
-    const isIntellectual = intellectualCategoryNames.some(name => 
-      catName.toLowerCase().includes(name.toLowerCase())
-    );
-
-    if (isWorkplace && !isIntellectual) {
-      workplaceCategories.push({ ...cat, dimension: 'workplace' });
-    } else if (isIntellectual && !isWorkplace) {
-      intellectualCategories.push({ ...cat, dimension: 'intellectual' });
-    } else if (isWorkplace && isIntellectual) {
-      // If it matches both, check the category name more carefully
-      if (catName.toLowerCase().includes('safety') || 
-          catName.toLowerCase().includes('technical') ||
-          catName.toLowerCase().includes('communication') ||
-          catName.toLowerCase().includes('teamwork') ||
-          catName.toLowerCase().includes('ownership') ||
-          catName.toLowerCase().includes('integrity') ||
-          catName.toLowerCase().includes('workplace')) {
-        workplaceCategories.push({ ...cat, dimension: 'workplace' });
-      } else {
-        intellectualCategories.push({ ...cat, dimension: 'intellectual' });
-      }
-    } else {
-      generalCategories.push({ ...cat, dimension: 'general' });
-    }
-  });
-
-  // If no categories were split, put them all in general
-  if (workplaceCategories.length === 0 && intellectualCategories.length === 0) {
-    // Try to determine from category names
+  if (allCategories.length > 0) {
     allCategories.forEach(cat => {
       const catName = cat.category || '';
+      const lowerName = catName.toLowerCase();
+      
       const isWorkplace = workplaceCategoryNames.some(name => 
-        catName.toLowerCase().includes(name.toLowerCase())
+        lowerName.includes(name.toLowerCase())
       );
-      if (isWorkplace) {
+      const isIntellectual = intellectualCategoryNames.some(name => 
+        lowerName.includes(name.toLowerCase())
+      );
+
+      if (isWorkplace && !isIntellectual) {
         workplaceCategories.push({ ...cat, dimension: 'workplace' });
-      } else {
+      } else if (isIntellectual && !isWorkplace) {
         intellectualCategories.push({ ...cat, dimension: 'intellectual' });
+      } else if (isWorkplace && isIntellectual) {
+        // If it matches both, check more carefully
+        if (lowerName.includes('safety') || 
+            lowerName.includes('technical') ||
+            lowerName.includes('communication') ||
+            lowerName.includes('teamwork') ||
+            lowerName.includes('ownership') ||
+            lowerName.includes('integrity') ||
+            lowerName.includes('workplace')) {
+          workplaceCategories.push({ ...cat, dimension: 'workplace' });
+        } else {
+          intellectualCategories.push({ ...cat, dimension: 'intellectual' });
+        }
+      } else {
+        // Default based on category name patterns
+        if (lowerName.includes('readiness') || lowerName.includes('ethics')) {
+          workplaceCategories.push({ ...cat, dimension: 'workplace' });
+        } else {
+          intellectualCategories.push({ ...cat, dimension: 'intellectual' });
+        }
       }
     });
-    // If still none, put all in general
-    if (workplaceCategories.length === 0 && intellectualCategories.length === 0) {
-      allCategories.forEach(cat => {
-        generalCategories.push({ ...cat, dimension: 'general' });
+  }
+
+  // If still no categories, create some from the scores
+  if (workplaceCategories.length === 0 && intellectualCategories.length === 0) {
+    if (workplaceScore > 0) {
+      workplaceCategories.push({
+        category: 'Workplace Readiness (Overall)',
+        percentage: workplaceScore,
+        earned: Math.round(workplaceScore),
+        max: 100,
+        earnedDisplay: Math.round(workplaceScore),
+        maxDisplay: 100,
+        dimension: 'workplace',
+        grade: workplaceScore >= 70 ? 'A' : workplaceScore >= 50 ? 'C' : 'F'
+      });
+    }
+    if (intellectualScore > 0) {
+      intellectualCategories.push({
+        category: 'Intellectual Capability (Overall)',
+        percentage: intellectualScore,
+        earned: Math.round(intellectualScore),
+        max: 100,
+        earnedDisplay: Math.round(intellectualScore),
+        maxDisplay: 100,
+        dimension: 'intellectual',
+        grade: intellectualScore >= 70 ? 'A' : intellectualScore >= 50 ? 'C' : 'F'
       });
     }
   }
 
+  console.log('[Report] Workplace categories:', workplaceCategories.length);
+  console.log('[Report] Intellectual categories:', intellectualCategories.length);
+
+  // ============================================================
+  // RENDER HELPERS
+  // ============================================================
   const getRecommendationColor = (level) => {
     switch (level) {
       case 'Highly Recommended': return '#2e7d32';
@@ -217,15 +273,16 @@ export default function NationalServiceReport({ report, onBack }) {
   };
 
   const getBandColor = (band) => {
-    switch (band) {
-      case 'Excellent':
-      case 'Exceptional': return '#2e7d32';
-      case 'Ready':
-      case 'High Potential': return '#1565c0';
-      case 'Developing':
-      case 'Moderate Potential': return '#f57c00';
-      case 'Needs Improvement':
-      case 'Development Required': return '#c62828';
+    if (!band) return '#333';
+    switch (band.toString().toLowerCase()) {
+      case 'excellent':
+      case 'exceptional': return '#2e7d32';
+      case 'ready':
+      case 'high potential': return '#1565c0';
+      case 'developing':
+      case 'moderate potential': return '#f57c00';
+      case 'needs improvement':
+      case 'development required': return '#c62828';
       default: return '#333';
     }
   };
@@ -253,18 +310,38 @@ export default function NationalServiceReport({ report, onBack }) {
     return { text: 'Critical development area', color: '#c62828', emoji: '🔴' };
   };
 
+  const getGradeColor = (grade) => {
+    const colors = {
+      'A+': '#0f766e',
+      'A': '#0f766e',
+      'A-': '#0f766e',
+      'B+': '#2563eb',
+      'B': '#2563eb',
+      'B-': '#2563eb',
+      'C+': '#f59e0b',
+      'C': '#f59e0b',
+      'C-': '#f59e0b',
+      'D+': '#ea580c',
+      'D': '#ea580c',
+      'D-': '#ea580c',
+      'F': '#b42318'
+    };
+    return colors[grade] || '#64748b';
+  };
+
   const recommendationColor = getRecommendationColor(recommendationLevel);
   const recommendationBg = getRecommendationBg(recommendationLevel);
   const recommendationNarrative = getRecommendationNarrative(recommendationLevel);
 
   // Top strengths (top 3)
   const topStrengths = [...allCategories]
+    .filter(c => c.percentage > 0)
     .sort((a, b) => b.percentage - a.percentage)
     .slice(0, 3);
 
   // Development areas (below 60%)
   const developmentAreas = [...allCategories]
-    .filter(item => item.percentage < 60)
+    .filter(c => c.percentage > 0 && c.percentage < 60)
     .sort((a, b) => a.percentage - b.percentage);
 
   const candidateFullName = candidateInfo?.fullName || candidateName || 'Candidate';
@@ -273,6 +350,8 @@ export default function NationalServiceReport({ report, onBack }) {
   const assessmentDate = candidateInfo?.assessmentDate || (completed_at ? new Date(completed_at).toLocaleDateString() : 'N/A');
   const graduationYear = candidateInfo?.graduationYear || 'N/A';
   const preferredDepartment = candidateInfo?.preferredDepartment || 'Not Specified';
+
+  const hasCategories = workplaceCategories.length > 0 || intellectualCategories.length > 0;
 
   return (
     <div style={styles.container}>
@@ -338,108 +417,88 @@ export default function NationalServiceReport({ report, onBack }) {
       </div>
 
       {/* ============================================================
-          WORKPLACE READINESS - FULL CATEGORY BREAKDOWN
+          CATEGORY BREAKDOWN SECTIONS
           ============================================================ */}
-      {workplaceCategories.length > 0 && (
-        <div style={styles.section}>
-          <div style={styles.sectionHeader}>
-            <h2 style={styles.sectionTitle}>🛠️ Workplace Readiness - Category Breakdown</h2>
-            <span style={styles.sectionScore}>{Math.round(workplaceScore)}%</span>
-          </div>
-          <div style={styles.categoryGrid}>
-            {workplaceCategories.map((cat, index) => {
-              const comment = getCategoryComment(cat.percentage);
-              return (
-                <div key={index} style={styles.categoryCard}>
-                  <div style={styles.categoryHeader}>
-                    <span style={styles.categoryName}>{cat.category}</span>
-                    <span style={{ ...styles.categoryScore, color: comment.color }}>
-                      {Math.round(cat.percentage)}%
-                    </span>
-                  </div>
-                  <div style={styles.categoryBar}>
-                    <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%', background: comment.color }} />
-                  </div>
-                  <div style={styles.categoryDetail}>
-                    {cat.earnedDisplay || Math.round(cat.earned || 0)} / {cat.maxDisplay || Math.round(cat.max || 100)} points
-                  </div>
-                  <div style={{ ...styles.categoryComment, color: comment.color }}>
-                    {comment.emoji} {comment.text}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {hasCategories ? (
+        <>
+          {/* WORKPLACE READINESS CATEGORIES */}
+          {workplaceCategories.length > 0 && (
+            <div style={styles.section}>
+              <div style={styles.sectionHeader}>
+                <h2 style={styles.sectionTitle}>🛠️ Workplace Readiness - Category Breakdown</h2>
+                <span style={styles.sectionScore}>{Math.round(workplaceScore)}%</span>
+              </div>
+              <div style={styles.categoryGrid}>
+                {workplaceCategories.map((cat, index) => {
+                  const comment = getCategoryComment(cat.percentage);
+                  return (
+                    <div key={index} style={styles.categoryCard}>
+                      <div style={styles.categoryHeader}>
+                        <span style={styles.categoryName}>{cat.category}</span>
+                        <span style={{ ...styles.categoryScore, color: comment.color }}>
+                          {Math.round(cat.percentage)}%
+                        </span>
+                      </div>
+                      <div style={styles.categoryBar}>
+                        <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%', background: comment.color }} />
+                      </div>
+                      <div style={styles.categoryDetail}>
+                        {cat.earnedDisplay || Math.round(cat.earned || 0)} / {cat.maxDisplay || Math.round(cat.max || 100)} points
+                      </div>
+                      <div style={{ ...styles.categoryComment, color: comment.color }}>
+                        {comment.emoji} {comment.text}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
-      {/* ============================================================
-          INTELLECTUAL CAPABILITY - FULL CATEGORY BREAKDOWN
-          ============================================================ */}
-      {intellectualCategories.length > 0 && (
+          {/* INTELLECTUAL CAPABILITY CATEGORIES */}
+          {intellectualCategories.length > 0 && (
+            <div style={styles.section}>
+              <div style={styles.sectionHeader}>
+                <h2 style={styles.sectionTitle}>🧠 Intellectual Capability - Category Breakdown</h2>
+                <span style={styles.sectionScore}>{Math.round(intellectualScore)}%</span>
+              </div>
+              <div style={styles.categoryGrid}>
+                {intellectualCategories.map((cat, index) => {
+                  const comment = getCategoryComment(cat.percentage);
+                  return (
+                    <div key={index} style={styles.categoryCard}>
+                      <div style={styles.categoryHeader}>
+                        <span style={styles.categoryName}>{cat.category}</span>
+                        <span style={{ ...styles.categoryScore, color: comment.color }}>
+                          {Math.round(cat.percentage)}%
+                        </span>
+                      </div>
+                      <div style={styles.categoryBar}>
+                        <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%', background: comment.color }} />
+                      </div>
+                      <div style={styles.categoryDetail}>
+                        {cat.earnedDisplay || Math.round(cat.earned || 0)} / {cat.maxDisplay || Math.round(cat.max || 100)} points
+                      </div>
+                      <div style={{ ...styles.categoryComment, color: comment.color }}>
+                        {comment.emoji} {comment.text}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
         <div style={styles.section}>
           <div style={styles.sectionHeader}>
-            <h2 style={styles.sectionTitle}>🧠 Intellectual Capability - Category Breakdown</h2>
-            <span style={styles.sectionScore}>{Math.round(intellectualScore)}%</span>
+            <h2 style={styles.sectionTitle}>📊 Category Breakdown</h2>
           </div>
-          <div style={styles.categoryGrid}>
-            {intellectualCategories.map((cat, index) => {
-              const comment = getCategoryComment(cat.percentage);
-              return (
-                <div key={index} style={styles.categoryCard}>
-                  <div style={styles.categoryHeader}>
-                    <span style={styles.categoryName}>{cat.category}</span>
-                    <span style={{ ...styles.categoryScore, color: comment.color }}>
-                      {Math.round(cat.percentage)}%
-                    </span>
-                  </div>
-                  <div style={styles.categoryBar}>
-                    <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%', background: comment.color }} />
-                  </div>
-                  <div style={styles.categoryDetail}>
-                    {cat.earnedDisplay || Math.round(cat.earned || 0)} / {cat.maxDisplay || Math.round(cat.max || 100)} points
-                  </div>
-                  <div style={{ ...styles.categoryComment, color: comment.color }}>
-                    {comment.emoji} {comment.text}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================
-          GENERAL CATEGORIES (if any)
-          ============================================================ */}
-      {generalCategories.length > 0 && (
-        <div style={styles.section}>
-          <div style={styles.sectionHeader}>
-            <h2 style={styles.sectionTitle}>📊 All Categories</h2>
-          </div>
-          <div style={styles.categoryGrid}>
-            {generalCategories.map((cat, index) => {
-              const comment = getCategoryComment(cat.percentage);
-              return (
-                <div key={index} style={styles.categoryCard}>
-                  <div style={styles.categoryHeader}>
-                    <span style={styles.categoryName}>{cat.category}</span>
-                    <span style={{ ...styles.categoryScore, color: comment.color }}>
-                      {Math.round(cat.percentage)}%
-                    </span>
-                  </div>
-                  <div style={styles.categoryBar}>
-                    <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%', background: comment.color }} />
-                  </div>
-                  <div style={styles.categoryDetail}>
-                    {cat.earnedDisplay || Math.round(cat.earned || 0)} / {cat.maxDisplay || Math.round(cat.max || 100)} points
-                  </div>
-                  <div style={{ ...styles.categoryComment, color: comment.color }}>
-                    {comment.emoji} {comment.text}
-                  </div>
-                </div>
-              );
-            })}
+          <div style={styles.emptyState}>
+            <p>No category breakdown available for this report.</p>
+            <p style={{ fontSize: '13px', color: '#94a3b8' }}>
+              The category scores may not have been stored for this assessment.
+            </p>
           </div>
         </div>
       )}
@@ -545,7 +604,7 @@ export default function NationalServiceReport({ report, onBack }) {
             <div style={styles.statLabel}>Overall Score</div>
           </div>
           <div style={styles.statCard}>
-            <div style={styles.statValue}>{statistics?.totalAnswered || allCategories.length || 0}</div>
+            <div style={styles.statValue}>{allCategories.length || statistics?.totalAnswered || 0}</div>
             <div style={styles.statLabel}>Categories Assessed</div>
           </div>
         </div>
@@ -575,8 +634,7 @@ const styles = {
     cursor: 'pointer', 
     fontSize: '14px', 
     color: '#475569', 
-    marginBottom: '20px',
-    ':hover': { background: '#f1f5f9' }
+    marginBottom: '20px'
   },
   header: { 
     textAlign: 'center', 
@@ -915,6 +973,13 @@ const styles = {
     color: '#94a3b8', 
     marginTop: '4px' 
   },
+  emptyState: {
+    textAlign: 'center',
+    padding: '40px',
+    background: '#f8fafc',
+    borderRadius: '12px',
+    border: '1px solid #e2e8f0'
+  },
   actions: { 
     textAlign: 'center', 
     marginTop: '20px' 
@@ -927,8 +992,7 @@ const styles = {
     borderRadius: '8px', 
     fontSize: '16px', 
     fontWeight: '600', 
-    cursor: 'pointer',
-    ':hover': { background: '#1b4a7a' }
+    cursor: 'pointer'
   },
   loading: { 
     textAlign: 'center', 
