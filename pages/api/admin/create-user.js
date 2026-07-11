@@ -6,12 +6,18 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export default async function handler(req, res) {
-  // Only allow POST requests
+  console.log("[Create User API] Request received");
+  console.log("[Create User API] Method:", req.method);
+
   if (req.method !== "POST") {
+    console.log("[Create User API] Method not allowed:", req.method);
     return res.status(405).json({ success: false, error: "Method not allowed" });
   }
 
   try {
+    const body = req.body;
+    console.log("[Create User API] Request body:", JSON.stringify(body, null, 2));
+
     const { 
       email, 
       password, 
@@ -20,43 +26,32 @@ export default async function handler(req, res) {
       programme, 
       graduation_year, 
       preferred_department 
-    } = req.body;
+    } = body;
 
     // Validate required fields
     if (!email || !password || !full_name) {
+      console.log("[Create User API] Missing required fields");
       return res.status(400).json({ 
         success: false, 
         error: "Missing required fields: email, password, and full_name are required." 
       });
     }
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "Please enter a valid email address." 
-      });
-    }
-
-    // Validate password length
-    if (password.length < 6) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "Password must be at least 6 characters." 
-      });
-    }
+    console.log("[Create User API] Email:", email);
+    console.log("[Create User API] Full Name:", full_name);
+    console.log("[Create User API] Supabase URL exists:", !!supabaseUrl);
+    console.log("[Create User API] Service Role Key exists:", !!serviceRoleKey);
 
     // Check if service role key is configured
     if (!supabaseUrl || !serviceRoleKey) {
-      console.error("Missing Supabase configuration");
+      console.error("[Create User API] Missing Supabase configuration");
       return res.status(500).json({ 
         success: false, 
         error: "Registration service is temporarily unavailable. Please try again later." 
       });
     }
 
-    // Create admin client with service role (bypasses RLS and auth issues)
+    // Create admin client with service role
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: {
         autoRefreshToken: false,
@@ -64,35 +59,60 @@ export default async function handler(req, res) {
       }
     });
 
-    // Step 1: Check if user already exists in auth
-    const { data: existingAuth, error: authCheckError } = await adminClient
-      .from("auth.users")
-      .select("id, email")
-      .eq("email", email)
-      .maybeSingle();
+    console.log("[Create User API] Admin client created");
 
-    if (existingAuth) {
-      return res.status(409).json({ 
-        success: false, 
-        error: "An account with this email already exists. Please log in instead." 
-      });
+    // Step 1: Check if user already exists in auth
+    try {
+      console.log("[Create User API] Checking auth.users for:", email);
+      const { data: existingAuth, error: authCheckError } = await adminClient
+        .from("auth.users")
+        .select("id, email")
+        .eq("email", email)
+        .maybeSingle();
+
+      if (authCheckError) {
+        console.log("[Create User API] Auth check error (continuing):", authCheckError.message);
+      }
+
+      if (existingAuth) {
+        console.log("[Create User API] User already exists in auth");
+        return res.status(409).json({ 
+          success: false, 
+          error: "An account with this email already exists. Please log in instead." 
+        });
+      }
+      console.log("[Create User API] User does not exist in auth");
+    } catch (authCheckErr) {
+      console.log("[Create User API] Auth check exception (continuing):", authCheckErr.message);
     }
 
     // Step 2: Check if user already exists in profiles
-    const { data: existingProfile, error: profileCheckError } = await adminClient
-      .from("candidate_profiles")
-      .select("id")
-      .eq("email", email)
-      .maybeSingle();
+    try {
+      console.log("[Create User API] Checking candidate_profiles for:", email);
+      const { data: existingProfile, error: profileCheckError } = await adminClient
+        .from("candidate_profiles")
+        .select("id")
+        .eq("email", email)
+        .maybeSingle();
 
-    if (existingProfile) {
-      return res.status(409).json({ 
-        success: false, 
-        error: "A candidate profile with this email already exists." 
-      });
+      if (profileCheckError) {
+        console.log("[Create User API] Profile check error (continuing):", profileCheckError.message);
+      }
+
+      if (existingProfile) {
+        console.log("[Create User API] Profile already exists");
+        return res.status(409).json({ 
+          success: false, 
+          error: "A candidate profile with this email already exists." 
+        });
+      }
+      console.log("[Create User API] No existing profile found");
+    } catch (profileCheckErr) {
+      console.log("[Create User API] Profile check exception (continuing):", profileCheckErr.message);
     }
 
-    // Step 3: Create user via admin API (bypasses auth endpoint completely)
+    // Step 3: Create user via admin API
+    console.log("[Create User API] Creating user with email:", email);
     const { data: userData, error: userError } = await adminClient.auth.admin.createUser({
       email,
       password,
@@ -106,7 +126,7 @@ export default async function handler(req, res) {
     });
 
     if (userError) {
-      console.error("Create user error:", userError);
+      console.error("[Create User API] Create user error:", JSON.stringify(userError, null, 2));
       return res.status(500).json({ 
         success: false, 
         error: userError.message || "Failed to create account. Please try again." 
@@ -114,13 +134,14 @@ export default async function handler(req, res) {
     }
 
     if (!userData?.user) {
+      console.error("[Create User API] No user data returned");
       return res.status(500).json({ 
         success: false, 
         error: "Account creation failed. Please try again." 
       });
     }
 
-    console.log("✅ User created:", userData.user.id, userData.user.email);
+    console.log("[Create User API] ✅ User created:", userData.user.id);
 
     // Step 4: Create candidate profile
     const profileData = {
@@ -134,6 +155,8 @@ export default async function handler(req, res) {
       updated_at: new Date().toISOString()
     };
 
+    console.log("[Create User API] Creating profile with data:", JSON.stringify(profileData, null, 2));
+
     const { data: profile, error: profileError } = await adminClient
       .from("candidate_profiles")
       .insert(profileData)
@@ -141,7 +164,7 @@ export default async function handler(req, res) {
       .single();
 
     if (profileError) {
-      console.error("Profile creation error:", profileError);
+      console.error("[Create User API] Profile creation error:", JSON.stringify(profileError, null, 2));
       // Rollback: delete the user
       await adminClient.auth.admin.deleteUser(userData.user.id);
       return res.status(500).json({ 
@@ -150,7 +173,7 @@ export default async function handler(req, res) {
       });
     }
 
-    console.log("✅ Profile created:", profile.id);
+    console.log("[Create User API] ✅ Profile created:", profile.id);
 
     // Step 5: Auto-assign National Service assessment
     const NATIONAL_SERVICE_ASSESSMENT_ID = "bdb9d46e-9fac-4d00-8478-1f649e7ac600";
@@ -167,13 +190,12 @@ export default async function handler(req, res) {
       });
 
     if (assignmentError) {
-      console.warn("Assignment error:", assignmentError);
-      // Don't fail the registration for this
+      console.warn("[Create User API] Assignment error (non-fatal):", assignmentError.message);
     } else {
-      console.log("✅ National Service assessment assigned");
+      console.log("[Create User API] ✅ National Service assessment assigned");
     }
 
-    // Step 6: Add to supervisor_candidate_access for default supervisors
+    // Step 6: Add to supervisor_candidate_access
     const defaultSupervisors = [
       "972a8a23-e0c4-4031-a553-191c9a31fbed", // Maabena Baah
       "f4b541af-f765-46f0-8f1a-955ad1847930"  // Emmanuel Fofie
@@ -195,9 +217,9 @@ export default async function handler(req, res) {
       }
     }
 
-    console.log(`✅ Added to ${supervisorAccessCount} supervisor(s)`);
+    console.log(`[Create User API] ✅ Added to ${supervisorAccessCount} supervisor(s)`);
 
-    // Step 7: Return success
+    // Return success
     return res.status(200).json({
       success: true,
       message: "Registration successful! Your account has been created. Please log in.",
@@ -209,10 +231,12 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error("Registration error:", error);
+    console.error("[Create User API] Unhandled error:", error);
+    console.error("[Create User API] Error stack:", error.stack);
     return res.status(500).json({ 
       success: false, 
-      error: error.message || "Registration failed. Please try again." 
+      error: error.message || "Registration failed. Please try again.",
+      details: error.message
     });
   }
 }
