@@ -64,12 +64,12 @@ function getTone(score) {
 }
 
 function getToneLabel(score) {
-  const tone = getTone(score);
-  if (tone === "excellent") return "Excellent";
-  if (tone === "strong") return "Strong";
-  if (tone === "capable") return "Capable";
-  if (tone === "developing") return "Developing";
-  if (tone === "risk") return "At Risk";
+  const value = safeNumber(score, 0);
+  if (value >= 85) return "Exceptional";
+  if (value >= 75) return "Strong";
+  if (value >= 65) return "Capable";
+  if (value >= 55) return "Developing";
+  if (value >= 40) return "At Risk";
   return "Critical";
 }
 
@@ -145,6 +145,58 @@ function EmptyState({ title, message, icon }) {
       <p style={styles.emptyTitle}>{title}</p>
       <p style={styles.emptyText}>{message}</p>
     </div>
+  );
+}
+
+// ============================================================
+// RENDER SUB-CATEGORIES FUNCTION
+// ============================================================
+function renderSubCategories(title, subCategories, icon, mainScore) {
+  if (!subCategories || subCategories.length === 0) {
+    return null;
+  }
+
+  const sorted = [...subCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
+
+  return (
+    <SectionShell 
+      title={`${icon} ${title} - Sub-Category Breakdown`}
+      eyebrow="Individual categories that make up this score"
+      badge={subCategories.length}
+      badgeStyle={styles.badgeGood}
+    >
+      <div style={styles.categoryDeck}>
+        {sorted.map((cat, index) => {
+          const row = safeObject(cat);
+          const rowTitle = row.category || row.name || "Unknown";
+          const rowPercentage = row.percentage || 0;
+          const rowScore = row.score || row.earned || 0;
+          const rowMax = row.maxScore || row.max || 100;
+          const color = getToneColor(rowPercentage);
+          const comment = getToneLabel(rowPercentage);
+          const key = `${title}-${index}`;
+          
+          return (
+            <article key={key} style={styles.categoryCard}>
+              <div style={styles.categoryButton}>
+                <div style={styles.categoryLeft}>
+                  <div style={{ ...styles.categoryIcon, background: getToneGradient(rowPercentage) }}>{index + 1}</div>
+                  <div>
+                    <h3 style={styles.categoryTitle}>{rowTitle}</h3>
+                    <p style={styles.categoryMeta}>{Math.round(rowScore)} / {Math.round(rowMax)} points</p>
+                  </div>
+                </div>
+                <div style={styles.categoryRight}>
+                  <strong style={{ ...styles.categoryScore, color }}>{formatPercentage(rowPercentage)}</strong>
+                  <span style={{ ...getBadgeStyle(rowPercentage), fontSize: '12px', padding: '4px 10px' }}>{comment}</span>
+                </div>
+              </div>
+              <div style={styles.categoryProgressWrap}><ProgressBar value={rowPercentage} color={color} /></div>
+            </article>
+          );
+        })}
+      </div>
+    </SectionShell>
   );
 }
 
@@ -271,6 +323,10 @@ export default function SupervisorUserReportPage() {
   const recommendations = safeArray(cleanReport.recommendations || []);
   const followUpQuestions = safeArray(cleanReport.followUpQuestions || cleanReport.follow_up_questions || []);
   
+  // Get sub-categories from the report
+  const workplaceSubCategories = safeArray(cleanReport.workplaceSubCategories || []);
+  const intellectualSubCategories = safeArray(cleanReport.intellectualSubCategories || []);
+  
   const candidateName = cleanReport.candidateName || candidate?.full_name || candidate?.email || "Candidate";
   const assessmentName = cleanReport.assessmentName || assessment?.title || "Assessment";
   const overallScore = cleanReport.percentage || cleanReport.overallPercentage || cleanReport.score || 0;
@@ -286,12 +342,12 @@ export default function SupervisorUserReportPage() {
 
   const tabs = useMemo(() => [
     { key: "overview", label: "Overview", icon: "◈" },
-    { key: "categories", label: "Categories", icon: "▦", count: categoryScores.length },
+    { key: "categories", label: "Categories", icon: "▦", count: categoryScores.length + workplaceSubCategories.length + intellectualSubCategories.length },
     { key: "strengths", label: "Strengths", icon: "★", count: strengths.length },
     { key: "development", label: "Development", icon: "△", count: developmentAreas.length },
     { key: "questions", label: "Questions", icon: "?", count: followUpQuestions.length },
     { key: "recommendations", label: "Recommendations", icon: "✓", count: recommendations.length }
-  ], [categoryScores.length, strengths.length, developmentAreas.length, followUpQuestions.length, recommendations.length]);
+  ], [categoryScores.length, strengths.length, developmentAreas.length, followUpQuestions.length, recommendations.length, workplaceSubCategories.length, intellectualSubCategories.length]);
 
   function toggleRow(key) {
     setExpandedRows((previous) => ({ ...previous, [key]: !previous[key] }));
@@ -361,6 +417,76 @@ export default function SupervisorUserReportPage() {
   }
 
   function renderCategories() {
+    // Get sub-categories from the report
+    const workplaceSubCats = safeArray(cleanReport.workplaceSubCategories || []);
+    const intellectualSubCats = safeArray(cleanReport.intellectualSubCategories || []);
+    
+    // Get main scores
+    const workplaceScore = cleanReport.workplace_readiness || cleanReport.workplaceReadiness || overallScore || 0;
+    const intellectualScore = cleanReport.intellectual_capability || cleanReport.intellectualCapability || overallScore || 0;
+    
+    // If we have sub-categories, display them grouped
+    if (workplaceSubCats.length > 0 || intellectualSubCats.length > 0) {
+      return (
+        <React.Fragment>
+          {/* Workplace Readiness Sub-Categories */}
+          {workplaceSubCats.length > 0 && renderSubCategories(
+            "Workplace Readiness",
+            workplaceSubCats,
+            "🛠️",
+            workplaceScore
+          )}
+          
+          {/* Intellectual Capability Sub-Categories */}
+          {intellectualSubCats.length > 0 && renderSubCategories(
+            "Intellectual Capability",
+            intellectualSubCats,
+            "🧠",
+            intellectualScore
+          )}
+          
+          {/* If no sub-categories were found but we have category scores, show fallback */}
+          {categoryScores.length > 0 && workplaceSubCats.length === 0 && intellectualSubCats.length === 0 && (
+            <SectionShell title="Category Scores" eyebrow="Performance breakdown" badge={categoryScores.length}>
+              <div style={styles.categoryDeck}>
+                {categoryScores.map((item, index) => {
+                  const row = safeObject(item);
+                  const rowTitle = row.name || row.category || "General";
+                  const rowPercentage = row.percentage || row.score || 0;
+                  const color = getToneColor(rowPercentage);
+                  const key = "category-" + index;
+                  const isOpen = !!expandedRows[key];
+                  return (
+                    <article key={key} style={styles.categoryCard}>
+                      <button type="button" style={styles.categoryButton} onClick={() => toggleRow(key)}>
+                        <div style={styles.categoryLeft}>
+                          <div style={{ ...styles.categoryIcon, background: getToneGradient(rowPercentage) }}>{index + 1}</div>
+                          <div>
+                            <h3 style={styles.categoryTitle}>{rowTitle}</h3>
+                          </div>
+                        </div>
+                        <div style={styles.categoryRight}>
+                          <strong style={{ ...styles.categoryScore, color }}>{formatPercentage(rowPercentage)}</strong>
+                          <span style={styles.chevron}>{isOpen ? "−" : "+"}</span>
+                        </div>
+                      </button>
+                      <div style={styles.categoryProgressWrap}><ProgressBar value={rowPercentage} color={color} /></div>
+                      {isOpen && row.narrative && (
+                        <div style={styles.categoryDetails}>
+                          <p style={styles.bodyText}>{row.narrative}</p>
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            </SectionShell>
+          )}
+        </React.Fragment>
+      );
+    }
+
+    // Fallback: Show original category scores if no sub-categories found
     if (categoryScores.length === 0) {
       return <EmptyState title="No category scores found" message="No category or competency scores were found in the generated report." icon="▦" />;
     }
@@ -582,10 +708,10 @@ export default function SupervisorUserReportPage() {
         </header>
 
         <div style={styles.metricStrip}>
-          <MetricCard label="Categories" value={categoryScores.length} note="Measured areas" icon="▦" background="#eef4ff" color="#3538cd" />
-          <MetricCard label="Strengths" value={strengths.length} note="Leverage areas" icon="★" background="#ecfdf3" color="#027a48" />
+          <MetricCard label="Categories" value={categoryScores.length + workplaceSubCategories.length + intellectualSubCategories.length} note="Measured areas" icon="▦" background="#eef4ff" color="#3538cd" />
+          <MetricCard label="Workplace Sub-Cats" value={workplaceSubCategories.length} note="Workplace categories" icon="🛠️" background="#ecfdf3" color="#027a48" />
+          <MetricCard label="Intellectual Sub-Cats" value={intellectualSubCategories.length} note="Intellectual categories" icon="🧠" background="#f5f3ff" color="#6d28d9" />
           <MetricCard label="Development" value={developmentAreas.length} note="Priority areas" icon="△" background="#fff7ed" color="#c2410c" />
-          <MetricCard label="Questions" value={followUpQuestions.length} note="Supervisor prompts" icon="?" background="#f5f3ff" color="#6d28d9" />
         </div>
 
         <nav style={styles.tabBar}>
