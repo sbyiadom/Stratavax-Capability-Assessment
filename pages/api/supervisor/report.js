@@ -35,6 +35,10 @@ function safeText(value, fallback = "") {
   return String(value);
 }
 
+function safeObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
 function getClassification(percentage) {
   if (percentage >= 85) return "Exceptional";
   if (percentage >= 75) return "Strong Performer";
@@ -93,6 +97,117 @@ function buildRecommendationsFromLibrary(developmentAreas) {
       recommendation: item.recommendation,
       priority: "Medium"
     }));
+}
+
+// ============================================================
+// NEW: Extract sub-categories from report_data
+// ============================================================
+function extractSubCategories(reportData) {
+  const rd = safeObject(reportData);
+  let subCategories = [];
+
+  // 1. Try report_data.categoryScores
+  if (rd.categoryScores && Array.isArray(rd.categoryScores) && rd.categoryScores.length > 0) {
+    subCategories = rd.categoryScores;
+    console.log('[API] Found sub-categories in report_data.categoryScores:', subCategories.length);
+  }
+  // 2. Try report_data.scoreBreakdown
+  else if (rd.scoreBreakdown && Array.isArray(rd.scoreBreakdown) && rd.scoreBreakdown.length > 0) {
+    subCategories = rd.scoreBreakdown;
+    console.log('[API] Found sub-categories in report_data.scoreBreakdown:', subCategories.length);
+  }
+  // 3. Try report_data._fullReport.categoryScores
+  else if (rd._fullReport?.categoryScores) {
+    const catScores = rd._fullReport.categoryScores;
+    if (typeof catScores === 'object') {
+      subCategories = Object.keys(catScores).map(key => ({
+        category: key,
+        percentage: catScores[key].percentage || 0,
+        score: catScores[key].score || catScores[key].totalScore || 0,
+        maxScore: catScores[key].maxScore || catScores[key].maxPossible || 100,
+        grade: catScores[key].grade || 'N/A'
+      }));
+      console.log('[API] Found sub-categories in _fullReport.categoryScores:', subCategories.length);
+    }
+  }
+
+  return subCategories;
+}
+
+// ============================================================
+// NEW: Split sub-categories into Workplace and Intellectual
+// ============================================================
+function splitSubCategories(subCategories) {
+  const workplace = [];
+  const intellectual = [];
+
+  const workplaceNames = [
+    'Safety & Risk Awareness', 'Safety', 'Risk Awareness',
+    'Technical Fundamentals', 'Technical',
+    'Communication & Teamwork', 'Communication', 'Teamwork',
+    'Ownership & Integrity', 'Ownership', 'Integrity',
+    'Workplace Ethics', 'Workplace Readiness'
+  ];
+
+  const intellectualNames = [
+    'Problem Solving & Troubleshooting', 'Problem Solving', 'Troubleshooting',
+    'Logical Reasoning', 'Logic',
+    'Numerical Reasoning', 'Numerical',
+    'Measurement & Engineering Units', 'Measurement', 'Engineering Units',
+    'Learning Agility', 'Agility',
+    'Critical Thinking', 'Analytical', 'Decision Making',
+    'Intellectual Capability'
+  ];
+
+  if (subCategories.length > 0) {
+    subCategories.forEach(cat => {
+      const name = safeText(cat.category || cat.name || '', '');
+      const lowerName = name.toLowerCase();
+      
+      const isWorkplace = workplaceNames.some(n => lowerName.includes(n.toLowerCase()));
+      const isIntellectual = intellectualNames.some(n => lowerName.includes(n.toLowerCase()));
+
+      // Also check for patterns
+      const hasWorkplacePattern = lowerName.includes('safety') || 
+                                   lowerName.includes('technical') ||
+                                   lowerName.includes('communication') ||
+                                   lowerName.includes('teamwork') ||
+                                   lowerName.includes('ownership') ||
+                                   lowerName.includes('integrity') ||
+                                   lowerName.includes('workplace') ||
+                                   lowerName.includes('ethics');
+
+      const hasIntellectualPattern = lowerName.includes('problem') || 
+                                      lowerName.includes('solving') ||
+                                      lowerName.includes('reasoning') ||
+                                      lowerName.includes('numerical') ||
+                                      lowerName.includes('measurement') ||
+                                      lowerName.includes('engineering') ||
+                                      lowerName.includes('learning') ||
+                                      lowerName.includes('agility') ||
+                                      lowerName.includes('critical') ||
+                                      lowerName.includes('analytical') ||
+                                      lowerName.includes('decision');
+
+      if (isWorkplace || hasWorkplacePattern) {
+        workplace.push(cat);
+      } else if (isIntellectual || hasIntellectualPattern) {
+        intellectual.push(cat);
+      } else {
+        // Default based on category name
+        if (lowerName.includes('readiness') || lowerName.includes('ethics') || lowerName.includes('ownership')) {
+          workplace.push(cat);
+        } else {
+          intellectual.push(cat);
+        }
+      }
+    });
+  }
+
+  console.log('[API] Workplace sub-categories:', workplace.length);
+  console.log('[API] Intellectual sub-categories:', intellectual.length);
+
+  return { workplace, intellectual };
 }
 
 /**
@@ -173,7 +288,10 @@ export default async function handler(req, res) {
         violation_count,
         violation_details,
         total_questions,
-        percentage_score
+        percentage_score,
+        workplace_readiness,
+        intellectual_capability,
+        report_data
       `)
       .eq("user_id", userId)
       .order("completed_at", { ascending: false });
@@ -201,6 +319,10 @@ export default async function handler(req, res) {
     }
 
     const record = results[0];
+    const reportData = safeObject(record.report_data);
+
+    console.log('[API] Processing report for user:', userId);
+    console.log('[API] report_data exists:', !!record.report_data);
 
     /**
      * ------------------------------------------------------------
@@ -209,7 +331,7 @@ export default async function handler(req, res) {
      */
     const { data: candidate, error: candidateError } = await supabase
       .from("candidate_profiles")
-      .select("id, full_name, email")
+      .select("id, full_name, email, university, programme")
       .eq("id", record.user_id)
       .maybeSingle();
 
@@ -227,7 +349,7 @@ export default async function handler(req, res) {
     if (record.assessment_id) {
       const { data: assessmentData, error: assessmentError } = await supabase
         .from("assessments")
-        .select("id, title")
+        .select("id, title, description")
         .eq("id", record.assessment_id)
         .maybeSingle();
 
@@ -240,7 +362,17 @@ export default async function handler(req, res) {
 
     /**
      * ------------------------------------------------------------
-     * 4) Load library rows for relevant categories (for recommendations and follow-ups only)
+     * 4) EXTRACT SUB-CATEGORIES FROM report_data
+     * ------------------------------------------------------------
+     */
+    const subCategories = extractSubCategories(record.report_data);
+    const { workplace: workplaceSubCategories, intellectual: intellectualSubCategories } = splitSubCategories(subCategories);
+
+    console.log('[API] Sub-categories found:', subCategories.length);
+
+    /**
+     * ------------------------------------------------------------
+     * 5) Load library rows for relevant categories
      * ------------------------------------------------------------
      */
     const categoryScores = safeArray(record.category_scores);
@@ -275,7 +407,7 @@ export default async function handler(req, res) {
 
     /**
      * ------------------------------------------------------------
-     * 5) Build report payload - DIRECTLY use stored strengths/weaknesses
+     * 6) Build report payload
      * ------------------------------------------------------------
      */
     const percentage = toNumber(record.percentage_score, 0);
@@ -294,9 +426,8 @@ export default async function handler(req, res) {
     const assessmentName =
       safeText(assessment?.title, "") || "Assessment";
 
-    // DIRECTLY use stored strengths - no re-processing
+    // DIRECTLY use stored strengths
     const strengths = safeArray(record.strengths).map((item) => {
-      // Handle string format (legacy)
       if (typeof item === "string") {
         return {
           name: item,
@@ -306,23 +437,19 @@ export default async function handler(req, res) {
           classification: "Not classified"
         };
       }
-      
-      // Return the stored object as-is, ensuring all expected fields exist
       return {
         name: item.name || item.category || "Strength",
         percentage: item.percentage !== undefined ? item.percentage : (item.score || 0),
         narrative: item.narrative || item.description || `${item.name || item.category || "This area"} is a strength.`,
         description: item.narrative || item.description || `${item.name || item.category || "This area"} is a strength.`,
         classification: item.classification || getClassification(item.percentage || item.score || 0),
-        // Preserve any additional fields from the stored data
         ...(item.action && { action: item.action }),
         ...(item.followUpQuestion && { followUpQuestion: item.followUpQuestion })
       };
     });
 
-    // DIRECTLY use stored weaknesses - no re-processing
+    // DIRECTLY use stored weaknesses
     const developmentAreas = safeArray(record.weaknesses).map((item) => {
-      // Handle string format (legacy)
       if (typeof item === "string") {
         return {
           name: item,
@@ -332,33 +459,24 @@ export default async function handler(req, res) {
           classification: "Not classified"
         };
       }
-      
-      // Return the stored object as-is, ensuring all expected fields exist
       return {
         name: item.name || item.category || "Development Area",
         percentage: item.percentage !== undefined ? item.percentage : (item.score || 0),
         narrative: item.narrative || item.description || `${item.name || item.category || "This area"} needs development.`,
         description: item.narrative || item.description || `${item.name || item.category || "This area"} needs development.`,
         classification: item.classification || getClassification(item.percentage || item.score || 0),
-        // Preserve any additional fields from the stored data
         ...(item.action && { action: item.action }),
         ...(item.followUpQuestion && { followUpQuestion: item.followUpQuestion })
       };
     });
 
-    // Build follow-up questions from development areas (using stored data if available)
+    // Build follow-up questions
     let followUpQuestions = [];
-    
-    // First try to use stored follow-up questions from interpretations
     if (record.interpretations && record.interpretations.followUpQuestions) {
       followUpQuestions = safeArray(record.interpretations.followUpQuestions);
-    } 
-    // Otherwise build from development areas
-    else if (developmentAreas.length > 0) {
+    } else if (developmentAreas.length > 0) {
       followUpQuestions = buildFollowUpQuestionsFromLibrary(developmentAreas);
-    }
-    // Fallback: use category scores
-    else if (categoryScores.length > 0) {
+    } else if (categoryScores.length > 0) {
       followUpQuestions = categoryScores
         .filter(item => toNumber(item.percentage, 0) < 75)
         .slice(0, 3)
@@ -369,14 +487,11 @@ export default async function handler(req, res) {
         }));
     }
 
-    // Build recommendations from stored data or library
+    // Build recommendations
     let recommendations = safeArray(record.recommendations);
-    
     if (recommendations.length === 0 && developmentAreas.length > 0) {
       recommendations = buildRecommendationsFromLibrary(developmentAreas);
     }
-    
-    // Ensure recommendations have proper structure
     recommendations = recommendations.map((item) => {
       if (typeof item === "string") {
         return {
@@ -413,6 +528,9 @@ export default async function handler(req, res) {
         ? "Candidate appears ready for role responsibilities."
         : "Candidate requires additional development before assuming critical responsibilities.");
 
+    // ============================================================
+    // BUILD THE FINAL REPORT WITH SUB-CATEGORIES
+    // ============================================================
     const generatedReport = {
       candidateName,
       assessmentName,
@@ -440,12 +558,26 @@ export default async function handler(req, res) {
       roleReadiness,
       readinessStatement: percentage >= 75 ? "Ready for role" : "Development needed",
 
+      // ============================================================
+      // MAIN CATEGORY SCORES
+      // ============================================================
+      workplace_readiness: record.workplace_readiness || 0,
+      intellectual_capability: record.intellectual_capability || 0,
+      percentage_score: record.percentage_score || 0,
+
+      // ============================================================
+      // SUB-CATEGORIES - THIS IS WHAT THE SUPERVISOR NEEDS TO SEE
+      // ============================================================
+      workplaceSubCategories: workplaceSubCategories,
+      intellectualSubCategories: intellectualSubCategories,
+
+      // Also keep the original category scores for compatibility
       categoryScores: categoryScores.map(item => ({
         ...item,
         percentage: item.percentage !== undefined ? item.percentage : (item.score || 0),
         narrative: item.narrative || getDefaultNarrative(item.name || item.category, item.percentage || item.score || 0)
       })),
-      
+
       strengths,
       developmentAreas,
       recommendations,
