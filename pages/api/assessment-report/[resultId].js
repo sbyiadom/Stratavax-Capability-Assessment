@@ -40,37 +40,68 @@ import {
 } from "../../../utils/phraseLibrary";
 
 // ============================================================
-// HELPER: Extract sub-categories from report_data
+// HELPERS
 // ============================================================
-function extractSubCategories(reportData) {
-  const rd = safeObject(reportData);
+function safeObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function safeText(value, fallback = "") {
+  if (value === null || value === undefined || value === "") return fallback;
+  return String(value);
+}
+
+// ============================================================
+// HELPER: Extract sub-categories from result data
+// ============================================================
+function extractSubCategories(resultData) {
   let subCategories = [];
 
-  // 1. Try report_data.categoryScores
+  console.log('[API] extractSubCategories - checking data sources');
+
+  // 1. Check category_scores column first (MOST IMPORTANT - this is where the data is)
+  if (resultData.category_scores && Array.isArray(resultData.category_scores) && resultData.category_scores.length > 0) {
+    subCategories = resultData.category_scores;
+    console.log('[API] Found sub-categories in category_scores column:', subCategories.length);
+    return subCategories;
+  }
+
+  // 2. Check report_data
+  const rd = safeObject(resultData.report_data);
+  
   if (rd.categoryScores && Array.isArray(rd.categoryScores) && rd.categoryScores.length > 0) {
     subCategories = rd.categoryScores;
     console.log('[API] Found sub-categories in report_data.categoryScores:', subCategories.length);
+    return subCategories;
   }
-  // 2. Try report_data.scoreBreakdown
-  else if (rd.scoreBreakdown && Array.isArray(rd.scoreBreakdown) && rd.scoreBreakdown.length > 0) {
-    subCategories = rd.scoreBreakdown;
-    console.log('[API] Found sub-categories in report_data.scoreBreakdown:', subCategories.length);
-  }
-  // 3. Try report_data._fullReport.categoryScores
-  else if (rd._fullReport?.categoryScores) {
-    const catScores = rd._fullReport.categoryScores;
-    if (typeof catScores === 'object') {
-      subCategories = Object.keys(catScores).map(key => ({
-        category: key,
-        percentage: catScores[key].percentage || 0,
-        score: catScores[key].score || catScores[key].totalScore || 0,
-        maxScore: catScores[key].maxScore || catScores[key].maxPossible || 100,
-        grade: catScores[key].grade || 'N/A'
-      }));
-      console.log('[API] Found sub-categories in _fullReport.categoryScores:', subCategories.length);
-    }
+  
+  if (rd.category_scores && Array.isArray(rd.category_scores) && rd.category_scores.length > 0) {
+    subCategories = rd.category_scores;
+    console.log('[API] Found sub-categories in report_data.category_scores:', subCategories.length);
+    return subCategories;
   }
 
+  if (rd.scoreBreakdown && Array.isArray(rd.scoreBreakdown) && rd.scoreBreakdown.length > 0) {
+    subCategories = rd.scoreBreakdown;
+    console.log('[API] Found sub-categories in report_data.scoreBreakdown:', subCategories.length);
+    return subCategories;
+  }
+
+  // 3. Check _fullReport.categoryScores
+  if (rd._fullReport?.categoryScores && typeof rd._fullReport.categoryScores === 'object') {
+    const catScores = rd._fullReport.categoryScores;
+    subCategories = Object.keys(catScores).map(key => ({
+      category: key,
+      percentage: catScores[key].percentage || 0,
+      score: catScores[key].score || catScores[key].totalScore || 0,
+      maxScore: catScores[key].maxScore || catScores[key].maxPossible || 100,
+      grade: catScores[key].grade || 'N/A'
+    }));
+    console.log('[API] Found sub-categories in _fullReport.categoryScores:', subCategories.length);
+    return subCategories;
+  }
+
+  console.log('[API] No sub-categories found in any source');
   return subCategories;
 }
 
@@ -148,15 +179,41 @@ function splitSubCategories(subCategories) {
   return { workplace, intellectual };
 }
 
-function safeObject(value) {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+// ============================================================
+// HELPER: Get score level label
+// ============================================================
+function getScoreLevelLabel(percentage) {
+  const value = toNumber(percentage, 0);
+  if (value >= 85) return 'Exceptional';
+  if (value >= 75) return 'Strong';
+  if (value >= 65) return 'Adequate';
+  if (value >= 55) return 'Developing';
+  if (value >= 40) return 'Priority Development';
+  return 'Critical Gap';
 }
 
-function safeText(value, fallback = "") {
-  if (value === null || value === undefined || value === "") return fallback;
-  return String(value);
+// ============================================================
+// HELPER: Get development action
+// ============================================================
+function getDevelopmentAction(category, percentage) {
+  const value = toNumber(percentage, 0);
+  const rec = getDevelopmentRecommendation(category, value);
+  
+  if (value < 40) {
+    return `Immediate intervention required. ${rec}`;
+  }
+  if (value < 55) {
+    return `High priority action. ${rec}`;
+  }
+  if (value < 65) {
+    return `Structured development. ${rec}`;
+  }
+  return `Reinforcement and practice. ${rec}`;
 }
 
+// ============================================================
+// API HANDLER
+// ============================================================
 export default async function handler(req, res) {
   const { resultId } = req.query;
 
@@ -209,6 +266,7 @@ export default async function handler(req, res) {
     }
 
     console.log('[API] Result found:', result.id);
+    console.log('[API] category_scores column:', result.category_scores ? result.category_scores.length : 'null');
 
     // ============================================================
     // Get candidate profile
@@ -571,12 +629,10 @@ export default async function handler(req, res) {
       // ============================================================
       console.log('[API] National Service report with sub-categories');
 
-      const reportData = result.report_data || {};
-      
       // ============================================================
-      // EXTRACT SUB-CATEGORIES FROM report_data
+      // EXTRACT SUB-CATEGORIES FROM result (checks category_scores column first)
       // ============================================================
-      const subCategories = extractSubCategories(reportData);
+      const subCategories = extractSubCategories(result);
       const { workplace: workplaceSubCategories, intellectual: intellectualSubCategories } = splitSubCategories(subCategories);
 
       console.log('[API] Sub-categories found:', subCategories.length);
@@ -584,6 +640,7 @@ export default async function handler(req, res) {
       console.log('[API] Intellectual sub-categories:', intellectualSubCategories.length);
 
       // Get category breakdown if available (legacy)
+      const reportData = result.report_data || {};
       const categoryBreakdown = reportData.categoryBreakdown || [];
       const legacyCategoryScores = categoryBreakdown.map(cat => ({
         category: cat.category,
@@ -689,38 +746,6 @@ export default async function handler(req, res) {
         executiveSummary: executiveSummary,
         supervisorImplication: supervisorImplication
       };
-    }
-
-    // ============================================================
-    // Helper function for score level label
-    // ============================================================
-    function getScoreLevelLabel(percentage) {
-      const value = toNumber(percentage, 0);
-      if (value >= 85) return 'Exceptional';
-      if (value >= 75) return 'Strong';
-      if (value >= 65) return 'Adequate';
-      if (value >= 55) return 'Developing';
-      if (value >= 40) return 'Priority Development';
-      return 'Critical Gap';
-    }
-
-    // ============================================================
-    // Helper function for development action
-    // ============================================================
-    function getDevelopmentAction(category, percentage) {
-      const value = toNumber(percentage, 0);
-      const rec = getDevelopmentRecommendation(category, value);
-      
-      if (value < 40) {
-        return `Immediate intervention required. ${rec}`;
-      }
-      if (value < 55) {
-        return `High priority action. ${rec}`;
-      }
-      if (value < 65) {
-        return `Structured development. ${rec}`;
-      }
-      return `Reinforcement and practice. ${rec}`;
     }
 
     // ============================================================
