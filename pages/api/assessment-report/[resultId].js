@@ -39,6 +39,124 @@ import {
   generalReportPhrases
 } from "../../../utils/phraseLibrary";
 
+// ============================================================
+// HELPER: Extract sub-categories from report_data
+// ============================================================
+function extractSubCategories(reportData) {
+  const rd = safeObject(reportData);
+  let subCategories = [];
+
+  // 1. Try report_data.categoryScores
+  if (rd.categoryScores && Array.isArray(rd.categoryScores) && rd.categoryScores.length > 0) {
+    subCategories = rd.categoryScores;
+    console.log('[API] Found sub-categories in report_data.categoryScores:', subCategories.length);
+  }
+  // 2. Try report_data.scoreBreakdown
+  else if (rd.scoreBreakdown && Array.isArray(rd.scoreBreakdown) && rd.scoreBreakdown.length > 0) {
+    subCategories = rd.scoreBreakdown;
+    console.log('[API] Found sub-categories in report_data.scoreBreakdown:', subCategories.length);
+  }
+  // 3. Try report_data._fullReport.categoryScores
+  else if (rd._fullReport?.categoryScores) {
+    const catScores = rd._fullReport.categoryScores;
+    if (typeof catScores === 'object') {
+      subCategories = Object.keys(catScores).map(key => ({
+        category: key,
+        percentage: catScores[key].percentage || 0,
+        score: catScores[key].score || catScores[key].totalScore || 0,
+        maxScore: catScores[key].maxScore || catScores[key].maxPossible || 100,
+        grade: catScores[key].grade || 'N/A'
+      }));
+      console.log('[API] Found sub-categories in _fullReport.categoryScores:', subCategories.length);
+    }
+  }
+
+  return subCategories;
+}
+
+// ============================================================
+// HELPER: Split sub-categories into Workplace and Intellectual
+// ============================================================
+function splitSubCategories(subCategories) {
+  const workplace = [];
+  const intellectual = [];
+
+  const workplaceNames = [
+    'Safety & Risk Awareness', 'Safety', 'Risk Awareness',
+    'Technical Fundamentals', 'Technical',
+    'Communication & Teamwork', 'Communication', 'Teamwork',
+    'Ownership & Integrity', 'Ownership', 'Integrity',
+    'Workplace Ethics', 'Workplace Readiness'
+  ];
+
+  const intellectualNames = [
+    'Problem Solving & Troubleshooting', 'Problem Solving', 'Troubleshooting',
+    'Logical Reasoning', 'Logic',
+    'Numerical Reasoning', 'Numerical',
+    'Measurement & Engineering Units', 'Measurement', 'Engineering Units',
+    'Learning Agility', 'Agility',
+    'Critical Thinking', 'Analytical', 'Decision Making',
+    'Intellectual Capability'
+  ];
+
+  if (subCategories.length > 0) {
+    subCategories.forEach(cat => {
+      const name = safeText(cat.category || cat.name || '', '');
+      const lowerName = name.toLowerCase();
+      
+      const isWorkplace = workplaceNames.some(n => lowerName.includes(n.toLowerCase()));
+      const isIntellectual = intellectualNames.some(n => lowerName.includes(n.toLowerCase()));
+
+      const hasWorkplacePattern = lowerName.includes('safety') || 
+                                   lowerName.includes('technical') ||
+                                   lowerName.includes('communication') ||
+                                   lowerName.includes('teamwork') ||
+                                   lowerName.includes('ownership') ||
+                                   lowerName.includes('integrity') ||
+                                   lowerName.includes('workplace') ||
+                                   lowerName.includes('ethics');
+
+      const hasIntellectualPattern = lowerName.includes('problem') || 
+                                      lowerName.includes('solving') ||
+                                      lowerName.includes('reasoning') ||
+                                      lowerName.includes('numerical') ||
+                                      lowerName.includes('measurement') ||
+                                      lowerName.includes('engineering') ||
+                                      lowerName.includes('learning') ||
+                                      lowerName.includes('agility') ||
+                                      lowerName.includes('critical') ||
+                                      lowerName.includes('analytical') ||
+                                      lowerName.includes('decision');
+
+      if (isWorkplace || hasWorkplacePattern) {
+        workplace.push(cat);
+      } else if (isIntellectual || hasIntellectualPattern) {
+        intellectual.push(cat);
+      } else {
+        if (lowerName.includes('readiness') || lowerName.includes('ethics') || lowerName.includes('ownership')) {
+          workplace.push(cat);
+        } else {
+          intellectual.push(cat);
+        }
+      }
+    });
+  }
+
+  console.log('[API] Workplace sub-categories:', workplace.length);
+  console.log('[API] Intellectual sub-categories:', intellectual.length);
+
+  return { workplace, intellectual };
+}
+
+function safeObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function safeText(value, fallback = "") {
+  if (value === null || value === undefined || value === "") return fallback;
+  return String(value);
+}
+
 export default async function handler(req, res) {
   const { resultId } = req.query;
 
@@ -230,7 +348,6 @@ export default async function handler(req, res) {
         const gradeInfo = getGradeInfo(percentage);
         const gap = calculateGapToTarget(percentage);
         
-        // Get commentary for this category
         const commentary = generateCommentary(
           cat.category,
           percentage,
@@ -238,10 +355,7 @@ export default async function handler(req, res) {
           assessmentTypeCode
         );
 
-        // Get development recommendation
         const devRecommendation = getDevelopmentRecommendation(cat.category, percentage);
-
-        // Get response insights for this category
         const insights = responseInsights[cat.category]?.insights || [];
 
         return {
@@ -257,10 +371,9 @@ export default async function handler(req, res) {
           supervisorImplication: cat.supervisorImplication || getSupervisorImplication(percentage),
           riskLevel: cat.riskLevel || getRiskLevel(percentage),
           gapToTarget: gap,
-          // NEW: Detailed fields for the report
           commentary: commentary,
           developmentRecommendation: devRecommendation,
-          insights: insights.slice(0, 3), // Top 3 insights per category
+          insights: insights.slice(0, 3),
           questionCount: cat.count || 0,
           isStrength: isStrength(percentage),
           isDevelopmentArea: isDevelopmentArea(percentage),
@@ -285,7 +398,6 @@ export default async function handler(req, res) {
           gapToTarget: s.gapToTarget || 0,
           comment: s.comment || getScoreComment(percentage),
           supervisorImplication: s.supervisorImplication || getSupervisorImplication(percentage),
-          // NEW: Commentary and phrase
           commentary: generateCommentary(s.category, percentage, 'strength', assessmentTypeCode),
           phrase: getScorePhrase(s.category, percentage, 'summary', `${s.category}-${percentage}`)
         };
@@ -303,16 +415,13 @@ export default async function handler(req, res) {
           gapToTarget: w.gapToTarget || calculateGapToTarget(percentage),
           comment: w.comment || getScoreComment(percentage),
           supervisorImplication: w.supervisorImplication || getSupervisorImplication(percentage),
-          // NEW: Commentary and development recommendation
           commentary: generateCommentary(w.category, percentage, 'weakness', assessmentTypeCode),
           developmentRecommendation: getDevelopmentRecommendation(w.category, percentage),
           phrase: getScorePhrase(w.category, percentage, 'summary', `${w.category}-${percentage}`)
         };
       });
 
-      // ============================================================
-      // Generate detailed interpretation using detailedInterpreter
-      // ============================================================
+      // Generate detailed interpretation
       detailedInterpretation = generateDetailedInterpretation(
         candidateProfile?.full_name || 'Candidate',
         scoresMap,
@@ -320,9 +429,7 @@ export default async function handler(req, res) {
         responseInsights
       );
 
-      // ============================================================
-      // Generate universal interpretation using categoryMapper
-      // ============================================================
+      // Generate universal interpretation
       const interpretation = generateUniversalInterpretation(
         assessmentTypeCode || 'general',
         candidateProfile?.full_name || 'Candidate',
@@ -343,9 +450,7 @@ export default async function handler(req, res) {
       };
       developmentFocus = interpretation.developmentFocus || [];
 
-      // ============================================================
-      // Generate recommendations from interpretation or weaknesses
-      // ============================================================
+      // Generate recommendations
       if (interpretation.developmentFocus && interpretation.developmentFocus.length > 0) {
         recommendations = interpretation.developmentFocus.map((item, index) => {
           let priority = 'Medium';
@@ -390,9 +495,7 @@ export default async function handler(req, res) {
       const priorityOrder = { Critical: 0, High: 1, Medium: 2, Low: 3 };
       recommendations.sort((a, b) => (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4));
 
-      // ============================================================
-      // Generate executive summary using commentaryEngine + phraseLibrary
-      // ============================================================
+      // Generate executive summary
       const strengthsSummary = generateStrengthsSummary(
         strengths.map(s => ({ area: s.category, percentage: s.percentage })),
         strengths.slice(0, 3).map(s => s.category)
@@ -411,20 +514,13 @@ export default async function handler(req, res) {
         weaknesses.map(w => ({ area: w.category, percentage: w.percentage }))
       );
 
-      // Combine into full executive summary
       const candidateName = candidateProfile?.full_name || 'Candidate';
       const assessmentTitle = assessment?.title || 'Assessment';
       
       executiveSummary = `${candidateName} completed the ${assessmentTitle} with an overall score of ${Math.round(overallScore)}%. ${strengthsSummary} ${weaknessesSummary} ${profileCommentary}`;
 
-      // ============================================================
-      // Supervisor implication
-      // ============================================================
       supervisorImplication = getSupervisorImplication(overallScore);
 
-      // ============================================================
-      // Build the complete report
-      // ============================================================
       report = {
         candidateName: candidateProfile?.full_name || 'Candidate',
         assessmentName: assessment?.title || 'Assessment',
@@ -437,7 +533,6 @@ export default async function handler(req, res) {
           preferredDepartment: candidateProfile?.preferred_department || '',
           assessmentDate: new Date(result.completed_at).toLocaleDateString()
         },
-        // Core data
         categoryScores: categoryScores,
         strengths: strengths,
         weaknesses: weaknesses,
@@ -448,13 +543,11 @@ export default async function handler(req, res) {
         riskLevel: riskLevel,
         overallScore: overallScore,
         reportType: 'stratavax',
-        // Detailed analysis
         categoryInterpretation: categoryInterpretation,
         profileSummary: profileSummary,
         suitabilityAndRisks: suitabilityAndRisks,
         developmentFocus: developmentFocus,
         detailedInterpretation: detailedInterpretation,
-        // Stats
         summaryStats: {
           totalCategories: categoryScores.length,
           totalStrengths: strengths.length,
@@ -469,21 +562,30 @@ export default async function handler(req, res) {
         categoryScores: categoryScores.length,
         strengths: strengths.length,
         weaknesses: weaknesses.length,
-        recommendations: recommendations.length,
-        hasDetailedInterpretation: !!detailedInterpretation.overallProfileSummary
+        recommendations: recommendations.length
       });
 
     } else if (isNationalService) {
       // ============================================================
-      // NATIONAL SERVICE REPORT
+      // NATIONAL SERVICE REPORT - WITH SUB-CATEGORIES
       // ============================================================
-      console.log('[API] National Service report');
+      console.log('[API] National Service report with sub-categories');
 
       const reportData = result.report_data || {};
       
-      // Get category breakdown if available
+      // ============================================================
+      // EXTRACT SUB-CATEGORIES FROM report_data
+      // ============================================================
+      const subCategories = extractSubCategories(reportData);
+      const { workplace: workplaceSubCategories, intellectual: intellectualSubCategories } = splitSubCategories(subCategories);
+
+      console.log('[API] Sub-categories found:', subCategories.length);
+      console.log('[API] Workplace sub-categories:', workplaceSubCategories.length);
+      console.log('[API] Intellectual sub-categories:', intellectualSubCategories.length);
+
+      // Get category breakdown if available (legacy)
       const categoryBreakdown = reportData.categoryBreakdown || [];
-      categoryScores = categoryBreakdown.map(cat => ({
+      const legacyCategoryScores = categoryBreakdown.map(cat => ({
         category: cat.category,
         name: cat.category,
         percentage: cat.percentage || 0,
@@ -492,10 +594,13 @@ export default async function handler(req, res) {
         dimension: cat.dimension || 'other'
       }));
 
+      // Use sub-categories if available, otherwise use legacy
+      const finalCategoryScores = subCategories.length > 0 ? subCategories : legacyCategoryScores;
+
       // Build scores map for utilities
       const scoresMap = {};
-      categoryScores.forEach(cat => {
-        scoresMap[cat.category] = cat.percentage;
+      finalCategoryScores.forEach(cat => {
+        scoresMap[cat.category || cat.name] = cat.percentage || 0;
       });
 
       // Generate interpretation
@@ -508,6 +613,9 @@ export default async function handler(req, res) {
         overallScore
       );
 
+      // ============================================================
+      // BUILD NATIONAL SERVICE REPORT WITH SUB-CATEGORIES
+      // ============================================================
       report = {
         dimensions: {
           workplaceReadiness: result.workplace_readiness || 0,
@@ -521,7 +629,13 @@ export default async function handler(req, res) {
           totalQuestions: result.total_questions || 0,
           totalAnswered: result.answered_questions || 0
         },
-        categoryBreakdown: categoryScores,
+        // ============================================================
+        // SUB-CATEGORIES - WHAT THE SUPERVISOR NEEDS TO SEE
+        // ============================================================
+        workplaceSubCategories: workplaceSubCategories,
+        intellectualSubCategories: intellectualSubCategories,
+        // Legacy category breakdown for compatibility
+        categoryBreakdown: finalCategoryScores,
         candidateInfo: {
           fullName: candidateProfile?.full_name || 'Candidate',
           university: candidateProfile?.university || '',
@@ -541,6 +655,12 @@ export default async function handler(req, res) {
           risks: interpretation.risks || []
         }
       };
+
+      console.log('[API] National Service report with sub-categories generated:', {
+        workplaceSubCategories: workplaceSubCategories.length,
+        intellectualSubCategories: intellectualSubCategories.length
+      });
+
     } else {
       // ============================================================
       // FALLBACK - Use report_data
@@ -549,7 +669,6 @@ export default async function handler(req, res) {
       
       const reportData = result.report_data || {};
       
-      // Try to extract data from report_data
       categoryScores = reportData.categoryScores || reportData.category_scores || [];
       strengths = reportData.strengths || [];
       weaknesses = reportData.weaknesses || reportData.developmentAreas || [];
@@ -611,7 +730,6 @@ export default async function handler(req, res) {
       ...result,
       candidate_profiles: candidateProfile,
       assessments: assessment,
-      // All calculated data at top level for easy access
       categoryScores: categoryScores,
       strengths: strengths,
       weaknesses: weaknesses,
@@ -625,17 +743,21 @@ export default async function handler(req, res) {
       profileSummary: profileSummary,
       suitabilityAndRisks: suitabilityAndRisks,
       developmentFocus: developmentFocus,
-      detailedInterpretation: detailedInterpretation
+      detailedInterpretation: detailedInterpretation,
+      // NATIONAL SERVICE SUB-CATEGORIES
+      workplaceSubCategories: report.workplaceSubCategories || [],
+      intellectualSubCategories: report.intellectualSubCategories || []
     };
 
     console.log('[API] Final response:', {
       success: true,
       isNationalService: isNationalService,
+      workplaceSubCategories: (report.workplaceSubCategories || []).length,
+      intellectualSubCategories: (report.intellectualSubCategories || []).length,
       categoryScores: categoryScores.length,
       strengths: strengths.length,
       weaknesses: weaknesses.length,
-      recommendations: recommendations.length,
-      hasDetailedInterpretation: !!detailedInterpretation.overallProfileSummary
+      recommendations: recommendations.length
     });
 
     return res.status(200).json({
@@ -644,7 +766,9 @@ export default async function handler(req, res) {
       report: report,
       isNationalService: isNationalService,
       assessmentTypeCode: assessmentTypeCode,
-      // All data available at top level
+      // NATIONAL SERVICE SUB-CATEGORIES at top level
+      workplaceSubCategories: report.workplaceSubCategories || [],
+      intellectualSubCategories: report.intellectualSubCategories || [],
       categoryScores: categoryScores,
       strengths: strengths,
       weaknesses: weaknesses,
@@ -663,7 +787,9 @@ export default async function handler(req, res) {
         totalCategories: categoryScores.length,
         totalStrengths: strengths.length,
         totalWeaknesses: weaknesses.length,
-        totalRecommendations: recommendations.length
+        totalRecommendations: recommendations.length,
+        workplaceSubCategories: (report.workplaceSubCategories || []).length,
+        intellectualSubCategories: (report.intellectualSubCategories || []).length
       }
     });
 
