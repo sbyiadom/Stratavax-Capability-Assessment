@@ -3,19 +3,16 @@
 import React, { useEffect } from 'react';
 
 export default function NationalServiceReport({ report, onBack }) {
-  // Log the report data on mount for debugging
   useEffect(() => {
-    console.log('[NationalServiceReport] Full report data received:', report);
+    console.log('[NationalServiceReport] Report received:', report);
     console.log('[NationalServiceReport] category_scores:', report?.category_scores);
-    console.log('[NationalServiceReport] categoryBreakdown:', report?.categoryBreakdown);
-    console.log('[NationalServiceReport] report_data?.categoryScores:', report?.report_data?.categoryScores);
   }, [report]);
 
   if (!report) {
     return <div style={styles.loading}>Loading report...</div>;
   }
 
-  // Extract data from the report object
+  // Extract data from the report
   const {
     candidateName = 'Candidate',
     dimensions = {},
@@ -24,211 +21,93 @@ export default function NationalServiceReport({ report, onBack }) {
     executiveSummary = {},
     candidateInfo = {},
     category_scores = [],
-    categoryBreakdown = [],
-    report_data = {},
     workplace_readiness = 0,
     intellectual_capability = 0,
     percentage_score = 0,
     recommendation: recommendationText = 'Not Available',
-    risk_level = 'Medium',
     completed_at = null,
     university = '',
     programme = '',
   } = report;
 
-  // Calculate scores
   const workplaceScore = dimensions.workplaceReadiness || workplace_readiness || 0;
   const intellectualScore = dimensions.intellectualCapability || intellectual_capability || 0;
   const overallScore = dimensions.overallScore || percentage_score || 0;
 
-  const recommendationLevel = 
-    recommendation.level || 
-    recommendationText || 
-    'Not Recommended';
+  const recommendationLevel = recommendation.level || recommendationText || 'Not Recommended';
 
   // ============================================================
-  // EXTRACT CATEGORY SCORES FROM ALL POSSIBLE SOURCES
+  // SPLIT SUB-CATEGORIES INTO WORKPLACE AND INTELLECTUAL
   // ============================================================
-  let allCategories = [];
+  const workplaceSubCategories = [];
+  const intellectualSubCategories = [];
 
-  // Helper to normalize category data
-  const normalizeCategory = (cat) => ({
-    category: cat.category || cat.name || cat.area || 'Unknown',
-    percentage: typeof cat.percentage === 'number' ? cat.percentage : 0,
-    earned: cat.score || cat.earned || cat.correct || 0,
-    max: cat.maxScore || cat.max || cat.total || 100,
-    earnedDisplay: cat.score || cat.earned || cat.correct || 0,
-    maxDisplay: cat.maxScore || cat.max || cat.total || 100,
-    grade: cat.grade || 'N/A',
-    comment: cat.comment || cat.description || ''
-  });
-
-  // 1. Use category_scores from the report (database column)
-  if (category_scores && Array.isArray(category_scores) && category_scores.length > 0) {
-    console.log('[Report] Using category_scores:', category_scores.length);
-    allCategories = category_scores.map(normalizeCategory);
-  }
-  // 2. Use categoryBreakdown
-  else if (categoryBreakdown && Array.isArray(categoryBreakdown) && categoryBreakdown.length > 0) {
-    console.log('[Report] Using categoryBreakdown:', categoryBreakdown.length);
-    allCategories = categoryBreakdown.map(normalizeCategory);
-  }
-  // 3. Extract from report_data.categoryScores
-  else if (report_data?.categoryScores && Array.isArray(report_data.categoryScores) && report_data.categoryScores.length > 0) {
-    console.log('[Report] Using report_data.categoryScores:', report_data.categoryScores.length);
-    allCategories = report_data.categoryScores.map(normalizeCategory);
-  }
-  // 4. Extract from report_data.scoreBreakdown
-  else if (report_data?.scoreBreakdown && Array.isArray(report_data.scoreBreakdown) && report_data.scoreBreakdown.length > 0) {
-    console.log('[Report] Using report_data.scoreBreakdown:', report_data.scoreBreakdown.length);
-    allCategories = report_data.scoreBreakdown.map(cat => ({
-      category: cat.category || cat.area || 'Unknown',
-      percentage: cat.percentage || 0,
-      earned: typeof cat.score === 'string' ? parseInt(cat.score.split('/')[0]) : (cat.score || 0),
-      max: typeof cat.score === 'string' ? parseInt(cat.score.split('/')[1]) : (cat.maxScore || 100),
-      earnedDisplay: typeof cat.score === 'string' ? cat.score.split('/')[0] : (cat.score || 0),
-      maxDisplay: typeof cat.score === 'string' ? cat.score.split('/')[1] : (cat.maxScore || 100),
-      grade: cat.grade || 'N/A',
-      comment: cat.comment || cat.supervisorImplication || ''
-    }));
-  }
-  // 5. Extract from report_data._fullReport.categoryScores
-  else if (report_data?._fullReport?.categoryScores && typeof report_data._fullReport.categoryScores === 'object') {
-    console.log('[Report] Using report_data._fullReport.categoryScores');
-    const catScores = report_data._fullReport.categoryScores;
-    allCategories = Object.keys(catScores).map(key => ({
-      category: key,
-      percentage: catScores[key].percentage || 0,
-      earned: catScores[key].score || catScores[key].totalScore || 0,
-      max: catScores[key].maxScore || catScores[key].maxPossible || 100,
-      earnedDisplay: catScores[key].score || catScores[key].totalScore || 0,
-      maxDisplay: catScores[key].maxScore || catScores[key].maxPossible || 100,
-      grade: catScores[key].grade || 'N/A',
-      comment: catScores[key].comment || ''
-    }));
-  }
-
-  // Calculate percentages if missing
-  allCategories = allCategories.map(cat => {
-    if (!cat.percentage || cat.percentage === 0) {
-      const earned = cat.earned || 0;
-      const max = cat.max || 100;
-      cat.percentage = max > 0 ? Math.round((earned / max) * 100) : 0;
-    }
-    return cat;
-  });
-
-  console.log('[Report] Total categories found:', allCategories.length);
-
-  // ============================================================
-  // SPLIT CATEGORIES INTO WORKPLACE AND INTELLECTUAL
-  // ============================================================
-  const workplaceCategories = [];
-  const intellectualCategories = [];
-
-  // Define which categories belong to which dimension
+  // Define which categories belong to Workplace Readiness
   const workplaceCategoryNames = [
-    'Safety & Risk Awareness', 'Safety', 'Risk Awareness',
-    'Technical Fundamentals', 'Technical',
-    'Communication & Teamwork', 'Communication', 'Teamwork',
-    'Ownership & Integrity', 'Ownership', 'Integrity',
-    'Workplace Readiness', 'Workplace Ethics'
+    'Safety & Risk Awareness',
+    'Technical Fundamentals',
+    'Communication & Teamwork',
+    'Ownership & Integrity',
+    'Workplace Ethics'
   ];
 
+  // Define which categories belong to Intellectual Capability
   const intellectualCategoryNames = [
-    'Problem Solving & Troubleshooting', 'Problem Solving', 'Troubleshooting',
-    'Logical Reasoning', 'Logic',
-    'Numerical Reasoning', 'Numerical',
-    'Measurement & Engineering Units', 'Measurement', 'Engineering Units',
-    'Learning Agility', 'Agility',
-    'Critical Thinking', 'Analytical', 'Decision Making',
-    'Intellectual Capability'
+    'Problem Solving & Troubleshooting',
+    'Logical Reasoning',
+    'Numerical Reasoning',
+    'Measurement & Engineering Units',
+    'Learning Agility'
   ];
 
-  // Also check for categories that might be in the data
-  if (allCategories.length > 0) {
-    allCategories.forEach(cat => {
-      const catName = cat.category || '';
-      const lowerName = catName.toLowerCase();
+  // Process the category_scores
+  if (category_scores && Array.isArray(category_scores) && category_scores.length > 0) {
+    category_scores.forEach(cat => {
+      const categoryName = cat.category || cat.name || '';
       
-      // Check if it's a workplace category
+      // Check if it's a Workplace category
       const isWorkplace = workplaceCategoryNames.some(name => 
-        lowerName.includes(name.toLowerCase())
+        categoryName.toLowerCase().includes(name.toLowerCase())
       );
       
-      // Check if it's an intellectual category
+      // Check if it's an Intellectual category
       const isIntellectual = intellectualCategoryNames.some(name => 
-        lowerName.includes(name.toLowerCase())
+        categoryName.toLowerCase().includes(name.toLowerCase())
       );
 
-      // Try to detect from the category name pattern
-      const isWorkplacePattern = lowerName.includes('safety') || 
-                                  lowerName.includes('technical') ||
-                                  lowerName.includes('communication') ||
-                                  lowerName.includes('teamwork') ||
-                                  lowerName.includes('ownership') ||
-                                  lowerName.includes('integrity') ||
-                                  lowerName.includes('workplace') ||
-                                  lowerName.includes('ethics');
-
-      const isIntellectualPattern = lowerName.includes('problem') || 
-                                     lowerName.includes('solving') ||
-                                     lowerName.includes('reasoning') ||
-                                     lowerName.includes('numerical') ||
-                                     lowerName.includes('measurement') ||
-                                     lowerName.includes('engineering') ||
-                                     lowerName.includes('learning') ||
-                                     lowerName.includes('agility') ||
-                                     lowerName.includes('critical') ||
-                                     lowerName.includes('analytical') ||
-                                     lowerName.includes('decision');
-
-      if (isWorkplace || isWorkplacePattern) {
-        workplaceCategories.push({ ...cat, dimension: 'workplace' });
-      } else if (isIntellectual || isIntellectualPattern) {
-        intellectualCategories.push({ ...cat, dimension: 'intellectual' });
+      if (isWorkplace) {
+        workplaceSubCategories.push(cat);
+      } else if (isIntellectual) {
+        intellectualSubCategories.push(cat);
       } else {
-        // Default to intellectual
-        intellectualCategories.push({ ...cat, dimension: 'intellectual' });
+        // If uncertain, try to detect from the name
+        const lowerName = categoryName.toLowerCase();
+        if (lowerName.includes('safety') || lowerName.includes('technical') || 
+            lowerName.includes('communication') || lowerName.includes('teamwork') ||
+            lowerName.includes('ownership') || lowerName.includes('integrity') ||
+            lowerName.includes('workplace') || lowerName.includes('ethics')) {
+          workplaceSubCategories.push(cat);
+        } else {
+          intellectualSubCategories.push(cat);
+        }
       }
     });
   }
 
-  // If no categories were found from the data, create placeholder categories
-  if (workplaceCategories.length === 0 && intellectualCategories.length === 0) {
-    console.log('[Report] No categories found, creating placeholders from scores');
-    if (workplaceScore > 0) {
-      workplaceCategories.push({
-        category: 'Workplace Readiness (Overall)',
-        percentage: workplaceScore,
-        earned: Math.round(workplaceScore),
-        max: 100,
-        earnedDisplay: Math.round(workplaceScore),
-        maxDisplay: 100,
-        dimension: 'workplace',
-        grade: workplaceScore >= 70 ? 'A' : workplaceScore >= 50 ? 'C' : 'F'
-      });
-    }
-    if (intellectualScore > 0) {
-      intellectualCategories.push({
-        category: 'Intellectual Capability (Overall)',
-        percentage: intellectualScore,
-        earned: Math.round(intellectualScore),
-        max: 100,
-        earnedDisplay: Math.round(intellectualScore),
-        maxDisplay: 100,
-        dimension: 'intellectual',
-        grade: intellectualScore >= 70 ? 'A' : intellectualScore >= 50 ? 'C' : 'F'
-      });
-    }
-  }
-
-  console.log('[Report] Workplace categories:', workplaceCategories.length);
-  console.log('[Report] Intellectual categories:', intellectualCategories.length);
+  console.log('[Report] Workplace sub-categories:', workplaceSubCategories.length);
+  console.log('[Report] Intellectual sub-categories:', intellectualSubCategories.length);
 
   // ============================================================
   // RENDER HELPERS
   // ============================================================
+  const getCategoryComment = (percentage) => {
+    if (percentage >= 80) return { text: 'Exceptional', color: '#2e7d32', emoji: '🌟' };
+    if (percentage >= 70) return { text: 'Strong', color: '#2e7d32', emoji: '✅' };
+    if (percentage >= 60) return { text: 'Adequate', color: '#f57c00', emoji: '⚡' };
+    if (percentage >= 50) return { text: 'Development Area', color: '#ea580c', emoji: '🔸' };
+    return { text: 'Critical Gap', color: '#c62828', emoji: '🔴' };
+  };
+
   const getRecommendationColor = (level) => {
     switch (level) {
       case 'Highly Recommended': return '#2e7d32';
@@ -274,28 +153,9 @@ export default function NationalServiceReport({ report, onBack }) {
     }
   };
 
-  const getCategoryComment = (percentage) => {
-    if (percentage >= 80) return { text: 'Exceptional performance', color: '#2e7d32', emoji: '🌟' };
-    if (percentage >= 70) return { text: 'Strong capability', color: '#2e7d32', emoji: '✅' };
-    if (percentage >= 60) return { text: 'Adequate performance', color: '#f57c00', emoji: '⚡' };
-    if (percentage >= 50) return { text: 'Development area', color: '#ea580c', emoji: '🔸' };
-    return { text: 'Critical development area', color: '#c62828', emoji: '🔴' };
-  };
-
   const recommendationColor = getRecommendationColor(recommendationLevel);
   const recommendationBg = getRecommendationBg(recommendationLevel);
   const recommendationNarrative = getRecommendationNarrative(recommendationLevel);
-
-  // Top strengths (top 3)
-  const topStrengths = [...allCategories]
-    .filter(c => c.percentage > 0)
-    .sort((a, b) => b.percentage - a.percentage)
-    .slice(0, 3);
-
-  // Development areas (below 60%)
-  const developmentAreas = [...allCategories]
-    .filter(c => c.percentage > 0 && c.percentage < 60)
-    .sort((a, b) => a.percentage - b.percentage);
 
   const candidateFullName = candidateInfo?.fullName || candidateName || 'Candidate';
   const candidateUniversity = candidateInfo?.university || university || 'N/A';
@@ -303,6 +163,21 @@ export default function NationalServiceReport({ report, onBack }) {
   const assessmentDate = candidateInfo?.assessmentDate || (completed_at ? new Date(completed_at).toLocaleDateString() : 'N/A');
   const graduationYear = candidateInfo?.graduationYear || 'N/A';
   const preferredDepartment = candidateInfo?.preferredDepartment || 'Not Specified';
+
+  // Sort sub-categories by percentage (highest first)
+  const sortedWorkplace = [...workplaceSubCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
+  const sortedIntellectual = [...intellectualSubCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
+
+  // Find top strengths and development areas from sub-categories
+  const allSubCategories = [...workplaceSubCategories, ...intellectualSubCategories];
+  const topStrengths = [...allSubCategories]
+    .filter(c => (c.percentage || 0) > 0)
+    .sort((a, b) => (b.percentage || 0) - (a.percentage || 0))
+    .slice(0, 3);
+
+  const developmentAreas = [...allSubCategories]
+    .filter(c => (c.percentage || 0) > 0 && (c.percentage || 0) < 60)
+    .sort((a, b) => (a.percentage || 0) - (b.percentage || 0));
 
   return (
     <div style={styles.container}>
@@ -342,7 +217,7 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       </div>
 
-      {/* Score Cards */}
+      {/* Score Cards - Main Categories */}
       <div style={styles.scoreGrid}>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Workplace Readiness</div>
@@ -350,12 +225,18 @@ export default function NationalServiceReport({ report, onBack }) {
           <div style={{ ...styles.scoreBand, color: getBandColor(executiveSummary?.workplaceBand) }}>
             {executiveSummary?.workplaceBand || (workplaceScore >= 70 ? 'Ready' : workplaceScore >= 50 ? 'Developing' : 'Needs Improvement')}
           </div>
+          <div style={styles.subCategoryCount}>
+            {sortedWorkplace.length} sub-categories assessed
+          </div>
         </div>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Intellectual Capability</div>
           <div style={styles.scoreValue}>{Math.round(intellectualScore)}%</div>
           <div style={{ ...styles.scoreBand, color: getBandColor(executiveSummary?.intellectualBand) }}>
             {executiveSummary?.intellectualBand || (intellectualScore >= 70 ? 'Ready' : intellectualScore >= 50 ? 'Developing' : 'Development Required')}
+          </div>
+          <div style={styles.subCategoryCount}>
+            {sortedIntellectual.length} sub-categories assessed
           </div>
         </div>
         <div style={styles.scoreCard}>
@@ -372,26 +253,31 @@ export default function NationalServiceReport({ report, onBack }) {
           ============================================================ */}
       <div style={styles.section}>
         <div style={styles.sectionHeader}>
-          <h2 style={styles.sectionTitle}>🛠️ Workplace Readiness - Category Breakdown</h2>
+          <h2 style={styles.sectionTitle}>🛠️ Workplace Readiness - Sub-Category Breakdown</h2>
           <span style={styles.sectionScore}>{Math.round(workplaceScore)}%</span>
         </div>
-        {workplaceCategories.length > 0 ? (
+        {sortedWorkplace.length > 0 ? (
           <div style={styles.categoryGrid}>
-            {workplaceCategories.map((cat, index) => {
-              const comment = getCategoryComment(cat.percentage);
+            {sortedWorkplace.map((cat, index) => {
+              const percentage = cat.percentage || 0;
+              const comment = getCategoryComment(percentage);
+              const categoryName = cat.category || cat.name || 'Unknown';
+              const score = cat.score || cat.earned || 0;
+              const maxScore = cat.maxScore || cat.max || 100;
+              
               return (
                 <div key={index} style={styles.categoryCard}>
                   <div style={styles.categoryHeader}>
-                    <span style={styles.categoryName}>{cat.category}</span>
+                    <span style={styles.categoryName}>{categoryName}</span>
                     <span style={{ ...styles.categoryScore, color: comment.color }}>
-                      {Math.round(cat.percentage)}%
+                      {Math.round(percentage)}%
                     </span>
                   </div>
                   <div style={styles.categoryBar}>
-                    <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%', background: comment.color }} />
+                    <div style={{ ...styles.categoryBarFill, width: Math.min(percentage, 100) + '%', background: comment.color }} />
                   </div>
                   <div style={styles.categoryDetail}>
-                    {cat.earnedDisplay || Math.round(cat.earned || 0)} / {cat.maxDisplay || Math.round(cat.max || 100)} points
+                    {Math.round(score)} / {Math.round(maxScore)} points
                   </div>
                   <div style={{ ...styles.categoryComment, color: comment.color }}>
                     {comment.emoji} {comment.text}
@@ -402,7 +288,7 @@ export default function NationalServiceReport({ report, onBack }) {
           </div>
         ) : (
           <div style={styles.emptyState}>
-            <p>No sub-categories available for Workplace Readiness.</p>
+            <p>No sub-category data available for Workplace Readiness.</p>
           </div>
         )}
       </div>
@@ -412,26 +298,31 @@ export default function NationalServiceReport({ report, onBack }) {
           ============================================================ */}
       <div style={styles.section}>
         <div style={styles.sectionHeader}>
-          <h2 style={styles.sectionTitle}>🧠 Intellectual Capability - Category Breakdown</h2>
+          <h2 style={styles.sectionTitle}>🧠 Intellectual Capability - Sub-Category Breakdown</h2>
           <span style={styles.sectionScore}>{Math.round(intellectualScore)}%</span>
         </div>
-        {intellectualCategories.length > 0 ? (
+        {sortedIntellectual.length > 0 ? (
           <div style={styles.categoryGrid}>
-            {intellectualCategories.map((cat, index) => {
-              const comment = getCategoryComment(cat.percentage);
+            {sortedIntellectual.map((cat, index) => {
+              const percentage = cat.percentage || 0;
+              const comment = getCategoryComment(percentage);
+              const categoryName = cat.category || cat.name || 'Unknown';
+              const score = cat.score || cat.earned || 0;
+              const maxScore = cat.maxScore || cat.max || 100;
+              
               return (
                 <div key={index} style={styles.categoryCard}>
                   <div style={styles.categoryHeader}>
-                    <span style={styles.categoryName}>{cat.category}</span>
+                    <span style={styles.categoryName}>{categoryName}</span>
                     <span style={{ ...styles.categoryScore, color: comment.color }}>
-                      {Math.round(cat.percentage)}%
+                      {Math.round(percentage)}%
                     </span>
                   </div>
                   <div style={styles.categoryBar}>
-                    <div style={{ ...styles.categoryBarFill, width: Math.min(cat.percentage, 100) + '%', background: comment.color }} />
+                    <div style={{ ...styles.categoryBarFill, width: Math.min(percentage, 100) + '%', background: comment.color }} />
                   </div>
                   <div style={styles.categoryDetail}>
-                    {cat.earnedDisplay || Math.round(cat.earned || 0)} / {cat.maxDisplay || Math.round(cat.max || 100)} points
+                    {Math.round(score)} / {Math.round(maxScore)} points
                   </div>
                   <div style={{ ...styles.categoryComment, color: comment.color }}>
                     {comment.emoji} {comment.text}
@@ -442,7 +333,7 @@ export default function NationalServiceReport({ report, onBack }) {
           </div>
         ) : (
           <div style={styles.emptyState}>
-            <p>No sub-categories available for Intellectual Capability.</p>
+            <p>No sub-category data available for Intellectual Capability.</p>
           </div>
         )}
       </div>
@@ -454,18 +345,22 @@ export default function NationalServiceReport({ report, onBack }) {
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>🌟 Top Strengths</h2>
           <div style={styles.strengthGrid}>
-            {topStrengths.map((strength, index) => (
-              <div key={index} style={styles.strengthCard}>
-                <div style={styles.strengthRank}>{index + 1}</div>
-                <div style={styles.strengthContent}>
-                  <div style={styles.strengthName}>{strength.category}</div>
-                  <div style={styles.strengthScore}>{Math.round(strength.percentage)}%</div>
-                  <div style={styles.strengthBar}>
-                    <div style={{ ...styles.strengthBarFill, width: Math.min(strength.percentage, 100) + '%' }} />
+            {topStrengths.map((strength, index) => {
+              const percentage = strength.percentage || 0;
+              const categoryName = strength.category || strength.name || 'Unknown';
+              return (
+                <div key={index} style={styles.strengthCard}>
+                  <div style={styles.strengthRank}>{index + 1}</div>
+                  <div style={styles.strengthContent}>
+                    <div style={styles.strengthName}>{categoryName}</div>
+                    <div style={styles.strengthScore}>{Math.round(percentage)}%</div>
+                    <div style={styles.strengthBar}>
+                      <div style={{ ...styles.strengthBarFill, width: Math.min(percentage, 100) + '%' }} />
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -477,21 +372,25 @@ export default function NationalServiceReport({ report, onBack }) {
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>📈 Development Areas</h2>
           <div style={styles.developmentGrid}>
-            {developmentAreas.map((area, index) => (
-              <div key={index} style={styles.developmentCard}>
-                <div style={styles.developmentRank}>{index + 1}</div>
-                <div style={styles.developmentContent}>
-                  <div style={styles.developmentName}>{area.category}</div>
-                  <div style={styles.developmentScore}>{Math.round(area.percentage)}%</div>
-                  <div style={styles.developmentBar}>
-                    <div style={{ ...styles.developmentBarFill, width: Math.min(area.percentage, 100) + '%' }} />
-                  </div>
-                  <div style={styles.developmentGap}>
-                    Gap to 70% target: {Math.round(70 - area.percentage)}%
+            {developmentAreas.map((area, index) => {
+              const percentage = area.percentage || 0;
+              const categoryName = area.category || area.name || 'Unknown';
+              return (
+                <div key={index} style={styles.developmentCard}>
+                  <div style={styles.developmentRank}>{index + 1}</div>
+                  <div style={styles.developmentContent}>
+                    <div style={styles.developmentName}>{categoryName}</div>
+                    <div style={styles.developmentScore}>{Math.round(percentage)}%</div>
+                    <div style={styles.developmentBar}>
+                      <div style={{ ...styles.developmentBarFill, width: Math.min(percentage, 100) + '%' }} />
+                    </div>
+                    <div style={styles.developmentGap}>
+                      Gap to 70% target: {Math.round(70 - percentage)}%
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -548,8 +447,8 @@ export default function NationalServiceReport({ report, onBack }) {
             <div style={styles.statLabel}>Overall Score</div>
           </div>
           <div style={styles.statCard}>
-            <div style={styles.statValue}>{allCategories.length || statistics?.totalAnswered || 0}</div>
-            <div style={styles.statLabel}>Categories Assessed</div>
+            <div style={styles.statValue}>{allSubCategories.length || 0}</div>
+            <div style={styles.statLabel}>Sub-Categories Assessed</div>
           </div>
         </div>
       </div>
@@ -670,6 +569,11 @@ const styles = {
     fontSize: '14px', 
     fontWeight: '600', 
     marginTop: '8px' 
+  },
+  subCategoryCount: {
+    fontSize: '12px',
+    color: '#94a3b8',
+    marginTop: '8px'
   },
   section: { 
     marginBottom: '30px' 
