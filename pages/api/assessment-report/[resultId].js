@@ -52,57 +52,125 @@ function safeText(value, fallback = "") {
 }
 
 // ============================================================
-// HELPER: Extract sub-categories from result data
+// HELPER: Normalize a single sub-category item (supports array or object format)
+// ============================================================
+function normalizeSubCategoryItem(item, fallbackName = '') {
+  if (!item) return null;
+
+  // If stored as: "Safety & Risk Awareness": 93 (key-value pair)
+  if (typeof item !== 'object') {
+    return {
+      category: fallbackName,
+      name: fallbackName,
+      percentage: Number(item) || 0,
+      score: Number(item) || 0,
+      maxScore: 100
+    };
+  }
+
+  const categoryName = safeText(
+    item.category ||
+    item.name ||
+    item.subcategory ||
+    item.sub_category ||
+    item.subcategory_name ||
+    item.sub_category_name ||
+    item.title ||
+    item.competency ||
+    item.section ||
+    item.area ||
+    fallbackName,
+    fallbackName
+  );
+
+  const percentage = toNumber(
+    item.percentage ??
+    item.percent ??
+    item.score_percentage ??
+    item.average ??
+    item.score ??
+    item.value,
+    0
+  );
+
+  return {
+    ...item,
+    category: categoryName,
+    name: categoryName,
+    percentage: percentage,
+    score: toNumber(item.score ?? item.earned ?? item.totalScore ?? percentage, percentage),
+    maxScore: toNumber(item.maxScore ?? item.max_score ?? item.max ?? item.maxPossible ?? 100, 100),
+    questionCount: toNumber(item.questionCount ?? item.count ?? item.totalQuestions ?? 0, 0)
+  };
+}
+
+// ============================================================
+// HELPER: Extract sub-categories from result data (supports both array and object)
 // ============================================================
 function extractSubCategories(resultData) {
   let subCategories = [];
 
   console.log('[API] extractSubCategories - checking data sources');
 
-  // 1. Check category_scores column first (MOST IMPORTANT - this is where the data is)
-  if (resultData.category_scores && Array.isArray(resultData.category_scores) && resultData.category_scores.length > 0) {
-    subCategories = resultData.category_scores;
-    console.log('[API] Found sub-categories in category_scores column:', subCategories.length);
-    return subCategories;
+  const normalizeArray = (arr) =>
+    safeArray(arr)
+      .map((item) => normalizeSubCategoryItem(item))
+      .filter((item) => item && item.category);
+
+  const normalizeObject = (obj) =>
+    Object.entries(obj || {})
+      .map(([key, value]) => normalizeSubCategoryItem(value, key))
+      .filter((item) => item && item.category);
+
+  // 1. category_scores column - supports array or object
+  if (resultData.category_scores) {
+    if (Array.isArray(resultData.category_scores)) {
+      subCategories = normalizeArray(resultData.category_scores);
+    } else if (typeof resultData.category_scores === 'object') {
+      subCategories = normalizeObject(resultData.category_scores);
+    }
+
+    if (subCategories.length > 0) {
+      console.log('[API] Found sub-categories in category_scores:', subCategories.length);
+      return subCategories;
+    }
   }
 
-  // 2. Check report_data
+  // 2. report_data possible locations
   const rd = safeObject(resultData.report_data);
-  
-  if (rd.categoryScores && Array.isArray(rd.categoryScores) && rd.categoryScores.length > 0) {
-    subCategories = rd.categoryScores;
-    console.log('[API] Found sub-categories in report_data.categoryScores:', subCategories.length);
-    return subCategories;
-  }
-  
-  if (rd.category_scores && Array.isArray(rd.category_scores) && rd.category_scores.length > 0) {
-    subCategories = rd.category_scores;
-    console.log('[API] Found sub-categories in report_data.category_scores:', subCategories.length);
-    return subCategories;
+
+  const possibleArrays = [
+    rd.categoryScores,
+    rd.category_scores,
+    rd.scoreBreakdown,
+    rd.categoryBreakdown,
+    rd.subCategories,
+    rd.sub_categories,
+    rd.workplaceSubCategories,
+    rd.intellectualSubCategories
+  ];
+
+  for (const source of possibleArrays) {
+    if (Array.isArray(source) && source.length > 0) {
+      subCategories = normalizeArray(source);
+      if (subCategories.length > 0) {
+        console.log('[API] Found sub-categories in report_data:', subCategories.length);
+        return subCategories;
+      }
+    }
   }
 
-  if (rd.scoreBreakdown && Array.isArray(rd.scoreBreakdown) && rd.scoreBreakdown.length > 0) {
-    subCategories = rd.scoreBreakdown;
-    console.log('[API] Found sub-categories in report_data.scoreBreakdown:', subCategories.length);
-    return subCategories;
-  }
-
-  // 3. Check _fullReport.categoryScores
+  // 3. _fullReport.categoryScores may be an object
   if (rd._fullReport?.categoryScores && typeof rd._fullReport.categoryScores === 'object') {
-    const catScores = rd._fullReport.categoryScores;
-    subCategories = Object.keys(catScores).map(key => ({
-      category: key,
-      percentage: catScores[key].percentage || 0,
-      score: catScores[key].score || catScores[key].totalScore || 0,
-      maxScore: catScores[key].maxScore || catScores[key].maxPossible || 100,
-      grade: catScores[key].grade || 'N/A'
-    }));
-    console.log('[API] Found sub-categories in _fullReport.categoryScores:', subCategories.length);
-    return subCategories;
+    subCategories = normalizeObject(rd._fullReport.categoryScores);
+    if (subCategories.length > 0) {
+      console.log('[API] Found sub-categories in _fullReport.categoryScores:', subCategories.length);
+      return subCategories;
+    }
   }
 
   console.log('[API] No sub-categories found in any source');
-  return subCategories;
+  return [];
 }
 
 // ============================================================
@@ -112,58 +180,85 @@ function splitSubCategories(subCategories) {
   const workplace = [];
   const intellectual = [];
 
+  // CORRECTED: Workplace Readiness sub-categories
   const workplaceNames = [
-    'Safety & Risk Awareness', 'Safety', 'Risk Awareness',
-    'Technical Fundamentals', 'Technical',
-    'Communication & Teamwork', 'Communication', 'Teamwork',
-    'Ownership & Integrity', 'Ownership', 'Integrity',
-    'Workplace Ethics', 'Workplace Readiness'
+    'Safety & Risk Awareness',
+    'Safety',
+    'Risk Awareness',
+    'Communication & Teamwork',
+    'Communication',
+    'Teamwork',
+    'Ownership & Integrity',
+    'Ownership',
+    'Integrity',
+    'Workplace Ethics',
+    'Workplace Readiness',
+    'Learning Agility',
+    'Agility'
   ];
 
+  // CORRECTED: Intellectual Capability sub-categories
   const intellectualNames = [
-    'Problem Solving & Troubleshooting', 'Problem Solving', 'Troubleshooting',
-    'Logical Reasoning', 'Logic',
-    'Numerical Reasoning', 'Numerical',
-    'Measurement & Engineering Units', 'Measurement', 'Engineering Units',
-    'Learning Agility', 'Agility',
-    'Critical Thinking', 'Analytical', 'Decision Making',
+    'Technical Fundamentals',
+    'Technical',
+    'Problem Solving & Troubleshooting',
+    'Problem Solving',
+    'Troubleshooting',
+    'Logical Reasoning',
+    'Logic',
+    'Numerical Reasoning',
+    'Numerical',
+    'Measurement & Engineering Units',
+    'Measurement',
+    'Engineering Units',
+    'Critical Thinking',
+    'Analytical',
+    'Decision Making',
     'Intellectual Capability'
   ];
 
   if (subCategories.length > 0) {
-    subCategories.forEach(cat => {
-      const name = safeText(cat.category || cat.name || '', '');
+    subCategories.forEach(rawCat => {
+      // Normalize the category item first
+      const cat = normalizeSubCategoryItem(rawCat);
+      if (!cat || !cat.category) return;
+
+      const name = safeText(cat.category || cat.name, '');
       const lowerName = name.toLowerCase();
-      
+
       const isWorkplace = workplaceNames.some(n => lowerName.includes(n.toLowerCase()));
       const isIntellectual = intellectualNames.some(n => lowerName.includes(n.toLowerCase()));
 
-      const hasWorkplacePattern = lowerName.includes('safety') || 
-                                   lowerName.includes('technical') ||
-                                   lowerName.includes('communication') ||
-                                   lowerName.includes('teamwork') ||
-                                   lowerName.includes('ownership') ||
-                                   lowerName.includes('integrity') ||
-                                   lowerName.includes('workplace') ||
-                                   lowerName.includes('ethics');
+      // CORRECTED: Workplace pattern logic
+      const hasWorkplacePattern = lowerName.includes('safety') ||
+        lowerName.includes('communication') ||
+        lowerName.includes('teamwork') ||
+        lowerName.includes('ownership') ||
+        lowerName.includes('integrity') ||
+        lowerName.includes('workplace') ||
+        lowerName.includes('ethics') ||
+        lowerName.includes('learning') ||
+        lowerName.includes('agility');
 
-      const hasIntellectualPattern = lowerName.includes('problem') || 
-                                      lowerName.includes('solving') ||
-                                      lowerName.includes('reasoning') ||
-                                      lowerName.includes('numerical') ||
-                                      lowerName.includes('measurement') ||
-                                      lowerName.includes('engineering') ||
-                                      lowerName.includes('learning') ||
-                                      lowerName.includes('agility') ||
-                                      lowerName.includes('critical') ||
-                                      lowerName.includes('analytical') ||
-                                      lowerName.includes('decision');
+      // CORRECTED: Intellectual pattern logic
+      const hasIntellectualPattern = lowerName.includes('technical') ||
+        lowerName.includes('problem') ||
+        lowerName.includes('solving') ||
+        lowerName.includes('reasoning') ||
+        lowerName.includes('numerical') ||
+        lowerName.includes('measurement') ||
+        lowerName.includes('engineering') ||
+        lowerName.includes('critical') ||
+        lowerName.includes('analytical') ||
+        lowerName.includes('decision');
 
+      // Classification logic with corrected patterns
       if (isWorkplace || hasWorkplacePattern) {
         workplace.push(cat);
       } else if (isIntellectual || hasIntellectualPattern) {
         intellectual.push(cat);
       } else {
+        // Fallback: default based on category name
         if (lowerName.includes('readiness') || lowerName.includes('ethics') || lowerName.includes('ownership')) {
           workplace.push(cat);
         } else {
@@ -198,7 +293,7 @@ function getScoreLevelLabel(percentage) {
 function getDevelopmentAction(category, percentage) {
   const value = toNumber(percentage, 0);
   const rec = getDevelopmentRecommendation(category, value);
-  
+
   if (value < 40) {
     return `Immediate intervention required. ${rec}`;
   }
@@ -266,7 +361,13 @@ export default async function handler(req, res) {
     }
 
     console.log('[API] Result found:', result.id);
-    console.log('[API] category_scores column:', result.category_scores ? result.category_scores.length : 'null');
+    console.log('[API] category_scores column:', result.category_scores ? (Array.isArray(result.category_scores) ? result.category_scores.length : 'object') : 'null');
+
+    // ============================================================
+    // DEBUG LOGS - Raw data (remove after confirming fix)
+    // ============================================================
+    console.log('[API DEBUG] Raw category_scores:', JSON.stringify(result.category_scores, null, 2));
+    console.log('[API DEBUG] Raw report_data:', JSON.stringify(result.report_data, null, 2));
 
     // ============================================================
     // Get candidate profile
@@ -307,7 +408,7 @@ export default async function handler(req, res) {
     // ============================================================
     // Check if National Service
     // ============================================================
-    const isNationalService = 
+    const isNationalService =
       assessmentTypeCode === 'national_service' ||
       (result.workplace_readiness !== null && result.workplace_readiness !== undefined);
 
@@ -393,7 +494,7 @@ export default async function handler(req, res) {
       // Calculate category scores from responses
       const isBaseline = false;
       const calculatedCategories = calculateCategoryScores(responses, isBaseline);
-      
+
       // Build scores object for utilities
       const scoresMap = {};
       calculatedCategories.forEach(cat => {
@@ -405,7 +506,7 @@ export default async function handler(req, res) {
         const percentage = cat.percentage || 0;
         const gradeInfo = getGradeInfo(percentage);
         const gap = calculateGapToTarget(percentage);
-        
+
         const commentary = generateCommentary(
           cat.category,
           percentage,
@@ -574,7 +675,7 @@ export default async function handler(req, res) {
 
       const candidateName = candidateProfile?.full_name || 'Candidate';
       const assessmentTitle = assessment?.title || 'Assessment';
-      
+
       executiveSummary = `${candidateName} completed the ${assessmentTitle} with an overall score of ${Math.round(overallScore)}%. ${strengthsSummary} ${weaknessesSummary} ${profileCommentary}`;
 
       supervisorImplication = getSupervisorImplication(overallScore);
@@ -633,6 +734,9 @@ export default async function handler(req, res) {
       // EXTRACT SUB-CATEGORIES FROM result (checks category_scores column first)
       // ============================================================
       const subCategories = extractSubCategories(result);
+
+      console.log('[API DEBUG] Extracted SubCategories:', JSON.stringify(subCategories, null, 2));
+
       const { workplace: workplaceSubCategories, intellectual: intellectualSubCategories } = splitSubCategories(subCategories);
 
       console.log('[API] Sub-categories found:', subCategories.length);
@@ -723,9 +827,9 @@ export default async function handler(req, res) {
       // FALLBACK - Use report_data
       // ============================================================
       console.log('[API] Using fallback - report_data only');
-      
+
       const reportData = result.report_data || {};
-      
+
       categoryScores = reportData.categoryScores || reportData.category_scores || [];
       strengths = reportData.strengths || [];
       weaknesses = reportData.weaknesses || reportData.developmentAreas || [];
