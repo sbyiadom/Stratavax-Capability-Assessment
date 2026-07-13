@@ -353,7 +353,6 @@ export default async function handler(req, res) {
       console.log('[Submit Assessment] National Service report generated');
     } else {
       // Stratavax report generation...
-      // (kept from previous version)
       console.log('[Submit Assessment] Generating Stratavax report');
       reportType = 'stratavax';
       
@@ -437,6 +436,32 @@ export default async function handler(req, res) {
     };
 
     // ============================================================
+    // FIX: Prepare category_scores for the database
+    // ============================================================
+    // For National Service, use categoryBreakdown as the source for category_scores
+    // This ensures the sub-categories are available in the category_scores column
+    let categoryScoresForDb = [];
+
+    if (isNationalService && categoryBreakdown && categoryBreakdown.length > 0) {
+      // Format category breakdown for the category_scores column
+      categoryScoresForDb = categoryBreakdown.map(cat => ({
+        category: cat.category || cat.name || 'Unknown',
+        name: cat.category || cat.name || 'Unknown',
+        percentage: cat.percentage || 0,
+        score: cat.earned || cat.score || 0,
+        maxScore: cat.max || cat.maxScore || 100,
+        dimension: cat.dimension || 'other',
+        // Include any additional fields
+        ...(cat.grade && { grade: cat.grade }),
+        ...(cat.comment && { comment: cat.comment })
+      }));
+      console.log(`[Submit Assessment] category_scores prepared: ${categoryScoresForDb.length} categories`);
+    } else if (!isNationalService && report.categoryScores) {
+      // For Stratavax, use categoryScores from the report
+      categoryScoresForDb = report.categoryScores;
+    }
+
+    // ============================================================
     // Save result
     // ============================================================
     const resultData = {
@@ -454,10 +479,14 @@ export default async function handler(req, res) {
       workplace_readiness: isNationalService ? workplaceReadiness : null,
       intellectual_capability: isNationalService ? intellectualCapability : null,
       recommendation: isNationalService ? (recommendation?.recommendation || null) : null,
+      // ============================================================
+      // CRITICAL FIX: Save category_scores directly to the column
+      // ============================================================
+      category_scores: categoryScoresForDb,
       report_data: reportDataWithType
     };
 
-    console.log('[Submit Assessment] Result data saved');
+    console.log(`[Submit Assessment] Result data with ${categoryScoresForDb.length} category scores`);
 
     // Check if a result already exists for this session
     const { data: existingResult, error: checkError } = await supabase
@@ -551,6 +580,8 @@ export default async function handler(req, res) {
       responsePayload.recommendation = recommendation;
       responsePayload.suggestedDepartments = suggestedDepartments;
       responsePayload.categoryBreakdown = categoryBreakdown;
+      // Also include category_scores count for debugging
+      responsePayload.categoryScoresCount = categoryScoresForDb.length;
     }
 
     return res.status(200).json(responsePayload);
