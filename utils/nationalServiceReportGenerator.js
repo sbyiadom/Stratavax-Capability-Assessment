@@ -1,25 +1,31 @@
-// utils/nationalServiceReportGenerator.js
+// utils/nationalServiceReportGenerator.js - FIXED VERSION
+// Handles all National Service specific report generation logic
+// Now properly generates sub-categories for the frontend
 
 import { roundNumber, safeArray } from './scoring';
 
-/**
- * National Service Report Generator
- * Handles all National Service specific report generation logic
- */
-
 // ============================================================
-// CATEGORY MAPPING
+// CATEGORY MAPPING - Updated with more comprehensive lists
 // ============================================================
 
 const WORKPLACE_CATEGORIES = [
-  'safety', 'risk_awareness', 'problem_solving', 'troubleshooting',
-  'technical_fundamentals', 'learning_agility', 'communication',
-  'teamwork', 'ownership', 'integrity', 'professional_conduct', 'work_ethic'
+  'safety', 'risk_awareness', 'risk', 'hazard',
+  'technical_fundamentals', 'technical',
+  'communication', 'teamwork', 'collaboration',
+  'ownership', 'integrity', 'accountability',
+  'professional_conduct', 'work_ethic', 'ethics',
+  'workplace', 'workplace_readiness', 'readiness',
+  'learning_agility', 'agility', 'adaptability'
 ];
 
 const INTELLECTUAL_CATEGORIES = [
-  'numerical_reasoning', 'numerical_aptitude', 'logical_reasoning',
-  'measurement', 'engineering_units', 'spatial_reasoning'
+  'numerical_reasoning', 'numerical_aptitude', 'numerical', 'math',
+  'logical_reasoning', 'logic', 'reasoning',
+  'measurement', 'engineering_units', 'units',
+  'spatial_reasoning', 'spatial',
+  'problem_solving', 'troubleshooting', 'analysis',
+  'critical_thinking', 'analytical', 'decision_making',
+  'intellectual', 'cognitive', 'capability'
 ];
 
 function cleanText(value, fallback = "") {
@@ -100,7 +106,6 @@ export function calculateNationalServiceScores(responses, questions) {
     responseMap[r.question_id] = r;
   });
 
-  // Helper to get score from answer
   function getAnswerScore(question, answerId) {
     const answers = Array.isArray(question.answers) ? question.answers : [];
     const answer = answers.find(a => String(a.id) === String(answerId));
@@ -136,13 +141,14 @@ export function calculateNationalServiceScores(responses, questions) {
 }
 
 // ============================================================
-// CATEGORY BREAKDOWN CALCULATION - NEW FUNCTION
+// ENHANCED CATEGORY BREAKDOWN CALCULATION
 // ============================================================
 
 export function calculateCategoryBreakdown(responses, questions) {
   const categoryMap = {};
   const categoryMaxMap = {};
   const categoryDimensionMap = {};
+  const questionCountMap = {};
 
   const responseMap = {};
   responses.forEach(r => {
@@ -156,20 +162,35 @@ export function calculateCategoryBreakdown(responses, questions) {
   }
 
   questions.forEach(question => {
-    const category = cleanText(question.section || 'General', 'General');
+    // Get the category name (use section field)
+    const category = question.section || question.category || 'General';
+    const categoryKey = cleanText(category, 'general');
+    
     const answers = Array.isArray(question.answers) ? question.answers : [];
     const maxScore = answers.reduce((max, a) => Math.max(max, Number(a.score) || 0), 0) || 1;
 
-    if (!categoryMap[category]) {
-      categoryMap[category] = 0;
-      categoryMaxMap[category] = 0;
+    if (!categoryMap[categoryKey]) {
+      categoryMap[categoryKey] = 0;
+      categoryMaxMap[categoryKey] = 0;
+      questionCountMap[categoryKey] = 0;
+      
       // Determine if this category is workplace or intellectual
       if (isWorkplaceCategory(category)) {
-        categoryDimensionMap[category] = 'workplace';
+        categoryDimensionMap[categoryKey] = 'workplace';
       } else if (isIntellectualCategory(category)) {
-        categoryDimensionMap[category] = 'intellectual';
+        categoryDimensionMap[categoryKey] = 'intellectual';
       } else {
-        categoryDimensionMap[category] = 'other';
+        // Default based on category name patterns
+        const lowerCategory = category.toLowerCase();
+        if (lowerCategory.includes('safety') || lowerCategory.includes('technical') || 
+            lowerCategory.includes('communication') || lowerCategory.includes('teamwork') ||
+            lowerCategory.includes('ownership') || lowerCategory.includes('integrity') ||
+            lowerCategory.includes('workplace') || lowerCategory.includes('ethics') ||
+            lowerCategory.includes('professional')) {
+          categoryDimensionMap[categoryKey] = 'workplace';
+        } else {
+          categoryDimensionMap[categoryKey] = 'intellectual';
+        }
       }
     }
 
@@ -179,24 +200,34 @@ export function calculateCategoryBreakdown(responses, questions) {
       earned = getAnswerScore(question, response.answer_id);
     }
 
-    categoryMap[category] += earned;
-    categoryMaxMap[category] += maxScore;
+    categoryMap[categoryKey] += earned;
+    categoryMaxMap[categoryKey] += maxScore;
+    questionCountMap[categoryKey] += 1;
   });
 
-  // Build category breakdown array
-  const breakdown = Object.keys(categoryMap).map(category => {
-    const earned = categoryMap[category];
-    const max = categoryMaxMap[category];
-    const percentage = max > 0 ? roundNumber((earned / max) * 100, 2) : 0;
+  // Build category breakdown array with display names
+  const breakdown = Object.keys(categoryMap).map(categoryKey => {
+    const earned = categoryMap[categoryKey];
+    const max = categoryMaxMap[categoryKey];
+    const percentage = max > 0 ? roundNumber((earned / max) * 100, 1) : 0;
+    const questionCount = questionCountMap[categoryKey] || 0;
+    
+    // Get display name (capitalized with spaces)
+    const displayName = categoryKey
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
     
     return {
-      category: category,
-      dimension: categoryDimensionMap[category] || 'other',
+      category: displayName,
+      key: categoryKey,
+      dimension: categoryDimensionMap[categoryKey] || 'other',
       earned: earned,
       max: max,
       percentage: percentage,
-      earnedDisplay: earned,
-      maxDisplay: max
+      questionCount: questionCount,
+      score: earned,
+      maxScore: max
     };
   });
 
@@ -207,7 +238,45 @@ export function calculateCategoryBreakdown(responses, questions) {
 }
 
 // ============================================================
-// REPORT BUILDING
+// SPLIT CATEGORIES INTO WORKPLACE AND INTELLECTUAL
+// ============================================================
+
+export function splitCategoryBreakdown(categoryBreakdown) {
+  const workplace = [];
+  const intellectual = [];
+
+  categoryBreakdown.forEach(cat => {
+    if (cat.dimension === 'workplace') {
+      workplace.push(cat);
+    } else if (cat.dimension === 'intellectual') {
+      intellectual.push(cat);
+    } else {
+      // Fallback: check the category name
+      const categoryName = cat.category || '';
+      const lowerName = categoryName.toLowerCase();
+      
+      const workplaceKeywords = ['safety', 'technical', 'communication', 'teamwork', 'ownership', 'integrity', 'workplace', 'ethics', 'professional', 'readiness'];
+      const intellectualKeywords = ['numerical', 'logical', 'reasoning', 'measurement', 'engineering', 'spatial', 'problem', 'troubleshooting', 'critical', 'analytical', 'decision'];
+      
+      const isWorkplace = workplaceKeywords.some(k => lowerName.includes(k));
+      const isIntellectual = intellectualKeywords.some(k => lowerName.includes(k));
+      
+      if (isWorkplace) {
+        workplace.push(cat);
+      } else if (isIntellectual) {
+        intellectual.push(cat);
+      } else {
+        // Default: put in intellectual if we're not sure
+        intellectual.push(cat);
+      }
+    }
+  });
+
+  return { workplace, intellectual };
+}
+
+// ============================================================
+// MAIN REPORT BUILDING - ENHANCED
 // ============================================================
 
 export function generateNationalServiceReport({
@@ -222,8 +291,24 @@ export function generateNationalServiceReport({
   suggestedDepartments,
   workplaceClass,
   intellectualClass,
-  categoryBreakdown = []  // NEW: Accept category breakdown
+  categoryBreakdown = [],
+  responses = [],
+  questions = []
 }) {
+  // If we have responses and questions but no category breakdown, calculate it
+  let finalCategoryBreakdown = categoryBreakdown;
+  
+  if ((finalCategoryBreakdown.length === 0) && responses.length > 0 && questions.length > 0) {
+    finalCategoryBreakdown = calculateCategoryBreakdown(responses, questions);
+    console.log('[NationalServiceReport] Calculated category breakdown from responses:', finalCategoryBreakdown.length);
+  }
+  
+  // Split into workplace and intellectual sub-categories
+  const { workplace, intellectual } = splitCategoryBreakdown(finalCategoryBreakdown);
+  
+  console.log('[NationalServiceReport] Workplace sub-categories:', workplace.length);
+  console.log('[NationalServiceReport] Intellectual sub-categories:', intellectual.length);
+
   return {
     candidateName: profile?.full_name || 'Candidate',
     assessmentName: assessment?.title || 'National Service Assessment',
@@ -258,6 +343,37 @@ export function generateNationalServiceReport({
       workplace: workplaceClass,
       intellectual: intellectualClass
     },
-    categoryBreakdown: categoryBreakdown  // NEW: Include in report
+    // ============================================================
+    // CRITICAL: These are the sub-categories for the frontend
+    // ============================================================
+    categoryBreakdown: finalCategoryBreakdown,
+    workplaceSubCategories: workplace,
+    intellectualSubCategories: intellectual,
+    // Also include as category_scores for compatibility with NationalServiceReport component
+    category_scores: finalCategoryBreakdown,
+    // Legacy support
+    scores: {
+      overall: overallScore,
+      workplace: workplaceReadiness,
+      intellectual: intellectualCapability,
+      recommendation: recommendation.recommendation
+    }
   };
 }
+
+// ============================================================
+// EXPORT ALL FUNCTIONS
+// ============================================================
+
+export default {
+  isWorkplaceCategory,
+  isIntellectualCategory,
+  classifyWorkplaceReadiness,
+  classifyIntellectualCapability,
+  getRecommendation,
+  getSuggestedDepartments,
+  calculateNationalServiceScores,
+  calculateCategoryBreakdown,
+  splitCategoryBreakdown,
+  generateNationalServiceReport
+};
