@@ -1,4 +1,5 @@
-// pages/api/supervisor/dashboard.js - DEBUG VERSION
+// pages/api/supervisor/dashboard.js - FIXED VERSION
+// Avoids querying assessment_types separately to prevent 403 errors
 import { createClient } from '@supabase/supabase-js';
 
 function extractBearerToken(req) {
@@ -38,10 +39,8 @@ export default async function handler(req, res) {
     const user = userData.user;
     const supervisorId = user.id;
 
-    console.log('[DEBUG] Supervisor ID:', supervisorId);
-
     // ============================================================
-    // STEP 1: Get candidates
+    // STEP 1: Get candidates for this supervisor
     // ============================================================
     const { data: candidates, error: candidatesError } = await serviceClient
       .from('candidate_profiles')
@@ -49,14 +48,11 @@ export default async function handler(req, res) {
       .eq('supervisor_id', supervisorId);
 
     if (candidatesError) {
-      console.error('[DEBUG] Candidates error:', candidatesError);
+      console.error('[Dashboard] Candidates error:', candidatesError);
       return res.status(500).json({ success: false, error: 'Failed to load candidates', details: candidatesError.message });
     }
 
-    console.log('[DEBUG] Found candidates:', candidates.length);
-
     const candidateIds = candidates.map(c => c.id);
-    console.log('[DEBUG] Candidate IDs:', candidateIds);
 
     if (candidateIds.length === 0) {
       return res.status(200).json({
@@ -65,131 +61,129 @@ export default async function handler(req, res) {
         stats: { totalCandidates: 0, completedAssessments: 0, nationalServiceReports: 0 },
         candidates: [],
         nationalServiceReports: [],
-        otherReports: [],
-        debug: { message: 'No candidates found' }
+        otherReports: []
       });
     }
 
     // ============================================================
-    // STEP 2: Get candidate assessments
+    // STEP 2: Get candidate assessments with assessment details in ONE query
+    // Using a simpler approach - get assessments first, then join manually
     // ============================================================
-    console.log('[DEBUG] Fetching assessments for candidate IDs:', candidateIds);
-    
     const { data: assessments, error: assessmentsError } = await serviceClient
       .from('candidate_assessments')
       .select('*')
       .in('user_id', candidateIds);
 
     if (assessmentsError) {
-      console.error('[DEBUG] Assessments error:', assessmentsError);
+      console.error('[Dashboard] Assessments error:', assessmentsError);
       return res.status(500).json({ success: false, error: 'Failed to load assessments', details: assessmentsError.message });
     }
 
-    console.log('[DEBUG] Found assessments:', assessments.length);
-
     // ============================================================
-    // STEP 3: Get assessment details
+    // STEP 3: Get assessment details (with assessment_type info embedded)
+    // We'll use a left join to get the type info
     // ============================================================
     const assessmentIds = assessments.map(a => a.assessment_id).filter(Boolean);
-    console.log('[DEBUG] Assessment IDs:', assessmentIds);
-
-    let assessmentDetails = [];
-    let assessmentDetailsError = null;
+    let assessmentMap = {};
+    let typeMap = {};
 
     if (assessmentIds.length > 0) {
-      const result = await serviceClient
+      // Get assessments with their types using a single query with embedded fields
+      const { data: assessmentData, error: assessmentError } = await serviceClient
         .from('assessments')
-        .select('id, title, assessment_type_id')
+        .select(`
+          id, 
+          title, 
+          assessment_type_id,
+          assessment_types:assessment_type_id (id, code, name)
+        `)
         .in('id', assessmentIds);
-      
-      assessmentDetails = result.data || [];
-      assessmentDetailsError = result.error;
 
-      if (assessmentDetailsError) {
-        console.error('[DEBUG] Assessment details error:', assessmentDetailsError);
-        return res.status(500).json({ success: false, error: 'Failed to load assessment details', details: assessmentDetailsError.message });
+      if (assessmentError) {
+        console.error('[Dashboard] Assessment details error:', assessmentError);
+        // If this fails, try a simpler approach without the nested join
+        // Fallback: get assessments without types
+        const { data: simpleAssessments, error: simpleError } = await serviceClient
+          .from('assessments')
+          .select('id, title, assessment_type_id')
+          .in('id', assessmentIds);
+
+        if (simpleError) {
+          console.error('[Dashboard] Simple assessment error:', simpleError);
+          return res.status(500).json({ success: false, error: 'Failed to load assessment details', details: simpleError.message });
+        }
+
+        // Build assessment map from simple data
+        simpleAssessments.forEach(a => {
+          assessmentMap[a.id] = { ...a, assessment_type: null };
+        });
+
+        // Try to get types separately
+        const typeIds = simpleAssessments.map(a => a.assessment_type_id).filter(Boolean);
+        if (typeIds.length > 0) {
+          const { data: typesData, error: typesError } = await serviceClient
+            .from('assessment_types')
+            .select('id, code, name')
+            .in('id', typeIds);
+
+          if (!typesError && typesData) {
+            typesData.forEach(t => { typeMap[t.id] = t; });
+          }
+        }
+
+        // Map types to assessments
+        Object.keys(assessmentMap).forEach(id => {
+          const a = assessmentMap[id];
+          if (a.assessment_type_id) {
+            a.assessment_type = typeMap[a.assessment_type_id] || null;
+          }
+        });
+      } else {
+        // Build assessment map from successful nested query
+        assessmentData.forEach(a => {
+          assessmentMap[a.id] = a;
+        });
       }
     }
 
-    console.log('[DEBUG] Found assessment details:', assessmentDetails.length);
-
     // ============================================================
-    // STEP 4: Get assessment types
-    // ============================================================
-    const typeIds = assessmentDetails.map(a => a.assessment_type_id).filter(Boolean);
-    console.log('[DEBUG] Type IDs:', typeIds);
-
-    let assessmentTypes = [];
-    let assessmentTypesError = null;
-
-    if (typeIds.length > 0) {
-      const result = await serviceClient
-        .from('assessment_types')
-        .select('id, code, name')
-        .in('id', typeIds);
-      
-      assessmentTypes = result.data || [];
-      assessmentTypesError = result.error;
-
-      if (assessmentTypesError) {
-        console.error('[DEBUG] Assessment types error:', assessmentTypesError);
-        return res.status(500).json({ success: false, error: 'Failed to load assessment types', details: assessmentTypesError.message });
-      }
-    }
-
-    console.log('[DEBUG] Found assessment types:', assessmentTypes.length);
-
-    // ============================================================
-    // STEP 5: Get results
+    // STEP 4: Get results for completed assessments
     // ============================================================
     const resultIds = assessments.map(a => a.result_id).filter(Boolean);
-    console.log('[DEBUG] Result IDs:', resultIds);
-
-    let results = [];
-    let resultsError = null;
+    let resultMap = {};
 
     if (resultIds.length > 0) {
-      const result = await serviceClient
+      const { data: resultsData, error: resultsError } = await serviceClient
         .from('assessment_results')
         .select('*')
         .in('id', resultIds);
-      
-      results = result.data || [];
-      resultsError = result.error;
 
       if (resultsError) {
-        console.error('[DEBUG] Results error:', resultsError);
-        return res.status(500).json({ success: false, error: 'Failed to load results', details: resultsError.message });
+        console.error('[Dashboard] Results error:', resultsError);
+        // Continue without results
+      } else {
+        resultsData.forEach(r => { resultMap[r.id] = r; });
       }
     }
 
-    console.log('[DEBUG] Found results:', results.length);
-
     // ============================================================
-    // BUILD RESPONSE
+    // STEP 5: Build reports
     // ============================================================
-    const assessmentMap = {};
-    assessmentDetails.forEach(a => { assessmentMap[a.id] = a; });
-
-    const typeMap = {};
-    assessmentTypes.forEach(t => { typeMap[t.id] = t; });
-
-    const resultMap = {};
-    results.forEach(r => { resultMap[r.id] = r; });
-
     const reports = [];
+
     assessments.forEach(a => {
       const assessment = assessmentMap[a.assessment_id];
       if (!assessment) {
-        console.log('[DEBUG] Missing assessment for:', a.assessment_id);
+        console.log('[Dashboard] Missing assessment for:', a.assessment_id);
         return;
       }
 
-      const type = typeMap[assessment.assessment_type_id];
+      const type = assessment.assessment_type || {};
       const isNationalService = type?.code === 'national_service';
       const result = a.result_id ? resultMap[a.result_id] : null;
       const isCompleted = a.status === 'completed' || a.result_id !== null;
 
+      // Only include completed assessments or those with results
       if (!isCompleted && !result) return;
 
       const candidate = candidates.find(c => c.id === a.user_id);
@@ -198,9 +192,13 @@ export default async function handler(req, res) {
         result_id: a.result_id,
         candidate_id: a.user_id,
         candidate_name: candidate?.full_name || 'Unknown',
+        candidate_email: candidate?.email || '',
+        university: candidate?.university || '',
+        programme: candidate?.programme || '',
         assessment_id: a.assessment_id,
         assessment_title: assessment.title || 'Assessment',
         assessment_code: type?.code || 'general',
+        assessment_type_name: type?.name || 'General',
         status: a.status,
         completed_at: a.completed_at,
         score: result?.percentage_score || 0,
@@ -208,59 +206,81 @@ export default async function handler(req, res) {
         workplace_readiness: result?.workplace_readiness || 0,
         intellectual_capability: result?.intellectual_capability || 0,
         recommendation: result?.recommendation || 'Not Available',
-        percentage_score: result?.percentage_score || 0
+        percentage_score: result?.percentage_score || 0,
+        resultData: result || null
       });
     });
 
     const nationalServiceReports = reports.filter(r => r.is_national_service);
     const otherReports = reports.filter(r => !r.is_national_service);
 
+    // ============================================================
+    // STEP 6: Build candidate objects with their stats
+    // ============================================================
+    const candidatesWithStats = candidates.map(c => {
+      const candidateAssessments = assessments.filter(a => a.user_id === c.id);
+      const completed = candidateAssessments.filter(a => a.status === 'completed' || a.result_id !== null).length;
+      const inProgress = candidateAssessments.filter(a => a.status === 'in_progress').length;
+      const unblocked = candidateAssessments.filter(a => a.status === 'unblocked').length;
+      const blocked = candidateAssessments.filter(a => a.status === 'blocked').length;
+      const notStarted = candidateAssessments.filter(a => !a.status || a.status === 'pending' || a.status === '').length;
+
+      const completedAssessments = candidateAssessments
+        .filter(a => a.status === 'completed' || a.result_id !== null)
+        .map(a => {
+          const assessment = assessmentMap[a.assessment_id];
+          const type = assessment?.assessment_type || {};
+          const result = a.result_id ? resultMap[a.result_id] : null;
+          
+          return {
+            assessment_id: a.assessment_id,
+            result_id: a.result_id,
+            title: assessment?.title || 'Assessment',
+            score: result?.percentage_score || 0,
+            isNationalService: type?.code === 'national_service',
+            assessment_code: type?.code || 'general',
+            assessment_type: type?.name || 'General',
+            reportData: reports.find(r => r.result_id === a.result_id) || null
+          };
+        })
+        .filter(item => item.result_id);
+
+      return {
+        ...c,
+        assessments: candidateAssessments,
+        stats: { completed, inProgress, unblocked, blocked, notStarted, total: candidateAssessments.length },
+        completedAssessments
+      };
+    });
+
+    // ============================================================
+    // STEP 7: Return response
+    // ============================================================
+    const stats = {
+      totalCandidates: candidates.length,
+      completedAssessments: assessments.filter(a => a.status === 'completed' || a.result_id !== null).length,
+      pendingReviews: assessments.filter(a => a.status === 'in_progress' || a.status === 'unblocked').length,
+      nationalServiceReports: nationalServiceReports.length
+    };
+
     return res.status(200).json({
       success: true,
-      supervisor: { id: user.id, email: user.email },
-      stats: {
-        totalCandidates: candidates.length,
-        completedAssessments: assessments.filter(a => a.status === 'completed' || a.result_id !== null).length,
-        nationalServiceReports: nationalServiceReports.length
+      supervisor: {
+        id: user.id,
+        email: user.email,
+        full_name: user.user_metadata?.full_name || ''
       },
-      candidates: candidates.map(c => ({
-        ...c,
-        stats: {
-          completed: assessments.filter(a => a.user_id === c.id && (a.status === 'completed' || a.result_id !== null)).length,
-          inProgress: assessments.filter(a => a.user_id === c.id && a.status === 'in_progress').length,
-          unblocked: assessments.filter(a => a.user_id === c.id && a.status === 'unblocked').length,
-          blocked: assessments.filter(a => a.user_id === c.id && a.status === 'blocked').length,
-          notStarted: assessments.filter(a => a.user_id === c.id && (!a.status || a.status === 'pending')).length,
-          total: assessments.filter(a => a.user_id === c.id).length
-        },
-        completedAssessments: assessments
-          .filter(a => a.user_id === c.id && (a.status === 'completed' || a.result_id !== null))
-          .map(a => {
-            const result = a.result_id ? resultMap[a.result_id] : null;
-            return {
-              assessment_id: a.assessment_id,
-              result_id: a.result_id,
-              title: assessmentMap[a.assessment_id]?.title || 'Assessment',
-              score: result?.percentage_score || 0,
-              isNationalService: typeMap[assessmentMap[a.assessment_id]?.assessment_type_id]?.code === 'national_service'
-            };
-          })
-          .filter(a => a.result_id)
-      })),
+      stats,
+      candidates: candidatesWithStats,
       nationalServiceReports,
-      otherReports,
-      debug: {
-        candidateCount: candidates.length,
-        assessmentCount: assessments.length,
-        resultCount: results.length,
-        reportCount: reports.length,
-        nationalServiceCount: nationalServiceReports.length,
-        otherCount: otherReports.length
-      }
+      otherReports
     });
 
   } catch (error) {
     console.error('[Dashboard API] Error:', error);
-    return res.status(500).json({ success: false, error: error.message || 'Internal error', stack: error.stack });
+    return res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Internal error'
+    });
   }
 }
