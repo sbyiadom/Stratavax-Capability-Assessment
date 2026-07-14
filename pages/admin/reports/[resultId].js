@@ -24,7 +24,6 @@ export default function AdminReportView() {
       try {
         setLoading(true);
 
-        // Check if user is admin
         const userRole = session.user?.user_metadata?.role || session.user?.role;
         if (userRole !== 'admin') {
           setError('You do not have permission to view this report.');
@@ -32,7 +31,6 @@ export default function AdminReportView() {
           return;
         }
 
-        // Fetch the report directly from the API
         const response = await fetch(`/api/assessment-report/${resultId}`);
         const data = await response.json();
 
@@ -42,9 +40,7 @@ export default function AdminReportView() {
 
         console.log('[Admin Report] Full data received:', data);
 
-        // Check if it's a National Service assessment
-        const isNS = 
-          data.isNationalService === true ||
+        const isNS = data.isNationalService === true ||
           (data.result?.report_data && data.result.report_data.dimensions && 
            data.result.report_data.dimensions.workplaceReadiness !== undefined) ||
           (data.report && data.report.dimensions && 
@@ -53,22 +49,15 @@ export default function AdminReportView() {
 
         console.log('[Admin Report] Is National Service:', isNS);
 
-        // ============================================================
-        // BUILD THE REPORT OBJECT WITH SUB-CATEGORIES
-        // ============================================================
         let report = data.report || {};
 
-        // If we have report_data in the result, use it
         if (data.result?.report_data && !report.dimensions) {
           report = data.result.report_data;
-          console.log('[Admin Report] Using report_data from result:', report);
         }
 
         // ============================================================
-        // ADD SUB-CATEGORIES FROM API RESPONSE
+        // FIX: Add sub-categories from API response to the report object
         // ============================================================
-        // The API now returns workplaceSubCategories and intellectualSubCategories
-        // at the top level of the response
         if (data.workplaceSubCategories && data.workplaceSubCategories.length > 0) {
           report.workplaceSubCategories = data.workplaceSubCategories;
           console.log('[Admin Report] Added workplaceSubCategories:', data.workplaceSubCategories.length);
@@ -79,7 +68,6 @@ export default function AdminReportView() {
           console.log('[Admin Report] Added intellectualSubCategories:', data.intellectualSubCategories.length);
         }
 
-        // Also check if sub-categories are in the result
         if (data.result?.workplaceSubCategories && data.result.workplaceSubCategories.length > 0) {
           report.workplaceSubCategories = data.result.workplaceSubCategories;
         }
@@ -88,105 +76,24 @@ export default function AdminReportView() {
           report.intellectualSubCategories = data.result.intellectualSubCategories;
         }
 
-        // If we have categoryScores but no sub-categories, try to extract from categoryScores
-        if ((!report.workplaceSubCategories || report.workplaceSubCategories.length === 0) && 
-            data.categoryScores && data.categoryScores.length > 0) {
-          // Split categoryScores into workplace and intellectual based on category names
-          const workplaceNames = [
-            'Safety & Risk Awareness', 'Safety', 'Risk Awareness',
-            'Technical Fundamentals', 'Technical',
-            'Communication & Teamwork', 'Communication', 'Teamwork',
-            'Ownership & Integrity', 'Ownership', 'Integrity',
-            'Workplace Ethics', 'Workplace Readiness'
-          ];
-
-          const intellectualNames = [
-            'Problem Solving & Troubleshooting', 'Problem Solving', 'Troubleshooting',
-            'Logical Reasoning', 'Logic',
-            'Numerical Reasoning', 'Numerical',
-            'Measurement & Engineering Units', 'Measurement', 'Engineering Units',
-            'Learning Agility', 'Agility',
-            'Critical Thinking', 'Analytical', 'Decision Making',
-            'Intellectual Capability'
-          ];
-
-          const workplace = [];
-          const intellectual = [];
-
-          data.categoryScores.forEach(cat => {
-            const name = cat.category || cat.name || '';
-            const lowerName = name.toLowerCase();
-            
-            const isWorkplace = workplaceNames.some(n => lowerName.includes(n.toLowerCase()));
-            const isIntellectual = intellectualNames.some(n => lowerName.includes(n.toLowerCase()));
-
-            if (isWorkplace || lowerName.includes('safety') || lowerName.includes('technical')) {
-              workplace.push(cat);
-            } else if (isIntellectual || lowerName.includes('reasoning') || lowerName.includes('problem')) {
-              intellectual.push(cat);
-            } else {
-              if (lowerName.includes('readiness') || lowerName.includes('ethics') || lowerName.includes('ownership')) {
-                workplace.push(cat);
-              } else {
-                intellectual.push(cat);
-              }
-            }
-          });
-
-          if (workplace.length > 0) {
-            report.workplaceSubCategories = workplace;
-            console.log('[Admin Report] Extracted workplaceSubCategories from categoryScores:', workplace.length);
-          }
-          if (intellectual.length > 0) {
-            report.intellectualSubCategories = intellectual;
-            console.log('[Admin Report] Extracted intellectualSubCategories from categoryScores:', intellectual.length);
-          }
-        }
-
-        // Also pass through raw data for the component to handle
-        report.categoryScores = data.categoryScores || report.categoryScores || [];
-        report.strengths = data.strengths || report.strengths || [];
-        report.weaknesses = data.weaknesses || report.weaknesses || [];
-        report.recommendations = data.recommendations || report.recommendations || [];
-        report.executiveSummary = data.executiveSummary || report.executiveSummary || '';
-        report.supervisorImplication = data.supervisorImplication || report.supervisorImplication || '';
-        report.classification = data.classification || report.classification || 'Not Available';
-        report.riskLevel = data.riskLevel || report.riskLevel || 'Medium';
-        report.overallScore = data.overallScore || report.overallScore || 0;
-
-        // Ensure dimensions exist for National Service reports
+        // Also ensure dimensions exist
         if (isNS && !report.dimensions) {
           report.dimensions = {
-            workplaceReadiness: data.result?.workplace_readiness || data.report?.dimensions?.workplaceReadiness || 0,
-            intellectualCapability: data.result?.intellectual_capability || data.report?.dimensions?.intellectualCapability || 0,
-            overallScore: data.overallScore || data.report?.dimensions?.overallScore || 0
+            workplaceReadiness: data.result?.workplace_readiness || 0,
+            intellectualCapability: data.result?.intellectual_capability || 0,
+            overallScore: data.overallScore || 0
           };
         }
 
-        // Ensure recommendation exists
         if (isNS && !report.recommendation) {
           report.recommendation = {
-            level: data.result?.recommendation || data.report?.recommendation?.level || 'Not Recommended'
+            level: data.result?.recommendation || 'Not Available'
           };
         }
 
-        // Ensure candidateInfo exists
-        if (!report.candidateInfo && data.result?.candidate_profiles) {
-          report.candidateInfo = {
-            fullName: data.result.candidate_profiles.full_name || 'Candidate',
-            university: data.result.candidate_profiles.university || '',
-            programme: data.result.candidate_profiles.programme || '',
-            graduationYear: data.result.candidate_profiles.graduation_year || '',
-            preferredDepartment: data.result.candidate_profiles.preferred_department || '',
-            assessmentDate: data.result.completed_at ? new Date(data.result.completed_at).toLocaleDateString() : 'N/A'
-          };
-        }
-
-        console.log('[Admin Report] Final report object:', {
+        console.log('[Admin Report] Final report with sub-categories:', {
           hasWorkplaceSubCategories: (report.workplaceSubCategories || []).length,
-          hasIntellectualSubCategories: (report.intellectualSubCategories || []).length,
-          hasDimensions: !!report.dimensions,
-          hasRecommendation: !!report.recommendation
+          hasIntellectualSubCategories: (report.intellectualSubCategories || []).length
         });
 
         setReportData({
@@ -234,7 +141,6 @@ export default function AdminReportView() {
     );
   }
 
-  // Render National Service Report if detected
   if (isNationalService && reportData?.report) {
     console.log('[Admin Report] Rendering National Service Report with:', {
       workplaceSubCategories: (reportData.report.workplaceSubCategories || []).length,
@@ -254,7 +160,6 @@ export default function AdminReportView() {
     );
   }
 
-  // If we have report_data but it's not being detected, try to render it anyway
   if (reportData?.result?.report_data) {
     console.log('[Admin Report] Rendering report_data directly');
     const report = reportData.result.report_data;
@@ -279,7 +184,6 @@ export default function AdminReportView() {
     );
   }
 
-  // Fallback
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.fallbackContainer}>
@@ -289,19 +193,6 @@ export default function AdminReportView() {
         <div style={styles.fallbackContent}>
           <h2>Standard Report</h2>
           <p>This assessment uses the standard report format.</p>
-          {reportData?.result && (
-            <div style={styles.debugInfo}>
-              <h4>Debug Info:</h4>
-              <pre>{JSON.stringify({
-                hasReportData: !!reportData.result.report_data,
-                hasWorkplaceReadiness: reportData.result.workplace_readiness,
-                hasIntellectualCapability: reportData.result.intellectual_capability,
-                recommendation: reportData.result.recommendation,
-                workplaceSubCategories: (reportData.workplaceSubCategories || []).length,
-                intellectualSubCategories: (reportData.intellectualSubCategories || []).length
-              }, null, 2)}</pre>
-            </div>
-          )}
         </div>
       </div>
     </AppLayout>
@@ -393,14 +284,6 @@ const styles = {
     padding: '24px',
     borderRadius: '12px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-  },
-  debugInfo: {
-    marginTop: '16px',
-    padding: '12px',
-    background: '#f8fafc',
-    borderRadius: '8px',
-    fontSize: '12px',
-    overflow: 'auto'
   }
 };
 
