@@ -298,13 +298,11 @@ function AssessmentContent() {
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
       
+      // ============================================================
+      // FIX: Redirect to completion page instead of results
+      // ============================================================
       setTimeout(() => {
-        const resultId = result.result_id || result.id || result.result?.id;
-        if (resultId) {
-          router.push(`/candidate/results/${resultId}`);
-        } else {
-          router.push('/candidate/dashboard');
-        }
+        router.push('/candidate/assessment-complete');
       }, 2000);
 
     } catch (err) {
@@ -701,13 +699,12 @@ function AssessmentContent() {
       
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
+      
+      // ============================================================
+      // FIX: Redirect to completion page instead of results
+      // ============================================================
       setTimeout(() => {
-        const resultId = result.result_id || result.id || result.result?.id;
-        if (resultId) {
-          router.push(`/candidate/results/${resultId}`);
-        } else {
-          router.push('/candidate/dashboard');
-        }
+        router.push('/candidate/assessment-complete');
       }, 2000);
     } catch (err) {
       console.error("Submission error:", err);
@@ -790,7 +787,7 @@ function AssessmentContent() {
         </div>
       )}
 
-      {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: successColor }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to dashboard...</p></div></div>}
+      {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: successColor }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to completion page...</p></div></div>}
 
       {/* ============================================================
           NATIONAL SERVICE ASSESSMENT WITH STRATAVAX BRANDING
