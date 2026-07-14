@@ -1,18 +1,7 @@
 // pages/api/supervisor/dashboard.js
-// Secure supervisor dashboard API
-// Purpose:
-// - Loads supervisor dashboard data using the Supabase service role on the server.
-// - Avoids frontend RLS issues where a supervisor may see 0 rows even when candidates are assigned.
-// - Supports both supervisor and admin roles.
-//
-// IMPORTANT FRONTEND NOTE:
-// Your pages/supervisor/index.js must call this API with the logged-in user's access token:
-//
-// const { data: sessionData } = await supabase.auth.getSession();
-// const token = sessionData?.session?.access_token;
-// const response = await fetch('/api/supervisor/dashboard', {
-//   headers: { Authorization: `Bearer ${token}` }
-// });
+// Robust Supervisor Dashboard API
+// Fixes: "Failed to load supervisor profile" by avoiding hard failure on supervisor_profiles lookup.
+// Also validates that SUPABASE_SERVICE_ROLE_KEY is truly a service_role key.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -31,6 +20,24 @@ function extractBearerToken(req) {
   if (!authHeader || typeof authHeader !== 'string') return null;
   if (!authHeader.toLowerCase().startsWith('bearer ')) return null;
   return authHeader.slice(7).trim();
+}
+
+function decodeJwtPayload(token) {
+  try {
+    const parts = String(token || '').split('.');
+    if (parts.length < 2) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
+    const json = Buffer.from(padded, 'base64').toString('utf8');
+    return JSON.parse(json);
+  } catch (error) {
+    return null;
+  }
+}
+
+function isLikelyServiceRoleKey(key) {
+  const payload = decodeJwtPayload(key);
+  return payload?.role === 'service_role';
 }
 
 function getScoreFromResult(resultData) {
@@ -95,24 +102,17 @@ function getRecommendation(resultData) {
 
   const reportData = resultData.report_data || {};
 
-  if (typeof reportData.recommendation === 'string') {
-    return reportData.recommendation;
-  }
-
-  if (reportData.recommendation?.level) {
-    return reportData.recommendation.level;
-  }
+  if (typeof reportData.recommendation === 'string') return reportData.recommendation;
+  if (reportData.recommendation?.level) return reportData.recommendation.level;
 
   return 'Not Available';
 }
 
 function getRiskLevel(resultData) {
   if (!resultData) return 'Medium';
-
   if (resultData.risk_level) return resultData.risk_level;
 
   const reportData = resultData.report_data || {};
-
   return reportData.riskLevel || reportData.classification || 'Medium';
 }
 
@@ -132,12 +132,92 @@ function buildCandidateMap(candidates) {
   return map;
 }
 
+async function verifyUser(serviceClient, token) {
+  const { data, error } = await serviceClient.auth.getUser(token);
+  if (error || !data?.user) {
+    return { user: null, error: error?.message || 'Invalid or expired user session.' };
+  }
+  return { user: data.user, error: null };
+}
+
+async function loadSupervisorProfile(serviceClient, user) {
+  const byId = await serviceClient
+    .from('supervisor_profiles')
+    .select('id, email, full_name, role, is_active')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (!byId.error && byId.data) {
+    return { profile: byId.data, error: null, lookup: 'id' };
+  }
+
+  const byEmail = await serviceClient
+    .from('supervisor_profiles')
+    .select('id, email, full_name, role, is_active')
+    .eq('email', user.email)
+    .maybeSingle();
+
+  if (!byEmail.error && byEmail.data) {
+    return { profile: byEmail.data, error: null, lookup: 'email' };
+  }
+
+  return {
+    profile: null,
+    error: byId.error?.message || byEmail.error?.message || 'Supervisor profile not found.',
+    lookup: 'failed'
+  };
+}
+
+async function loadCandidates(serviceClient, supervisorId, role) {
+  if (role === 'admin') {
+    const response = await serviceClient
+      .from('candidate_profiles')
+      .select('id, full_name, email, university, programme, supervisor_id, created_at')
+      .order('full_name', { ascending: true });
+
+    if (response.error) return { candidates: [], error: response.error.message };
+    return { candidates: response.data || [], error: null };
+  }
+
+  const directResponse = await serviceClient
+    .from('candidate_profiles')
+    .select('id, full_name, email, university, programme, supervisor_id, created_at')
+    .eq('supervisor_id', supervisorId)
+    .order('full_name', { ascending: true });
+
+  if (directResponse.error) return { candidates: [], error: directResponse.error.message };
+
+  let candidates = directResponse.data || [];
+
+  const accessResponse = await serviceClient
+    .from('supervisor_candidate_access')
+    .select('candidate_id')
+    .eq('supervisor_id', supervisorId);
+
+  if (!accessResponse.error && accessResponse.data?.length > 0) {
+    const existingIds = new Set(candidates.map((candidate) => String(candidate.id)));
+    const missingCandidateIds = accessResponse.data
+      .map((row) => row.candidate_id)
+      .filter((candidateId) => candidateId && !existingIds.has(String(candidateId)));
+
+    if (missingCandidateIds.length > 0) {
+      const accessCandidates = await serviceClient
+        .from('candidate_profiles')
+        .select('id, full_name, email, university, programme, supervisor_id, created_at')
+        .in('id', missingCandidateIds);
+
+      if (!accessCandidates.error && accessCandidates.data) {
+        candidates = [...candidates, ...accessCandidates.data];
+      }
+    }
+  }
+
+  return { candidates, error: null };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
-    return res.status(405).json({
-      success: false,
-      error: 'Method not allowed'
-    });
+    return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
   try {
@@ -147,132 +227,83 @@ export default async function handler(req, res) {
     if (!supabaseUrl || !serviceRoleKey) {
       return res.status(500).json({
         success: false,
-        error: 'Missing Supabase server environment variables.'
+        error: 'Missing Supabase server environment variables.',
+        required: ['NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']
+      });
+    }
+
+    if (!isLikelyServiceRoleKey(serviceRoleKey)) {
+      return res.status(500).json({
+        success: false,
+        error: 'SUPABASE_SERVICE_ROLE_KEY is not a service_role key. Set the real Supabase service_role secret in Vercel Environment Variables, then redeploy.',
+        hint: 'Do not use NEXT_PUBLIC_SUPABASE_ANON_KEY as SUPABASE_SERVICE_ROLE_KEY.'
       });
     }
 
     const token = extractBearerToken(req);
-
     if (!token) {
-      return res.status(401).json({
-        success: false,
-        error: 'Missing Authorization bearer token.'
-      });
+      return res.status(401).json({ success: false, error: 'Missing Authorization bearer token.' });
     }
 
     const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false
-      }
+      auth: { persistSession: false, autoRefreshToken: false }
     });
 
-    // Verify the frontend user session token.
-    const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
+    const verified = await verifyUser(serviceClient, token);
+    if (!verified.user) {
+      return res.status(401).json({ success: false, error: verified.error });
+    }
 
-    if (userError || !userData?.user) {
-      return res.status(401).json({
+    const user = verified.user;
+    const metadataRole = user.user_metadata?.role || null;
+
+    const profileResult = await loadSupervisorProfile(serviceClient, user);
+    const supervisorProfile = profileResult.profile;
+
+    const resolvedRole = supervisorProfile?.role || metadataRole;
+
+    if (resolvedRole !== 'supervisor' && resolvedRole !== 'admin') {
+      return res.status(403).json({
         success: false,
-        error: 'Invalid or expired user session.'
+        error: 'Supervisor or admin access is required.',
+        debug: {
+          userId: user.id,
+          email: user.email,
+          metadataRole,
+          profileLookup: profileResult.lookup,
+          profileError: profileResult.error
+        }
       });
     }
 
-    const user = userData.user;
-    const supervisorId = user.id;
+    if (supervisorProfile?.is_active === false) {
+      return res.status(403).json({ success: false, error: 'This supervisor account is inactive.' });
+    }
 
-    // Load supervisor profile from database, not only user metadata.
-    const { data: supervisorProfile, error: supervisorProfileError } = await serviceClient
-      .from('supervisor_profiles')
-      .select('id, email, full_name, role, is_active')
-      .eq('id', supervisorId)
-      .maybeSingle();
+    const role = resolvedRole;
+    const isAdmin = role === 'admin';
+    const supervisorIdForAssignments = supervisorProfile?.id || user.id;
 
-    if (supervisorProfileError) {
+    const candidateResult = await loadCandidates(serviceClient, supervisorIdForAssignments, role);
+
+    if (candidateResult.error) {
       return res.status(500).json({
         success: false,
-        error: 'Failed to load supervisor profile.',
-        details: supervisorProfileError.message
-      });
-    }
-
-    if (!supervisorProfile) {
-      return res.status(403).json({
-        success: false,
-        error: 'No supervisor profile found for this user.'
-      });
-    }
-
-    if (supervisorProfile.is_active === false) {
-      return res.status(403).json({
-        success: false,
-        error: 'This supervisor account is inactive.'
-      });
-    }
-
-    const role = supervisorProfile.role || user.user_metadata?.role || 'supervisor';
-    const isAdmin = role === 'admin';
-
-    let assignedCandidates = [];
-
-    if (isAdmin) {
-      const { data: allCandidates, error: allCandidatesError } = await serviceClient
-        .from('candidate_profiles')
-        .select('id, full_name, email, university, programme, supervisor_id, created_at')
-        .order('full_name', { ascending: true });
-
-      if (allCandidatesError) {
-        return res.status(500).json({
-          success: false,
-          error: 'Failed to load candidates for admin.',
-          details: allCandidatesError.message
-        });
-      }
-
-      assignedCandidates = allCandidates || [];
-    } else {
-      // Primary source: candidate_profiles.supervisor_id.
-      const { data: directCandidates, error: directCandidatesError } = await serviceClient
-        .from('candidate_profiles')
-        .select('id, full_name, email, university, programme, supervisor_id, created_at')
-        .eq('supervisor_id', supervisorId)
-        .order('full_name', { ascending: true });
-
-      if (directCandidatesError) {
-        return res.status(500).json({
-          success: false,
-          error: 'Failed to load assigned candidates.',
-          details: directCandidatesError.message
-        });
-      }
-
-      assignedCandidates = directCandidates || [];
-
-      // Fallback source: supervisor_candidate_access.
-      // This protects the dashboard if some records are mapped only through the access table.
-      const { data: accessRows, error: accessError } = await serviceClient
-        .from('supervisor_candidate_access')
-        .select('candidate_id')
-        .eq('supervisor_id', supervisorId);
-
-      if (!accessError && accessRows && accessRows.length > 0) {
-        const existingIds = new Set(assignedCandidates.map((candidate) => String(candidate.id)));
-        const missingCandidateIds = accessRows
-          .map((row) => row.candidate_id)
-          .filter((candidateId) => candidateId && !existingIds.has(String(candidateId)));
-
-        if (missingCandidateIds.length > 0) {
-          const { data: accessCandidates, error: accessCandidatesError } = await serviceClient
-            .from('candidate_profiles')
-            .select('id, full_name, email, university, programme, supervisor_id, created_at')
-            .in('id', missingCandidateIds);
-
-          if (!accessCandidatesError && accessCandidates) {
-            assignedCandidates = [...assignedCandidates, ...accessCandidates];
-          }
+        error: 'Failed to load assigned candidates.',
+        details: candidateResult.error,
+        debug: {
+          userId: user.id,
+          email: user.email,
+          metadataRole,
+          supervisorIdForAssignments,
+          role,
+          profileLookup: profileResult.lookup,
+          profileError: profileResult.error
         }
-      }
+      });
     }
 
+    const assignedCandidates = candidateResult.candidates || [];
     const candidateIds = assignedCandidates.map((candidate) => candidate.id).filter(Boolean);
 
     let allAssessments = [];
@@ -282,7 +313,7 @@ export default async function handler(req, res) {
     let candidates = [];
 
     if (candidateIds.length > 0) {
-      const { data: assessmentRows, error: assessmentRowsError } = await serviceClient
+      const assessmentResponse = await serviceClient
         .from('candidate_assessments')
         .select(`
           id,
@@ -299,35 +330,24 @@ export default async function handler(req, res) {
         `)
         .in('user_id', candidateIds);
 
-      if (assessmentRowsError) {
-        return res.status(500).json({
-          success: false,
-          error: 'Failed to load candidate assessments.',
-          details: assessmentRowsError.message
-        });
+      if (assessmentResponse.error) {
+        return res.status(500).json({ success: false, error: 'Failed to load candidate assessments.', details: assessmentResponse.error.message });
       }
 
-      allAssessments = assessmentRows || [];
-
-      const resultIds = allAssessments
-        .map((assessment) => assessment.result_id)
-        .filter(Boolean);
+      allAssessments = assessmentResponse.data || [];
+      const resultIds = allAssessments.map((assessment) => assessment.result_id).filter(Boolean);
 
       if (resultIds.length > 0) {
-        const { data: resultsData, error: resultsError } = await serviceClient
+        const resultResponse = await serviceClient
           .from('assessment_results')
           .select('*')
           .in('id', resultIds);
 
-        if (resultsError) {
-          return res.status(500).json({
-            success: false,
-            error: 'Failed to load assessment results.',
-            details: resultsError.message
-          });
+        if (resultResponse.error) {
+          return res.status(500).json({ success: false, error: 'Failed to load assessment results.', details: resultResponse.error.message });
         }
 
-        resultRows = resultsData || [];
+        resultRows = resultResponse.data || [];
       }
 
       const resultMap = buildResultMap(resultRows);
@@ -372,7 +392,6 @@ export default async function handler(req, res) {
           intellectual_capability: intellectualCapability || 0,
           recommendation: recommendation || 'Not Available',
           risk_level: riskLevel || 'Medium',
-          // Management requested no sub-category display on dashboard.
           category_scores: []
         };
 
@@ -393,36 +412,18 @@ export default async function handler(req, res) {
       });
 
       candidates = assignedCandidates.map((candidate) => {
-        const candidateAssessments = allAssessments.filter(
-          (assessment) => String(assessment.user_id) === String(candidate.id)
-        );
-
-        const completed = candidateAssessments.filter(
-          (assessment) => assessment.status === 'completed' || assessment.result_id !== null
-        ).length;
-
-        const inProgress = candidateAssessments.filter(
-          (assessment) => assessment.status === 'in_progress'
-        ).length;
-
-        const unblocked = candidateAssessments.filter(
-          (assessment) => assessment.status === 'unblocked'
-        ).length;
-
-        const blocked = candidateAssessments.filter(
-          (assessment) => assessment.status === 'blocked'
-        ).length;
-
-        const notStarted = candidateAssessments.filter(
-          (assessment) => assessment.status === 'pending' || !assessment.status || assessment.status === ''
-        ).length;
+        const candidateAssessments = allAssessments.filter((assessment) => String(assessment.user_id) === String(candidate.id));
+        const completed = candidateAssessments.filter((assessment) => assessment.status === 'completed' || assessment.result_id !== null).length;
+        const inProgress = candidateAssessments.filter((assessment) => assessment.status === 'in_progress').length;
+        const unblocked = candidateAssessments.filter((assessment) => assessment.status === 'unblocked').length;
+        const blocked = candidateAssessments.filter((assessment) => assessment.status === 'blocked').length;
+        const notStarted = candidateAssessments.filter((assessment) => assessment.status === 'pending' || !assessment.status || assessment.status === '').length;
 
         const completedAssessments = candidateAssessments
           .filter((assessment) => assessment.status === 'completed' || assessment.result_id !== null)
           .map((assessment) => {
             const reportEntry = allReportData.find(
-              (report) => String(report.result_id) === String(assessment.result_id) &&
-                String(report.candidate_id) === String(candidate.id)
+              (report) => String(report.result_id) === String(assessment.result_id) && String(report.candidate_id) === String(candidate.id)
             );
 
             const isNationalService = assessment.assessments?.assessment_type?.code === 'national_service';
@@ -443,14 +444,7 @@ export default async function handler(req, res) {
         return {
           ...candidate,
           assessments: candidateAssessments,
-          stats: {
-            completed,
-            inProgress,
-            unblocked,
-            blocked,
-            notStarted,
-            total: candidateAssessments.length
-          },
+          stats: { completed, inProgress, unblocked, blocked, notStarted, total: candidateAssessments.length },
           completedAssessments
         };
       });
@@ -458,21 +452,17 @@ export default async function handler(req, res) {
 
     const stats = {
       totalCandidates: assignedCandidates.length,
-      completedAssessments: allAssessments.filter(
-        (assessment) => assessment.status === 'completed' || assessment.result_id !== null
-      ).length,
-      pendingReviews: allAssessments.filter(
-        (assessment) => assessment.status === 'in_progress' || assessment.status === 'unblocked'
-      ).length,
+      completedAssessments: allAssessments.filter((assessment) => assessment.status === 'completed' || assessment.result_id !== null).length,
+      pendingReviews: allAssessments.filter((assessment) => assessment.status === 'in_progress' || assessment.status === 'unblocked').length,
       nationalServiceReports: nationalServiceReports.length
     };
 
     return res.status(200).json({
       success: true,
       supervisor: {
-        id: supervisorProfile.id,
-        email: supervisorProfile.email,
-        full_name: supervisorProfile.full_name || '',
+        id: supervisorProfile?.id || user.id,
+        email: supervisorProfile?.email || user.email,
+        full_name: supervisorProfile?.full_name || user.user_metadata?.full_name || '',
         role,
         is_admin: isAdmin
       },
@@ -481,19 +471,22 @@ export default async function handler(req, res) {
       nationalServiceReports,
       otherReports,
       debug: {
-        supervisorId,
+        userId: user.id,
+        userEmail: user.email,
+        metadataRole,
+        profileLookup: profileResult.lookup,
+        profileError: profileResult.error,
+        supervisorIdForAssignments,
         assignedCandidates: assignedCandidates.length,
         candidateAssessments: allAssessments.length,
         resultRows: resultRows.length,
         nationalServiceReports: nationalServiceReports.length,
-        otherReports: otherReports.length
+        otherReports: otherReports.length,
+        serviceRoleKeyLooksValid: true
       }
     });
   } catch (error) {
     console.error('[Supervisor Dashboard API] Fatal error:', error);
-    return res.status(500).json({
-      success: false,
-      error: error?.message || 'Failed to load supervisor dashboard.'
-    });
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to load supervisor dashboard.' });
   }
 }
