@@ -1,4 +1,9 @@
 // pages/admin/assign-candidates.js
+// Corrected candidate-to-supervisor assignment page
+// Permanent fix included:
+// 1. Updates candidate_profiles.supervisor_id
+// 2. Synchronizes supervisor_candidate_access at the same time
+// 3. Clears old supervisor access records when reassignment or clear assignment happens
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -183,6 +188,60 @@ export default function AssignCandidates() {
     }, 4500);
   }
 
+  async function syncSingleAccessRecord(candidateId, supervisorId) {
+    // Remove any previous access record for this candidate so reassignment stays clean.
+    const { error: deleteError } = await supabase
+      .from("supervisor_candidate_access")
+      .delete()
+      .eq("candidate_id", candidateId);
+
+    if (deleteError) throw deleteError;
+
+    if (!supervisorId) return;
+
+    const { error: insertError } = await supabase
+      .from("supervisor_candidate_access")
+      .upsert(
+        {
+          supervisor_id: supervisorId,
+          candidate_id: candidateId
+        },
+        {
+          onConflict: "supervisor_id,candidate_id",
+          ignoreDuplicates: true
+        }
+      );
+
+    if (insertError) throw insertError;
+  }
+
+  async function syncBulkAccessRecords(candidateIds, supervisorId) {
+    if (!candidateIds || candidateIds.length === 0) return;
+
+    const { error: deleteError } = await supabase
+      .from("supervisor_candidate_access")
+      .delete()
+      .in("candidate_id", candidateIds);
+
+    if (deleteError) throw deleteError;
+
+    if (!supervisorId) return;
+
+    const rows = candidateIds.map((candidateId) => ({
+      supervisor_id: supervisorId,
+      candidate_id: candidateId
+    }));
+
+    const { error: insertError } = await supabase
+      .from("supervisor_candidate_access")
+      .upsert(rows, {
+        onConflict: "supervisor_id,candidate_id",
+        ignoreDuplicates: true
+      });
+
+    if (insertError) throw insertError;
+  }
+
   async function handleAssign(candidateId) {
     const supervisorId = selectedSupervisor[candidateId] || "";
     const candidate = candidates.find((item) => item.id === candidateId);
@@ -211,7 +270,9 @@ export default function AssignCandidates() {
 
       if (error) throw error;
 
-      setMessage({ type: "success", text: "Candidate assigned successfully." });
+      await syncSingleAccessRecord(candidateId, supervisorId);
+
+      setMessage({ type: "success", text: "Candidate assigned successfully and supervisor access synchronized." });
       await fetchData();
       clearMessageAfterDelay();
     } catch (error) {
@@ -240,7 +301,9 @@ export default function AssignCandidates() {
 
       if (error) throw error;
 
-      setMessage({ type: "success", text: "Candidate assignment cleared successfully." });
+      await syncSingleAccessRecord(candidateId, null);
+
+      setMessage({ type: "success", text: "Candidate assignment cleared and supervisor access removed." });
       await fetchData();
       clearMessageAfterDelay();
     } catch (error) {
@@ -265,7 +328,13 @@ export default function AssignCandidates() {
     }
 
     const supervisor = supervisors.find((item) => item.id === selectedBulkSupervisor);
-    const confirmed = window.confirm("Assign " + unassigned.length + " unassigned candidate(s) to " + (supervisor?.full_name || supervisor?.email || "the selected supervisor") + "?");
+    const confirmed = window.confirm(
+      "Assign " +
+        unassigned.length +
+        " unassigned candidate(s) to " +
+        (supervisor?.full_name || supervisor?.email || "the selected supervisor") +
+        "?"
+    );
 
     if (!confirmed) return;
 
@@ -285,8 +354,10 @@ export default function AssignCandidates() {
 
       if (error) throw error;
 
+      await syncBulkAccessRecords(candidateIds, selectedBulkSupervisor);
+
       setSelectedBulkSupervisor("");
-      setMessage({ type: "success", text: "Bulk assignment completed successfully." });
+      setMessage({ type: "success", text: "Bulk assignment completed and supervisor access synchronized." });
       await fetchData();
       clearMessageAfterDelay();
     } catch (error) {
