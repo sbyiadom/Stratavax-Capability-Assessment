@@ -1,4 +1,5 @@
-// pages/admin/reports/index.js
+// pages/admin/reports/index.js - FIXED VERSION
+// Shows ALL assessment reports (both National Service and Stratavax)
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -12,6 +13,7 @@ export default function AdminReportsList() {
   
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState([]);
+  const [filter, setFilter] = useState('all'); // 'all', 'national_service', 'stratavax'
 
   useEffect(() => {
     if (!session) return;
@@ -22,10 +24,28 @@ export default function AdminReportsList() {
     try {
       setLoading(true);
 
-      // Step 1: Get all assessment results
+      // Step 1: Get all assessment results with joins in a single query
       const { data: results, error: resultsError } = await supabase
         .from('assessment_results')
-        .select('*')
+        .select(`
+          *,
+          candidate_profiles!inner(
+            full_name,
+            email,
+            university,
+            programme
+          ),
+          assessments!inner(
+            id,
+            title,
+            assessment_type_id,
+            assessment_types!inner(
+              id,
+              code,
+              name
+            )
+          )
+        `)
         .order('completed_at', { ascending: false });
 
       if (resultsError) {
@@ -37,70 +57,40 @@ export default function AdminReportsList() {
 
       console.log('All results:', results);
 
-      // Step 2: Get assessment details for each result
-      const enrichedReports = await Promise.all(
-        results.map(async (result) => {
-          // Get assessment info
-          const { data: assessment, error: assessmentError } = await supabase
-            .from('assessments')
-            .select('id, title, assessment_type_id')
-            .eq('id', result.assessment_id)
-            .single();
+      // Transform the data
+      const enrichedReports = results.map((result) => ({
+        ...result,
+        candidate_name: result.candidate_profiles?.full_name || 'Unknown',
+        candidate_email: result.candidate_profiles?.email || '',
+        candidate_university: result.candidate_profiles?.university || '',
+        candidate_programme: result.candidate_profiles?.programme || '',
+        assessment_title: result.assessments?.title || 'Unknown',
+        assessment_type_code: result.assessments?.assessment_types?.code || null,
+        assessment_type_name: result.assessments?.assessment_types?.name || 'General'
+      }));
 
-          if (assessmentError) {
-            console.error('Error fetching assessment:', assessmentError);
-            return null;
-          }
-
-          // Get assessment type
-          let assessmentTypeCode = null;
-          if (assessment?.assessment_type_id) {
-            const { data: type, error: typeError } = await supabase
-              .from('assessment_types')
-              .select('code')
-              .eq('id', assessment.assessment_type_id)
-              .single();
-
-            if (!typeError && type) {
-              assessmentTypeCode = type.code;
-            }
-          }
-
-          // Get candidate profile
-          const { data: profile, error: profileError } = await supabase
-            .from('candidate_profiles')
-            .select('full_name, email')
-            .eq('id', result.user_id)
-            .single();
-
-          if (profileError) {
-            console.error('Error fetching profile:', profileError);
-          }
-
-          return {
-            ...result,
-            assessment_title: assessment?.title || 'Unknown',
-            assessment_type_code: assessmentTypeCode,
-            candidate_name: profile?.full_name || 'Unknown',
-            candidate_email: profile?.email || ''
-          };
-        })
-      );
-
-      // Filter out nulls and filter for National Service
-      const validReports = enrichedReports.filter(r => r !== null);
-      const nationalServiceReports = validReports.filter(
-        r => r.assessment_type_code === 'national_service'
-      );
-
-      console.log('National Service reports:', nationalServiceReports.length);
-      setReports(nationalServiceReports);
+      console.log('Enriched reports:', enrichedReports.length);
+      setReports(enrichedReports);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching reports:', error);
       setLoading(false);
     }
   };
+
+  const getFilteredReports = () => {
+    if (filter === 'national_service') {
+      return reports.filter(r => r.assessment_type_code === 'national_service');
+    }
+    if (filter === 'stratavax') {
+      return reports.filter(r => r.assessment_type_code !== 'national_service');
+    }
+    return reports;
+  };
+
+  const filteredReports = getFilteredReports();
+  const nationalServiceCount = reports.filter(r => r.assessment_type_code === 'national_service').length;
+  const stratavaxCount = reports.filter(r => r.assessment_type_code !== 'national_service').length;
 
   const handleViewReport = (resultId) => {
     router.push(`/admin/reports/${resultId}`);
@@ -130,9 +120,43 @@ export default function AdminReportsList() {
 
         <div style={styles.header}>
           <h1 style={styles.title}>Assessment Reports</h1>
-          <p style={styles.subtitle}>National Service Assessment Reports</p>
-          <div style={styles.stats}>
-            <span style={styles.statBadge}>Total Reports: {reports.length}</span>
+          <p style={styles.subtitle}>All assessment reports from candidates</p>
+          
+          {/* Filter Tabs */}
+          <div style={styles.filterTabs}>
+            <button
+              onClick={() => setFilter('all')}
+              style={{
+                ...styles.filterTab,
+                background: filter === 'all' ? '#1a237e' : 'white',
+                color: filter === 'all' ? 'white' : '#1a237e',
+                border: filter === 'all' ? 'none' : '1px solid #e2e8f0'
+              }}
+            >
+              All Reports ({reports.length})
+            </button>
+            <button
+              onClick={() => setFilter('national_service')}
+              style={{
+                ...styles.filterTab,
+                background: filter === 'national_service' ? '#1a237e' : 'white',
+                color: filter === 'national_service' ? 'white' : '#1a237e',
+                border: filter === 'national_service' ? 'none' : '1px solid #e2e8f0'
+              }}
+            >
+              📋 National Service ({nationalServiceCount})
+            </button>
+            <button
+              onClick={() => setFilter('stratavax')}
+              style={{
+                ...styles.filterTab,
+                background: filter === 'stratavax' ? '#1a237e' : 'white',
+                color: filter === 'stratavax' ? 'white' : '#1a237e',
+                border: filter === 'stratavax' ? 'none' : '1px solid #e2e8f0'
+              }}
+            >
+              📊 Stratavax ({stratavaxCount})
+            </button>
           </div>
         </div>
 
@@ -142,94 +166,118 @@ export default function AdminReportsList() {
               <tr>
                 <th style={styles.th}>Candidate</th>
                 <th style={styles.th}>Assessment</th>
-                <th style={styles.th}>Workplace Readiness</th>
-                <th style={styles.th}>Intellectual Capability</th>
-                <th style={styles.th}>Overall Score</th>
+                <th style={styles.th}>Type</th>
+                <th style={styles.th}>Score</th>
                 <th style={styles.th}>Recommendation</th>
                 <th style={styles.th}>Completed</th>
                 <th style={styles.th}>Action</th>
               </tr>
             </thead>
             <tbody>
-              {reports.length === 0 ? (
+              {filteredReports.length === 0 ? (
                 <tr>
-                  <td colSpan="8" style={styles.emptyState}>
-                    No National Service assessment reports found.
+                  <td colSpan="7" style={styles.emptyState}>
+                    No assessment reports found.
                   </td>
                 </tr>
               ) : (
-                reports.map((report) => (
-                  <tr key={report.id} style={styles.tr}>
-                    <td style={styles.td}>
-                      <div style={styles.candidateName}>
-                        {report.candidate_name || 'Unknown'}
-                      </div>
-                      <div style={styles.candidateEmail}>
-                        {report.candidate_email || ''}
-                      </div>
-                    </td>
-                    <td style={styles.td}>
-                      {report.assessment_title || 'N/A'}
-                    </td>
-                    <td style={styles.td}>
-                      <span style={{
-                        ...styles.scoreBadge,
-                        background: report.workplace_readiness >= 75 ? '#dcfce7' :
-                                   report.workplace_readiness >= 65 ? '#fef3c7' : '#fee2e2',
-                        color: report.workplace_readiness >= 75 ? '#166534' :
-                               report.workplace_readiness >= 65 ? '#92400e' : '#991b1b'
-                      }}>
-                        {report.workplace_readiness || 0}%
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={{
-                        ...styles.scoreBadge,
-                        background: report.intellectual_capability >= 75 ? '#dcfce7' :
-                                   report.intellectual_capability >= 65 ? '#fef3c7' : '#fee2e2',
-                        color: report.intellectual_capability >= 75 ? '#166534' :
-                               report.intellectual_capability >= 65 ? '#92400e' : '#991b1b'
-                      }}>
-                        {report.intellectual_capability || 0}%
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={{
-                        ...styles.scoreBadge,
-                        background: report.percentage_score >= 75 ? '#dcfce7' :
-                                   report.percentage_score >= 65 ? '#fef3c7' : '#fee2e2',
-                        color: report.percentage_score >= 75 ? '#166534' :
-                               report.percentage_score >= 65 ? '#92400e' : '#991b1b'
-                      }}>
-                        {report.percentage_score || 0}%
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={{
-                        ...styles.recommendationBadge,
-                        background: report.recommendation === 'Highly Recommended' ? '#dcfce7' :
-                                   report.recommendation === 'Recommended' ? '#dbeafe' :
-                                   report.recommendation === 'Reserve Pool' ? '#fef3c7' : '#fee2e2',
-                        color: report.recommendation === 'Highly Recommended' ? '#166534' :
-                               report.recommendation === 'Recommended' ? '#1e40af' :
-                               report.recommendation === 'Reserve Pool' ? '#92400e' : '#991b1b'
-                      }}>
-                        {report.recommendation || 'N/A'}
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      {report.completed_at ? new Date(report.completed_at).toLocaleDateString() : 'N/A'}
-                    </td>
-                    <td style={styles.td}>
-                      <button
-                        onClick={() => handleViewReport(report.id)}
-                        style={styles.viewButton}
-                      >
-                        View Report
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                filteredReports.map((report) => {
+                  const isNationalService = report.assessment_type_code === 'national_service';
+                  
+                  return (
+                    <tr key={report.id} style={styles.tr}>
+                      <td style={styles.td}>
+                        <div style={styles.candidateName}>
+                          {report.candidate_name || 'Unknown'}
+                        </div>
+                        <div style={styles.candidateEmail}>
+                          {report.candidate_email || ''}
+                        </div>
+                        {report.candidate_university && (
+                          <div style={styles.candidateSub}>
+                            {report.candidate_university} • {report.candidate_programme || ''}
+                          </div>
+                        )}
+                      </td>
+                      <td style={styles.td}>
+                        {report.assessment_title || 'N/A'}
+                      </td>
+                      <td style={styles.td}>
+                        <span style={{
+                          ...styles.typeBadge,
+                          background: isNationalService ? '#dbeafe' : '#e8f5e9',
+                          color: isNationalService ? '#1e40af' : '#2e7d32'
+                        }}>
+                          {isNationalService ? '📋 National Service' : '📊 Stratavax'}
+                        </span>
+                      </td>
+                      <td style={styles.td}>
+                        {isNationalService ? (
+                          <div>
+                            <div style={styles.scoreRow}>
+                              <span style={styles.scoreLabel}>Overall:</span>
+                              <span style={{
+                                ...styles.scoreBadge,
+                                background: report.percentage_score >= 75 ? '#dcfce7' :
+                                           report.percentage_score >= 65 ? '#fef3c7' : '#fee2e2',
+                                color: report.percentage_score >= 75 ? '#166534' :
+                                       report.percentage_score >= 65 ? '#92400e' : '#991b1b'
+                              }}>
+                                {Math.round(report.percentage_score || 0)}%
+                              </span>
+                            </div>
+                            <div style={styles.scoreRow}>
+                              <span style={styles.scoreLabel}>Workplace:</span>
+                              <span style={styles.scoreSmall}>
+                                {Math.round(report.workplace_readiness || 0)}%
+                              </span>
+                            </div>
+                            <div style={styles.scoreRow}>
+                              <span style={styles.scoreLabel}>Intellectual:</span>
+                              <span style={styles.scoreSmall}>
+                                {Math.round(report.intellectual_capability || 0)}%
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{
+                            ...styles.scoreBadge,
+                            background: report.percentage_score >= 75 ? '#dcfce7' :
+                                       report.percentage_score >= 65 ? '#fef3c7' : '#fee2e2',
+                            color: report.percentage_score >= 75 ? '#166534' :
+                                   report.percentage_score >= 65 ? '#92400e' : '#991b1b'
+                          }}>
+                            {Math.round(report.percentage_score || 0)}%
+                          </span>
+                        )}
+                      </td>
+                      <td style={styles.td}>
+                        <span style={{
+                          ...styles.recommendationBadge,
+                          background: report.recommendation === 'Highly Recommended' ? '#dcfce7' :
+                                     report.recommendation === 'Recommended' ? '#dbeafe' :
+                                     report.recommendation === 'Reserve Pool' ? '#fef3c7' : '#fee2e2',
+                          color: report.recommendation === 'Highly Recommended' ? '#166534' :
+                                 report.recommendation === 'Recommended' ? '#1e40af' :
+                                 report.recommendation === 'Reserve Pool' ? '#92400e' : '#991b1b'
+                        }}>
+                          {report.recommendation || 'N/A'}
+                        </span>
+                      </td>
+                      <td style={styles.td}>
+                        {report.completed_at ? new Date(report.completed_at).toLocaleDateString() : 'N/A'}
+                      </td>
+                      <td style={styles.td}>
+                        <button
+                          onClick={() => handleViewReport(report.id)}
+                          style={styles.viewButton}
+                        >
+                          View Report
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -285,16 +333,21 @@ const styles = {
     color: '#64748b',
     margin: '0 0 16px 0'
   },
-  stats: {
+  filterTabs: {
     display: 'flex',
-    gap: '12px'
+    gap: '8px',
+    flexWrap: 'wrap'
   },
-  statBadge: {
-    padding: '6px 16px',
-    background: '#e2e8f0',
-    borderRadius: '20px',
+  filterTab: {
+    padding: '8px 20px',
+    borderRadius: '8px',
+    cursor: 'pointer',
     fontSize: '14px',
-    color: '#475569'
+    fontWeight: '600',
+    transition: 'all 0.2s',
+    fontFamily: 'inherit',
+    background: 'white',
+    border: '1px solid #e2e8f0'
   },
   tableContainer: {
     background: 'white',
@@ -334,12 +387,40 @@ const styles = {
     fontSize: '12px',
     color: '#94a3b8'
   },
+  candidateSub: {
+    fontSize: '11px',
+    color: '#94a3b8',
+    marginTop: '2px'
+  },
+  typeBadge: {
+    padding: '2px 10px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '600',
+    display: 'inline-block'
+  },
   scoreBadge: {
-    padding: '4px 12px',
+    padding: '2px 10px',
     borderRadius: '12px',
     fontSize: '13px',
     fontWeight: '600',
     display: 'inline-block'
+  },
+  scoreRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    fontSize: '12px',
+    marginTop: '1px'
+  },
+  scoreLabel: {
+    color: '#94a3b8',
+    fontSize: '11px'
+  },
+  scoreSmall: {
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#1a202c'
   },
   recommendationBadge: {
     padding: '4px 12px',
