@@ -1,5 +1,4 @@
-// pages/admin/reports/index.js - FIXED VERSION
-// Properly fetches and displays candidate names
+// pages/admin/reports/index.js - SIMPLIFIED WORKING VERSION
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -25,11 +24,11 @@ export default function AdminReportsList() {
       setLoading(true);
 
       // ============================================================
-      // STEP 1: Get all assessment results with candidate_profiles
-      // Use a simpler approach with separate queries
+      // STEP 1: Get all assessment results with candidate info
+      // Use a direct query with the candidate_profiles table
       // ============================================================
       
-      // Get all results
+      // First, get all results
       const { data: results, error: resultsError } = await supabase
         .from('assessment_results')
         .select('*')
@@ -51,29 +50,29 @@ export default function AdminReportsList() {
       }
 
       // ============================================================
-      // STEP 2: Get all candidate profiles
+      // STEP 2: Get ALL candidate profiles (no filter)
       // ============================================================
-      const userIds = results.map(r => r.user_id).filter(Boolean);
-      let candidateMap = {};
+      const { data: candidates, error: candidatesError } = await supabase
+        .from('candidate_profiles')
+        .select('id, full_name, email, university, programme');
 
-      if (userIds.length > 0) {
-        const { data: candidates, error: candidatesError } = await supabase
-          .from('candidate_profiles')
-          .select('id, full_name, email, university, programme')
-          .in('id', userIds);
-
-        if (!candidatesError && candidates) {
-          candidates.forEach(c => {
-            candidateMap[c.id] = c;
-          });
-          console.log('Found candidates:', Object.keys(candidateMap).length);
-        } else {
-          console.error('Error fetching candidates:', candidatesError);
-        }
+      if (candidatesError) {
+        console.error('Error fetching candidates:', candidatesError);
+        setReports([]);
+        setLoading(false);
+        return;
       }
 
+      console.log('Found candidates:', candidates.length);
+
+      // Build a map of candidate ID to candidate data
+      const candidateMap = {};
+      candidates.forEach(c => {
+        candidateMap[c.id] = c;
+      });
+
       // ============================================================
-      // STEP 3: Get assessment details
+      // STEP 3: Get assessment types
       // ============================================================
       const assessmentIds = results.map(r => r.assessment_id).filter(Boolean);
       let assessmentMap = {};
@@ -107,26 +106,20 @@ export default function AdminReportsList() {
       }
 
       // ============================================================
-      // STEP 4: Enrich reports with all data
+      // STEP 4: Build enriched reports
       // ============================================================
       const enrichedReports = results.map((result) => {
+        // Find the candidate by matching user_id
+        const candidate = candidateMap[result.user_id];
+        
+        // Get assessment info
         const assessment = assessmentMap[result.assessment_id] || null;
         const assessmentType = assessment ? typeMap[assessment.assessment_type_id] : null;
-        const candidate = candidateMap[result.user_id] || null;
-        
         const isNationalService = assessmentType?.code === 'national_service';
-
-        // Get candidate name with fallback
-        let candidateName = candidate?.full_name || 'Unknown';
-        
-        // If candidate name is still unknown, try to get it from result's user metadata
-        if (candidateName === 'Unknown' && result.user_metadata) {
-          candidateName = result.user_metadata?.full_name || result.user_metadata?.name || 'Unknown';
-        }
 
         return {
           ...result,
-          candidate_name: candidateName,
+          candidate_name: candidate?.full_name || 'Unknown',
           candidate_email: candidate?.email || '',
           candidate_university: candidate?.university || '',
           candidate_programme: candidate?.programme || '',
@@ -143,6 +136,7 @@ export default function AdminReportsList() {
 
       console.log('Enriched reports:', enrichedReports.length);
       console.log('Sample report:', enrichedReports[0]);
+      
       setReports(enrichedReports);
       setLoading(false);
     } catch (error) {
