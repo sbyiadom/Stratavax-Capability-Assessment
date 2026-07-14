@@ -1,4 +1,6 @@
-// pages/supervisor/index.js - Complete Supervisor Dashboard with Category Breakdown
+// pages/supervisor/index.js - Corrected Supervisor Dashboard
+// Fixes supervisor zero-data issue by loading candidates directly from candidate_profiles.supervisor_id
+// Removes visible sub-category/category breakdown behavior for National Service reports.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -9,23 +11,19 @@ import AppLayout from '../../components/AppLayout';
 export default function SupervisorDashboard() {
   const router = useRouter();
   const { session, loading: authLoading } = useRequireAuth();
-  
+
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('national_service');
   const [candidates, setCandidates] = useState([]);
   const [nationalServiceReports, setNationalServiceReports] = useState([]);
   const [otherReports, setOtherReports] = useState([]);
-  const [selectedReport, setSelectedReport] = useState(null);
-  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [selectedAssessments, setSelectedAssessments] = useState({});
   const [stats, setStats] = useState({
     totalCandidates: 0,
     completedAssessments: 0,
     pendingReviews: 0,
     nationalServiceReports: 0
   });
-
-  // Store selected assessment IDs for each candidate
-  const [selectedAssessments, setSelectedAssessments] = useState({});
 
   useEffect(() => {
     if (!session) return;
@@ -35,42 +33,64 @@ export default function SupervisorDashboard() {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      
-      const supervisorId = session.user.id;
 
-      // Get candidates assigned to this supervisor via supervisor_candidate_access
-      const { data: accessData, error: accessError } = await supabase
-        .from('supervisor_candidate_access')
-        .select('candidate_id')
-        .eq('supervisor_id', supervisorId);
+      const supervisorId = session?.user?.id;
 
-      if (accessError) {
-        console.error('Error fetching access data:', accessError);
+      if (!supervisorId) {
+        console.error('[Supervisor] No logged-in user found.');
+        setLoading(false);
+        return;
       }
 
+      console.log('[Supervisor] Logged in user:', supervisorId);
+
+      const { data: supervisorProfile, error: supervisorProfileError } = await supabase
+        .from('supervisor_profiles')
+        .select('id, email, role, is_active')
+        .eq('id', supervisorId)
+        .single();
+
+      if (supervisorProfileError) {
+        console.error('[Supervisor] Error fetching supervisor profile:', supervisorProfileError);
+      }
+
+      const isAdmin = supervisorProfile?.role === 'admin';
       let assignedCandidates = [];
-      if (accessData && accessData.length > 0) {
-        const candidateIds = accessData.map(a => a.candidate_id);
+
+      if (isAdmin) {
         const { data: candidatesData, error: candidatesError } = await supabase
           .from('candidate_profiles')
-          .select('id, full_name, email, university, programme')
-          .in('id', candidateIds);
+          .select('id, full_name, email, university, programme, supervisor_id')
+          .order('full_name', { ascending: true });
 
         if (candidatesError) {
-          console.error('Error fetching candidates:', candidatesError);
+          console.error('[Supervisor] Error fetching admin candidates:', candidatesError);
+        } else {
+          assignedCandidates = candidatesData || [];
+        }
+      } else {
+        const { data: candidatesData, error: candidatesError } = await supabase
+          .from('candidate_profiles')
+          .select('id, full_name, email, university, programme, supervisor_id')
+          .eq('supervisor_id', supervisorId)
+          .order('full_name', { ascending: true });
+
+        if (candidatesError) {
+          console.error('[Supervisor] Error fetching supervisor candidates:', candidatesError);
         } else {
           assignedCandidates = candidatesData || [];
         }
       }
 
+      console.log('[Supervisor] Assigned candidates found:', assignedCandidates.length);
+
       let allAssessments = [];
       let nsReports = [];
       let otherAssessments = [];
 
-      if (assignedCandidates && assignedCandidates.length > 0) {
+      if (assignedCandidates.length > 0) {
         const candidateIds = assignedCandidates.map(c => c.id);
-        
-        // Get assessments with assessment type info
+
         const { data: assessments, error: assessmentsError } = await supabase
           .from('candidate_assessments')
           .select(`
@@ -82,67 +102,68 @@ export default function SupervisorDashboard() {
             completed_at,
             assessments!inner(
               id,
-              title, 
+              title,
               assessment_type:assessment_types(id, code, name)
             )
           `)
           .in('user_id', candidateIds);
 
         if (assessmentsError) {
-          console.error('Error fetching assessments:', assessmentsError);
+          console.error('[Supervisor] Error fetching assessments:', assessmentsError);
         } else {
           allAssessments = assessments || [];
         }
+
+        console.log('[Supervisor] Assessments found:', allAssessments.length);
 
         const allReportData = [];
 
         for (const assessment of allAssessments) {
           const isCompleted = assessment.status === 'completed' && assessment.result_id !== null;
-          
           let resultData = null;
-          
+
           if (assessment.result_id) {
-            const result = await supabase
+            const { data: result, error: resultError } = await supabase
               .from('assessment_results')
               .select('*')
               .eq('id', assessment.result_id)
               .single();
-            
-            if (!result.error) {
-              resultData = result.data;
+
+            if (resultError) {
+              console.error('[Supervisor] Error fetching result:', resultError);
+            } else {
+              resultData = result;
             }
           }
 
           if (assessment.result_id || isCompleted) {
             const candidate = assignedCandidates.find(c => c.id === assessment.user_id);
             const isNationalService = assessment.assessments?.assessment_type?.code === 'national_service';
-            
-            // Get scores
-            let score = resultData?.percentage_score || 0;
-            if (!score && resultData?.report_data?.overallScore) {
-              score = resultData.report_data.overallScore;
+
+            let workplaceReadiness =
+              resultData?.workplace_readiness ||
+              resultData?.report_data?.dimensions?.workplaceReadiness ||
+              resultData?.report_data?.workplaceReadiness ||
+              0;
+
+            let intellectualCapability =
+              resultData?.intellectual_capability ||
+              resultData?.report_data?.dimensions?.intellectualCapability ||
+              resultData?.report_data?.intellectualCapability ||
+              0;
+
+            let overallScore =
+              resultData?.percentage_score ||
+              resultData?.report_data?.overallScore ||
+              resultData?.report_data?.dimensions?.overallScore ||
+              0;
+
+            if (!overallScore && workplaceReadiness && intellectualCapability) {
+              overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
             }
-            if (!score && resultData?.report_data?.dimensions?.overallScore) {
-              score = resultData.report_data.dimensions.overallScore;
-            }
-            
-            let workplaceReadiness = resultData?.workplace_readiness || 0;
-            if (!workplaceReadiness && resultData?.report_data?.dimensions?.workplaceReadiness) {
-              workplaceReadiness = resultData.report_data.dimensions.workplaceReadiness;
-            }
-            if (!workplaceReadiness && resultData?.report_data?.workplaceReadiness) {
-              workplaceReadiness = resultData.report_data.workplaceReadiness;
-            }
-            
-            let intellectualCapability = resultData?.intellectual_capability || 0;
-            if (!intellectualCapability && resultData?.report_data?.dimensions?.intellectualCapability) {
-              intellectualCapability = resultData.report_data.dimensions.intellectualCapability;
-            }
-            if (!intellectualCapability && resultData?.report_data?.intellectualCapability) {
-              intellectualCapability = resultData.report_data.intellectualCapability;
-            }
-            
+
             let recommendation = resultData?.recommendation || 'Not Available';
+
             if (recommendation === 'Not Available' && resultData?.report_data?.recommendation) {
               if (typeof resultData.report_data.recommendation === 'string') {
                 recommendation = resultData.report_data.recommendation;
@@ -150,74 +171,12 @@ export default function SupervisorDashboard() {
                 recommendation = resultData.report_data.recommendation.level;
               }
             }
-            
-            let riskLevel = resultData?.risk_level || 'Medium';
-            if (!riskLevel || riskLevel === 'Medium') {
-              if (resultData?.report_data?.riskLevel) {
-                riskLevel = resultData.report_data.riskLevel;
-              } else if (resultData?.report_data?.classification) {
-                riskLevel = resultData.report_data.classification;
-              }
-            }
-            
-            let overallScore = resultData?.percentage_score || 0;
-            if (!overallScore && workplaceReadiness && intellectualCapability) {
-              overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
-            }
-            if (!overallScore && resultData?.report_data?.overallScore) {
-              overallScore = resultData.report_data.overallScore;
-            }
-            if (!overallScore && resultData?.report_data?.dimensions?.overallScore) {
-              overallScore = resultData.report_data.dimensions.overallScore;
-            }
-            
-            // ================================================================
-            // EXTRACT CATEGORY SCORES - Read from category_scores column first
-            // ================================================================
-            let categoryScores = [];
 
-            // PRIMARY: Use the category_scores column directly
-            if (resultData?.category_scores && Array.isArray(resultData.category_scores) && resultData.category_scores.length > 0) {
-              categoryScores = resultData.category_scores.map(cat => ({
-                category: cat.category || cat.name || 'Unknown',
-                score: cat.score || cat.correct || 0,
-                maxScore: cat.maxScore || cat.total || 100,
-                percentage: cat.percentage || Math.round(((cat.score || 0) / (cat.maxScore || 100)) * 100) || 0,
-                grade: cat.grade || 'N/A',
-                comment: cat.comment || cat.description || ''
-              }));
-            } 
-            // SECONDARY: Fallback to report_data.categoryScores
-            else if (resultData?.report_data) {
-              const rd = resultData.report_data;
-              
-              if (rd.categoryScores && Array.isArray(rd.categoryScores) && rd.categoryScores.length > 0) {
-                categoryScores = rd.categoryScores.map(cat => ({
-                  category: cat.category || cat.name || 'Unknown',
-                  score: cat.score || cat.correct || 0,
-                  maxScore: cat.maxScore || cat.total || 100,
-                  percentage: cat.percentage || Math.round(((cat.score || 0) / (cat.maxScore || 100)) * 100) || 0,
-                  grade: cat.grade || 'N/A',
-                  comment: cat.comment || cat.description || ''
-                }));
-              }
-              // TERTIARY: scoreBreakdown array
-              else if (rd.scoreBreakdown && Array.isArray(rd.scoreBreakdown) && rd.scoreBreakdown.length > 0) {
-                categoryScores = rd.scoreBreakdown.map(cat => ({
-                  category: cat.category || cat.area || 'Unknown',
-                  score: typeof cat.score === 'string' ? parseInt(cat.score.split('/')[0]) : (cat.score || 0),
-                  maxScore: typeof cat.score === 'string' ? parseInt(cat.score.split('/')[1]) : (cat.maxScore || 100),
-                  percentage: cat.percentage || 0,
-                  grade: cat.grade || cat.letter_grade || 'N/A',
-                  comment: cat.comment || cat.supervisorImplication || ''
-                }));
-              }
-            }
-            
-            // Debug log
-            if (isNationalService && categoryScores.length > 0) {
-              console.log(`[Category Scores] ${candidate?.full_name}:`, categoryScores.length, 'categories found');
-            }
+            let riskLevel =
+              resultData?.risk_level ||
+              resultData?.report_data?.riskLevel ||
+              resultData?.report_data?.classification ||
+              'Medium';
 
             const reportEntry = {
               result_id: assessment.result_id,
@@ -232,80 +191,67 @@ export default function SupervisorDashboard() {
               assessment_code: assessment.assessments?.assessment_type?.code || 'general',
               status: assessment.status,
               completed_at: assessment.completed_at || resultData?.completed_at,
-              score: overallScore || score || 0,
+              score: overallScore || 0,
               is_national_service: isNationalService,
               resultData: resultData,
-              percentage_score: overallScore || resultData?.percentage_score || 0,
+              percentage_score: overallScore || 0,
               workplace_readiness: workplaceReadiness || 0,
               intellectual_capability: intellectualCapability || 0,
               recommendation: recommendation || 'Not Available',
               risk_level: riskLevel || 'Medium',
-              category_scores: categoryScores
+              category_scores: []
             };
 
             if (isNationalService) {
               reportEntry.scores = {
-                overall: overallScore || resultData?.percentage_score || 0,
+                overall: overallScore || 0,
                 workplace: workplaceReadiness || 0,
                 intellectual: intellectualCapability || 0,
                 recommendation: recommendation || 'Not Available',
                 riskLevel: riskLevel || 'Medium'
               };
-              
+
               nsReports.push(reportEntry);
             } else {
               otherAssessments.push(reportEntry);
             }
-            
+
             allReportData.push(reportEntry);
           }
         }
 
-        // Build candidate list
         const candidateList = assignedCandidates.map(c => {
           const candidateAssessments = allAssessments.filter(a => a.user_id === c.id);
-          
-          const completed = candidateAssessments.filter(a => a.status === 'completed' || a.result_id !== null).length;
+
+          const completed = candidateAssessments.filter(
+            a => a.status === 'completed' || a.result_id !== null
+          ).length;
+
           const inProgress = candidateAssessments.filter(a => a.status === 'in_progress').length;
           const unblocked = candidateAssessments.filter(a => a.status === 'unblocked').length;
           const blocked = candidateAssessments.filter(a => a.status === 'blocked').length;
-          const notStarted = candidateAssessments.filter(a => a.status === 'pending' || !a.status || a.status === '').length;
-          
+          const notStarted = candidateAssessments.filter(
+            a => a.status === 'pending' || !a.status || a.status === ''
+          ).length;
+
           const completedAssessments = candidateAssessments
             .filter(a => a.status === 'completed' || a.result_id !== null)
             .map(a => {
-              const reportEntry = allReportData.find(r => r.result_id === a.result_id && r.candidate_id === c.id);
-              
-              let score = 0;
-              let resultId = a.result_id;
-              let reportData = null;
-              
-              if (reportEntry) {
-                score = reportEntry.score || 0;
-                reportData = reportEntry;
-                resultId = reportEntry.result_id;
-              }
-              
-              if (!score && a.result_id) {
-                if (reportEntry?.resultData) {
-                  score = reportEntry.resultData.percentage_score || 
-                          reportEntry.resultData.report_data?.overallScore || 
-                          reportEntry.resultData.report_data?.dimensions?.overallScore || 
-                          0;
-                }
-              }
-              
+              const reportEntry = allReportData.find(
+                r => r.result_id === a.result_id && r.candidate_id === c.id
+              );
+
               const isNationalService = a.assessments?.assessment_type?.code === 'national_service';
-              
+
               return {
                 assessment_id: a.assessment_id,
-                result_id: resultId,
+                result_id: a.result_id,
                 title: a.assessments?.title || 'Assessment',
-                score: score,
+                score: reportEntry?.score || 0,
                 isNationalService: isNationalService,
                 assessment_code: a.assessments?.assessment_type?.code || 'general',
                 assessment_type: a.assessments?.assessment_type?.name || 'General',
-                reportData: reportData
+                reportData: reportEntry || null
               };
             })
             .filter(a => a.result_id);
@@ -314,19 +260,19 @@ export default function SupervisorDashboard() {
             ...c,
             assessments: candidateAssessments,
             stats: {
-              completed: completed,
-              inProgress: inProgress,
-              unblocked: unblocked,
-              blocked: blocked,
-              notStarted: notStarted,
+              completed,
+              inProgress,
+              unblocked,
+              blocked,
+              notStarted,
               total: candidateAssessments.length
             },
-            completedAssessments: completedAssessments
+            completedAssessments
           };
         });
 
         setCandidates(candidateList);
-        
+
         const initialSelected = {};
         candidateList.forEach(c => {
           const nonNs = c.completedAssessments.filter(a => !a.isNationalService);
@@ -335,20 +281,27 @@ export default function SupervisorDashboard() {
           }
         });
         setSelectedAssessments(initialSelected);
-
-        setStats({
-          totalCandidates: assignedCandidates.length,
-          completedAssessments: allAssessments.filter(a => a.status === 'completed' || a.result_id !== null).length,
-          pendingReviews: allAssessments.filter(a => a.status === 'in_progress' || a.status === 'unblocked').length,
-          nationalServiceReports: nsReports.length
-        });
+      } else {
+        setCandidates([]);
       }
 
       setNationalServiceReports(nsReports);
       setOtherReports(otherAssessments);
+
+      setStats({
+        totalCandidates: assignedCandidates.length,
+        completedAssessments: allAssessments.filter(
+          a => a.status === 'completed' || a.result_id !== null
+        ).length,
+        pendingReviews: allAssessments.filter(
+          a => a.status === 'in_progress' || a.status === 'unblocked'
+        ).length,
+        nationalServiceReports: nsReports.length
+      });
+
       setLoading(false);
     } catch (error) {
-      console.error('Error fetching dashboard data:', error);
+      console.error('[Supervisor] Error fetching dashboard data:', error);
       setLoading(false);
     }
   };
@@ -361,33 +314,28 @@ export default function SupervisorDashboard() {
     router.push(`/supervisor/reports/${resultId}`);
   };
 
-  const handleViewCategoryBreakdown = (report) => {
-    setSelectedReport(report);
-    setShowCategoryModal(true);
-  };
-
   const handleAssessmentSelect = (candidateId, assessmentId) => {
     if (!assessmentId) {
       alert('Please select an assessment first.');
       return;
     }
-    
+
     const candidate = candidates.find(c => c.id === candidateId);
     if (!candidate) {
       console.warn('[Supervisor] Candidate not found');
       return;
     }
-    
+
     const assessment = candidate.completedAssessments.find(
       a => String(a.assessment_id) === String(assessmentId)
     );
-    
+
     if (!assessment) {
       alert('Assessment not found. Please try again.');
       return;
     }
-    
-    if (assessment && assessment.result_id) {
+
+    if (assessment.result_id) {
       handleViewReport(assessment.result_id);
     } else {
       alert('This assessment does not have a result available yet.');
@@ -423,25 +371,6 @@ export default function SupervisorDashboard() {
     if (score >= 70) return '#166534';
     if (score >= 50) return '#92400e';
     return '#991b1b';
-  };
-
-  const getGradeColor = (grade) => {
-    const colors = {
-      'A+': '#0f766e',
-      'A': '#0f766e',
-      'A-': '#0f766e',
-      'B+': '#2563eb',
-      'B': '#2563eb',
-      'B-': '#2563eb',
-      'C+': '#f59e0b',
-      'C': '#f59e0b',
-      'C-': '#f59e0b',
-      'D+': '#ea580c',
-      'D': '#ea580c',
-      'D-': '#ea580c',
-      'F': '#b42318'
-    };
-    return colors[grade] || '#64748b';
   };
 
   if (authLoading || loading) {
@@ -539,7 +468,7 @@ export default function SupervisorDashboard() {
           {activeTab === 'national_service' && (
             <div style={styles.tabPanel}>
               <div style={styles.tabDescription}>
-                <p>📋 All National Service assessment reports. Click <strong>"📊 Categories"</strong> to see the detailed category breakdown.</p>
+                <p>📋 All National Service assessment reports assigned to this supervisor.</p>
               </div>
               {nationalServiceReports.length === 0 ? (
                 <div style={styles.emptyState}>
@@ -566,12 +495,10 @@ export default function SupervisorDashboard() {
                         const overallScore = report.percentage_score || 0;
                         const recommendation = report.recommendation || 'Not Available';
                         const status = report.status || 'unknown';
-                        const hasCategoryScores = report.category_scores && report.category_scores.length > 0;
-                        
                         const recColor = getRecommendationColor(recommendation);
                         const isCompleted = status === 'completed' || report.result_id !== null;
                         const hasScores = workplaceScore > 0 || intellectualScore > 0 || overallScore > 0;
-                        
+
                         return (
                           <tr key={report.result_id || report.candidate_id} style={styles.tr}>
                             <td style={styles.td}>
@@ -579,8 +506,8 @@ export default function SupervisorDashboard() {
                               <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
                             </td>
                             <td style={styles.td}>
-                              <span style={{ 
-                                ...styles.statusBadge, 
+                              <span style={{
+                                ...styles.statusBadge,
                                 background: isCompleted ? '#dcfce7' : '#fef3c7',
                                 color: isCompleted ? '#166534' : '#92400e'
                               }}>
@@ -610,22 +537,12 @@ export default function SupervisorDashboard() {
                             <td style={styles.td}>
                               <div style={styles.actionButtons}>
                                 {isCompleted && report.result_id ? (
-                                  <>
-                                    <button
-                                      onClick={() => handleViewReport(report.result_id)}
-                                      style={styles.viewButton}
-                                    >
-                                      📄 View Report
-                                    </button>
-                                    {hasCategoryScores && (
-                                      <button
-                                        onClick={() => handleViewCategoryBreakdown(report)}
-                                        style={styles.categoryButton}
-                                      >
-                                        📊 Categories
-                                      </button>
-                                    )}
-                                  </>
+                                  <button
+                                    onClick={() => handleViewReport(report.result_id)}
+                                    style={styles.viewButton}
+                                  >
+                                    📄 View Report
+                                  </button>
                                 ) : (
                                   <span style={styles.pendingText}>Awaiting completion</span>
                                 )}
@@ -721,9 +638,9 @@ export default function SupervisorDashboard() {
                     </thead>
                     <tbody>
                       {candidates.map((candidate) => {
-                        const selectedId = selectedAssessments[candidate.id] || 
-                                          (candidate.completedAssessments.length > 0 ? candidate.completedAssessments[0].assessment_id : '');
-                        
+                        const selectedId = selectedAssessments[candidate.id] ||
+                          (candidate.completedAssessments.length > 0 ? candidate.completedAssessments[0].assessment_id : '');
+
                         return (
                           <tr key={candidate.id} style={styles.tr}>
                             <td style={styles.td}>
@@ -748,10 +665,7 @@ export default function SupervisorDashboard() {
                             </td>
                             <td style={styles.td}>
                               <select
-                                onChange={(e) => {
-                                  const selectedValue = e.target.value;
-                                  handleAssessmentChange(candidate.id, selectedValue);
-                                }}
+                                onChange={(e) => handleAssessmentChange(candidate.id, e.target.value)}
                                 style={styles.assessmentDropdown}
                                 value={selectedId}
                                 data-candidate={candidate.id}
@@ -794,86 +708,6 @@ export default function SupervisorDashboard() {
           )}
         </div>
       </div>
-
-      {/* Category Breakdown Modal */}
-      {showCategoryModal && selectedReport && (
-        <div style={styles.modalOverlay} onClick={() => setShowCategoryModal(false)}>
-          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>📊 Category Breakdown</h2>
-              <button 
-                onClick={() => setShowCategoryModal(false)} 
-                style={styles.modalCloseButton}
-              >
-                ✕
-              </button>
-            </div>
-            <div style={styles.modalBody}>
-              <div style={styles.modalCandidateInfo}>
-                <h3 style={styles.modalCandidateName}>{selectedReport.candidate_name}</h3>
-                <p style={styles.modalCandidateDetails}>
-                  {selectedReport.university || ''} • {selectedReport.programme || ''}
-                </p>
-                <div style={styles.modalScoreSummary}>
-                  <span style={styles.modalScoreItem}>
-                    <strong>Overall:</strong> {Math.round(selectedReport.percentage_score || 0)}%
-                  </span>
-                  <span style={styles.modalScoreItem}>
-                    <strong>Workplace Readiness:</strong> {Math.round(selectedReport.workplace_readiness || 0)}%
-                  </span>
-                  <span style={styles.modalScoreItem}>
-                    <strong>Intellectual Capability:</strong> {Math.round(selectedReport.intellectual_capability || 0)}%
-                  </span>
-                </div>
-                <div style={styles.modalScoreSummary}>
-                  <span style={{ ...styles.modalScoreItem, fontSize: '12px', color: '#94a3b8' }}>
-                    <strong>Categories:</strong> {selectedReport.category_scores?.length || 0} found
-                  </span>
-                </div>
-              </div>
-              
-              {selectedReport.category_scores && selectedReport.category_scores.length > 0 ? (
-                <div style={styles.categoryGrid}>
-                  {selectedReport.category_scores.map((cat, index) => (
-                    <div key={index} style={styles.categoryCard}>
-                      <div style={styles.categoryHeader}>
-                        <span style={styles.categoryName}>{cat.category}</span>
-                        <span style={{ 
-                          ...styles.categoryGrade, 
-                          color: getGradeColor(cat.grade),
-                          borderColor: getGradeColor(cat.grade)
-                        }}>
-                          {cat.grade || 'N/A'}
-                        </span>
-                      </div>
-                      <div style={styles.categoryScoreBar}>
-                        <div style={{ 
-                          ...styles.categoryScoreFill, 
-                          width: `${Math.min(cat.percentage || 0, 100)}%`,
-                          background: getScoreColor(cat.percentage || 0)
-                        }} />
-                      </div>
-                      <div style={styles.categoryScoreDetails}>
-                        <span style={{ fontWeight: '600', color: getScoreTextColor(cat.percentage || 0) }}>
-                          {Math.round(cat.percentage || 0)}%
-                        </span>
-                        <span>{cat.score || 0} / {cat.maxScore || 100}</span>
-                      </div>
-                      {cat.comment && (
-                        <div style={styles.categoryComment}>{cat.comment}</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={styles.emptyState}>
-                  <p>No category scores available for this report.</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </AppLayout>
   );
 }
@@ -1033,18 +867,6 @@ const styles = {
     transition: 'background 0.2s',
     whiteSpace: 'nowrap'
   },
-  categoryButton: {
-    padding: '6px 12px',
-    background: '#f59e0b',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '12px',
-    fontWeight: '500',
-    transition: 'background 0.2s',
-    whiteSpace: 'nowrap'
-  },
   viewReportButtonSmall: {
     padding: '4px 12px',
     background: '#1a237e',
@@ -1110,145 +932,15 @@ const styles = {
     background: '#fef3c7',
     color: '#92400e'
   },
-  emptyState: { textAlign: 'center', padding: '30px', color: '#64748b', background: '#f8fafc', borderRadius: '8px' },
-  
-  // Modal Styles
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-    backdropFilter: 'blur(4px)'
-  },
-  modalContent: {
-    background: 'white',
-    borderRadius: '16px',
-    maxWidth: '900px',
-    width: '95%',
-    maxHeight: '90vh',
-    overflow: 'hidden',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
-    display: 'flex',
-    flexDirection: 'column'
-  },
-  modalHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '20px 24px',
-    borderBottom: '1px solid #e2e8f0',
-    flexShrink: 0
-  },
-  modalTitle: {
-    fontSize: '20px',
-    fontWeight: '700',
-    color: '#0a1929',
-    margin: 0
-  },
-  modalCloseButton: {
-    background: 'none',
-    border: 'none',
-    fontSize: '24px',
-    cursor: 'pointer',
-    color: '#94a3b8',
-    padding: '4px 8px',
-    borderRadius: '6px',
-    transition: 'background 0.2s'
-  },
-  modalBody: {
-    padding: '24px',
-    overflowY: 'auto',
-    flex: 1
-  },
-  modalCandidateInfo: {
-    marginBottom: '20px',
-    paddingBottom: '16px',
-    borderBottom: '1px solid #e2e8f0'
-  },
-  modalCandidateName: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#0a1929',
-    margin: 0
-  },
-  modalCandidateDetails: {
-    fontSize: '14px',
+  emptyState: {
+    textAlign: 'center',
+    padding: '30px',
     color: '#64748b',
-    margin: '4px 0 8px 0'
-  },
-  modalScoreSummary: {
-    display: 'flex',
-    gap: '20px',
-    flexWrap: 'wrap',
-    marginTop: '8px'
-  },
-  modalScoreItem: {
-    fontSize: '14px',
-    color: '#475569'
-  },
-  categoryGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '12px'
-  },
-  categoryCard: {
     background: '#f8fafc',
-    padding: '14px 16px',
-    borderRadius: '10px',
-    border: '1px solid #eef2f7'
-  },
-  categoryHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '6px'
-  },
-  categoryName: {
-    fontSize: '13px',
-    fontWeight: '600',
-    color: '#1e293b'
-  },
-  categoryGrade: {
-    fontSize: '13px',
-    fontWeight: '700',
-    padding: '2px 10px',
-    borderRadius: '4px',
-    border: '2px solid'
-  },
-  categoryScoreBar: {
-    height: '6px',
-    background: '#e2e8f0',
-    borderRadius: '3px',
-    overflow: 'hidden',
-    marginTop: '4px'
-  },
-  categoryScoreFill: {
-    height: '100%',
-    borderRadius: '3px',
-    transition: 'width 0.5s ease'
-  },
-  categoryScoreDetails: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: '12px',
-    color: '#64748b',
-    marginTop: '4px'
-  },
-  categoryComment: {
-    fontSize: '11px',
-    color: '#94a3b8',
-    marginTop: '4px',
-    fontStyle: 'italic'
+    borderRadius: '8px'
   }
 };
 
-// Add keyframe animation
 if (typeof document !== 'undefined') {
   const style = document.createElement('style');
   style.textContent = `
