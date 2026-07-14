@@ -1,5 +1,5 @@
 // pages/admin/reports/index.js - FIXED VERSION
-// Shows ALL assessment reports (both National Service and Stratavax)
+// Uses separate queries instead of nested joins to avoid foreign key errors
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -24,28 +24,12 @@ export default function AdminReportsList() {
     try {
       setLoading(true);
 
-      // Step 1: Get all assessment results with joins in a single query
+      // ============================================================
+      // STEP 1: Get all assessment results
+      // ============================================================
       const { data: results, error: resultsError } = await supabase
         .from('assessment_results')
-        .select(`
-          *,
-          candidate_profiles!inner(
-            full_name,
-            email,
-            university,
-            programme
-          ),
-          assessments!inner(
-            id,
-            title,
-            assessment_type_id,
-            assessment_types!inner(
-              id,
-              code,
-              name
-            )
-          )
-        `)
+        .select('*')
         .order('completed_at', { ascending: false });
 
       if (resultsError) {
@@ -55,19 +39,96 @@ export default function AdminReportsList() {
         return;
       }
 
-      console.log('All results:', results);
+      console.log('Found results:', results.length);
 
-      // Transform the data
-      const enrichedReports = results.map((result) => ({
-        ...result,
-        candidate_name: result.candidate_profiles?.full_name || 'Unknown',
-        candidate_email: result.candidate_profiles?.email || '',
-        candidate_university: result.candidate_profiles?.university || '',
-        candidate_programme: result.candidate_profiles?.programme || '',
-        assessment_title: result.assessments?.title || 'Unknown',
-        assessment_type_code: result.assessments?.assessment_types?.code || null,
-        assessment_type_name: result.assessments?.assessment_types?.name || 'General'
-      }));
+      if (results.length === 0) {
+        setReports([]);
+        setLoading(false);
+        return;
+      }
+
+      // ============================================================
+      // STEP 2: Get candidate profiles for all user_ids
+      // ============================================================
+      const userIds = results.map(r => r.user_id).filter(Boolean);
+      let candidateMap = {};
+
+      if (userIds.length > 0) {
+        const { data: candidates, error: candidatesError } = await supabase
+          .from('candidate_profiles')
+          .select('id, full_name, email, university, programme')
+          .in('id', userIds);
+
+        if (!candidatesError && candidates) {
+          candidates.forEach(c => {
+            candidateMap[c.id] = c;
+          });
+        }
+        console.log('Found candidates:', Object.keys(candidateMap).length);
+      }
+
+      // ============================================================
+      // STEP 3: Get assessment details for all assessment_ids
+      // ============================================================
+      const assessmentIds = results.map(r => r.assessment_id).filter(Boolean);
+      let assessmentMap = {};
+      let typeMap = {};
+
+      if (assessmentIds.length > 0) {
+        const { data: assessments, error: assessmentsError } = await supabase
+          .from('assessments')
+          .select('id, title, assessment_type_id')
+          .in('id', assessmentIds);
+
+        if (!assessmentsError && assessments) {
+          assessments.forEach(a => {
+            assessmentMap[a.id] = a;
+          });
+          
+          // Get assessment types
+          const typeIds = assessments.map(a => a.assessment_type_id).filter(Boolean);
+          if (typeIds.length > 0) {
+            const { data: types, error: typesError } = await supabase
+              .from('assessment_types')
+              .select('id, code, name')
+              .in('id', typeIds);
+
+            if (!typesError && types) {
+              types.forEach(t => {
+                typeMap[t.id] = t;
+              });
+            }
+          }
+        }
+        console.log('Found assessments:', Object.keys(assessmentMap).length);
+      }
+
+      // ============================================================
+      // STEP 4: Enrich reports with all data
+      // ============================================================
+      const enrichedReports = results.map((result) => {
+        const assessment = assessmentMap[result.assessment_id] || null;
+        const assessmentType = assessment ? typeMap[assessment.assessment_type_id] : null;
+        const candidate = candidateMap[result.user_id] || null;
+        
+        const isNationalService = assessmentType?.code === 'national_service';
+
+        return {
+          ...result,
+          candidate_name: candidate?.full_name || 'Unknown',
+          candidate_email: candidate?.email || '',
+          candidate_university: candidate?.university || '',
+          candidate_programme: candidate?.programme || '',
+          assessment_title: assessment?.title || 'Unknown',
+          assessment_type_code: assessmentType?.code || null,
+          assessment_type_name: assessmentType?.name || 'General',
+          isNationalService: isNationalService,
+          workplace_readiness: result.workplace_readiness || 0,
+          intellectual_capability: result.intellectual_capability || 0,
+          percentage_score: result.percentage_score || 0,
+          recommendation: result.recommendation || 'N/A'
+        };
+      });
 
       console.log('Enriched reports:', enrichedReports.length);
       setReports(enrichedReports);
@@ -80,17 +141,17 @@ export default function AdminReportsList() {
 
   const getFilteredReports = () => {
     if (filter === 'national_service') {
-      return reports.filter(r => r.assessment_type_code === 'national_service');
+      return reports.filter(r => r.isNationalService === true);
     }
     if (filter === 'stratavax') {
-      return reports.filter(r => r.assessment_type_code !== 'national_service');
+      return reports.filter(r => r.isNationalService !== true);
     }
     return reports;
   };
 
   const filteredReports = getFilteredReports();
-  const nationalServiceCount = reports.filter(r => r.assessment_type_code === 'national_service').length;
-  const stratavaxCount = reports.filter(r => r.assessment_type_code !== 'national_service').length;
+  const nationalServiceCount = reports.filter(r => r.isNationalService === true).length;
+  const stratavaxCount = reports.filter(r => r.isNationalService !== true).length;
 
   const handleViewReport = (resultId) => {
     router.push(`/admin/reports/${resultId}`);
@@ -182,7 +243,7 @@ export default function AdminReportsList() {
                 </tr>
               ) : (
                 filteredReports.map((report) => {
-                  const isNationalService = report.assessment_type_code === 'national_service';
+                  const isNationalService = report.isNationalService;
                   
                   return (
                     <tr key={report.id} style={styles.tr}>
@@ -195,7 +256,8 @@ export default function AdminReportsList() {
                         </div>
                         {report.candidate_university && (
                           <div style={styles.candidateSub}>
-                            {report.candidate_university} • {report.candidate_programme || ''}
+                            {report.candidate_university}
+                            {report.candidate_programme ? ` • ${report.candidate_programme}` : ''}
                           </div>
                         )}
                       </td>
