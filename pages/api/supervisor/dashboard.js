@@ -1,4 +1,4 @@
-// pages/api/supervisor/dashboard.js - MINIMAL TEST VERSION
+// pages/api/supervisor/dashboard.js - DEBUG VERSION
 import { createClient } from '@supabase/supabase-js';
 
 function extractBearerToken(req) {
@@ -32,68 +32,142 @@ export default async function handler(req, res) {
     // Get user from token
     const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
     if (userError || !userData?.user) {
-      return res.status(401).json({ success: false, error: 'Invalid token' });
+      return res.status(401).json({ success: false, error: 'Invalid token', details: userError?.message });
     }
 
     const user = userData.user;
     const supervisorId = user.id;
 
-    // Get candidates for this supervisor
+    console.log('[DEBUG] Supervisor ID:', supervisorId);
+
+    // ============================================================
+    // STEP 1: Get candidates
+    // ============================================================
     const { data: candidates, error: candidatesError } = await serviceClient
       .from('candidate_profiles')
       .select('id, full_name, email, university, programme, supervisor_id')
       .eq('supervisor_id', supervisorId);
 
     if (candidatesError) {
+      console.error('[DEBUG] Candidates error:', candidatesError);
       return res.status(500).json({ success: false, error: 'Failed to load candidates', details: candidatesError.message });
     }
 
-    const candidateIds = candidates.map(c => c.id);
+    console.log('[DEBUG] Found candidates:', candidates.length);
 
-    // Get candidate assessments
+    const candidateIds = candidates.map(c => c.id);
+    console.log('[DEBUG] Candidate IDs:', candidateIds);
+
+    if (candidateIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        supervisor: { id: user.id, email: user.email },
+        stats: { totalCandidates: 0, completedAssessments: 0, nationalServiceReports: 0 },
+        candidates: [],
+        nationalServiceReports: [],
+        otherReports: [],
+        debug: { message: 'No candidates found' }
+      });
+    }
+
+    // ============================================================
+    // STEP 2: Get candidate assessments
+    // ============================================================
+    console.log('[DEBUG] Fetching assessments for candidate IDs:', candidateIds);
+    
     const { data: assessments, error: assessmentsError } = await serviceClient
       .from('candidate_assessments')
       .select('*')
       .in('user_id', candidateIds);
 
     if (assessmentsError) {
+      console.error('[DEBUG] Assessments error:', assessmentsError);
       return res.status(500).json({ success: false, error: 'Failed to load assessments', details: assessmentsError.message });
     }
 
-    // Get assessment details
+    console.log('[DEBUG] Found assessments:', assessments.length);
+
+    // ============================================================
+    // STEP 3: Get assessment details
+    // ============================================================
     const assessmentIds = assessments.map(a => a.assessment_id).filter(Boolean);
-    const { data: assessmentDetails, error: assessmentDetailsError } = await serviceClient
-      .from('assessments')
-      .select('id, title, assessment_type_id')
-      .in('id', assessmentIds);
+    console.log('[DEBUG] Assessment IDs:', assessmentIds);
 
-    if (assessmentDetailsError) {
-      return res.status(500).json({ success: false, error: 'Failed to load assessment details', details: assessmentDetailsError.message });
+    let assessmentDetails = [];
+    let assessmentDetailsError = null;
+
+    if (assessmentIds.length > 0) {
+      const result = await serviceClient
+        .from('assessments')
+        .select('id, title, assessment_type_id')
+        .in('id', assessmentIds);
+      
+      assessmentDetails = result.data || [];
+      assessmentDetailsError = result.error;
+
+      if (assessmentDetailsError) {
+        console.error('[DEBUG] Assessment details error:', assessmentDetailsError);
+        return res.status(500).json({ success: false, error: 'Failed to load assessment details', details: assessmentDetailsError.message });
+      }
     }
 
-    // Get assessment types
+    console.log('[DEBUG] Found assessment details:', assessmentDetails.length);
+
+    // ============================================================
+    // STEP 4: Get assessment types
+    // ============================================================
     const typeIds = assessmentDetails.map(a => a.assessment_type_id).filter(Boolean);
-    const { data: assessmentTypes, error: assessmentTypesError } = await serviceClient
-      .from('assessment_types')
-      .select('id, code, name')
-      .in('id', typeIds);
+    console.log('[DEBUG] Type IDs:', typeIds);
 
-    if (assessmentTypesError) {
-      return res.status(500).json({ success: false, error: 'Failed to load assessment types', details: assessmentTypesError.message });
+    let assessmentTypes = [];
+    let assessmentTypesError = null;
+
+    if (typeIds.length > 0) {
+      const result = await serviceClient
+        .from('assessment_types')
+        .select('id, code, name')
+        .in('id', typeIds);
+      
+      assessmentTypes = result.data || [];
+      assessmentTypesError = result.error;
+
+      if (assessmentTypesError) {
+        console.error('[DEBUG] Assessment types error:', assessmentTypesError);
+        return res.status(500).json({ success: false, error: 'Failed to load assessment types', details: assessmentTypesError.message });
+      }
     }
 
-    // Get results
+    console.log('[DEBUG] Found assessment types:', assessmentTypes.length);
+
+    // ============================================================
+    // STEP 5: Get results
+    // ============================================================
     const resultIds = assessments.map(a => a.result_id).filter(Boolean);
-    const { data: results, error: resultsError } = await serviceClient
-      .from('assessment_results')
-      .select('*')
-      .in('id', resultIds);
+    console.log('[DEBUG] Result IDs:', resultIds);
 
-    if (resultsError) {
-      return res.status(500).json({ success: false, error: 'Failed to load results', details: resultsError.message });
+    let results = [];
+    let resultsError = null;
+
+    if (resultIds.length > 0) {
+      const result = await serviceClient
+        .from('assessment_results')
+        .select('*')
+        .in('id', resultIds);
+      
+      results = result.data || [];
+      resultsError = result.error;
+
+      if (resultsError) {
+        console.error('[DEBUG] Results error:', resultsError);
+        return res.status(500).json({ success: false, error: 'Failed to load results', details: resultsError.message });
+      }
     }
 
-    // Build maps
+    console.log('[DEBUG] Found results:', results.length);
+
+    // ============================================================
+    // BUILD RESPONSE
+    // ============================================================
     const assessmentMap = {};
     assessmentDetails.forEach(a => { assessmentMap[a.id] = a; });
 
@@ -103,11 +177,13 @@ export default async function handler(req, res) {
     const resultMap = {};
     results.forEach(r => { resultMap[r.id] = r; });
 
-    // Build reports
     const reports = [];
     assessments.forEach(a => {
       const assessment = assessmentMap[a.assessment_id];
-      if (!assessment) return;
+      if (!assessment) {
+        console.log('[DEBUG] Missing assessment for:', a.assessment_id);
+        return;
+      }
 
       const type = typeMap[assessment.assessment_type_id];
       const isNationalService = type?.code === 'national_service';
@@ -159,20 +235,32 @@ export default async function handler(req, res) {
         },
         completedAssessments: assessments
           .filter(a => a.user_id === c.id && (a.status === 'completed' || a.result_id !== null))
-          .map(a => ({
-            assessment_id: a.assessment_id,
-            result_id: a.result_id,
-            title: assessmentMap[a.assessment_id]?.title || 'Assessment',
-            score: a.result_id ? (resultMap[a.result_id]?.percentage_score || 0) : 0
-          }))
+          .map(a => {
+            const result = a.result_id ? resultMap[a.result_id] : null;
+            return {
+              assessment_id: a.assessment_id,
+              result_id: a.result_id,
+              title: assessmentMap[a.assessment_id]?.title || 'Assessment',
+              score: result?.percentage_score || 0,
+              isNationalService: typeMap[assessmentMap[a.assessment_id]?.assessment_type_id]?.code === 'national_service'
+            };
+          })
           .filter(a => a.result_id)
       })),
       nationalServiceReports,
-      otherReports
+      otherReports,
+      debug: {
+        candidateCount: candidates.length,
+        assessmentCount: assessments.length,
+        resultCount: results.length,
+        reportCount: reports.length,
+        nationalServiceCount: nationalServiceReports.length,
+        otherCount: otherReports.length
+      }
     });
 
   } catch (error) {
     console.error('[Dashboard API] Error:', error);
-    return res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    return res.status(500).json({ success: false, error: error.message || 'Internal error', stack: error.stack });
   }
 }
