@@ -1,4 +1,4 @@
- // pages/api/assessment-report/[resultId].js - FIXED VERSION
+// pages/api/assessment-report/[resultId].js - FIXED VERSION
 // Properly extracts sub-categories from category_scores
 
 import { createClient } from "@supabase/supabase-js";
