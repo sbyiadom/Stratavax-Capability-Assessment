@@ -1,5 +1,5 @@
 // pages/admin/reports/index.js - FIXED VERSION
-// Uses separate queries instead of nested joins to avoid foreign key errors
+// Properly fetches and displays candidate names
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -13,7 +13,7 @@ export default function AdminReportsList() {
   
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState([]);
-  const [filter, setFilter] = useState('all'); // 'all', 'national_service', 'stratavax'
+  const [filter, setFilter] = useState('all');
 
   useEffect(() => {
     if (!session) return;
@@ -25,8 +25,11 @@ export default function AdminReportsList() {
       setLoading(true);
 
       // ============================================================
-      // STEP 1: Get all assessment results
+      // STEP 1: Get all assessment results with candidate_profiles
+      // Use a simpler approach with separate queries
       // ============================================================
+      
+      // Get all results
       const { data: results, error: resultsError } = await supabase
         .from('assessment_results')
         .select('*')
@@ -48,7 +51,7 @@ export default function AdminReportsList() {
       }
 
       // ============================================================
-      // STEP 2: Get candidate profiles for all user_ids
+      // STEP 2: Get all candidate profiles
       // ============================================================
       const userIds = results.map(r => r.user_id).filter(Boolean);
       let candidateMap = {};
@@ -63,12 +66,14 @@ export default function AdminReportsList() {
           candidates.forEach(c => {
             candidateMap[c.id] = c;
           });
+          console.log('Found candidates:', Object.keys(candidateMap).length);
+        } else {
+          console.error('Error fetching candidates:', candidatesError);
         }
-        console.log('Found candidates:', Object.keys(candidateMap).length);
       }
 
       // ============================================================
-      // STEP 3: Get assessment details for all assessment_ids
+      // STEP 3: Get assessment details
       // ============================================================
       const assessmentIds = results.map(r => r.assessment_id).filter(Boolean);
       let assessmentMap = {};
@@ -85,7 +90,6 @@ export default function AdminReportsList() {
             assessmentMap[a.id] = a;
           });
           
-          // Get assessment types
           const typeIds = assessments.map(a => a.assessment_type_id).filter(Boolean);
           if (typeIds.length > 0) {
             const { data: types, error: typesError } = await supabase
@@ -100,7 +104,6 @@ export default function AdminReportsList() {
             }
           }
         }
-        console.log('Found assessments:', Object.keys(assessmentMap).length);
       }
 
       // ============================================================
@@ -113,9 +116,17 @@ export default function AdminReportsList() {
         
         const isNationalService = assessmentType?.code === 'national_service';
 
+        // Get candidate name with fallback
+        let candidateName = candidate?.full_name || 'Unknown';
+        
+        // If candidate name is still unknown, try to get it from result's user metadata
+        if (candidateName === 'Unknown' && result.user_metadata) {
+          candidateName = result.user_metadata?.full_name || result.user_metadata?.name || 'Unknown';
+        }
+
         return {
           ...result,
-          candidate_name: candidate?.full_name || 'Unknown',
+          candidate_name: candidateName,
           candidate_email: candidate?.email || '',
           candidate_university: candidate?.university || '',
           candidate_programme: candidate?.programme || '',
@@ -131,6 +142,7 @@ export default function AdminReportsList() {
       });
 
       console.log('Enriched reports:', enrichedReports.length);
+      console.log('Sample report:', enrichedReports[0]);
       setReports(enrichedReports);
       setLoading(false);
     } catch (error) {
@@ -183,7 +195,6 @@ export default function AdminReportsList() {
           <h1 style={styles.title}>Assessment Reports</h1>
           <p style={styles.subtitle}>All assessment reports from candidates</p>
           
-          {/* Filter Tabs */}
           <div style={styles.filterTabs}>
             <button
               onClick={() => setFilter('all')}
