@@ -1,6 +1,6 @@
 // pages/api/supervisor/dashboard.js
 // Robust Supervisor Dashboard API
-// Fixes: "Failed to load supervisor profile" by avoiding hard failure on supervisor_profiles lookup.
+// Fixes: Changed !inner join to !left join to prevent 500 errors when assessments are missing
 // Also validates that SUPABASE_SERVICE_ROLE_KEY is truly a service_role key.
 
 import { createClient } from '@supabase/supabase-js';
@@ -313,6 +313,10 @@ export default async function handler(req, res) {
     let candidates = [];
 
     if (candidateIds.length > 0) {
+      // ============================================================
+      // FIXED: Changed !inner to !left to prevent 500 errors
+      // when assessments or assessment_types are missing
+      // ============================================================
       const assessmentResponse = await serviceClient
         .from('candidate_assessments')
         .select(`
@@ -322,7 +326,7 @@ export default async function handler(req, res) {
           status,
           result_id,
           completed_at,
-          assessments!inner(
+          assessments!left(
             id,
             title,
             assessment_type:assessment_types(id, code, name)
@@ -331,10 +335,25 @@ export default async function handler(req, res) {
         .in('user_id', candidateIds);
 
       if (assessmentResponse.error) {
-        return res.status(500).json({ success: false, error: 'Failed to load candidate assessments.', details: assessmentResponse.error.message });
+        console.error('[Dashboard API] Assessment query error:', assessmentResponse.error);
+        return res.status(500).json({ 
+          success: false, 
+          error: 'Failed to load candidate assessments.', 
+          details: assessmentResponse.error.message 
+        });
       }
 
       allAssessments = assessmentResponse.data || [];
+      
+      // Filter out any assessments that have null assessment_id or null assessments data
+      const validAssessments = allAssessments.filter(item => item.assessment_id && item.assessments);
+      
+      if (validAssessments.length < allAssessments.length) {
+        console.warn(`[Dashboard API] Filtered out ${allAssessments.length - validAssessments.length} assessments with missing assessment data`);
+      }
+      
+      allAssessments = validAssessments;
+
       const resultIds = allAssessments.map((assessment) => assessment.result_id).filter(Boolean);
 
       if (resultIds.length > 0) {
@@ -344,7 +363,12 @@ export default async function handler(req, res) {
           .in('id', resultIds);
 
         if (resultResponse.error) {
-          return res.status(500).json({ success: false, error: 'Failed to load assessment results.', details: resultResponse.error.message });
+          console.error('[Dashboard API] Results query error:', resultResponse.error);
+          return res.status(500).json({ 
+            success: false, 
+            error: 'Failed to load assessment results.', 
+            details: resultResponse.error.message 
+          });
         }
 
         resultRows = resultResponse.data || [];
@@ -355,6 +379,12 @@ export default async function handler(req, res) {
       const allReportData = [];
 
       allAssessments.forEach((assessment) => {
+        // Skip if assessment data is missing
+        if (!assessment.assessments) {
+          console.warn('[Dashboard API] Skipping assessment with missing assessment data:', assessment.id);
+          return;
+        }
+
         const isCompleted = assessment.status === 'completed' || assessment.result_id !== null;
         const resultData = assessment.result_id ? resultMap.get(String(assessment.result_id)) : null;
 
