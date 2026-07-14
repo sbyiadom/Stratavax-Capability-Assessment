@@ -1,6 +1,6 @@
-// pages/supervisor/index.js - Corrected Supervisor Dashboard
-// Fixes supervisor zero-data issue by loading candidates directly from candidate_profiles.supervisor_id
-// Removes visible sub-category/category breakdown behavior for National Service reports.
+// pages/supervisor/index.js
+// Supervisor Dashboard corrected to load data from /api/supervisor/dashboard
+// This avoids browser-side RLS returning 0 candidates for valid supervisors.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -18,6 +18,8 @@ export default function SupervisorDashboard() {
   const [nationalServiceReports, setNationalServiceReports] = useState([]);
   const [otherReports, setOtherReports] = useState([]);
   const [selectedAssessments, setSelectedAssessments] = useState({});
+  const [errorMessage, setErrorMessage] = useState('');
+  const [debugInfo, setDebugInfo] = useState(null);
   const [stats, setStats] = useState({
     totalCandidates: 0,
     completedAssessments: 0,
@@ -33,275 +35,77 @@ export default function SupervisorDashboard() {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
+      setErrorMessage('');
+      setDebugInfo(null);
 
-      const supervisorId = session?.user?.id;
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
 
-      if (!supervisorId) {
-        console.error('[Supervisor] No logged-in user found.');
-        setLoading(false);
-        return;
+      if (sessionError) {
+        throw new Error(sessionError.message || 'Unable to read active session.');
       }
 
-      console.log('[Supervisor] Logged in user:', supervisorId);
+      const token = sessionData?.session?.access_token || session?.access_token;
 
-      const { data: supervisorProfile, error: supervisorProfileError } = await supabase
-        .from('supervisor_profiles')
-        .select('id, email, role, is_active')
-        .eq('id', supervisorId)
-        .single();
-
-      if (supervisorProfileError) {
-        console.error('[Supervisor] Error fetching supervisor profile:', supervisorProfileError);
+      if (!token) {
+        throw new Error('No active access token found. Please log out and log in again.');
       }
 
-      const isAdmin = supervisorProfile?.role === 'admin';
-      let assignedCandidates = [];
-
-      if (isAdmin) {
-        const { data: candidatesData, error: candidatesError } = await supabase
-          .from('candidate_profiles')
-          .select('id, full_name, email, university, programme, supervisor_id')
-          .order('full_name', { ascending: true });
-
-        if (candidatesError) {
-          console.error('[Supervisor] Error fetching admin candidates:', candidatesError);
-        } else {
-          assignedCandidates = candidatesData || [];
+      const response = await fetch('/api/supervisor/dashboard', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
         }
-      } else {
-        const { data: candidatesData, error: candidatesError } = await supabase
-          .from('candidate_profiles')
-          .select('id, full_name, email, university, programme, supervisor_id')
-          .eq('supervisor_id', supervisorId)
-          .order('full_name', { ascending: true });
-
-        if (candidatesError) {
-          console.error('[Supervisor] Error fetching supervisor candidates:', candidatesError);
-        } else {
-          assignedCandidates = candidatesData || [];
-        }
-      }
-
-      console.log('[Supervisor] Assigned candidates found:', assignedCandidates.length);
-
-      let allAssessments = [];
-      let nsReports = [];
-      let otherAssessments = [];
-
-      if (assignedCandidates.length > 0) {
-        const candidateIds = assignedCandidates.map(c => c.id);
-
-        const { data: assessments, error: assessmentsError } = await supabase
-          .from('candidate_assessments')
-          .select(`
-            id,
-            user_id,
-            assessment_id,
-            status,
-            result_id,
-            completed_at,
-            assessments!inner(
-              id,
-              title,
-              assessment_type:assessment_types(id, code, name)
-            )
-          `)
-          .in('user_id', candidateIds);
-
-        if (assessmentsError) {
-          console.error('[Supervisor] Error fetching assessments:', assessmentsError);
-        } else {
-          allAssessments = assessments || [];
-        }
-
-        console.log('[Supervisor] Assessments found:', allAssessments.length);
-
-        const allReportData = [];
-
-        for (const assessment of allAssessments) {
-          const isCompleted = assessment.status === 'completed' && assessment.result_id !== null;
-          let resultData = null;
-
-          if (assessment.result_id) {
-            const { data: result, error: resultError } = await supabase
-              .from('assessment_results')
-              .select('*')
-              .eq('id', assessment.result_id)
-              .single();
-
-            if (resultError) {
-              console.error('[Supervisor] Error fetching result:', resultError);
-            } else {
-              resultData = result;
-            }
-          }
-
-          if (assessment.result_id || isCompleted) {
-            const candidate = assignedCandidates.find(c => c.id === assessment.user_id);
-            const isNationalService = assessment.assessments?.assessment_type?.code === 'national_service';
-
-            let workplaceReadiness =
-              resultData?.workplace_readiness ||
-              resultData?.report_data?.dimensions?.workplaceReadiness ||
-              resultData?.report_data?.workplaceReadiness ||
-              0;
-
-            let intellectualCapability =
-              resultData?.intellectual_capability ||
-              resultData?.report_data?.dimensions?.intellectualCapability ||
-              resultData?.report_data?.intellectualCapability ||
-              0;
-
-            let overallScore =
-              resultData?.percentage_score ||
-              resultData?.report_data?.overallScore ||
-              resultData?.report_data?.dimensions?.overallScore ||
-              0;
-
-            if (!overallScore && workplaceReadiness && intellectualCapability) {
-              overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
-            }
-
-            let recommendation = resultData?.recommendation || 'Not Available';
-
-            if (recommendation === 'Not Available' && resultData?.report_data?.recommendation) {
-              if (typeof resultData.report_data.recommendation === 'string') {
-                recommendation = resultData.report_data.recommendation;
-              } else if (resultData.report_data.recommendation?.level) {
-                recommendation = resultData.report_data.recommendation.level;
-              }
-            }
-
-            let riskLevel =
-              resultData?.risk_level ||
-              resultData?.report_data?.riskLevel ||
-              resultData?.report_data?.classification ||
-              'Medium';
-
-            const reportEntry = {
-              result_id: assessment.result_id,
-              candidate_id: assessment.user_id,
-              candidate_name: candidate?.full_name || 'Unknown',
-              candidate_email: candidate?.email || '',
-              university: candidate?.university || '',
-              programme: candidate?.programme || '',
-              assessment_id: assessment.assessment_id,
-              assessment_title: assessment.assessments?.title || 'Assessment',
-              assessment_type: assessment.assessments?.assessment_type?.name || 'General',
-              assessment_code: assessment.assessments?.assessment_type?.code || 'general',
-              status: assessment.status,
-              completed_at: assessment.completed_at || resultData?.completed_at,
-              score: overallScore || 0,
-              is_national_service: isNationalService,
-              resultData: resultData,
-              percentage_score: overallScore || 0,
-              workplace_readiness: workplaceReadiness || 0,
-              intellectual_capability: intellectualCapability || 0,
-              recommendation: recommendation || 'Not Available',
-              risk_level: riskLevel || 'Medium',
-              category_scores: []
-            };
-
-            if (isNationalService) {
-              reportEntry.scores = {
-                overall: overallScore || 0,
-                workplace: workplaceReadiness || 0,
-                intellectual: intellectualCapability || 0,
-                recommendation: recommendation || 'Not Available',
-                riskLevel: riskLevel || 'Medium'
-              };
-
-              nsReports.push(reportEntry);
-            } else {
-              otherAssessments.push(reportEntry);
-            }
-
-            allReportData.push(reportEntry);
-          }
-        }
-
-        const candidateList = assignedCandidates.map(c => {
-          const candidateAssessments = allAssessments.filter(a => a.user_id === c.id);
-
-          const completed = candidateAssessments.filter(
-            a => a.status === 'completed' || a.result_id !== null
-          ).length;
-
-          const inProgress = candidateAssessments.filter(a => a.status === 'in_progress').length;
-          const unblocked = candidateAssessments.filter(a => a.status === 'unblocked').length;
-          const blocked = candidateAssessments.filter(a => a.status === 'blocked').length;
-          const notStarted = candidateAssessments.filter(
-            a => a.status === 'pending' || !a.status || a.status === ''
-          ).length;
-
-          const completedAssessments = candidateAssessments
-            .filter(a => a.status === 'completed' || a.result_id !== null)
-            .map(a => {
-              const reportEntry = allReportData.find(
-                r => r.result_id === a.result_id && r.candidate_id === c.id
-              );
-
-              const isNationalService = a.assessments?.assessment_type?.code === 'national_service';
-
-              return {
-                assessment_id: a.assessment_id,
-                result_id: a.result_id,
-                title: a.assessments?.title || 'Assessment',
-                score: reportEntry?.score || 0,
-                isNationalService: isNationalService,
-                assessment_code: a.assessments?.assessment_type?.code || 'general',
-                assessment_type: a.assessments?.assessment_type?.name || 'General',
-                reportData: reportEntry || null
-              };
-            })
-            .filter(a => a.result_id);
-
-          return {
-            ...c,
-            assessments: candidateAssessments,
-            stats: {
-              completed,
-              inProgress,
-              unblocked,
-              blocked,
-              notStarted,
-              total: candidateAssessments.length
-            },
-            completedAssessments
-          };
-        });
-
-        setCandidates(candidateList);
-
-        const initialSelected = {};
-        candidateList.forEach(c => {
-          const nonNs = c.completedAssessments.filter(a => !a.isNationalService);
-          if (nonNs.length > 0) {
-            initialSelected[c.id] = nonNs[0].assessment_id;
-          }
-        });
-        setSelectedAssessments(initialSelected);
-      } else {
-        setCandidates([]);
-      }
-
-      setNationalServiceReports(nsReports);
-      setOtherReports(otherAssessments);
-
-      setStats({
-        totalCandidates: assignedCandidates.length,
-        completedAssessments: allAssessments.filter(
-          a => a.status === 'completed' || a.result_id !== null
-        ).length,
-        pendingReviews: allAssessments.filter(
-          a => a.status === 'in_progress' || a.status === 'unblocked'
-        ).length,
-        nationalServiceReports: nsReports.length
       });
 
-      setLoading(false);
+      const payload = await response.json();
+
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error || payload?.message || 'Failed to load supervisor dashboard.');
+      }
+
+      const candidateRows = Array.isArray(payload.candidates) ? payload.candidates : [];
+      const nsRows = Array.isArray(payload.nationalServiceReports) ? payload.nationalServiceReports : [];
+      const otherRows = Array.isArray(payload.otherReports) ? payload.otherReports : [];
+      const dashboardStats = payload.stats || {};
+
+      setCandidates(candidateRows);
+      setNationalServiceReports(nsRows);
+      setOtherReports(otherRows);
+      setStats({
+        totalCandidates: Number(dashboardStats.totalCandidates || 0),
+        completedAssessments: Number(dashboardStats.completedAssessments || 0),
+        pendingReviews: Number(dashboardStats.pendingReviews || 0),
+        nationalServiceReports: Number(dashboardStats.nationalServiceReports || 0)
+      });
+      setDebugInfo(payload.debug || null);
+
+      const initialSelected = {};
+      candidateRows.forEach((candidate) => {
+        const completedAssessments = Array.isArray(candidate.completedAssessments)
+          ? candidate.completedAssessments
+          : [];
+        const nonNationalService = completedAssessments.filter((assessment) => !assessment.isNationalService);
+        if (nonNationalService.length > 0) {
+          initialSelected[candidate.id] = nonNationalService[0].assessment_id;
+        } else if (completedAssessments.length > 0) {
+          initialSelected[candidate.id] = completedAssessments[0].assessment_id;
+        }
+      });
+      setSelectedAssessments(initialSelected);
     } catch (error) {
-      console.error('[Supervisor] Error fetching dashboard data:', error);
+      console.error('[Supervisor Dashboard] Load error:', error);
+      setCandidates([]);
+      setNationalServiceReports([]);
+      setOtherReports([]);
+      setStats({
+        totalCandidates: 0,
+        completedAssessments: 0,
+        pendingReviews: 0,
+        nationalServiceReports: 0
+      });
+      setErrorMessage(error?.message || 'Unable to load dashboard data.');
+    } finally {
       setLoading(false);
     }
   };
@@ -320,14 +124,18 @@ export default function SupervisorDashboard() {
       return;
     }
 
-    const candidate = candidates.find(c => c.id === candidateId);
+    const candidate = candidates.find((item) => String(item.id) === String(candidateId));
     if (!candidate) {
-      console.warn('[Supervisor] Candidate not found');
+      alert('Candidate not found. Please refresh and try again.');
       return;
     }
 
-    const assessment = candidate.completedAssessments.find(
-      a => String(a.assessment_id) === String(assessmentId)
+    const completedAssessments = Array.isArray(candidate.completedAssessments)
+      ? candidate.completedAssessments
+      : [];
+
+    const assessment = completedAssessments.find(
+      (item) => String(item.assessment_id) === String(assessmentId)
     );
 
     if (!assessment) {
@@ -343,33 +151,35 @@ export default function SupervisorDashboard() {
   };
 
   const handleAssessmentChange = (candidateId, assessmentId) => {
-    setSelectedAssessments(prev => ({
-      ...prev,
+    setSelectedAssessments((previous) => ({
+      ...previous,
       [candidateId]: assessmentId
     }));
   };
 
-  const getRecommendationColor = (rec) => {
+  const getRecommendationColor = (recommendation) => {
     const colors = {
       'Highly Recommended': '#2e7d32',
-      'Recommended': '#1565c0',
-      'Conditional': '#f57c00',
+      Recommended: '#1565c0',
+      Conditional: '#f57c00',
       'Reserve Pool': '#f57c00',
       'Not Recommended': '#c62828',
       'Not Available': '#64748b'
     };
-    return colors[rec] || '#64748b';
+    return colors[recommendation] || '#64748b';
   };
 
   const getScoreColor = (score) => {
-    if (score >= 70) return '#dcfce7';
-    if (score >= 50) return '#fef3c7';
+    const value = Number(score || 0);
+    if (value >= 70) return '#dcfce7';
+    if (value >= 50) return '#fef3c7';
     return '#fee2e2';
   };
 
   const getScoreTextColor = (score) => {
-    if (score >= 70) return '#166534';
-    if (score >= 50) return '#92400e';
+    const value = Number(score || 0);
+    if (value >= 70) return '#166534';
+    if (value >= 50) return '#92400e';
     return '#991b1b';
   };
 
@@ -380,6 +190,12 @@ export default function SupervisorDashboard() {
           <div style={styles.loadingSpinner}></div>
           <p>Loading dashboard...</p>
         </div>
+        <style jsx>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
       </AppLayout>
     );
   }
@@ -393,32 +209,20 @@ export default function SupervisorDashboard() {
             <p style={styles.subtitle}>Manage your candidates and review assessment reports.</p>
           </div>
           <div style={styles.headerActions}>
-            <button onClick={fetchDashboardData} style={styles.refreshButton}>🔄 Refresh</button>
+            <button onClick={fetchDashboardData} style={styles.refreshButton}>Refresh</button>
           </div>
         </div>
 
+        {errorMessage && (
+          <div style={styles.errorBox}>
+            <strong>Dashboard loading issue:</strong> {errorMessage}
+          </div>
+        )}
+
         <div style={styles.statsGrid}>
-          <div style={styles.statCard}>
-            <div style={styles.statIcon}>👥</div>
-            <div>
-              <div style={styles.statLabel}>Total Candidates</div>
-              <div style={styles.statValue}>{stats.totalCandidates}</div>
-            </div>
-          </div>
-          <div style={styles.statCard}>
-            <div style={styles.statIcon}>✅</div>
-            <div>
-              <div style={styles.statLabel}>Completed</div>
-              <div style={styles.statValue}>{stats.completedAssessments}</div>
-            </div>
-          </div>
-          <div style={styles.statCard}>
-            <div style={styles.statIcon}>⏳</div>
-            <div>
-              <div style={styles.statLabel}>Pending Review</div>
-              <div style={styles.statValue}>{stats.pendingReviews}</div>
-            </div>
-          </div>
+          <StatCard icon="👥" label="Total Candidates" value={stats.totalCandidates} />
+          <StatCard icon="✅" label="Completed" value={stats.completedAssessments} />
+          <StatCard icon="⏳" label="Pending Review" value={stats.pendingReviews} />
           <div style={{ ...styles.statCard, background: '#1a237e' }}>
             <div style={{ ...styles.statIcon, color: 'white' }}>📋</div>
             <div>
@@ -428,287 +232,313 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
+        {debugInfo && (
+          <div style={styles.debugBox}>
+            <span>Debug:</span>{' '}
+            Candidates loaded: {debugInfo.assignedCandidates || 0} | Assessments: {debugInfo.candidateAssessments || 0} | Results: {debugInfo.resultRows || 0}
+          </div>
+        )}
+
         <div style={styles.tabsContainer}>
-          <button
+          <TabButton
+            active={activeTab === 'national_service'}
             onClick={() => setActiveTab('national_service')}
-            style={{
-              ...styles.tabButton,
-              background: activeTab === 'national_service' ? '#1a237e' : 'white',
-              color: activeTab === 'national_service' ? 'white' : '#1a237e',
-              border: activeTab === 'national_service' ? 'none' : '1px solid #e2e8f0'
-            }}
-          >
-            📋 National Service ({nationalServiceReports.length})
-          </button>
-          <button
+            label={`📋 National Service (${nationalServiceReports.length})`}
+          />
+          <TabButton
+            active={activeTab === 'other'}
             onClick={() => setActiveTab('other')}
-            style={{
-              ...styles.tabButton,
-              background: activeTab === 'other' ? '#1a237e' : 'white',
-              color: activeTab === 'other' ? 'white' : '#1a237e',
-              border: activeTab === 'other' ? 'none' : '1px solid #e2e8f0'
-            }}
-          >
-            📊 Other Assessments ({otherReports.length})
-          </button>
-          <button
+            label={`📊 Other Assessments (${otherReports.length})`}
+          />
+          <TabButton
+            active={activeTab === 'candidates'}
             onClick={() => setActiveTab('candidates')}
-            style={{
-              ...styles.tabButton,
-              background: activeTab === 'candidates' ? '#1a237e' : 'white',
-              color: activeTab === 'candidates' ? 'white' : '#1a237e',
-              border: activeTab === 'candidates' ? 'none' : '1px solid #e2e8f0'
-            }}
-          >
-            👥 All Candidates ({candidates.length})
-          </button>
+            label={`👥 All Candidates (${candidates.length})`}
+          />
         </div>
 
         <div style={styles.tabContent}>
           {activeTab === 'national_service' && (
-            <div style={styles.tabPanel}>
-              <div style={styles.tabDescription}>
-                <p>📋 All National Service assessment reports assigned to this supervisor.</p>
-              </div>
-              {nationalServiceReports.length === 0 ? (
-                <div style={styles.emptyState}>
-                  <p>No National Service assessments found.</p>
-                </div>
-              ) : (
-                <div style={styles.tableContainer}>
-                  <table style={styles.table}>
-                    <thead>
-                      <tr>
-                        <th style={styles.th}>Candidate</th>
-                        <th style={styles.th}>Status</th>
-                        <th style={styles.th}>Workplace Readiness</th>
-                        <th style={styles.th}>Intellectual Capability</th>
-                        <th style={styles.th}>Overall Score</th>
-                        <th style={styles.th}>Recommendation</th>
-                        <th style={styles.th}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {nationalServiceReports.map((report) => {
-                        const workplaceScore = report.workplace_readiness || 0;
-                        const intellectualScore = report.intellectual_capability || 0;
-                        const overallScore = report.percentage_score || 0;
-                        const recommendation = report.recommendation || 'Not Available';
-                        const status = report.status || 'unknown';
-                        const recColor = getRecommendationColor(recommendation);
-                        const isCompleted = status === 'completed' || report.result_id !== null;
-                        const hasScores = workplaceScore > 0 || intellectualScore > 0 || overallScore > 0;
-
-                        return (
-                          <tr key={report.result_id || report.candidate_id} style={styles.tr}>
-                            <td style={styles.td}>
-                              <div style={styles.cellName}>{report.candidate_name}</div>
-                              <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
-                            </td>
-                            <td style={styles.td}>
-                              <span style={{
-                                ...styles.statusBadge,
-                                background: isCompleted ? '#dcfce7' : '#fef3c7',
-                                color: isCompleted ? '#166534' : '#92400e'
-                              }}>
-                                {isCompleted ? '✅ Completed' : '⏳ In Progress'}
-                              </span>
-                            </td>
-                            <td style={styles.td}>
-                              <span style={{ ...styles.scoreBadge, background: getScoreColor(workplaceScore), color: getScoreTextColor(workplaceScore) }}>
-                                {hasScores ? Math.round(workplaceScore) + '%' : '—'}
-                              </span>
-                            </td>
-                            <td style={styles.td}>
-                              <span style={{ ...styles.scoreBadge, background: getScoreColor(intellectualScore), color: getScoreTextColor(intellectualScore) }}>
-                                {hasScores ? Math.round(intellectualScore) + '%' : '—'}
-                              </span>
-                            </td>
-                            <td style={styles.td}>
-                              <span style={{ ...styles.scoreBadge, background: getScoreColor(overallScore), color: getScoreTextColor(overallScore) }}>
-                                {hasScores ? Math.round(overallScore) + '%' : '—'}
-                              </span>
-                            </td>
-                            <td style={styles.td}>
-                              <span style={{ ...styles.recommendationBadge, color: recColor }}>
-                                {hasScores ? recommendation : 'Pending'}
-                              </span>
-                            </td>
-                            <td style={styles.td}>
-                              <div style={styles.actionButtons}>
-                                {isCompleted && report.result_id ? (
-                                  <button
-                                    onClick={() => handleViewReport(report.result_id)}
-                                    style={styles.viewButton}
-                                  >
-                                    📄 View Report
-                                  </button>
-                                ) : (
-                                  <span style={styles.pendingText}>Awaiting completion</span>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            <NationalServiceTab
+              reports={nationalServiceReports}
+              getScoreColor={getScoreColor}
+              getScoreTextColor={getScoreTextColor}
+              getRecommendationColor={getRecommendationColor}
+              onViewReport={handleViewReport}
+            />
           )}
 
           {activeTab === 'other' && (
-            <div style={styles.tabPanel}>
-              <div style={styles.tabDescription}>
-                <p>📊 All other completed assessments for candidates under your supervision.</p>
-              </div>
-              {otherReports.length === 0 ? (
-                <div style={styles.emptyState}>
-                  <p>No other assessments found.</p>
-                </div>
-              ) : (
-                <div style={styles.tableContainer}>
-                  <table style={styles.table}>
-                    <thead>
-                      <tr>
-                        <th style={styles.th}>Candidate</th>
-                        <th style={styles.th}>Assessment</th>
-                        <th style={styles.th}>Score</th>
-                        <th style={styles.th}>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {otherReports.map((report) => (
-                        <tr key={report.result_id} style={styles.tr}>
-                          <td style={styles.td}>
-                            <div style={styles.cellName}>{report.candidate_name}</div>
-                            <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
-                          </td>
-                          <td style={styles.td}>{report.assessment_title}</td>
-                          <td style={styles.td}>
-                            <span style={styles.scoreBadge}>
-                              {Math.round(report.score || 0)}%
-                            </span>
-                          </td>
-                          <td style={styles.td}>
-                            {report.result_id ? (
-                              <button
-                                onClick={() => handleViewReport(report.result_id)}
-                                style={styles.viewButton}
-                              >
-                                📄 View Report
-                              </button>
-                            ) : (
-                              <span style={styles.pendingText}>No result</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            <OtherAssessmentsTab
+              reports={otherReports}
+              onViewReport={handleViewReport}
+            />
           )}
 
           {activeTab === 'candidates' && (
-            <div style={styles.tabPanel}>
-              <div style={styles.tabDescription}>
-                <p>👥 All candidates with assessment status and ability to view individual reports.</p>
-              </div>
-              {candidates.length === 0 ? (
-                <div style={styles.emptyState}>
-                  <p>No candidates assigned to you yet.</p>
-                </div>
-              ) : (
-                <div style={styles.tableContainer}>
-                  <table style={styles.table}>
-                    <thead>
-                      <tr>
-                        <th style={styles.th}>Candidate</th>
-                        <th style={styles.th}>Completed</th>
-                        <th style={styles.th}>In Progress</th>
-                        <th style={styles.th}>Ready to Start</th>
-                        <th style={styles.th}>Blocked</th>
-                        <th style={styles.th}>Not Started</th>
-                        <th style={styles.th}>Select Assessment</th>
-                        <th style={styles.th}>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {candidates.map((candidate) => {
-                        const selectedId = selectedAssessments[candidate.id] ||
-                          (candidate.completedAssessments.length > 0 ? candidate.completedAssessments[0].assessment_id : '');
-
-                        return (
-                          <tr key={candidate.id} style={styles.tr}>
-                            <td style={styles.td}>
-                              <div style={styles.cellName}>{candidate.full_name || candidate.name}</div>
-                              <div style={styles.cellSub}>{candidate.email}</div>
-                              <div style={styles.cellSub}>{candidate.university} • {candidate.programme}</div>
-                            </td>
-                            <td style={styles.td}>
-                              <span style={styles.statBadgeCompleted}>{candidate.stats.completed}</span>
-                            </td>
-                            <td style={styles.td}>
-                              <span style={styles.statBadgeProgress}>{candidate.stats.inProgress}</span>
-                            </td>
-                            <td style={styles.td}>
-                              <span style={styles.statBadgeUnblocked}>{candidate.stats.unblocked}</span>
-                            </td>
-                            <td style={styles.td}>
-                              <span style={styles.statBadgeBlocked}>{candidate.stats.blocked}</span>
-                            </td>
-                            <td style={styles.td}>
-                              <span style={styles.statBadgeNotStarted}>{candidate.stats.notStarted}</span>
-                            </td>
-                            <td style={styles.td}>
-                              <select
-                                onChange={(e) => handleAssessmentChange(candidate.id, e.target.value)}
-                                style={styles.assessmentDropdown}
-                                value={selectedId}
-                                data-candidate={candidate.id}
-                              >
-                                <option value="">-- Select --</option>
-                                {candidate.completedAssessments.map((assessment) => (
-                                  <option key={assessment.assessment_id} value={assessment.assessment_id}>
-                                    {assessment.title} ({Math.round(assessment.score || 0)}%)
-                                  </option>
-                                ))}
-                                {candidate.completedAssessments.length === 0 && (
-                                  <option value="" disabled>No completed assessments</option>
-                                )}
-                              </select>
-                            </td>
-                            <td style={styles.td}>
-                              <button
-                                onClick={() => {
-                                  const select = document.querySelector(`select[data-candidate="${candidate.id}"]`);
-                                  if (select && select.value) {
-                                    handleAssessmentSelect(candidate.id, select.value);
-                                  } else {
-                                    alert('Please select an assessment first.');
-                                  }
-                                }}
-                                style={styles.viewReportButtonSmall}
-                                disabled={candidate.completedAssessments.length === 0}
-                              >
-                                📄 View Report
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            <CandidatesTab
+              candidates={candidates}
+              selectedAssessments={selectedAssessments}
+              onAssessmentChange={handleAssessmentChange}
+              onAssessmentSelect={handleAssessmentSelect}
+            />
           )}
         </div>
       </div>
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </AppLayout>
+  );
+}
+
+function StatCard({ icon, label, value }) {
+  return (
+    <div style={styles.statCard}>
+      <div style={styles.statIcon}>{icon}</div>
+      <div>
+        <div style={styles.statLabel}>{label}</div>
+        <div style={styles.statValue}>{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function TabButton({ active, onClick, label }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        ...styles.tabButton,
+        background: active ? '#1a237e' : 'white',
+        color: active ? 'white' : '#1a237e',
+        border: active ? 'none' : '1px solid #e2e8f0'
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getRecommendationColor, onViewReport }) {
+  return (
+    <div style={styles.tabPanel}>
+      <div style={styles.tabDescription}>
+        <p>📋 All National Service assessment reports assigned to this supervisor.</p>
+      </div>
+      {reports.length === 0 ? (
+        <div style={styles.emptyState}>
+          <p>No National Service assessments found.</p>
+        </div>
+      ) : (
+        <div style={styles.tableContainer}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Candidate</th>
+                <th style={styles.th}>Status</th>
+                <th style={styles.th}>Workplace Readiness</th>
+                <th style={styles.th}>Intellectual Capability</th>
+                <th style={styles.th}>Overall Score</th>
+                <th style={styles.th}>Recommendation</th>
+                <th style={styles.th}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reports.map((report) => {
+                const workplaceScore = Number(report.workplace_readiness || 0);
+                const intellectualScore = Number(report.intellectual_capability || 0);
+                const overallScore = Number(report.percentage_score || report.score || 0);
+                const recommendation = report.recommendation || 'Not Available';
+                const status = report.status || 'unknown';
+                const isCompleted = status === 'completed' || report.result_id !== null;
+                const hasScores = workplaceScore > 0 || intellectualScore > 0 || overallScore > 0;
+
+                return (
+                  <tr key={report.result_id || report.candidate_id} style={styles.tr}>
+                    <td style={styles.td}>
+                      <div style={styles.cellName}>{report.candidate_name}</div>
+                      <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={{
+                        ...styles.statusBadge,
+                        background: isCompleted ? '#dcfce7' : '#fef3c7',
+                        color: isCompleted ? '#166534' : '#92400e'
+                      }}>
+                        {isCompleted ? '✅ Completed' : '⏳ In Progress'}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={{ ...styles.scoreBadge, background: getScoreColor(workplaceScore), color: getScoreTextColor(workplaceScore) }}>
+                        {hasScores ? Math.round(workplaceScore) + '%' : '—'}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={{ ...styles.scoreBadge, background: getScoreColor(intellectualScore), color: getScoreTextColor(intellectualScore) }}>
+                        {hasScores ? Math.round(intellectualScore) + '%' : '—'}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={{ ...styles.scoreBadge, background: getScoreColor(overallScore), color: getScoreTextColor(overallScore) }}>
+                        {hasScores ? Math.round(overallScore) + '%' : '—'}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={{ ...styles.recommendationBadge, color: getRecommendationColor(recommendation) }}>
+                        {hasScores ? recommendation : 'Pending'}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      {isCompleted && report.result_id ? (
+                        <button onClick={() => onViewReport(report.result_id)} style={styles.viewButton}>📄 View Report</button>
+                      ) : (
+                        <span style={styles.pendingText}>Awaiting completion</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OtherAssessmentsTab({ reports, onViewReport }) {
+  return (
+    <div style={styles.tabPanel}>
+      <div style={styles.tabDescription}>
+        <p>📊 All other completed assessments for candidates under your supervision.</p>
+      </div>
+      {reports.length === 0 ? (
+        <div style={styles.emptyState}>
+          <p>No other assessments found.</p>
+        </div>
+      ) : (
+        <div style={styles.tableContainer}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Candidate</th>
+                <th style={styles.th}>Assessment</th>
+                <th style={styles.th}>Score</th>
+                <th style={styles.th}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reports.map((report) => (
+                <tr key={report.result_id || `${report.candidate_id}-${report.assessment_id}`} style={styles.tr}>
+                  <td style={styles.td}>
+                    <div style={styles.cellName}>{report.candidate_name}</div>
+                    <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
+                  </td>
+                  <td style={styles.td}>{report.assessment_title}</td>
+                  <td style={styles.td}>
+                    <span style={styles.scoreBadge}>{Math.round(Number(report.score || 0))}%</span>
+                  </td>
+                  <td style={styles.td}>
+                    {report.result_id ? (
+                      <button onClick={() => onViewReport(report.result_id)} style={styles.viewButton}>📄 View Report</button>
+                    ) : (
+                      <span style={styles.pendingText}>No result</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CandidatesTab({ candidates, selectedAssessments, onAssessmentChange, onAssessmentSelect }) {
+  return (
+    <div style={styles.tabPanel}>
+      <div style={styles.tabDescription}>
+        <p>👥 All candidates with assessment status and ability to view individual reports.</p>
+      </div>
+      {candidates.length === 0 ? (
+        <div style={styles.emptyState}>
+          <p>No candidates assigned to you yet.</p>
+        </div>
+      ) : (
+        <div style={styles.tableContainer}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Candidate</th>
+                <th style={styles.th}>Completed</th>
+                <th style={styles.th}>In Progress</th>
+                <th style={styles.th}>Ready to Start</th>
+                <th style={styles.th}>Blocked</th>
+                <th style={styles.th}>Not Started</th>
+                <th style={styles.th}>Select Assessment</th>
+                <th style={styles.th}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {candidates.map((candidate) => {
+                const completedAssessments = Array.isArray(candidate.completedAssessments)
+                  ? candidate.completedAssessments
+                  : [];
+                const stats = candidate.stats || {};
+                const selectedId = selectedAssessments[candidate.id] ||
+                  (completedAssessments.length > 0 ? completedAssessments[0].assessment_id : '');
+
+                return (
+                  <tr key={candidate.id} style={styles.tr}>
+                    <td style={styles.td}>
+                      <div style={styles.cellName}>{candidate.full_name || candidate.name || 'Unnamed Candidate'}</div>
+                      <div style={styles.cellSub}>{candidate.email || ''}</div>
+                      <div style={styles.cellSub}>{candidate.university || ''} • {candidate.programme || ''}</div>
+                    </td>
+                    <td style={styles.td}><span style={styles.statBadgeCompleted}>{stats.completed || 0}</span></td>
+                    <td style={styles.td}><span style={styles.statBadgeProgress}>{stats.inProgress || 0}</span></td>
+                    <td style={styles.td}><span style={styles.statBadgeUnblocked}>{stats.unblocked || 0}</span></td>
+                    <td style={styles.td}><span style={styles.statBadgeBlocked}>{stats.blocked || 0}</span></td>
+                    <td style={styles.td}><span style={styles.statBadgeNotStarted}>{stats.notStarted || 0}</span></td>
+                    <td style={styles.td}>
+                      <select
+                        onChange={(event) => onAssessmentChange(candidate.id, event.target.value)}
+                        style={styles.assessmentDropdown}
+                        value={selectedId}
+                      >
+                        <option value="">-- Select --</option>
+                        {completedAssessments.map((assessment) => (
+                          <option key={`${candidate.id}-${assessment.assessment_id}`} value={assessment.assessment_id}>
+                            {assessment.title} ({Math.round(Number(assessment.score || 0))}%)
+                          </option>
+                        ))}
+                        {completedAssessments.length === 0 && (
+                          <option value="" disabled>No completed assessments</option>
+                        )}
+                      </select>
+                    </td>
+                    <td style={styles.td}>
+                      <button
+                        onClick={() => onAssessmentSelect(candidate.id, selectedId)}
+                        style={styles.viewReportButtonSmall}
+                        disabled={completedAssessments.length === 0}
+                      >
+                        📄 View Report
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -759,6 +589,24 @@ const styles = {
     fontSize: '13px',
     fontWeight: '500',
     color: '#475569'
+  },
+  errorBox: {
+    background: '#fee2e2',
+    border: '1px solid #fecaca',
+    color: '#991b1b',
+    borderRadius: '10px',
+    padding: '12px 16px',
+    marginBottom: '16px',
+    fontSize: '14px'
+  },
+  debugBox: {
+    background: '#f8fafc',
+    border: '1px solid #e2e8f0',
+    color: '#475569',
+    borderRadius: '8px',
+    padding: '8px 12px',
+    marginBottom: '16px',
+    fontSize: '12px'
   },
   statsGrid: {
     display: 'grid',
@@ -821,7 +669,8 @@ const styles = {
     background: '#f8fafc',
     fontWeight: '600',
     color: '#475569',
-    borderBottom: '2px solid #e2e8f0'
+    borderBottom: '2px solid #e2e8f0',
+    whiteSpace: 'nowrap'
   },
   td: { padding: '12px 16px', borderBottom: '1px solid #e2e8f0', verticalAlign: 'middle' },
   tr: { transition: 'background 0.2s' },
@@ -839,7 +688,8 @@ const styles = {
     borderRadius: '20px',
     fontSize: '13px',
     fontWeight: '600',
-    display: 'inline-block'
+    display: 'inline-block',
+    background: '#f1f5f9'
   },
   recommendationBadge: {
     padding: '4px 12px',
@@ -850,11 +700,6 @@ const styles = {
     background: 'white',
     border: '1px solid #e2e8f0'
   },
-  actionButtons: {
-    display: 'flex',
-    gap: '6px',
-    flexWrap: 'wrap'
-  },
   viewButton: {
     padding: '6px 12px',
     background: '#1a237e',
@@ -864,7 +709,6 @@ const styles = {
     cursor: 'pointer',
     fontSize: '12px',
     fontWeight: '500',
-    transition: 'background 0.2s',
     whiteSpace: 'nowrap'
   },
   viewReportButtonSmall: {
@@ -876,13 +720,9 @@ const styles = {
     cursor: 'pointer',
     fontSize: '12px',
     fontWeight: '500',
-    transition: 'background 0.2s',
     whiteSpace: 'nowrap'
   },
-  pendingText: {
-    color: '#94a3b8',
-    fontSize: '13px'
-  },
+  pendingText: { color: '#94a3b8', fontSize: '13px' },
   assessmentDropdown: {
     padding: '6px 10px',
     borderRadius: '6px',
@@ -890,7 +730,7 @@ const styles = {
     fontSize: '12px',
     background: 'white',
     minWidth: '140px',
-    maxWidth: '200px'
+    maxWidth: '220px'
   },
   statBadgeCompleted: {
     padding: '2px 10px',
@@ -940,14 +780,3 @@ const styles = {
     borderRadius: '8px'
   }
 };
-
-if (typeof document !== 'undefined') {
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-  `;
-  document.head.appendChild(style);
-}
