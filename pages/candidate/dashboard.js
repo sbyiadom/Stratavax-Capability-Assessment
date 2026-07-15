@@ -151,7 +151,7 @@ export default function CandidateDashboard() {
   const getShortName = (title, isNationalService) => {
     if (isNationalService) return 'National Service';
     
-    // Remove common suffixes for shorter display
+    // Map full titles to short display names
     const shortNames = {
       'General Assessment': 'General',
       'Leadership Assessment': 'Leadership',
@@ -163,7 +163,8 @@ export default function CandidateDashboard() {
       'Manufacturing Technical Skills': 'Manufacturing',
       'Cultural & Attitudinal Fit': 'Cultural',
       'Strategic Leadership Assessment': 'Strategic',
-      'Manufacturing Baseline Assessment': 'Baseline'
+      'Manufacturing Baseline Assessment': 'Baseline',
+      'National Service Recruitment Assessment': 'National Service'
     };
     
     return shortNames[title] || title;
@@ -523,14 +524,14 @@ const styles = {
   sectionSubtitle: { fontSize: "13px", color: "rgba(255,255,255,0.7)", margin: "2px 0 0 0", textShadow: "1px 1px 2px rgba(0,0,0,0.3)" },
   sectionCount: { fontSize: "13px", color: "rgba(255,255,255,0.7)", padding: "2px 12px", background: "rgba(255,255,255,0.15)", borderRadius: "20px", textShadow: "1px 1px 2px rgba(0,0,0,0.3)" },
   
-  compactGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "8px", marginBottom: "20px" },
+  compactGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: "8px", marginBottom: "20px" },
   compactCard: { 
     position: "relative",
     borderRadius: "8px", 
     overflow: "hidden",
     transition: "all 0.3s ease",
     cursor: "pointer",
-    height: "40px"
+    height: "38px"
   },
   compactGradient: { 
     position: "absolute", 
@@ -607,7 +608,7 @@ const styles = {
   
   guidelinesSection: { marginTop: "16px", marginBottom: "20px", background: "rgba(255,255,255,0.95)", borderRadius: "12px", padding: "20px", border: "1px solid #e2e8f0" },
   guidelinesTitle: { fontSize: "16px", fontWeight: "600", color: "#0a1929", margin: "0 0 12px 0" },
-  guidelinesGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "10px" },
+  guidelinesGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: "10px" },
   guidelineCard: { display: "flex", alignItems: "flex-start", gap: "10px", padding: "10px 12px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #eef2f7" },
   guidelineIcon: { fontSize: "20px", flexShrink: 0 },
   guidelineCardTitle: { fontSize: "13px", fontWeight: "600", color: "#0a1929", margin: "0 0 2px 0" },
