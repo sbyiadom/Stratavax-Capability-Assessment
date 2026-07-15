@@ -1,4 +1,4 @@
-// pages/api/assessment-report/[resultId].js - COMPLETELY FIXED
+// pages/api/assessment-report/[resultId].js - FIXED with recommendations
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -13,6 +13,109 @@ function safeNumber(value, fallback = 0) {
 
 function safeObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+// ============================================================
+// GENERATE RECOMMENDATIONS FROM CATEGORY SCORES
+// ============================================================
+function generateRecommendations(categoryScores, overallScore) {
+  const recommendations = [];
+  
+  if (!categoryScores || categoryScores.length === 0) {
+    // If no category scores, generate general recommendations based on overall score
+    if (overallScore < 55) {
+      recommendations.push({
+        priority: 'High',
+        recommendation: 'Focus on building foundational skills across all areas.',
+        action: 'Provide structured training and close supervision in key competency areas.',
+        impact: 'Building a stronger foundation will enable more consistent performance.'
+      });
+    } else if (overallScore < 65) {
+      recommendations.push({
+        priority: 'Medium',
+        recommendation: 'Strengthen core competencies through targeted development.',
+        action: 'Identify specific areas for improvement and create a structured development plan.',
+        impact: 'Improving core competencies will enhance overall effectiveness.'
+      });
+    } else if (overallScore < 75) {
+      recommendations.push({
+        priority: 'Low',
+        recommendation: 'Continue to build on existing strengths through practical application.',
+        action: 'Provide opportunities to apply skills in real-world contexts.',
+        impact: 'Practical application will reinforce and strengthen existing capabilities.'
+      });
+    }
+    return recommendations;
+  }
+
+  // Sort categories by score (lowest first) to identify development areas
+  const sortedCategories = [...categoryScores].sort((a, b) => 
+    (a.percentage || a.score || 0) - (b.percentage || b.score || 0)
+  );
+
+  // Generate recommendations for low-scoring categories
+  sortedCategories.forEach((cat, index) => {
+    const percentage = safeNumber(cat.percentage || cat.score || 0);
+    const categoryName = cat.category || cat.name || 'Unknown';
+    
+    // Only generate recommendations for categories below 65%
+    if (percentage < 65) {
+      let priority = 'High';
+      if (percentage >= 55) priority = 'Medium';
+      if (percentage >= 60) priority = 'Low';
+      
+      let recommendation = '';
+      let action = '';
+      let impact = '';
+      
+      if (percentage < 40) {
+        recommendation = `${categoryName} requires immediate foundational development.`;
+        action = `Provide intensive training and close supervision in ${categoryName}. Consider assigning a mentor for this area.`;
+        impact = `Addressing this gap will significantly improve overall capability in ${categoryName}.`;
+      } else if (percentage < 55) {
+        recommendation = `${categoryName} shows significant room for improvement.`;
+        action = `Implement structured development activities focused on ${categoryName}. Regular progress reviews are recommended.`;
+        impact = `Developing ${categoryName} will enhance the candidate's overall effectiveness.`;
+      } else {
+        recommendation = `${categoryName} would benefit from targeted development.`;
+        action = `Provide focused practice and constructive feedback in ${categoryName} to build confidence and consistency.`;
+        impact = `Strengthening ${categoryName} will contribute to more consistent performance.`;
+      }
+      
+      recommendations.push({
+        priority: priority,
+        category: categoryName,
+        currentScore: percentage,
+        gapToTarget: Math.round(70 - percentage),
+        recommendation: recommendation,
+        action: action,
+        impact: impact
+      });
+    }
+  });
+
+  // If there are no low-scoring categories but overall score is below 70, add general recommendation
+  if (recommendations.length === 0 && overallScore < 70) {
+    recommendations.push({
+      priority: 'Medium',
+      recommendation: 'Continue to build on existing capabilities with practical experience.',
+      action: 'Provide structured opportunities to apply skills in increasingly complex scenarios.',
+      impact: 'Practical application will help consolidate and extend existing capabilities.'
+    });
+  }
+
+  // If we have no recommendations at all, add a general one
+  if (recommendations.length === 0) {
+    recommendations.push({
+      priority: 'Low',
+      recommendation: 'Continue to reinforce and apply existing capabilities.',
+      action: 'Provide regular feedback and opportunities for practical application.',
+      impact: 'Continued reinforcement will support sustained professional growth.'
+    });
+  }
+
+  // Limit to top 5 recommendations
+  return recommendations.slice(0, 5);
 }
 
 // ============================================================
@@ -96,6 +199,10 @@ function splitCategoryScores(categoryScores) {
   return { workplace, intellectual };
 }
 
+// ============================================================
+// MAIN HANDLER
+// ============================================================
+
 export default async function handler(req, res) {
   const { resultId } = req.query;
 
@@ -132,8 +239,6 @@ export default async function handler(req, res) {
       return res.status(404).json({ success: false, error: "Result not found", details: resultError.message });
     }
 
-    console.log('[API] Result found:', result.id);
-
     // ============================================================
     // GET CANDIDATE PROFILE
     // ============================================================
@@ -151,12 +256,11 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // GET ASSESSMENT WITH TYPE - THIS IS THE KEY!
+    // GET ASSESSMENT WITH TYPE
     // ============================================================
     let assessment = null;
     let assessmentTypeCode = null;
     if (result.assessment_id) {
-      // First get the assessment
       const { data: assmt, error: assmtError } = await serviceClient
         .from("assessments")
         .select("id, title, assessment_type_id")
@@ -166,7 +270,6 @@ export default async function handler(req, res) {
       if (!assmtError && assmt) {
         assessment = assmt;
         
-        // Then get the assessment type
         if (assmt.assessment_type_id) {
           const { data: type, error: typeError } = await serviceClient
             .from("assessment_types")
@@ -183,12 +286,9 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // CRITICAL FIX: Determine if National Service by assessment_type_code ONLY
+    // DETERMINE IF NATIONAL SERVICE
     // ============================================================
     const isNationalService = assessmentTypeCode === 'national_service';
-
-    console.log('[API] assessmentTypeCode:', assessmentTypeCode);
-    console.log('[API] isNationalService:', isNationalService);
 
     // ============================================================
     // EXTRACT CATEGORY SCORES
@@ -205,24 +305,22 @@ export default async function handler(req, res) {
       categoryScores = result.report_data.category_scores;
     }
 
-    // Only split if it's actually a National Service report
+    // Split for National Service
     if (isNationalService && categoryScores.length > 0) {
       const split = splitCategoryScores(categoryScores);
       workplaceSubCategories = split.workplace;
       intellectualSubCategories = split.intellectual;
-      console.log('[API] Workplace sub-categories:', workplaceSubCategories.length);
-      console.log('[API] Intellectual sub-categories:', intellectualSubCategories.length);
     }
 
     // ============================================================
-    // GET SCORES
+    // CALCULATE SCORES
     // ============================================================
     let workplaceReadiness = safeNumber(result.workplace_readiness, 0);
     let intellectualCapability = safeNumber(result.intellectual_capability, 0);
     let overallScore = safeNumber(result.percentage_score, 0);
     let recommendation = result.recommendation || 'N/A';
 
-    // For National Service, calculate scores from sub-categories if missing
+    // For National Service, calculate from sub-categories if missing
     if (isNationalService) {
       if (workplaceReadiness === 0 && workplaceSubCategories.length > 0) {
         const total = workplaceSubCategories.reduce((sum, cat) => sum + safeNumber(cat.percentage, 0), 0);
@@ -238,7 +336,6 @@ export default async function handler(req, res) {
         overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
       }
 
-      // Calculate recommendation for National Service if missing
       if (!recommendation || recommendation === 'N/A' || recommendation === '') {
         const workplace = Number(workplaceReadiness) || 0;
         const intellectual = Number(intellectualCapability) || 0;
@@ -247,6 +344,46 @@ export default async function handler(req, res) {
         else if (workplace >= 65 && intellectual >= 65) recommendation = 'Reserve Pool';
         else recommendation = 'Not Recommended';
       }
+    }
+
+    // ============================================================
+    // GENERATE RECOMMENDATIONS FOR STRATAVAX
+    // ============================================================
+    let strengths = [];
+    let weaknesses = [];
+    let recommendations = [];
+
+    if (!isNationalService) {
+      // Identify strengths and weaknesses
+      categoryScores.forEach(cat => {
+        const percentage = safeNumber(cat.percentage || cat.score || 0);
+        const name = cat.category || cat.name || 'Unknown';
+        
+        if (percentage >= 75) {
+          strengths.push({
+            category: name,
+            name: name,
+            percentage: percentage,
+            score: safeNumber(cat.earned || cat.score || 0),
+            maxScore: safeNumber(cat.max || cat.maxScore || 100)
+          });
+        } else if (percentage < 65) {
+          weaknesses.push({
+            category: name,
+            name: name,
+            percentage: percentage,
+            score: safeNumber(cat.earned || cat.score || 0),
+            maxScore: safeNumber(cat.max || cat.maxScore || 100)
+          });
+        }
+      });
+
+      // Sort strengths and weaknesses
+      strengths.sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
+      weaknesses.sort((a, b) => (a.percentage || 0) - (b.percentage || 0));
+
+      // Generate recommendations
+      recommendations = generateRecommendations(categoryScores, overallScore);
     }
 
     // ============================================================
@@ -283,10 +420,11 @@ export default async function handler(req, res) {
         reportType: 'national_service'
       };
     } else {
-      // STRATAVAX REPORT - Build with all data
+      // STRATAVAX REPORT - with recommendations
       report = {
         candidateInfo: {
           fullName: candidateProfile?.full_name || 'Candidate',
+          email: candidateProfile?.email || '',
           university: candidateProfile?.university || '',
           programme: candidateProfile?.programme || '',
           graduationYear: candidateProfile?.graduation_year || '',
@@ -301,10 +439,10 @@ export default async function handler(req, res) {
         riskLevel: result.risk_level || result.riskLevel || 'Medium',
         categoryScores: categoryScores,
         category_scores: categoryScores,
-        // These will be populated by the report generator if needed
-        strengths: result.strengths || [],
-        weaknesses: result.weaknesses || result.developmentAreas || [],
-        recommendations: result.recommendations || [],
+        strengths: strengths,
+        weaknesses: weaknesses,
+        // CRITICAL: Pass recommendations to frontend
+        recommendations: recommendations,
         executiveSummary: result.executive_summary || result.executiveSummary || '',
         supervisorImplication: result.supervisor_implication || result.supervisorImplication || '',
         reportType: 'stratavax',
@@ -324,7 +462,10 @@ export default async function handler(req, res) {
         assessments: assessment,
         workplaceSubCategories: workplaceSubCategories,
         intellectualSubCategories: intellectualSubCategories,
-        categoryScores: categoryScores
+        categoryScores: categoryScores,
+        strengths: strengths,
+        weaknesses: weaknesses,
+        recommendations: recommendations
       },
       report: report,
       isNationalService: isNationalService,
@@ -335,7 +476,9 @@ export default async function handler(req, res) {
       workplaceReadiness: workplaceReadiness,
       intellectualCapability: intellectualCapability,
       overallScore: overallScore,
-      recommendation: recommendation
+      recommendation: recommendation,
+      // Include recommendations at top level for easy access
+      recommendations: recommendations
     });
 
   } catch (error) {
