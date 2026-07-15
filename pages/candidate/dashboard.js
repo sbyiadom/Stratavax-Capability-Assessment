@@ -1,4 +1,4 @@
-// pages/candidate/dashboard.js - COMPLETE POLISHED VERSION
+// pages/candidate/dashboard.js - COMPLETE FIXED VERSION
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
@@ -246,7 +246,7 @@ export default function CandidateDashboard() {
               </div>
             ) : (
               <>
-                {/* Compact Cards - Only Assessment Name */}
+                {/* Compact Cards */}
                 <div style={styles.compactGrid}>
                   {assessments.map((assessment) => {
                     const colors = getAssessmentColor(assessment.typeCode);
