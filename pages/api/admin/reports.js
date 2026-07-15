@@ -1,12 +1,10 @@
-// pages/api/admin/reports.js - FIXED with recommendation calculation
+// pages/api/admin/reports.js - SIMPLIFIED RELIABLE VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
-// Helper function to determine recommendation based on scores
 function getRecommendation(workplaceReadiness, intellectualCapability) {
   const workplace = Number(workplaceReadiness) || 0;
   const intellectual = Number(intellectualCapability) || 0;
-  const overall = (workplace + intellectual) / 2;
 
   if (workplace >= 85 && intellectual >= 85) {
     return 'Highly Recommended';
@@ -16,9 +14,6 @@ function getRecommendation(workplaceReadiness, intellectualCapability) {
   }
   if (workplace >= 65 && intellectual >= 65) {
     return 'Reserve Pool';
-  }
-  if (overall >= 40) {
-    return 'Not Recommended';
   }
   return 'Not Recommended';
 }
@@ -33,10 +28,6 @@ export default async function handler(req, res) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !serviceRoleKey) {
-      console.error('Missing env vars:', {
-        supabaseUrl: !!supabaseUrl,
-        serviceRoleKey: !!serviceRoleKey
-      });
       return res.status(500).json({
         success: false,
         error: 'Server configuration error: Missing Supabase credentials'
@@ -56,7 +47,6 @@ export default async function handler(req, res) {
       .order('completed_at', { ascending: false });
 
     if (resultsError) {
-      console.error('Results error:', resultsError);
       return res.status(500).json({
         success: false,
         error: `Failed to load results: ${resultsError.message}`
@@ -91,11 +81,10 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 3: Get assessment details
+    // STEP 3: Get assessment details (simple query)
     // ============================================================
     const assessmentIds = results.map(r => r.assessment_id).filter(Boolean);
     let assessmentMap = {};
-    let typeMap = {};
 
     if (assessmentIds.length > 0) {
       const { data: assessments, error: assessmentsError } = await serviceClient
@@ -107,30 +96,39 @@ export default async function handler(req, res) {
         assessments.forEach(a => {
           assessmentMap[a.id] = a;
         });
-
-        const typeIds = assessments.map(a => a.assessment_type_id).filter(Boolean);
-        if (typeIds.length > 0) {
-          const { data: types, error: typesError } = await serviceClient
-            .from('assessment_types')
-            .select('id, code, name')
-            .in('id', typeIds);
-
-          if (!typesError && types) {
-            types.forEach(t => {
-              typeMap[t.id] = t;
-            });
-          }
-        }
       }
     }
 
     // ============================================================
-    // STEP 4: Build enriched reports with recommendation
+    // STEP 4: Get assessment types (simple query)
+    // ============================================================
+    const typeIds = Object.values(assessmentMap).map(a => a.assessment_type_id).filter(Boolean);
+    let typeMap = {};
+
+    if (typeIds.length > 0) {
+      const { data: types, error: typesError } = await serviceClient
+        .from('assessment_types')
+        .select('id, code, name')
+        .in('id', typeIds);
+
+      if (!typesError && types) {
+        types.forEach(t => {
+          typeMap[t.id] = t;
+        });
+      }
+    }
+
+    console.log(`📊 Found ${Object.keys(assessmentMap).length} assessments, ${Object.keys(typeMap).length} types`);
+
+    // ============================================================
+    // STEP 5: Build enriched reports
     // ============================================================
     const enrichedReports = results.map((result) => {
       const candidate = candidateMap[result.user_id];
       const assessment = assessmentMap[result.assessment_id] || null;
       const assessmentType = assessment ? typeMap[assessment.assessment_type_id] : null;
+      
+      // Check if this is a National Service assessment
       const isNationalService = assessmentType?.code === 'national_service';
 
       // Get scores
@@ -143,10 +141,9 @@ export default async function handler(req, res) {
         overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
       }
 
-      // Determine recommendation for National Service
+      // Determine recommendation
       let recommendation = result.recommendation || 'N/A';
       if (isNationalService) {
-        // If recommendation is missing or N/A, calculate it
         if (!recommendation || recommendation === 'N/A' || recommendation === '') {
           recommendation = getRecommendation(workplaceReadiness, intellectualCapability);
         }
@@ -175,8 +172,13 @@ export default async function handler(req, res) {
       };
     });
 
-    const nationalServiceCount = enrichedReports.filter(r => r.isNationalService === true).length;
-    const stratavaxCount = enrichedReports.filter(r => r.isNationalService !== true).length;
+    // Count National Service reports
+    const nationalServiceReports = enrichedReports.filter(r => r.isNationalService === true);
+    const nationalServiceCount = nationalServiceReports.length;
+    const stratavaxCount = enrichedReports.length - nationalServiceCount;
+
+    console.log(`✅ National Service reports: ${nationalServiceCount}`);
+    console.log(`✅ Stratavax reports: ${stratavaxCount}`);
 
     return res.status(200).json({
       success: true,
