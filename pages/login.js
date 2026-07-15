@@ -1,4 +1,4 @@
-// pages/login.js - FINAL CORRECTED VERSION (single export)
+// pages/login.js - WITH STRATAVAX LOGO (PNG)
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -77,7 +77,7 @@ export default function Login() {
       <div style={styles.card}>
         <div style={styles.logoContainer}>
           <Image 
-            src="/images/stratavax-logo.svg" 
+            src="/images/stratavax-logo.png" 
             alt="Stratavax" 
             width={64} 
             height={64}
