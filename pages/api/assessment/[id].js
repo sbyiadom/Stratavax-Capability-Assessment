@@ -1,12 +1,11 @@
-// pages/api/assessment/[id].js - FIXED VERSION
+// pages/api/assessment/[id].js - SIMPLIFIED WORKING VERSION
 
 import { createClient } from "@supabase/supabase-js";
 
 export default async function handler(req, res) {
   const { id } = req.query;
 
-  // Allow both GET and POST for flexibility
-  if (req.method !== "GET" && req.method !== "POST") {
+  if (req.method !== "GET") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
   }
 
@@ -20,41 +19,23 @@ export default async function handler(req, res) {
 
     if (!supabaseUrl || !supabaseKey) {
       console.error("Missing Supabase environment variables");
-      return res.status(500).json({ success: false, error: "Server configuration error" });
+      return res.status(500).json({ 
+        success: false, 
+        error: "Server configuration error",
+        details: "Missing environment variables"
+      });
     }
 
-    const serviceClient = createClient(
-      supabaseUrl,
-      supabaseKey,
-      {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false
-        }
-      }
-    );
+    console.log("Fetching assessment with ID:", id);
 
-    // Get the assessment with its type
+    const serviceClient = createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+
+    // First, get the assessment
     const { data: assessment, error: assessmentError } = await serviceClient
       .from("assessments")
-      .select(`
-        id,
-        title,
-        description,
-        question_count,
-        time_limit_minutes,
-        attempts_allowed,
-        is_active,
-        assessment_type_id,
-        assessment_types:assessment_type_id (
-          id,
-          code,
-          name,
-          description,
-          category_config,
-          time_limit_minutes as type_time_limit
-        )
-      `)
+      .select("*")
       .eq("id", id)
       .maybeSingle();
 
@@ -62,7 +43,7 @@ export default async function handler(req, res) {
       console.error("Assessment fetch error:", assessmentError);
       return res.status(500).json({
         success: false,
-        error: "Failed to fetch assessment",
+        error: "Database error",
         details: assessmentError.message
       });
     }
@@ -74,15 +55,22 @@ export default async function handler(req, res) {
       });
     }
 
-    // Get the total question count for this assessment type
-    const { count: questionCount, error: countError } = await serviceClient
-      .from("unique_questions")
-      .select("id", { count: "exact", head: true })
-      .eq("assessment_type_id", assessment.assessment_type_id);
+    // Then get the assessment type
+    let assessmentType = null;
+    if (assessment.assessment_type_id) {
+      const { data: type, error: typeError } = await serviceClient
+        .from("assessment_types")
+        .select("*")
+        .eq("id", assessment.assessment_type_id)
+        .maybeSingle();
 
-    if (!countError && questionCount !== null) {
-      assessment.question_count = questionCount;
+      if (!typeError && type) {
+        assessmentType = type;
+        assessment.assessment_type = type;
+      }
     }
+
+    console.log("Assessment found:", assessment.title);
 
     return res.status(200).json({
       success: true,
