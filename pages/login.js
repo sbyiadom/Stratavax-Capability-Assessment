@@ -1,7 +1,8 @@
-// pages/login.js - CLEANEST VERSION
+// pages/login.js - WITH BRANDING AND BACKGROUND
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Image from 'next/image';
 import { supabase } from '../supabase/client';
 
 export default function Login() {
@@ -69,12 +70,24 @@ export default function Login() {
 
   return (
     <div style={styles.container}>
+      {/* Background Image */}
+      <div style={styles.background} />
+      
       <div style={styles.card}>
-        <div style={styles.logo}>
+        {/* Logo */}
+        <div style={styles.logoContainer}>
+          <Image 
+            src="/images/stratavax-logo.svg" 
+            alt="Stratavax" 
+            width={60} 
+            height={60}
+            style={styles.logoImage}
+          />
           <h1 style={styles.title}>Stratavax</h1>
           <p style={styles.subtitle}>Talent Assessment Portal</p>
         </div>
 
+        {/* Role Toggle */}
         <div style={styles.roleToggle}>
           <button
             onClick={() => setRole('candidate')}
@@ -157,38 +170,57 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: 'linear-gradient(135deg, #0a1628 0%, #1a237e 100%)',
-    padding: '20px'
+    padding: '20px',
+    position: 'relative',
+    overflow: 'hidden'
+  },
+  background: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'linear-gradient(135deg, #0a1628 0%, #1a237e 50%, #0d47a1 100%)',
+    zIndex: 0
   },
   card: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '40px',
+    position: 'relative',
+    zIndex: 1,
+    background: 'rgba(255, 255, 255, 0.95)',
+    backdropFilter: 'blur(10px)',
+    borderRadius: '20px',
+    padding: '40px 36px',
     width: '100%',
     maxWidth: '420px',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+    boxShadow: '0 25px 80px rgba(0,0,0,0.4)',
+    border: '1px solid rgba(255,255,255,0.2)'
   },
-  logo: {
+  logoContainer: {
     textAlign: 'center',
-    marginBottom: '30px'
+    marginBottom: '32px'
+  },
+  logoImage: {
+    marginBottom: '12px'
   },
   title: {
-    fontSize: '32px',
+    fontSize: '28px',
     fontWeight: '700',
     color: '#1a237e',
-    margin: '0 0 4px 0'
+    margin: '0 0 4px 0',
+    letterSpacing: '-0.5px'
   },
   subtitle: {
     fontSize: '14px',
     color: '#64748b',
-    margin: 0
+    margin: 0,
+    fontWeight: '400'
   },
   roleToggle: {
     display: 'flex',
     gap: '8px',
     marginBottom: '24px',
     background: '#f1f5f9',
-    borderRadius: '10px',
+    borderRadius: '12px',
     padding: '4px'
   },
   roleButton: {
@@ -220,7 +252,7 @@ const styles = {
   field: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '4px'
+    gap: '6px'
   },
   label: {
     fontSize: '13px',
@@ -229,23 +261,24 @@ const styles = {
   },
   input: {
     padding: '12px 16px',
-    borderRadius: '8px',
+    borderRadius: '10px',
     border: '1px solid #e2e8f0',
     fontSize: '14px',
-    transition: 'border-color 0.2s',
+    transition: 'all 0.2s',
     outline: 'none',
-    fontFamily: 'inherit'
+    fontFamily: 'inherit',
+    background: '#f8fafc'
   },
   loginButton: {
     padding: '14px',
     background: '#1a237e',
     color: 'white',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '10px',
     fontSize: '16px',
     fontWeight: '600',
     cursor: 'pointer',
-    transition: 'background 0.2s',
+    transition: 'all 0.2s',
     marginTop: '8px',
     fontFamily: 'inherit'
   },
@@ -259,3 +292,5 @@ const styles = {
     textDecoration: 'none'
   }
 };
+
+export default Login;
