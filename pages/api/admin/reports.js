@@ -1,8 +1,7 @@
-// pages/api/admin/reports.js - FIXED with hardcoded National Service ID
+// pages/api/admin/reports.js - CALCULATES SCORES FROM SUB-CATEGORIES
 
 import { createClient } from '@supabase/supabase-js';
 
-// Hardcoded National Service assessment ID
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
 function getRecommendation(workplaceReadiness, intellectualCapability) {
@@ -19,6 +18,44 @@ function getRecommendation(workplaceReadiness, intellectualCapability) {
     return 'Reserve Pool';
   }
   return 'Not Recommended';
+}
+
+// ============================================================
+// HELPER: Calculate scores from category_scores
+// ============================================================
+function calculateScoresFromCategories(categoryScores) {
+  let workplaceTotal = 0;
+  let workplaceCount = 0;
+  let intellectualTotal = 0;
+  let intellectualCount = 0;
+
+  const workplaceKeywords = ['safety', 'risk', 'technical', 'communication', 'teamwork', 'ownership', 'integrity', 'workplace', 'ethics', 'professional', 'readiness', 'conduct', 'attitude', 'work ethic'];
+  const intellectualKeywords = ['numerical', 'logical', 'reasoning', 'measurement', 'engineering', 'spatial', 'problem', 'troubleshooting', 'analysis', 'critical', 'analytical', 'decision', 'cognitive', 'aptitude', 'intellectual'];
+
+  if (!Array.isArray(categoryScores) || categoryScores.length === 0) {
+    return { workplaceReadiness: 0, intellectualCapability: 0 };
+  }
+
+  categoryScores.forEach(cat => {
+    const name = (cat.category || cat.name || '').toLowerCase();
+    const percentage = Number(cat.percentage || cat.score || 0);
+    
+    const isWorkplace = workplaceKeywords.some(keyword => name.includes(keyword));
+    const isIntellectual = intellectualKeywords.some(keyword => name.includes(keyword));
+
+    if (isWorkplace) {
+      workplaceTotal += percentage;
+      workplaceCount++;
+    } else if (isIntellectual) {
+      intellectualTotal += percentage;
+      intellectualCount++;
+    }
+  });
+
+  const workplaceReadiness = workplaceCount > 0 ? Math.round(workplaceTotal / workplaceCount) : 0;
+  const intellectualCapability = intellectualCount > 0 ? Math.round(intellectualTotal / intellectualCount) : 0;
+
+  return { workplaceReadiness, intellectualCapability };
 }
 
 export default async function handler(req, res) {
@@ -122,32 +159,51 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 5: Build enriched reports
+    // STEP 5: Build enriched reports with calculated scores
     // ============================================================
     const enrichedReports = results.map((result) => {
       const candidate = candidateMap[result.user_id];
       const assessment = assessmentMap[result.assessment_id] || null;
       const assessmentType = assessment ? typeMap[assessment.assessment_type_id] : null;
       
-      // ============================================================
-      // CRITICAL FIX: Check if this is a National Service assessment
-      // Using multiple methods including hardcoded ID
-      // ============================================================
       const isNationalService = 
         result.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID ||
         assessmentType?.code === 'national_service' ||
         assessmentType?.name === 'National Service Recruitment Assessment' ||
         assessment?.title === 'National Service Recruitment Assessment';
 
-      // Get scores
+      // ============================================================
+      // CRITICAL FIX: Get scores from multiple sources
+      // ============================================================
       let workplaceReadiness = Number(result.workplace_readiness) || 0;
       let intellectualCapability = Number(result.intellectual_capability) || 0;
       let overallScore = Number(result.percentage_score) || 0;
 
+      // If main scores are missing, try to calculate from category_scores
+      if (workplaceReadiness === 0 || intellectualCapability === 0) {
+        // Try category_scores from result
+        let categoryScores = [];
+        if (result.category_scores && Array.isArray(result.category_scores)) {
+          categoryScores = result.category_scores;
+        } else if (result.report_data && result.report_data.categoryScores) {
+          categoryScores = result.report_data.categoryScores;
+        } else if (result.report_data && result.report_data.category_scores) {
+          categoryScores = result.report_data.category_scores;
+        }
+
+        if (categoryScores.length > 0) {
+          const calculated = calculateScoresFromCategories(categoryScores);
+          if (workplaceReadiness === 0) workplaceReadiness = calculated.workplaceReadiness;
+          if (intellectualCapability === 0) intellectualCapability = calculated.intellectualCapability;
+        }
+      }
+
+      // Calculate overall score if missing
       if (overallScore === 0 && (workplaceReadiness > 0 || intellectualCapability > 0)) {
         overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
       }
 
+      // Get recommendation
       let recommendation = result.recommendation || 'N/A';
       if (isNationalService) {
         if (!recommendation || recommendation === 'N/A' || recommendation === '') {
@@ -155,8 +211,15 @@ export default async function handler(req, res) {
         }
       }
 
-      // Determine the type label for display
-      const typeLabel = isNationalService ? 'National Service' : 'Stratavax';
+      // Get category_scores for the report view
+      let categoryScores = [];
+      if (result.category_scores && Array.isArray(result.category_scores)) {
+        categoryScores = result.category_scores;
+      } else if (result.report_data && result.report_data.categoryScores) {
+        categoryScores = result.report_data.categoryScores;
+      } else if (result.report_data && result.report_data.category_scores) {
+        categoryScores = result.report_data.category_scores;
+      }
 
       return {
         id: result.id,
@@ -170,7 +233,7 @@ export default async function handler(req, res) {
         assessment_type_code: assessmentType?.code || null,
         assessment_type_name: assessmentType?.name || 'General',
         isNationalService: isNationalService,
-        typeLabel: typeLabel,
+        typeLabel: isNationalService ? 'National Service' : 'Stratavax',
         workplace_readiness: workplaceReadiness,
         intellectual_capability: intellectualCapability,
         percentage_score: overallScore,
@@ -178,7 +241,7 @@ export default async function handler(req, res) {
         completed_at: result.completed_at,
         total_questions: result.total_questions || 0,
         answered_questions: result.answered_questions || 0,
-        category_scores: result.category_scores || []
+        category_scores: categoryScores
       };
     });
 
@@ -186,10 +249,6 @@ export default async function handler(req, res) {
     const nationalServiceReports = enrichedReports.filter(r => r.isNationalService === true);
     const nationalServiceCount = nationalServiceReports.length;
     const stratavaxCount = enrichedReports.length - nationalServiceCount;
-
-    console.log(`✅ Total reports: ${enrichedReports.length}`);
-    console.log(`✅ National Service: ${nationalServiceCount}`);
-    console.log(`✅ Stratavax: ${stratavaxCount}`);
 
     return res.status(200).json({
       success: true,
