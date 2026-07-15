@@ -1,4 +1,4 @@
-// pages/candidate/dashboard.js
+// pages/candidate/dashboard.js - FIXED with API call
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
@@ -17,33 +17,16 @@ function toNumber(value, fallback = 0) {
 }
 
 function decodeHtmlEntities(value) {
-  let text;
-  let previousText;
-
   if (value === null || value === undefined) return value;
-  text = String(value);
-
-  for (let i = 0; i < 10; i += 1) {
-    previousText = text;
-    text = text.replace(/&amp;amp;/gi, "&");
-    text = text.replace(/&amp;lt;/gi, "<");
-    text = text.replace(/&amp;gt;/gi, ">");
-    text = text.replace(/&amp;quot;/gi, '"');
-    text = text.replace(/&amp;#039;/gi, "'");
-    text = text.replace(/&amp;#39;/gi, "'");
-    text = text.replace(/&amp;nbsp;/gi, " ");
-
-    text = text.replace(/&amp;/gi, "&");
-    text = text.replace(/&lt;/gi, "<");
-    text = text.replace(/&gt;/gi, ">");
-    text = text.replace(/&quot;/gi, '"');
-    text = text.replace(/&#039;/gi, "'");
-    text = text.replace(/&#39;/gi, "'");
-    text = text.replace(/&nbsp;/gi, " ");
-
-    if (text === previousText) break;
-  }
-
+  let text = String(value);
+  // Simple decode
+  text = text.replace(/&amp;/gi, "&");
+  text = text.replace(/&lt;/gi, "<");
+  text = text.replace(/&gt;/gi, ">");
+  text = text.replace(/&quot;/gi, '"');
+  text = text.replace(/&#039;/gi, "'");
+  text = text.replace(/&#39;/gi, "'");
+  text = text.replace(/&nbsp;/gi, " ");
   return text;
 }
 
@@ -60,21 +43,12 @@ function formatDate(value) {
   }
 }
 
-function getScorePercentage(record) {
-  if (!record) return null;
-
-  const rawPercentage = record.percentage_score ?? record.percentage ?? null;
-  const score = record.total_score ?? record.score ?? null;
-  const maxScore = record.max_score ?? null;
-
-  if (score !== null && score !== undefined && maxScore !== null && maxScore !== undefined && toNumber(maxScore, 0) > 0) {
-    return Math.round((toNumber(score, 0) / toNumber(maxScore, 0)) * 100);
-  }
-
+function getScorePercentage(result) {
+  if (!result) return null;
+  const rawPercentage = result.percentage_score ?? result.percentage ?? null;
   if (rawPercentage !== null && rawPercentage !== undefined && rawPercentage !== "") {
     return Math.round(toNumber(rawPercentage, 0));
   }
-
   return null;
 }
 
@@ -92,7 +66,6 @@ function getAssessmentColor(typeCode) {
     manufacturing_baseline: { gradient: "linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%)", color: "#2e7d32", light: "#e8f5e9" },
     national_service: { gradient: "linear-gradient(135deg, #0d47a1 0%, #1a237e 100%)", color: "#0d47a1", light: "#e8eaf6" }
   };
-
   return colors[typeCode] || colors.general;
 }
 
@@ -110,7 +83,6 @@ function getAssessmentIcon(typeCode) {
     manufacturing_baseline: "/images/stratavax_mfg_baseline_assessment.png",
     national_service: "/images/stratavax_national_service_assessment.png"
   };
-
   return icons[typeCode] || "/images/stratavax_general_assessment.png";
 }
 
@@ -128,7 +100,6 @@ function getDefaultAssessmentAreas(typeCode) {
     manufacturing_baseline: ["Technical Fundamentals", "Troubleshooting", "Numerical Aptitude", "Safety & Work Ethic"],
     national_service: ["Workplace Readiness", "Intellectual Capability", "Safety & Risk Awareness", "Problem Solving", "Technical Fundamentals", "Communication", "Teamwork", "Professional Conduct"]
   };
-
   return areas[typeCode] || ["General Assessment"];
 }
 
@@ -142,7 +113,6 @@ function getStatusConfig(status, scorePercentage) {
       icon: "✓"
     };
   }
-
   if (status === "in_progress") {
     return {
       label: "In Progress",
@@ -152,7 +122,6 @@ function getStatusConfig(status, scorePercentage) {
       icon: "↗"
     };
   }
-
   if (status === "unblocked") {
     return {
       label: "Ready to Start",
@@ -162,7 +131,6 @@ function getStatusConfig(status, scorePercentage) {
       icon: "🔓"
     };
   }
-
   return {
     label: "Blocked",
     bg: "#f5f5f5",
@@ -170,57 +138,6 @@ function getStatusConfig(status, scorePercentage) {
     border: "1px solid #e0e0e0",
     icon: "🔒"
   };
-}
-
-function getAssessmentPriority(assessment, accessMap, resultMap, latestSessionMap) {
-  const access = accessMap[assessment.id] || null;
-  const result = resultMap[assessment.id] || null;
-  const session = latestSessionMap[assessment.id] || null;
-
-  if (access && access.status === "unblocked" && !access.result_id && !access.completed_at && !result) return 100;
-  if (session && session.status === "in_progress" && (!access || access.status !== "blocked")) return 90;
-  if (result || (access && (access.status === "completed" || access.result_id || access.completed_at))) return 80;
-  if (access && access.status === "blocked") return 70;
-  if (access) return 60;
-  return 0;
-}
-
-function removeDuplicateAssessments(assessments, accessMap, resultMap, latestSessionMap) {
-  const map = new Map();
-
-  safeArray(assessments).forEach((assessment) => {
-    const typeCode = assessment.assessment_type?.code || "general";
-    const existing = map.get(typeCode);
-
-    if (!existing) {
-      map.set(typeCode, assessment);
-      return;
-    }
-
-    const currentPriority = getAssessmentPriority(assessment, accessMap, resultMap, latestSessionMap);
-    const existingPriority = getAssessmentPriority(existing, accessMap, resultMap, latestSessionMap);
-
-    if (currentPriority > existingPriority) {
-      map.set(typeCode, assessment);
-    }
-  });
-
-  return Array.from(map.values());
-}
-
-function determineCardStatus(access, latestSession, result) {
-  const isCompleted = Boolean(
-    !!result ||
-      (access && (access.status === "completed" || access.result_id || access.completed_at))
-  );
-
-  if (isCompleted) return "completed";
-
-  if (access && access.status === "unblocked") return "unblocked";
-
-  if (latestSession && latestSession.status === "in_progress" && (!access || access.status !== "blocked")) return "in_progress";
-
-  return "blocked";
 }
 
 export default function CandidateDashboard() {
@@ -234,168 +151,77 @@ export default function CandidateDashboard() {
   const [activeTab, setActiveTab] = useState(null);
   const [selectedAssessmentAreas, setSelectedAssessmentAreas] = useState([]);
   const [errorMessage, setErrorMessage] = useState("");
+  const [stats, setStats] = useState({ completed: 0, ready: 0, inProgress: 0, total: 0 });
 
   const excludedTypes = ["manufacturing"];
 
   useEffect(() => {
     if (!session?.user) return;
-    fetchDashboardData(session.user);
+    fetchDashboardData();
   }, [session]);
 
-  async function fetchDashboardData(user) {
+  async function fetchDashboardData() {
     try {
       setLoading(true);
       setErrorMessage("");
 
-      const userId = user.id;
+      // Get the session token
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
 
-      const profilePromise = supabase
-        .from("candidate_profiles")
-        .select("full_name, email")
-        .eq("id", userId)
-        .maybeSingle();
-
-      const typesPromise = supabase
-        .from("assessment_types")
-        .select("*")
-        .eq("is_active", true)
-        .order("display_order", { ascending: true });
-
-      const assessmentsPromise = supabase
-        .from("assessments")
-        .select("*, assessment_type:assessment_types(*)")
-        .eq("is_active", true);
-
-      const accessPromise = supabase
-        .from("candidate_assessments")
-        .select("id, assessment_id, status, result_id, completed_at, unblocked_at, created_at, session_id")
-        .eq("user_id", userId);
-
-      const sessionsPromise = supabase
-        .from("assessment_sessions")
-        .select("id, assessment_id, status, time_spent_seconds, updated_at, expires_at")
-        .eq("user_id", userId);
-
-      const resultsPromise = supabase
-        .from("assessment_results")
-        .select("id, assessment_id, total_score, max_score, percentage_score, completed_at, is_valid, is_auto_submitted")
-        .eq("user_id", userId);
-
-      const [profileResponse, typesResponse, assessmentsResponse, accessResponse, sessionsResponse, resultsResponse] = await Promise.all([
-        profilePromise,
-        typesPromise,
-        assessmentsPromise,
-        accessPromise,
-        sessionsPromise,
-        resultsPromise
-      ]);
-
-      if (profileResponse.data?.full_name) {
-        setUserName(profileResponse.data.full_name);
-      } else {
-        setUserName(user.user_metadata?.full_name || user.email?.split("@")[0] || "Candidate");
+      if (!token) {
+        setErrorMessage("Not authenticated");
+        setLoading(false);
+        return;
       }
 
-      if (typesResponse.error) throw typesResponse.error;
-      if (assessmentsResponse.error) throw assessmentsResponse.error;
-      if (accessResponse.error) throw accessResponse.error;
-      if (sessionsResponse.error) throw sessionsResponse.error;
-      if (resultsResponse.error) throw resultsResponse.error;
-
-      const filteredTypes = safeArray(typesResponse.data).filter((type) => !excludedTypes.includes(type.code));
-      const filteredAssessments = safeArray(assessmentsResponse.data).filter((assessment) => !excludedTypes.includes(assessment.assessment_type?.code));
-
-      const accessMap = {};
-      safeArray(accessResponse.data).forEach((item) => {
-        accessMap[item.assessment_id] = item;
-      });
-
-      const latestSessionMap = {};
-      safeArray(sessionsResponse.data).forEach((item) => {
-        const existing = latestSessionMap[item.assessment_id];
-        if (!existing || new Date(item.updated_at || 0).getTime() > new Date(existing.updated_at || 0).getTime()) {
-          latestSessionMap[item.assessment_id] = item;
+      // Call the API instead of direct Supabase queries
+      const response = await fetch('/api/candidate/dashboard', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         }
       });
 
-      const resultMap = {};
-      safeArray(resultsResponse.data).forEach((item) => {
-        const existing = resultMap[item.assessment_id];
-        if (!existing || new Date(item.completed_at || 0).getTime() > new Date(existing.completed_at || 0).getTime()) {
-          resultMap[item.assessment_id] = item;
-        }
-      });
+      const data = await response.json();
 
-      const uniqueAssessments = removeDuplicateAssessments(filteredAssessments, accessMap, resultMap, latestSessionMap);
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to load dashboard');
+      }
 
-      const typeOptions = filteredTypes.map((type) => {
-        let areas = [];
-        
-        if (Array.isArray(type.category_config) && type.category_config.length > 0) {
-          areas = type.category_config.map(decodeHtmlEntities);
-        } else {
-          areas = getDefaultAssessmentAreas(type.code);
-        }
-        
-        return {
-          id: type.code,
-          label: decodeHtmlEntities(type.name),
-          shortLabel: type.code === "manufacturing_baseline" ? "Mfg Baseline" : decodeHtmlEntities(type.name || type.code),
-          description: decodeHtmlEntities(type.description || type.name + " assessment"),
-          icon: getAssessmentIcon(type.code),
-          gradientStart: type.gradient_start || getAssessmentColor(type.code).color,
-          gradientEnd: type.gradient_end || getAssessmentColor(type.code).color,
-          color: type.color || getAssessmentColor(type.code).color,
-          areas: areas
-        };
-      });
+      console.log('Dashboard data:', data);
 
-      const cards = uniqueAssessments.map((assessment) => {
-        const typeCode = assessment.assessment_type?.code || "general";
-        const access = accessMap[assessment.id] || null;
-        const latestSession = latestSessionMap[assessment.id] || null;
-        const result = resultMap[assessment.id] || null;
-        const scorePercentage = getScorePercentage(result);
-        const status = determineCardStatus(access, latestSession, result);
+      // Set user name
+      setUserName(data.candidateName || "Candidate");
 
-        return {
-          id: assessment.id,
-          title: decodeHtmlEntities(assessment.title || "Assessment"),
-          description: decodeHtmlEntities(assessment.description || "Assessment assigned by your supervisor."),
-          typeCode,
-          typeName: decodeHtmlEntities(assessment.assessment_type?.name || typeCode),
-          icon: getAssessmentIcon(typeCode),
-          status,
-          scorePercentage: scorePercentage !== null ? scorePercentage : null,
-          completedAt: (result && result.completed_at) || (access && access.completed_at) || null,
-          unblockedAt: access && access.unblocked_at ? access.unblocked_at : null,
-          session: latestSession,
-          result,
-          access,
-          questionCount: assessment.question_count || assessment.assessment_type?.question_count || 100,
-          timeLimitMinutes: assessment.time_limit_minutes || assessment.assessment_type?.time_limit_minutes || 180,
-          attemptsAllowed: assessment.attempts_allowed || assessment.assessment_type?.attempts_allowed || 1
-        };
-      });
-
+      // Process assessment types
+      const typeOptions = data.assessmentTypes || [];
       setAssessmentTypes(typeOptions);
+
+      // Process assessment cards
+      const cards = data.assessmentCards || [];
       setAssessmentCards(cards);
 
-      const firstReadyType =
-        typeOptions.find((type) =>
-          cards.some((card) => card.typeCode === type.id && (card.status === "unblocked" || card.status === "in_progress"))
-        ) || null;
+      // Set stats
+      setStats(data.stats || { completed: 0, ready: 0, inProgress: 0, total: 0 });
 
-      const firstAvailableType =
-        firstReadyType ||
+      // Set active tab
+      const firstReadyType = typeOptions.find((type) =>
+        cards.some((card) => card.typeCode === type.id && (card.status === "unblocked" || card.status === "in_progress"))
+      ) || null;
+
+      const firstAvailableType = firstReadyType ||
         typeOptions.find((type) => cards.some((card) => card.typeCode === type.id)) ||
         typeOptions[0] ||
         null;
 
       if (firstAvailableType) {
         setActiveTab(firstAvailableType.id);
-        setSelectedAssessmentAreas(firstAvailableType.areas || getDefaultAssessmentAreas(firstAvailableType.id));
+        const areas = firstAvailableType.areas || getDefaultAssessmentAreas(firstAvailableType.id);
+        setSelectedAssessmentAreas(areas);
       }
+
     } catch (error) {
       console.error("Error loading candidate dashboard:", error);
       setErrorMessage(error?.message || "Unable to load dashboard.");
@@ -491,7 +317,7 @@ export default function CandidateDashboard() {
             </h2>
             <p style={styles.welcomeText}>
               {readyCount + inProgressCount > 0
-                ? "You have " + (readyCount + inProgressCount) + " assessment(s) ready or in progress."
+                ? `You have ${readyCount + inProgressCount} assessment(s) ready or in progress.`
                 : "No assessments are currently ready. Contact your supervisor to unlock assessments."}
             </p>
           </div>
@@ -505,9 +331,7 @@ export default function CandidateDashboard() {
         <div style={styles.mainContent}>
           {errorMessage && <div style={styles.errorBox}>{errorMessage}</div>}
 
-          {/* ============================================================
-              TABS - Clean design with logo images
-              ============================================================ */}
+          {/* TABS */}
           <div style={styles.tabsContainer}>
             {assessmentTypes.map((tab) => {
               const isActive = activeTab === tab.id;
@@ -558,9 +382,7 @@ export default function CandidateDashboard() {
             })}
           </div>
 
-          {/* ============================================================
-              ASSESSMENT DETAIL CARD
-              ============================================================ */}
+          {/* ASSESSMENT DETAIL CARD */}
           {activeAssessment ? (
             <div style={styles.assessmentDetailsSection}>
               <div style={{ ...styles.card, border: "1px solid " + activeColors.color + "40" }}>
@@ -592,15 +414,15 @@ export default function CandidateDashboard() {
                     <div style={styles.cardMeta}>
                       <span style={styles.metaItem}>
                         <span style={styles.metaIcon}>⏱️</span> 
-                        {activeAssessment.timeLimitMinutes} minutes
+                        {activeAssessment.timeLimitMinutes || 180} minutes
                       </span>
                       <span style={styles.metaItem}>
                         <span style={styles.metaIcon}>📋</span> 
-                        {activeAssessment.questionCount} questions
+                        {activeAssessment.questionCount || 100} questions
                       </span>
                       <span style={styles.metaItem}>
                         <span style={styles.metaIcon}>🎯</span> 
-                        {activeAssessment.attemptsAllowed === 1 ? 'One attempt' : `${activeAssessment.attemptsAllowed} attempts`}
+                        {activeAssessment.attemptsAllowed === 1 ? 'One attempt' : `${activeAssessment.attemptsAllowed || 1} attempts`}
                       </span>
                     </div>
                     {activeAssessment.completedAt && <p style={styles.completedText}>Completed: {formatDate(activeAssessment.completedAt)}</p>}
