@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - FIXED VERSION
+// pages/assessment/[id].js - UPDATED TO USE APIs
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -50,6 +50,73 @@ function getAssessmentDuration(assessmentTypeCode) {
   return 180;
 }
 
+// ============================================================
+// API HELPERS - Using the new API endpoints
+// ============================================================
+
+async function apiCall(endpoint, options = {}) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  
+  const response = await fetch(endpoint, {
+    ...options,
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+  });
+  
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || 'API call failed');
+  }
+  return result;
+}
+
+async function fetchAssessmentDetails(assessmentId) {
+  return apiCall(`/api/assessment/${assessmentId}`);
+}
+
+async function fetchAccess(assessmentId) {
+  const result = await apiCall(`/api/assessment/access?assessmentId=${assessmentId}`);
+  return result.access;
+}
+
+async function fetchQuestions(assessmentTypeId) {
+  const result = await apiCall(`/api/assessment/questions?assessmentTypeId=${assessmentTypeId}`);
+  return result.questions || [];
+}
+
+async function createOrGetSession(assessmentId, assessmentTypeId, durationMinutes) {
+  const result = await apiCall('/api/assessment/session', {
+    method: 'POST',
+    body: JSON.stringify({ assessmentId, assessmentTypeId, durationMinutes })
+  });
+  return result.session;
+}
+
+async function getSessionResponses(sessionId) {
+  const result = await apiCall(`/api/assessment/responses?sessionId=${sessionId}`);
+  return result.responses || {};
+}
+
+async function saveAnswer(sessionId, questionId, answer, metadata) {
+  const result = await apiCall('/api/assessment/save-response', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, questionId, answer, metadata })
+  });
+  return result;
+}
+
+async function submitAssessment(sessionId, autoSubmitted, autoSubmitReason, allowIncomplete) {
+  const result = await apiCall('/api/assessment/submit', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, autoSubmitted, autoSubmitReason, allowIncomplete })
+  });
+  return result;
+}
+
 function AssessmentContent() {
   const router = useRouter();
   const assessmentId = router.query.id || router.query.assessment_id;
@@ -88,7 +155,6 @@ function AssessmentContent() {
   const sessionIdRef = useRef(null);
   const submittingRef = useRef(false);
   const autoSubmitRef = useRef(false);
-  const userIdRef = useRef(null);
 
   // STRATAVAX BRAND COLORS
   const primaryColor = "#0b2a4e";
@@ -105,10 +171,8 @@ function AssessmentContent() {
   const remainingSeconds = Math.max(0, timeLimitSeconds - elapsedSeconds);
   const timeRemainingFormatted = formatTime(remainingSeconds);
   const timeUsedPercent = timeLimitSeconds > 0 ? (elapsedSeconds / timeLimitSeconds) * 100 : 0;
-  const isTimeWarning = timeUsedPercent > 80;
   const isTimeCritical = timeUsedPercent > 90;
 
-  const answeredPercent = questions.length > 0 ? Math.round((totalAnswered / questions.length) * 100) : 0;
   const isNationalService = assessmentTypeCode === 'national_service' || 
     (assessment && assessment.title && assessment.title.toLowerCase().includes('national service'));
 
@@ -128,135 +192,6 @@ function AssessmentContent() {
   }
 
   // ============================================================
-  // API HELPERS - Using the API instead of direct Supabase
-  // ============================================================
-  async function apiCall(endpoint, options = {}) {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData?.session?.access_token;
-    
-    const response = await fetch(endpoint, {
-      ...options,
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        ...(options.headers || {})
-      }
-    });
-    
-    const result = await response.json();
-    if (!response.ok) {
-      throw new Error(result.error || 'API call failed');
-    }
-    return result;
-  }
-
-  async function fetchAssessmentData() {
-    return apiCall(`/api/assessment/${assessmentId}`);
-  }
-
-  async function saveAnswer(questionId, answerToStore, metadata) {
-    return apiCall(`/api/assessment/save-response`, {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: sessionIdRef.current,
-        questionId,
-        answer: answerToStore,
-        metadata,
-        assessmentId
-      })
-    });
-  }
-
-  async function getSessionResponses() {
-    const result = await apiCall(`/api/assessment/responses/${sessionIdRef.current}`);
-    return result.responses || {};
-  }
-
-  async function submitAssessmentData(autoSubmit, reason) {
-    return apiCall(`/api/assessment/submit`, {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: sessionIdRef.current,
-        autoSubmitted: autoSubmit,
-        autoSubmitReason: reason || null,
-        allowIncomplete: autoSubmit,
-        elapsedSeconds,
-        answers
-      })
-    });
-  }
-
-  async function updateAnsweredQuestionsCount(nextAnswers) {
-    if (!sessionIdRef.current) return;
-    const answeredCount = countAnswered(nextAnswers || answers);
-    await apiCall(`/api/assessment/update-count`, {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: sessionIdRef.current,
-        answeredCount,
-        totalQuestions: questions.length
-      })
-    });
-  }
-
-  async function saveQuestionTiming(questionId, timeSpentSeconds) {
-    if (!sessionIdRef.current || !questionId) return;
-    const questionIdNum = parseInt(questionId, 10);
-    if (Number.isNaN(questionIdNum)) return;
-    try {
-      await apiCall(`/api/assessment/timing`, {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: sessionIdRef.current,
-          questionId: questionIdNum,
-          questionNumber: currentIndex + 1,
-          timeSpentSeconds: Math.max(0, safeNumber(timeSpentSeconds, 0))
-        })
-      });
-    } catch (err) {
-      console.warn("Question timing save skipped:", err);
-    }
-  }
-
-  async function updateSessionTimer(elapsed) {
-    if (!sessionIdRef.current) return;
-    try {
-      await apiCall(`/api/assessment/timer`, {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: sessionIdRef.current,
-          elapsedSeconds: elapsed
-        })
-      });
-    } catch (err) {
-      console.warn("Timer update skipped:", err);
-    }
-  }
-
-  async function logViolation(violationType) {
-    if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting || isTimeExpired) return;
-    const newCount = violationCount + 1;
-    setViolationCount(newCount);
-    try {
-      await apiCall(`/api/assessment/violation`, {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: sessionIdRef.current,
-          violationType,
-          violationCount: newCount
-        })
-      });
-    } catch (err) {
-      console.warn("Violation logging failed:", err);
-    }
-    showViolation(violationType + ". Violation " + newCount + " of 3.");
-    if (newCount >= 3) {
-      showViolation("Maximum violations reached. Auto-submitting assessment...");
-      setTimeout(() => handleAutoSubmit("Auto-submitted due to rule violations."), 1000);
-    }
-  }
-
-  // ============================================================
   // AUTO SUBMIT
   // ============================================================
   async function handleAutoSubmit(reason) {
@@ -271,8 +206,6 @@ function AssessmentContent() {
       setIsAutoSubmitting(true);
       setIsTimeExpired(true);
 
-      const currentQuestionId = questions[currentIndex]?.id || null;
-      
       // Save all answers
       const answerPromises = Object.entries(answers).map(([qId, answer]) => {
         if (answer === null || answer === undefined || answer === '') return null;
@@ -280,20 +213,22 @@ function AssessmentContent() {
         const changeCount = answerChangeCount[qId] || 0;
         const initialAns = initialAnswers[qId] || answer;
         
-        return saveAnswer(qId, answerToStore, {
-          time_spent_seconds: Math.floor((Date.now() - questionStartTime) / 1000),
-          times_changed: changeCount,
-          initial_answer_id: Array.isArray(initialAns) ? initialAns.join(",") : String(initialAns),
-          is_answer_change: false
-        });
+        return saveAnswer(
+          sessionIdRef.current,
+          qId,
+          answerToStore,
+          {
+            time_spent_seconds: Math.floor((Date.now() - questionStartTime) / 1000),
+            times_changed: changeCount,
+            initial_answer_id: Array.isArray(initialAns) ? initialAns.join(",") : String(initialAns),
+            is_answer_change: false
+          }
+        );
       });
 
       await Promise.all(answerPromises.filter(p => p !== null));
 
-      await updateSessionTimer(elapsedSeconds);
-      await updateAnsweredQuestionsCount(answers);
-
-      await submitAssessmentData(true, reason || 'Auto-submitted because the assessment timer expired.');
+      await submitAssessment(sessionIdRef.current, true, reason || 'Auto-submitted because the assessment timer expired.', true);
 
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
@@ -366,17 +301,20 @@ function AssessmentContent() {
 
     try {
       const answerToStore = Array.isArray(newSelectedAnswer) ? newSelectedAnswer.join(",") : newSelectedAnswer;
-      const result = await saveAnswer(questionId, answerToStore, {
-        time_spent_seconds: timeSpentSeconds,
-        times_changed: nextChangeCount,
-        initial_answer_id: Array.isArray(initialAnswerId) ? initialAnswerId.join(",") : initialAnswerId,
-        is_answer_change: isAnswerChange
-      });
+      const result = await saveAnswer(
+        sessionIdRef.current,
+        questionId,
+        answerToStore,
+        {
+          time_spent_seconds: timeSpentSeconds,
+          times_changed: nextChangeCount,
+          initial_answer_id: Array.isArray(initialAnswerId) ? initialAnswerId.join(",") : initialAnswerId,
+          is_answer_change: isAnswerChange
+        }
+      );
 
       if (result && result.success) {
         setSaveStatus((previous) => ({ ...previous, [questionId]: "saved" }));
-        await saveQuestionTiming(questionId, timeSpentSeconds);
-        await updateAnsweredQuestionsCount(nextAnswers);
       } else {
         setSaveStatus((previous) => ({ ...previous, [questionId]: "error" }));
       }
@@ -393,6 +331,20 @@ function AssessmentContent() {
       });
     }, 900);
     setQuestionStartTime(Date.now());
+  }
+
+  // ============================================================
+  // LOG VIOLATION
+  // ============================================================
+  async function logViolation(violationType) {
+    if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting || isTimeExpired) return;
+    const newCount = violationCount + 1;
+    setViolationCount(newCount);
+    showViolation(violationType + ". Violation " + newCount + " of 3.");
+    if (newCount >= 3) {
+      showViolation("Maximum violations reached. Auto-submitting assessment...");
+      setTimeout(() => handleAutoSubmit("Auto-submitted due to rule violations."), 1000);
+    }
   }
 
   // ============================================================
@@ -427,44 +379,64 @@ function AssessmentContent() {
 
         const currentUser = authSession.user;
         setUser(currentUser);
-        userIdRef.current = currentUser.id;
 
-        // Use the API to fetch assessment data
-        const assessmentData = await fetchAssessmentData();
-        
+        // ============================================================
+        // STEP 1: Get assessment details (existing API)
+        // ============================================================
+        const assessmentData = await fetchAssessmentDetails(assessmentId);
         if (!assessmentData.success) {
           throw new Error(assessmentData.error || 'Failed to load assessment');
         }
 
-        const { assessment: assessmentInfo, questions: questionData, access, session: sessionData } = assessmentData;
+        const assessmentInfo = assessmentData;
+        setAssessment(assessmentInfo);
+        setAssessmentType(assessmentInfo.assessment_type || null);
+        setAssessmentTypeCode(assessmentInfo.assessment_type?.code || null);
+        
+        const durationMinutes = getAssessmentDuration(assessmentInfo.assessment_type?.code || null);
+        const durationSeconds = durationMinutes * 60;
+        setTimeLimitSeconds(durationSeconds);
 
-        if (access && (access.status === 'completed' || access.result_id)) {
+        // ============================================================
+        // STEP 2: Check access
+        // ============================================================
+        const accessData = await fetchAccess(assessmentId);
+        
+        if (accessData && (accessData.status === 'completed' || accessData.result_id)) {
           setAlreadySubmitted(true);
           setLoading(false);
           return;
         }
 
-        if (access && access.status === 'blocked') {
+        if (accessData && accessData.status === 'blocked') {
           setAccessDenied(true);
           setLoading(false);
           return;
         }
 
-        setAssessment(assessmentInfo);
-        setAssessmentType(assessmentInfo?.assessment_type || null);
-        setAssessmentTypeCode(assessmentInfo?.assessment_type?.code || null);
+        // ============================================================
+        // STEP 3: Get questions
+        // ============================================================
+        const questionData = await fetchQuestions(assessmentInfo.assessment_type_id);
+        setQuestions(questionData || []);
+
+        // ============================================================
+        // STEP 4: Create or get session
+        // ============================================================
+        const sessionData = await createOrGetSession(
+          assessmentId,
+          assessmentInfo.assessment_type_id,
+          durationMinutes
+        );
 
         if (sessionData) {
           setSession(sessionData);
           sessionIdRef.current = sessionData.id;
-          const durationMinutes = getAssessmentDuration(assessmentInfo?.assessment_type?.code || null);
-          const durationSeconds = durationMinutes * 60;
-          setTimeLimitSeconds(durationSeconds);
         }
 
-        setQuestions(questionData || []);
-        
-        // Restore responses if session exists
+        // ============================================================
+        // STEP 5: Get existing responses if session exists
+        // ============================================================
         if (sessionData && sessionData.id) {
           const responses = await getSessionResponses(sessionData.id);
           const restoredAnswers = {};
@@ -511,7 +483,9 @@ function AssessmentContent() {
     if (assessmentId) init();
   }, [assessmentId, router]);
 
-  // Timer
+  // ============================================================
+  // TIMER
+  // ============================================================
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isAutoSubmitting || questions.length === 0 || isTimeExpired) return;
     
@@ -526,11 +500,6 @@ function AssessmentContent() {
           }
           return next;
         }
-        
-        if (next % 30 === 0 && session && user) {
-          updateSessionTimer(next);
-        }
-        
         return next;
       });
     }, 1000);
@@ -538,7 +507,9 @@ function AssessmentContent() {
     return () => clearInterval(timer);
   }, [loading, alreadySubmitted, accessDenied, session, isAutoSubmitting, timeLimitSeconds, user, assessmentId, currentIndex, questions, isTimeExpired]);
 
-  // Anti-cheat
+  // ============================================================
+  // ANTI-CHEAT
+  // ============================================================
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
 
@@ -570,7 +541,9 @@ function AssessmentContent() {
     };
   }, [loading, alreadySubmitted, accessDenied, session, violationCount, isAutoSubmitting, isTimeExpired]);
 
-  // Navigation
+  // ============================================================
+  // NAVIGATION
+  // ============================================================
   async function moveToQuestion(nextIndex) {
     if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
       alert("Time has expired! The assessment is being submitted automatically.");
@@ -578,11 +551,6 @@ function AssessmentContent() {
     }
     
     if (isAutoSubmitting || nextIndex < 0 || nextIndex >= questions.length) return;
-    const currentQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
-    if (currentQuestionId) {
-      const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
-      await saveQuestionTiming(currentQuestionId, timeSpentSeconds);
-    }
     setCurrentIndex(nextIndex);
     setQuestionStartTime(Date.now());
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
@@ -624,17 +592,7 @@ function AssessmentContent() {
       setIsSubmitting(true);
       setShowSubmitModal(false);
       
-      // Save all remaining answers
-      const currentQuestionId = questions[currentIndex]?.id || null;
-      if (currentQuestionId) {
-        const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
-        await saveQuestionTiming(currentQuestionId, timeSpentSeconds);
-      }
-      
-      await updateSessionTimer(elapsedSeconds);
-      await updateAnsweredQuestionsCount(answers);
-      
-      const result = await submitAssessmentData(false, null);
+      await submitAssessment(sessionIdRef.current, false, null, false);
       
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
@@ -653,16 +611,14 @@ function AssessmentContent() {
   }
 
   async function handleBackClick() {
-    if (session && user && !alreadySubmitted && !isTimeExpired) {
-      const currentQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
-      await saveQuestionTiming(currentQuestionId, Math.floor((Date.now() - questionStartTime) / 1000));
-      await updateSessionTimer(elapsedSeconds);
-    }
     router.push("/candidate/dashboard");
   }
 
   const isDisabled = alreadySubmitted || isAutoSubmitting || isTimeExpired;
 
+  // ============================================================
+  // LOADING / ERROR STATES
+  // ============================================================
   if (loading) return <div style={styles.loadingContainer}><div style={styles.loadingSpinner} /><h2>Loading Assessment...</h2><p>Preparing your questions</p></div>;
   if (accessDenied) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.errorIcon}>🔒</div><h2>Access Denied</h2><p>This assessment is not currently available for your account.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
   if (alreadySubmitted && !showSuccessModal) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.successIcon}>✅</div><h2>Assessment Completed</h2><p>This assessment has already been submitted.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
@@ -680,6 +636,9 @@ function AssessmentContent() {
     );
   }
 
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
     <>
       {showViolationWarning && <div style={styles.violationBanner}><span>⚠️</span><span>{violationMessage}</span></div>}
@@ -718,9 +677,7 @@ function AssessmentContent() {
 
       {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: successColor }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to completion page...</p></div></div>}
 
-      {/* ============================================================
-          MAIN ASSESSMENT UI
-          ============================================================ */}
+      {/* MAIN ASSESSMENT UI */}
       <div style={styles.container}>
         {/* Header */}
         <div style={styles.header}>
