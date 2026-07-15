@@ -1,21 +1,9 @@
-// pages/assessment/[id].js - National Service Assessment with Stratavax Branding
+// pages/assessment/[id].js - FIXED VERSION
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import dynamic from "next/dynamic";
 import { supabase } from "../../supabase/client";
-import {
-  getAssessmentById,
-  createAssessmentSession,
-  getSessionResponses,
-  submitAssessment,
-  getProgress,
-  saveProgress,
-  updateSessionTimer,
-  isAssessmentCompleted,
-  getUniqueQuestions,
-  saveUniqueResponse
-} from "../../supabase/assessment";
 
 const AssessmentPage = dynamic(() => Promise.resolve(AssessmentContent), { ssr: false });
 
@@ -49,40 +37,10 @@ function countAnswered(answerMap) {
   }).length;
 }
 
-function isManufacturingBaselineAssessment(assessment, assessmentType) {
-  const typeId = safeNumber(
-    assessment && assessment.assessment_type_id
-      ? assessment.assessment_type_id
-      : assessmentType && assessmentType.id
-      ? assessmentType.id
-      : 0,
-    0
-  );
-
-  const assessmentTitle = String((assessment && assessment.title) || "").toLowerCase();
-  const typeCode = String((assessmentType && assessmentType.code) || "").toLowerCase();
-  const typeName = String((assessmentType && assessmentType.name) || "").toLowerCase();
-
-  return (
-    typeId === 19 ||
-    assessmentTitle.includes("manufacturing baseline") ||
-    typeCode.includes("manufacturing_baseline") ||
-    typeCode.includes("manufacturing-baseline") ||
-    typeName.includes("manufacturing baseline")
-  );
-}
-
 function isMultipleCorrectQuestion(question) {
   if (!question || !Array.isArray(question.answers)) return false;
   const correctAnswers = question.answers.filter((answer) => safeNumber(answer.score, 0) === 1);
   return correctAnswers.length > 1;
-}
-
-function getRemainingFromSession(sessionData, fallbackSeconds) {
-  if (!sessionData || !sessionData.expires_at) return fallbackSeconds;
-  const expiresAtMs = new Date(sessionData.expires_at).getTime();
-  if (Number.isNaN(expiresAtMs)) return fallbackSeconds;
-  return Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
 }
 
 function getAssessmentDuration(assessmentTypeCode) {
@@ -90,18 +48,6 @@ function getAssessmentDuration(assessmentTypeCode) {
     return 120;
   }
   return 180;
-}
-
-async function fetchCandidateAccess(userId, assessmentId) {
-  const response = await supabase
-    .from("candidate_assessments")
-    .select("id,status,result_id,completed_at,unblocked_at,session_id")
-    .eq("user_id", userId)
-    .eq("assessment_id", assessmentId)
-    .maybeSingle();
-
-  if (response.error) throw response.error;
-  return response.data || null;
 }
 
 function AssessmentContent() {
@@ -142,19 +88,17 @@ function AssessmentContent() {
   const sessionIdRef = useRef(null);
   const submittingRef = useRef(false);
   const autoSubmitRef = useRef(false);
+  const userIdRef = useRef(null);
 
   // STRATAVAX BRAND COLORS
   const primaryColor = "#0b2a4e";
-  const primaryLight = "#e8eaf6";
-  const primaryDark = "#1b4a7a";
   const accentColor = "#f9b83a";
   const successColor = "#2e7d32";
   const warningColor = "#f57c00";
   const dangerColor = "#c62828";
 
   const currentQuestion = questions[currentIndex] || {};
-  const allowMultipleSelection = isManufacturingBaselineAssessment(assessment, assessmentType);
-  const isMultipleCorrect = allowMultipleSelection && isMultipleCorrectQuestion(currentQuestion);
+  const isMultipleCorrect = isMultipleCorrectQuestion(currentQuestion);
   const totalAnswered = countAnswered(answers);
   const totalChanges = Object.values(answerChangeCount).reduce((a, b) => a + safeNumber(b, 0), 0);
   const isLastQuestion = currentIndex === questions.length - 1;
@@ -165,8 +109,6 @@ function AssessmentContent() {
   const isTimeCritical = timeUsedPercent > 90;
 
   const answeredPercent = questions.length > 0 ? Math.round((totalAnswered / questions.length) * 100) : 0;
-
-  // Check if this is a National Service assessment
   const isNationalService = assessmentTypeCode === 'national_service' || 
     (assessment && assessment.title && assessment.title.toLowerCase().includes('national service'));
 
@@ -185,68 +127,138 @@ function AssessmentContent() {
     setTimeout(() => setShowViolationWarning(false), 3000);
   }
 
+  // ============================================================
+  // API HELPERS - Using the API instead of direct Supabase
+  // ============================================================
+  async function apiCall(endpoint, options = {}) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    
+    const response = await fetch(endpoint, {
+      ...options,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...(options.headers || {})
+      }
+    });
+    
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || 'API call failed');
+    }
+    return result;
+  }
+
+  async function fetchAssessmentData() {
+    return apiCall(`/api/assessment/${assessmentId}`);
+  }
+
+  async function saveAnswer(questionId, answerToStore, metadata) {
+    return apiCall(`/api/assessment/save-response`, {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: sessionIdRef.current,
+        questionId,
+        answer: answerToStore,
+        metadata,
+        assessmentId
+      })
+    });
+  }
+
+  async function getSessionResponses() {
+    const result = await apiCall(`/api/assessment/responses/${sessionIdRef.current}`);
+    return result.responses || {};
+  }
+
+  async function submitAssessmentData(autoSubmit, reason) {
+    return apiCall(`/api/assessment/submit`, {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: sessionIdRef.current,
+        autoSubmitted: autoSubmit,
+        autoSubmitReason: reason || null,
+        allowIncomplete: autoSubmit,
+        elapsedSeconds,
+        answers
+      })
+    });
+  }
+
   async function updateAnsweredQuestionsCount(nextAnswers) {
     if (!sessionIdRef.current) return;
     const answeredCount = countAnswered(nextAnswers || answers);
-    await supabase
-      .from("assessment_sessions")
-      .update({
-        answered_questions: answeredCount,
-        total_questions: questions.length,
-        updated_at: new Date().toISOString()
+    await apiCall(`/api/assessment/update-count`, {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: sessionIdRef.current,
+        answeredCount,
+        totalQuestions: questions.length
       })
-      .eq("id", sessionIdRef.current);
+    });
   }
 
   async function saveQuestionTiming(questionId, timeSpentSeconds) {
     if (!sessionIdRef.current || !questionId) return;
     const questionIdNum = parseInt(questionId, 10);
     if (Number.isNaN(questionIdNum)) return;
-
     try {
-      await supabase.from("question_timing").upsert(
-        {
-          session_id: sessionIdRef.current,
-          question_id: questionIdNum,
-          question_number: currentIndex + 1,
-          time_spent_seconds: Math.max(0, safeNumber(timeSpentSeconds, 0)),
-          last_answered_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        { onConflict: "session_id,question_id" }
-      );
+      await apiCall(`/api/assessment/timing`, {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: sessionIdRef.current,
+          questionId: questionIdNum,
+          questionNumber: currentIndex + 1,
+          timeSpentSeconds: Math.max(0, safeNumber(timeSpentSeconds, 0))
+        })
+      });
     } catch (err) {
       console.warn("Question timing save skipped:", err);
     }
   }
 
-  async function completeAssessmentSafely(autoSubmitted, reason) {
-    if (!session || !session.id) {
-      throw new Error("No active session to submit.");
+  async function updateSessionTimer(elapsed) {
+    if (!sessionIdRef.current) return;
+    try {
+      await apiCall(`/api/assessment/timer`, {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: sessionIdRef.current,
+          elapsedSeconds: elapsed
+        })
+      });
+    } catch (err) {
+      console.warn("Timer update skipped:", err);
     }
-    
-    if (!user || !assessmentId) {
-      throw new Error("Missing user or assessment information.");
-    }
-
-    const lastQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
-    if (lastQuestionId) {
-      await saveQuestionTiming(lastQuestionId, Math.floor((Date.now() - questionStartTime) / 1000));
-    }
-
-    await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, lastQuestionId);
-    await updateSessionTimer(session.id, elapsedSeconds);
-    await updateAnsweredQuestionsCount(answers);
-
-    const result = await submitAssessment(session.id, {
-      autoSubmitted: autoSubmitted === true,
-      autoSubmitReason: reason || null,
-      allowIncomplete: autoSubmitted === true
-    });
-    
-    return result;
   }
 
+  async function logViolation(violationType) {
+    if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting || isTimeExpired) return;
+    const newCount = violationCount + 1;
+    setViolationCount(newCount);
+    try {
+      await apiCall(`/api/assessment/violation`, {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: sessionIdRef.current,
+          violationType,
+          violationCount: newCount
+        })
+      });
+    } catch (err) {
+      console.warn("Violation logging failed:", err);
+    }
+    showViolation(violationType + ". Violation " + newCount + " of 3.");
+    if (newCount >= 3) {
+      showViolation("Maximum violations reached. Auto-submitting assessment...");
+      setTimeout(() => handleAutoSubmit("Auto-submitted due to rule violations."), 1000);
+    }
+  }
+
+  // ============================================================
+  // AUTO SUBMIT
+  // ============================================================
   async function handleAutoSubmit(reason) {
     if (alreadySubmitted || submittingRef.current || autoSubmitRef.current) {
       return;
@@ -261,46 +273,31 @@ function AssessmentContent() {
 
       const currentQuestionId = questions[currentIndex]?.id || null;
       
+      // Save all answers
       const answerPromises = Object.entries(answers).map(([qId, answer]) => {
         if (answer === null || answer === undefined || answer === '') return null;
-        
         const answerToStore = Array.isArray(answer) ? answer.join(",") : String(answer);
         const changeCount = answerChangeCount[qId] || 0;
         const initialAns = initialAnswers[qId] || answer;
         
-        return saveUniqueResponse(
-          session.id,
-          user.id,
-          assessmentId,
-          qId,
-          answerToStore,
-          {
-            time_spent_seconds: Math.floor((Date.now() - questionStartTime) / 1000),
-            times_changed: changeCount,
-            initial_answer_id: Array.isArray(initialAns) ? initialAns.join(",") : String(initialAns),
-            is_answer_change: false
-          }
-        );
+        return saveAnswer(qId, answerToStore, {
+          time_spent_seconds: Math.floor((Date.now() - questionStartTime) / 1000),
+          times_changed: changeCount,
+          initial_answer_id: Array.isArray(initialAns) ? initialAns.join(",") : String(initialAns),
+          is_answer_change: false
+        });
       });
 
       await Promise.all(answerPromises.filter(p => p !== null));
 
-      await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, currentQuestionId);
-      await updateSessionTimer(session.id, elapsedSeconds);
+      await updateSessionTimer(elapsedSeconds);
       await updateAnsweredQuestionsCount(answers);
 
-      const result = await submitAssessment(session.id, {
-        autoSubmitted: true,
-        autoSubmitReason: reason || 'Auto-submitted because the assessment timer expired.',
-        allowIncomplete: true
-      });
+      await submitAssessmentData(true, reason || 'Auto-submitted because the assessment timer expired.');
 
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
       
-      // ============================================================
-      // FIX: Redirect to completion page instead of results
-      // ============================================================
       setTimeout(() => {
         router.push('/candidate/assessment-complete');
       }, 2000);
@@ -308,13 +305,6 @@ function AssessmentContent() {
     } catch (err) {
       console.error('[AutoSubmit] Failed:', err);
       alert('Auto-submit failed. Please contact support with this error: ' + (err.message || 'Unknown error'));
-      
-      try {
-        await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, questions[currentIndex]?.id || null);
-      } catch (saveErr) {
-        console.error('[AutoSubmit] Failed to save progress:', saveErr);
-      }
-      
       setTimeout(() => {
         router.push('/candidate/dashboard');
       }, 3000);
@@ -325,245 +315,9 @@ function AssessmentContent() {
     }
   }
 
-  async function logViolation(violationType) {
-    if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting || isTimeExpired) return;
-    const newCount = violationCount + 1;
-    setViolationCount(newCount);
-
-    try {
-      await supabase
-        .from("assessment_sessions")
-        .update({ violation_count: newCount, updated_at: new Date().toISOString() })
-        .eq("id", sessionIdRef.current);
-      await supabase.from("assessment_violations").insert({
-        session_id: sessionIdRef.current,
-        user_id: user ? user.id : null,
-        assessment_id: assessmentId,
-        violation_type: violationType,
-        created_at: new Date().toISOString()
-      });
-    } catch (err) {
-      console.warn("Violation logging failed:", err);
-    }
-
-    showViolation(violationType + ". Violation " + newCount + " of 3.");
-    if (newCount >= 3) {
-      showViolation("Maximum violations reached. Auto-submitting assessment...");
-      setTimeout(() => handleAutoSubmit("Auto-submitted due to rule violations."), 1000);
-    }
-  }
-
-  useEffect(() => {
-    if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
-
-    const handleCopy = (event) => { event.preventDefault(); logViolation("Copy attempt"); return false; };
-    const handlePaste = (event) => { event.preventDefault(); logViolation("Paste attempt"); return false; };
-    const handleCut = (event) => { event.preventDefault(); logViolation("Cut attempt"); return false; };
-    const handleContextMenu = (event) => { event.preventDefault(); logViolation("Right-click attempt"); return false; };
-    const handleKeyDown = (event) => {
-      const key = String(event.key || "").toLowerCase();
-      if (event.key === "PrintScreen") { event.preventDefault(); logViolation("Screenshot attempt"); return false; }
-      if (event.key === "F12") { event.preventDefault(); logViolation("DevTools attempt"); return false; }
-      if (event.ctrlKey && event.shiftKey && ["i", "j", "c"].includes(key)) { event.preventDefault(); logViolation("DevTools shortcut attempt"); return false; }
-      if (event.ctrlKey && key === "u") { event.preventDefault(); logViolation("View source attempt"); return false; }
-      return true;
-    };
-
-    document.addEventListener("copy", handleCopy);
-    document.addEventListener("paste", handlePaste);
-    document.addEventListener("cut", handleCut);
-    document.addEventListener("contextmenu", handleContextMenu);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("copy", handleCopy);
-      document.removeEventListener("paste", handlePaste);
-      document.removeEventListener("cut", handleCut);
-      document.removeEventListener("contextmenu", handleContextMenu);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [loading, alreadySubmitted, accessDenied, session, violationCount, isAutoSubmitting, isTimeExpired]);
-
-  useEffect(() => {
-    const init = async () => {
-      try {
-        setLoading(true);
-        setPageError("");
-        setAccessDenied(false);
-        setAlreadySubmitted(false);
-        setQuestions([]);
-        setAnswers({});
-        setInitialAnswers({});
-        setAnswerChangeCount({});
-        setSaveStatus({});
-        setElapsedSeconds(0);
-        setViolationCount(0);
-        setIsTimeExpired(false);
-        sessionIdRef.current = null;
-        submittingRef.current = false;
-        autoSubmitRef.current = false;
-
-        const authResponse = await supabase.auth.getSession();
-        const authSession = authResponse && authResponse.data ? authResponse.data.session : null;
-        if (!authSession) {
-          router.push("/login");
-          return;
-        }
-        if (!assessmentId) return;
-
-        const currentUser = authSession.user;
-        setUser(currentUser);
-
-        const completed = await isAssessmentCompleted(currentUser.id, assessmentId);
-        if (completed) {
-          setAlreadySubmitted(true);
-          setLoading(false);
-          return;
-        }
-
-        const accessData = await fetchCandidateAccess(currentUser.id, assessmentId);
-        if (!accessData || !["unblocked", "in_progress"].includes(accessData.status)) {
-          setAccessDenied(true);
-          setLoading(false);
-          return;
-        }
-
-        const assessmentData = await getAssessmentById(assessmentId);
-        setAssessment(assessmentData);
-        setAssessmentType(assessmentData ? assessmentData.assessment_type : null);
-        
-        const typeCode = assessmentData?.assessment_type?.code || null;
-        setAssessmentTypeCode(typeCode);
-
-        const allowMultipleForThisAssessment = isManufacturingBaselineAssessment(
-          assessmentData,
-          assessmentData ? assessmentData.assessment_type : null
-        );
-
-        const sessionData = await createAssessmentSession(
-          currentUser.id,
-          assessmentId,
-          assessmentData && assessmentData.assessment_type_id ? assessmentData.assessment_type_id : null
-        );
-
-        if (!sessionData || !sessionData.id) throw new Error("Unable to create assessment session.");
-        setSession(sessionData);
-        sessionIdRef.current = sessionData.id;
-
-        const progress = await getProgress(currentUser.id, assessmentId);
-        const progressElapsed = progress && progress.elapsed_seconds ? safeNumber(progress.elapsed_seconds, 0) : 0;
-        setElapsedSeconds(progressElapsed);
-        
-        const durationMinutes = getAssessmentDuration(typeCode);
-        const durationSeconds = durationMinutes * 60;
-        setTimeLimitSeconds(progressElapsed + getRemainingFromSession(sessionData, durationSeconds));
-
-        let uniqueQuestions = [];
-        try {
-          uniqueQuestions = safeArray(await getUniqueQuestions(assessmentId));
-        } catch (questionsError) {
-          console.error("[Assessment] Error fetching questions:", questionsError);
-          uniqueQuestions = [];
-        }
-        
-        setQuestions(uniqueQuestions);
-        
-        if (uniqueQuestions.length === 0) {
-          setLoading(false);
-          return;
-        }
-
-        const responses = await getSessionResponses(sessionData.id);
-        const restoredAnswers = {};
-        const restoredInitialAnswers = {};
-        const restoredChangeCount = {};
-
-        if (responses && responses.answerMap) {
-          Object.entries(responses.answerMap).forEach(([qId, answer]) => {
-            if (typeof answer === "string" && answer.includes(",")) {
-              const answerList = answer.split(",").map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id));
-              restoredAnswers[qId] = allowMultipleForThisAssessment ? answerList : answerList[0];
-            } else if (answer !== null && answer !== undefined && answer !== "") {
-              restoredAnswers[qId] = parseInt(answer, 10);
-            }
-          });
-        }
-
-        if (responses && responses.initialAnswerMap) {
-          Object.entries(responses.initialAnswerMap).forEach(([qId, answer]) => {
-            if (typeof answer === "string" && answer.includes(",") && !allowMultipleForThisAssessment) {
-              const firstAnswer = answer.split(",").map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id))[0];
-              restoredInitialAnswers[qId] = firstAnswer;
-            } else {
-              restoredInitialAnswers[qId] = answer;
-            }
-          });
-        }
-
-        if (responses && responses.changeCountMap) {
-          Object.entries(responses.changeCountMap).forEach(([qId, count]) => {
-            restoredChangeCount[qId] = safeNumber(count, 0);
-          });
-        }
-
-        setAnswers(restoredAnswers);
-        setInitialAnswers(restoredInitialAnswers);
-        setAnswerChangeCount(restoredChangeCount);
-
-        if (progress && progress.last_question_id) {
-          const lastIndex = uniqueQuestions.findIndex((question) => String(question.id) === String(progress.last_question_id));
-          if (lastIndex >= 0) setCurrentIndex(lastIndex);
-        }
-
-        const violationResponse = await supabase
-          .from("assessment_sessions")
-          .select("violation_count")
-          .eq("id", sessionData.id)
-          .maybeSingle();
-        if (violationResponse.data && violationResponse.data.violation_count) {
-          setViolationCount(safeNumber(violationResponse.data.violation_count, 0));
-        }
-
-        setQuestionStartTime(Date.now());
-        setLoading(false);
-      } catch (err) {
-        console.error("Assessment initialization error:", err);
-        setPageError(err && err.message ? err.message : "Failed to load assessment.");
-        setLoading(false);
-      }
-    };
-
-    if (assessmentId) init();
-  }, [assessmentId, router]);
-
-  useEffect(() => {
-    if (loading || alreadySubmitted || accessDenied || !session || isAutoSubmitting || questions.length === 0 || isTimeExpired) return;
-    
-    const timer = setInterval(() => {
-      setElapsedSeconds((previous) => {
-        const next = previous + 1;
-        
-        if (timeLimitSeconds > 0 && next >= timeLimitSeconds) {
-          setIsTimeExpired(true);
-          if (!autoSubmitRef.current && !submittingRef.current) {
-            handleAutoSubmit("Auto-submitted because the assessment timer expired.");
-          }
-          return next;
-        }
-        
-        if (next % 30 === 0 && session && user) {
-          const currentQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
-          saveProgress(session.id, user.id, assessmentId, next, currentQuestionId);
-          updateSessionTimer(session.id, next);
-        }
-        
-        return next;
-      });
-    }, 1000);
-    
-    return () => clearInterval(timer);
-  }, [loading, alreadySubmitted, accessDenied, session, isAutoSubmitting, timeLimitSeconds, user, assessmentId, currentIndex, questions, isTimeExpired]);
-
+  // ============================================================
+  // ANSWER HANDLER
+  // ============================================================
   async function handleAnswerSelect(questionId, answerId, multipleCorrect) {
     if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
       alert("Time has expired! The assessment is being submitted automatically.");
@@ -612,7 +366,7 @@ function AssessmentContent() {
 
     try {
       const answerToStore = Array.isArray(newSelectedAnswer) ? newSelectedAnswer.join(",") : newSelectedAnswer;
-      const result = await saveUniqueResponse(session.id, user.id, assessmentId, questionId, answerToStore, {
+      const result = await saveAnswer(questionId, answerToStore, {
         time_spent_seconds: timeSpentSeconds,
         times_changed: nextChangeCount,
         initial_answer_id: Array.isArray(initialAnswerId) ? initialAnswerId.join(",") : initialAnswerId,
@@ -641,6 +395,182 @@ function AssessmentContent() {
     setQuestionStartTime(Date.now());
   }
 
+  // ============================================================
+  // INITIALIZATION
+  // ============================================================
+  useEffect(() => {
+    const init = async () => {
+      try {
+        setLoading(true);
+        setPageError("");
+        setAccessDenied(false);
+        setAlreadySubmitted(false);
+        setQuestions([]);
+        setAnswers({});
+        setInitialAnswers({});
+        setAnswerChangeCount({});
+        setSaveStatus({});
+        setElapsedSeconds(0);
+        setViolationCount(0);
+        setIsTimeExpired(false);
+        sessionIdRef.current = null;
+        submittingRef.current = false;
+        autoSubmitRef.current = false;
+
+        const authResponse = await supabase.auth.getSession();
+        const authSession = authResponse && authResponse.data ? authResponse.data.session : null;
+        if (!authSession) {
+          router.push("/login");
+          return;
+        }
+        if (!assessmentId) return;
+
+        const currentUser = authSession.user;
+        setUser(currentUser);
+        userIdRef.current = currentUser.id;
+
+        // Use the API to fetch assessment data
+        const assessmentData = await fetchAssessmentData();
+        
+        if (!assessmentData.success) {
+          throw new Error(assessmentData.error || 'Failed to load assessment');
+        }
+
+        const { assessment: assessmentInfo, questions: questionData, access, session: sessionData } = assessmentData;
+
+        if (access && (access.status === 'completed' || access.result_id)) {
+          setAlreadySubmitted(true);
+          setLoading(false);
+          return;
+        }
+
+        if (access && access.status === 'blocked') {
+          setAccessDenied(true);
+          setLoading(false);
+          return;
+        }
+
+        setAssessment(assessmentInfo);
+        setAssessmentType(assessmentInfo?.assessment_type || null);
+        setAssessmentTypeCode(assessmentInfo?.assessment_type?.code || null);
+
+        if (sessionData) {
+          setSession(sessionData);
+          sessionIdRef.current = sessionData.id;
+          const durationMinutes = getAssessmentDuration(assessmentInfo?.assessment_type?.code || null);
+          const durationSeconds = durationMinutes * 60;
+          setTimeLimitSeconds(durationSeconds);
+        }
+
+        setQuestions(questionData || []);
+        
+        // Restore responses if session exists
+        if (sessionData && sessionData.id) {
+          const responses = await getSessionResponses(sessionData.id);
+          const restoredAnswers = {};
+          const restoredInitialAnswers = {};
+          const restoredChangeCount = {};
+
+          if (responses && responses.answerMap) {
+            Object.entries(responses.answerMap).forEach(([qId, answer]) => {
+              if (typeof answer === "string" && answer.includes(",")) {
+                const answerList = answer.split(",").map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id));
+                restoredAnswers[qId] = answerList;
+              } else if (answer !== null && answer !== undefined && answer !== "") {
+                restoredAnswers[qId] = parseInt(answer, 10);
+              }
+            });
+          }
+
+          if (responses && responses.initialAnswerMap) {
+            Object.entries(responses.initialAnswerMap).forEach(([qId, answer]) => {
+              restoredInitialAnswers[qId] = answer;
+            });
+          }
+
+          if (responses && responses.changeCountMap) {
+            Object.entries(responses.changeCountMap).forEach(([qId, count]) => {
+              restoredChangeCount[qId] = safeNumber(count, 0);
+            });
+          }
+
+          setAnswers(restoredAnswers);
+          setInitialAnswers(restoredInitialAnswers);
+          setAnswerChangeCount(restoredChangeCount);
+        }
+
+        setQuestionStartTime(Date.now());
+        setLoading(false);
+      } catch (err) {
+        console.error("Assessment initialization error:", err);
+        setPageError(err && err.message ? err.message : "Failed to load assessment.");
+        setLoading(false);
+      }
+    };
+
+    if (assessmentId) init();
+  }, [assessmentId, router]);
+
+  // Timer
+  useEffect(() => {
+    if (loading || alreadySubmitted || accessDenied || !session || isAutoSubmitting || questions.length === 0 || isTimeExpired) return;
+    
+    const timer = setInterval(() => {
+      setElapsedSeconds((previous) => {
+        const next = previous + 1;
+        
+        if (timeLimitSeconds > 0 && next >= timeLimitSeconds) {
+          setIsTimeExpired(true);
+          if (!autoSubmitRef.current && !submittingRef.current) {
+            handleAutoSubmit("Auto-submitted because the assessment timer expired.");
+          }
+          return next;
+        }
+        
+        if (next % 30 === 0 && session && user) {
+          updateSessionTimer(next);
+        }
+        
+        return next;
+      });
+    }, 1000);
+    
+    return () => clearInterval(timer);
+  }, [loading, alreadySubmitted, accessDenied, session, isAutoSubmitting, timeLimitSeconds, user, assessmentId, currentIndex, questions, isTimeExpired]);
+
+  // Anti-cheat
+  useEffect(() => {
+    if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
+
+    const handleCopy = (event) => { event.preventDefault(); logViolation("Copy attempt"); return false; };
+    const handlePaste = (event) => { event.preventDefault(); logViolation("Paste attempt"); return false; };
+    const handleCut = (event) => { event.preventDefault(); logViolation("Cut attempt"); return false; };
+    const handleContextMenu = (event) => { event.preventDefault(); logViolation("Right-click attempt"); return false; };
+    const handleKeyDown = (event) => {
+      const key = String(event.key || "").toLowerCase();
+      if (event.key === "PrintScreen") { event.preventDefault(); logViolation("Screenshot attempt"); return false; }
+      if (event.key === "F12") { event.preventDefault(); logViolation("DevTools attempt"); return false; }
+      if (event.ctrlKey && event.shiftKey && ["i", "j", "c"].includes(key)) { event.preventDefault(); logViolation("DevTools shortcut attempt"); return false; }
+      if (event.ctrlKey && key === "u") { event.preventDefault(); logViolation("View source attempt"); return false; }
+      return true;
+    };
+
+    document.addEventListener("copy", handleCopy);
+    document.addEventListener("paste", handlePaste);
+    document.addEventListener("cut", handleCut);
+    document.addEventListener("contextmenu", handleContextMenu);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("copy", handleCopy);
+      document.removeEventListener("paste", handlePaste);
+      document.removeEventListener("cut", handleCut);
+      document.removeEventListener("contextmenu", handleContextMenu);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [loading, alreadySubmitted, accessDenied, session, violationCount, isAutoSubmitting, isTimeExpired]);
+
+  // Navigation
   async function moveToQuestion(nextIndex) {
     if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
       alert("Time has expired! The assessment is being submitted automatically.");
@@ -652,7 +582,6 @@ function AssessmentContent() {
     if (currentQuestionId) {
       const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
       await saveQuestionTiming(currentQuestionId, timeSpentSeconds);
-      if (session && user) await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, currentQuestionId);
     }
     setCurrentIndex(nextIndex);
     setQuestionStartTime(Date.now());
@@ -695,14 +624,21 @@ function AssessmentContent() {
       setIsSubmitting(true);
       setShowSubmitModal(false);
       
-      const result = await completeAssessmentSafely(false, null);
+      // Save all remaining answers
+      const currentQuestionId = questions[currentIndex]?.id || null;
+      if (currentQuestionId) {
+        const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
+        await saveQuestionTiming(currentQuestionId, timeSpentSeconds);
+      }
+      
+      await updateSessionTimer(elapsedSeconds);
+      await updateAnsweredQuestionsCount(answers);
+      
+      const result = await submitAssessmentData(false, null);
       
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
       
-      // ============================================================
-      // FIX: Redirect to completion page instead of results
-      // ============================================================
       setTimeout(() => {
         router.push('/candidate/assessment-complete');
       }, 2000);
@@ -719,8 +655,8 @@ function AssessmentContent() {
   async function handleBackClick() {
     if (session && user && !alreadySubmitted && !isTimeExpired) {
       const currentQuestionId = questions[currentIndex] ? questions[currentIndex].id : null;
-      await saveProgress(session.id, user.id, assessmentId, elapsedSeconds, currentQuestionId);
-      await updateSessionTimer(session.id, elapsedSeconds);
+      await saveQuestionTiming(currentQuestionId, Math.floor((Date.now() - questionStartTime) / 1000));
+      await updateSessionTimer(elapsedSeconds);
     }
     router.push("/candidate/dashboard");
   }
@@ -738,13 +674,6 @@ function AssessmentContent() {
           <div style={styles.errorIcon}>📭</div>
           <h2>No Questions Available</h2>
           <p>This assessment does not have any questions configured yet.</p>
-          <div style={styles.debugInfo}>
-            <p><strong>Assessment ID:</strong> {assessmentId}</p>
-            <p><strong>Assessment Name:</strong> {assessment?.title || "N/A"}</p>
-            <p style={{ fontSize: "13px", color: "#64748b", marginTop: "10px" }}>
-              Please contact your supervisor or the system administrator to add questions to this assessment.
-            </p>
-          </div>
           <button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button>
         </div>
       </div>
@@ -790,10 +719,10 @@ function AssessmentContent() {
       {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: successColor }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to completion page...</p></div></div>}
 
       {/* ============================================================
-          NATIONAL SERVICE ASSESSMENT WITH STRATAVAX BRANDING
+          MAIN ASSESSMENT UI
           ============================================================ */}
       <div style={styles.container}>
-        {/* Header with Stratavax Logo and National Service Badge */}
+        {/* Header */}
         <div style={styles.header}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
@@ -807,7 +736,7 @@ function AssessmentContent() {
                 </div>
                 {isNationalService && (
                   <div style={styles.nationalBadge}>
-                    <span style={styles.nationalBadgeIcon}>🇿🇦</span>
+                    <span style={styles.nationalBadgeIcon}>🇬🇭</span>
                     <span style={styles.nationalBadgeText}>National Service</span>
                   </div>
                 )}
@@ -835,13 +764,10 @@ function AssessmentContent() {
           </div>
         </div>
 
-        {/* ============================================================
-            MAIN CONTENT - LEFT SIDEBAR WITH STATS, QUESTION ON RIGHT, NAVIGATOR ON FAR RIGHT
-            ============================================================ */}
+        {/* Main Content - 3 Column Layout */}
         <div style={styles.mainContent}>
-          {/* Left Column - Stats Sidebar */}
+          {/* Left Column - Stats */}
           <div style={styles.leftSidebar}>
-            {/* Question Status */}
             <div style={styles.statusCard}>
               <div style={styles.statusNumber}>Question {currentIndex + 1}</div>
               <div style={styles.statusBadge}>
@@ -849,53 +775,36 @@ function AssessmentContent() {
               </div>
             </div>
 
-            {/* Stats */}
             <div style={styles.statsCard}>
-              <div style={styles.statsRow}>
-                <span style={styles.statsLabel}>Answered</span>
-                <span style={styles.statsValue}>{totalAnswered}</span>
-              </div>
-              <div style={styles.statsRow}>
-                <span style={styles.statsLabel}>Remaining</span>
-                <span style={styles.statsValue}>{questions.length - totalAnswered}</span>
-              </div>
-              <div style={styles.statsRow}>
-                <span style={styles.statsLabel}>Changes</span>
-                <span style={styles.statsValue}>{totalChanges}</span>
-              </div>
+              <div style={styles.statsRow}><span style={styles.statsLabel}>Answered</span><span style={styles.statsValue}>{totalAnswered}</span></div>
+              <div style={styles.statsRow}><span style={styles.statsLabel}>Remaining</span><span style={styles.statsValue}>{questions.length - totalAnswered}</span></div>
+              <div style={styles.statsRow}><span style={styles.statsLabel}>Changes</span><span style={styles.statsValue}>{totalChanges}</span></div>
               <div style={styles.statsDivider} />
-              <div style={styles.statsRow}>
-                <span style={styles.statsLabel}>Progress</span>
-                <span style={styles.statsValue}>{Math.round((totalAnswered / questions.length) * 100)}%</span>
-              </div>
+              <div style={styles.statsRow}><span style={styles.statsLabel}>Progress</span><span style={styles.statsValue}>{Math.round((totalAnswered / questions.length) * 100)}%</span></div>
               <div style={styles.progressBar}>
                 <div style={{ ...styles.progressFill, width: Math.min((totalAnswered / questions.length) * 100, 100) + '%' }} />
               </div>
             </div>
 
-            {/* Marked out of / Flag */}
             <div style={styles.metaCard}>
               <div style={styles.metaItem}>Marked out of 1.00</div>
               <div style={styles.metaItem}>Flag question</div>
             </div>
           </div>
 
-          {/* Middle Column - Question Area */}
+          {/* Middle Column - Question */}
           <div style={styles.middleColumn}>
             <div style={styles.questionCard}>
-              {/* Question Text */}
               <div style={styles.questionText}>
                 {currentQuestion.question_text}
               </div>
 
-              {/* Multiple Select Hint */}
               {isMultipleCorrect && (
                 <div style={styles.multipleHint}>
                   💡 Select one or more answers
                 </div>
               )}
 
-              {/* Answer Options */}
               <div style={styles.answersContainer}>
                 {safeArray(currentQuestion.answers).map((answer, index) => {
                   const selected = isAnswerSelected(currentQuestion.id, answer.id);
@@ -935,7 +844,7 @@ function AssessmentContent() {
               </div>
             </div>
 
-            {/* Navigation Buttons */}
+            {/* Navigation */}
             <div style={styles.navButtons}>
               <button 
                 onClick={() => moveToQuestion(currentIndex - 1)} 
@@ -964,7 +873,7 @@ function AssessmentContent() {
             </div>
           </div>
 
-          {/* Right Column - Question Navigator */}
+          {/* Right Column - Navigator */}
           <div style={styles.rightColumn}>
             <div style={styles.navigatorCard}>
               <div style={styles.navigatorHeader}>
@@ -1018,27 +927,13 @@ function AssessmentContent() {
                 })}
               </div>
               
-              {/* Legend */}
               <div style={styles.legend}>
-                <div style={styles.legendItem}>
-                  <div style={{ ...styles.legendDot, background: successColor }} />
-                  <span>Answered</span>
-                </div>
-                <div style={styles.legendItem}>
-                  <div style={{ ...styles.legendDot, background: warningColor }} />
-                  <span>Changed</span>
-                </div>
-                <div style={styles.legendItem}>
-                  <div style={{ ...styles.legendDot, background: accentColor }} />
-                  <span>Current</span>
-                </div>
-                <div style={styles.legendItem}>
-                  <div style={{ ...styles.legendDot, background: "white", border: "2px solid #e2e8f0" }} />
-                  <span>Pending</span>
-                </div>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: successColor }} /><span>Answered</span></div>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: warningColor }} /><span>Changed</span></div>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: accentColor }} /><span>Current</span></div>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: "white", border: "2px solid #e2e8f0" }} /><span>Pending</span></div>
               </div>
 
-              {/* Timer in navigator */}
               <div style={styles.navigatorTimer}>
                 <span style={styles.navigatorTimerLabel}>⏱</span>
                 <span style={styles.navigatorTimerValue}>{timeRemainingFormatted}</span>
@@ -1078,25 +973,6 @@ function AssessmentContent() {
             z-index: 2;
           }
 
-          .assessment-scroll::-webkit-scrollbar {
-            width: 4px;
-            height: 4px;
-          }
-          
-          .assessment-scroll::-webkit-scrollbar-track {
-            background: #f1f5f9;
-            border-radius: 999px;
-          }
-          
-          .assessment-scroll::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 999px;
-          }
-          
-          .assessment-scroll::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
-          }
-
           @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
@@ -1108,7 +984,7 @@ function AssessmentContent() {
 }
 
 // ============================================================
-// STYLES - STRATAVAX NATIONAL SERVICE ASSESSMENT
+// STYLES
 // ============================================================
 
 const styles = {
@@ -1168,14 +1044,6 @@ const styles = {
     cursor: "pointer", 
     fontSize: "14px" 
   },
-  debugInfo: { 
-    background: "#f8fafc", 
-    padding: "15px", 
-    borderRadius: "8px", 
-    margin: "15px 0", 
-    fontSize: "14px", 
-    textAlign: "left" 
-  },
   
   violationBanner: { 
     position: "fixed", 
@@ -1231,9 +1099,6 @@ const styles = {
     flexDirection: "column" 
   },
   
-  // ============================================================
-  // HEADER
-  // ============================================================
   header: { 
     position: "sticky", 
     top: 0, 
@@ -1367,9 +1232,6 @@ const styles = {
     color: "#f9b83a"
   },
   
-  // ============================================================
-  // MAIN CONTENT - 3 COLUMN LAYOUT
-  // ============================================================
   mainContent: { 
     maxWidth: "1400px", 
     margin: "0 auto", 
@@ -1385,9 +1247,6 @@ const styles = {
     boxSizing: "border-box"
   },
   
-  // ============================================================
-  // LEFT SIDEBAR - Stats
-  // ============================================================
   leftSidebar: {
     display: "flex",
     flexDirection: "column",
@@ -1479,9 +1338,6 @@ const styles = {
     padding: "2px 0"
   },
   
-  // ============================================================
-  // MIDDLE COLUMN - Question
-  // ============================================================
   middleColumn: {
     display: "flex",
     flexDirection: "column",
@@ -1561,9 +1417,6 @@ const styles = {
     transition: "all 0.2s ease"
   },
   
-  // ============================================================
-  // NAVIGATION BUTTONS
-  // ============================================================
   navButtons: {
     display: "flex",
     gap: "8px",
@@ -1609,9 +1462,6 @@ const styles = {
     transition: "0.2s ease"
   },
   
-  // ============================================================
-  // RIGHT COLUMN - Navigator
-  // ============================================================
   rightColumn: {
     display: "flex",
     flexDirection: "column",
@@ -1719,9 +1569,6 @@ const styles = {
     fontFamily: "monospace"
   },
   
-  // ============================================================
-  // MODAL
-  // ============================================================
   modalOverlay: { 
     position: "fixed", 
     top: 0, 
