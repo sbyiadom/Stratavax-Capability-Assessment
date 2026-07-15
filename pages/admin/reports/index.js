@@ -1,8 +1,7 @@
-// pages/admin/reports/index.js - FIXED WITH SERVICE ROLE
+// pages/admin/reports/index.js - CALLS API ENDPOINT
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { createClient } from '@supabase/supabase-js';
 import { useRequireAuth } from '../../../utils/requireAuth';
 import AppLayout from '../../../components/AppLayout';
 
@@ -14,7 +13,7 @@ export default function AdminReportsList() {
   const [reports, setReports] = useState([]);
   const [filter, setFilter] = useState('all');
   const [error, setError] = useState(null);
-  const [debugInfo, setDebugInfo] = useState(null);
+  const [stats, setStats] = useState({ total: 0, nationalService: 0, stratavax: 0 });
 
   useEffect(() => {
     if (!session) return;
@@ -26,158 +25,37 @@ export default function AdminReportsList() {
       setLoading(true);
       setError(null);
 
-      console.log('🔍 Fetching reports with service role...');
+      console.log('🔍 Fetching reports from API...');
 
-      // ============================================================
-      // Use service role client for admin queries (bypasses RLS)
-      // ============================================================
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      // Get the session token for authentication
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
 
-      if (!supabaseUrl || !serviceRoleKey) {
-        setError('Missing Supabase service role key. Please check environment variables.');
+      if (!token) {
+        setError('Not authenticated');
         setLoading(false);
         return;
       }
 
-      const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-        auth: { persistSession: false }
+      const response = await fetch('/api/admin/reports', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
 
-      // ============================================================
-      // STEP 1: Get all assessment results
-      // ============================================================
-      const { data: results, error: resultsError } = await serviceClient
-        .from('assessment_results')
-        .select('*')
-        .order('completed_at', { ascending: false });
+      const data = await response.json();
 
-      if (resultsError) {
-        console.error('❌ Results error:', resultsError);
-        setError(`Failed to load results: ${resultsError.message}`);
-        setLoading(false);
-        return;
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to load reports');
       }
 
-      console.log(`✅ Found ${results?.length || 0} results`);
-      setDebugInfo({ resultCount: results?.length || 0 });
-
-      if (!results || results.length === 0) {
-        setReports([]);
-        setLoading(false);
-        return;
-      }
-
-      // ============================================================
-      // STEP 2: Get candidate profiles (using service role)
-      // ============================================================
-      const userIds = results.map(r => r.user_id).filter(Boolean);
-      console.log(`👤 Fetching ${userIds.length} candidates with service role...`);
-
-      const { data: candidates, error: candidatesError } = await serviceClient
-        .from('candidate_profiles')
-        .select('id, full_name, email, university, programme')
-        .in('id', userIds);
-
-      if (candidatesError) {
-        console.error('❌ Candidates error:', candidatesError);
-        setError(`Candidates error: ${candidatesError.message}`);
-        // Continue with empty candidates
-      }
-
-      const candidateMap = {};
-      if (candidates) {
-        candidates.forEach(c => {
-          candidateMap[c.id] = c;
-        });
-        console.log(`✅ Found ${Object.keys(candidateMap).length} candidates`);
-      }
-
-      // ============================================================
-      // STEP 3: Get assessment details
-      // ============================================================
-      const assessmentIds = results.map(r => r.assessment_id).filter(Boolean);
-      let assessmentMap = {};
-      let typeMap = {};
-
-      if (assessmentIds.length > 0) {
-        console.log(`📋 Fetching ${assessmentIds.length} assessments...`);
-        const { data: assessments, error: assessmentsError } = await serviceClient
-          .from('assessments')
-          .select('id, title, assessment_type_id')
-          .in('id', assessmentIds);
-
-        if (!assessmentsError && assessments) {
-          assessments.forEach(a => {
-            assessmentMap[a.id] = a;
-          });
-          
-          const typeIds = assessments.map(a => a.assessment_type_id).filter(Boolean);
-          if (typeIds.length > 0) {
-            const { data: types, error: typesError } = await serviceClient
-              .from('assessment_types')
-              .select('id, code, name')
-              .in('id', typeIds);
-
-            if (!typesError && types) {
-              types.forEach(t => {
-                typeMap[t.id] = t;
-              });
-            }
-          }
-        }
-      }
-
-      // ============================================================
-      // STEP 4: Build enriched reports
-      // ============================================================
-      const enrichedReports = results.map((result) => {
-        const candidate = candidateMap[result.user_id];
-        const assessment = assessmentMap[result.assessment_id] || null;
-        const assessmentType = assessment ? typeMap[assessment.assessment_type_id] : null;
-        const isNationalService = assessmentType?.code === 'national_service';
-
-        // Try to get category scores
-        let categoryScores = [];
-        if (result.category_scores && Array.isArray(result.category_scores)) {
-          categoryScores = result.category_scores;
-        } else if (result.report_data && result.report_data.categoryScores) {
-          categoryScores = result.report_data.categoryScores;
-        }
-
-        return {
-          ...result,
-          candidate_name: candidate?.full_name || 'Unknown',
-          candidate_email: candidate?.email || '',
-          candidate_university: candidate?.university || '',
-          candidate_programme: candidate?.programme || '',
-          assessment_title: assessment?.title || 'Unknown',
-          assessment_type_code: assessmentType?.code || null,
-          assessment_type_name: assessmentType?.name || 'General',
-          isNationalService: isNationalService,
-          workplace_readiness: result.workplace_readiness || 0,
-          intellectual_capability: result.intellectual_capability || 0,
-          percentage_score: result.percentage_score || 0,
-          recommendation: result.recommendation || 'N/A',
-          category_scores: categoryScores
-        };
-      });
-
-      console.log(`✅ Built ${enrichedReports.length} enriched reports`);
-      if (enrichedReports.length > 0) {
-        console.log('📊 Sample:', {
-          id: enrichedReports[0].id,
-          candidate_name: enrichedReports[0].candidate_name,
-          assessment_title: enrichedReports[0].assessment_title,
-          score: enrichedReports[0].percentage_score
-        });
-      }
-
-      setReports(enrichedReports);
+      console.log(`✅ Found ${data.reports?.length || 0} reports`);
+      setReports(data.reports || []);
+      setStats(data.stats || { total: 0, nationalService: 0, stratavax: 0 });
       setLoading(false);
     } catch (error) {
-      console.error('❌ Fatal error:', error);
-      setError(error.message || 'Unknown error');
+      console.error('❌ Error fetching reports:', error);
+      setError(error.message || 'Failed to load reports');
       setLoading(false);
     }
   };
@@ -193,8 +71,6 @@ export default function AdminReportsList() {
   };
 
   const filteredReports = getFilteredReports();
-  const nationalServiceCount = reports.filter(r => r.isNationalService === true).length;
-  const stratavaxCount = reports.filter(r => r.isNationalService !== true).length;
 
   const handleViewReport = (resultId) => {
     router.push(`/admin/reports/${resultId}`);
@@ -229,13 +105,7 @@ export default function AdminReportsList() {
           {error && (
             <div style={styles.errorBox}>
               <strong>⚠️ Error:</strong> {error}
-            </div>
-          )}
-
-          {debugInfo && (
-            <div style={styles.debugBox}>
-              <span>Results found: {debugInfo.resultCount}</span>
-              <button onClick={fetchReports} style={styles.refreshButton}>🔄 Refresh</button>
+              <button onClick={fetchReports} style={styles.retryButton}>Retry</button>
             </div>
           )}
 
@@ -249,7 +119,7 @@ export default function AdminReportsList() {
                 border: filter === 'all' ? 'none' : '1px solid #e2e8f0'
               }}
             >
-              All Reports ({reports.length})
+              All Reports ({stats.total})
             </button>
             <button
               onClick={() => setFilter('national_service')}
@@ -260,7 +130,7 @@ export default function AdminReportsList() {
                 border: filter === 'national_service' ? 'none' : '1px solid #e2e8f0'
               }}
             >
-              📋 National Service ({nationalServiceCount})
+              📋 National Service ({stats.nationalService})
             </button>
             <button
               onClick={() => setFilter('stratavax')}
@@ -271,7 +141,7 @@ export default function AdminReportsList() {
                 border: filter === 'stratavax' ? 'none' : '1px solid #e2e8f0'
               }}
             >
-              📊 Stratavax ({stratavaxCount})
+              📊 Stratavax ({stats.stratavax})
             </button>
           </div>
         </div>
@@ -456,23 +326,15 @@ const styles = {
     borderRadius: '8px',
     padding: '12px 16px',
     marginBottom: '12px',
-    color: '#991b1b'
-  },
-  debugBox: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    background: '#f8fafc',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px',
-    padding: '8px 16px',
-    marginBottom: '12px',
-    fontSize: '13px',
-    color: '#475569'
+    justifyContent: 'space-between',
+    color: '#991b1b'
   },
-  refreshButton: {
+  retryButton: {
     padding: '4px 12px',
-    background: '#e2e8f0',
+    background: '#991b1b',
+    color: 'white',
     border: 'none',
     borderRadius: '4px',
     cursor: 'pointer',
