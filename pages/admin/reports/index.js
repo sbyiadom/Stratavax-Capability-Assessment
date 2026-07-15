@@ -1,4 +1,4 @@
-// pages/admin/reports/index.js - SIMPLIFIED WORKING VERSION
+// pages/admin/reports/index.js - DIRECT QUERY VERSION
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -13,6 +13,8 @@ export default function AdminReportsList() {
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState([]);
   const [filter, setFilter] = useState('all');
+  const [error, setError] = useState(null);
+  const [debugInfo, setDebugInfo] = useState(null);
 
   useEffect(() => {
     if (!session) return;
@@ -22,63 +24,69 @@ export default function AdminReportsList() {
   const fetchReports = async () => {
     try {
       setLoading(true);
+      setError(null);
+      setDebugInfo(null);
+
+      console.log('🔍 Starting fetchReports...');
 
       // ============================================================
-      // STEP 1: Get all assessment results with candidate info
-      // Use a direct query with the candidate_profiles table
+      // METHOD 1: Try a simple query first
       // ============================================================
-      
-      // First, get all results
+      console.log('📊 Fetching from assessment_results...');
       const { data: results, error: resultsError } = await supabase
         .from('assessment_results')
         .select('*')
         .order('completed_at', { ascending: false });
 
       if (resultsError) {
-        console.error('Error fetching results:', resultsError);
-        setReports([]);
+        console.error('❌ Supabase error:', resultsError);
+        setError(`Database error: ${resultsError.message}`);
         setLoading(false);
         return;
       }
 
-      console.log('Found results:', results.length);
+      console.log(`✅ Found ${results?.length || 0} results`);
+      setDebugInfo({ resultCount: results?.length || 0 });
 
-      if (results.length === 0) {
+      if (!results || results.length === 0) {
         setReports([]);
         setLoading(false);
         return;
       }
 
       // ============================================================
-      // STEP 2: Get ALL candidate profiles (no filter)
+      // Get candidate profiles
       // ============================================================
+      const userIds = results.map(r => r.user_id).filter(Boolean);
+      console.log(`👤 Fetching ${userIds.length} candidates...`);
+
       const { data: candidates, error: candidatesError } = await supabase
         .from('candidate_profiles')
-        .select('id, full_name, email, university, programme');
+        .select('id, full_name, email, university, programme')
+        .in('id', userIds);
 
       if (candidatesError) {
-        console.error('Error fetching candidates:', candidatesError);
-        setReports([]);
-        setLoading(false);
-        return;
+        console.error('❌ Candidates error:', candidatesError);
+        setError(`Candidates error: ${candidatesError.message}`);
       }
 
-      console.log('Found candidates:', candidates.length);
-
-      // Build a map of candidate ID to candidate data
       const candidateMap = {};
-      candidates.forEach(c => {
-        candidateMap[c.id] = c;
-      });
+      if (candidates) {
+        candidates.forEach(c => {
+          candidateMap[c.id] = c;
+        });
+        console.log(`✅ Found ${Object.keys(candidateMap).length} candidates`);
+      }
 
       // ============================================================
-      // STEP 3: Get assessment types
+      // Get assessment details
       // ============================================================
       const assessmentIds = results.map(r => r.assessment_id).filter(Boolean);
       let assessmentMap = {};
       let typeMap = {};
 
       if (assessmentIds.length > 0) {
+        console.log(`📋 Fetching ${assessmentIds.length} assessments...`);
         const { data: assessments, error: assessmentsError } = await supabase
           .from('assessments')
           .select('id, title, assessment_type_id')
@@ -106,13 +114,10 @@ export default function AdminReportsList() {
       }
 
       // ============================================================
-      // STEP 4: Build enriched reports
+      // Build enriched reports
       // ============================================================
       const enrichedReports = results.map((result) => {
-        // Find the candidate by matching user_id
         const candidate = candidateMap[result.user_id];
-        
-        // Get assessment info
         const assessment = assessmentMap[result.assessment_id] || null;
         const assessmentType = assessment ? typeMap[assessment.assessment_type_id] : null;
         const isNationalService = assessmentType?.code === 'national_service';
@@ -125,7 +130,6 @@ export default function AdminReportsList() {
           candidate_programme: candidate?.programme || '',
           assessment_title: assessment?.title || 'Unknown',
           assessment_type_code: assessmentType?.code || null,
-          assessment_type_name: assessmentType?.name || 'General',
           isNationalService: isNationalService,
           workplace_readiness: result.workplace_readiness || 0,
           intellectual_capability: result.intellectual_capability || 0,
@@ -134,13 +138,21 @@ export default function AdminReportsList() {
         };
       });
 
-      console.log('Enriched reports:', enrichedReports.length);
-      console.log('Sample report:', enrichedReports[0]);
-      
+      console.log(`✅ Built ${enrichedReports.length} enriched reports`);
+      if (enrichedReports.length > 0) {
+        console.log('📊 Sample:', {
+          id: enrichedReports[0].id,
+          candidate_name: enrichedReports[0].candidate_name,
+          assessment_title: enrichedReports[0].assessment_title,
+          score: enrichedReports[0].percentage_score
+        });
+      }
+
       setReports(enrichedReports);
       setLoading(false);
     } catch (error) {
-      console.error('Error fetching reports:', error);
+      console.error('❌ Fatal error:', error);
+      setError(error.message || 'Unknown error');
       setLoading(false);
     }
   };
@@ -189,6 +201,19 @@ export default function AdminReportsList() {
           <h1 style={styles.title}>Assessment Reports</h1>
           <p style={styles.subtitle}>All assessment reports from candidates</p>
           
+          {error && (
+            <div style={styles.errorBox}>
+              <strong>⚠️ Error:</strong> {error}
+            </div>
+          )}
+
+          {debugInfo && (
+            <div style={styles.debugBox}>
+              <span>Results found: {debugInfo.resultCount}</span>
+              <button onClick={fetchReports} style={styles.refreshButton}>🔄 Refresh</button>
+            </div>
+          )}
+
           <div style={styles.filterTabs}>
             <button
               onClick={() => setFilter('all')}
@@ -243,7 +268,12 @@ export default function AdminReportsList() {
               {filteredReports.length === 0 ? (
                 <tr>
                   <td colSpan="7" style={styles.emptyState}>
-                    No assessment reports found.
+                    {error ? '⚠️ Error loading reports' : 'No assessment reports found.'}
+                    {!error && reports.length === 0 && (
+                      <div style={styles.emptySub}>
+                        <p>Try completing an assessment or check if results are saved.</p>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -400,6 +430,34 @@ const styles = {
     color: '#64748b',
     margin: '0 0 16px 0'
   },
+  errorBox: {
+    background: '#fee2e2',
+    border: '1px solid #fecaca',
+    borderRadius: '8px',
+    padding: '12px 16px',
+    marginBottom: '12px',
+    color: '#991b1b'
+  },
+  debugBox: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    background: '#f8fafc',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    padding: '8px 16px',
+    marginBottom: '12px',
+    fontSize: '13px',
+    color: '#475569'
+  },
+  refreshButton: {
+    padding: '4px 12px',
+    background: '#e2e8f0',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '12px'
+  },
   filterTabs: {
     display: 'flex',
     gap: '8px',
@@ -512,6 +570,11 @@ const styles = {
     textAlign: 'center',
     padding: '40px',
     color: '#94a3b8'
+  },
+  emptySub: {
+    fontSize: '13px',
+    color: '#94a3b8',
+    marginTop: '8px'
   }
 };
 
