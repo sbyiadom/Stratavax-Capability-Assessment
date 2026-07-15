@@ -1,4 +1,4 @@
-// pages/api/candidate/dashboard.js - FIXED with proper title fetching
+// pages/api/candidate/dashboard.js - COMPLETE FIXED VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -35,20 +35,26 @@ export default async function handler(req, res) {
     }
 
     const userId = userData.user.id;
+    console.log('[API] User ID:', userId);
 
     // ============================================================
     // STEP 1: Get candidate profile
     // ============================================================
-    const { data: profile } = await serviceClient
+    const { data: profile, error: profileError } = await serviceClient
       .from('candidate_profiles')
       .select('full_name, email, university, programme')
       .eq('id', userId)
       .maybeSingle();
 
+    if (profileError) {
+      console.error('[API] Profile error:', profileError);
+    }
+
     const candidateName = profile?.full_name || userData.user.user_metadata?.full_name || 'Candidate';
+    console.log('[API] Candidate name:', candidateName);
 
     // ============================================================
-    // STEP 2: Get candidate assessments
+    // STEP 2: Get ALL candidate assessments
     // ============================================================
     const { data: candidateAssessments, error: caError } = await serviceClient
       .from('candidate_assessments')
@@ -64,6 +70,8 @@ export default async function handler(req, res) {
       });
     }
 
+    console.log('[API] Found candidate assessments:', candidateAssessments?.length || 0);
+
     if (!candidateAssessments || candidateAssessments.length === 0) {
       return res.status(200).json({
         success: true,
@@ -75,14 +83,14 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 3: Get ALL assessments with their types in ONE query
+    // STEP 3: Get ALL assessments with their details
     // ============================================================
     const assessmentIds = candidateAssessments.map(ca => ca.assessment_id).filter(Boolean);
     let assessmentMap = {};
     let typeMap = {};
 
     if (assessmentIds.length > 0) {
-      // Get assessments with their type IDs
+      // Get assessments
       const { data: assessments, error: aError } = await serviceClient
         .from('assessments')
         .select('id, title, description, assessment_type_id, question_count, time_limit_minutes, attempts_allowed')
@@ -94,7 +102,7 @@ export default async function handler(req, res) {
         });
         console.log('[API] Found assessments:', Object.keys(assessmentMap).length);
         
-        // Get types for these assessments
+        // Get assessment types
         const typeIds = assessments.map(a => a.assessment_type_id).filter(Boolean);
         if (typeIds.length > 0) {
           const { data: types, error: tError } = await serviceClient
@@ -125,8 +133,10 @@ export default async function handler(req, res) {
         status = 'completed';
       }
 
-      // Get the actual title - use assessment.title, fallback to type name
+      // Get the actual title - use assessment.title
       let title = assessment.title || 'Assessment';
+      
+      // If title is still generic but we have a type name, use that
       if (title === 'Assessment' && type.name) {
         title = type.name;
       }
@@ -148,14 +158,20 @@ export default async function handler(req, res) {
       };
     });
 
+    console.log('[API] Cards with titles:', cards.map(c => ({ id: c.id, title: c.title, status: c.status })));
+
     // ============================================================
     // STEP 5: Get all assessment types for tabs
     // ============================================================
-    const { data: allTypes } = await serviceClient
+    const { data: allTypes, error: allTypesError } = await serviceClient
       .from('assessment_types')
       .select('*')
       .eq('is_active', true)
       .order('display_order', { ascending: true });
+
+    if (allTypesError) {
+      console.error('[API] All types error:', allTypesError);
+    }
 
     const defaultAreas = {
       general: ["Cognitive Ability", "Communication", "Cultural & Attitudinal Fit", "Emotional Intelligence", "Ethics & Integrity", "Leadership & Management", "Performance Metrics", "Personality & Behavioral", "Problem-Solving", "Technical & Manufacturing"],
@@ -201,6 +217,8 @@ export default async function handler(req, res) {
       blocked: cards.filter(c => c.status === 'blocked').length
     };
 
+    console.log('[API] Stats:', stats);
+
     return res.status(200).json({
       success: true,
       candidateName,
@@ -213,7 +231,8 @@ export default async function handler(req, res) {
     console.error('[API] Error:', error);
     return res.status(500).json({
       success: false,
-      error: error.message || 'Internal server error'
+      error: error.message || 'Internal server error',
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }
