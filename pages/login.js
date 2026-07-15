@@ -1,5 +1,4 @@
-// pages/login.js - COMPLETE FIXED VERSION
-// NO database queries - only Supabase Auth
+// pages/login.js - CLEAN VERSION (no duplicate exports)
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -41,7 +40,6 @@ export default function Login() {
     setError(null);
 
     try {
-      // ONLY Supabase Auth - NO database queries
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password: password
@@ -59,10 +57,7 @@ export default function Login() {
         return;
       }
 
-      // Get role from user_metadata ONLY
       const userRole = data.user.user_metadata?.role || 'candidate';
-      
-      // Redirect based on role
       redirectUser(userRole);
 
     } catch (err) {
@@ -81,7 +76,6 @@ export default function Login() {
           <p style={styles.subtitle}>Talent Assessment Portal</p>
         </div>
 
-        {/* Role Toggle - Just for UI, doesn't affect login */}
         <div style={styles.roleToggle}>
           <button
             onClick={() => setSelectedRole('candidate')}
@@ -266,5 +260,3 @@ const styles = {
     textDecoration: 'none'
   }
 };
-
-export default Login;
