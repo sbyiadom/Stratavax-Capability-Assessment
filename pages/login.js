@@ -1,4 +1,5 @@
-// pages/login.js - SIMPLIFIED VERSION
+// pages/login.js - COMPLETE FIXED VERSION
+// NO database queries - only Supabase Auth
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -10,7 +11,7 @@ export default function Login() {
   const [error, setError] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('supervisor');
+  const [selectedRole, setSelectedRole] = useState('candidate');
 
   // Check if already logged in
   useEffect(() => {
@@ -40,7 +41,7 @@ export default function Login() {
     setError(null);
 
     try {
-      // Step 1: Authenticate with Supabase
+      // ONLY Supabase Auth - NO database queries
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password: password
@@ -58,10 +59,10 @@ export default function Login() {
         return;
       }
 
-      // Step 2: Get the user's role from metadata
+      // Get role from user_metadata ONLY
       const userRole = data.user.user_metadata?.role || 'candidate';
       
-      // Step 3: Redirect based on role
+      // Redirect based on role
       redirectUser(userRole);
 
     } catch (err) {
@@ -80,26 +81,26 @@ export default function Login() {
           <p style={styles.subtitle}>Talent Assessment Portal</p>
         </div>
 
-        {/* Role Toggle */}
+        {/* Role Toggle - Just for UI, doesn't affect login */}
         <div style={styles.roleToggle}>
           <button
-            onClick={() => setRole('candidate')}
+            onClick={() => setSelectedRole('candidate')}
             style={{
               ...styles.roleButton,
-              background: role === 'candidate' ? '#1a237e' : 'transparent',
-              color: role === 'candidate' ? 'white' : '#475569',
-              border: role === 'candidate' ? 'none' : '1px solid #e2e8f0'
+              background: selectedRole === 'candidate' ? '#1a237e' : 'transparent',
+              color: selectedRole === 'candidate' ? 'white' : '#475569',
+              border: selectedRole === 'candidate' ? 'none' : '1px solid #e2e8f0'
             }}
           >
             Candidate
           </button>
           <button
-            onClick={() => setRole('supervisor')}
+            onClick={() => setSelectedRole('supervisor')}
             style={{
               ...styles.roleButton,
-              background: role === 'supervisor' ? '#1a237e' : 'transparent',
-              color: role === 'supervisor' ? 'white' : '#475569',
-              border: role === 'supervisor' ? 'none' : '1px solid #e2e8f0'
+              background: selectedRole === 'supervisor' ? '#1a237e' : 'transparent',
+              color: selectedRole === 'supervisor' ? 'white' : '#475569',
+              border: selectedRole === 'supervisor' ? 'none' : '1px solid #e2e8f0'
             }}
           >
             Supervisor
@@ -145,7 +146,7 @@ export default function Login() {
               opacity: loading ? 0.7 : 1
             }}
           >
-            {loading ? 'Logging in...' : `Login as ${role.charAt(0).toUpperCase() + role.slice(1)}`}
+            {loading ? 'Logging in...' : `Login as ${selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)}`}
           </button>
         </form>
 
