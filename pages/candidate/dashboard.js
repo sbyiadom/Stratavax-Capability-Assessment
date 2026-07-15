@@ -1,4 +1,4 @@
-// pages/candidate/dashboard.js - COMPACT CARDS VERSION
+// pages/candidate/dashboard.js - COMPLETE POLISHED VERSION
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
@@ -51,6 +51,8 @@ export default function CandidateDashboard() {
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to load dashboard');
       }
+
+      console.log('Dashboard data:', data);
 
       setUserName(data.candidateName || "Candidate");
       setAssessments(data.assessmentCards || []);
@@ -160,6 +162,7 @@ export default function CandidateDashboard() {
                   alt="Stratavax" 
                   width={36} 
                   height={36}
+                  priority
                 />
                 <span style={styles.headerTitle}>STRATAVAX</span>
               </div>
