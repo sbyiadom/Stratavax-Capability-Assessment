@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - UPDATED TO USE APIs
+// pages/assessment/[id].js - COMPLETE FIXED VERSION
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -37,7 +37,15 @@ function countAnswered(answerMap) {
   }).length;
 }
 
-function isMultipleCorrectQuestion(question) {
+// ============================================================
+// FIXED: isMultipleCorrectQuestion - National Service always uses single selection
+// ============================================================
+function isMultipleCorrectQuestion(question, assessmentTypeCode) {
+  // National Service assessment should ALWAYS use single selection
+  if (assessmentTypeCode === 'national_service') {
+    return false;
+  }
+  
   if (!question || !Array.isArray(question.answers)) return false;
   const correctAnswers = question.answers.filter((answer) => safeNumber(answer.score, 0) === 1);
   return correctAnswers.length > 1;
@@ -51,7 +59,7 @@ function getAssessmentDuration(assessmentTypeCode) {
 }
 
 // ============================================================
-// API HELPERS - Using the new API endpoints
+// API HELPERS
 // ============================================================
 
 async function apiCall(endpoint, options = {}) {
@@ -75,7 +83,8 @@ async function apiCall(endpoint, options = {}) {
 }
 
 async function fetchAssessmentDetails(assessmentId) {
-  return apiCall(`/api/assessment/${assessmentId}`);
+  const result = await apiCall(`/api/assessment/${assessmentId}`);
+  return result;
 }
 
 async function fetchAccess(assessmentId) {
@@ -116,6 +125,10 @@ async function submitAssessment(sessionId, autoSubmitted, autoSubmitReason, allo
   });
   return result;
 }
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 
 function AssessmentContent() {
   const router = useRouter();
@@ -164,7 +177,12 @@ function AssessmentContent() {
   const dangerColor = "#c62828";
 
   const currentQuestion = questions[currentIndex] || {};
-  const isMultipleCorrect = isMultipleCorrectQuestion(currentQuestion);
+  const isNationalService = assessmentTypeCode === 'national_service' || 
+    (assessment && assessment.title && assessment.title.toLowerCase().includes('national service'));
+
+  // FIXED: Pass assessmentTypeCode to isMultipleCorrectQuestion
+  const isMultipleCorrect = isMultipleCorrectQuestion(currentQuestion, assessmentTypeCode);
+  
   const totalAnswered = countAnswered(answers);
   const totalChanges = Object.values(answerChangeCount).reduce((a, b) => a + safeNumber(b, 0), 0);
   const isLastQuestion = currentIndex === questions.length - 1;
@@ -172,9 +190,6 @@ function AssessmentContent() {
   const timeRemainingFormatted = formatTime(remainingSeconds);
   const timeUsedPercent = timeLimitSeconds > 0 ? (elapsedSeconds / timeLimitSeconds) * 100 : 0;
   const isTimeCritical = timeUsedPercent > 90;
-
-  const isNationalService = assessmentTypeCode === 'national_service' || 
-    (assessment && assessment.title && assessment.title.toLowerCase().includes('national service'));
 
   function getSelectedAnswersForQuestion(questionId) {
     return getAnswerArray(answers[questionId]);
@@ -206,7 +221,6 @@ function AssessmentContent() {
       setIsAutoSubmitting(true);
       setIsTimeExpired(true);
 
-      // Save all answers
       const answerPromises = Object.entries(answers).map(([qId, answer]) => {
         if (answer === null || answer === undefined || answer === '') return null;
         const answerToStore = Array.isArray(answer) ? answer.join(",") : String(answer);
@@ -251,7 +265,7 @@ function AssessmentContent() {
   }
 
   // ============================================================
-  // ANSWER HANDLER
+  // ANSWER HANDLER - FIXED: Forces single selection for National Service
   // ============================================================
   async function handleAnswerSelect(questionId, answerId, multipleCorrect) {
     if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
@@ -261,12 +275,17 @@ function AssessmentContent() {
     
     if (alreadySubmitted || !session || !user || !questionId || !answerId || accessDenied || isAutoSubmitting) return;
 
+    // Force single selection for National Service
+    const isNationalServiceType = assessmentTypeCode === 'national_service';
+    const actualMultipleCorrect = multipleCorrect && !isNationalServiceType;
+
     const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
     let newSelectedAnswer;
     let isAnswerChange = false;
     let isFirstAnswer = false;
 
-    if (multipleCorrect) {
+    if (actualMultipleCorrect) {
+      // Multiple selection logic
       const currentSelected = getSelectedAnswersForQuestion(questionId);
       if (currentSelected.map(String).includes(String(answerId))) {
         newSelectedAnswer = currentSelected.filter((id) => String(id) !== String(answerId));
@@ -276,6 +295,7 @@ function AssessmentContent() {
       isFirstAnswer = currentSelected.length === 0 && newSelectedAnswer.length > 0;
       isAnswerChange = !isFirstAnswer && currentSelected.map(String).join(",") !== newSelectedAnswer.map(String).join(",");
     } else {
+      // Single selection logic - ALWAYS replace the answer
       const previousAnswer = answers[questionId];
       newSelectedAnswer = answerId;
       isFirstAnswer = previousAnswer === undefined || previousAnswer === null || previousAnswer === "";
@@ -287,7 +307,7 @@ function AssessmentContent() {
     let initialAnswerId = initialAnswers[questionId];
 
     if (isFirstAnswer) {
-      initialAnswerId = multipleCorrect ? newSelectedAnswer : answerId;
+      initialAnswerId = actualMultipleCorrect ? newSelectedAnswer : answerId;
       setInitialAnswers((previous) => ({ ...previous, [questionId]: initialAnswerId }));
     }
 
@@ -380,9 +400,7 @@ function AssessmentContent() {
         const currentUser = authSession.user;
         setUser(currentUser);
 
-        // ============================================================
-        // STEP 1: Get assessment details (existing API)
-        // ============================================================
+        // STEP 1: Get assessment details
         const assessmentData = await fetchAssessmentDetails(assessmentId);
         if (!assessmentData.success) {
           throw new Error(assessmentData.error || 'Failed to load assessment');
@@ -397,9 +415,7 @@ function AssessmentContent() {
         const durationSeconds = durationMinutes * 60;
         setTimeLimitSeconds(durationSeconds);
 
-        // ============================================================
         // STEP 2: Check access
-        // ============================================================
         const accessData = await fetchAccess(assessmentId);
         
         if (accessData && (accessData.status === 'completed' || accessData.result_id)) {
@@ -414,15 +430,11 @@ function AssessmentContent() {
           return;
         }
 
-        // ============================================================
         // STEP 3: Get questions
-        // ============================================================
         const questionData = await fetchQuestions(assessmentInfo.assessment_type_id);
         setQuestions(questionData || []);
 
-        // ============================================================
         // STEP 4: Create or get session
-        // ============================================================
         const sessionData = await createOrGetSession(
           assessmentId,
           assessmentInfo.assessment_type_id,
@@ -434,9 +446,7 @@ function AssessmentContent() {
           sessionIdRef.current = sessionData.id;
         }
 
-        // ============================================================
         // STEP 5: Get existing responses if session exists
-        // ============================================================
         if (sessionData && sessionData.id) {
           const responses = await getSessionResponses(sessionData.id);
           const restoredAnswers = {};
@@ -712,7 +722,8 @@ function AssessmentContent() {
             <span style={styles.headerMetaItem}>Question {currentIndex + 1}</span>
             <span style={styles.headerMetaDivider}>•</span>
             <span style={styles.headerMetaItem}>{currentQuestion.section || "General"}</span>
-            {isMultipleCorrect && (
+            {/* FIXED: Only show "Select one or more answers" for non-National Service */}
+            {isMultipleCorrect && !isNationalService && (
               <>
                 <span style={styles.headerMetaDivider}>•</span>
                 <span style={{ ...styles.headerMetaItem, color: accentColor, fontWeight: 600 }}>Select all that apply</span>
@@ -756,7 +767,8 @@ function AssessmentContent() {
                 {currentQuestion.question_text}
               </div>
 
-              {isMultipleCorrect && (
+              {/* FIXED: Only show "Select one or more answers" for non-National Service */}
+              {isMultipleCorrect && !isNationalService && (
                 <div style={styles.multipleHint}>
                   💡 Select one or more answers
                 </div>
