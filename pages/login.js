@@ -1,4 +1,4 @@
-// pages/login.js - CLEAN VERSION (no duplicate exports)
+// pages/login.js - CLEAN VERSION (single export)
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -10,9 +10,8 @@ export default function Login() {
   const [error, setError] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [selectedRole, setSelectedRole] = useState('candidate');
+  const [role, setRole] = useState('candidate');
 
-  // Check if already logged in
   useEffect(() => {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -78,23 +77,23 @@ export default function Login() {
 
         <div style={styles.roleToggle}>
           <button
-            onClick={() => setSelectedRole('candidate')}
+            onClick={() => setRole('candidate')}
             style={{
               ...styles.roleButton,
-              background: selectedRole === 'candidate' ? '#1a237e' : 'transparent',
-              color: selectedRole === 'candidate' ? 'white' : '#475569',
-              border: selectedRole === 'candidate' ? 'none' : '1px solid #e2e8f0'
+              background: role === 'candidate' ? '#1a237e' : 'transparent',
+              color: role === 'candidate' ? 'white' : '#475569',
+              border: role === 'candidate' ? 'none' : '1px solid #e2e8f0'
             }}
           >
             Candidate
           </button>
           <button
-            onClick={() => setSelectedRole('supervisor')}
+            onClick={() => setRole('supervisor')}
             style={{
               ...styles.roleButton,
-              background: selectedRole === 'supervisor' ? '#1a237e' : 'transparent',
-              color: selectedRole === 'supervisor' ? 'white' : '#475569',
-              border: selectedRole === 'supervisor' ? 'none' : '1px solid #e2e8f0'
+              background: role === 'supervisor' ? '#1a237e' : 'transparent',
+              color: role === 'supervisor' ? 'white' : '#475569',
+              border: role === 'supervisor' ? 'none' : '1px solid #e2e8f0'
             }}
           >
             Supervisor
@@ -140,7 +139,7 @@ export default function Login() {
               opacity: loading ? 0.7 : 1
             }}
           >
-            {loading ? 'Logging in...' : `Login as ${selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)}`}
+            {loading ? 'Logging in...' : `Login as ${role.charAt(0).toUpperCase() + role.slice(1)}`}
           </button>
         </form>
 
