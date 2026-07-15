@@ -1,6 +1,27 @@
-// pages/api/admin/reports.js
+// pages/api/admin/reports.js - FIXED with recommendation calculation
 
 import { createClient } from '@supabase/supabase-js';
+
+// Helper function to determine recommendation based on scores
+function getRecommendation(workplaceReadiness, intellectualCapability) {
+  const workplace = Number(workplaceReadiness) || 0;
+  const intellectual = Number(intellectualCapability) || 0;
+  const overall = (workplace + intellectual) / 2;
+
+  if (workplace >= 85 && intellectual >= 85) {
+    return 'Highly Recommended';
+  }
+  if (workplace >= 75 && intellectual >= 75) {
+    return 'Recommended';
+  }
+  if (workplace >= 65 && intellectual >= 65) {
+    return 'Reserve Pool';
+  }
+  if (overall >= 40) {
+    return 'Not Recommended';
+  }
+  return 'Not Recommended';
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -12,13 +33,13 @@ export default async function handler(req, res) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !serviceRoleKey) {
-      console.error('Missing env vars:', { 
-        supabaseUrl: !!supabaseUrl, 
-        serviceRoleKey: !!serviceRoleKey 
+      console.error('Missing env vars:', {
+        supabaseUrl: !!supabaseUrl,
+        serviceRoleKey: !!serviceRoleKey
       });
-      return res.status(500).json({ 
-        success: false, 
-        error: 'Server configuration error: Missing Supabase credentials' 
+      return res.status(500).json({
+        success: false,
+        error: 'Server configuration error: Missing Supabase credentials'
       });
     }
 
@@ -36,9 +57,9 @@ export default async function handler(req, res) {
 
     if (resultsError) {
       console.error('Results error:', resultsError);
-      return res.status(500).json({ 
-        success: false, 
-        error: `Failed to load results: ${resultsError.message}` 
+      return res.status(500).json({
+        success: false,
+        error: `Failed to load results: ${resultsError.message}`
       });
     }
 
@@ -86,7 +107,7 @@ export default async function handler(req, res) {
         assessments.forEach(a => {
           assessmentMap[a.id] = a;
         });
-        
+
         const typeIds = assessments.map(a => a.assessment_type_id).filter(Boolean);
         if (typeIds.length > 0) {
           const { data: types, error: typesError } = await serviceClient
@@ -104,13 +125,32 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 4: Build enriched reports
+    // STEP 4: Build enriched reports with recommendation
     // ============================================================
     const enrichedReports = results.map((result) => {
       const candidate = candidateMap[result.user_id];
       const assessment = assessmentMap[result.assessment_id] || null;
       const assessmentType = assessment ? typeMap[assessment.assessment_type_id] : null;
       const isNationalService = assessmentType?.code === 'national_service';
+
+      // Get scores
+      let workplaceReadiness = Number(result.workplace_readiness) || 0;
+      let intellectualCapability = Number(result.intellectual_capability) || 0;
+      let overallScore = Number(result.percentage_score) || 0;
+
+      // If overall score is 0 but we have sub-categories, calculate it
+      if (overallScore === 0 && (workplaceReadiness > 0 || intellectualCapability > 0)) {
+        overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
+      }
+
+      // Determine recommendation for National Service
+      let recommendation = result.recommendation || 'N/A';
+      if (isNationalService) {
+        // If recommendation is missing or N/A, calculate it
+        if (!recommendation || recommendation === 'N/A' || recommendation === '') {
+          recommendation = getRecommendation(workplaceReadiness, intellectualCapability);
+        }
+      }
 
       return {
         id: result.id,
@@ -124,10 +164,10 @@ export default async function handler(req, res) {
         assessment_type_code: assessmentType?.code || null,
         assessment_type_name: assessmentType?.name || 'General',
         isNationalService: isNationalService,
-        workplace_readiness: result.workplace_readiness || 0,
-        intellectual_capability: result.intellectual_capability || 0,
-        percentage_score: result.percentage_score || 0,
-        recommendation: result.recommendation || 'N/A',
+        workplace_readiness: workplaceReadiness,
+        intellectual_capability: intellectualCapability,
+        percentage_score: overallScore,
+        recommendation: recommendation,
         completed_at: result.completed_at,
         total_questions: result.total_questions || 0,
         answered_questions: result.answered_questions || 0,
@@ -150,9 +190,9 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('API error:', error);
-    return res.status(500).json({ 
-      success: false, 
-      error: error.message || 'Internal server error' 
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Internal server error'
     });
   }
 }
