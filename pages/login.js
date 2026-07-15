@@ -1,4 +1,4 @@
-// pages/login.js - CLEAN VERSION (single export)
+// pages/login.js - CLEANEST VERSION
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
