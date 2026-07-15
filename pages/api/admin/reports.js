@@ -1,4 +1,4 @@
-// pages/api/admin/reports.js - SIMPLIFIED RELIABLE VERSION
+// pages/api/admin/reports.js - WITH DEBUGGING
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -81,67 +81,94 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 3: Get assessment details (simple query)
+    // STEP 3: Get all assessments with their types in ONE query
     // ============================================================
     const assessmentIds = results.map(r => r.assessment_id).filter(Boolean);
-    let assessmentMap = {};
+    let assessmentTypeMap = {};
 
     if (assessmentIds.length > 0) {
-      const { data: assessments, error: assessmentsError } = await serviceClient
+      // Use a join to get assessment with type info
+      const { data: assessmentsWithTypes, error: joinError } = await serviceClient
         .from('assessments')
-        .select('id, title, assessment_type_id')
+        .select(`
+          id,
+          title,
+          assessment_type_id,
+          assessment_types!inner (
+            id,
+            code,
+            name
+          )
+        `)
         .in('id', assessmentIds);
 
-      if (!assessmentsError && assessments) {
-        assessments.forEach(a => {
-          assessmentMap[a.id] = a;
+      if (!joinError && assessmentsWithTypes) {
+        assessmentsWithTypes.forEach(a => {
+          assessmentTypeMap[a.id] = {
+            title: a.title,
+            assessment_type_id: a.assessment_type_id,
+            type: a.assessment_types || null
+          };
         });
+        console.log(`✅ Found ${Object.keys(assessmentTypeMap).length} assessments with types`);
+      } else {
+        // Fallback: get assessments and types separately
+        console.log('⚠️ Join failed, using fallback...');
+        
+        const { data: assessments, error: assessmentsError } = await serviceClient
+          .from('assessments')
+          .select('id, title, assessment_type_id')
+          .in('id', assessmentIds);
+
+        if (!assessmentsError && assessments) {
+          const typeIds = assessments.map(a => a.assessment_type_id).filter(Boolean);
+          let typeMap = {};
+          
+          if (typeIds.length > 0) {
+            const { data: types, error: typesError } = await serviceClient
+              .from('assessment_types')
+              .select('id, code, name')
+              .in('id', typeIds);
+
+            if (!typesError && types) {
+              types.forEach(t => {
+                typeMap[t.id] = t;
+              });
+            }
+          }
+
+          assessments.forEach(a => {
+            assessmentTypeMap[a.id] = {
+              title: a.title,
+              assessment_type_id: a.assessment_type_id,
+              type: typeMap[a.assessment_type_id] || null
+            };
+          });
+        }
       }
     }
 
     // ============================================================
-    // STEP 4: Get assessment types (simple query)
-    // ============================================================
-    const typeIds = Object.values(assessmentMap).map(a => a.assessment_type_id).filter(Boolean);
-    let typeMap = {};
-
-    if (typeIds.length > 0) {
-      const { data: types, error: typesError } = await serviceClient
-        .from('assessment_types')
-        .select('id, code, name')
-        .in('id', typeIds);
-
-      if (!typesError && types) {
-        types.forEach(t => {
-          typeMap[t.id] = t;
-        });
-      }
-    }
-
-    console.log(`📊 Found ${Object.keys(assessmentMap).length} assessments, ${Object.keys(typeMap).length} types`);
-
-    // ============================================================
-    // STEP 5: Build enriched reports
+    // STEP 4: Build enriched reports
     // ============================================================
     const enrichedReports = results.map((result) => {
       const candidate = candidateMap[result.user_id];
-      const assessment = assessmentMap[result.assessment_id] || null;
-      const assessmentType = assessment ? typeMap[assessment.assessment_type_id] : null;
+      const assessmentInfo = assessmentTypeMap[result.assessment_id] || null;
       
       // Check if this is a National Service assessment
-      const isNationalService = assessmentType?.code === 'national_service';
+      const isNationalService = 
+        assessmentInfo?.type?.code === 'national_service' ||
+        assessmentInfo?.type?.name === 'National Service Recruitment Assessment';
 
       // Get scores
       let workplaceReadiness = Number(result.workplace_readiness) || 0;
       let intellectualCapability = Number(result.intellectual_capability) || 0;
       let overallScore = Number(result.percentage_score) || 0;
 
-      // If overall score is 0 but we have sub-categories, calculate it
       if (overallScore === 0 && (workplaceReadiness > 0 || intellectualCapability > 0)) {
         overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
       }
 
-      // Determine recommendation
       let recommendation = result.recommendation || 'N/A';
       if (isNationalService) {
         if (!recommendation || recommendation === 'N/A' || recommendation === '') {
@@ -157,9 +184,9 @@ export default async function handler(req, res) {
         candidate_email: candidate?.email || '',
         candidate_university: candidate?.university || '',
         candidate_programme: candidate?.programme || '',
-        assessment_title: assessment?.title || 'Unknown',
-        assessment_type_code: assessmentType?.code || null,
-        assessment_type_name: assessmentType?.name || 'General',
+        assessment_title: assessmentInfo?.title || 'Unknown',
+        assessment_type_code: assessmentInfo?.type?.code || null,
+        assessment_type_name: assessmentInfo?.type?.name || 'General',
         isNationalService: isNationalService,
         workplace_readiness: workplaceReadiness,
         intellectual_capability: intellectualCapability,
@@ -177,8 +204,20 @@ export default async function handler(req, res) {
     const nationalServiceCount = nationalServiceReports.length;
     const stratavaxCount = enrichedReports.length - nationalServiceCount;
 
-    console.log(`✅ National Service reports: ${nationalServiceCount}`);
-    console.log(`✅ Stratavax reports: ${stratavaxCount}`);
+    console.log(`📊 Total reports: ${enrichedReports.length}`);
+    console.log(`📋 National Service reports: ${nationalServiceCount}`);
+    console.log(`📊 Stratavax reports: ${stratavaxCount}`);
+
+    // Log sample National Service reports for debugging
+    if (nationalServiceReports.length > 0) {
+      console.log('Sample National Service report:', {
+        id: nationalServiceReports[0].id,
+        assessment_id: nationalServiceReports[0].assessment_id,
+        assessment_title: nationalServiceReports[0].assessment_title,
+        isNationalService: nationalServiceReports[0].isNationalService,
+        type_code: nationalServiceReports[0].assessment_type_code
+      });
+    }
 
     return res.status(200).json({
       success: true,
