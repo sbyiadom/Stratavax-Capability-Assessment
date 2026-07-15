@@ -1,12 +1,15 @@
-// pages/admin/reports/[resultId].js - FIXED with both report types
+// pages/admin/reports/[resultId].js - FIXED detection logic
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
 import NationalServiceReport from '../../../components/reports/NationalServiceReport';
-import StratavaxReport from '../../../components/reports/StratavaxReport'; // <-- ADD THIS IMPORT
+import StratavaxReport from '../../../components/reports/StratavaxReport';
 import AppLayout from '../../../components/AppLayout';
+
+// Hardcoded National Service assessment ID
+const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
 export default function AdminReportView() {
   const router = useRouter();
@@ -42,19 +45,20 @@ export default function AdminReportView() {
         console.log('[Admin Report] Full data received:', data);
 
         // ============================================================
-        // DETERMINE IF NATIONAL SERVICE
+        // CRITICAL FIX: Determine if National Service by assessment_id first
         // ============================================================
+        const assessmentId = data.result?.assessment_id || data.assessment_id || '';
+        const assessmentTypeCode = data.assessmentTypeCode || data.result?.assessment_type_code || '';
+        
+        // Primary check: assessment_id matches the National Service assessment
         const isNS = 
-          data.isNationalService === true ||
-          data.assessmentTypeCode === 'national_service' ||
-          (data.result?.report_data && data.result.report_data.dimensions && 
-           data.result.report_data.dimensions.workplaceReadiness !== undefined) ||
-          (data.report && data.report.dimensions && 
-           data.report.dimensions.workplaceReadiness !== undefined) ||
-          (data.result?.workplace_readiness !== undefined && data.result?.workplace_readiness !== null) ||
-          (data.report?.reportType === 'national_service');
+          assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID ||
+          assessmentTypeCode === 'national_service' ||
+          data.isNationalService === true;
 
         console.log('[Admin Report] Is National Service:', isNS);
+        console.log('[Admin Report] Assessment ID:', assessmentId);
+        console.log('[Admin Report] Assessment Type Code:', assessmentTypeCode);
 
         // ============================================================
         // BUILD REPORT OBJECT
@@ -116,12 +120,8 @@ export default function AdminReportView() {
               } else if (isIntellectual) {
                 intellectual.push(cat);
               } else {
-                // Default: if it has 'capability' or 'reasoning' put in intellectual
-                if (name.includes('capability') || name.includes('reasoning')) {
-                  intellectual.push(cat);
-                } else {
-                  workplace.push(cat);
-                }
+                // Default: put in intellectual
+                intellectual.push(cat);
               }
             });
 
@@ -145,6 +145,25 @@ export default function AdminReportView() {
           if (!report.recommendation) {
             report.recommendation = {
               level: result.recommendation || 'Not Recommended'
+            };
+          }
+
+          // Ensure candidateInfo exists
+          if (!report.candidateInfo && result.candidate_profiles) {
+            report.candidateInfo = {
+              fullName: result.candidate_profiles.full_name || 'Candidate',
+              university: result.candidate_profiles.university || '',
+              programme: result.candidate_profiles.programme || '',
+              graduationYear: result.candidate_profiles.graduation_year || '',
+              preferredDepartment: result.candidate_profiles.preferred_department || '',
+              assessmentDate: result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
+            };
+          }
+
+          if (!report.statistics) {
+            report.statistics = {
+              totalQuestions: result.total_questions || 0,
+              totalAnswered: result.answered_questions || 0
             };
           }
         }
@@ -190,18 +209,6 @@ export default function AdminReportView() {
               assessmentDate: result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
             },
             reportType: 'stratavax'
-          };
-        }
-
-        // Ensure candidateInfo exists for both
-        if (!report.candidateInfo && result.candidate_profiles) {
-          report.candidateInfo = {
-            fullName: result.candidate_profiles.full_name || 'Candidate',
-            university: result.candidate_profiles.university || '',
-            programme: result.candidate_profiles.programme || '',
-            graduationYear: result.candidate_profiles.graduation_year || '',
-            preferredDepartment: result.candidate_profiles.preferred_department || '',
-            assessmentDate: result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
           };
         }
 
@@ -324,8 +331,7 @@ export default function AdminReportView() {
             <pre>{JSON.stringify({
               isNationalService,
               hasReport: !!reportData?.report,
-              reportKeys: reportData?.report ? Object.keys(reportData.report) : [],
-              hasResult: !!reportData?.result
+              reportKeys: reportData?.report ? Object.keys(reportData.report) : []
             }, null, 2)}</pre>
           </div>
         </div>
