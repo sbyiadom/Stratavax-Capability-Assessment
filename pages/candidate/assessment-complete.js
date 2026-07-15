@@ -1,4 +1,5 @@
-// pages/candidate/assessment-complete.js
+// pages/candidate/assessment-complete.js - WITH submit-bg.jpg
+
 import { useEffect } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../supabase/client";
@@ -28,6 +29,12 @@ export default function AssessmentComplete() {
 
   return (
     <div style={styles.container}>
+      {/* Background with gradient and image */}
+      <div style={styles.backgroundWrapper}>
+        <div style={styles.backgroundImage} />
+        <div style={styles.backgroundOverlay} />
+      </div>
+      
       <div style={styles.card}>
         <div style={styles.successIcon}>✓</div>
         <h1 style={styles.title}>Assessment Submitted Successfully!</h1>
@@ -50,6 +57,29 @@ export default function AssessmentComplete() {
           </button>
         </div>
       </div>
+
+      <style jsx>{`
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes scaleIn {
+          from {
+            transform: scale(0);
+            opacity: 0;
+          }
+          to {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
+      `}</style>
     </div>
   );
 }
@@ -60,23 +90,56 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background: "linear-gradient(135deg, #f4f7fc 0%, #e8eaf6 100%)",
-    padding: "20px"
+    padding: "20px",
+    position: "relative",
+    overflow: "hidden"
+  },
+  backgroundWrapper: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 0
+  },
+  backgroundImage: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundImage: 'url("/images/submit-bg.jpg")',
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+    backgroundRepeat: "no-repeat",
+    transform: "scale(1.05)"
+  },
+  backgroundOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: "linear-gradient(135deg, rgba(10, 22, 40, 0.75) 0%, rgba(26, 35, 126, 0.7) 50%, rgba(13, 71, 161, 0.75) 100%)"
   },
   card: {
-    background: "white",
+    position: "relative",
+    zIndex: 1,
+    background: "rgba(255, 255, 255, 0.95)",
+    backdropFilter: "blur(12px)",
     padding: "48px 40px",
     borderRadius: "20px",
     maxWidth: "520px",
     width: "100%",
     textAlign: "center",
-    boxShadow: "0 20px 60px rgba(0,0,0,0.1)",
-    border: "1px solid rgba(11, 42, 78, 0.08)"
+    boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+    border: "1px solid rgba(255,255,255,0.15)",
+    animation: "fadeInUp 0.6s ease-out"
   },
   successIcon: {
     width: "80px",
     height: "80px",
-    background: "#2e7d32",
+    background: "linear-gradient(135deg, #2e7d32, #43a047)",
     borderRadius: "50%",
     display: "flex",
     alignItems: "center",
@@ -84,13 +147,15 @@ const styles = {
     margin: "0 auto 24px",
     fontSize: "40px",
     color: "white",
-    boxShadow: "0 4px 12px rgba(46, 125, 50, 0.3)"
+    boxShadow: "0 8px 32px rgba(46, 125, 50, 0.3)",
+    animation: "scaleIn 0.6s ease-out 0.3s both"
   },
   title: {
     fontSize: "24px",
     fontWeight: 700,
-    color: "#0f172a",
-    marginBottom: "12px"
+    color: "#1a237e",
+    marginBottom: "12px",
+    letterSpacing: "-0.5px"
   },
   message: {
     fontSize: "16px",
@@ -99,7 +164,7 @@ const styles = {
     marginBottom: "16px"
   },
   noteBox: {
-    background: "#f0f4ff",
+    background: "rgba(241, 245, 249, 0.9)",
     padding: "16px 20px",
     borderRadius: "12px",
     marginBottom: "28px",
