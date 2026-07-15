@@ -158,7 +158,8 @@ export default async function handler(req, res) {
       };
     });
 
-    console.log('[API] Cards with titles:', cards.map(c => ({ id: c.id, title: c.title, status: c.status })));
+    console.log('[API] Cards built:', cards.length);
+    console.log('[API] Card titles:', cards.map(c => ({ id: c.id, title: c.title, status: c.status })));
 
     // ============================================================
     // STEP 5: Get all assessment types for tabs
