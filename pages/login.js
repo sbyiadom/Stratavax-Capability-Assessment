@@ -1,8 +1,7 @@
-// pages/login.js - WITH BRANDING AND BACKGROUND
+// pages/login.js - CORRECTED (single export only at the top)
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import Image from 'next/image';
 import { supabase } from '../supabase/client';
 
 export default function Login() {
@@ -70,24 +69,15 @@ export default function Login() {
 
   return (
     <div style={styles.container}>
-      {/* Background Image */}
       <div style={styles.background} />
       
       <div style={styles.card}>
-        {/* Logo */}
         <div style={styles.logoContainer}>
-          <Image 
-            src="/images/stratavax-logo.svg" 
-            alt="Stratavax" 
-            width={60} 
-            height={60}
-            style={styles.logoImage}
-          />
+          <div style={styles.logoEmoji}>📊</div>
           <h1 style={styles.title}>Stratavax</h1>
           <p style={styles.subtitle}>Talent Assessment Portal</p>
         </div>
 
-        {/* Role Toggle */}
         <div style={styles.roleToggle}>
           <button
             onClick={() => setRole('candidate')}
@@ -199,8 +189,9 @@ const styles = {
     textAlign: 'center',
     marginBottom: '32px'
   },
-  logoImage: {
-    marginBottom: '12px'
+  logoEmoji: {
+    fontSize: '48px',
+    marginBottom: '8px'
   },
   title: {
     fontSize: '28px',
@@ -292,5 +283,3 @@ const styles = {
     textDecoration: 'none'
   }
 };
-
-export default Login;
