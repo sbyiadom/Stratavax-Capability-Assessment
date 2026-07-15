@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - COMPLETE FIXED VERSION
+// pages/assessment/[id].js - FIXED: National Service ALWAYS single selection
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -38,14 +38,15 @@ function countAnswered(answerMap) {
 }
 
 // ============================================================
-// FIXED: isMultipleCorrectQuestion - National Service always uses single selection
+// FIXED: National Service ALWAYS uses single selection
 // ============================================================
 function isMultipleCorrectQuestion(question, assessmentTypeCode) {
-  // National Service assessment should ALWAYS use single selection
+  // National Service assessment: ALWAYS single selection
   if (assessmentTypeCode === 'national_service') {
     return false;
   }
   
+  // For other assessments: check if more than 1 correct answer
   if (!question || !Array.isArray(question.answers)) return false;
   const correctAnswers = question.answers.filter((answer) => safeNumber(answer.score, 0) === 1);
   return correctAnswers.length > 1;
@@ -180,8 +181,8 @@ function AssessmentContent() {
   const isNationalService = assessmentTypeCode === 'national_service' || 
     (assessment && assessment.title && assessment.title.toLowerCase().includes('national service'));
 
-  // FIXED: Pass assessmentTypeCode to isMultipleCorrectQuestion
-  const isMultipleCorrect = isMultipleCorrectQuestion(currentQuestion, assessmentTypeCode);
+  // FIXED: For National Service, ALWAYS single selection
+  const isMultipleCorrect = isNationalService ? false : isMultipleCorrectQuestion(currentQuestion, assessmentTypeCode);
   
   const totalAnswered = countAnswered(answers);
   const totalChanges = Object.values(answerChangeCount).reduce((a, b) => a + safeNumber(b, 0), 0);
@@ -265,7 +266,7 @@ function AssessmentContent() {
   }
 
   // ============================================================
-  // ANSWER HANDLER - FIXED: Forces single selection for National Service
+  // ANSWER HANDLER - FORCES SINGLE SELECTION FOR NATIONAL SERVICE
   // ============================================================
   async function handleAnswerSelect(questionId, answerId, multipleCorrect) {
     if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
@@ -275,7 +276,7 @@ function AssessmentContent() {
     
     if (alreadySubmitted || !session || !user || !questionId || !answerId || accessDenied || isAutoSubmitting) return;
 
-    // Force single selection for National Service
+    // FORCE single selection for National Service
     const isNationalServiceType = assessmentTypeCode === 'national_service';
     const actualMultipleCorrect = multipleCorrect && !isNationalServiceType;
 
