@@ -1,4 +1,4 @@
-// pages/candidate/dashboard.js - COMPLETE PROFESSIONAL VERSION
+// pages/candidate/dashboard.js - POLISHED VERSION WITH INTERACTIVE CARDS
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
@@ -14,6 +14,7 @@ export default function CandidateDashboard() {
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("Candidate");
   const [assessments, setAssessments] = useState([]);
+  const [selectedAssessment, setSelectedAssessment] = useState(null);
   const [error, setError] = useState(null);
   const [stats, setStats] = useState({ total: 0, completed: 0, ready: 0, inProgress: 0, blocked: 0 });
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
@@ -54,6 +55,13 @@ export default function CandidateDashboard() {
       setUserName(data.candidateName || "Candidate");
       setAssessments(data.assessmentCards || []);
       setStats(data.stats || { total: 0, completed: 0, ready: 0, inProgress: 0, blocked: 0 });
+      
+      // Auto-select first unblocked or first assessment
+      if (data.assessmentCards && data.assessmentCards.length > 0) {
+        const firstReady = data.assessmentCards.find(a => a.status === 'unblocked' || a.status === 'in_progress');
+        setSelectedAssessment(firstReady || data.assessmentCards[0]);
+      }
+      
       setLoading(false);
 
     } catch (err) {
@@ -70,6 +78,10 @@ export default function CandidateDashboard() {
   async function handleSignOut() {
     await supabase.auth.signOut();
     router.push("/login");
+  }
+
+  function handleSelectAssessment(assessment) {
+    setSelectedAssessment(assessment);
   }
 
   if (authLoading || loading) {
@@ -100,12 +112,46 @@ export default function CandidateDashboard() {
     }
   };
 
+  const getAssessmentColor = (typeCode) => {
+    const colors = {
+      general: { gradient: 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)', border: '#2563eb', light: '#dbeafe' },
+      leadership: { gradient: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)', border: '#7c3aed', light: '#ede9fe' },
+      cognitive: { gradient: 'linear-gradient(135deg, #0891b2 0%, #0e7490 100%)', border: '#0891b2', light: '#cffafe' },
+      cultural: { gradient: 'linear-gradient(135deg, #059669 0%, #047857 100%)', border: '#059669', light: '#d1fae5' },
+      personality: { gradient: 'linear-gradient(135deg, #0d9488 0%, #115e59 100%)', border: '#0d9488', light: '#ccfbf1' },
+      strategic_leadership: { gradient: 'linear-gradient(135deg, #1e3a8a 0%, #5b21b6 100%)', border: '#5b21b6', light: '#e9d8fd' },
+      performance: { gradient: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)', border: '#ea580c', light: '#ffedd5' },
+      technical: { gradient: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)', border: '#dc2626', light: '#fee2e2' },
+      behavioral: { gradient: 'linear-gradient(135deg, #9333ea 0%, #6b21a5 100%)', border: '#9333ea', light: '#f3e8ff' },
+      manufacturing_baseline: { gradient: 'linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%)', border: '#2e7d32', light: '#e8f5e9' },
+      national_service: { gradient: 'linear-gradient(135deg, #0d47a1 0%, #1a237e 100%)', border: '#0d47a1', light: '#e8eaf6' }
+    };
+    return colors[typeCode] || colors.general;
+  };
+
+  const getDefaultAreas = (typeCode) => {
+    const areas = {
+      general: ["Cognitive Ability", "Communication", "Cultural & Attitudinal Fit", "Emotional Intelligence", "Ethics & Integrity", "Leadership & Management", "Performance Metrics", "Personality & Behavioral", "Problem-Solving", "Technical & Manufacturing"],
+      leadership: ["Change Leadership & Agility", "Communication & Influence", "Cultural Alignment", "Decision-Making & Problem-Solving", "Execution & Results Orientation", "People Management & Coaching", "Resilience & Stress Management", "Role Readiness", "Vision & Strategic Thinking"],
+      cognitive: ["Logical / Abstract Reasoning", "Mechanical Reasoning", "Memory & Attention", "Numerical Reasoning", "Perceptual Speed & Accuracy", "Spatial Reasoning", "Verbal Reasoning"],
+      technical: ["CIP & Maintenance", "Conveyors & Line Efficiency", "Filling & Bottling", "Packaging & Labeling", "Safety & Efficiency", "Water Treatment & Quality"],
+      performance: ["Employee Engagement and Behavior", "Financial and Operational Performance", "Goal Achievement and Strategic Alignment", "Productivity and Efficiency", "Work Quality and Effectiveness"],
+      cultural: ["Attitude", "Core Values", "Environmental Fit", "Interpersonal", "Leadership", "Work Style"],
+      personality: ["Ownership", "Collaboration", "Action", "Analysis", "Risk Tolerance", "Structure"],
+      strategic_leadership: ["Vision / Strategy", "People Leadership", "Decision Making", "Accountability", "Emotional Intelligence", "Execution Drive", "Ethics"],
+      behavioral: ["Adaptability", "Clinical", "Collaboration", "Communication Style", "Decision-Making", "FBA", "Leadership"],
+      manufacturing_baseline: ["Technical Fundamentals", "Troubleshooting", "Numerical Aptitude", "Safety & Work Ethic"],
+      national_service: ["Workplace Readiness", "Intellectual Capability", "Safety & Risk Awareness", "Problem Solving", "Technical Fundamentals", "Communication", "Teamwork", "Professional Conduct"]
+    };
+    return areas[typeCode] || ["General Assessment"];
+  };
+
   return (
     <div style={styles.pageContainer}>
       <div style={styles.pageBackground} />
       
       <div style={styles.content}>
-        {/* Header with Logo */}
+        {/* Header */}
         <header style={styles.header}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
@@ -180,12 +226,12 @@ export default function CandidateDashboard() {
             </div>
           )}
 
-          {/* Assessments Grid */}
+          {/* Assessment Cards */}
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
               <div>
                 <h3 style={styles.sectionTitle}>Your Assessments</h3>
-                <p style={styles.sectionSubtitle}>Complete the assessments assigned to you by your supervisor</p>
+                <p style={styles.sectionSubtitle}>Select an assessment to view details and start</p>
               </div>
               <span style={styles.sectionCount}>{assessments.length} available</span>
             </div>
@@ -197,59 +243,129 @@ export default function CandidateDashboard() {
                 <p style={styles.emptySub}>Contact your supervisor to get assessments assigned to you.</p>
               </div>
             ) : (
-              <div style={styles.assessmentGrid}>
-                {assessments.map((assessment) => {
-                  const status = getStatusInfo(assessment.status);
-                  const isNationalService = assessment.isNationalService || assessment.typeCode === 'national_service';
-                  const canStart = assessment.status === 'unblocked' || assessment.status === 'in_progress';
+              <>
+                {/* Colored Assessment Cards - Grouped at Top */}
+                <div style={styles.assessmentGrid}>
+                  {assessments.map((assessment) => {
+                    const status = getStatusInfo(assessment.status);
+                    const colors = getAssessmentColor(assessment.typeCode);
+                    const isSelected = selectedAssessment?.id === assessment.id;
+                    const isNationalService = assessment.isNationalService || assessment.typeCode === 'national_service';
+                    const canStart = assessment.status === 'unblocked' || assessment.status === 'in_progress';
 
-                  return (
-                    <div key={assessment.id} style={styles.assessmentCard}>
-                      <div style={styles.cardHeader}>
-                        <div style={styles.cardBadge}>
-                          <span style={{ ...styles.statusDot, background: status.color }} />
-                          <span style={{ ...styles.statusLabel, color: status.color }}>{status.icon} {status.label}</span>
-                        </div>
-                        <div style={styles.cardBadges}>
-                          {isNationalService && (
-                            <span style={styles.nsBadge}>🇬🇭 National Service</span>
-                          )}
+                    return (
+                      <div 
+                        key={assessment.id} 
+                        style={{
+                          ...styles.assessmentCard,
+                          border: isSelected ? `3px solid ${colors.border}` : '1px solid #e2e8f0',
+                          boxShadow: isSelected ? `0 8px 30px rgba(0,0,0,0.15)` : '0 4px 20px rgba(0,0,0,0.1)',
+                          transform: isSelected ? 'scale(1.02)' : 'scale(1)',
+                          cursor: 'pointer'
+                        }}
+                        onClick={() => handleSelectAssessment(assessment)}
+                      >
+                        <div style={{ ...styles.cardGradient, background: colors.gradient }} />
+                        
+                        <div style={styles.cardContent}>
+                          <div style={styles.cardHeader}>
+                            <div style={styles.cardBadge}>
+                              <span style={{ ...styles.statusDot, background: status.color }} />
+                              <span style={{ ...styles.statusLabel, color: status.color }}>{status.icon} {status.label}</span>
+                            </div>
+                            {isNationalService && (
+                              <span style={styles.nsBadge}>🇬🇭 National Service</span>
+                            )}
+                          </div>
+
+                          <h3 style={styles.cardTitle}>{assessment.title}</h3>
+                          <p style={styles.cardDescription}>{assessment.description}</p>
+
+                          <div style={styles.cardMeta}>
+                            <span style={styles.metaItem}>
+                              <span style={styles.metaIcon}>⏱️</span> {assessment.timeLimitMinutes || 180} min
+                            </span>
+                            <span style={styles.metaItem}>
+                              <span style={styles.metaIcon}>📋</span> {assessment.questionCount || 100} questions
+                            </span>
+                            <span style={styles.metaItem}>
+                              <span style={styles.metaIcon}>📂</span> {assessment.typeName}
+                            </span>
+                          </div>
+
+                          <div style={styles.cardFooter}>
+                            <span style={styles.selectHint}>Click to view details →</span>
+                          </div>
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
 
-                      <h3 style={styles.cardTitle}>{assessment.title}</h3>
-                      <p style={styles.cardDescription}>{assessment.description}</p>
-
-                      <div style={styles.cardMeta}>
-                        <span style={styles.metaItem}>
-                          <span style={styles.metaIcon}>⏱️</span> {assessment.timeLimitMinutes || 180} min
-                        </span>
-                        <span style={styles.metaItem}>
-                          <span style={styles.metaIcon}>📋</span> {assessment.questionCount || 100} questions
-                        </span>
-                        <span style={styles.metaItem}>
-                          <span style={styles.metaIcon}>📂</span> {assessment.typeName}
-                        </span>
+                {/* Selected Assessment Detail Card */}
+                {selectedAssessment && (
+                  <div style={styles.detailSection}>
+                    <div style={styles.detailHeader}>
+                      <div style={styles.detailHeaderLeft}>
+                        <h3 style={styles.detailTitle}>📋 {selectedAssessment.title}</h3>
+                        <span style={styles.detailType}>{selectedAssessment.typeName}</span>
                       </div>
-
-                      <div style={styles.cardFooter}>
-                        {canStart ? (
+                      <div style={styles.detailActions}>
+                        {(selectedAssessment.status === 'unblocked' || selectedAssessment.status === 'in_progress') && (
                           <button
-                            onClick={() => handleStartAssessment(assessment.id)}
-                            style={styles.startButton}
+                            onClick={() => handleStartAssessment(selectedAssessment.id)}
+                            style={styles.detailStartButton}
                           >
-                            {assessment.status === 'in_progress' ? 'Continue Assessment →' : 'Start Assessment →'}
+                            {selectedAssessment.status === 'in_progress' ? 'Continue Assessment →' : 'Start Assessment →'}
                           </button>
-                        ) : (
-                          <span style={styles.blockedText}>
-                            {isNationalService ? '⚠️ Contact support' : '🔒 Contact supervisor to unlock'}
+                        )}
+                        {selectedAssessment.status === 'blocked' && (
+                          <span style={styles.detailBlocked}>
+                            🔒 {selectedAssessment.isNationalService ? 'Contact support' : 'Contact supervisor to unlock'}
                           </span>
+                        )}
+                        {selectedAssessment.status === 'completed' && (
+                          <span style={styles.detailCompleted}>✅ Completed</span>
                         )}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+
+                    {/* Assessment Areas */}
+                    <div style={styles.detailAreas}>
+                      <h4 style={styles.detailAreasTitle}>Assessment Areas</h4>
+                      <p style={styles.detailAreasSubtitle}>The following areas will be assessed in this assessment</p>
+                      <div style={styles.detailAreasGrid}>
+                        {getDefaultAreas(selectedAssessment.typeCode).map((area, index) => (
+                          <div key={index} style={styles.detailAreaItem}>
+                            <span style={styles.detailAreaDot}>•</span>
+                            <span style={styles.detailAreaText}>{area}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Assessment Info */}
+                    <div style={styles.detailInfo}>
+                      <div style={styles.detailInfoItem}>
+                        <span style={styles.detailInfoLabel}>⏱️ Time Limit</span>
+                        <span style={styles.detailInfoValue}>{selectedAssessment.timeLimitMinutes || 180} minutes</span>
+                      </div>
+                      <div style={styles.detailInfoItem}>
+                        <span style={styles.detailInfoLabel}>📋 Questions</span>
+                        <span style={styles.detailInfoValue}>{selectedAssessment.questionCount || 100}</span>
+                      </div>
+                      <div style={styles.detailInfoItem}>
+                        <span style={styles.detailInfoLabel}>🔄 Attempts</span>
+                        <span style={styles.detailInfoValue}>{selectedAssessment.attemptsAllowed === 1 ? 'Single attempt' : `${selectedAssessment.attemptsAllowed} attempts`}</span>
+                      </div>
+                      <div style={styles.detailInfoItem}>
+                        <span style={styles.detailInfoLabel}>📂 Type</span>
+                        <span style={styles.detailInfoValue}>{selectedAssessment.typeName}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -313,7 +429,7 @@ export default function CandidateDashboard() {
           </div>
         </div>
 
-        {/* Footer with Regulations */}
+        {/* Footer */}
         <footer style={styles.footer}>
           <div style={styles.footerContent}>
             <div style={styles.footerLeft}>
@@ -394,26 +510,89 @@ const styles = {
   sectionSubtitle: { fontSize: "14px", color: "rgba(255,255,255,0.7)", margin: "4px 0 0 0", textShadow: "1px 1px 2px rgba(0,0,0,0.3)" },
   sectionCount: { fontSize: "14px", color: "rgba(255,255,255,0.7)", padding: "4px 12px", background: "rgba(255,255,255,0.15)", borderRadius: "20px", textShadow: "1px 1px 2px rgba(0,0,0,0.3)" },
   
-  assessmentGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "20px" },
-  assessmentCard: { background: "white", borderRadius: "16px", padding: "24px", boxShadow: "0 4px 20px rgba(0,0,0,0.1)", display: "flex", flexDirection: "column" },
-  
-  cardHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" },
+  assessmentGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px", marginBottom: "24px" },
+  assessmentCard: { 
+    position: "relative",
+    borderRadius: "16px", 
+    overflow: "hidden",
+    boxShadow: "0 4px 20px rgba(0,0,0,0.1)", 
+    transition: "all 0.3s ease",
+    background: "white",
+    cursor: "pointer",
+    height: "100%",
+    minHeight: "200px"
+  },
+  cardGradient: { 
+    position: "absolute", 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    height: "4px" 
+  },
+  cardContent: { 
+    padding: "20px", 
+    display: "flex", 
+    flexDirection: "column", 
+    height: "100%",
+    paddingTop: "24px"
+  },
+  cardHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "8px" },
   cardBadge: { display: "flex", alignItems: "center", gap: "6px" },
-  cardBadges: { display: "flex", gap: "6px", flexWrap: "wrap" },
   statusDot: { width: "8px", height: "8px", borderRadius: "50%", display: "inline-block" },
   statusLabel: { fontSize: "12px", fontWeight: "600" },
-  nsBadge: { fontSize: "11px", fontWeight: "600", padding: "2px 10px", background: "#dbeafe", color: "#1e40af", borderRadius: "12px" },
-  
-  cardTitle: { fontSize: "18px", fontWeight: "600", color: "#0a1929", margin: "0 0 8px 0" },
-  cardDescription: { fontSize: "14px", color: "#64748b", margin: "0 0 12px 0", lineHeight: "1.5" },
-  
-  cardMeta: { display: "flex", gap: "16px", fontSize: "13px", color: "#94a3b8", flexWrap: "wrap", marginBottom: "16px" },
+  nsBadge: { fontSize: "10px", fontWeight: "600", padding: "2px 8px", background: "#dbeafe", color: "#1e40af", borderRadius: "10px" },
+  cardTitle: { fontSize: "16px", fontWeight: "600", color: "#0a1929", margin: "0 0 6px 0" },
+  cardDescription: { fontSize: "13px", color: "#64748b", margin: "0 0 10px 0", lineHeight: "1.4", flex: 1 },
+  cardMeta: { display: "flex", gap: "12px", fontSize: "12px", color: "#94a3b8", flexWrap: "wrap", marginBottom: "10px" },
   metaItem: { display: "flex", alignItems: "center", gap: "4px" },
-  metaIcon: { fontSize: "16px" },
+  metaIcon: { fontSize: "14px" },
+  cardFooter: { display: "flex", justifyContent: "flex-end", borderTop: "1px solid #f1f5f9", paddingTop: "10px", marginTop: "auto" },
+  selectHint: { fontSize: "12px", color: "#94a3b8", fontStyle: "italic" },
   
-  cardFooter: { marginTop: "auto", paddingTop: "16px", borderTop: "1px solid #f1f5f9", display: "flex", justifyContent: "flex-end" },
-  startButton: { padding: "10px 24px", background: "#1a237e", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: "500", fontFamily: "inherit", transition: "background 0.2s" },
-  blockedText: { fontSize: "13px", color: "#94a3b8", fontWeight: "500", fontStyle: "italic" },
+  detailSection: { 
+    background: "white", 
+    borderRadius: "16px", 
+    padding: "24px", 
+    boxShadow: "0 8px 30px rgba(0,0,0,0.12)",
+    border: "2px solid #1a237e",
+    marginTop: "8px"
+  },
+  detailHeader: { 
+    display: "flex", 
+    justifyContent: "space-between", 
+    alignItems: "center", 
+    flexWrap: "wrap", 
+    gap: "12px",
+    marginBottom: "16px",
+    paddingBottom: "16px",
+    borderBottom: "2px solid #f1f5f9"
+  },
+  detailHeaderLeft: { display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" },
+  detailTitle: { fontSize: "20px", fontWeight: "600", color: "#0a1929", margin: 0 },
+  detailType: { fontSize: "13px", color: "#64748b", padding: "2px 10px", background: "#f1f5f9", borderRadius: "12px" },
+  detailActions: { display: "flex", alignItems: "center", gap: "12px" },
+  detailStartButton: { padding: "10px 24px", background: "#1a237e", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: "500", fontFamily: "inherit", transition: "background 0.2s" },
+  detailBlocked: { fontSize: "14px", color: "#94a3b8", fontWeight: "500" },
+  detailCompleted: { fontSize: "14px", color: "#16a34a", fontWeight: "600" },
+  
+  detailAreas: { marginBottom: "16px" },
+  detailAreasTitle: { fontSize: "16px", fontWeight: "600", color: "#0a1929", margin: "0 0 4px 0" },
+  detailAreasSubtitle: { fontSize: "13px", color: "#64748b", margin: "0 0 12px 0" },
+  detailAreasGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "8px" },
+  detailAreaItem: { display: "flex", alignItems: "center", gap: "8px", padding: "6px 12px", background: "#f8fafc", borderRadius: "6px" },
+  detailAreaDot: { color: "#1a237e", fontSize: "18px", fontWeight: "bold" },
+  detailAreaText: { fontSize: "13px", color: "#334155" },
+  
+  detailInfo: { 
+    display: "grid", 
+    gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", 
+    gap: "12px",
+    paddingTop: "16px",
+    borderTop: "1px solid #f1f5f9"
+  },
+  detailInfoItem: { display: "flex", flexDirection: "column", gap: "2px" },
+  detailInfoLabel: { fontSize: "12px", color: "#94a3b8" },
+  detailInfoValue: { fontSize: "14px", fontWeight: "500", color: "#0a1929" },
   
   emptyState: { textAlign: "center", padding: "60px 40px", background: "rgba(255,255,255,0.95)", borderRadius: "16px", border: "1px solid #e2e8f0" },
   emptyIcon: { fontSize: "48px", marginBottom: "16px" },
