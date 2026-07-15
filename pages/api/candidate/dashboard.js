@@ -1,4 +1,4 @@
-// pages/api/candidate/dashboard.js - SHOW ALL ASSESSMENTS
+// pages/api/candidate/dashboard.js - RETURNS ALL ASSESSMENTS
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -47,7 +47,83 @@ export default async function handler(req, res) {
     const candidateName = profile?.full_name || userData.user.user_metadata?.full_name || 'Candidate';
 
     // ============================================================
-    // STEP 2: Get ALL active assessment types
+    // STEP 2: Get ALL candidate assessments with assessment details
+    // ============================================================
+    const { data: candidateAssessments, error: caError } = await serviceClient
+      .from('candidate_assessments')
+      .select(`
+        id,
+        user_id,
+        assessment_id,
+        status,
+        result_id,
+        completed_at,
+        unblocked_at,
+        created_at,
+        assessments:assessment_id (
+          id,
+          title,
+          description,
+          assessment_type_id,
+          question_count,
+          time_limit_minutes,
+          attempts_allowed,
+          assessment_types:assessment_type_id (
+            id,
+            code,
+            name
+          )
+        )
+      `)
+      .eq('user_id', userId);
+
+    if (caError) {
+      console.error('[API] Candidate assessments error:', caError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to load assessments',
+        details: caError.message
+      });
+    }
+
+    console.log('[API] Found candidate assessments:', candidateAssessments?.length || 0);
+
+    // ============================================================
+    // STEP 3: Build assessment cards
+    // ============================================================
+    const cards = (candidateAssessments || []).map(ca => {
+      const assessment = ca.assessments || {};
+      const type = assessment.assessment_types || {};
+      const typeCode = type.code || 'general';
+
+      let status = ca.status || 'blocked';
+      
+      // If completed, mark as completed
+      if (ca.status === 'completed' || ca.result_id) {
+        status = 'completed';
+      }
+
+      return {
+        id: ca.assessment_id,
+        title: assessment.title || 'Unknown Assessment',
+        description: assessment.description || 'Assessment assigned by your supervisor.',
+        typeCode: typeCode,
+        typeName: type.name || 'General',
+        status: status,
+        questionCount: assessment.question_count || 100,
+        timeLimitMinutes: assessment.time_limit_minutes || 180,
+        attemptsAllowed: assessment.attempts_allowed || 1,
+        isNationalService: typeCode === 'national_service',
+        completedAt: ca.completed_at || null,
+        unblockedAt: ca.unblocked_at || null,
+        resultId: ca.result_id || null
+      };
+    });
+
+    console.log('[API] Cards built:', cards.length);
+
+    // ============================================================
+    // STEP 4: Get assessment types for the tabs
     // ============================================================
     const { data: assessmentTypes, error: typesError } = await serviceClient
       .from('assessment_types')
@@ -56,92 +132,10 @@ export default async function handler(req, res) {
       .order('display_order', { ascending: true });
 
     if (typesError) {
-      console.error('Types error:', typesError);
+      console.error('[API] Types error:', typesError);
     }
 
-    // ============================================================
-    // STEP 3: Get ALL active assessments
-    // ============================================================
-    const { data: allAssessments, error: assessmentsError } = await serviceClient
-      .from('assessments')
-      .select(`
-        id,
-        title,
-        description,
-        assessment_type_id,
-        question_count,
-        time_limit_minutes,
-        attempts_allowed,
-        is_active
-      `)
-      .eq('is_active', true);
-
-    if (assessmentsError) {
-      console.error('Assessments error:', assessmentsError);
-    }
-
-    // ============================================================
-    // STEP 4: Get candidate's existing assessments (to check status)
-    // ============================================================
-    const { data: candidateAssessments, error: caError } = await serviceClient
-      .from('candidate_assessments')
-      .select('*')
-      .eq('user_id', userId);
-
-    if (caError) {
-      console.error('Candidate assessments error:', caError);
-    }
-
-    // Build a map of existing assessments
-    const existingMap = {};
-    (candidateAssessments || []).forEach(ca => {
-      existingMap[ca.assessment_id] = ca;
-    });
-
-    // ============================================================
-    // STEP 5: Build assessment cards - SHOW ALL ASSESSMENTS
-    // ============================================================
-    const cards = (allAssessments || []).map(assessment => {
-      const existing = existingMap[assessment.id] || null;
-      const type = (assessmentTypes || []).find(t => t.id === assessment.assessment_type_id);
-      const typeCode = type?.code || 'general';
-      
-      // Determine status:
-      // - If already completed: 'completed'
-      // - If in progress: 'in_progress'  
-      // - If National Service: 'unblocked' (always ready)
-      // - Otherwise: 'blocked' (needs supervisor to unblock)
-      let status = 'blocked';
-      if (existing?.status === 'completed' || existing?.result_id) {
-        status = 'completed';
-      } else if (existing?.status === 'in_progress') {
-        status = 'in_progress';
-      } else if (typeCode === 'national_service') {
-        status = 'unblocked'; // National Service is always unblocked
-      } else if (existing?.status === 'unblocked') {
-        status = 'unblocked'; // Supervisor has unblocked it
-      }
-
-      return {
-        id: assessment.id,
-        title: assessment.title || 'Assessment',
-        description: assessment.description || '',
-        typeCode: typeCode,
-        typeName: type?.name || 'General',
-        status: status,
-        questionCount: assessment.question_count || 100,
-        timeLimitMinutes: assessment.time_limit_minutes || 180,
-        attemptsAllowed: assessment.attempts_allowed || 1,
-        isNationalService: typeCode === 'national_service',
-        existing: existing,
-        completedAt: existing?.completed_at || null,
-        unblockedAt: existing?.unblocked_at || null
-      };
-    });
-
-    // ============================================================
-    // STEP 6: Build assessment types list
-    // ============================================================
+    // Build assessment types with areas
     const defaultAreas = {
       general: ["Cognitive Ability", "Communication", "Cultural & Attitudinal Fit", "Emotional Intelligence", "Ethics & Integrity", "Leadership & Management", "Performance Metrics", "Personality & Behavioral", "Problem-Solving", "Technical & Manufacturing"],
       leadership: ["Change Leadership & Agility", "Communication & Influence", "Cultural Alignment", "Decision-Making & Problem-Solving", "Execution & Results Orientation", "People Management & Coaching", "Resilience & Stress Management", "Role Readiness", "Vision & Strategic Thinking"],
@@ -176,7 +170,7 @@ export default async function handler(req, res) {
       });
 
     // ============================================================
-    // STEP 7: Calculate stats
+    // STEP 5: Calculate stats
     // ============================================================
     const stats = {
       total: cards.length,
