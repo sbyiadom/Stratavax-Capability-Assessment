@@ -1,4 +1,4 @@
-// utils/requireAuth.js
+// utils/requireAuth.js - FIXED (no database queries)
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -12,44 +12,8 @@ function getSafeName(session) {
   return session?.user?.user_metadata?.full_name || session?.user?.email?.split("@")[0] || "User";
 }
 
-function buildLocalSession(session, roleOverride) {
-  const role = roleOverride || getSafeRole(session) || "candidate";
-
-  return {
-    loggedIn: true,
-    user_id: session.user.id,
-    email: session.user.email,
-    full_name: getSafeName(session),
-    role,
-    access_token: session.access_token,
-    refresh_token: session.refresh_token,
-    timestamp: Date.now()
-  };
-}
-
-function safeWriteLocalSession(session, roleOverride) {
-  if (typeof window === "undefined" || !session?.user) return;
-
-  try {
-    localStorage.setItem("userSession", JSON.stringify(buildLocalSession(session, roleOverride)));
-  } catch (error) {
-    console.error("Unable to write local session:", error);
-  }
-}
-
-function safeClearLocalSession() {
-  if (typeof window === "undefined") return;
-
-  try {
-    localStorage.removeItem("userSession");
-  } catch (error) {
-    console.error("Unable to clear local session:", error);
-  }
-}
-
 function getRouteAccess(pathname) {
   const path = pathname || "";
-
   return {
     isCandidateRoute: path.startsWith("/candidate"),
     isSupervisorRoute: path.startsWith("/supervisor"),
@@ -94,6 +58,7 @@ export function useRequireAuth() {
       try {
         setLoading(true);
 
+        // ONLY get session from Supabase Auth - NO database queries
         const { data, error } = await supabase.auth.getSession();
 
         if (error) {
@@ -103,7 +68,6 @@ export function useRequireAuth() {
         const activeSession = data?.session || null;
 
         if (!activeSession) {
-          safeClearLocalSession();
           if (mounted) {
             setSession(null);
             setRole(null);
@@ -116,8 +80,6 @@ export function useRequireAuth() {
         const userRole = getSafeRole(activeSession) || "candidate";
         const redirectTo = getRedirectForRole(userRole, router.pathname);
 
-        safeWriteLocalSession(activeSession, userRole);
-
         if (mounted) {
           setSession(activeSession);
           setRole(userRole);
@@ -129,7 +91,6 @@ export function useRequireAuth() {
         }
       } catch (error) {
         console.error("Auth check error:", error);
-        safeClearLocalSession();
         if (mounted) {
           setSession(null);
           setRole(null);
@@ -145,7 +106,6 @@ export function useRequireAuth() {
       if (!mounted) return;
 
       if (event === "SIGNED_OUT") {
-        safeClearLocalSession();
         setSession(null);
         setRole(null);
         setLoading(false);
@@ -155,7 +115,6 @@ export function useRequireAuth() {
 
       if ((event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") && nextSession) {
         const nextRole = getSafeRole(nextSession) || "candidate";
-        safeWriteLocalSession(nextSession, nextRole);
         setSession(nextSession);
         setRole(nextRole);
         setLoading(false);
