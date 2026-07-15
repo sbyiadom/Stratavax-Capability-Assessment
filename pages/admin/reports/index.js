@@ -1,7 +1,8 @@
-// pages/admin/reports/index.js - CALLS API ENDPOINT
+// pages/admin/reports/index.js - COMPLETE FIXED VERSION
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { supabase } from '../../../supabase/client'; // <-- IMPORT THIS
 import { useRequireAuth } from '../../../utils/requireAuth';
 import AppLayout from '../../../components/AppLayout';
 
@@ -38,8 +39,10 @@ export default function AdminReportsList() {
       }
 
       const response = await fetch('/api/admin/reports', {
+        method: 'GET',
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         }
       });
 
