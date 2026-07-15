@@ -1,4 +1,4 @@
-// pages/api/admin/reports.js - CALCULATES SCORES FROM SUB-CATEGORIES
+// pages/api/admin/reports.js - FIXED to show correct scores
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -173,14 +173,16 @@ export default async function handler(req, res) {
         assessment?.title === 'National Service Recruitment Assessment';
 
       // ============================================================
-      // CRITICAL FIX: Get scores from multiple sources
+      // CRITICAL FIX: Use database scores FIRST, only calculate if missing
       // ============================================================
       let workplaceReadiness = Number(result.workplace_readiness) || 0;
       let intellectualCapability = Number(result.intellectual_capability) || 0;
       let overallScore = Number(result.percentage_score) || 0;
 
-      // If main scores are missing, try to calculate from category_scores
-      if (workplaceReadiness === 0 || intellectualCapability === 0) {
+      // ONLY calculate if ALL scores are missing (0 or null)
+      const hasAnyScore = workplaceReadiness > 0 || intellectualCapability > 0 || overallScore > 0;
+
+      if (!hasAnyScore) {
         // Try category_scores from result
         let categoryScores = [];
         if (result.category_scores && Array.isArray(result.category_scores)) {
@@ -195,10 +197,14 @@ export default async function handler(req, res) {
           const calculated = calculateScoresFromCategories(categoryScores);
           if (workplaceReadiness === 0) workplaceReadiness = calculated.workplaceReadiness;
           if (intellectualCapability === 0) intellectualCapability = calculated.intellectualCapability;
+          // Calculate overall score from workplace and intellectual
+          if (workplaceReadiness > 0 || intellectualCapability > 0) {
+            overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
+          }
         }
       }
 
-      // Calculate overall score if missing
+      // If overallScore is still 0 but we have individual scores, calculate it
       if (overallScore === 0 && (workplaceReadiness > 0 || intellectualCapability > 0)) {
         overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
       }
