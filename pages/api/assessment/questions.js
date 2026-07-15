@@ -1,4 +1,4 @@
-// pages/api/assessment/questions.js
+// pages/api/assessment/questions.js - FIXED VERSION
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -35,7 +35,9 @@ export default async function handler(req, res) {
       return res.status(401).json({ success: false, error: "Invalid token" });
     }
 
-    // Get questions with their answers
+    // ============================================================
+    // STEP 1: Get questions with their answers
+    // ============================================================
     const { data: questions, error: questionsError } = await serviceClient
       .from("unique_questions")
       .select(`
@@ -59,9 +61,28 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: questionsError.message });
     }
 
+    // ============================================================
+    // STEP 2: Format the response
+    // ============================================================
+    const formattedQuestions = questions.map((q) => ({
+      id: q.id,
+      question_text: q.question_text,
+      section: q.section || "General",
+      subsection: q.subsection || "",
+      display_order: q.display_order || 0,
+      answers: (q.unique_answers || []).map((a) => ({
+        id: a.id,
+        answer_text: a.answer_text,
+        score: a.score || 0,
+        display_order: a.display_order || 0
+      }))
+    }));
+
+    console.log(`[API] Found ${formattedQuestions.length} questions with answers`);
+
     return res.status(200).json({
       success: true,
-      questions: questions || []
+      questions: formattedQuestions
     });
 
   } catch (error) {
