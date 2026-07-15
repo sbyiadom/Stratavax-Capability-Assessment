@@ -12,7 +12,10 @@ export default async function handler(req, res) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !serviceRoleKey) {
-      console.error('Missing environment variables:', { supabaseUrl: !!supabaseUrl, serviceRoleKey: !!serviceRoleKey });
+      console.error('Missing env vars:', { 
+        supabaseUrl: !!supabaseUrl, 
+        serviceRoleKey: !!serviceRoleKey 
+      });
       return res.status(500).json({ 
         success: false, 
         error: 'Server configuration error: Missing Supabase credentials' 
