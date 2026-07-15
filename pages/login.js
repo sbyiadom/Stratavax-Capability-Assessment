@@ -1,4 +1,4 @@
-// pages/login.js - WITH STRATAVAX LOGO AND BACKGROUND IMAGE
+// pages/login.js - FINAL CORRECTED VERSION (single export)
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -71,13 +71,10 @@ export default function Login() {
 
   return (
     <div style={styles.container}>
-      {/* Background Image */}
       <div style={styles.backgroundImage} />
-      {/* Gradient Overlay */}
       <div style={styles.overlay} />
       
       <div style={styles.card}>
-        {/* Logo */}
         <div style={styles.logoContainer}>
           <Image 
             src="/images/stratavax-logo.svg" 
@@ -90,7 +87,6 @@ export default function Login() {
           <p style={styles.subtitle}>Talent Assessment Portal</p>
         </div>
 
-        {/* Role Toggle */}
         <div style={styles.roleToggle}>
           <button
             onClick={() => setRole('candidate')}
@@ -313,5 +309,3 @@ const styles = {
     textDecoration: 'none'
   }
 };
-
-export default Login;
