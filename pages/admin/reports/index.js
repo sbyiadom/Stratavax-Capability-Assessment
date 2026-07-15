@@ -1,8 +1,8 @@
-// pages/admin/reports/index.js - DIRECT QUERY VERSION
+// pages/admin/reports/index.js - FIXED WITH SERVICE ROLE
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { supabase } from '../../../supabase/client';
+import { createClient } from '@supabase/supabase-js';
 import { useRequireAuth } from '../../../utils/requireAuth';
 import AppLayout from '../../../components/AppLayout';
 
@@ -25,22 +25,36 @@ export default function AdminReportsList() {
     try {
       setLoading(true);
       setError(null);
-      setDebugInfo(null);
 
-      console.log('🔍 Starting fetchReports...');
+      console.log('🔍 Fetching reports with service role...');
 
       // ============================================================
-      // METHOD 1: Try a simple query first
+      // Use service role client for admin queries (bypasses RLS)
       // ============================================================
-      console.log('📊 Fetching from assessment_results...');
-      const { data: results, error: resultsError } = await supabase
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+      if (!supabaseUrl || !serviceRoleKey) {
+        setError('Missing Supabase service role key. Please check environment variables.');
+        setLoading(false);
+        return;
+      }
+
+      const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
+        auth: { persistSession: false }
+      });
+
+      // ============================================================
+      // STEP 1: Get all assessment results
+      // ============================================================
+      const { data: results, error: resultsError } = await serviceClient
         .from('assessment_results')
         .select('*')
         .order('completed_at', { ascending: false });
 
       if (resultsError) {
-        console.error('❌ Supabase error:', resultsError);
-        setError(`Database error: ${resultsError.message}`);
+        console.error('❌ Results error:', resultsError);
+        setError(`Failed to load results: ${resultsError.message}`);
         setLoading(false);
         return;
       }
@@ -55,12 +69,12 @@ export default function AdminReportsList() {
       }
 
       // ============================================================
-      // Get candidate profiles
+      // STEP 2: Get candidate profiles (using service role)
       // ============================================================
       const userIds = results.map(r => r.user_id).filter(Boolean);
-      console.log(`👤 Fetching ${userIds.length} candidates...`);
+      console.log(`👤 Fetching ${userIds.length} candidates with service role...`);
 
-      const { data: candidates, error: candidatesError } = await supabase
+      const { data: candidates, error: candidatesError } = await serviceClient
         .from('candidate_profiles')
         .select('id, full_name, email, university, programme')
         .in('id', userIds);
@@ -68,6 +82,7 @@ export default function AdminReportsList() {
       if (candidatesError) {
         console.error('❌ Candidates error:', candidatesError);
         setError(`Candidates error: ${candidatesError.message}`);
+        // Continue with empty candidates
       }
 
       const candidateMap = {};
@@ -79,7 +94,7 @@ export default function AdminReportsList() {
       }
 
       // ============================================================
-      // Get assessment details
+      // STEP 3: Get assessment details
       // ============================================================
       const assessmentIds = results.map(r => r.assessment_id).filter(Boolean);
       let assessmentMap = {};
@@ -87,7 +102,7 @@ export default function AdminReportsList() {
 
       if (assessmentIds.length > 0) {
         console.log(`📋 Fetching ${assessmentIds.length} assessments...`);
-        const { data: assessments, error: assessmentsError } = await supabase
+        const { data: assessments, error: assessmentsError } = await serviceClient
           .from('assessments')
           .select('id, title, assessment_type_id')
           .in('id', assessmentIds);
@@ -99,7 +114,7 @@ export default function AdminReportsList() {
           
           const typeIds = assessments.map(a => a.assessment_type_id).filter(Boolean);
           if (typeIds.length > 0) {
-            const { data: types, error: typesError } = await supabase
+            const { data: types, error: typesError } = await serviceClient
               .from('assessment_types')
               .select('id, code, name')
               .in('id', typeIds);
@@ -114,13 +129,21 @@ export default function AdminReportsList() {
       }
 
       // ============================================================
-      // Build enriched reports
+      // STEP 4: Build enriched reports
       // ============================================================
       const enrichedReports = results.map((result) => {
         const candidate = candidateMap[result.user_id];
         const assessment = assessmentMap[result.assessment_id] || null;
         const assessmentType = assessment ? typeMap[assessment.assessment_type_id] : null;
         const isNationalService = assessmentType?.code === 'national_service';
+
+        // Try to get category scores
+        let categoryScores = [];
+        if (result.category_scores && Array.isArray(result.category_scores)) {
+          categoryScores = result.category_scores;
+        } else if (result.report_data && result.report_data.categoryScores) {
+          categoryScores = result.report_data.categoryScores;
+        }
 
         return {
           ...result,
@@ -130,11 +153,13 @@ export default function AdminReportsList() {
           candidate_programme: candidate?.programme || '',
           assessment_title: assessment?.title || 'Unknown',
           assessment_type_code: assessmentType?.code || null,
+          assessment_type_name: assessmentType?.name || 'General',
           isNationalService: isNationalService,
           workplace_readiness: result.workplace_readiness || 0,
           intellectual_capability: result.intellectual_capability || 0,
           percentage_score: result.percentage_score || 0,
-          recommendation: result.recommendation || 'N/A'
+          recommendation: result.recommendation || 'N/A',
+          category_scores: categoryScores
         };
       });
 
@@ -269,11 +294,6 @@ export default function AdminReportsList() {
                 <tr>
                   <td colSpan="7" style={styles.emptyState}>
                     {error ? '⚠️ Error loading reports' : 'No assessment reports found.'}
-                    {!error && reports.length === 0 && (
-                      <div style={styles.emptySub}>
-                        <p>Try completing an assessment or check if results are saved.</p>
-                      </div>
-                    )}
                   </td>
                 </tr>
               ) : (
@@ -570,11 +590,6 @@ const styles = {
     textAlign: 'center',
     padding: '40px',
     color: '#94a3b8'
-  },
-  emptySub: {
-    fontSize: '13px',
-    color: '#94a3b8',
-    marginTop: '8px'
   }
 };
 
