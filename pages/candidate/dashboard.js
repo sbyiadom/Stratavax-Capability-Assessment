@@ -147,6 +147,28 @@ export default function CandidateDashboard() {
     return areas[typeCode] || ["General Assessment"];
   };
 
+  // Helper to get short display name for assessment cards
+  const getShortName = (title, isNationalService) => {
+    if (isNationalService) return 'National Service';
+    
+    // Remove common suffixes for shorter display
+    const shortNames = {
+      'General Assessment': 'General',
+      'Leadership Assessment': 'Leadership',
+      'Cognitive Ability Assessment': 'Cognitive',
+      'Technical Competence Assessment': 'Technical',
+      'Personality Assessment': 'Personality',
+      'Performance Assessment': 'Performance',
+      'Behavioral & Soft Skills': 'Behavioral',
+      'Manufacturing Technical Skills': 'Manufacturing',
+      'Cultural & Attitudinal Fit': 'Cultural',
+      'Strategic Leadership Assessment': 'Strategic',
+      'Manufacturing Baseline Assessment': 'Baseline'
+    };
+    
+    return shortNames[title] || title;
+  };
+
   return (
     <div style={styles.pageContainer}>
       <div style={styles.pageBackground} />
@@ -252,6 +274,7 @@ export default function CandidateDashboard() {
                     const colors = getAssessmentColor(assessment.typeCode);
                     const isSelected = selectedAssessment?.id === assessment.id;
                     const isNationalService = assessment.isNationalService || assessment.typeCode === 'national_service';
+                    const displayName = getShortName(assessment.title, isNationalService);
 
                     return (
                       <div 
@@ -270,7 +293,7 @@ export default function CandidateDashboard() {
                         <div style={styles.compactContent}>
                           <div style={styles.compactLeft}>
                             <span style={styles.compactIcon}>{isNationalService ? '🇬🇭' : '📊'}</span>
-                            <span style={styles.compactName}>{assessment.title}</span>
+                            <span style={styles.compactName}>{displayName}</span>
                           </div>
                           <span style={styles.compactArrow}>{isSelected ? '▼' : '▶'}</span>
                         </div>
@@ -500,14 +523,14 @@ const styles = {
   sectionSubtitle: { fontSize: "13px", color: "rgba(255,255,255,0.7)", margin: "2px 0 0 0", textShadow: "1px 1px 2px rgba(0,0,0,0.3)" },
   sectionCount: { fontSize: "13px", color: "rgba(255,255,255,0.7)", padding: "2px 12px", background: "rgba(255,255,255,0.15)", borderRadius: "20px", textShadow: "1px 1px 2px rgba(0,0,0,0.3)" },
   
-  compactGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "10px", marginBottom: "20px" },
+  compactGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "8px", marginBottom: "20px" },
   compactCard: { 
     position: "relative",
-    borderRadius: "10px", 
+    borderRadius: "8px", 
     overflow: "hidden",
     transition: "all 0.3s ease",
     cursor: "pointer",
-    height: "44px"
+    height: "40px"
   },
   compactGradient: { 
     position: "absolute", 
@@ -517,16 +540,16 @@ const styles = {
     height: "3px" 
   },
   compactContent: { 
-    padding: "8px 14px", 
+    padding: "6px 12px", 
     display: "flex", 
     justifyContent: "space-between", 
     alignItems: "center", 
     height: "100%"
   },
-  compactLeft: { display: "flex", alignItems: "center", gap: "8px" },
-  compactIcon: { fontSize: "14px" },
-  compactName: { fontSize: "14px", fontWeight: "500", color: "#0a1929" },
-  compactArrow: { fontSize: "12px", color: "#94a3b8" },
+  compactLeft: { display: "flex", alignItems: "center", gap: "6px" },
+  compactIcon: { fontSize: "13px" },
+  compactName: { fontSize: "13px", fontWeight: "500", color: "#0a1929" },
+  compactArrow: { fontSize: "10px", color: "#94a3b8" },
   
   detailSection: { 
     background: "white", 
@@ -584,7 +607,7 @@ const styles = {
   
   guidelinesSection: { marginTop: "16px", marginBottom: "20px", background: "rgba(255,255,255,0.95)", borderRadius: "12px", padding: "20px", border: "1px solid #e2e8f0" },
   guidelinesTitle: { fontSize: "16px", fontWeight: "600", color: "#0a1929", margin: "0 0 12px 0" },
-  guidelinesGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "12px" },
+  guidelinesGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "10px" },
   guidelineCard: { display: "flex", alignItems: "flex-start", gap: "10px", padding: "10px 12px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #eef2f7" },
   guidelineIcon: { fontSize: "20px", flexShrink: 0 },
   guidelineCardTitle: { fontSize: "13px", fontWeight: "600", color: "#0a1929", margin: "0 0 2px 0" },
