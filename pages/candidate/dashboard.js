@@ -1,4 +1,4 @@
-// pages/candidate/dashboard.js - POLISHED VERSION WITH INTERACTIVE CARDS
+// pages/candidate/dashboard.js - COMPACT CARDS VERSION
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
@@ -56,10 +56,9 @@ export default function CandidateDashboard() {
       setAssessments(data.assessmentCards || []);
       setStats(data.stats || { total: 0, completed: 0, ready: 0, inProgress: 0, blocked: 0 });
       
-      // Auto-select first unblocked or first assessment
+      // Auto-select first assessment
       if (data.assessmentCards && data.assessmentCards.length > 0) {
-        const firstReady = data.assessmentCards.find(a => a.status === 'unblocked' || a.status === 'in_progress');
-        setSelectedAssessment(firstReady || data.assessmentCards[0]);
+        setSelectedAssessment(data.assessmentCards[0]);
       }
       
       setLoading(false);
@@ -159,8 +158,8 @@ export default function CandidateDashboard() {
                 <Image 
                   src="/images/stratavax-logo.png" 
                   alt="Stratavax" 
-                  width={40} 
-                  height={40}
+                  width={36} 
+                  height={36}
                 />
                 <span style={styles.headerTitle}>STRATAVAX</span>
               </div>
@@ -226,12 +225,12 @@ export default function CandidateDashboard() {
             </div>
           )}
 
-          {/* Assessment Cards */}
+          {/* Compact Assessment Cards */}
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
               <div>
                 <h3 style={styles.sectionTitle}>Your Assessments</h3>
-                <p style={styles.sectionSubtitle}>Select an assessment to view details and start</p>
+                <p style={styles.sectionSubtitle}>Click an assessment to view details</p>
               </div>
               <span style={styles.sectionCount}>{assessments.length} available</span>
             </div>
@@ -244,58 +243,33 @@ export default function CandidateDashboard() {
               </div>
             ) : (
               <>
-                {/* Colored Assessment Cards - Grouped at Top */}
-                <div style={styles.assessmentGrid}>
+                {/* Compact Cards - Only Assessment Name */}
+                <div style={styles.compactGrid}>
                   {assessments.map((assessment) => {
-                    const status = getStatusInfo(assessment.status);
                     const colors = getAssessmentColor(assessment.typeCode);
                     const isSelected = selectedAssessment?.id === assessment.id;
                     const isNationalService = assessment.isNationalService || assessment.typeCode === 'national_service';
-                    const canStart = assessment.status === 'unblocked' || assessment.status === 'in_progress';
 
                     return (
                       <div 
                         key={assessment.id} 
                         style={{
-                          ...styles.assessmentCard,
-                          border: isSelected ? `3px solid ${colors.border}` : '1px solid #e2e8f0',
-                          boxShadow: isSelected ? `0 8px 30px rgba(0,0,0,0.15)` : '0 4px 20px rgba(0,0,0,0.1)',
+                          ...styles.compactCard,
+                          border: isSelected ? `2px solid ${colors.border}` : '1px solid #e2e8f0',
+                          background: isSelected ? colors.light : 'white',
+                          boxShadow: isSelected ? `0 4px 12px rgba(0,0,0,0.15)` : '0 2px 8px rgba(0,0,0,0.05)',
                           transform: isSelected ? 'scale(1.02)' : 'scale(1)',
                           cursor: 'pointer'
                         }}
                         onClick={() => handleSelectAssessment(assessment)}
                       >
-                        <div style={{ ...styles.cardGradient, background: colors.gradient }} />
-                        
-                        <div style={styles.cardContent}>
-                          <div style={styles.cardHeader}>
-                            <div style={styles.cardBadge}>
-                              <span style={{ ...styles.statusDot, background: status.color }} />
-                              <span style={{ ...styles.statusLabel, color: status.color }}>{status.icon} {status.label}</span>
-                            </div>
-                            {isNationalService && (
-                              <span style={styles.nsBadge}>🇬🇭 National Service</span>
-                            )}
+                        <div style={{ ...styles.compactGradient, background: colors.gradient }} />
+                        <div style={styles.compactContent}>
+                          <div style={styles.compactLeft}>
+                            <span style={styles.compactIcon}>{isNationalService ? '🇬🇭' : '📊'}</span>
+                            <span style={styles.compactName}>{assessment.title}</span>
                           </div>
-
-                          <h3 style={styles.cardTitle}>{assessment.title}</h3>
-                          <p style={styles.cardDescription}>{assessment.description}</p>
-
-                          <div style={styles.cardMeta}>
-                            <span style={styles.metaItem}>
-                              <span style={styles.metaIcon}>⏱️</span> {assessment.timeLimitMinutes || 180} min
-                            </span>
-                            <span style={styles.metaItem}>
-                              <span style={styles.metaIcon}>📋</span> {assessment.questionCount || 100} questions
-                            </span>
-                            <span style={styles.metaItem}>
-                              <span style={styles.metaIcon}>📂</span> {assessment.typeName}
-                            </span>
-                          </div>
-
-                          <div style={styles.cardFooter}>
-                            <span style={styles.selectHint}>Click to view details →</span>
-                          </div>
+                          <span style={styles.compactArrow}>{isSelected ? '▼' : '▶'}</span>
                         </div>
                       </div>
                     );
@@ -307,33 +281,46 @@ export default function CandidateDashboard() {
                   <div style={styles.detailSection}>
                     <div style={styles.detailHeader}>
                       <div style={styles.detailHeaderLeft}>
-                        <h3 style={styles.detailTitle}>📋 {selectedAssessment.title}</h3>
+                        <h3 style={styles.detailTitle}>{selectedAssessment.title}</h3>
                         <span style={styles.detailType}>{selectedAssessment.typeName}</span>
                       </div>
                       <div style={styles.detailActions}>
-                        {(selectedAssessment.status === 'unblocked' || selectedAssessment.status === 'in_progress') && (
+                        {selectedAssessment.status === 'unblocked' || selectedAssessment.status === 'in_progress' ? (
                           <button
                             onClick={() => handleStartAssessment(selectedAssessment.id)}
                             style={styles.detailStartButton}
                           >
                             {selectedAssessment.status === 'in_progress' ? 'Continue Assessment →' : 'Start Assessment →'}
                           </button>
-                        )}
-                        {selectedAssessment.status === 'blocked' && (
+                        ) : selectedAssessment.status === 'completed' ? (
+                          <span style={styles.detailCompleted}>✅ Completed</span>
+                        ) : (
                           <span style={styles.detailBlocked}>
                             🔒 {selectedAssessment.isNationalService ? 'Contact support' : 'Contact supervisor to unlock'}
                           </span>
                         )}
-                        {selectedAssessment.status === 'completed' && (
-                          <span style={styles.detailCompleted}>✅ Completed</span>
-                        )}
                       </div>
                     </div>
+
+                    {/* Status and Description */}
+                    <div style={styles.detailStatusRow}>
+                      {(() => {
+                        const status = getStatusInfo(selectedAssessment.status);
+                        return (
+                          <span style={{ ...styles.detailStatusBadge, background: status.bg, color: status.color }}>
+                            {status.icon} {status.label}
+                          </span>
+                        );
+                      })()}
+                      {selectedAssessment.isNationalService && (
+                        <span style={styles.detailNsBadge}>🇬🇭 National Service (Always Available)</span>
+                      )}
+                    </div>
+                    <p style={styles.detailDescription}>{selectedAssessment.description}</p>
 
                     {/* Assessment Areas */}
                     <div style={styles.detailAreas}>
                       <h4 style={styles.detailAreasTitle}>Assessment Areas</h4>
-                      <p style={styles.detailAreasSubtitle}>The following areas will be assessed in this assessment</p>
                       <div style={styles.detailAreasGrid}>
                         {getDefaultAreas(selectedAssessment.typeCode).map((area, index) => (
                           <div key={index} style={styles.detailAreaItem}>
@@ -377,7 +364,7 @@ export default function CandidateDashboard() {
                 <div style={styles.guidelineIcon}>⏱️</div>
                 <div>
                   <h4 style={styles.guidelineCardTitle}>Time Limit</h4>
-                  <p style={styles.guidelineCardText}>All assessments have a 3-hour time limit. The timer starts when you begin the assessment.</p>
+                  <p style={styles.guidelineCardText}>All assessments have a 3-hour time limit. The timer starts when you begin.</p>
                 </div>
               </div>
               <div style={styles.guidelineCard}>
@@ -391,28 +378,28 @@ export default function CandidateDashboard() {
                 <div style={styles.guidelineIcon}>🔓</div>
                 <div>
                   <h4 style={styles.guidelineCardTitle}>Supervisor Approval</h4>
-                  <p style={styles.guidelineCardText}>Most assessments require supervisor approval. The National Service assessment is always available.</p>
+                  <p style={styles.guidelineCardText}>Most assessments require supervisor approval. National Service is always available.</p>
                 </div>
               </div>
               <div style={styles.guidelineCard}>
                 <div style={styles.guidelineIcon}>💾</div>
                 <div>
                   <h4 style={styles.guidelineCardTitle}>Auto-Save</h4>
-                  <p style={styles.guidelineCardText}>Your answers are automatically saved. You can resume in-progress assessments anytime.</p>
+                  <p style={styles.guidelineCardText}>Your answers are automatically saved. Resume in-progress assessments anytime.</p>
                 </div>
               </div>
               <div style={styles.guidelineCard}>
                 <div style={styles.guidelineIcon}>🔒</div>
                 <div>
                   <h4 style={styles.guidelineCardTitle}>Data Privacy</h4>
-                  <p style={styles.guidelineCardText}>Your assessment data is encrypted and protected. Results are only shared with authorized supervisors.</p>
+                  <p style={styles.guidelineCardText}>Your assessment data is encrypted. Results are only shared with authorized supervisors.</p>
                 </div>
               </div>
               <div style={styles.guidelineCard}>
                 <div style={styles.guidelineIcon}>⚖️</div>
                 <div>
                   <h4 style={styles.guidelineCardTitle}>Fair Assessment</h4>
-                  <p style={styles.guidelineCardText}>All candidates are assessed using the same standardized criteria to ensure fairness.</p>
+                  <p style={styles.guidelineCardText}>All candidates are assessed using the same standardized criteria.</p>
                 </div>
               </div>
             </div>
@@ -473,151 +460,144 @@ const styles = {
   loadingSpinner: { width: "50px", height: "50px", border: "4px solid rgba(255,255,255,0.2)", borderTop: "4px solid white", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 20px" },
   loadingText: { fontSize: "16px", opacity: 0.9 },
   
-  header: { padding: "16px 24px", background: "rgba(255,255,255,0.1)", backdropFilter: "blur(10px)", borderBottom: "1px solid rgba(255,255,255,0.2)" },
+  header: { padding: "12px 24px", background: "rgba(255,255,255,0.1)", backdropFilter: "blur(10px)", borderBottom: "1px solid rgba(255,255,255,0.2)" },
   headerContent: { maxWidth: "1200px", margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" },
   headerLeft: { display: "flex", alignItems: "center", gap: "12px" },
   logoWrapper: { display: "flex", alignItems: "center", gap: "8px" },
-  headerTitle: { fontSize: "20px", fontWeight: "700", color: "white", letterSpacing: "1px", textShadow: "2px 2px 4px rgba(0,0,0,0.3)" },
-  headerDivider: { color: "rgba(255,255,255,0.7)", fontSize: "20px", fontWeight: "300" },
-  headerSubtitle: { fontSize: "16px", color: "rgba(255,255,255,0.9)", fontWeight: "400", textShadow: "1px 1px 2px rgba(0,0,0,0.3)" },
-  headerRight: { display: "flex", alignItems: "center", gap: "12px" },
-  profileButton: { padding: "8px 20px", background: "rgba(255,255,255,0.2)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "30px", cursor: "pointer", fontSize: "14px", fontWeight: "500", backdropFilter: "blur(10px)", textDecoration: "none", display: "inline-block" },
-  logoutButton: { padding: "8px 20px", background: "rgba(255,255,255,0.2)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "30px", cursor: "pointer", fontSize: "14px", fontWeight: "500", backdropFilter: "blur(10px)" },
+  headerTitle: { fontSize: "18px", fontWeight: "700", color: "white", letterSpacing: "1px", textShadow: "2px 2px 4px rgba(0,0,0,0.3)" },
+  headerDivider: { color: "rgba(255,255,255,0.7)", fontSize: "18px", fontWeight: "300" },
+  headerSubtitle: { fontSize: "15px", color: "rgba(255,255,255,0.9)", fontWeight: "400", textShadow: "1px 1px 2px rgba(0,0,0,0.3)" },
+  headerRight: { display: "flex", alignItems: "center", gap: "10px" },
+  profileButton: { padding: "6px 16px", background: "rgba(255,255,255,0.2)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "30px", cursor: "pointer", fontSize: "13px", fontWeight: "500", backdropFilter: "blur(10px)", textDecoration: "none", display: "inline-block" },
+  logoutButton: { padding: "6px 16px", background: "rgba(255,255,255,0.2)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "30px", cursor: "pointer", fontSize: "13px", fontWeight: "500", backdropFilter: "blur(10px)" },
   
-  welcomeSection: { maxWidth: "1200px", margin: "32px auto 16px", padding: "0 20px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", flexWrap: "wrap" },
+  welcomeSection: { maxWidth: "1200px", margin: "24px auto 12px", padding: "0 20px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", flexWrap: "wrap" },
   welcomeContent: { flex: 1 },
-  welcomeTitle: { fontSize: "24px", fontWeight: "600", margin: "0 0 4px 0", color: "white", textShadow: "2px 2px 4px rgba(0,0,0,0.3)" },
+  welcomeTitle: { fontSize: "22px", fontWeight: "600", margin: "0 0 4px 0", color: "white", textShadow: "2px 2px 4px rgba(0,0,0,0.3)" },
   welcomeName: { color: "#ffd700" },
   welcomeText: { fontSize: "14px", color: "rgba(255,255,255,0.9)", margin: 0, textShadow: "1px 1px 2px rgba(0,0,0,0.3)" },
-  progressBadge: { background: "rgba(255,255,255,0.15)", padding: "8px 20px", borderRadius: "30px", display: "flex", alignItems: "baseline", gap: "4px", border: "1px solid rgba(255,255,255,0.3)", backdropFilter: "blur(10px)" },
-  progressCount: { fontSize: "20px", fontWeight: "700", color: "white" },
-  progressTotal: { fontSize: "14px", color: "rgba(255,255,255,0.7)" },
-  progressLabel: { fontSize: "13px", color: "rgba(255,255,255,0.7)", marginLeft: "8px" },
+  progressBadge: { background: "rgba(255,255,255,0.15)", padding: "6px 16px", borderRadius: "30px", display: "flex", alignItems: "baseline", gap: "4px", border: "1px solid rgba(255,255,255,0.3)", backdropFilter: "blur(10px)" },
+  progressCount: { fontSize: "18px", fontWeight: "700", color: "white" },
+  progressTotal: { fontSize: "13px", color: "rgba(255,255,255,0.7)" },
+  progressLabel: { fontSize: "12px", color: "rgba(255,255,255,0.7)", marginLeft: "8px" },
   
-  statsBar: { maxWidth: "1200px", margin: "0 auto 24px", padding: "0 20px" },
-  statsGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" },
-  statCard: { padding: "16px", borderRadius: "12px", textAlign: "center", border: "2px solid", background: "white" },
-  statNumber: { fontSize: "28px", fontWeight: "700", color: "#0a1929" },
-  statLabel: { fontSize: "13px", color: "#475569", marginTop: "4px" },
+  statsBar: { maxWidth: "1200px", margin: "0 auto 20px", padding: "0 20px" },
+  statsGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px" },
+  statCard: { padding: "12px", borderRadius: "10px", textAlign: "center", border: "2px solid", background: "white" },
+  statNumber: { fontSize: "24px", fontWeight: "700", color: "#0a1929" },
+  statLabel: { fontSize: "12px", color: "#475569", marginTop: "2px" },
   
-  mainContent: { maxWidth: "1200px", margin: "0 auto", padding: "0 20px 40px", flex: 1 },
-  errorBox: { marginBottom: "16px", padding: "12px 16px", borderRadius: "10px", background: "#fff5f5", border: "1px solid #fecaca", color: "#b42318", display: "flex", alignItems: "center", justifyContent: "space-between" },
+  mainContent: { maxWidth: "1200px", margin: "0 auto", padding: "0 20px 30px", flex: 1 },
+  errorBox: { marginBottom: "16px", padding: "10px 16px", borderRadius: "10px", background: "#fff5f5", border: "1px solid #fecaca", color: "#b42318", display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "14px" },
   retryButton: { padding: "4px 12px", background: "#b42318", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "12px" },
   
-  section: { marginBottom: "30px" },
-  sectionHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px", flexWrap: "wrap", gap: "8px" },
-  sectionTitle: { fontSize: "20px", fontWeight: "600", color: "white", margin: 0, textShadow: "2px 2px 4px rgba(0,0,0,0.3)" },
-  sectionSubtitle: { fontSize: "14px", color: "rgba(255,255,255,0.7)", margin: "4px 0 0 0", textShadow: "1px 1px 2px rgba(0,0,0,0.3)" },
-  sectionCount: { fontSize: "14px", color: "rgba(255,255,255,0.7)", padding: "4px 12px", background: "rgba(255,255,255,0.15)", borderRadius: "20px", textShadow: "1px 1px 2px rgba(0,0,0,0.3)" },
+  section: { marginBottom: "24px" },
+  sectionHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px", flexWrap: "wrap", gap: "8px" },
+  sectionTitle: { fontSize: "18px", fontWeight: "600", color: "white", margin: 0, textShadow: "2px 2px 4px rgba(0,0,0,0.3)" },
+  sectionSubtitle: { fontSize: "13px", color: "rgba(255,255,255,0.7)", margin: "2px 0 0 0", textShadow: "1px 1px 2px rgba(0,0,0,0.3)" },
+  sectionCount: { fontSize: "13px", color: "rgba(255,255,255,0.7)", padding: "2px 12px", background: "rgba(255,255,255,0.15)", borderRadius: "20px", textShadow: "1px 1px 2px rgba(0,0,0,0.3)" },
   
-  assessmentGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px", marginBottom: "24px" },
-  assessmentCard: { 
+  compactGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "10px", marginBottom: "20px" },
+  compactCard: { 
     position: "relative",
-    borderRadius: "16px", 
+    borderRadius: "10px", 
     overflow: "hidden",
-    boxShadow: "0 4px 20px rgba(0,0,0,0.1)", 
     transition: "all 0.3s ease",
-    background: "white",
     cursor: "pointer",
-    height: "100%",
-    minHeight: "200px"
+    height: "44px"
   },
-  cardGradient: { 
+  compactGradient: { 
     position: "absolute", 
     top: 0, 
     left: 0, 
     right: 0, 
-    height: "4px" 
+    height: "3px" 
   },
-  cardContent: { 
-    padding: "20px", 
+  compactContent: { 
+    padding: "8px 14px", 
     display: "flex", 
-    flexDirection: "column", 
-    height: "100%",
-    paddingTop: "24px"
+    justifyContent: "space-between", 
+    alignItems: "center", 
+    height: "100%"
   },
-  cardHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "8px" },
-  cardBadge: { display: "flex", alignItems: "center", gap: "6px" },
-  statusDot: { width: "8px", height: "8px", borderRadius: "50%", display: "inline-block" },
-  statusLabel: { fontSize: "12px", fontWeight: "600" },
-  nsBadge: { fontSize: "10px", fontWeight: "600", padding: "2px 8px", background: "#dbeafe", color: "#1e40af", borderRadius: "10px" },
-  cardTitle: { fontSize: "16px", fontWeight: "600", color: "#0a1929", margin: "0 0 6px 0" },
-  cardDescription: { fontSize: "13px", color: "#64748b", margin: "0 0 10px 0", lineHeight: "1.4", flex: 1 },
-  cardMeta: { display: "flex", gap: "12px", fontSize: "12px", color: "#94a3b8", flexWrap: "wrap", marginBottom: "10px" },
-  metaItem: { display: "flex", alignItems: "center", gap: "4px" },
-  metaIcon: { fontSize: "14px" },
-  cardFooter: { display: "flex", justifyContent: "flex-end", borderTop: "1px solid #f1f5f9", paddingTop: "10px", marginTop: "auto" },
-  selectHint: { fontSize: "12px", color: "#94a3b8", fontStyle: "italic" },
+  compactLeft: { display: "flex", alignItems: "center", gap: "8px" },
+  compactIcon: { fontSize: "14px" },
+  compactName: { fontSize: "14px", fontWeight: "500", color: "#0a1929" },
+  compactArrow: { fontSize: "12px", color: "#94a3b8" },
   
   detailSection: { 
     background: "white", 
-    borderRadius: "16px", 
-    padding: "24px", 
+    borderRadius: "12px", 
+    padding: "20px 24px", 
     boxShadow: "0 8px 30px rgba(0,0,0,0.12)",
     border: "2px solid #1a237e",
-    marginTop: "8px"
+    marginTop: "4px"
   },
   detailHeader: { 
     display: "flex", 
     justifyContent: "space-between", 
     alignItems: "center", 
     flexWrap: "wrap", 
-    gap: "12px",
-    marginBottom: "16px",
-    paddingBottom: "16px",
+    gap: "10px",
+    marginBottom: "10px",
+    paddingBottom: "10px",
     borderBottom: "2px solid #f1f5f9"
   },
-  detailHeaderLeft: { display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" },
-  detailTitle: { fontSize: "20px", fontWeight: "600", color: "#0a1929", margin: 0 },
-  detailType: { fontSize: "13px", color: "#64748b", padding: "2px 10px", background: "#f1f5f9", borderRadius: "12px" },
-  detailActions: { display: "flex", alignItems: "center", gap: "12px" },
-  detailStartButton: { padding: "10px 24px", background: "#1a237e", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: "500", fontFamily: "inherit", transition: "background 0.2s" },
-  detailBlocked: { fontSize: "14px", color: "#94a3b8", fontWeight: "500" },
-  detailCompleted: { fontSize: "14px", color: "#16a34a", fontWeight: "600" },
+  detailHeaderLeft: { display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" },
+  detailTitle: { fontSize: "18px", fontWeight: "600", color: "#0a1929", margin: 0 },
+  detailType: { fontSize: "12px", color: "#64748b", padding: "2px 10px", background: "#f1f5f9", borderRadius: "10px" },
+  detailActions: { display: "flex", alignItems: "center", gap: "10px" },
+  detailStartButton: { padding: "8px 20px", background: "#1a237e", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: "500", fontFamily: "inherit", transition: "background 0.2s" },
+  detailBlocked: { fontSize: "13px", color: "#94a3b8", fontWeight: "500" },
+  detailCompleted: { fontSize: "13px", color: "#16a34a", fontWeight: "600" },
   
-  detailAreas: { marginBottom: "16px" },
-  detailAreasTitle: { fontSize: "16px", fontWeight: "600", color: "#0a1929", margin: "0 0 4px 0" },
-  detailAreasSubtitle: { fontSize: "13px", color: "#64748b", margin: "0 0 12px 0" },
-  detailAreasGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "8px" },
-  detailAreaItem: { display: "flex", alignItems: "center", gap: "8px", padding: "6px 12px", background: "#f8fafc", borderRadius: "6px" },
-  detailAreaDot: { color: "#1a237e", fontSize: "18px", fontWeight: "bold" },
+  detailStatusRow: { display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px", flexWrap: "wrap" },
+  detailStatusBadge: { padding: "2px 12px", borderRadius: "12px", fontSize: "12px", fontWeight: "600" },
+  detailNsBadge: { fontSize: "11px", fontWeight: "600", padding: "2px 10px", background: "#dbeafe", color: "#1e40af", borderRadius: "12px" },
+  detailDescription: { fontSize: "14px", color: "#64748b", margin: "0 0 12px 0", lineHeight: "1.5" },
+  
+  detailAreas: { marginBottom: "14px" },
+  detailAreasTitle: { fontSize: "14px", fontWeight: "600", color: "#0a1929", margin: "0 0 8px 0" },
+  detailAreasGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "6px" },
+  detailAreaItem: { display: "flex", alignItems: "center", gap: "6px", padding: "4px 10px", background: "#f8fafc", borderRadius: "6px" },
+  detailAreaDot: { color: "#1a237e", fontSize: "16px", fontWeight: "bold" },
   detailAreaText: { fontSize: "13px", color: "#334155" },
   
   detailInfo: { 
     display: "grid", 
-    gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", 
-    gap: "12px",
-    paddingTop: "16px",
+    gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", 
+    gap: "10px",
+    paddingTop: "12px",
     borderTop: "1px solid #f1f5f9"
   },
-  detailInfoItem: { display: "flex", flexDirection: "column", gap: "2px" },
-  detailInfoLabel: { fontSize: "12px", color: "#94a3b8" },
-  detailInfoValue: { fontSize: "14px", fontWeight: "500", color: "#0a1929" },
+  detailInfoItem: { display: "flex", flexDirection: "column", gap: "1px" },
+  detailInfoLabel: { fontSize: "11px", color: "#94a3b8" },
+  detailInfoValue: { fontSize: "13px", fontWeight: "500", color: "#0a1929" },
   
-  emptyState: { textAlign: "center", padding: "60px 40px", background: "rgba(255,255,255,0.95)", borderRadius: "16px", border: "1px solid #e2e8f0" },
-  emptyIcon: { fontSize: "48px", marginBottom: "16px" },
-  emptyTitle: { fontSize: "18px", fontWeight: "600", color: "#0a1929", margin: "0 0 8px 0" },
-  emptySub: { fontSize: "14px", color: "#94a3b8", margin: 0 },
+  emptyState: { textAlign: "center", padding: "40px", background: "rgba(255,255,255,0.95)", borderRadius: "12px", border: "1px solid #e2e8f0" },
+  emptyIcon: { fontSize: "40px", marginBottom: "12px" },
+  emptyTitle: { fontSize: "16px", fontWeight: "600", color: "#0a1929", margin: "0 0 6px 0" },
+  emptySub: { fontSize: "13px", color: "#94a3b8", margin: 0 },
   
-  guidelinesSection: { marginTop: "20px", marginBottom: "24px", background: "rgba(255,255,255,0.95)", borderRadius: "16px", padding: "24px", border: "1px solid #e2e8f0" },
-  guidelinesTitle: { fontSize: "18px", fontWeight: "600", color: "#0a1929", margin: "0 0 16px 0" },
-  guidelinesGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px" },
-  guidelineCard: { display: "flex", alignItems: "flex-start", gap: "12px", padding: "12px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #eef2f7" },
-  guidelineIcon: { fontSize: "24px", flexShrink: 0 },
-  guidelineCardTitle: { fontSize: "14px", fontWeight: "600", color: "#0a1929", margin: "0 0 4px 0" },
-  guidelineCardText: { fontSize: "13px", color: "#64748b", margin: 0, lineHeight: "1.4" },
+  guidelinesSection: { marginTop: "16px", marginBottom: "20px", background: "rgba(255,255,255,0.95)", borderRadius: "12px", padding: "20px", border: "1px solid #e2e8f0" },
+  guidelinesTitle: { fontSize: "16px", fontWeight: "600", color: "#0a1929", margin: "0 0 12px 0" },
+  guidelinesGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "12px" },
+  guidelineCard: { display: "flex", alignItems: "flex-start", gap: "10px", padding: "10px 12px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #eef2f7" },
+  guidelineIcon: { fontSize: "20px", flexShrink: 0 },
+  guidelineCardTitle: { fontSize: "13px", fontWeight: "600", color: "#0a1929", margin: "0 0 2px 0" },
+  guidelineCardText: { fontSize: "12px", color: "#64748b", margin: 0, lineHeight: "1.4" },
   
-  infoNote: { padding: "12px 20px", background: "rgba(227,242,253,0.95)", borderRadius: "10px", display: "flex", alignItems: "center", gap: "10px", color: "#1565c0", fontSize: "14px", border: "1px solid #90caf9" },
-  infoIcon: { fontSize: "18px" },
+  infoNote: { padding: "10px 16px", background: "rgba(227,242,253,0.95)", borderRadius: "8px", display: "flex", alignItems: "center", gap: "8px", color: "#1565c0", fontSize: "13px", border: "1px solid #90caf9" },
+  infoIcon: { fontSize: "16px" },
   
-  footer: { marginTop: "auto", padding: "16px 24px", background: "rgba(10,22,40,0.9)", backdropFilter: "blur(10px)", borderTop: "1px solid rgba(255,255,255,0.1)" },
-  footerContent: { maxWidth: "1200px", margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", flexWrap: "wrap" },
+  footer: { marginTop: "auto", padding: "12px 24px", background: "rgba(10,22,40,0.9)", backdropFilter: "blur(10px)", borderTop: "1px solid rgba(255,255,255,0.1)" },
+  footerContent: { maxWidth: "1200px", margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" },
   footerLeft: { display: "flex", alignItems: "center", gap: "8px" },
-  footerBrand: { fontSize: "14px", fontWeight: "600", color: "white" },
+  footerBrand: { fontSize: "13px", fontWeight: "600", color: "white" },
   footerDivider: { color: "rgba(255,255,255,0.3)" },
-  footerText: { fontSize: "13px", color: "rgba(255,255,255,0.6)" },
+  footerText: { fontSize: "12px", color: "rgba(255,255,255,0.6)" },
   footerCenter: { display: "flex", alignItems: "center", gap: "8px" },
-  footerRight: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" },
-  footerLink: { fontSize: "13px", color: "rgba(255,255,255,0.6)", textDecoration: "none", transition: "color 0.2s" },
-  footerDot: { fontSize: "13px", color: "rgba(255,255,255,0.3)" }
+  footerRight: { display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" },
+  footerLink: { fontSize: "12px", color: "rgba(255,255,255,0.6)", textDecoration: "none", transition: "color 0.2s" },
+  footerDot: { fontSize: "12px", color: "rgba(255,255,255,0.3)" }
 };
