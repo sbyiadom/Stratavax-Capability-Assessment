@@ -1,11 +1,11 @@
-// pages/admin/reports/[resultId].js - FIXED with correct report rendering
+// pages/admin/reports/[resultId].js - FIXED with both report types
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
 import NationalServiceReport from '../../../components/reports/NationalServiceReport';
-import StratavaxReport from '../../../components/reports/StratavaxReport';
+import StratavaxReport from '../../../components/reports/StratavaxReport'; // <-- ADD THIS IMPORT
 import AppLayout from '../../../components/AppLayout';
 
 export default function AdminReportView() {
@@ -16,7 +16,7 @@ export default function AdminReportView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reportData, setReportData] = useState(null);
-  const [reportType, setReportType] = useState(null); // 'national_service' or 'stratavax'
+  const [isNationalService, setIsNationalService] = useState(false);
 
   useEffect(() => {
     if (!resultId || !session) return;
@@ -25,7 +25,6 @@ export default function AdminReportView() {
       try {
         setLoading(true);
 
-        // Check if user is admin
         const userRole = session.user?.user_metadata?.role || session.user?.role;
         if (userRole !== 'admin') {
           setError('You do not have permission to view this report.');
@@ -33,7 +32,6 @@ export default function AdminReportView() {
           return;
         }
 
-        // Fetch the report directly from the API
         const response = await fetch(`/api/assessment-report/${resultId}`);
         const data = await response.json();
 
@@ -44,10 +42,9 @@ export default function AdminReportView() {
         console.log('[Admin Report] Full data received:', data);
 
         // ============================================================
-        // DETERMINE REPORT TYPE
+        // DETERMINE IF NATIONAL SERVICE
         // ============================================================
-        // Check if this is a National Service assessment
-        const isNationalService = 
+        const isNS = 
           data.isNationalService === true ||
           data.assessmentTypeCode === 'national_service' ||
           (data.result?.report_data && data.result.report_data.dimensions && 
@@ -57,10 +54,10 @@ export default function AdminReportView() {
           (data.result?.workplace_readiness !== undefined && data.result?.workplace_readiness !== null) ||
           (data.report?.reportType === 'national_service');
 
-        console.log('[Admin Report] Report type - National Service:', isNationalService);
+        console.log('[Admin Report] Is National Service:', isNS);
 
         // ============================================================
-        // BUILD THE REPORT OBJECT
+        // BUILD REPORT OBJECT
         // ============================================================
         let report = data.report || {};
         let result = data.result || {};
@@ -70,12 +67,94 @@ export default function AdminReportView() {
           report = result.report_data;
         }
 
-        // For Stratavax reports, ensure we have all the data
-        if (!isNationalService) {
-          // Get category scores from result
+        // ============================================================
+        // FOR NATIONAL SERVICE: Build with sub-categories
+        // ============================================================
+        if (isNS) {
+          let allCategoryScores = [];
+
+          // Get category scores from various sources
+          if (data.workplaceSubCategories && data.workplaceSubCategories.length > 0) {
+            report.workplaceSubCategories = data.workplaceSubCategories;
+            allCategoryScores = [...allCategoryScores, ...data.workplaceSubCategories];
+          }
+
+          if (data.intellectualSubCategories && data.intellectualSubCategories.length > 0) {
+            report.intellectualSubCategories = data.intellectualSubCategories;
+            allCategoryScores = [...allCategoryScores, ...data.intellectualSubCategories];
+          }
+
+          if (result.workplaceSubCategories && result.workplaceSubCategories.length > 0) {
+            report.workplaceSubCategories = result.workplaceSubCategories;
+            allCategoryScores = [...allCategoryScores, ...result.workplaceSubCategories];
+          }
+
+          if (result.intellectualSubCategories && result.intellectualSubCategories.length > 0) {
+            report.intellectualSubCategories = result.intellectualSubCategories;
+            allCategoryScores = [...allCategoryScores, ...result.intellectualSubCategories];
+          }
+
+          if (report.categoryScores && Array.isArray(report.categoryScores) && report.categoryScores.length > 0) {
+            allCategoryScores = [...allCategoryScores, ...report.categoryScores];
+          }
+
+          // Fallback: split from categoryScores
+          if (allCategoryScores.length === 0 && data.categoryScores && data.categoryScores.length > 0) {
+            const workplaceNames = ['Safety', 'Risk', 'Technical', 'Communication', 'Teamwork', 'Ownership', 'Integrity', 'Workplace', 'Ethics', 'Professional', 'Readiness'];
+            const intellectualNames = ['Numerical', 'Logical', 'Reasoning', 'Measurement', 'Engineering', 'Spatial', 'Problem', 'Troubleshooting', 'Analysis', 'Critical', 'Analytical', 'Decision'];
+
+            const workplace = [];
+            const intellectual = [];
+
+            data.categoryScores.forEach(cat => {
+              const name = (cat.category || cat.name || '').toLowerCase();
+              const isWorkplace = workplaceNames.some(n => name.includes(n.toLowerCase()));
+              const isIntellectual = intellectualNames.some(n => name.includes(n.toLowerCase()));
+
+              if (isWorkplace) {
+                workplace.push(cat);
+              } else if (isIntellectual) {
+                intellectual.push(cat);
+              } else {
+                // Default: if it has 'capability' or 'reasoning' put in intellectual
+                if (name.includes('capability') || name.includes('reasoning')) {
+                  intellectual.push(cat);
+                } else {
+                  workplace.push(cat);
+                }
+              }
+            });
+
+            if (workplace.length > 0) report.workplaceSubCategories = workplace;
+            if (intellectual.length > 0) report.intellectualSubCategories = intellectual;
+            allCategoryScores = [...workplace, ...intellectual];
+          }
+
+          if (allCategoryScores.length > 0) {
+            report.category_scores = allCategoryScores;
+          }
+
+          if (!report.dimensions) {
+            report.dimensions = {
+              workplaceReadiness: result.workplace_readiness || 0,
+              intellectualCapability: result.intellectual_capability || 0,
+              overallScore: result.percentage_score || 0
+            };
+          }
+
+          if (!report.recommendation) {
+            report.recommendation = {
+              level: result.recommendation || 'Not Recommended'
+            };
+          }
+        }
+
+        // ============================================================
+        // FOR STRATAVAX: Build with category scores, strengths, weaknesses
+        // ============================================================
+        if (!isNS) {
+          // Get category scores
           let categoryScores = result.categoryScores || result.category_scores || [];
-          
-          // Try to get from report_data if not found
           if (categoryScores.length === 0 && report.categoryScores) {
             categoryScores = report.categoryScores;
           }
@@ -88,7 +167,7 @@ export default function AdminReportView() {
           let weaknesses = result.weaknesses || report.weaknesses || report.developmentAreas || [];
           let recommendations = result.recommendations || report.recommendations || [];
 
-          // Build the Stratavax report data
+          // Build the report
           report = {
             ...report,
             categoryScores: categoryScores,
@@ -114,85 +193,24 @@ export default function AdminReportView() {
           };
         }
 
-        // ============================================================
-        // For National Service, ensure sub-categories are included
-        // ============================================================
-        if (isNationalService) {
-          // Get category scores from various sources
-          let categoryScores = [];
-          
-          if (result.category_scores && Array.isArray(result.category_scores)) {
-            categoryScores = result.category_scores;
-          } else if (report.category_scores && Array.isArray(report.category_scores)) {
-            categoryScores = report.category_scores;
-          } else if (data.categoryScores && Array.isArray(data.categoryScores)) {
-            categoryScores = data.categoryScores;
-          } else if (result.report_data?.categoryScores) {
-            categoryScores = result.report_data.categoryScores;
-          }
-
-          // Get workplace and intellectual sub-categories
-          let workplaceSubCategories = report.workplaceSubCategories || data.workplaceSubCategories || [];
-          let intellectualSubCategories = report.intellectualSubCategories || data.intellectualSubCategories || [];
-
-          // If we have category scores but no sub-categories, try to split them
-          if (categoryScores.length > 0 && workplaceSubCategories.length === 0 && intellectualSubCategories.length === 0) {
-            const workplaceKeywords = ['safety', 'risk', 'technical', 'communication', 'teamwork', 'ownership', 'integrity', 'workplace', 'ethics', 'professional', 'readiness'];
-            const intellectualKeywords = ['numerical', 'logical', 'reasoning', 'measurement', 'engineering', 'spatial', 'problem', 'troubleshooting', 'analysis', 'critical', 'analytical', 'decision'];
-
-            categoryScores.forEach(cat => {
-              const name = (cat.category || cat.name || '').toLowerCase();
-              const isWorkplace = workplaceKeywords.some(k => name.includes(k));
-              const isIntellectual = intellectualKeywords.some(k => name.includes(k));
-
-              if (isWorkplace) {
-                workplaceSubCategories.push(cat);
-              } else if (isIntellectual) {
-                intellectualSubCategories.push(cat);
-              }
-            });
-          }
-
-          // Build the National Service report
-          report = {
-            ...report,
-            dimensions: {
-              workplaceReadiness: result.workplace_readiness || report.dimensions?.workplaceReadiness || 0,
-              intellectualCapability: result.intellectual_capability || report.dimensions?.intellectualCapability || 0,
-              overallScore: result.percentage_score || report.dimensions?.overallScore || 0
-            },
-            recommendation: {
-              level: result.recommendation || report.recommendation?.level || 'Not Recommended'
-            },
-            workplaceSubCategories: workplaceSubCategories,
-            intellectualSubCategories: intellectualSubCategories,
-            category_scores: categoryScores,
-            categoryBreakdown: categoryScores,
-            candidateInfo: {
-              fullName: result.candidate_profiles?.full_name || report.candidateInfo?.fullName || 'Candidate',
-              university: result.candidate_profiles?.university || report.candidateInfo?.university || '',
-              programme: result.candidate_profiles?.programme || report.candidateInfo?.programme || '',
-              graduationYear: result.candidate_profiles?.graduation_year || report.candidateInfo?.graduationYear || '',
-              preferredDepartment: result.candidate_profiles?.preferred_department || report.candidateInfo?.preferredDepartment || '',
-              assessmentDate: result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
-            },
-            statistics: {
-              totalQuestions: result.total_questions || report.statistics?.totalQuestions || 0,
-              totalAnswered: result.answered_questions || report.statistics?.totalAnswered || 0
-            },
-            reportType: 'national_service'
+        // Ensure candidateInfo exists for both
+        if (!report.candidateInfo && result.candidate_profiles) {
+          report.candidateInfo = {
+            fullName: result.candidate_profiles.full_name || 'Candidate',
+            university: result.candidate_profiles.university || '',
+            programme: result.candidate_profiles.programme || '',
+            graduationYear: result.candidate_profiles.graduation_year || '',
+            preferredDepartment: result.candidate_profiles.preferred_department || '',
+            assessmentDate: result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
           };
         }
-
-        console.log('[Admin Report] Final report type:', isNationalService ? 'National Service' : 'Stratavax');
-        console.log('[Admin Report] Report keys:', Object.keys(report));
 
         setReportData({
           ...data,
           report: report,
           result: result
         });
-        setReportType(isNationalService ? 'national_service' : 'stratavax');
+        setIsNationalService(isNS);
 
         setLoading(false);
       } catch (err) {
@@ -234,11 +252,9 @@ export default function AdminReportView() {
   }
 
   // ============================================================
-  // RENDER THE CORRECT REPORT TYPE
+  // RENDER NATIONAL SERVICE REPORT
   // ============================================================
-
-  // National Service Report
-  if (reportType === 'national_service' && reportData?.report) {
+  if (isNationalService && reportData?.report) {
     console.log('[Admin Report] Rendering National Service Report');
     return (
       <AppLayout background="/images/admin-bg.jpg">
@@ -254,31 +270,13 @@ export default function AdminReportView() {
     );
   }
 
-  // Stratavax Report
-  if (reportType === 'stratavax' && reportData?.report) {
+  // ============================================================
+  // RENDER STRATAVAX REPORT
+  // ============================================================
+  if (!isNationalService && reportData?.report) {
     console.log('[Admin Report] Rendering Stratavax Report');
     const report = reportData.report;
     
-    // Prepare data for Stratavax report
-    const stratavaxData = {
-      result: {
-        ...reportData.result,
-        candidate_profiles: report.candidateInfo || null,
-        assessments: reportData.result?.assessments || null,
-        percentage_score: report.overallScore || report.percentage_score || 0,
-        classification: report.classification || 'Standard Profile',
-        riskLevel: report.riskLevel || 'Medium',
-        categoryScores: report.categoryScores || report.category_scores || [],
-        strengths: report.strengths || [],
-        weaknesses: report.weaknesses || [],
-        recommendations: report.recommendations || [],
-        executiveSummary: report.executiveSummary || '',
-        supervisorImplication: report.supervisorImplication || ''
-      },
-      candidate: report.candidateInfo || null,
-      assessment: reportData.result?.assessments || null
-    };
-
     return (
       <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.breadcrumb}>
@@ -289,16 +287,30 @@ export default function AdminReportView() {
           <span style={styles.breadcrumbText}>Assessment Report</span>
         </div>
         <StratavaxReport 
-          result={stratavaxData.result}
-          candidate={stratavaxData.candidate}
-          assessment={stratavaxData.assessment}
+          result={{
+            ...reportData.result,
+            candidate_profiles: report.candidateInfo || null,
+            percentage_score: report.overallScore || report.percentage_score || 0,
+            classification: report.classification || 'Standard Profile',
+            riskLevel: report.riskLevel || 'Medium',
+            categoryScores: report.categoryScores || report.category_scores || [],
+            strengths: report.strengths || [],
+            weaknesses: report.weaknesses || [],
+            recommendations: report.recommendations || [],
+            executiveSummary: report.executiveSummary || '',
+            supervisorImplication: report.supervisorImplication || ''
+          }}
+          candidate={report.candidateInfo || null}
+          assessment={reportData.result?.assessments || null}
           onBack={handleBack}
         />
       </AppLayout>
     );
   }
 
-  // Fallback
+  // ============================================================
+  // FALLBACK
+  // ============================================================
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.fallbackContainer}>
@@ -308,13 +320,14 @@ export default function AdminReportView() {
         <div style={styles.fallbackContent}>
           <h2>Report Not Available</h2>
           <p>Unable to determine the report type.</p>
-          <pre style={styles.debugPre}>
-            {JSON.stringify({
-              reportType,
+          <div style={styles.debugInfo}>
+            <pre>{JSON.stringify({
+              isNationalService,
               hasReport: !!reportData?.report,
-              reportKeys: reportData?.report ? Object.keys(reportData.report) : []
-            }, null, 2)}
-          </pre>
+              reportKeys: reportData?.report ? Object.keys(reportData.report) : [],
+              hasResult: !!reportData?.result
+            }, null, 2)}</pre>
+          </div>
         </div>
       </div>
     </AppLayout>
@@ -407,9 +420,10 @@ const styles = {
     borderRadius: '12px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
   },
-  debugPre: {
-    background: '#f8fafc',
+  debugInfo: {
+    marginTop: '16px',
     padding: '12px',
+    background: '#f8fafc',
     borderRadius: '8px',
     fontSize: '12px',
     overflow: 'auto',
